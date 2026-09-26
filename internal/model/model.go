@@ -86,6 +86,8 @@ type Target struct {
 	Path     string        `yaml:"path,omitempty" json:"-"` // HTTPS path, default "/"
 	Kinds    []ProbeKind   `yaml:"-" json:"kinds"`          // default: all three
 	Interval time.Duration `yaml:"-" json:"interval"`       // HTTPS/TCP interval, default 15s; ICMP runs at Interval/3
+	// Layer is LayerGateway, LayerEdge or LayerAnycast for path targets.
+	Layer string `yaml:"-" json:"layer,omitempty"`
 	// HostOverrides uses a different host for some kinds (e.g. Google Meet:
 	// HTTPS/TCP to meet.google.com, ICMP to lens.l.google.com).
 	HostOverrides map[ProbeKind]string `yaml:"-" json:"-"`
@@ -140,4 +142,56 @@ func (f Fanout) Observe(s Sample) {
 	for _, k := range f {
 		k.Observe(s)
 	}
+}
+
+// Layer tags a target that measures one layer of the path, so the verdict
+// engine can tell whose fault a problem is. Empty for ordinary targets.
+const (
+	LayerGateway = "gateway"  // the default gateway (home router)
+	LayerEdge    = "isp-edge" // the first public hop (the ISP's side)
+	LayerAnycast = "anycast"  // big anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9)
+)
+
+// Special hosts resolved at runtime from the local network path.
+const (
+	HostGateway = "@gateway"
+	HostEdge    = "@isp-edge"
+)
+
+// VerdictKind is the engine's conclusion about the current problem.
+type VerdictKind string
+
+const (
+	VerdictOK        VerdictKind = "ok"
+	VerdictWarmingUp VerdictKind = "warming_up" // not enough data yet
+	VerdictLAN       VerdictKind = "lan"        // gateway unhealthy: Wi-Fi/LAN/router
+	VerdictISP       VerdictKind = "isp"        // gateway fine, ISP edge unhealthy
+	VerdictUpstream  VerdictKind = "upstream"   // edge fine, most internet targets unhealthy
+	VerdictDNS       VerdictKind = "dns"        // path fine, name resolution failing widely
+	VerdictService   VerdictKind = "service"    // path fine, only some targets/groups unhealthy
+	VerdictNoNetwork VerdictKind = "no_network" // no default route / all layers down
+)
+
+// Verdict is the current assessment. Summary is one plain-English sentence
+// and must never contain IP addresses or hostnames of the user's network
+// (it is served on the public link).
+type Verdict struct {
+	Kind    VerdictKind `json:"kind"`
+	Since   time.Time   `json:"since"`
+	Summary string      `json:"summary"`
+	// Targets affected (names, as in the profile). Empty for path-level kinds.
+	Targets []string `json:"targets,omitempty"`
+	// Evidence are the numbers behind the verdict, e.g. "gateway_loss": 0.2.
+	Evidence map[string]float64 `json:"evidence,omitempty"`
+}
+
+// Incident is one period with a non-OK verdict. End is zero while ongoing.
+type Incident struct {
+	ID       int64       `json:"id"`
+	Start    time.Time   `json:"start"`
+	End      time.Time   `json:"end,omitempty"`
+	Kind     VerdictKind `json:"kind"`
+	Summary  string      `json:"summary"`
+	Targets  []string    `json:"targets,omitempty"`
+	PeakLoss float64     `json:"peak_loss"` // worst 1-minute loss fraction seen
 }
