@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -112,7 +113,14 @@ func TestLocalhostAllKinds(t *testing.T) {
 				if s.Lost {
 					t.Errorf("lost: %+v", s)
 				}
-				if s.RTT <= 0 || s.RTT > time.Second {
+				// Go's monotonic clock on Windows ticks every ~0.5ms, and
+				// IcmpSendEcho reports whole milliseconds, so a loopback RTT
+				// can legitimately read as 0 there.
+				minRTT := time.Duration(1)
+				if runtime.GOOS == "windows" {
+					minRTT = 0
+				}
+				if s.RTT < minRTT || s.RTT > time.Second {
 					t.Errorf("rtt %s: %+v", s.RTT, s)
 				}
 			}
