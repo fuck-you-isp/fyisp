@@ -69,8 +69,10 @@ func realSleep(ctx context.Context, d time.Duration) bool {
 //
 // Clock jumps: after a forward jump (or suspend) only the current slot is
 // fired; skipped slots get no sample (the store records them as not
-// measured). After a backward jump nothing fires until the clock passes the
-// last fired slot again, so slots never repeat.
+// measured). After a small backward jump (up to backStep(iv)) nothing fires
+// until the clock passes the last fired slot again, so slots never repeat.
+// After a larger one (the clock was wrong and got corrected) the schedule
+// restarts from the current slot instead of waiting for the old time.
 func schedule(ctx context.Context, c clock, iv, phase time.Duration, fire func(slot time.Time)) {
 	last := slotIndex(c.now(), iv, phase)
 	for {
@@ -78,10 +80,14 @@ func schedule(ctx context.Context, c clock, iv, phase time.Duration, fire func(s
 			return
 		}
 		now := c.now()
-		if n := slotIndex(now, iv, phase); n > last {
+		n := slotIndex(now, iv, phase)
+		if n > last {
 			last = n
 			fire(slotStart(n, iv))
 			continue
+		}
+		if time.Duration(last-n)*iv > backStep(iv) {
+			last = n
 		}
 		wait := fireTime(last+1, iv, phase).Sub(now)
 		// Re-check at least once per interval: the wall clock may have been
@@ -92,3 +98,8 @@ func schedule(ctx context.Context, c clock, iv, phase time.Duration, fire func(s
 		}
 	}
 }
+
+// backStep is how far the clock may step back before the schedule restarts
+// from the current slot: two intervals, and at least the minute within which
+// the store still rejects samples behind its last one (see store.clockSlack).
+func backStep(iv time.Duration) time.Duration { return max(2*iv, time.Minute) }
