@@ -1,0 +1,70 @@
+# systemd unit for fyisp. Install:
+#   sudo install -m 0755 fyisp-linux-amd64 /usr/local/bin/fyisp
+#   sudo install -m 0644 fyisp.service /etc/systemd/system/fyisp.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now fyisp
+# Open http://127.0.0.1:3000. Data lives in /var/lib/fyisp (StateDirectory);
+# `sudo systemctl stop fyisp && sudo rm -rf /var/lib/private/fyisp` removes it.
+#
+# ICMP uses unprivileged ping sockets, allowed when the service's group is in
+# net.ipv4.ping_group_range (the default on most distributions:
+# "0 2147483647"). If fyisp logs "ICMP unavailable", either widen that range
+# or grant CAP_NET_RAW with a drop-in (sudo systemctl edit fyisp):
+#
+#   [Service]
+#   AmbientCapabilities=CAP_NET_RAW
+#   CapabilityBoundingSet=CAP_NET_RAW
+#
+# To share a public link, add --share to ExecStart in a drop-in:
+#
+#   [Service]
+#   ExecStart=
+#   ExecStart=/usr/local/bin/fyisp --data-dir=${STATE_DIRECTORY} --listen=127.0.0.1:3000 --share
+
+[Unit]
+Description=fyisp internet quality monitor
+Documentation=https://github.com/fuck-you-isp/fyisp
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/fyisp --data-dir=${STATE_DIRECTORY} --listen=127.0.0.1:3000
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+DynamicUser=yes
+StateDirectory=fyisp
+StateDirectoryMode=0700
+UMask=0077
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
