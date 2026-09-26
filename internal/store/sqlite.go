@@ -39,8 +39,17 @@ const PageSize = 16384
 // hour close and prune.
 const (
 	writerParams = "?_busy_timeout=5000&_synchronous=NORMAL&_txlock=immediate&_pragma=wal_autocheckpoint(256)&_pragma=journal_size_limit(16777216)"
-	readerParams = "?_busy_timeout=5000&_query_only=1"
+	readerParams = "?_busy_timeout=5000&_query_only=1&_pragma=cache_size(-1024)"
 )
+
+// Reader pool memory. Each SQLite connection keeps its own page cache
+// (default 2000 KiB), outside the Go heap, for as long as it stays open, and
+// the pool opens up to max(4, GOMAXPROCS) of them. Panel queries scan far
+// more blob pages than any cache holds (the OS page cache serves those), so
+// readers get 1 MiB each, and a connection idle for readerIdleTime is
+// closed: a burst of dashboard panels opens several, a dashboard left open
+// keeps them busy, and a process nobody looks at holds none.
+const readerIdleTime = time.Minute
 
 // migrations[i] brings the schema from version i to i+1. Append only: never
 // edit a released migration. The schema version (PRAGMA user_version) is
@@ -181,6 +190,7 @@ func openReader(ctx context.Context, path string) (*sql.DB, error) {
 	n := max(4, runtime.GOMAXPROCS(0))
 	r.SetMaxOpenConns(n)
 	r.SetMaxIdleConns(n)
+	r.SetConnMaxIdleTime(readerIdleTime)
 	if err := r.PingContext(ctx); err != nil {
 		r.Close()
 		return nil, err
