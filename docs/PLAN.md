@@ -132,7 +132,7 @@ The prototype binary is 6.4 MB before the tunnel is added.
   - `meta(...)`
   - `PRAGMA user_version` holds the schema version. Migrations are embedded and backed up first (`VACUUM INTO`), and a database from a newer version is refused.
 - **Blob format v1:**
-  - A version byte, then `uvarint(slot0_unix_ms)`, `uvarint(interval_ms)`, then one uvarint per slot, then zstd at max level (SpeedBestCompression, no dictionary).
+  - A version byte, then `uvarint(slot0_unix_ms)`, `uvarint(interval_ms)`, then one uvarint per slot, then zstd (SpeedBetterCompression, no dictionary; SpeedBestCompression held a 34 MB encoder table for the same size).
   - For each slot: if `u&1==0`, `u>>1` is the zigzag-encoded change from the previous value, in 10 µs units.
   - If `u&1==1`, the slot has no value and `code=u>>1`: **0 = not measured** (restart or sleep), **1–15 = loss reason**.
 - **Slots come from wall-clock UTC:** `slot = floor((now − hourStart − phase)/interval)`. Skipped slots are filled with code 0. If the clock steps backwards, samples are dropped until it catches up.
