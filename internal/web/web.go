@@ -44,6 +44,8 @@ type Deps struct {
 	Metrics http.Handler
 	Share   ShareControl
 	Log     *slog.Logger
+
+	firsts *firstCache // set by the handlers; nil queries the store each time
 }
 
 // Status is what /api/status reports. The public handler redacts it (see

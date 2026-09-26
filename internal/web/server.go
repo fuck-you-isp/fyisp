@@ -96,6 +96,7 @@ func newServer(d Deps, public bool, token string) *server {
 	if public {
 		mode = "public"
 	}
+	d.firsts = &firstCache{}
 	html := strings.NewReplacer("{{mode}}", mode, "{{token}}", token).Replace(indexTmpl)
 	return &server{d: d, public: public, index: []byte(html), now: time.Now}
 }
@@ -264,6 +265,12 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
+	if s.public {
+		if asCSV {
+			p.points = min(p.points, PublicCSVMaxPoints)
+		}
+		p.quantize(now)
+	}
 	render := func(ctx context.Context) (*cached, error) {
 		if s.sem != nil {
 			select {
@@ -283,7 +290,7 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 		}
 		return &cached{code: http.StatusOK, ctype: "application/json; charset=utf-8", body: pd.JSON()}, nil
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), panelTimeout)
 	defer cancel()
 	var c *cached
 	if s.cache != nil {
@@ -300,7 +307,15 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 	case errors.Is(err, errUnknownGroup):
 		writeErr(w, r, http.StatusNotFound, "unknown group")
 		return
-	case errors.Is(err, errBusy), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, errBusy), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		switch {
+		case r.Context().Err() != nil:
+			s.d.log().Debug("panel query: client went away", "group", p.group)
+		case errors.Is(err, errBusy):
+			s.d.log().Debug("panel query: busy", "group", p.group)
+		default:
+			s.d.log().Warn("panel query timed out", "group", p.group, "err", err)
+		}
 		w.Header().Set("Retry-After", "2")
 		writeErr(w, r, http.StatusServiceUnavailable, "busy, retry shortly")
 		return
@@ -321,6 +336,9 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 }
 
 var errBusy = errors.New("busy")
+
+// panelTimeout bounds one panel query.
+const panelTimeout = 20 * time.Second
 
 func allowGET(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {

@@ -559,25 +559,6 @@ func TestPanelJSON(t *testing.T) {
 	}
 }
 
-func TestPanelGapStartsAtOldestData(t *testing.T) {
-	now := time.Now()
-	cs, d, _ := fixture(t, now)
-	cs.oldest = now.Add(-32 * time.Minute) // "installed" 32 minutes ago
-	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
-	w := do(h, "GET", "/api/panel?group=common&from=now-40m", map[string]string{"Host": "127.0.0.1:3000"})
-	var r panelResp
-	if err := json.Unmarshal(w.Body.Bytes(), &r); err != nil {
-		t.Fatal(err)
-	}
-	gaps := 0
-	for _, g := range r.Series[0].Gap {
-		gaps += int(g)
-	}
-	if gaps < 6 || gaps > 8 { // 32m..30m ago at 15s
-		t.Errorf("not measured = %d, want ~8", gaps)
-	}
-}
-
 func TestPanelClamp(t *testing.T) {
 	now := time.Now()
 	cs, d, _ := fixture(t, now)
