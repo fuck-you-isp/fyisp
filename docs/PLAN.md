@@ -123,10 +123,10 @@ The prototype binary is 6.4 MB before the tunnel is added.
 
   `--ephemeral` uses a temporary directory that is deleted on exit. `fyisp paths` prints every location.
 - **Permissions:** the directory is 0700 and the database files are 0600.
-- **Pragma order** (before the first CREATE TABLE): `page_size=16384`, then `auto_vacuum=INCREMENTAL`, then `journal_mode=WAL`, then `synchronous=NORMAL`.
+- **Pragma order** (before the first CREATE TABLE): `page_size=16384`, then `auto_vacuum=INCREMENTAL`, then `journal_mode=WAL`, then `synchronous=NORMAL`. These must be explicit `Exec` calls: modernc applies `_pragma` DSN values in alphabetical order, which silently loses the page size. Use `openDB` in `internal/store/sqlite.go` (spike S3).
 - **Connections:** one writer (`MaxOpenConns=1`) and a separate read-only pool, so the per-minute write never blocks UI reads.
 - **Schema:**
-  - `samples(hour, series, data BLOB, PK(hour, series)) WITHOUT ROWID`: time-first key.
+  - `samples(hour, series, data BLOB, PRIMARY KEY(hour, series))`: time-first key, a **rowid table**. The spike showed `WITHOUT ROWID` wastes overflow pages on blobs larger than about 4 KB (3.75 vs 1.70 B/sample).
   - `summary_1h(hour, series, n, lost, lost_by BLOB, min, mean, max, p95, PK(hour, series)) WITHOUT ROWID`
   - `series(id, target, kind, interval_ms, UNIQUE(target, kind))`
   - `meta(...)`
@@ -144,7 +144,8 @@ The prototype binary is 6.4 MB before the tunnel is added.
   - `Panel` is **one SQL query per panel** (`hour BETWEEN .. AND series IN (..)`).
   - Ranges up to 48h read raw blobs, bucketed to 1000 points or fewer. Longer ranges read `summary_1h`.
 - **Disk full:** keep probing, buffer up to about 10 MB in memory, show a red banner, and retry every 60s. Refuse to start if less than 200 MB is free, unless `--force`.
-- **Expected size** at v0.1's ~23 samples/s: about 220 MB for 90 days of raw data, plus about 35 MB of summaries.
+- **Expected size** at v0.1's ~23 samples/s: measured 1.7 B/sample on the database file with the v0.1 target mix, so **about 300 MB for 90 days**, summaries included.
+- Blobs are encoded *before* BEGIN so the write transaction stays short. `wal_checkpoint(TRUNCATE)` runs after each hour close and prune.
 
 ### Export and metrics
 - **`fyisp export`** (`--format csv|sqlite --from --to --target --kind --tier raw|1h`):
