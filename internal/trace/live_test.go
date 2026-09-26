@@ -3,6 +3,7 @@ package trace
 import (
 	"context"
 	"net/netip"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -34,7 +35,9 @@ func TestLiveLoopback(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range sink.samplesOf("lo") {
-		if s.Key.Hop != 1 || s.Lost || s.RTT <= 0 || s.RTT > time.Second {
+		// Lost says whether the hop answered. On Windows a loopback RTT of
+		// 0 is real: IcmpSendEcho reports whole milliseconds.
+		if s.Key.Hop != 1 || s.Lost || s.RTT < 0 || (s.RTT == 0 && runtime.GOOS != "windows") || s.RTT > time.Second {
 			t.Errorf("sample %+v, want hop 1 answered", s)
 		}
 	}

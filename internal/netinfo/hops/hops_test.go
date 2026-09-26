@@ -3,13 +3,15 @@ package hops
 import (
 	"context"
 	"net/netip"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
 
 // TestLoopback sends parallel TTL-limited probes to 127.0.0.1 with the best
-// available socket: each gets its own answer.
+// available socket: each gets its own answer. On Windows IcmpSendEcho
+// reports whole milliseconds, so a loopback RTT of 0 is real there.
 func TestLoopback(t *testing.T) {
 	p, err := Open()
 	if err != nil {
@@ -23,7 +25,7 @@ func TestLoopback(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			h, err := p.Probe(context.Background(), dst, ttl, 2*time.Second)
-			if err != nil || h.Addr != dst || !h.Reached || h.RTT <= 0 || h.RTT > 2*time.Second {
+			if err != nil || h.Addr != dst || !h.Reached || h.RTT < 0 || (h.RTT == 0 && runtime.GOOS != "windows") || h.RTT > 2*time.Second {
 				t.Errorf("ttl %d: %+v, %v", ttl, h, err)
 			}
 		}()

@@ -46,7 +46,7 @@ type Options struct {
 	Parallel    int           // probes in flight per target (default 4)
 	MaxInFlight int           // probes in flight over all targets (default 32)
 
-	Now func() time.Time // wall clock for slots; default time.Now
+	Now func() time.Time // wall clock for slots, route times and DNS refresh; default time.Now
 	Log *slog.Logger     // default slog.Default()
 
 	// Lookup maps a hop address to its AS (typically asn.Lookup); nil
@@ -403,7 +403,7 @@ func (tr *tracer) dest(ctx context.Context, st *target) (netip.Addr, error) {
 	if a, err := netip.ParseAddr(st.host); err == nil {
 		return a.Unmap(), nil
 	}
-	now := time.Now()
+	now := tr.o.Now()
 	if !st.resolved.IsValid() {
 		tr.resolve(ctx, st) // first round: wait for the address
 	} else if now.After(st.resolveAt) && st.resolving.CompareAndSwap(false, true) {

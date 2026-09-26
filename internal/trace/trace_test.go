@@ -141,6 +141,19 @@ func roundTracer(t *testing.T, f *fakeNet, o Options) (*tracer, *target, *recSin
 	t.Helper()
 	o.Log = quiet()
 	o.open = func() (hops.Prober, error) { return f, nil }
+	if o.Now == nil {
+		// A clock that moves on every reading: rounds called back to back
+		// must not depend on the wall clock's resolution (about 0.5 ms on
+		// Windows) to see time pass.
+		var mu sync.Mutex
+		now := time.Unix(1_800_000_000, 0)
+		o.Now = func() time.Time {
+			mu.Lock()
+			defer mu.Unlock()
+			now = now.Add(time.Millisecond)
+			return now
+		}
+	}
 	tr := newTracer(o)
 	sink := &recSink{}
 	tr.sink, tr.prober = sink, f

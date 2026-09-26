@@ -203,7 +203,15 @@ func TestPublicRoutes(t *testing.T) {
 	}
 }
 
-var leakRE = regexp.MustCompile(`\b(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|127\.\d+\.\d+\.\d+|169\.254\.\d+\.\d+)\b|\[?::1\]?|localhost|/home/|/var/|/proc/|/etc/|/Users/|[A-Z]:\\|v9\.9\.9|trycloudflare|secret-path|example\.com|8443`)
+// portLeak matches the planted port 8443 as a number of its own (":8443",
+// "port":8443, "8443"), not the same digits inside a millisecond timestamp
+// or a decimal RTT.
+const portLeak = `(^|[^\d.])8443($|[^\d.])`
+
+var portRE = regexp.MustCompile(portLeak)
+
+// leakRE matches private details planted in the fixtures.
+var leakRE = regexp.MustCompile(`\b(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|127\.\d+\.\d+\.\d+|169\.254\.\d+\.\d+)\b|\[?::1\]?|localhost|/home/|/var/|/proc/|/etc/|/Users/|[A-Z]:\\|v9\.9\.9|trycloudflare|secret-path|example\.com|` + portLeak)
 
 func TestPublicRedaction(t *testing.T) {
 	cs, d, sh := fixture(t, time.Now())
@@ -636,10 +644,13 @@ func TestProfileNoHosts(t *testing.T) {
 	_, d, _ := fixture(t, time.Now())
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
 	b := do(h, "GET", "/api/profile", map[string]string{"Host": "127.0.0.1:3000"}).Body.String()
-	for _, s := range []string{"example.com", "192.168", "10.1.2.3", "172.16", "secret-path", "8443"} {
+	for _, s := range []string{"example.com", "192.168", "10.1.2.3", "172.16", "secret-path"} {
 		if strings.Contains(b, s) {
 			t.Errorf("profile leaks %q: %s", s, b)
 		}
+	}
+	if m := portRE.FindString(b); m != "" {
+		t.Errorf("profile leaks %q: %s", m, b)
 	}
 	var p profileJSON
 	if err := json.Unmarshal([]byte(b), &p); err != nil || len(p.Groups) != 2 || len(p.Targets) != 4 || len(p.Targets[1].Kinds) != 1 {
