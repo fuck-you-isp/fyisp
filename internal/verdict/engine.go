@@ -40,6 +40,23 @@ type Options struct {
 	Interval time.Duration
 	// Log receives persistence errors. Default: discard.
 	Log *slog.Logger
+	// Baseline optionally returns a series' long-term normal at a time
+	// (baseline.Source.Get). When it knows a series, latency spikes are
+	// judged against that normal instead of the last 30 minutes (see
+	// rules.go), and the engine reports how each target compares to its
+	// normal (evidence *_vs_normal, Slow, EachVsNormal). Nil: 30-minute
+	// baselines only, as before.
+	Baseline func(model.SeriesKey, time.Time) (model.Baseline, bool)
+}
+
+// SlowTarget is a target whose median RTT over the last minute is well above
+// its long-term normal (see Engine.Slow). Kind is the probe kind compared.
+type SlowTarget struct {
+	Target   string          `json:"target"`
+	Kind     model.ProbeKind `json:"kind"`
+	Ratio    float64         `json:"ratio"` // NowMs / NormalMs
+	NowMs    float64         `json:"now_ms"`
+	NormalMs float64         `json:"normal_ms"`
 }
 
 // IncidentRecovery is optionally implemented by an IncidentStore (the
@@ -79,9 +96,12 @@ type engine struct {
 	mu     sync.Mutex // guards series
 	series map[model.SeriesKey]*series
 
-	vmu    sync.Mutex // guards cur and layers (read by Current/Layers)
+	vmu    sync.Mutex // guards cur, layers and normals (read by Current/Layers/Slow)
 	cur    model.Verdict
 	layers map[string]*bool
+	// normals: every (target, kind) with a long-term normal and ≥ 3
+	// successes in the last window, at the last evaluation.
+	normals []SlowTarget
 
 	// Evaluation state; only touched by step (the Run goroutine).
 	start     time.Time
@@ -134,6 +154,71 @@ func MetricsSource(e Engine) func() (model.Verdict, map[string]*bool) {
 			l = lr.Layers()
 		}
 		return e.Current(), l
+	}
+}
+
+// SlowSource adapts an Engine made by New for the UI's "slower than your
+// normal" line: it returns e's Slow (nil for other Engines).
+func SlowSource(e Engine) func() []SlowTarget {
+	return func() []SlowTarget {
+		if s, ok := e.(interface{ Slow() []SlowTarget }); ok {
+			return s.Slow()
+		}
+		return nil
+	}
+}
+
+// VsNormalSource adapts an Engine made by New for
+// metrics.Collector.SetVsNormalSource (a no-op for other Engines).
+func VsNormalSource(e Engine) func(yield func(name string, kind model.ProbeKind, ratio float64)) {
+	return func(yield func(string, model.ProbeKind, float64)) {
+		if s, ok := e.(interface {
+			EachVsNormal(func(string, model.ProbeKind, float64))
+		}); ok {
+			s.EachVsNormal(yield)
+		}
+	}
+}
+
+// Slow lists the targets whose median RTT over the last minute (at the last
+// evaluation) is more than slowFactor × their long-term normal and at least
+// slowMinExtraMs above it: one entry per target (its slowest kind), slowest
+// first. It is a signal for the UI, not a verdict: no hysteresis, no
+// incident, and it does not change Current. Empty without Options.Baseline.
+func (e *engine) Slow() []SlowTarget {
+	e.vmu.Lock()
+	defer e.vmu.Unlock()
+	var out []SlowTarget
+	for _, n := range e.normals {
+		if n.Ratio <= slowFactor || n.NowMs-n.NormalMs < slowMinExtraMs {
+			continue
+		}
+		if i := slices.IndexFunc(out, func(o SlowTarget) bool { return o.Target == n.Target }); i >= 0 {
+			if n.Ratio > out[i].Ratio {
+				out[i] = n
+			}
+			continue
+		}
+		out = append(out, n)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Ratio != out[j].Ratio {
+			return out[i].Ratio > out[j].Ratio
+		}
+		return out[i].Target < out[j].Target
+	})
+	return out
+}
+
+// EachVsNormal calls fn for every (target, kind) with a long-term normal and
+// enough successful probes in the last minute, with the ratio of the
+// window's median RTT to the normal median (at the last evaluation).
+func (e *engine) EachVsNormal(fn func(name string, kind model.ProbeKind, ratio float64)) {
+	e.vmu.Lock()
+	n := slices.Clone(e.normals)
+	e.vmu.Unlock()
+	for _, x := range n {
+		fn(x.Target, x.Kind, x.Ratio)
 	}
 }
 
@@ -326,6 +411,13 @@ func (e *engine) step(ctx context.Context, now time.Time) {
 	e.mu.Lock()
 	ts := e.collect(now, p)
 	e.mu.Unlock()
+	var normals []SlowTarget
+	for _, t := range ts {
+		normals = append(normals, t.normals...)
+	}
+	e.vmu.Lock()
+	e.normals = normals
+	e.vmu.Unlock()
 	e.apply(ctx, now, judge(p, ts))
 }
 
@@ -511,7 +603,10 @@ type tstat struct {
 	n, lost, dns, nonet int     // samples, lost, lost to DNS, lost to no network / unreachable
 	spike               bool    // some kind's median RTT far above its baseline
 	rtt, base           float64 // ms: window median and baseline of the spiking (else some) kind
+	longTerm            bool    // base is a long-term normal (Options.Baseline), not the 30-minute one
 	med                 float64 // ms: median of every successful RTT in the window; 0 if none
+	vsNormal            float64 // largest window median / long-term normal over the kinds; 0 if none
+	normals             []SlowTarget
 }
 
 func (t *tstat) loss() float64 {
@@ -558,12 +653,13 @@ func (e *engine) collect(now time.Time, p *model.Profile) []*tstat {
 		ts := &tstat{t: t}
 		pooled = pooled[:0]
 		var srs [3]*series
+		kinds := [3]model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
 		anyOK := false
-		for i, k := range []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP} {
+		for i, k := range kinds {
 			srs[i] = e.series[model.SeriesKey{Target: t.Name, Kind: k}]
 			anyOK = anyOK || (srs[i] != nil && srs[i].everOK)
 		}
-		for _, sr := range srs {
+		for ki, sr := range srs {
 			if sr == nil || (anyOK && !sr.everOK) {
 				continue // e.g. ICMP blocked by a target that answers HTTPS
 			}
@@ -587,6 +683,16 @@ func (e *engine) collect(now time.Time, p *model.Profile) []*tstat {
 			if len(scratch) < 3 {
 				continue
 			}
+			med := float64(medianU32(scratch)) / 1000
+			if e.o.Baseline != nil {
+				if b, ok := e.o.Baseline(model.SeriesKey{Target: t.Name, Kind: kinds[ki]}, now); ok && b.MedianMs > 0 {
+					r := med / b.MedianMs
+					ts.normals = append(ts.normals, SlowTarget{Target: t.Name, Kind: kinds[ki], Ratio: round3(r), NowMs: round3(med), NormalMs: round3(b.MedianMs)})
+					ts.vsNormal = max(ts.vsNormal, r)
+					ts.judgeKind(med, b.MedianMs, med > normalThreshold(b), true)
+					continue
+				}
+			}
 			var meds []uint32
 			for _, m := range sr.mins {
 				if m.idx != 0 && m.idx < baseTo && m.idx >= baseTo-baselineMins {
@@ -599,13 +705,8 @@ func (e *engine) collect(now time.Time, p *model.Profile) []*tstat {
 			if len(meds) < minBaseline {
 				continue
 			}
-			med := float64(medianU32(scratch)) / 1000
 			base := float64(medianU32(meds)) / 1000
-			if med > spikeThreshold(base) && (!ts.spike || med/base > ts.rtt/ts.base) {
-				ts.spike, ts.rtt, ts.base = true, med, base
-			} else if !ts.spike && ts.rtt == 0 {
-				ts.rtt, ts.base = med, base
-			}
+			ts.judgeKind(med, base, med > spikeThreshold(base), false)
 		}
 		if len(pooled) > 0 {
 			ts.med = float64(medianU32(pooled)) / 1000
@@ -613,6 +714,16 @@ func (e *engine) collect(now time.Time, p *model.Profile) []*tstat {
 		out = append(out, ts)
 	}
 	return out
+}
+
+// judgeKind folds one kind's window median and baseline into t: the
+// spiking kind with the largest ratio wins, else the first kind judged.
+func (t *tstat) judgeKind(med, base float64, spike, longTerm bool) {
+	if spike && (!t.spike || med/base > t.rtt/t.base) {
+		t.spike, t.rtt, t.base, t.longTerm = true, med, base, longTerm
+	} else if !t.spike && t.rtt == 0 {
+		t.rtt, t.base, t.longTerm = med, base, longTerm
+	}
 }
 
 // medianU32 sorts v and returns its (lower) median.

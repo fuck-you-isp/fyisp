@@ -19,7 +19,8 @@
 //
 // HTTPS and TCP results are exported as fyisp_https_rtt_seconds and
 // fyisp_tcp_rtt_seconds, with loss and sample counters for every kind except
-// trace hops.
+// trace hops. With SetVsNormalSource, fyisp_rtt_vs_normal{name,kind} is the
+// last minute's median RTT over the series' long-term normal.
 //
 // The Collector is also a trace.Sink: the current route of every traced
 // profile target is exported as fyisp_trace_hops{name} (its length) and one
@@ -106,6 +107,15 @@ var (
 		[]string{"layer"}, nil)
 )
 
+// fyisp_rtt_vs_normal (set with SetVsNormalSource).
+var vsNormalDesc = prometheus.NewDesc("fyisp_rtt_vs_normal",
+	"Median RTT over the last minute divided by the series' long-term normal median (past 7 days, same hour of day once known); absent while no normal is known.",
+	[]string{"name", "kind"}, nil)
+
+// VsNormalSource calls yield for every (target, kind) whose ratio to its
+// long-term normal is known. See verdict.VsNormalSource.
+type VsNormalSource func(yield func(name string, kind model.ProbeKind, ratio float64))
+
 // verdictKinds are every fyisp_verdict kind label, in a stable order.
 var verdictKinds = []model.VerdictKind{
 	model.VerdictOK, model.VerdictWarmingUp, model.VerdictLAN, model.VerdictISP,
@@ -135,6 +145,7 @@ type Collector struct {
 	mu      sync.Mutex
 	series  map[model.SeriesKey]*series
 	verdict VerdictSource
+	normal  VsNormalSource
 	routes  map[string]model.Route
 	hops    map[netip.Addr]model.HopInfo
 	changes map[string]uint64
@@ -171,6 +182,14 @@ func (c *Collector) Handler() http.Handler { return c.handler }
 func (c *Collector) SetVerdictSource(f VerdictSource) {
 	c.mu.Lock()
 	c.verdict = f
+	c.mu.Unlock()
+}
+
+// SetVsNormalSource makes scrapes export fyisp_rtt_vs_normal from f
+// (called once per scrape; nil disables it).
+func (c *Collector) SetVsNormalSource(f VsNormalSource) {
+	c.mu.Lock()
+	c.normal = f
 	c.mu.Unlock()
 }
 
@@ -254,7 +273,7 @@ func (pc *promCollector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{
 		pingUpDesc, pingTargetsDesc, pingStatusDesc, pingRTTDesc, pingSntDesc,
 		pingSntFailDesc, pingSntTimeDesc, pingLossDesc,
-		httpsRTTDesc, tcpRTTDesc, samplesDesc, lostDesc, verdictDesc, layerDesc,
+		httpsRTTDesc, tcpRTTDesc, samplesDesc, lostDesc, verdictDesc, layerDesc, vsNormalDesc,
 		traceHopsDesc, hopInfoDesc, routeChangesDesc,
 	} {
 		ch <- d
@@ -303,6 +322,7 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 		snaps = append(snaps, snap{k, t.HostFor(k.Kind), st.last, st.sent, st.failed, st.rttTotal, lost})
 	}
 	vsrc := c.verdict
+	nsrc := c.normal
 	type hopRow struct{ ip, asn, owner string }
 	type routeSnap struct {
 		name    string
@@ -367,6 +387,32 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 			if h := layers[l]; h != nil {
 				gauge(layerDesc, b2f(*h), l)
 			}
+		}
+	}
+
+	if nsrc != nil {
+		type row struct {
+			name string
+			kind model.ProbeKind
+			v    float64
+		}
+		var rows []row
+		nsrc(func(name string, kind model.ProbeKind, ratio float64) {
+			if _, ok := targets[name]; ok {
+				rows = append(rows, row{name, kind, ratio})
+			}
+		})
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].name != rows[j].name {
+				return rows[i].name < rows[j].name
+			}
+			return rows[i].kind < rows[j].kind
+		})
+		for i, r := range rows {
+			if i > 0 && r.name == rows[i-1].name && r.kind == rows[i-1].kind {
+				continue // a duplicate would fail the whole scrape
+			}
+			gauge(vsNormalDesc, r.v, r.name, r.kind.String())
 		}
 	}
 
