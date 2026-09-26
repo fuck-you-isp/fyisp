@@ -50,6 +50,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=livetest-build /tunnel.test /tunnel.test
 ENTRYPOINT ["/tunnel.test"]
 
+# License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
+# fyisp on any release platform, for the release assets and the image.
+FROM source AS licenses
+RUN --mount=type=cache,target=/go/pkg/mod <<'SH'
+set -eu
+for os in linux darwin windows; do
+  GOOS=$os go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{with .Replace}}(replaced-by:{{.Path}}@{{.Version}}){{end}} {{.Dir}}{{end}}{{end}}' ./cmd/fyisp
+done | sort -u > /tmp/mods
+out=/THIRD_PARTY_LICENSES.txt
+printf 'fyisp includes the following third-party Go modules. Their license and notice\nfiles follow. See NOTICE for a summary.\n\n' > $out
+while read -r path ver dir; do
+  printf '================================================================================\n%s %s\n================================================================================\n' "$path" "$ver" >> $out
+  found=0
+  for f in $(find "$dir" -maxdepth 1 -type f \( -iname 'LICEN[CS]E*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) | sort); do
+    printf -- '--- %s\n' "$(basename "$f")" >> $out; cat "$f" >> $out; printf '\n' >> $out; found=1
+  done
+  [ $found = 1 ] || { echo "no license file for $path in $dir" >&2; exit 1; }
+done < /tmp/mods
+wc -l /tmp/mods $out
+SH
+
 # Cross-compile the release matrix. VERSION is stamped into the binary.
 FROM source AS build-all
 ARG VERSION=dev
@@ -67,6 +88,7 @@ cd /out && sha256sum fyisp-* > SHA256SUMS && ls -l
 SH
 FROM scratch AS dist
 COPY --from=build-all /out/ /
+COPY --from=licenses /THIRD_PARTY_LICENSES.txt /
 
 # Launcher tests: scripts/run.sh (dash, bash, piped) and scripts/run.ps1
 # (PowerShell 7) download a fake release from 127.0.0.1; a good checksum must
@@ -113,6 +135,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM scratch AS image
 COPY --from=build-image /fyisp /fyisp
+COPY LICENSE NOTICE /usr/share/doc/fyisp/
+COPY --from=licenses /THIRD_PARTY_LICENSES.txt /usr/share/doc/fyisp/
 USER 65532:65532
 VOLUME /data
 EXPOSE 3000
