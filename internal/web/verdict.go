@@ -119,10 +119,16 @@ type incidentParams struct {
 }
 
 func parseIncidentParams(q url.Values, now time.Time) (incidentParams, error) {
-	var p incidentParams
 	if err := checkParams(q, "from", "to"); err != nil {
-		return p, err
+		return incidentParams{}, err
 	}
+	return parseRange(q, now)
+}
+
+// parseRange parses from and to (already whitelisted) with /api/panel's
+// time rules: defaults now-30m..now, to clamped to now, span to MaxRange.
+func parseRange(q url.Values, now time.Time) (incidentParams, error) {
+	var p incidentParams
 	fs, ts := q.Get("from"), q.Get("to")
 	if fs == "" {
 		fs = "now-30m"
