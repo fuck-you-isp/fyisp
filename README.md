@@ -53,7 +53,21 @@ The binaries are not code-signed yet:
 docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
 ```
 
-Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The container runs as an unprivileged user (65532) from a `scratch` image and keeps its data in the `/data` volume. `-p 3000:3000` makes the UI reachable from your network; use `-p 127.0.0.1:3000:3000` to keep it on this machine. Because the container listens on all interfaces, the UI's sharing controls are disabled unless you pass `--admin-token` (append fyisp options after the image name). ICMP works without extra capabilities on Docker 20.10+, which allows unprivileged ping sockets inside containers.
+Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The container runs as an unprivileged user (65532) from a `scratch` image and keeps its data in the `/data` volume. `-p 3000:3000` makes the UI reachable from your network; use `-p 127.0.0.1:3000:3000` to keep it on this machine. ICMP works without extra capabilities on Docker 20.10+, which allows unprivileged ping sockets inside containers.
+
+fyisp options go **after the image name** (the image already sets `--data-dir=/data --listen=0.0.0.0:3000`):
+
+```sh
+# Share a public read-only link from the start; the URL is in the logs
+docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --share
+docker logs fyisp 2>&1 | grep 'public link ready'
+
+# Or turn sharing on and off from the UI: set an admin token
+docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --admin-token "$(openssl rand -hex 16)"
+docker inspect fyisp --format '{{join .Args " "}}'   # shows the token again
+```
+
+Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. That is why its *Create public link* / *Stop sharing* buttons are off by default and the UI says *Share controls disabled*. `--share` still starts the link at startup without them. With `--admin-token`, the buttons come back and the browser asks for the token once per tab. If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
 
 ### systemd (Linux service)
 
