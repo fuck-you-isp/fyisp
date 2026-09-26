@@ -98,6 +98,8 @@ func main() {
 			os.Exit(cmdPaths(os.Args[2:]))
 		case "export":
 			os.Exit(cmdExport(os.Args[2:]))
+		case "report":
+			os.Exit(cmdReport(os.Args[2:]))
 		}
 	}
 	cfg, err := parseFlags(os.Args[1:])
@@ -144,7 +146,7 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 	fs.BoolVar(&c.force, "force", false, "start even if the data directory has less than 200 MB free")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp export [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
+		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
