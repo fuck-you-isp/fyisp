@@ -63,6 +63,25 @@ func fill(t *testing.T) (*store.SQLite, []model.SeriesKey) {
 	return s, keys
 }
 
+// storedRange is what an export without From/To covers: from the first to
+// the last real sample of any series (store.Reader.Series), so the
+// not-measured slots before a series' first sample are not exported.
+func storedRange(t *testing.T, r store.Reader) (from, to time.Time) {
+	ss, err := r.Series(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range ss {
+		if from.IsZero() || x.First.Before(from) {
+			from = x.First
+		}
+		if x.Last.After(to) {
+			to = x.Last
+		}
+	}
+	return from, to
+}
+
 func raw(t *testing.T, r store.Reader, keys []model.SeriesKey, from, to time.Time) []store.RawPoint {
 	var out []store.RawPoint
 	if err := r.Raw(ctx, keys, from, to, func(p store.RawPoint) error { out = append(out, p); return nil }); err != nil {
@@ -169,7 +188,8 @@ func checkMode(t *testing.T, path string) {
 
 func TestCSVRoundTrip(t *testing.T) {
 	s, keys := fill(t)
-	all := raw(t, s, keys, t0, t0.Add(6*time.Hour))
+	from, to := storedRange(t, s)
+	all := raw(t, s, keys, from, to)
 	var buf bytes.Buffer
 	if err := Write(ctx, s, &buf, Options{}); err != nil {
 		t.Fatal(err)
@@ -178,7 +198,7 @@ func TestCSVRoundTrip(t *testing.T) {
 	t.Logf("csv: %d rows, %d bytes; first rows:\n%s", len(all), buf.Len(), bytes.Join(bytes.SplitN(buf.Bytes(), []byte("\n"), 5)[:4], []byte("\n")))
 
 	// Filters, to a file.
-	from, to := t0.Add(90*time.Minute+500*time.Millisecond), t0.Add(3*time.Hour+7*time.Second)
+	from, to = t0.Add(90*time.Minute+500*time.Millisecond), t0.Add(3*time.Hour+7*time.Second)
 	path := filepath.Join(t.TempDir(), "out.csv")
 	o := Options{From: from, To: to, Targets: []string{"alpha"}, Kinds: []model.ProbeKind{model.KindICMP}}
 	if err := WriteFile(ctx, s, path, o); err != nil {
@@ -219,7 +239,8 @@ func TestSQLiteRoundTrip(t *testing.T) {
 		}
 		got = append(got, point(t, target, kind, ts, rtt, lost, reason))
 	}
-	equalPoints(t, got, raw(t, s, keys, t0, t0.Add(6*time.Hour)))
+	from, to := storedRange(t, s)
+	equalPoints(t, got, raw(t, s, keys, from, to))
 }
 
 func TestHourly(t *testing.T) {
