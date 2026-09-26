@@ -471,12 +471,15 @@ func (s *server) runCached(w http.ResponseWriter, r *http.Request, key string, r
 	case errors.Is(err, errUnknownTarget):
 		writeErr(w, r, http.StatusNotFound, "unknown target")
 		return
+	case errors.Is(err, errUnknownGroup):
+		writeErr(w, r, http.StatusNotFound, "unknown group")
+		return
 	case errors.Is(err, errBusy), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		w.Header().Set("Retry-After", "2")
 		writeErr(w, r, http.StatusServiceUnavailable, "busy, retry shortly")
 		return
 	default:
-		s.d.log().Error("trace query", "err", err)
+		s.d.log().Error("query", "key", strings.SplitN(key, "\x00", 2)[0], "err", err)
 		msg := "query failed"
 		if !s.public {
 			msg += ": " + strings.TrimSpace(err.Error())

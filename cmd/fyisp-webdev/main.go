@@ -215,6 +215,9 @@ func main() {
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
 	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP-edge samples (shows \"discovering…\")")
 	noTrace := flag.Bool("no-trace", false, "run without a trace source (Investigate view hidden)")
+	noNotes := flag.Bool("no-notes", false, "run without an annotation store (notes hidden)")
+	noReports := flag.Bool("no-reports", false, "run without reports")
+	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -222,8 +225,11 @@ func main() {
 	defer stop()
 
 	p := devProfile()
-	// sink drops ISP-edge samples with -edge-undiscovered.
+	now := time.Now()
+	// sink adds the evening slowdown and drops ISP-edge samples with
+	// -edge-undiscovered.
 	sink := func(inner model.Sink) model.Sink {
+		inner = slowSink(inner, now.Add(-slowFor))
 		if !*noEdge {
 			return inner
 		}
@@ -235,7 +241,6 @@ func main() {
 	}
 	st := store.NewFake()
 	var warm web.Warmup
-	now := time.Now()
 	if *bf > 0 {
 		log.Info("backfilling", "range", *bf)
 		backfill(sink(st), p, *bf, now)
@@ -273,6 +278,29 @@ func main() {
 	}
 	if !*noVerdict {
 		d.Verdict = newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge)
+	}
+	var notes *fakeNotes
+	if !*noNotes {
+		notes = newFakeNotes(now, *bf)
+		d.Annotations = notes
+	}
+	if !*noReports {
+		if notes == nil {
+			notes = newFakeNotes(now, 0)
+		}
+		fr := newFakeReports(notes, d.Verdict, st)
+		if *bf > 0 {
+			_, isp, _ := windows(*bf, now)
+			if id, err := fr.seed(ctx, isp.from.Add(-30*time.Minute), isp.to.Add(30*time.Minute)); err == nil {
+				log.Info("sample report", "public", *publicURL+"/s/"+sec+"/r/"+id)
+			}
+		}
+		d.Reports = fr
+	}
+	if !*noBaselines {
+		fb := newFakeBaselines(ctx, st, p, now, *bf)
+		d.Baselines = fb
+		d.Slow = fb.slow(st, p)
 	}
 	srv := func(addr string, h http.Handler) *http.Server {
 		return &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,

@@ -4,12 +4,15 @@
 // Two handlers share the same API code:
 //
 //   - Local is the owner's listener (default 127.0.0.1:3000). It adds /metrics
-//     and the POST routes that start and stop the public share link, protected
-//     by a Host allowlist, a same-origin check and a per-process CSRF token.
+//     and the write routes (share link, on-demand traces, notes, reports),
+//     protected by a Host allowlist, a same-origin check and a per-process
+//     CSRF token.
 //   - Public is the tunnel's origin. Everything lives under /s/<secret>/, only
 //     allowlisted GET/HEAD routes exist, requests are rate limited, panel
 //     queries are bounded and cached, and responses are redacted (no version,
-//     paths, LAN addresses or error strings).
+//     paths, LAN addresses or error strings). Private notes are never
+//     served; /s/<secret>/r/<id> serves a report snapshot only when it was
+//     built redacted and is marked public, under a strict CSP.
 //
 // The caller owns the http.Server. Recommended settings for both listeners:
 //
@@ -39,7 +42,9 @@ import (
 // required; Metrics and Share may be nil (the routes then answer 404).
 // Verdict may be nil: the verdict banner and outage log are then hidden.
 // Trace may be nil: the trace routes then answer 404 and the UI hides the
-// Investigate view.
+// Investigate view. Annotations, Reports and Baselines may be nil: their
+// routes then answer 404 and the UI hides notes, reports and "normal"
+// badges. Slow may be nil (no "slower than your normal" line).
 type Deps struct {
 	Profile func() *model.Profile
 	Store   store.Reader
@@ -48,7 +53,17 @@ type Deps struct {
 	Share   ShareControl
 	Verdict VerdictSource // the verdict engine (internal/verdict.Engine)
 	Trace   TraceSource   // per-hop stats, routes and on-demand traces
-	Log     *slog.Logger
+	// Annotations keeps timeline notes (store.AnnotationStore).
+	Annotations AnnotationStore
+	// Reports builds and keeps evidence reports (report.Builder plus
+	// store.ReportStore; see ReportSource).
+	Reports ReportSource
+	// Baselines answers each series' normal (baseline.Source).
+	Baselines BaselineSource
+	// Slow lists targets currently slower than their normal (the verdict
+	// engine's baseline comparison), worst first.
+	Slow func() []SlowTarget
+	Log  *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }

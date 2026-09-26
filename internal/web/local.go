@@ -49,7 +49,9 @@ type localHandler struct {
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
-// /metrics, and POST /api/share/start|stop.
+// /metrics, and the write routes (POST /api/share/start|stop, POST
+// /api/investigate, POST/PUT/DELETE /api/annotations[/{id}] and
+// /api/reports[/{id}]), all behind controlAllowed.
 func Local(d Deps, o LocalOptions) http.Handler {
 	tok := o.CSRFToken
 	if tok == "" {
@@ -143,6 +145,14 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/api/investigate":
 		h.serveInvestigate(w, r)
+		return
+	}
+	if rest, ok := strings.CutPrefix(p, "/api/annotations"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
+		h.serveNotes(w, r, strings.TrimPrefix(rest, "/"))
+		return
+	}
+	if rest, ok := strings.CutPrefix(p, "/api/reports"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
+		h.serveReports(w, r, strings.TrimPrefix(rest, "/"))
 		return
 	}
 	if !strings.HasPrefix(p, "/") {
