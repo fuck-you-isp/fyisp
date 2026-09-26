@@ -146,6 +146,10 @@ docker buildx build --target modfiles --output type=local,dest=. .   # go mod ti
 
 Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) from a `v*` tag using the same targets, and carry [build provenance attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations).
 
+### Network-fault tests (Linux, sudo)
+
+`test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) creates the throwaway namespaces `fyt-client ↔ fyt-gw ↔ fyt-isp ↔ fyt-inet`, runs fyisp in `fyt-client` as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It takes about 10 minutes and deletes the namespaces on exit. With a Go toolchain: `sudo -E go test -tags netns -v -timeout 25m ./test/netns`.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). fyisp includes third-party code under its own licenses, see [NOTICE](NOTICE).
