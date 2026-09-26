@@ -9,7 +9,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -130,7 +132,7 @@ func openConns(ctx context.Context, path, version string, now time.Time) (_ *con
 	}
 	f.Close()
 
-	w, err := sql.Open("sqlite", path+writerParams)
+	w, err := sql.Open("sqlite", path+writerParams+tempDirParam(path))
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +190,7 @@ func openConns(ctx context.Context, path, version string, now time.Time) (_ *con
 }
 
 func openReader(ctx context.Context, path string) (*sql.DB, error) {
-	r, err := sql.Open("sqlite", path+readerParams)
+	r, err := sql.Open("sqlite", path+readerParams+tempDirParam(path))
 	if err != nil {
 		return nil, err
 	}
@@ -283,3 +285,20 @@ func checkpoint(ctx context.Context, w *sql.DB) (busy bool, err error) {
 
 // inList returns "?,?,?" for n placeholders.
 func inList(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }
+
+// tempDirParam points SQLite's temporary files (used by VACUUM INTO backups
+// before migrations, and large sorts) at a private directory next to the
+// database. Minimal systems such as the scratch Docker image have no /tmp,
+// /var/tmp or TMPDIR, and SQLite then fails with SQLITE_IOERR_GETTEMPPATH
+// ("disk I/O error (6410)"). The environment cannot be used instead: the
+// transpiled libc snapshots it at process start. Windows uses GetTempPath.
+func tempDirParam(dbPath string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	dir := filepath.Join(filepath.Dir(dbPath), "tmp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	return "&_pragma=" + url.QueryEscape("temp_store_directory('"+strings.ReplaceAll(dir, "'", "''")+"')")
+}
