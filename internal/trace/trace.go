@@ -23,9 +23,16 @@ type Sink interface {
 //	func New(o Options) Tracer
 type Tracer interface {
 	Run(ctx context.Context, p *model.Profile, sink Sink) error
-	// Investigate traces target every Interval until the returned stop
-	// function is called or ttl passes (on-demand, for any profile target).
+	// Investigate traces target every Options.Investigate until the
+	// returned stop function is called or ttl passes (on-demand, for any
+	// profile target). Concurrent callers share one trace; it slows back
+	// down (or stops, for an untraced target) when the last one ends.
+	// Errors: not running, unknown target, ttl <= 0.
 	Investigate(target string, ttl time.Duration) (stop func(), err error)
 	// Routes returns the current route of every traced target.
 	Routes() []model.Route
+	// Interval is the current slot interval of target's KindTrace series
+	// (Options.Investigate while investigated, else Options.Interval), for
+	// the store's per-series interval.
+	Interval(target string) time.Duration
 }
