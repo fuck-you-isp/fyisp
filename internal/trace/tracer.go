@@ -31,6 +31,10 @@ const (
 	resolveTimeout     = 5 * time.Second
 	rdnsTimeout        = time.Second
 	hopRefresh         = 24 * time.Hour
+	// growRounds is how many rounds in a row the destination must answer
+	// only past its known TTL, behind silent hops, before the route counts
+	// as longer (see round).
+	growRounds = 5
 )
 
 // Options configures a Tracer. Zero fields use the defaults.
@@ -149,6 +153,7 @@ type target struct {
 	// loop goroutine
 	lastSlot  time.Time
 	knownLen  int // hop count of the route (destination TTL once reached)
+	grow      int // consecutive rounds the destination answered only beyond knownLen
 	resolved  netip.Addr
 	resolveAt time.Time // next lookup
 	resolving atomic.Bool
@@ -491,10 +496,24 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 		}
 	}
 	if end > 0 {
-		st.knownLen = end
+		// The destination answers every TTL from its own on. If the probe
+		// at its known TTL got lost, a higher TTL may still reach it: that
+		// is loss at the destination, not a longer route. Only when this
+		// persists (a new router that never answers) is the route longer.
+		if st.knownLen > 0 && end > st.knownLen && silent(res, st.knownLen, end) {
+			st.grow++
+			if st.grow < growRounds {
+				end = st.knownLen
+			} else {
+				st.grow = 0
+			}
+		} else {
+			st.grow = 0
+		}
+		st.knownLen, n = end, end
 	} else {
 		n = min(max(n+1, st.knownLen), tr.o.MaxHops)
-		st.knownLen = n
+		st.knownLen, st.grow = n, 0
 	}
 
 	sink := tr.sink
@@ -572,6 +591,16 @@ launch:
 		res[ttl] = hopResult{}
 	}
 	return res
+}
+
+// silent reports whether no TTL in [from, to) answered.
+func silent(res []hopResult, from, to int) bool {
+	for ttl := max(from, 1); ttl < to && ttl < len(res); ttl++ {
+		if res[ttl].h.Addr.IsValid() {
+			return false
+		}
+	}
+	return true
 }
 
 func reasonOf(err error) model.Reason {

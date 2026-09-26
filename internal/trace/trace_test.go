@@ -611,3 +611,40 @@ func TestRunErrors(t *testing.T) {
 }
 
 var errNetUnreach = fmt.Errorf("sendto: %w", syscall.ENETUNREACH)
+
+// The destination's probe at its own TTL is lost but a higher TTL reaches
+// it: that is loss at the destination, not a longer route, unless it keeps
+// happening (a new router that never answers).
+func TestDestinationAnswersHigherTTL(t *testing.T) {
+	f := newFakeNet("192.168.1.1", "62.1.1.1", "62.2.2.2")
+	tr, st, sink := roundTracer(t, f, Options{})
+	ctx := context.Background()
+	slot := time.Unix(1_800_000_000, 0).UTC()
+	next := func() { slot = slot.Add(5 * time.Second); tr.round(ctx, st, slot) }
+	next()
+	sink.take()
+	ms := time.Millisecond
+	f.set(func(f *fakeNet) { f.silent = map[int]bool{4: true} })
+	for i := 1; i < growRounds; i++ {
+		next()
+		smp, _, ch := sink.take()
+		checkRound(t, fmt.Sprintf("round %d", i), smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {rtt: 3 * ms}, {lost: true}})
+		if len(ch) != 0 {
+			t.Fatalf("round %d: changes %+v", i, ch)
+		}
+	}
+	// It persisted: the route is one hop longer, with a silent hop 4.
+	next()
+	smp, _, _ := sink.take()
+	checkRound(t, "grown", smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {rtt: 3 * ms}, {lost: true}, {rtt: 5 * ms}})
+	next()
+	_, _, ch := sink.take()
+	if len(ch) != 1 || ch[0].FirstDiff != 4 || !slices.Equal(ch[0].To, addrs("192.168.1.1", "62.1.1.1", "62.2.2.2", "", "1.1.1.1")) {
+		t.Errorf("longer route: changes %+v", ch)
+	}
+	// A shorter route is taken at once (the destination answered a lower TTL).
+	f.set(func(f *fakeNet) { f.silent = nil; f.routers = []string{"192.168.1.1", "62.1.1.1"} })
+	next()
+	smp, _, _ = sink.take()
+	checkRound(t, "shorter", smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {rtt: 3 * ms}})
+}
