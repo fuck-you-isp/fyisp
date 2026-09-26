@@ -11,7 +11,8 @@
 //	                     value in 10 µs units (the first value is relative to 0)
 //	           u&1 == 1: no value; code = u>>1 (0 = not measured, 1..15 = loss reason)
 //
-// The raw bytes are then zstd-compressed (SpeedBestCompression, no dictionary).
+// The raw bytes are then zstd-compressed (SpeedBetterCompression, no
+// dictionary; any zstd level decodes the same way).
 // Slots without a value do not reset the delta base.
 package blob
 
@@ -83,8 +84,15 @@ var (
 func init() {
 	var err error
 	// EncodeAll/DecodeAll are safe for concurrent use.
+	//
+	// SpeedBetterCompression, not SpeedBestCompression: the encoder's match
+	// tables are allocated on first use and kept for the life of the
+	// process, 34 MB for "best" (a 4M-entry long table) against 4 MB here.
+	// On hourly blobs (a few KB of varints) both reach the same size (to
+	// within 0.3%, TestSyntheticSize) and "better" is 2-4x faster; the long
+	// table size matters only for inputs far larger than a blob.
 	enc, err = zstd.NewWriter(nil,
-		zstd.WithEncoderLevel(zstd.SpeedBestCompression),
+		zstd.WithEncoderLevel(zstd.SpeedBetterCompression),
 		zstd.WithEncoderCRC(true),
 		zstd.WithEncoderConcurrency(1),
 		zstd.WithLowerEncoderMem(true),
