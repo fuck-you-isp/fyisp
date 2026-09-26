@@ -746,7 +746,7 @@ class Panel {
     if (!this.layers) return;
     const v = verdict && verdict.kind !== 'unknown' ? verdict : null;
     const ev = (v && v.evidence) || {};
-    const blame = v ? BLAME[v.kind] : undefined;
+    const blame = v ? blamedLayer(v, ev) : undefined;
     const kinds = this.kinds();
     const items = [];
     for (const L of LAYERS) {
@@ -772,7 +772,12 @@ class Panel {
       }
       if (v && v.kind === 'no_network') { st = 'down'; text = 'unreachable'; }
       const blamed = blame === L.id;
-      if (blamed && st !== 'down') st = v && (v.kind === 'service' || v.kind === 'dns') ? 'warn' : 'down';
+      if (blamed && v) {
+        // The blamed pill agrees with the verdict: never "OK" or a bare RTT.
+        const soft = v.kind === 'service' || v.kind === 'dns';
+        st = soft ? 'warn' : 'down';
+        text = blamedText(v, L, ev, loss, rtt);
+      }
       if (items.length) items.push(h('li', { class: 'arrow', 'aria-hidden': 'true', text: '→' }));
       items.push(h('li', { class: `layer st-${st}${blamed ? ' blame' : ''}`, title: `${L.label}: ${L.why}` },
         h('span', { class: 'ldot', 'aria-hidden': 'true' }),
@@ -782,6 +787,41 @@ class Panel {
     }
     this.layers.replaceChildren(...items);
   }
+}
+
+/**
+ * The layer a verdict blames. "upstream" is the anycast layer when most of
+ * its targets are unhealthy, else the services (most of them are failing,
+ * or the anycast layer is unknown).
+ * @param {Verdict} v @param {Object<string,number>} ev
+ */
+function blamedLayer(v, ev) {
+  if (v.kind === 'upstream') {
+    const acBad = typeof ev.anycast_targets === 'number' && 2 * (ev.anycast_unhealthy || 0) > ev.anycast_targets;
+    return acBad ? 'anycast' : 'services';
+  }
+  return BLAME[v.kind];
+}
+
+/**
+ * The text of the layer pill the verdict blames, consistent with it:
+ * service/dns count the targets the verdict names; path kinds show the loss
+ * the engine judged (evidence), or the slow RTT, else "unhealthy".
+ * @param {Verdict} v @param {{key:string}} L @param {Object<string,number>} ev
+ * @param {number} loss @param {number|null} rtt
+ */
+function blamedText(v, L, ev, loss, rtt) {
+  const n = Array.isArray(v.targets) ? v.targets.length : 0;
+  if (v.kind === 'service') return n ? `${n} affected` : 'some affected';
+  if (v.kind === 'dns') return n ? `${n} not resolving` : 'lookups failing';
+  if (v.kind === 'upstream' && L.key === 'services') {
+    const bad = ev.internet_unhealthy, all = ev.internet_targets;
+    if (typeof bad === 'number' && typeof all === 'number' && all > 0) return `${bad} of ${all} failing`;
+  }
+  if (isFinite(loss) && loss >= 0.05) return `${fmtPct(loss)} loss`;
+  if (typeof ev[L.key + '_baseline_ms'] === 'number' && rtt != null) return `${fmtMs(rtt)} ms, slow`;
+  if (isFinite(loss) && loss > 0) return `${fmtPct(loss)} loss`;
+  return 'unhealthy';
 }
 
 /**
