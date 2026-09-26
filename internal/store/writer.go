@@ -852,8 +852,9 @@ func (s *SQLite) flushFailed(items []*flushItem, err error) error {
 	return err
 }
 
-// Prune deletes every hour that ends at or before `before`, returns the free
-// pages to the OS (incremental_vacuum) and truncates the WAL.
+// Prune deletes every hour that ends at or before `before` (and incidents
+// that ended before the first kept hour), returns the free pages to the OS
+// (incremental_vacuum) and truncates the WAL.
 //
 // The retention it implies (Options.Now - before) is counted back from the
 // newest stored hour, not only from the clock: a clock far ahead (e.g. at
@@ -918,6 +919,11 @@ func (s *SQLite) prune(ctx context.Context, hour int64) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `DELETE FROM samples WHERE hour < ?`, hour); err != nil {
+		return err
+	}
+	// Incidents that ended before the first kept hour go with it; ongoing
+	// ones are always kept.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM incidents WHERE end_ms IS NOT NULL AND end_ms < ?`, hour*hourMs); err != nil {
 		return err
 	}
 	day := hour / 24

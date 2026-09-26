@@ -79,6 +79,20 @@ CREATE TABLE meta(
 	value ANY
 ) WITHOUT ROWID;
 `,
+	// v2 (fyisp v0.2): the outage log (see incidents.go).
+	`
+CREATE TABLE incidents(
+	id         INTEGER PRIMARY KEY,
+	start_ms   INT  NOT NULL,
+	end_ms     INT,  -- NULL while ongoing
+	kind       TEXT NOT NULL,
+	summary    TEXT NOT NULL,
+	targets    TEXT, -- JSON array of target names, NULL if none
+	peak_loss  REAL,
+	updated_ms INT   -- last SaveIncident (store clock)
+);
+CREATE INDEX incidents_start ON incidents(start_ms);
+`,
 }
 
 // SchemaVersion is the schema version this build writes.
