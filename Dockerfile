@@ -68,6 +68,41 @@ SH
 FROM scratch AS dist
 COPY --from=build-all /out/ /
 
+# Launcher tests: scripts/run.sh (dash, bash, piped) and scripts/run.ps1
+# (PowerShell 7) download a fake release from 127.0.0.1; a good checksum must
+# run `fyisp --version`, a tampered binary must fail without running.
+#   docker build --target launchertest .
+#   docker build --target launchertest-pwsh .
+FROM source AS launcher-bin
+ARG TARGETOS TARGETARCH TARGETVARIANT
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build <<'SH'
+set -eu
+arm=""; name=fyisp-$TARGETOS-$TARGETARCH
+if [ "$TARGETARCH" = arm ]; then arm=7; name=fyisp-$TARGETOS-armv7; fi
+GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=$arm go build -ldflags "-s -w -X main.version=launcher-test" -o /lt/fyisp ./cmd/fyisp
+echo "$name" > /lt/asset
+SH
+FROM debian:stable-slim AS launchertest
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3 bash && rm -rf /var/lib/apt/lists/*
+COPY --from=launcher-bin /lt/ /lt/
+COPY scripts/ /lt/scripts/
+RUN sh /lt/scripts/launcher_test.sh /lt/scripts /lt/fyisp "$(cat /lt/asset)" sh bash
+
+FROM mcr.microsoft.com/powershell:latest@sha256:810c4f1e0c9d23022c3ec18c50a6205ee4b60766f1739d329b2948df1fd7d5b0 AS launchertest-pwsh
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3 && rm -rf /var/lib/apt/lists/*
+COPY --from=launcher-bin /lt/ /lt/
+COPY scripts/ /lt/scripts/
+RUN sh /lt/scripts/launcher_test.sh /lt/scripts /lt/fyisp "$(cat /lt/asset)" pwsh
+
+# systemd unit lint: docker build --target servicetest .
+FROM debian:stable-slim AS servicetest
+RUN apt-get update && apt-get install -y --no-install-recommends systemd && rm -rf /var/lib/apt/lists/*
+COPY --from=launcher-bin /lt/fyisp /usr/local/bin/fyisp
+COPY packaging/fyisp.service /etc/systemd/system/fyisp.service
+RUN out=$(systemd-analyze verify /etc/systemd/system/fyisp.service 2>&1); echo "$out"; \
+    ! echo "$out" | grep -v -e 'Failed to .* bus' -e 'System has not been booted' -e '^$' | grep .
+
 # Runtime image: one static binary, non-root.
 FROM source AS build-image
 ARG TARGETOS TARGETARCH TARGETVARIANT VERSION=dev
