@@ -552,7 +552,9 @@ func appendStr(b []byte, s string) []byte {
 // panelJSON renders the columnar panel response. Bucket i starts at
 // start + i*step (milliseconds since the epoch).
 func (pd *panelData) JSON() []byte {
-	b := make([]byte, 0, 4096)
+	// Sized for ~32 bytes per series and bucket (six arrays) up front:
+	// growing from a small buffer allocates about twice the response.
+	b := make([]byte, 0, 4096+32*len(pd.series)*pd.nb)
 	b = append(b, `{"group":{"id":`...)
 	b = appendStr(b, pd.group.ID)
 	b = append(b, `,"title":`...)

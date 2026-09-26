@@ -149,7 +149,20 @@ func (f *Fake) Series(context.Context) ([]SeriesInfo, error) {
 		if len(ss) == 0 {
 			continue
 		}
-		out = append(out, SeriesInfo{Key: k, First: ss[0].Slot, Last: ss[len(ss)-1].Slot})
+		// Like SQLite: the first and last real samples (a measurement or a
+		// loss), else the bounds when every sample is "not measured".
+		lo, hi := 0, len(ss)-1
+		isGap := func(x model.Sample) bool { return x.Lost && x.Reason == model.ReasonGap }
+		for lo < hi && isGap(ss[lo]) {
+			lo++
+		}
+		for hi > lo && isGap(ss[hi]) {
+			hi--
+		}
+		if isGap(ss[lo]) {
+			lo, hi = 0, len(ss)-1
+		}
+		out = append(out, SeriesInfo{Key: k, First: ss[lo].Slot, Last: ss[hi].Slot})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Key.Target != out[j].Key.Target {
