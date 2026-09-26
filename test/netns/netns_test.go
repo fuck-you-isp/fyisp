@@ -73,8 +73,11 @@ var (
 	dnsAddr       = netip.MustParseAddr("203.0.113.53") // the test resolver
 )
 
+// The built-in network path group is left out here: it is covered by
+// TestNetworkPath (path_test.go).
 const profileYAML = `name: netns-lab
 version: "1"
+path: false
 groups:
   - {id: lab, title: Lab}
 targets:
@@ -107,6 +110,9 @@ func kindsFor(name string) []string {
 func TestMain(m *testing.M) {
 	if dir := os.Getenv(responderEnv); dir != "" {
 		runResponder(dir) // never returns
+	}
+	if os.Getenv(pathProbeEnv) != "" {
+		runPathProbe() // never returns
 	}
 	os.Exit(m.Run())
 }
@@ -438,13 +444,17 @@ func (h *harness) setupTopology(t *testing.T) {
 		h.run(t, "ip", "-n", a, "link", "set", ifa, "up")
 		h.run(t, "ip", "-n", b, "link", "set", ifb, "up")
 	}
-	pair(nsClient, "c0", nsGW, "g0", "10.99.1.2/24", "10.99.1.1/24")
-	pair(nsGW, "g1", nsISP, "i0", "10.99.2.1/24", "10.99.2.2/24")
+	// The gw <-> isp link is numbered from TEST-NET-2, a public-looking
+	// range: like a real ISP's access router, fyt-isp answers the client's
+	// TTL-limited probes from a public address, which netinfo takes as the
+	// ISP edge (hop 2; hop 1 is the gateway's LAN address).
+	pair(nsClient, "c0", nsGW, "g0", "10.99.1.2/24", gwAddr.String()+"/24")
+	pair(nsGW, "g1", nsISP, "i0", "198.51.100.1/24", edgeAddr.String()+"/24")
 	pair(nsISP, ispUplink, nsInet, "n0", "10.99.3.1/24", "10.99.3.2/24")
 
-	h.run(t, "ip", "-n", nsClient, "route", "add", "default", "via", "10.99.1.1")
-	h.run(t, "ip", "-n", nsGW, "route", "add", "default", "via", "10.99.2.2")
-	h.run(t, "ip", "-n", nsISP, "route", "add", "10.99.1.0/24", "via", "10.99.2.1")
+	h.run(t, "ip", "-n", nsClient, "route", "add", "default", "via", gwAddr.String())
+	h.run(t, "ip", "-n", nsGW, "route", "add", "default", "via", edgeAddr.String())
+	h.run(t, "ip", "-n", nsISP, "route", "add", "10.99.1.0/24", "via", "198.51.100.1")
 	h.run(t, "ip", "-n", nsISP, "route", "add", "default", "via", "10.99.3.2")
 	h.run(t, "ip", "-n", nsInet, "route", "add", "default", "via", "10.99.3.1")
 	for _, ns := range []string{nsGW, nsISP} {
