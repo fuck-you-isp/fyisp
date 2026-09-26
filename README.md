@@ -42,10 +42,32 @@ gh attestation verify fyisp-linux-amd64 --repo fuck-you-isp/fyisp   # optional
 chmod +x fyisp-linux-amd64 && ./fyisp-linux-amd64
 ```
 
-The binaries are not code-signed yet:
+### Avoiding "unknown publisher" warnings
 
-- **macOS:** Gatekeeper blocks a binary downloaded with a browser. After verifying it, run `xattr -d com.apple.quarantine fyisp-darwin-arm64`. (The launcher doesn't need this: `curl` doesn't set the quarantine flag.)
-- **Windows:** SmartScreen may say "Windows protected your PC" for a browser download: choose *More info → Run anyway*.
+The binaries are not code-signed yet. Windows SmartScreen and macOS Gatekeeper only check files that carry the browser's "downloaded from the internet" mark, so:
+
+- **Recommended: use the launchers above.** `run.ps1` (`irm`) and `run.sh` (`curl`) download without that mark, so there is no warning, and they refuse to run anything whose SHA-256 doesn't match `SHA256SUMS`.
+- **Windows, browser download:** SmartScreen says "Windows protected your PC". Either choose *More info → Run anyway*, or, after verifying the checksum, remove the mark once: `Unblock-File .\fyisp-windows-amd64.exe`. Double-clicking the `.exe` opens a console window with the log and the dashboard address; closing the window stops fyisp. To pass options, run it from a terminal or put them in a shortcut's *Target*.
+- **macOS, browser download:** Gatekeeper blocks it. After verifying it, run `xattr -d com.apple.quarantine fyisp-darwin-arm64`.
+
+Code signing is planned: free Windows signing through the [SignPath Foundation](https://signpath.org/) once the repository is public (it requires a public open-source project), and Apple notarization if there is demand.
+
+### While the repository is private
+
+Release downloads need GitHub authentication, so the one-line launchers above don't work anonymously yet. With the [GitHub CLI](https://cli.github.com/) logged in to an account with access:
+
+```sh
+gh release download -R fuck-you-isp/fyisp -p 'fyisp-linux-amd64' -p SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing && chmod +x fyisp-linux-amd64 && ./fyisp-linux-amd64
+```
+
+```powershell
+gh release download -R fuck-you-isp/fyisp -p 'fyisp-windows-amd64.exe' -p SHA256SUMS
+(Get-FileHash .\fyisp-windows-amd64.exe -Algorithm SHA256).Hash   # compare with SHA256SUMS
+.\fyisp-windows-amd64.exe
+```
+
+(`gh` downloads don't carry the "downloaded from the internet" mark either, so there is no SmartScreen or Gatekeeper warning.) The Docker image needs `docker login ghcr.io` with a token that has `read:packages`.
 
 ### Docker
 
