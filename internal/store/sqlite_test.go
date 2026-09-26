@@ -421,7 +421,7 @@ func TestHourCloseByClock(t *testing.T) {
 func TestReopenFinalizes(t *testing.T) {
 	dir := t.TempDir()
 	k := model.SeriesKey{Target: "x", Kind: model.KindTCP}
-	o := Options{Interval: func(model.SeriesKey) time.Duration { return 10 * time.Second }, Now: func() time.Time { return t0 }}
+	o := Options{Interval: func(model.SeriesKey) time.Duration { return 10 * time.Second }, Now: func() time.Time { return t0.Add(2*time.Hour + time.Minute) }}
 	s := openT(t, dir, o)
 	for i := range 2 * 360 { // two full hours
 		s.Observe(model.Sample{Key: k, Slot: t0.Add(time.Duration(i) * 10 * time.Second), RTT: time.Duration(i+1) * time.Millisecond})
@@ -555,7 +555,7 @@ func TestPrune(t *testing.T) {
 	for _, x := range samples(ss, t0, t0.Add(time.Duration(hours)*time.Hour)) {
 		s.Observe(x)
 	}
-	now = t0.Add(time.Duration(hours)*time.Hour + time.Hour)
+	now = t0.Add(time.Duration(hours) * time.Hour)
 	if err := s.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
