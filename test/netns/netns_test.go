@@ -159,18 +159,17 @@ func TestNetworkFaults(t *testing.T) {
 			t.Errorf("fyisp_probe_lost_total icmp/bravo/timeout = %v, want >= 5", v)
 		}
 
-		// Recovery: once the path is back, ICMP and TCP (a new socket per
-		// probe) recover at once, apart from a probe in flight at the
-		// switch. HTTPS reuses its kept-alive connection, whose TCP
-		// retransmission timer backed off during the outage; how long it
-		// keeps timing out is logged, not asserted.
+		// Recovery: once the path is back, every kind recovers at once,
+		// apart from a probe in flight at the switch. HTTPS drops its
+		// connection after a failure, so it does not keep using one whose
+		// TCP retransmission timer backed off during the outage.
 		time.Sleep(30 * time.Second)
 		r := h.panel(t, "b-recovery", restored, time.Now().Add(-settle))
 		for _, k := range allKinds {
 			a := r.get("bravo/" + k)
 			t.Logf("bravo/%s in the %s after the drop was removed: %s",
 				k, time.Since(restored).Round(time.Second)-settle, a)
-			if k != "https" && a.Lost > 1 {
+			if a.Lost > 1 {
 				t.Errorf("bravo/%s: %d probes lost after the path was restored, want <= 1", k, a.Lost)
 			}
 		}

@@ -85,12 +85,14 @@ func (r *runner) seriesTimeout(s *series) time.Duration {
 // series is one (target, kind) and everything needed to probe it. Each
 // series is driven by its own goroutine, which owns the http.Client.
 type series struct {
-	key    model.SeriesKey
-	idx    uint32
-	host   *hostState
-	port   int
-	url    string
-	client *http.Client
+	key  model.SeriesKey
+	idx  uint32
+	host *hostState
+	port int
+	url  string
+	// client is replaced after a failed HTTPS probe (see resetClient); it is
+	// also read by the DNS-change callback, hence atomic.
+	client atomic.Pointer[http.Client]
 	iv     time.Duration
 	phase  time.Duration
 }
@@ -145,8 +147,8 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 			case model.KindHTTPS:
 				s.phase = phaseOf(i, n, iv, 0)
 				s.url = httpsURL(s.host.name, port, t.Path)
-				s.client = r.newClient(s)
-				s.host.onChange = append(s.host.onChange, s.client.CloseIdleConnections)
+				s.client.Store(r.newClient(s))
+				s.host.onChange = append(s.host.onChange, func() { s.client.Load().CloseIdleConnections() })
 			case model.KindTCP:
 				s.phase = phaseOf(i, n, iv, 0.5)
 			case model.KindICMP:
@@ -194,8 +196,8 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 	}
 	wg.Wait()
 	for _, s := range all {
-		if s.client != nil {
-			s.client.CloseIdleConnections()
+		if c := s.client.Load(); c != nil {
+			c.CloseIdleConnections()
 		}
 	}
 	return nil
@@ -253,6 +255,18 @@ func (r *runner) probeTCP(ctx context.Context, ip netip.Addr, port int, timeout 
 	}
 	_ = c.Close()
 	return rtt, 0, nil
+}
+
+// resetClient drops a series' connection pool after a failed probe. With one
+// connection per target, a connection stalled by an outage (TCP retransmit
+// backoff, an unresponsive HTTP/2 connection) would otherwise keep failing
+// requests for several intervals after the path recovers.
+func (r *runner) resetClient(s *series) {
+	old := s.client.Swap(r.newClient(s))
+	old.CloseIdleConnections()
+	if tr, ok := old.Transport.(*http.Transport); ok {
+		tr.CloseIdleConnections()
+	}
 }
 
 func (r *runner) newClient(s *series) *http.Client {
@@ -344,7 +358,7 @@ func (r *runner) probeHTTPS(ctx context.Context, s *series) (time.Duration, bool
 		return 0, false, model.ReasonOther, err
 	}
 	req.Header.Set("User-Agent", r.o.UserAgent)
-	resp, err := s.client.Do(req)
+	resp, err := s.client.Load().Do(req)
 	headersAt := time.Now()
 	mu.Lock()
 	defer mu.Unlock()
@@ -353,6 +367,7 @@ func (r *runner) probeHTTPS(ctx context.Context, s *series) (time.Duration, bool
 		if reason == model.ReasonOther && tlsDone {
 			reason = model.ReasonHTTP // protocol error after the handshake
 		}
+		r.resetClient(s)
 		return 0, reused, reason, err
 	}
 	mu.Unlock()
@@ -463,22 +478,23 @@ func (r *runner) resolveLoop(ctx context.Context, hs *hostState) {
 }
 
 // httpsRTT picks the most precise available start and end (see probeHTTPS).
-// Zero times are missing events. The result is never negative.
+// Zero times are missing events. Trace callbacks run on transport goroutines
+// and can be observed late: on HTTP/2 WroteHeaders may even be recorded after
+// the response arrived. So the end is the first response byte (else the moment
+// Do returned), and the start is the latest request-side event that is not
+// after that end. The result is never negative.
 func httpsRTT(gotConn, wroteHeaders, wrote, first, headersAt time.Time) time.Duration {
-	start := gotConn
-	for _, t := range []time.Time{wrote, wroteHeaders} { // later entries win
-		if !t.IsZero() {
+	end := headersAt
+	if !first.IsZero() && !first.After(headersAt) {
+		end = first
+	}
+	var start time.Time
+	for _, t := range []time.Time{gotConn, wroteHeaders, wrote} {
+		if !t.IsZero() && !t.After(end) && t.After(start) {
 			start = t
 		}
 	}
 	if start.IsZero() {
-		start = headersAt
-	}
-	end := first
-	if end.IsZero() || end.Before(start) || end.After(headersAt) {
-		end = headersAt
-	}
-	if end.Before(start) {
 		return 0
 	}
 	return end.Sub(start)
