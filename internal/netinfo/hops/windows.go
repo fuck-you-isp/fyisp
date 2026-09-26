@@ -1,6 +1,6 @@
 //go:build windows
 
-package netinfo
+package hops
 
 import (
 	"context"
@@ -47,12 +47,12 @@ type ipOptionInformation struct {
 	OptionsData uintptr
 }
 
-type winTracer struct {
+type winProber struct {
 	h     uintptr
 	magic [8]byte
 }
 
-func openTracer() (tracer, error) {
+func open() (Prober, error) {
 	if err := procIcmpSendEcho2Ex.Find(); err != nil {
 		return nil, err
 	}
@@ -60,10 +60,10 @@ func openTracer() (tracer, error) {
 	if windows.Handle(h) == windows.InvalidHandle || h == 0 {
 		return nil, fmt.Errorf("IcmpCreateFile: %w", err)
 	}
-	return &winTracer{h: h, magic: newMagic()}, nil
+	return &winProber{h: h, magic: newMagic()}, nil
 }
 
-func (t *winTracer) Close() error {
+func (t *winProber) Close() error {
 	if t.h != 0 {
 		procIcmpCloseHandle.Call(t.h)
 		t.h = 0
@@ -71,9 +71,9 @@ func (t *winTracer) Close() error {
 	return nil
 }
 
-func (t *winTracer) Probe(ctx context.Context, dst netip.Addr, ttl int, timeout time.Duration) (hop, error) {
+func (t *winProber) Probe(ctx context.Context, dst netip.Addr, ttl int, timeout time.Duration) (Hop, error) {
 	if !dst.Is4() {
-		return hop{}, fmt.Errorf("%s is not IPv4", dst)
+		return Hop{}, fmt.Errorf("%s is not IPv4", dst)
 	}
 	req := make([]byte, 16)
 	copy(req, t.magic[:])
@@ -82,6 +82,7 @@ func (t *winTracer) Probe(ctx context.Context, dst netip.Addr, ttl int, timeout 
 	// ICMP_ECHO_REPLY (40 bytes on 64-bit) + data + room for an ICMP error.
 	reply := make([]byte, 256)
 	a4 := dst.As4()
+	sent := time.Now()
 	_, _, callErr := procIcmpSendEcho2Ex.Call(t.h, 0, 0, 0,
 		0, uintptr(binary.LittleEndian.Uint32(a4[:])),
 		uintptr(unsafe.Pointer(&req[0])), uintptr(len(req)), uintptr(unsafe.Pointer(opt)),
@@ -89,8 +90,9 @@ func (t *winTracer) Probe(ctx context.Context, dst netip.Addr, ttl int, timeout 
 	runtime.KeepAlive(req)
 	runtime.KeepAlive(opt)
 	runtime.KeepAlive(reply)
+	rtt := time.Since(sent)
 	if ctx.Err() != nil {
-		return hop{}, nil
+		return Hop{}, nil
 	}
 	// ICMP_ECHO_REPLY: Address uint32 (network order in memory), Status uint32.
 	// The reply is filled in even when the call returns 0 for a
@@ -101,24 +103,24 @@ func (t *winTracer) Probe(ctx context.Context, dst netip.Addr, ttl int, timeout 
 		// Nothing written: take the status from the call's error.
 		var e syscall.Errno
 		if !errors.As(callErr, &e) {
-			return hop{}, nil
+			return Hop{}, nil
 		}
 		status = uint32(e)
 	}
 	switch status {
 	case ipSuccess:
-		return hop{Addr: from, Reached: true}, nil
+		return Hop{Addr: from, Reached: true, RTT: rtt}, nil
 	case ipTTLExpiredTransit:
-		return hop{Addr: from}, nil
+		return Hop{Addr: from, RTT: rtt}, nil
 	case ipDestNetUnreachable, ipDestHostUnreachable, ipDestProtUnreachable, ipDestPortUnreachable:
 		if from.IsUnspecified() {
-			return hop{}, nil
+			return Hop{}, nil
 		}
-		return hop{Addr: from, Unreach: true}, nil
+		return Hop{Addr: from, Unreach: true, RTT: rtt}, nil
 	case ipReqTimedOut:
-		return hop{}, nil
+		return Hop{}, nil
 	case uint32(windows.ERROR_NETWORK_UNREACHABLE), uint32(windows.ERROR_HOST_UNREACHABLE):
-		return hop{}, fmt.Errorf("IcmpSendEcho2Ex: IP status %d", status)
+		return Hop{}, fmt.Errorf("IcmpSendEcho2Ex: IP status %d", status)
 	}
-	return hop{}, nil
+	return Hop{}, nil
 }

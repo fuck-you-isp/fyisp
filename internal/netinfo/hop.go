@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/netip"
 	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/netinfo/hops"
 )
 
 // Edge discovery parameters: hops 1..maxHops, each tried up to 1+hopRetries
@@ -16,21 +18,13 @@ const (
 	hopTimeout = time.Second
 )
 
-// hop is the answer to one TTL-limited echo request. A zero Addr means no
-// answer before the timeout.
-type hop struct {
-	Addr    netip.Addr
-	Reached bool // echo reply from the destination itself
-	Unreach bool // Addr answered "destination unreachable": no hop beyond it
-}
+// hop is the answer to one TTL-limited echo request (see package hops).
+type hop = hops.Hop
 
-// tracer sends TTL-limited ICMP echo requests. Probe calls are sequential.
-type tracer interface {
-	// Probe sends one echo request to dst with the given TTL and waits up
-	// to timeout. No answer is (hop{}, nil); err is a local failure.
-	Probe(ctx context.Context, dst netip.Addr, ttl int, timeout time.Duration) (hop, error)
-	Close() error
-}
+// tracer sends TTL-limited ICMP echo requests (see package hops).
+type tracer = hops.Prober
+
+func openTracer() (tracer, error) { return hops.Open() }
 
 var errNoPublicHop = errors.New("no public hop found")
 

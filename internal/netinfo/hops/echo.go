@@ -1,4 +1,4 @@
-package netinfo
+package hops
 
 import (
 	"crypto/rand"
