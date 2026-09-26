@@ -118,6 +118,8 @@ const (
 	routeTrace
 	routeTracePanel
 	routeRouteChanges
+	routeNotes
+	routeBaselines
 )
 
 func lookup(rel string) route {
@@ -142,6 +144,10 @@ func lookup(rel string) route {
 		return routeTracePanel
 	case "api/routes/changes":
 		return routeRouteChanges
+	case "api/annotations":
+		return routeNotes
+	case "api/baselines":
+		return routeBaselines
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -169,6 +175,9 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		writeJSON(w, r, http.StatusOK, s.status(r.Context()))
 	case routeProfile:
 		pj := buildProfile(s.d.Profile())
+		pj.Features.Notes = s.d.Annotations != nil
+		pj.Features.Reports = s.d.Reports != nil && !s.public
+		pj.Features.Baselines = s.d.Baselines != nil
 		if s.d.Trace != nil {
 			pj.Features.Trace = true
 			tr := s.traced()
@@ -183,6 +192,14 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveVerdict(w, r)
 	case routeIncidents:
 		s.serveIncidents(w, r)
+	case routeNotes:
+		if s.d.Annotations == nil {
+			notFound(w, r)
+			return
+		}
+		s.listNotes(w, r)
+	case routeBaselines:
+		s.serveBaselines(w, r)
 	case routeTrace, routeTracePanel, routeRouteChanges:
 		switch {
 		case s.d.Trace == nil:

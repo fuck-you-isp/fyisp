@@ -29,11 +29,13 @@ import (
 	_ "golang.org/x/crypto/x509roots/fallback"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
+	"github.com/fuck-you-isp/fyisp/internal/baseline"
 	"github.com/fuck-you-isp/fyisp/internal/metrics"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/report"
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
 	"github.com/fuck-you-isp/fyisp/internal/web"
@@ -98,6 +100,8 @@ func main() {
 			os.Exit(cmdPaths(os.Args[2:]))
 		case "export":
 			os.Exit(cmdExport(os.Args[2:]))
+		case "report":
+			os.Exit(cmdReport(os.Args[2:]))
 		}
 	}
 	cfg, err := parseFlags(os.Args[1:])
@@ -144,7 +148,7 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 	fs.BoolVar(&c.force, "force", false, "start even if the data directory has less than 200 MB free")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp export [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
+		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -269,8 +273,20 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	// The verdict engine judges whose fault a problem is and keeps the
 	// outage log in the store; it must stop before the store closes.
-	eng := verdict.New(func() *model.Profile { return prof }, st, verdict.Options{Log: log})
+	// "Your normal": per-series baselines from stored history, refreshed
+	// hourly; the verdict engine judges latency against them.
+	bs := baseline.New(st, func() []model.SeriesKey { return probeKeys(prof) }, baseline.Options{Log: log})
+	eng := verdict.New(func() *model.Profile { return prof }, st, verdict.Options{Log: log, Baseline: bs.Get})
 	mc.SetVerdictSource(verdict.MetricsSource(eng))
+	mc.SetVsNormalSource(metrics.VsNormalSource(verdict.VsNormalSource(eng)))
+	slow := verdict.SlowSource(eng)
+	reports := webReports{
+		b: report.New(report.Deps{
+			Profile: func() *model.Profile { return prof }, Store: st, Trace: st,
+			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, Version: version,
+		}),
+		ReportStore: st,
+	}
 	go func() {
 		if err := ni.Run(ctx); err != nil {
 			log.Warn("network path discovery stopped", "err", err)
@@ -302,11 +318,21 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		Status: func() web.Status {
 			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready()}
 		},
-		Metrics: mc.Handler(),
-		Verdict: eng,
-		Trace:   newWebTrace(st, tr, prof),
-		Share:   share,
-		Log:     log,
+		Metrics:     mc.Handler(),
+		Verdict:     eng,
+		Annotations: st,
+		Reports:     reports,
+		Baselines:   bs,
+		Slow: func() []web.SlowTarget {
+			var out []web.SlowTarget
+			for _, t := range slow() {
+				out = append(out, web.SlowTarget{Target: t.Target, Kind: t.Kind, Ratio: t.Ratio, NowMs: t.NowMs, NormalMs: t.NormalMs})
+			}
+			return out
+		},
+		Trace: newWebTrace(st, tr, prof),
+		Share: share,
+		Log:   log,
 	}
 	localAddr := localLn.Addr().String()
 	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: c.adminToken, ExtraHosts: c.allowHosts}))
@@ -352,6 +378,11 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		}
 	}()
 	go maintain(ctx, st, c.retention, log)
+	go func() {
+		if err := bs.Run(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("baselines stopped", "err", err)
+		}
+	}()
 	traceDone := make(chan struct{})
 	go func() {
 		defer close(traceDone)

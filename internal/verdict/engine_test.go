@@ -256,7 +256,7 @@ func checkSummary(t *testing.T, p *model.Profile, s string) {
 	if s == "" {
 		t.Error("empty summary")
 	}
-	if ipPattern.MatchString(s) {
+	if ipPattern.MatchString(ratioTok.ReplaceAllString(s, "$1")) { // "2.3×" is a ratio, not an address
 		t.Errorf("summary has an address-like number: %q", s)
 	}
 	for _, tg := range p.Targets {

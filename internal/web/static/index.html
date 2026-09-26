@@ -24,6 +24,7 @@
   <div class="controls">
     <div id="ranges" class="seg" role="group" aria-label="Time range"></div>
     <div id="kinds" class="seg" role="group" aria-label="Probe kinds"></div>
+    <div id="tools" class="tools" hidden></div>
     <span id="refresh" class="muted small" aria-live="polite"></span>
     <button id="theme" class="btn ghost" type="button" title="Toggle light/dark">Theme</button>
   </div>
@@ -34,12 +35,22 @@
   <summary><span class="o-title">Outage log</span> <span id="outages-count" class="muted"></span></summary>
   <div id="outages-list" class="o-list"></div>
 </details>
+<details id="notes" class="outages notes" hidden>
+  <summary><span class="o-title">Notes</span> <span id="notes-count" class="muted"></span></summary>
+  <div id="notes-list" class="o-list"></div>
+</details>
+<details id="reports" class="outages reports" hidden>
+  <summary><span class="o-title">Reports</span> <span id="reports-count" class="muted"></span></summary>
+  <div id="reports-list" class="o-list"></div>
+</details>
 <main id="panels" class="grid"></main>
 <div id="tip" class="tip" role="tooltip" hidden></div>
 <footer class="foot muted small">
   <span>Lines break where no probe succeeded. The strip under each chart shows lost samples by reason; grey hatching means not measured (fyisp was not running), which is not loss.</span>
   <span>Drag on a chart to zoom, double-click to reset. Click a legend entry to isolate it, Ctrl/Cmd-click to toggle.</span>
   <span>Faint coloured bands on the charts mark incidents from the outage log; click an incident to zoom to it.</span>
+  <span>Flags mark notes. On your own dashboard, right-click a chart (long-press on a phone) to add a note at that time, or Shift-drag to add one over a range; click a flag to edit it. Blue flags are shown on your public link.</span>
+  <span>"×2.3 normal" means a target is 2.3 times slower than its usual latency (its median over the past week). The "Normal band" shades each target's usual range (median to p95).</span>
 </footer>
 </body>
 </html>

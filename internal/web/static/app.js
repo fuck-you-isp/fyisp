@@ -4,7 +4,8 @@
 
 /** @typedef {{id:string,title:string}} Group */
 /** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean}} TargetInfo */
-/** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>}} Verdict */
+/** @typedef {{target:string,kind:string,ratio:number,now_ms:number,normal_ms:number}} SlowItem */
+/** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[]}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
 /** @typedef {{target:string,kind:string,interval:number,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
@@ -49,8 +50,8 @@ const LAYERS = [
 /** @type {Object<string,string>} */
 const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
 
-/** @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, inv:string|null}} */
-const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false, inv: null };
+/** @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean}} */
+const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false, notes: false, reports: false, inv: null, band: true };
 /** @type {any} */
 let status = null;
 /** @type {Panel[]} */
@@ -203,6 +204,8 @@ function readHash() {
   const f = Number(p.get('from')), t = Number(p.get('to'));
   if (f > 0 && t > f) { state.from = f; state.to = t; } else { state.from = state.to = null; }
   state.log = p.get('o') === '1';
+  state.notes = p.get('n') === '1';
+  state.reports = p.get('rp') === '1';
   const ti = p.get('t');
   state.inv = ti && traceOn ? ti : null;
   const k = p.get('k');
@@ -217,6 +220,8 @@ function writeHash() {
   if (state.from != null && state.to != null) { p.set('from', String(state.from)); p.set('to', String(state.to)); }
   p.set('k', [...state.kinds].join(','));
   if (state.log) p.set('o', '1');
+  if (state.notes) p.set('n', '1');
+  if (state.reports) p.set('rp', '1');
   if (state.inv) p.set('t', state.inv);
   const s = '#' + p.toString();
   if (location.hash !== s) history.replaceState(null, '', s);
@@ -369,6 +374,49 @@ class Panel {
     }
   }
 
+  /** The target's "×N normal" ratio for the selected kinds (HTTPS first). */
+  ratioFor(/** @type {string} */ name, /** @type {string[]} */ kinds) {
+    for (const k of ['https', 'tcp', 'icmp']) {
+      if (!kinds.includes(k)) continue;
+      const b = baselines.get(name + '\0' + k);
+      if (b && typeof b.ratio_now === 'number' && isFinite(b.ratio_now)) return { r: b.ratio_now, b };
+    }
+    return null;
+  }
+
+  /** The baseline band (median..p95) of visible HTTPS targets: at most BAND_MAX, else only the slow ones. */
+  drawBand(/** @type {any} */ u) {
+    if (!baseOn || !state.band || !baselines.size || !this.kinds().has('https')) return;
+    let list = this.targets
+      .filter((t) => !this.hidden.has(t.name) && t.kinds.includes('https'))
+      .map((t) => ({ t, b: baselines.get(t.name + '\0https') }))
+      .filter((x) => x.b);
+    if (list.length > BAND_MAX) list = list.filter((x) => (x.b?.ratio_now || 0) >= SLOW_RATIO);
+    if (!list.length) return;
+    const ctx = u.ctx;
+    const { left, top, width, height } = u.bbox;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, top, width, height);
+    ctx.clip();
+    for (const { t, b } of list) {
+      if (!b) continue;
+      const c = seriesColor(/** @type {number} */ (this.colors.get(t.name)));
+      const y0 = u.valToPos(b.median_ms, 'y', true), y1 = u.valToPos(Math.max(b.p95_ms, b.median_ms), 'y', true);
+      ctx.fillStyle = rgba(c, (b.ratio_now || 0) >= SLOW_RATIO ? 0.14 : 0.09);
+      ctx.fillRect(left, y1, width, Math.max(dpr, y0 - y1));
+      ctx.strokeStyle = rgba(c, 0.45);
+      ctx.lineWidth = dpr;
+      ctx.setLineDash([2 * dpr, 4 * dpr]);
+      ctx.beginPath();
+      ctx.moveTo(left, Math.round(y0) + 0.5);
+      ctx.lineTo(left + width, Math.round(y0) + 0.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /** Series layout: per target, per selected kind a mean line; HTTPS adds a min–max band. */
   layout() {
     const d = /** @type {PanelData} */ (this.data);
@@ -467,16 +515,9 @@ class Panel {
         },
       },
       hooks: {
-        setSelect: [(/** @type {any} */ u) => {
-          const w = u.select.width;
-          if (w > 4) {
-            const a = u.posToVal(u.select.left, 'x'), b = u.posToVal(u.select.left + w, 'x');
-            zoomTo(Math.round(a * 1000), Math.round(b * 1000));
-          }
-          u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
-        }],
+        setSelect: [onChartSelect],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { self.drawIncidents(u); self.drawStrip(); }],
+        draw: [(/** @type {any} */ u) => { self.drawBand(u); self.drawIncidents(u); drawNotes(u); self.drawStrip(); }],
       },
     };
     this.emptyEl.remove();
@@ -484,6 +525,7 @@ class Panel {
     this.chartEl.append(this.emptyEl);
     u.over.addEventListener('mouseenter', () => { self.hover = true; });
     u.over.addEventListener('mouseleave', () => { self.hover = false; hideTip(); });
+    bindNoteGestures(u);
     return u;
   }
 
@@ -527,6 +569,12 @@ class Panel {
         return (kinds.length > 1 ? KIND_LABEL[/** @type {'https'} */ (k)][0] + ' ' : '') + fmtMs(v);
       }).join(' / ') + ' ms';
       const lossF = n + lost > 0 ? lost / (n + lost) : NaN;
+      const rb = this.ratioFor(t.name, kinds);
+      const slow = rb && rb.r >= SLOW_RATIO ? h('span', {
+        class: 'xnorm' + (rb.r >= 3 ? ' bad' : ''),
+        title: `${t.name} ${KIND_LABEL[/** @type {'https'} */ (rb.b.kind)]}: ${fmtMs(rb.b.now_ms)} ms over the last 5 minutes vs ${fmtMs(rb.b.median_ms)} ms normal (median${rb.b.hour_of_day ? ' at this hour' : ''} over the past week)`,
+        text: `${fmtRatio(rb.r)} normal`,
+      }) : null;
       const sw = h('span', { class: 'sw' });
       sw.style.background = seriesColor(/** @type {number} */ (this.colors.get(t.name)));
       const li = h('li', {
@@ -539,11 +587,14 @@ class Panel {
       sw,
       h('span', { class: 'name', text: t.name }),
       h('span', { class: 'val', text: cur }),
+      slow,
       h('span', { class: 'loss' + (lossF > 0.005 ? ' bad' : ''), text: fmtPct(lossF) + ' loss' }),
       traceOn && t.trace ? traceButton(t.name, 'Trace') : null);
       items.push(li);
     }
     this.legend.replaceChildren(...items);
+    // "×2.3 normal" badges need wider legend columns.
+    this.legend.classList.toggle('wide', items.some((li) => li.querySelector('.xnorm')));
   }
 
   /** @param {string} name @param {boolean} toggle */
@@ -688,6 +739,8 @@ class Panel {
         nodes.push(h('div', { class: 'row' }, h('span', { class: 'k', text: KIND_LABEL[/** @type {'https'} */ (s.kind)] }), txt));
       }
       nodes.push(h('div', { class: 'row' }, h('span', { class: 'k', text: 'loss' }), n + lost ? `${fmtPct(lost / (n + lost))} in bucket` : '—'));
+      const nb = kinds.has('https') ? baselines.get(target + '\0https') : null;
+      if (nb) nodes.push(h('div', { class: 'row' }, h('span', { class: 'k', text: 'normal' }), `${fmtMs(nb.median_ms)}–${fmtMs(nb.p95_ms)} ms (median–p95)`));
     }
     // Other targets that lost samples in this bucket.
     const lossy = [];
@@ -710,6 +763,7 @@ class Panel {
         nodes.push(h('div', { class: 'row inc' }, sw, `incident: ${inc.summary}`));
       }
     }
+    nodes.push(...noteTipNodes(notesNear(u, u.cursor.left)));
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
   }
@@ -1435,7 +1489,7 @@ class Investigate {
           u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
         }],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => self.drawChanges(u, !isLoss)],
+        draw: [(/** @type {any} */ u) => { self.drawChanges(u, !isLoss); drawNotes(u); }],
       },
     };
     const u = new uPlot(opts, data, el);
@@ -1506,6 +1560,515 @@ class Investigate {
   }
 }
 
+// ---------- write helper ----------
+
+/** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] */
+async function apiWrite(method, url, body) {
+  /** @type {Record<string,string>} */
+  const headers = { 'X-FYISP-Token': TOKEN };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+  try {
+    return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
+  } catch (e) {
+    const err = /** @type {any} */ (e);
+    if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
+    throw e;
+  }
+}
+
+/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind without --admin-token. */
+function canWrite() { return MODE === 'local' && !!status && status.controls !== 'disabled'; }
+
+/** The current view as absolute milliseconds. */
+function viewRange() {
+  if (state.from != null && state.to != null) return { from: state.from, to: state.to };
+  const to = Date.now();
+  return { from: to - rangeSecs() * 1000, to };
+}
+
+/** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */
+function toLocalInput(/** @type {number} */ ms) {
+  const d = new Date(ms);
+  const p = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fromLocalInput(/** @type {string} */ s) { const t = s ? new Date(s).getTime() : NaN; return isFinite(t) ? t : NaN; }
+
+async function copyText(/** @type {string} */ text, /** @type {HTMLElement} */ btn) {
+  const label = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch { window.prompt('Copy this link:', text); }
+  setTimeout(() => { btn.textContent = label; }, 1500);
+}
+
+// ---------- notes (annotations) ----------
+
+/** @typedef {{id:number,at:string,end?:string,text:string,public:boolean,created?:string,updated?:string}} Note */
+
+let notesOn = false;
+/** @type {Note[]} */
+let notes = [];
+let notesLoaded = false;
+
+async function loadNotes() {
+  if (!notesOn) return;
+  const { from, to } = queryRange();
+  try {
+    const list = await fetchJSON('api/annotations?' + new URLSearchParams({ from, to }));
+    notes = Array.isArray(list) ? list : [];
+    notesLoaded = true;
+  } catch {
+    return;
+  }
+  renderNotes();
+  redrawCharts();
+}
+
+function redrawCharts() {
+  for (const p of panels) p.u?.redraw(false);
+  if (inv) { inv.rttU?.redraw(false); inv.lossU?.redraw(false); }
+}
+
+function noteSpan(/** @type {Note} */ n) {
+  const a = Date.parse(n.at);
+  return { a, b: n.end ? Date.parse(n.end) : a };
+}
+function noteColor(/** @type {Note} */ n) { return n.public ? (css('--accent') || '#3987e5') : (css('--note') || '#c3c2b7'); }
+
+/** Notes whose marker (or range) is under css-pixel x on this chart. */
+function notesNear(/** @type {any} */ u, /** @type {number} */ px) {
+  const out = [];
+  for (const n of notes) {
+    const { a, b } = noteSpan(n);
+    const x0 = u.valToPos(a / 1000, 'x'), x1 = u.valToPos(b / 1000, 'x');
+    if ((px >= x0 - 6 && px <= x0 + 10) || (b > a && px >= x0 && px <= x1)) out.push(n);
+  }
+  return out;
+}
+
+/** Note markers: a flag and a dashed line at the note's time; a faint band for a range. */
+function drawNotes(/** @type {any} */ u) {
+  if (!notes.length) return;
+  const ctx = u.ctx;
+  const { left, top, width, height } = u.bbox;
+  const vmin = u.scales.x.min, vmax = u.scales.x.max;
+  const dpr = window.devicePixelRatio || 1;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  for (const n of notes) {
+    const { a, b } = noteSpan(n);
+    if (b / 1000 < vmin || a / 1000 > vmax) continue;
+    const c = noteColor(n);
+    const x = Math.round(u.valToPos(a / 1000, 'x', true)) + 0.5;
+    if (b > a) {
+      const x1 = u.valToPos(b / 1000, 'x', true);
+      ctx.fillStyle = rgba(c, 0.07);
+      ctx.fillRect(x, top, x1 - x, height);
+      ctx.fillStyle = rgba(c, 0.55);
+      ctx.fillRect(x, top + height - 2 * dpr, x1 - x, 2 * dpr);
+    }
+    ctx.strokeStyle = rgba(c, 0.55);
+    ctx.lineWidth = dpr;
+    ctx.setLineDash([3 * dpr, 3 * dpr]);
+    ctx.beginPath();
+    ctx.moveTo(x, top + 12 * dpr);
+    ctx.lineTo(x, top + height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + 13 * dpr);
+    ctx.stroke();
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x + 10 * dpr, top + 3.5 * dpr);
+    ctx.lineTo(x, top + 7 * dpr);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Tooltip rows for notes under the cursor. */
+function noteTipNodes(/** @type {Note[]} */ list) {
+  const nodes = [];
+  if (!list.length) return nodes;
+  nodes.push(h('div', { class: 'sep' }));
+  for (const n of list.slice(0, 3)) {
+    const flag = h('span', { class: 'nflag' + (n.public ? ' pub' : '') });
+    nodes.push(h('div', { class: 'row note' }, flag, h('span', { class: 'ntext', text: n.text }),
+      MODE === 'local' ? h('span', { class: 'nbadge' + (n.public ? ' pub' : ''), text: n.public ? 'public' : 'private' }) : null));
+  }
+  if (list.length > 3) nodes.push(h('div', { class: 'muted', text: `+${list.length - 3} more notes` }));
+  return nodes;
+}
+
+/**
+ * Chart gestures for notes: right-click (or long-press) adds a note at that
+ * time, Shift-drag adds one over a range (instead of zooming), clicking a
+ * flag edits it. Local and writable only.
+ * @param {any} u
+ */
+function bindNoteGestures(u) {
+  const over = /** @type {HTMLElement} */ (u.over);
+  const timeAt = (/** @type {number} */ clientX) => Math.round(u.posToVal(clientX - over.getBoundingClientRect().left, 'x') * 1000);
+  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); }, true);
+  over.addEventListener('contextmenu', (e) => {
+    if (!notesOn || !canWrite()) return;
+    e.preventDefault();
+    openNoteEditor(null, e.clientX, e.clientY, { at: timeAt(e.clientX) });
+  });
+  over.addEventListener('click', (e) => {
+    if (!notesOn || !canWrite()) return;
+    const r = over.getBoundingClientRect();
+    if (e.clientY - r.top > 18) return;
+    const hit = notesNear(u, e.clientX - r.left)[0];
+    if (hit) { e.stopPropagation(); openNoteEditor(hit, e.clientX, e.clientY); }
+  });
+  /** @type {number} */ let timer = 0;
+  let sx = 0, sy = 0;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  over.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch' || !notesOn || !canWrite()) return;
+    sx = e.clientX; sy = e.clientY;
+    cancel();
+    timer = window.setTimeout(() => { timer = 0; hideTip(); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
+  });
+  over.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
+  over.addEventListener('pointerup', cancel);
+  over.addEventListener('pointercancel', cancel);
+}
+
+/** A select (drag) on a chart: zoom, or with Shift a note over that range. */
+function onChartSelect(/** @type {any} */ u) {
+  const w = u.select.width;
+  if (w > 4) {
+    const a = Math.round(u.posToVal(u.select.left, 'x') * 1000), b = Math.round(u.posToVal(u.select.left + w, 'x') * 1000);
+    if (u._noteDrag) {
+      const r = u.over.getBoundingClientRect();
+      openNoteEditor(null, r.left + u.select.left + w, r.top + 20, { at: a, end: b });
+    } else zoomTo(a, b);
+  }
+  u._noteDrag = false;
+  u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
+}
+
+const notePop = h('div', { id: 'note-pop', class: 'pop', role: 'dialog', 'aria-label': 'Note', hidden: true });
+
+function closeNoteEditor() { notePop.hidden = true; notePop.replaceChildren(); }
+
+/**
+ * The note popover: add (note null) or edit. preset gives the time(s) of a new note.
+ * @param {Note|null} note @param {number} x @param {number} y @param {{at:number,end?:number}} [preset]
+ */
+function openNoteEditor(note, x, y, preset) {
+  hideTip();
+  const at = note ? Date.parse(note.at) : (preset ? preset.at : Date.now());
+  const end = note ? (note.end ? Date.parse(note.end) : NaN) : (preset && preset.end ? preset.end : NaN);
+  const atIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(at), required: true, 'aria-label': 'When' }));
+  const endIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: isFinite(end) ? toLocalInput(end) : '', 'aria-label': 'Until (optional)' }));
+  const text = /** @type {HTMLTextAreaElement} */ (h('textarea', { rows: '3', maxlength: '500', placeholder: 'What happened? e.g. "Zoom call dropped", "ISP ticket #123 opened"', 'aria-label': 'Note text' }));
+  text.value = note ? note.text : '';
+  const pub = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
+  pub.checked = !!(note && note.public);
+  const err = h('div', { class: 'perr', role: 'alert' });
+  const save = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: note ? 'Save' : 'Add note' }));
+  const form = h('form', { class: 'pop-form' },
+    h('div', { class: 'pop-title', text: note ? 'Edit note' : preset && preset.end ? 'Note for this range' : 'Add a note' }),
+    h('label', { class: 'fld' }, h('span', { text: 'When' }), atIn),
+    h('label', { class: 'fld' }, h('span', { text: 'Until' }), endIn),
+    text,
+    h('label', { class: 'chk', title: 'Public notes are shown on your public link and in redacted reports. Private notes stay on this machine.' }, pub, ' Show on my public link'),
+    err,
+    h('div', { class: 'pop-actions' },
+      note ? h('button', { class: 'btn ghost danger', type: 'button', text: 'Delete', onclick: () => deleteNote(note) }) : null,
+      h('span', { class: 'grow' }),
+      h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: closeNoteEditor }),
+      save));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const a = fromLocalInput(atIn.value), b = fromLocalInput(endIn.value);
+    const t = text.value.trim();
+    if (!isFinite(a)) { err.textContent = 'Pick a time.'; return; }
+    if (!t) { err.textContent = 'Write something.'; text.focus(); return; }
+    if (endIn.value && !(b > a)) { err.textContent = '"Until" must be after "When".'; return; }
+    /** @type {any} */
+    const body = { at: new Date(a).toISOString(), text: t, public: pub.checked };
+    if (endIn.value) body.end = new Date(b).toISOString();
+    save.disabled = true;
+    try {
+      await apiWrite(note ? 'PUT' : 'POST', note ? `api/annotations/${note.id}` : 'api/annotations', body);
+      closeNoteEditor();
+      await loadNotes();
+    } catch (e2) {
+      err.textContent = `Could not save: ${/** @type {Error} */ (e2).message}`;
+      save.disabled = false;
+    }
+  });
+  form.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNoteEditor(); });
+  notePop.replaceChildren(form);
+  notePop.hidden = false;
+  const r = notePop.getBoundingClientRect();
+  let left = x + 8, top = y + 8;
+  if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 8);
+  if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
+  notePop.style.left = left + 'px';
+  notePop.style.top = top + 'px';
+  text.focus();
+}
+
+async function deleteNote(/** @type {Note} */ n) {
+  if (!window.confirm(`Delete this note?\n\n${n.text}`)) return;
+  try {
+    await apiWrite('DELETE', `api/annotations/${n.id}`);
+    closeNoteEditor();
+    await loadNotes();
+  } catch (e) {
+    window.alert(`Could not delete: ${/** @type {Error} */ (e).message}`);
+  }
+}
+
+function renderNotes() {
+  const box = $('#notes');
+  box.hidden = !notesOn;
+  if (!notesOn) return;
+  const n = notes.length;
+  $('#notes-count').textContent = notesLoaded ? `· ${n} in range` : '';
+  const list = $('#notes-list');
+  const kids = [];
+  if (!n) {
+    kids.push(h('p', { class: 'muted o-empty', text: MODE === 'public' ? 'No public notes in this range.' : 'No notes in this range. Right-click a chart (long-press on a phone) to add one at that time, or Shift-drag for a range.' }));
+  }
+  for (const note of [...notes].reverse()) {
+    const { a, b } = noteSpan(note);
+    const row = h('button', {
+      class: 'o-row n-row', type: 'button', title: 'Zoom all charts to this note',
+      onclick: () => zoomTo(a - 15 * 60e3, Math.min(Date.now(), Math.max(b, a) + 15 * 60e3)),
+    },
+    h('span', { class: 'o-when' }, fmtWhen(a), b > a ? ` – ${fmtWhen(b)}` : ''),
+    h('span', { class: 'nflag' + (note.public ? ' pub' : ''), 'aria-hidden': 'true' }),
+    h('span', { class: 'o-sum n-text', text: note.text }),
+    MODE === 'local' ? h('span', { class: 'nbadge' + (note.public ? ' pub' : ''), title: note.public ? 'Shown on your public link' : 'Only on this machine', text: note.public ? 'public' : 'private' }) : null);
+    const acts = canWrite() ? h('span', { class: 'n-acts' },
+      h('button', { class: 'tbtn', type: 'button', text: 'Edit', onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect(); openNoteEditor(note, r.left - 300, r.bottom); } }),
+      h('button', { class: 'tbtn danger', type: 'button', text: 'Delete', onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); deleteNote(note); } })) : null;
+    kids.push(h('div', { class: 'o-item' }, row, acts));
+  }
+  list.replaceChildren(...kids);
+}
+
+// ---------- baselines ----------
+
+/** @typedef {{target:string,kind:string,median_ms:number,p95_ms:number,loss:number,samples:number,hour_of_day:boolean,now_ms?:number,ratio_now?:number}} BaselineData */
+
+let baseOn = false;
+const SLOW_RATIO = 1.5;
+const BAND_MAX = 6; // bands for at most this many visible targets (then only slow ones)
+state.band = storageGet('fyisp-band') !== '0';
+
+/** @type {Map<string, BaselineData>} */
+let baselines = new Map();
+let baseKey = '';
+let baseAt = 0;
+
+/** Every series' normal in one request, at most once a minute per view. */
+async function loadBaselines() {
+  if (!baseOn) return;
+  const at = isRelative() ? 'now' : String(state.to);
+  if (at === baseKey && Date.now() - baseAt < 60e3) return;
+  baseKey = at;
+  baseAt = Date.now();
+  try {
+    const b = await fetchJSON('api/baselines?' + new URLSearchParams({ at }));
+    baselines = new Map((b.series || []).map((/** @type {BaselineData} */ x) => [x.target + '\0' + x.kind, x]));
+  } catch {
+    baseAt = 0;
+    return;
+  }
+  for (const p of panels) if (p.data) { p.renderLegend(); p.u?.redraw(false); }
+}
+
+function fmtRatio(/** @type {number} */ r) { return '×' + (r >= 10 ? r.toFixed(0) : r.toFixed(1)); }
+
+// ---------- reports ----------
+
+/** @typedef {{id:string,title:string,from:string,to:string,created:string,public:boolean,bytes:number,redacted:boolean}} ReportMeta */
+
+let reportsOn = false;
+/** @type {ReportMeta[]} */
+let reports = [];
+
+function shareURL() {
+  const sh = status && status.share;
+  return sh && sh.phase === 'connected' && sh.url ? String(sh.url) : '';
+}
+function reportPublicURL(/** @type {ReportMeta} */ r) {
+  const base = shareURL();
+  return base && r.public && r.redacted ? base.replace(/\/?$/, '/') + 'r/' + r.id : '';
+}
+function fmtBytes(/** @type {number} */ n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`; }
+
+async function loadReports() {
+  if (!reportsOn) return;
+  try {
+    const list = await fetchJSON('api/reports');
+    reports = Array.isArray(list) ? list : [];
+  } catch {
+    return;
+  }
+  renderReports();
+}
+
+/** Open / Download / Copy public link / Publish / Delete for one report. */
+function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ after, big = false) {
+  const cls = big ? 'btn' : 'tbtn';
+  const kids = [
+    h('a', { class: cls + (big ? ' primary' : ''), href: `api/reports/${r.id}`, target: '_blank', rel: 'noopener', text: 'Open' }),
+    h('a', { class: cls, href: `api/reports/${r.id}?download=1`, download: '', text: 'Download' }),
+  ];
+  const link = reportPublicURL(r);
+  if (r.public && r.redacted) {
+    const copy = h('button', {
+      class: cls, type: 'button', text: 'Copy public link', disabled: !link,
+      title: link ? link : 'Start your public link (top of the page) to get this report\'s address',
+      onclick: () => copyText(link, copy),
+    });
+    kids.push(copy);
+  }
+  if (canWrite()) {
+    if (r.redacted) {
+      kids.push(h('button', {
+        class: cls, type: 'button', text: r.public ? 'Unpublish' : 'Publish',
+        title: r.public ? 'Stop serving this snapshot on your public link' : 'Serve this redacted snapshot on your public link',
+        onclick: async () => {
+          try { await apiWrite('PUT', `api/reports/${r.id}`, { public: !r.public }); } catch (e) { window.alert(/** @type {Error} */ (e).message); }
+          await loadReports();
+          after();
+        },
+      }));
+    }
+    kids.push(h('button', {
+      class: cls + ' danger', type: 'button', text: 'Delete',
+      onclick: async () => {
+        if (!window.confirm(`Delete the report "${r.title}"?`)) return;
+        try { await apiWrite('DELETE', `api/reports/${r.id}`); } catch (e) { window.alert(/** @type {Error} */ (e).message); }
+        await loadReports();
+        after();
+      },
+    }));
+  }
+  return h('span', { class: 'r-acts' + (big ? ' big' : '') }, ...kids);
+}
+
+function renderReports() {
+  const box = $('#reports');
+  box.hidden = !reportsOn;
+  if (!reportsOn) return;
+  $('#reports-count').textContent = `· ${reports.length} saved`;
+  const list = $('#reports-list');
+  if (!reports.length) {
+    list.replaceChildren(h('p', { class: 'muted o-empty', text: 'No reports yet. "Create report" builds a self-contained page (prints to PDF) for the current range; "Report" on an outage builds one for that incident.' }));
+    return;
+  }
+  list.replaceChildren(...reports.map((r) => h('div', { class: 'r-item' },
+    h('div', { class: 'r-main' },
+      h('span', { class: 'r-title', text: r.title }),
+      h('span', { class: 'r-meta muted' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · created ${fmtWhen(Date.parse(r.created))} · ${fmtBytes(r.bytes)}`),
+      h('span', { class: 'r-badges' },
+        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; public notes only' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'redacted' : 'private details' }),
+        r.public && r.redacted ? h('span', { class: 'nbadge pub', title: 'Served on your public link while sharing is on', text: 'on public link' }) : null)),
+    reportActions(r, renderReports))));
+}
+
+/** @type {HTMLDialogElement|null} */
+let reportDlg = null;
+
+/**
+ * The "Create report" dialog. range defaults to the current view.
+ * @param {{from:number,to:number,title?:string}} [preset]
+ */
+function openReportDialog(preset) {
+  const rng = preset || viewRange();
+  const dlg = reportDlg || /** @type {HTMLDialogElement} */ (h('dialog', { class: 'dlg', 'aria-label': 'Create report' }));
+  if (!reportDlg) { document.body.append(dlg); reportDlg = dlg; }
+  const title = /** @type {HTMLInputElement} */ (h('input', { type: 'text', maxlength: '200', value: rng.title || `Connection report: ${fmtWhen(rng.from)} – ${fmtWhen(rng.to)}` }));
+  const fromIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(rng.from), required: true }));
+  const toIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(Math.min(rng.to, Date.now())), required: true }));
+  const priv = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
+  const pub = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
+  const pubHint = h('span', { class: 'hint' });
+  const syncPub = () => {
+    pub.disabled = priv.checked;
+    if (priv.checked) pub.checked = false;
+    pubHint.textContent = priv.checked
+      ? 'Reports with private details cannot be published; they stay on this machine.'
+      : shareURL() ? 'Anyone with your public link can open it.' : 'It will be served once you start your public link.';
+  };
+  priv.addEventListener('change', syncPub);
+  syncPub();
+  const err = h('div', { class: 'perr', role: 'alert' });
+  const go = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: 'Create report' }));
+  const form = h('form', { class: 'dlg-form', method: 'dialog' },
+    h('h2', { text: 'Create report' }),
+    h('p', { class: 'muted small', text: 'A self-contained page with the verdicts, outage log, charts, statistics and notes for this range. Open it to print or save as PDF.' }),
+    h('label', { class: 'fld' }, h('span', { text: 'Title' }), title),
+    h('div', { class: 'fld-row' },
+      h('label', { class: 'fld' }, h('span', { text: 'From' }), fromIn),
+      h('label', { class: 'fld' }, h('span', { text: 'To' }), toIn)),
+    h('label', { class: 'chk' }, priv, h('span', {}, ' Include private details', h('span', { class: 'hint', text: 'Addresses, router names and private notes. Leave unchecked for a redacted report you can send to your ISP.' }))),
+    h('label', { class: 'chk' }, pub, h('span', {}, ' Publish on my public link', pubHint)),
+    err,
+    h('div', { class: 'pop-actions' },
+      h('span', { class: 'grow' }),
+      h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => dlg.close() }),
+      go));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const a = fromLocalInput(fromIn.value), b = fromLocalInput(toIn.value);
+    if (!(isFinite(a) && isFinite(b) && b > a)) { err.textContent = '"To" must be after "From".'; return; }
+    go.disabled = true;
+    go.textContent = 'Building…';
+    err.textContent = '';
+    try {
+      /** @type {ReportMeta} */
+      const r = await apiWrite('POST', 'api/reports', {
+        from: new Date(a).toISOString(), to: new Date(b).toISOString(), title: title.value.trim(), redact: !priv.checked, public: pub.checked,
+      });
+      await loadReports();
+      showReportDone(dlg, r);
+    } catch (e2) {
+      err.textContent = `Could not build the report: ${/** @type {Error} */ (e2).message}`;
+      go.disabled = false;
+      go.textContent = 'Create report';
+    }
+  });
+  dlg.replaceChildren(form);
+  if (!dlg.open) dlg.showModal();
+  title.focus();
+  title.select();
+}
+
+function showReportDone(/** @type {HTMLDialogElement} */ dlg, /** @type {ReportMeta} */ r) {
+  const refresh = () => {
+    const cur = reports.find((x) => x.id === r.id);
+    if (!cur) { dlg.close(); return; }
+    showReportDone(dlg, cur);
+  };
+  dlg.replaceChildren(h('div', { class: 'dlg-form' },
+    h('h2', { text: 'Report ready' }),
+    h('p', { class: 'r-title', text: r.title }),
+    h('p', { class: 'muted small' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · ${fmtBytes(r.bytes)} · `,
+      r.redacted ? 'redacted' : 'includes private details', r.public && r.redacted ? ' · on your public link' : ''),
+    r.public && r.redacted && !shareURL() ? h('p', { class: 'hint', text: 'Start your public link to share it; the report\'s address is your public link followed by r/<id>.' }) : null,
+    reportActions(r, refresh, true),
+    h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }), h('button', { class: 'btn', type: 'button', text: 'Close', onclick: () => dlg.close() }))));
+}
+
 // ---------- zoom & refresh ----------
 
 function zoomTo(/** @type {number} */ from, /** @type {number} */ to) {
@@ -1530,8 +2093,8 @@ async function refreshAll() {
   refreshing = true;
   updateRefreshLabel();
   try {
-    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), inv.load()]);
-    else await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), ...panels.map((p) => p.load())]);
+    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), inv.load()]);
+    else await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), ...panels.map((p) => p.load())]).then(loadBaselines);
   } finally {
     refreshing = false;
     updateRefreshLabel();
@@ -1548,7 +2111,8 @@ function focusTarget(/** @type {string} */ name) {
   const p = panels.find((x) => x.targets.some((t) => t.name === name));
   if (!p) return;
   p.isolate(name);
-  const top = p.el.getBoundingClientRect().top + window.scrollY - $('.top').offsetHeight - 8;
+  const bar = $('.top');
+  const top = p.el.getBoundingClientRect().top + window.scrollY - (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) - 8;
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 }
 
@@ -1591,6 +2155,15 @@ function renderVerdict() {
     }
   }
   if (meta.length) kids.push(h('div', { class: 'v-meta' }, ...meta));
+  if (v.slow && v.slow.length) {
+    kids.push(h('div', { class: 'v-meta v-slow' },
+      h('span', { class: 'v-slow-l', text: 'Slower than your normal:' }),
+      ...v.slow.map((x) => h('button', {
+        class: 'tchip slow', type: 'button', text: `${x.target} ${fmtRatio(x.ratio)}`,
+        title: `${x.target}: ${fmtMs(x.now_ms)} ms now vs ${fmtMs(x.normal_ms)} ms normal. Show it on its chart.`,
+        onclick: () => focusTarget(x.target),
+      }))));
+  }
   el.replaceChildren(...kids);
 }
 
@@ -1638,7 +2211,7 @@ function renderOutages() {
   const now = Date.now();
   list.replaceChildren(...incidents.map((inc) => {
     const a = Date.parse(inc.start), b = inc.end ? Date.parse(inc.end) : now;
-    const info = VERDICTS[inc.kind] || { short: inc.kind };
+    const info = VERDICTS[inc.kind] || { label: inc.kind, short: inc.kind };
     const kind = /^[a-z_]+$/.test(inc.kind) ? inc.kind : 'other';
     const row = h('button', {
       class: 'o-row' + (inc.end ? '' : ' ongoing'), type: 'button',
@@ -1651,12 +2224,16 @@ function renderOutages() {
     h('span', { class: 'o-sum', text: inc.summary }),
     h('span', { class: 'o-peak', title: 'Worst one-minute loss', text: `peak ${fmtPct(inc.peak_loss)} loss` }));
     const tt = incidentTraceTarget(inc);
-    if (!tt) return h('div', { class: 'o-item' }, row);
-    const tb = h('button', {
+    const tb = tt ? h('button', {
       class: 'tbtn o-trace', type: 'button', title: `Trace ${tt} hop by hop during this incident`, text: `Trace ${tt}`,
       onclick: () => { zoomTo(a - 5 * 60e3, Math.min(Date.now(), b + 5 * 60e3)); openInvestigate(tt); },
-    });
-    return h('div', { class: 'o-item' }, row, tb);
+    }) : null;
+    const rb = reportsOn && canWrite() ? h('button', {
+      class: 'tbtn o-trace', type: 'button', title: 'Build an evidence report for this incident (±30 minutes)', text: 'Report',
+      onclick: () => openReportDialog({ from: a - 30 * 60e3, to: Math.min(Date.now(), b + 30 * 60e3), title: `${info.label || info.short}: ${fmtWhen(a)}` }),
+    }) : null;
+    if (!tb && !rb) return h('div', { class: 'o-item' }, row);
+    return h('div', { class: 'o-item' }, row, h('span', { class: 'o-acts' }, rb, tb));
   }));
 }
 
@@ -1708,14 +2285,39 @@ function renderControls() {
       renderLayers();
     },
   })));
+  renderTools();
   updateRefreshLabel();
+}
+
+/** Header tools: "+ note", "Create report" (local, writable) and the "normal" band toggle. */
+function renderTools() {
+  const el = $('#tools');
+  const kids = [];
+  if (baseOn) {
+    kids.push(h('button', {
+      class: 'btn ghost', type: 'button', text: 'Normal band', 'aria-pressed': String(state.band),
+      title: 'Shade each target\'s normal latency (median to p95 over the past week) on the HTTPS charts',
+      onclick: () => { state.band = !state.band; storageSet('fyisp-band', state.band ? '1' : '0'); renderTools(); redrawCharts(); },
+    }));
+  }
+  if (notesOn && canWrite()) {
+    kids.push(h('button', {
+      class: 'btn', type: 'button', text: '+ note', title: 'Add a note at the current time (or right-click a chart at any time)',
+      onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect(); openNoteEditor(null, r.left - 150, r.bottom, { at: Date.now() }); },
+    }));
+  }
+  if (reportsOn && canWrite()) {
+    kids.push(h('button', { class: 'btn', type: 'button', text: 'Create report', title: 'Build an evidence report for the current range', onclick: () => openReportDialog() }));
+  }
+  el.replaceChildren(...kids);
+  el.hidden = !kids.length;
 }
 
 function adminHeader() {
   let t = null;
   try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
   if (!t) {
-    t = window.prompt('Admin token (--admin-token) to control sharing:') || '';
+    t = window.prompt('Admin token (--admin-token) for sharing, notes and reports:') || '';
     try { if (t) sessionStorage.setItem('fyisp-admin', t); } catch { /* ignore */ }
   }
   return t;
@@ -1814,6 +2416,7 @@ async function loadStatus() {
   }
   renderShare();
   renderNotices();
+  renderTools();
   // Poll faster while the share link is changing state.
   clearTimeout(statusTimer);
   const ph = status.share && status.share.phase;
@@ -1837,15 +2440,33 @@ async function main() {
   const log = /** @type {HTMLDetailsElement} */ ($('#outages'));
   log.open = state.log;
   log.addEventListener('toggle', () => { if (state.log !== log.open) { state.log = log.open; writeHash(); } });
-  window.addEventListener('hashchange', () => { readHash(); log.open = state.log; renderControls(); showView(); refreshAll(); });
+  const notesBox = /** @type {HTMLDetailsElement} */ ($('#notes'));
+  const repBox = /** @type {HTMLDetailsElement} */ ($('#reports'));
+  notesBox.open = state.notes;
+  repBox.open = state.reports;
+  notesBox.addEventListener('toggle', () => { if (state.notes !== notesBox.open) { state.notes = notesBox.open; writeHash(); } });
+  repBox.addEventListener('toggle', () => { if (state.reports !== repBox.open) { state.reports = repBox.open; writeHash(); } if (repBox.open) loadReports(); });
+  document.body.append(notePop);
+  // Clicks outside the note popover close it.
+  document.addEventListener('mousedown', (e) => { if (!notePop.hidden && !notePop.contains(/** @type {Node} */ (e.target))) closeNoteEditor(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !notePop.hidden) closeNoteEditor(); });
+  window.addEventListener('hashchange', () => { readHash(); log.open = state.log; notesBox.open = state.notes; repBox.open = state.reports; renderControls(); showView(); refreshAll(); });
   renderShare();
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
   traceOn = !!(prof.features && prof.features.trace);
+  notesOn = !!(prof.features && prof.features.notes);
+  reportsOn = MODE === 'local' && !!(prof.features && prof.features.reports);
+  baseOn = !!(prof.features && prof.features.baselines);
   allTargets = prof.targets;
   readHash();
   if (status && status.caps && status.caps.icmp === 'unavailable') state.kinds.delete('icmp');
   if (!state.kinds.size) state.kinds.add('https');
+  notesBox.open = state.notes;
+  repBox.open = state.reports;
+  renderNotes();
+  renderReports();
+  if (reportsOn) loadReports();
   renderControls();
   renderShare();
   renderNotices();

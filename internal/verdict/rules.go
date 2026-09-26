@@ -5,6 +5,7 @@ import (
 	"math"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -12,20 +13,51 @@ import (
 
 // Rules, evaluated every 5s over the last 60s of samples (not-measured gaps
 // ignored). A target (or a layer) is unhealthy when it loses ≥ 20% of its
-// probes, or when the median RTT of one of its kinds exceeds
-// max(3 × baseline, baseline + 50 ms), the baseline being the median of the
-// per-minute medians of the preceding 30 minutes (judged once 5 such
-// minutes exist). A kind that never succeeded is ignored when another kind
-// of the same target did (e.g. a target that blocks ICMP).
+// probes, or when the median RTT of one of its kinds (over ≥ 3 successes)
+// spikes. A kind that never succeeded is ignored when another kind of the
+// same target did (e.g. a target that blocks ICMP).
+//
+// Latency spikes. When Options.Baseline knows the series' long-term normal
+// (7 days, same UTC hour of day once 6 such hours exist; see
+// internal/baseline), a spike is a window median above
+// max(2.5 × normal median, normal p95 + 30 ms). Otherwise the short-term
+// rule applies: above max(3 × baseline, baseline + 50 ms), the baseline
+// being the median of the per-minute medians of the preceding 30 minutes
+// (judged once 5 such minutes exist).
+//
+// Why those constants: the long-term normal is a better reference than the
+// last 30 minutes (congestion that builds up slowly drags the 30-minute
+// baseline up with it and is never flagged; the normal also works right
+// after start), so it can afford a lower factor, 2.5 instead of 3. Its p95
+// captures the series' usual jitter, which the median alone does not: a
+// jittery Wi-Fi hop or a far-away region with an occasional slow path
+// must stay clearly beyond what 1 probe in 20 normally sees, plus 30 ms
+// (the one-minute median of ~12-60 probes is much steadier than single
+// probes, so "median above the old p95" is already rare without a fault,
+// and 30 ms keeps low-latency series such as the router at 2 ms, p95 5 ms,
+// from flagging below 35 ms). Examples: normal 30 ms (p95 40) flags above
+// 75 ms; normal 42 (p95 60) above 105; normal 220 (p95 240) above 550;
+// normal 30 with a jittery p95 of 150 only above 180. The ratio shown to
+// people ("3× slower than your normal") is window median / normal median.
 //
 // Evidence (keys are lower-case identifiers; the web UI relies on the first
 // ones): gateway_loss, edge_loss, anycast_loss (pooled loss of the layer,
 // omitted while the layer is unknown), services_loss (pooled loss of the
 // internet targets), gateway_rtt_ms, edge_rtt_ms, anycast_rtt_ms (median of
 // the layer's targets' window median RTTs, when any succeeded); then
-// <layer>_unhealthy, <layer>_targets, <layer>_baseline_ms (when spiking),
-// internet_targets, internet_unhealthy, dns_failing and loss (the headline
-// loss, also the incident's PeakLoss candidate).
+// <layer>_unhealthy, <layer>_targets, <layer>_baseline_ms (when spiking:
+// the long-term normal median when known), <layer>_vs_normal and
+// services_vs_normal (median over the layer's / internet targets that have
+// a long-term normal of each target's largest window-median / normal-median
+// ratio over its kinds; omitted when none has one), internet_targets,
+// internet_unhealthy, dns_failing and loss (the headline loss, also the
+// incident's PeakLoss candidate).
+//
+// Summaries say "N× slower than your normal (98 ms vs 42 ms)" when every
+// target they describe is unhealthy by latency alone against a long-term
+// normal (numbers: median of those targets' window medians and normals);
+// otherwise they keep the short-term wording ("answers in 400 ms instead of
+// the usual 30 ms").
 //
 // Layers: targets with Target.Layer gateway, isp-edge or anycast. A layer is
 // unknown without samples (the rules then skip it) and unhealthy when a
@@ -81,15 +113,26 @@ const (
 	minLost            = 5   // lost samples needed before a layer is blamed for loss
 	propagated         = 0.5 // outer layers must lose at least this share of the inner loss
 	zWorse             = 2.5 // standard errors by which an outer layer must be worse than an inner one
+
+	normalFactor   = 2.5  // long-term spike: window median > normalFactor × normal median ...
+	normalMarginMs = 30.0 // ... and > normal p95 + normalMarginMs
+	slowFactor     = 2.0  // Engine.Slow: window median > slowFactor × normal median ...
+	slowMinExtraMs = 10.0 // ... and at least this much above it (2 ms -> 5 ms is not news)
 )
 
 func spikeThreshold(baseMs float64) float64 { return max(spikeFactor*baseMs, baseMs+spikeMarginMs) }
+
+// normalThreshold is the long-term spike threshold (b.MedianMs > 0).
+func normalThreshold(b model.Baseline) float64 {
+	return max(normalFactor*b.MedianMs, max(b.P95Ms, b.MedianMs)+normalMarginMs)
+}
 
 type layerStat struct {
 	name             string
 	targets, bad     int // with samples / unhealthy
 	n, lost, nonet   int
 	meds             []float64 // targets' window median RTTs (ms)
+	ratios           []float64 // targets' vsNormal (> 0 only)
 	worst            *tstat    // the unhealthy target with most loss (or spike)
 	unhealthy, known bool
 	allLostUnreach   bool
@@ -138,6 +181,9 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		if t.med > 0 {
 			l.meds = append(l.meds, t.med)
 		}
+		if t.vsNormal > 0 {
+			l.ratios = append(l.ratios, t.vsNormal)
+		}
 		if t.unhealthy() {
 			l.bad++
 			if l.worst == nil || t.loss() > l.worst.loss() {
@@ -168,9 +214,21 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		if l.worst != nil && l.worst.spike {
 			ev[key+"_baseline_ms"] = round3(l.worst.base)
 		}
+		if len(l.ratios) > 0 {
+			ev[key+"_vs_normal"] = round3(lowerMedian(l.ratios))
+		}
 	}
 	if inetN > 0 {
 		ev["services_loss"] = round3(float64(inetLost) / float64(inetN))
+	}
+	var inetRatios []float64
+	for _, t := range inet {
+		if t.vsNormal > 0 {
+			inetRatios = append(inetRatios, t.vsNormal)
+		}
+	}
+	if len(inetRatios) > 0 {
+		ev["services_vs_normal"] = round3(lowerMedian(inetRatios))
 	}
 	var badUp, dnsBad, bad []*tstat
 	for _, t := range inet {
@@ -233,9 +291,14 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		if edge.loss() < lossBad && w != nil && w.spike {
 			s = "Your ISP's network is slow: "
 			if gw.known {
-				s += "the router is fine, but the first hop past it answers in " + ms(w.rtt) + " instead of the usual " + ms(w.base) + "."
+				s += "the router is fine, but the first hop past it "
 			} else {
-				s += "the first hop past your router answers in " + ms(w.rtt) + " instead of the usual " + ms(w.base) + "."
+				s += "the first hop past your router "
+			}
+			if w.longTerm {
+				s += "is " + slower(w.rtt, w.base) + "."
+			} else {
+				s += "answers in " + ms(w.rtt) + " instead of the usual " + ms(w.base) + "."
 			}
 		}
 		return set(model.VerdictISP, edge.loss(), s)
@@ -251,16 +314,20 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 	if ac.unhealthy && beyondInner(gw, edge, ac) {
 		what := "responding slowly"
 		unreach := true
+		var bad []*tstat
 		for _, t := range ts {
 			if t.t.Layer == model.LayerAnycast && t.unhealthy() {
 				if t.loss() >= lossBad {
 					what = "dropping packets"
 				}
 				unreach = unreach && t.lost == t.n
+				bad = append(bad, t)
 			}
 		}
 		if unreach {
 			what = "unreachable"
+		} else if s, ok := slowerAll(bad); ok {
+			what = s
 		}
 		return set(model.VerdictUpstream, ac.loss(),
 			fmt.Sprintf("%s%d of %d public DNS anycast servers are %s.", beyond, ac.bad, ac.targets, what))
@@ -270,8 +337,12 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		for _, t := range badUp {
 			loss += t.lossNoDNS()
 		}
+		what := "having trouble"
+		if s, ok := slowerAll(badUp); ok {
+			what = s
+		}
 		return set(model.VerdictUpstream, loss/float64(len(badUp)),
-			fmt.Sprintf("%s%d of %d monitored services are having trouble.", beyond, len(badUp), len(inet)))
+			fmt.Sprintf("%s%d of %d monitored services are %s.", beyond, len(badUp), len(inet), what))
 	}
 	// 5. DNS
 	if len(inet) > 0 && float64(len(dnsBad)) >= dnsShare*float64(len(inet)) {
@@ -366,6 +437,9 @@ func beyondInner(gw, edge, ac *layerStat) bool {
 
 func layerSentence(l *layerStat, who string) string {
 	if l.loss() < lossBad && l.worst != nil && l.worst.spike {
+		if l.worst.longTerm {
+			return fmt.Sprintf("%s is %s.", who, slower(l.worst.rtt, l.worst.base))
+		}
 		return fmt.Sprintf("%s is slow: it answers in %s instead of the usual %s.", who, ms(l.worst.rtt), ms(l.worst.base))
 	}
 	return fmt.Sprintf("%s is dropping %s of packets.", who, pct(l.loss()))
@@ -375,6 +449,29 @@ func layerSentence(l *layerStat, who string) string {
 // single group (whole or part), or several groups.
 func serviceSentence(bad, inet []*tstat, nm *namer) string {
 	groups := groupsOf(bad)
+	slow, allSlow := slowerAll(bad)
+	if allSlow {
+		switch {
+		case len(bad) == 1:
+			return fmt.Sprintf("%s is %s.", nm.target(bad[0].t.Name), slow)
+		case len(groups) == 1 && groups[0] != "":
+			total := 0
+			for _, t := range inet {
+				if t.t.Group == groups[0] {
+					total++
+				}
+			}
+			if len(bad) == total {
+				return fmt.Sprintf("%s is %s.", nm.group(groups[0]), slow)
+			}
+			return fmt.Sprintf("%s is %s on %d of its %d targets.", nm.group(groups[0]), slow, len(bad), total)
+		}
+		var names []string
+		for _, n := range sortedNames(bad) {
+			names = append(names, nm.target(n))
+		}
+		return fmt.Sprintf("%d services are %s: %s.", len(bad), slow, list(slices.Compact(names), 3))
+	}
 	if len(bad) == 1 {
 		t := bad[0]
 		name := nm.target(t.t.Name)
@@ -402,6 +499,44 @@ func serviceSentence(bad, inet []*tstat, nm *namer) string {
 	}
 	names = slices.Compact(names)
 	return fmt.Sprintf("%d services look affected: %s.", len(bad), list(names, 3))
+}
+
+// slowerAll describes ts as slower than their normal ("3× slower than your
+// normal (90 ms vs 30 ms)", medians over ts) when every one of them is
+// unhealthy by latency alone (loss < lossBad) against a long-term normal.
+func slowerAll(ts []*tstat) (string, bool) {
+	if len(ts) == 0 {
+		return "", false
+	}
+	var nows, norms []float64
+	for _, t := range ts {
+		if !t.spike || !t.longTerm || t.loss() >= lossBad {
+			return "", false
+		}
+		nows = append(nows, t.rtt)
+		norms = append(norms, t.base)
+	}
+	return slower(lowerMedian(nows), lowerMedian(norms)), true
+}
+
+// slower: "3× slower than your normal (90 ms vs 30 ms)".
+func slower(nowMs, normalMs float64) string {
+	return fmt.Sprintf("%s× slower than your normal (%s vs %s)", fmtRatio(nowMs/normalMs), ms(nowMs), ms(normalMs))
+}
+
+// fmtRatio formats a ratio like baseline.FormatRatio: one decimal below 10
+// without a trailing ".0" ("2.3", "3"), whole numbers from 10.
+func fmtRatio(r float64) string {
+	if r >= 9.95 {
+		return strconv.Itoa(int(math.Round(r)))
+	}
+	return strconv.FormatFloat(math.Round(r*10)/10, 'f', -1, 64)
+}
+
+// lowerMedian sorts v and returns its lower median.
+func lowerMedian(v []float64) float64 {
+	slices.Sort(v)
+	return v[(len(v)-1)/2]
 }
 
 // list joins up to max items: "a, b and c", "a, b, c and 2 more".
@@ -441,8 +576,9 @@ func evKey(layer string) string {
 }
 
 // pct formats a fraction as a whole percentage ("34%"); ms formats
-// milliseconds as a whole number. Neither ever prints a decimal point, so a
-// summary can never contain a digits.digits sequence.
+// milliseconds as a whole number. Neither ever prints a decimal point: the
+// only digits.digits sequence a summary may contain is a ratio written
+// right before "×" (fmtRatio), which the sanitizer allows.
 func pct(f float64) string { return fmt.Sprintf("%d%%", int(math.Round(f*100))) }
 func ms(v float64) string  { return fmt.Sprintf("%d ms", max(1, int(math.Round(v)))) }
 
@@ -455,6 +591,10 @@ var (
 	ipLike = regexp.MustCompile(`\d+\.\d+|[0-9A-Fa-f]*:[0-9A-Fa-f]*:`)
 	// hostLike matches a dotted name ending in a letter label (example.com).
 	hostLike = regexp.MustCompile(`(?i)[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}`)
+	// ratioTok is a ratio as fmtRatio writes it before "×" ("2.3×"): one
+	// decimal, not part of a longer dotted number (so "1.2.3.4×" stays
+	// address-like). It is removed before the ipLike check.
+	ratioTok = regexp.MustCompile(`(^|[^0-9.])[0-9]+\.[0-9]×`)
 )
 
 // namer maps profile names to display names that are safe for the public
@@ -484,7 +624,7 @@ func newNamer(p *model.Profile) *namer {
 }
 
 func (nm *namer) unsafe(s string) bool {
-	if ipLike.MatchString(s) || hostLike.MatchString(s) {
+	if ipLike.MatchString(ratioTok.ReplaceAllString(s, "$1")) || hostLike.MatchString(s) {
 		return true
 	}
 	ls := strings.ToLower(s)

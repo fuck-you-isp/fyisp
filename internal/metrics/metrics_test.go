@@ -488,3 +488,30 @@ func TestTraceMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestVsNormalGauge(t *testing.T) {
+	c := New(testProfile)
+	if m := scrape(t, c); m["fyisp_rtt_vs_normal"] != nil {
+		t.Fatal("fyisp_rtt_vs_normal without a source")
+	}
+	c.SetVsNormalSource(func(yield func(string, model.ProbeKind, float64)) {
+		yield("Google-Meet", model.KindICMP, 2.5)
+		yield("Google-Meet", model.KindHTTPS, 1.1)
+		yield("Google-Meet", model.KindHTTPS, 1.2) // duplicate: dropped
+		yield("gone", model.KindICMP, 3)           // not in the profile
+	})
+	f := scrape(t, c)["fyisp_rtt_vs_normal"]
+	if f == nil || f.typ != "gauge" || len(f.samples) != 2 {
+		t.Fatalf("fyisp_rtt_vs_normal: %+v", f)
+	}
+	if v, ok := f.find(map[string]string{"name": "Google-Meet", "kind": "icmp"}); !ok || v != 2.5 {
+		t.Errorf("icmp %v %v", v, ok)
+	}
+	if v, ok := f.find(map[string]string{"name": "Google-Meet", "kind": "https"}); !ok || v != 1.1 {
+		t.Errorf("https %v %v", v, ok)
+	}
+	c.SetVsNormalSource(nil)
+	if m := scrape(t, c); m["fyisp_rtt_vs_normal"] != nil {
+		t.Fatal("fyisp_rtt_vs_normal after removing the source")
+	}
+}
