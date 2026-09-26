@@ -148,6 +148,35 @@ CREATE TABLE routes(
 	since_ms INT  NOT NULL
 );
 `,
+	// v4 (fyisp v0.3): annotations and evidence report snapshots (see
+	// annotations.go, reports.go). summary_1h day rows gain hourly medians
+	// (day format v2, summary.go) without a schema change: both formats are
+	// read.
+	`
+CREATE TABLE annotations(
+	id         INTEGER PRIMARY KEY,
+	at_ms      INT  NOT NULL,
+	end_ms     INT,  -- NULL for a point in time
+	text       TEXT NOT NULL,
+	public     INT  NOT NULL DEFAULT 0,
+	created_ms INT,
+	updated_ms INT
+);
+CREATE INDEX annotations_at ON annotations(at_ms);
+-- html is the rendered report, zstd-compressed; bytes is its uncompressed
+-- size (listed without reading the blob).
+CREATE TABLE reports(
+	id         TEXT PRIMARY KEY,
+	title      TEXT,
+	from_ms    INT,
+	to_ms      INT,
+	created_ms INT,
+	public     INT  NOT NULL DEFAULT 0,
+	bytes      INT  NOT NULL DEFAULT 0,
+	html       BLOB NOT NULL
+);
+CREATE INDEX reports_created ON reports(created_ms);
+`,
 }
 
 // SchemaVersion is the schema version this build writes.

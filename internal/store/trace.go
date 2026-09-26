@@ -631,7 +631,7 @@ func (s *SQLite) Hops(ctx context.Context, target string, from, to time.Time) ([
 		if err != nil {
 			return nil, err
 		}
-	} else if err := s.hourlySummaries(ctx, keys, from, to, func(k model.SeriesKey, u *summary) {
+	} else if err := s.hourlySummaries(ctx, keys, from, to, func(k model.SeriesKey, _ int64, u *summary) {
 		a := accs[k.Hop]
 		if a == nil {
 			a = &hopAcc{}
@@ -649,9 +649,10 @@ func (s *SQLite) Hops(ctx context.Context, target string, from, to time.Time) ([
 	return buildHopStats(ctx, accs, route, haveRoute, changes, from, to, s.hopInfos)
 }
 
-// hourlySummaries calls fn with every hourly summary of keys whose hour
-// starts in [from, to] (in memory or stored), with one SQL query.
-func (s *SQLite) hourlySummaries(ctx context.Context, keys []model.SeriesKey, from, to time.Time, fn func(model.SeriesKey, *summary)) error {
+// hourlySummaries calls fn with every hourly summary (and its unix hour) of
+// keys whose hour starts in [from, to] (in memory or stored), with one SQL
+// query.
+func (s *SQLite) hourlySummaries(ctx context.Context, keys []model.SeriesKey, from, to time.Time, fn func(model.SeriesKey, int64, *summary)) error {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -703,7 +704,7 @@ func (s *SQLite) hourlySummaries(ctx context.Context, keys []model.SeriesKey, fr
 			if _, ok := mem[hourKey{k, h.hour}]; ok {
 				continue
 			}
-			fn(k, &h.s)
+			fn(k, h.hour, &h.s)
 		}
 	}
 	if rows != nil {
@@ -713,7 +714,7 @@ func (s *SQLite) hourlySummaries(ctx context.Context, keys []model.SeriesKey, fr
 	}
 	for _, m := range mem {
 		if m.hour >= hFrom {
-			fn(m.key, m.summary())
+			fn(m.key, m.hour, m.summary())
 		}
 	}
 	return nil

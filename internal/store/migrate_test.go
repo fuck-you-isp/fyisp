@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -218,6 +219,45 @@ func TestWriteFixtureV2(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(dir, LockName))
+	os.RemoveAll(filepath.Join(dir, "tmp"))
+}
+
+// fixtureTrace is the trace data of testdata/v3.db (besides fixtureSamples
+// and fixtureIncidents): one route, one change and one hop address.
+func fixtureTrace() (model.Route, model.RouteChange, model.HopInfo) {
+	a, b, c := netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("198.51.100.1"), netip.MustParseAddr("203.0.113.9")
+	r := model.Route{Target: "github", Hops: []netip.Addr{a, c}, Since: t0.Add(time.Hour)}
+	ch := model.RouteChange{Target: "github", At: t0.Add(time.Hour), From: []netip.Addr{a, b}, To: []netip.Addr{a, c}, FirstDiff: 2}
+	h := model.HopInfo{IP: c, RDNS: "edge.example.net", ASN: 64500, Owner: "EXAMPLE-AS", FirstSeen: t0, LastSeen: t0.Add(2 * time.Hour)}
+	return r, ch, h
+}
+
+// TestWriteFixtureV3 regenerates testdata/v3.db (FYISP_WRITE_FIXTURE=dir):
+// fixtureSamples, fixtureIncidents and fixtureTrace written by a v3 build
+// (summary_1h in day format v1: no hourly medians). Never regenerate a
+// released fixture: it pins the v3 on-disk format.
+func TestWriteFixtureV3(t *testing.T) {
+	dir := os.Getenv("FYISP_WRITE_FIXTURE")
+	if dir == "" || SchemaVersion() != 3 {
+		t.Skip("set FYISP_WRITE_FIXTURE in a schema v3 build to regenerate testdata/v3.db")
+	}
+	s := openT(t, dir, Options{Version: "v0.2.0-fixture-v3", Now: func() time.Time { return t0.Add(2*time.Hour + 20*time.Minute) }})
+	for _, x := range fixtureSamples() {
+		s.Observe(x)
+	}
+	for _, in := range fixtureIncidents() {
+		if err := s.SaveIncident(ctx, &in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, ch, h := fixtureTrace()
+	s.ObserveRoute(r)
+	s.ObserveRouteChange(ch)
+	s.ObserveHop(h)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

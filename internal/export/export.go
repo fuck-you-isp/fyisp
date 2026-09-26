@@ -20,6 +20,11 @@
 //
 //	target,kind,ts,n,lost,rtt_mean_ms,rtt_min_ms,rtt_max_ms,hop
 //
+// Annotations (--annotations), one row per timeline note, oldest first:
+//
+//	id,at,end,public,text
+//	3,2026-09-26T12:00:00.000Z,2026-09-26T12:30:00.000Z,1,call dropped
+//
 // The SQLite format holds the same columns in a table named samples (raw;
 // ts is the column ts_utc, lost is NULL when not measured) or summary_1h;
 // hop is NULL for kinds other than trace.
@@ -63,12 +68,19 @@ type Options struct {
 	Targets  []string          // empty: all
 	Kinds    []model.ProbeKind // empty: all
 	Output   string            // file path; "" or "-" means the io.Writer (CSV only)
+	// Annotations exports the timeline notes overlapping [From, To] (all
+	// when unset) as CSV (AnnotationHeader) instead of samples. The reader
+	// must also be a store.AnnotationStore.
+	Annotations bool
 }
 
 // RawHeader and HourlyHeader are the CSV headers.
 var (
 	RawHeader    = []string{"target", "kind", "ts", "rtt_ms", "lost", "reason", "hop"}
 	HourlyHeader = []string{"target", "kind", "ts", "n", "lost", "rtt_mean_ms", "rtt_min_ms", "rtt_max_ms", "hop"}
+	// AnnotationHeader: at and end in TimeFormat (end empty for a point in
+	// time), public 0 or 1, oldest first.
+	AnnotationHeader = []string{"id", "at", "end", "public", "text"}
 )
 
 // Run exports to o.Output, or as CSV to stdout when o.Output is "" or "-".
@@ -83,6 +95,13 @@ func Run(ctx context.Context, r store.Reader, o Options, stdout io.Writer) error
 func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
 	if o.Format != "" && o.Format != FormatCSV {
 		return fmt.Errorf("export: format %q needs an output file", o.Format)
+	}
+	if o.Annotations {
+		as, ok := r.(store.AnnotationStore)
+		if !ok {
+			return errors.New("export: this store has no annotations")
+		}
+		return WriteAnnotations(ctx, as, w, o.From, o.To)
 	}
 	keys, o, err := selectKeys(ctx, r, o)
 	if err != nil {
@@ -127,9 +146,45 @@ func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
 	return cw.Error()
 }
 
+// WriteAnnotations writes the notes overlapping [from, to] as CSV
+// (AnnotationHeader); a zero from or to leaves that side open.
+func WriteAnnotations(ctx context.Context, as store.AnnotationStore, w io.Writer, from, to time.Time) error {
+	if from.IsZero() {
+		from = time.UnixMilli(0)
+	}
+	if to.IsZero() {
+		to = time.UnixMilli(math.MaxInt64 / 2)
+	}
+	notes, err := as.Annotations(ctx, from, to, false)
+	if err != nil {
+		return err
+	}
+	cw := csv.NewWriter(w)
+	if err := cw.Write(AnnotationHeader); err != nil {
+		return err
+	}
+	for _, a := range notes {
+		end, public := "", "0"
+		if !a.End.IsZero() {
+			end = a.End.UTC().Format(TimeFormat)
+		}
+		if a.Public {
+			public = "1"
+		}
+		if err := cw.Write([]string{strconv.FormatInt(a.ID, 10), a.At.UTC().Format(TimeFormat), end, public, a.Text}); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
 // WriteFile creates path (mode 0600; it must not exist) and exports into it
 // in o.Format. On error the partial file is removed.
 func WriteFile(ctx context.Context, r store.Reader, path string, o Options) (err error) {
+	if o.Annotations && o.Format != "" && o.Format != FormatCSV {
+		return fmt.Errorf("export: annotations are exported as CSV only")
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("export: %w", err)
