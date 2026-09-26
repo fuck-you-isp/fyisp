@@ -28,7 +28,7 @@ const defaultProbeInterval = 15 * time.Second
 // openStore opens the SQLite store. Series intervals must match the probe
 // scheduler exactly: the target's interval (default 15s) and a third of it
 // for ICMP.
-func openStore(dir string, prof *model.Profile, log *slog.Logger) (*store.SQLite, error) {
+func openStore(dir string, prof *model.Profile, traceInterval func(target string) time.Duration, log *slog.Logger) (*store.SQLite, error) {
 	iv := map[string]time.Duration{}
 	for _, t := range prof.Targets {
 		d := t.Interval
@@ -41,6 +41,9 @@ func openStore(dir string, prof *model.Profile, log *slog.Logger) (*store.SQLite
 		Version: version,
 		Log:     log,
 		Interval: func(k model.SeriesKey) time.Duration {
+			if k.Kind == model.KindTrace {
+				return traceInterval(k.Target) // 5s, 2.5s while investigated
+			}
 			d, ok := iv[k.Target]
 			if !ok {
 				d = defaultProbeInterval

@@ -28,11 +28,13 @@ import (
 	// minimal systems), so HTTPS probes and the tunnel still work.
 	_ "golang.org/x/crypto/x509roots/fallback"
 
+	"github.com/fuck-you-isp/fyisp/internal/asn"
 	"github.com/fuck-you-isp/fyisp/internal/metrics"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
 	"github.com/fuck-you-isp/fyisp/internal/web"
 )
@@ -239,7 +241,14 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		}
 	}
 
-	st, err := openStore(dir, prof, log)
+	// Path discovery (gateway, ISP edge) feeds the @gateway/@isp-edge targets
+	// and the tracer; it starts running below.
+	ni := netinfo.New(netinfo.Options{Log: log})
+	// Traceroutes: always-on for profile targets marked trace, on demand
+	// (Investigate) for any target. Hop owners come from the built-in table.
+	tr := trace.New(trace.Options{Log: log, Lookup: asn.Lookup, Path: ni.Current})
+
+	st, err := openStore(dir, prof, tr.Interval, log)
 	if err != nil {
 		var locked *lockedError
 		if errors.As(err, &locked) {
@@ -262,8 +271,6 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	// outage log in the store; it must stop before the store closes.
 	eng := verdict.New(func() *model.Profile { return prof }, st, verdict.Options{Log: log})
 	mc.SetVerdictSource(verdict.MetricsSource(eng))
-	// Path discovery (gateway, ISP edge) feeds the @gateway/@isp-edge targets.
-	ni := netinfo.New(netinfo.Options{Log: log})
 	go func() {
 		if err := ni.Run(ctx); err != nil {
 			log.Warn("network path discovery stopped", "err", err)
@@ -297,6 +304,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		},
 		Metrics: mc.Handler(),
 		Verdict: eng,
+		Trace:   newWebTrace(st, tr, prof),
 		Share:   share,
 		Log:     log,
 	}
@@ -344,6 +352,15 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		}
 	}()
 	go maintain(ctx, st, c.retention, log)
+	traceDone := make(chan struct{})
+	go func() {
+		defer close(traceDone)
+		// Trace samples go to the store and /metrics only: the verdict
+		// engine and warm-up judge targets, not individual hops.
+		if err := tr.Run(ctx, prof, traceSinks{st, mc}); err != nil && ctx.Err() == nil {
+			log.Warn("traceroutes unavailable", "err", err)
+		}
+	}()
 	verdictDone := make(chan struct{})
 	go func() {
 		defer close(verdictDone)
@@ -357,6 +374,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	stop() // restore default signal handling: a second Ctrl-C exits at once
 	<-probeDone
 	<-verdictDone // saves the open incident
+	<-traceDone
 	flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := st.Flush(flushCtx); err != nil {
