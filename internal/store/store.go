@@ -1,5 +1,27 @@
 // Package store keeps every sample for up to 90 days in one SQLite file:
-// hourly zstd-compressed blobs per series plus hourly summary rows.
+// hourly zstd-compressed blobs per series plus hourly summaries (packed per
+// day and series).
+//
+// Wiring (cmd/fyisp):
+//
+//	st, err := store.Open(dataDir, store.Options{Version: version, URL: localURL,
+//		Interval: intervalOf /* the probe schedule: Target.Interval, ICMP /3 */, Log: log})
+//	// errors.Is(err, store.ErrLocked): errors.As(err, &*store.LockedError) has the
+//	// running instance's PID and URL; exit 3.
+//	st.SetURL(url)                        // whenever the URL to show changes
+//	sink := model.Fanout{st, metrics}     // Observe never blocks
+//	every 60s:  st.Flush(ctx)             // error: shown via Stats().LastFlushErr, retried next time
+//	every 1h:   st.Prune(ctx, time.Now().Add(-retention))
+//	shutdown:   stop probes; st.Flush(ctx); close tunnel; stop HTTP; st.Close()
+//	            (Close flushes again, checkpoints, closes, releases the lock)
+//
+// `fyisp export` uses store.OpenReadOnly(dataDir), which takes no lock and
+// sees what the running instance has flushed.
+//
+// The store starts no goroutines. Interval must match the scheduler: slots
+// are Slot0 + i*Interval within each hour, so a too-long interval makes
+// samples collide (dropped, Stats.Rejected) and a too-short one leaves
+// not-measured slots.
 package store
 
 import (
@@ -78,6 +100,11 @@ type Stats struct {
 	Oldest       time.Time `json:"oldest"`
 	LastFlush    time.Time `json:"last_flush"`
 	LastFlushErr string    `json:"last_flush_err,omitempty"`
+	// BufferedBytes is the memory held by hours not yet in the database
+	// (the current hour, plus closed hours while flushes fail).
+	BufferedBytes int64 `json:"buffered_bytes"`
+	Dropped       int64 `json:"dropped,omitempty"`  // samples discarded: write buffer full
+	Rejected      int64 `json:"rejected,omitempty"` // samples ignored: duplicate slot or clock stepped back
 }
 
 // Reader serves queries. Safe for concurrent use.

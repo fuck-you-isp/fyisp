@@ -60,6 +60,7 @@ func TestRoundTripProperty(t *testing.T) {
 	if testing.Short() {
 		iters = 30
 	}
+	var d blob.Decoder // reused across blocks of varying sizes
 	for range iters {
 		b := randBlock(r)
 		enc, err := blob.Encode(&b)
@@ -68,6 +69,10 @@ func TestRoundTripProperty(t *testing.T) {
 		}
 		got, err := blob.Decode(enc)
 		if err != nil {
+			t.Fatal(err)
+		}
+		equal(t, b, got)
+		if got, err = d.Decode(enc); err != nil {
 			t.Fatal(err)
 		}
 		equal(t, b, got)

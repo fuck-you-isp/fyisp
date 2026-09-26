@@ -163,7 +163,32 @@ func Decode(data []byte) (Block, error) {
 }
 
 // DecodeRaw decodes the uncompressed encoding produced by AppendRaw.
-func DecodeRaw(raw []byte) (Block, error) {
+func DecodeRaw(raw []byte) (Block, error) { return decodeRaw(raw, nil) }
+
+// Decoder decodes blobs reusing its buffers, for readers that decode many
+// blobs in a row. The returned Block.Slots is valid until the next call.
+// A Decoder is not safe for concurrent use.
+type Decoder struct {
+	raw   []byte
+	slots []Slot
+}
+
+// Decode is like the package-level Decode.
+func (d *Decoder) Decode(data []byte) (Block, error) {
+	raw, err := dec.DecodeAll(data, d.raw[:0])
+	if err != nil {
+		return Block{}, corrupt("zstd: %v", err)
+	}
+	d.raw = raw
+	b, err := decodeRaw(raw, d.slots[:0])
+	if cap(b.Slots) > cap(d.slots) {
+		d.slots = b.Slots[:0]
+	}
+	return b, err
+}
+
+// decodeRaw decodes into dst (appending; nil allocates).
+func decodeRaw(raw []byte, dst []Slot) (Block, error) {
 	if len(raw) == 0 {
 		return Block{}, corrupt("empty")
 	}
@@ -186,7 +211,10 @@ func DecodeRaw(raw []byte) (Block, error) {
 	if len(p) > MaxSlots*binary.MaxVarintLen64 {
 		return Block{}, corrupt("too long")
 	}
-	b.Slots = make([]Slot, 0, min(len(p), MaxSlots))
+	if dst == nil {
+		dst = make([]Slot, 0, min(len(p), MaxSlots))
+	}
+	b.Slots = dst
 	var prev int64
 	for len(p) > 0 {
 		if len(b.Slots) == MaxSlots {
