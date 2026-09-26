@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"slices"
 	"sort"
@@ -443,5 +444,47 @@ func TestVerdictGauges(t *testing.T) {
 	}
 	if v, ok := l.find(map[string]string{"layer": "isp-edge"}); !ok || v != 0 {
 		t.Errorf("isp-edge %v %v", v, ok)
+	}
+}
+
+func TestTraceMetrics(t *testing.T) {
+	c := New(testProfile)
+	a, b := netip.MustParseAddr("192.168.1.1"), netip.MustParseAddr("100.64.0.1")
+	c.ObserveHop(model.HopInfo{IP: b, ASN: 7922, Owner: "COMCAST-7922"})
+	c.ObserveHop(model.HopInfo{IP: b, RDNS: "x.example"}) // keeps asn/owner
+	c.ObserveRoute(model.Route{Target: "Google-Meet", Hops: []netip.Addr{a, {}, b}})
+	c.ObserveRoute(model.Route{Target: "gone", Hops: []netip.Addr{a}}) // not in the profile
+	c.ObserveRouteChange(model.RouteChange{Target: "Google-Meet"})
+	c.ObserveRouteChange(model.RouteChange{Target: "Google-Meet"})
+	for hop := uint8(1); hop <= 3; hop++ { // hop samples do not collide in the per-kind counters
+		c.Observe(model.Sample{Key: model.SeriesKey{Target: "Google-Meet", Kind: model.KindTrace, Hop: hop}, Slot: time.Now(), RTT: time.Millisecond})
+	}
+	m := scrape(t, c)
+	if v, ok := m["fyisp_trace_hops"].find(map[string]string{"name": "Google-Meet"}); !ok || v != 3 {
+		t.Errorf("trace_hops = %v %v", v, ok)
+	}
+	if n := len(m["fyisp_trace_hops"].samples); n != 1 {
+		t.Errorf("%d trace_hops samples", n)
+	}
+	want := []map[string]string{
+		{"name": "Google-Meet", "hop": "1", "ip": "192.168.1.1", "asn": "", "owner": ""},
+		{"name": "Google-Meet", "hop": "2", "ip": "", "asn": "", "owner": ""},
+		{"name": "Google-Meet", "hop": "3", "ip": "100.64.0.1", "asn": "7922", "owner": "COMCAST-7922"},
+	}
+	for _, w := range want {
+		if v, ok := m["fyisp_hop_info"].find(w); !ok || v != 1 {
+			t.Errorf("hop_info %v = %v %v", w, v, ok)
+		}
+	}
+	if n := len(m["fyisp_hop_info"].samples); n != 3 {
+		t.Errorf("%d hop_info samples", n)
+	}
+	if v, ok := m["fyisp_route_changes_total"].find(map[string]string{"name": "Google-Meet"}); !ok || v != 2 || m["fyisp_route_changes_total"].typ != "counter" {
+		t.Errorf("route_changes_total = %v %v", v, ok)
+	}
+	if f := m["fyisp_probe_samples_total"]; f != nil {
+		if _, ok := f.find(map[string]string{"kind": "trace"}); ok {
+			t.Error("trace hop samples counted")
+		}
 	}
 }

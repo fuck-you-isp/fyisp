@@ -4,21 +4,25 @@
 // Raw tier (default), one row per stored slot, exactly what store.Reader.Raw
 // returns:
 //
-//	target,kind,ts,rtt_ms,lost,reason
-//	github,https,2026-09-26T12:00:00.000Z,23.41,0,
-//	github,tcp,2026-09-26T12:00:15.000Z,,1,timeout
-//	github,icmp,2026-09-26T12:00:05.000Z,,,not measured
+//	target,kind,ts,rtt_ms,lost,reason,hop
+//	github,https,2026-09-26T12:00:00.000Z,23.41,0,,
+//	github,tcp,2026-09-26T12:00:15.000Z,,1,timeout,
+//	github,icmp,2026-09-26T12:00:05.000Z,,,not measured,
+//	github,trace,2026-09-26T12:00:00.000Z,8.2,0,,3
 //
 // rtt_ms is set only for measured slots; lost is 0 or 1, and empty for
 // not-measured slots (fyisp was stopped, the machine slept), which are not
-// losses. ts is the slot start in UTC with millisecond precision.
+// losses. ts is the slot start in UTC with millisecond precision. hop is the
+// TTL of a traceroute hop (kind trace) and empty for every other kind; it is
+// the last column so that v0.1 readers of the first six keep working.
 //
 // Hourly tier ("1h"), one row per series and hour with data:
 //
-//	target,kind,ts,n,lost,rtt_mean_ms,rtt_min_ms,rtt_max_ms
+//	target,kind,ts,n,lost,rtt_mean_ms,rtt_min_ms,rtt_max_ms,hop
 //
 // The SQLite format holds the same columns in a table named samples (raw;
-// ts is the column ts_utc, lost is NULL when not measured) or summary_1h.
+// ts is the column ts_utc, lost is NULL when not measured) or summary_1h;
+// hop is NULL for kinds other than trace.
 package export
 
 import (
@@ -63,8 +67,8 @@ type Options struct {
 
 // RawHeader and HourlyHeader are the CSV headers.
 var (
-	RawHeader    = []string{"target", "kind", "ts", "rtt_ms", "lost", "reason"}
-	HourlyHeader = []string{"target", "kind", "ts", "n", "lost", "rtt_mean_ms", "rtt_min_ms", "rtt_max_ms"}
+	RawHeader    = []string{"target", "kind", "ts", "rtt_ms", "lost", "reason", "hop"}
+	HourlyHeader = []string{"target", "kind", "ts", "n", "lost", "rtt_mean_ms", "rtt_min_ms", "rtt_max_ms", "hop"}
 )
 
 // Run exports to o.Output, or as CSV to stdout when o.Output is "" or "-".
@@ -90,9 +94,10 @@ func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
 		if err := cw.Write(RawHeader); err != nil {
 			return err
 		}
-		rec := make([]string, 6)
+		rec := make([]string, 7)
 		err = r.Raw(ctx, keys, o.From, o.To, func(p store.RawPoint) error {
 			rec[0], rec[1], rec[2] = p.Key.Target, p.Key.Kind.String(), p.TS.UTC().Format(TimeFormat)
+			rec[6] = hopText(p.Key)
 			switch {
 			case !p.Lost:
 				rec[3], rec[4], rec[5] = fmtMs(p.RTTms), "0", ""
@@ -110,7 +115,7 @@ func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
 		err = hourly(ctx, r, keys, o, func(h hourRow) error {
 			return cw.Write([]string{h.key.Target, h.key.Kind.String(), h.ts.Format(TimeFormat),
 				strconv.FormatUint(uint64(h.n), 10), strconv.FormatUint(uint64(h.lost), 10),
-				fmtMs32(h.mean), fmtMs32(h.min), fmtMs32(h.max)})
+				fmtMs32(h.mean), fmtMs32(h.min), fmtMs32(h.max), hopText(h.key)})
 		})
 	default:
 		return fmt.Errorf("export: unknown tier %q", o.Tier)
@@ -170,10 +175,10 @@ func writeSQLite(ctx context.Context, r store.Reader, path string, o Options) er
 	switch o.Tier {
 	case "", TierRaw:
 		if _, err := tx.ExecContext(ctx, `CREATE TABLE samples(target TEXT NOT NULL, kind TEXT NOT NULL, ts_utc TEXT NOT NULL,
-			rtt_ms REAL, lost INTEGER, reason TEXT)`); err != nil {
+			rtt_ms REAL, lost INTEGER, reason TEXT, hop INTEGER)`); err != nil {
 			return err
 		}
-		ins, err := tx.PrepareContext(ctx, `INSERT INTO samples VALUES(?,?,?,?,?,?)`)
+		ins, err := tx.PrepareContext(ctx, `INSERT INTO samples VALUES(?,?,?,?,?,?,?)`)
 		if err != nil {
 			return err
 		}
@@ -188,7 +193,7 @@ func writeSQLite(ctx context.Context, r store.Reader, path string, o Options) er
 			default:
 				lost, reason = 1, ReasonName(p.Reason)
 			}
-			_, err := ins.ExecContext(ctx, p.Key.Target, p.Key.Kind.String(), p.TS.UTC().Format(TimeFormat), rtt, lost, reason)
+			_, err := ins.ExecContext(ctx, p.Key.Target, p.Key.Kind.String(), p.TS.UTC().Format(TimeFormat), rtt, lost, reason, hopValue(p.Key))
 			return err
 		})
 		if err != nil {
@@ -196,17 +201,17 @@ func writeSQLite(ctx context.Context, r store.Reader, path string, o Options) er
 		}
 	case TierHourly:
 		if _, err := tx.ExecContext(ctx, `CREATE TABLE summary_1h(target TEXT NOT NULL, kind TEXT NOT NULL, ts_utc TEXT NOT NULL,
-			n INTEGER NOT NULL, lost INTEGER NOT NULL, rtt_mean_ms REAL, rtt_min_ms REAL, rtt_max_ms REAL)`); err != nil {
+			n INTEGER NOT NULL, lost INTEGER NOT NULL, rtt_mean_ms REAL, rtt_min_ms REAL, rtt_max_ms REAL, hop INTEGER)`); err != nil {
 			return err
 		}
-		ins, err := tx.PrepareContext(ctx, `INSERT INTO summary_1h VALUES(?,?,?,?,?,?,?,?)`)
+		ins, err := tx.PrepareContext(ctx, `INSERT INTO summary_1h VALUES(?,?,?,?,?,?,?,?,?)`)
 		if err != nil {
 			return err
 		}
 		defer ins.Close()
 		err = hourly(ctx, r, keys, o, func(h hourRow) error {
 			_, err := ins.ExecContext(ctx, h.key.Target, h.key.Kind.String(), h.ts.Format(TimeFormat), h.n, h.lost,
-				nullF(h.mean), nullF(h.min), nullF(h.max))
+				nullF(h.mean), nullF(h.min), nullF(h.max), hopValue(h.key))
 			return err
 		})
 		if err != nil {
@@ -297,6 +302,22 @@ func hourly(ctx context.Context, r store.Reader, keys []model.SeriesKey, o Optio
 		}
 	}
 	return nil
+}
+
+// hopText is the hop column: the TTL of a trace hop, else empty.
+func hopText(k model.SeriesKey) string {
+	if k.Kind != model.KindTrace {
+		return ""
+	}
+	return strconv.Itoa(int(k.Hop))
+}
+
+// hopValue is the SQLite hop column: the TTL of a trace hop, else NULL.
+func hopValue(k model.SeriesKey) any {
+	if k.Kind != model.KindTrace {
+		return nil
+	}
+	return int64(k.Hop)
 }
 
 // ReasonName is the reason column value: model.Reason.String(), except that
