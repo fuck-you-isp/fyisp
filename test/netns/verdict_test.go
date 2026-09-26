@@ -37,6 +37,9 @@ targets:
 const (
 	enterTimeout   = 150 * time.Second
 	recoverTimeout = 240 * time.Second
+	// A resolver outage while running shows after the next periodic lookup
+	// (every 60s) and a retry 10s later both fail, plus the hold above.
+	dnsEnterTimeout = 180 * time.Second
 )
 
 // Summaries are shown on the public link: no addresses, no lab host names.
@@ -93,8 +96,9 @@ func (h *harness) incidents(t *testing.T, from time.Time) ([]incidentAPI, []byte
 }
 
 // waitVerdict polls /api/verdict until its kind is want, logging every
-// change of kind on the way (brief other kinds are possible while a
-// window fills or drains).
+// change of kind on the way. While entering a problem (from ok or
+// warming_up), any other problem kind on the way is an error: the verdict
+// must name the faulty layer first.
 func (h *harness) waitVerdict(t *testing.T, want string, timeout time.Duration) (verdictAPI, []byte) {
 	t.Helper()
 	t0 := time.Now()
@@ -104,6 +108,9 @@ func (h *harness) waitVerdict(t *testing.T, want string, timeout time.Duration) 
 		if v.Kind != last {
 			t.Logf("  +%3.0fs verdict %s: %q", time.Since(t0).Seconds(), v.Kind, v.Summary)
 			last = v.Kind
+			if want != "ok" && v.Kind != want && v.Kind != "ok" && v.Kind != "warming_up" {
+				t.Errorf("verdict %s before %s: %s", v.Kind, want, raw)
+			}
 		}
 		checkSummary(t, "verdict", v.Summary)
 		if v.Kind == want {
@@ -140,13 +147,15 @@ func checkSummary(t *testing.T, what, s string) {
 //	c) netem loss 40% between gateway and ISP    -> isp
 //	d) anycast and most targets dropped          -> upstream
 //	f) one target dropped                        -> service [bravo]
-//	e) resolver unreachable                      -> dns [delta kilo]
+//	e) resolver unreachable while running        -> dns [delta kilo]
+//	e2) fyisp starting while it is unreachable   -> dns [delta kilo]
 //
-// Each fault must open an incident of its kind that is closed once the
-// verdict is back to ok. e runs last, in a second fyisp that starts while
-// the resolver is unreachable: fyisp keeps probing a host's last good
-// address when a later lookup fails (and re-resolves every 15 minutes), so
-// a resolver outage only shows for names that have not resolved yet.
+// Each fault must make its kind the first problem shown and the first
+// incident logged, and that incident must be closed once the verdict is
+// back to ok. e2 runs in a second fyisp. In e, the names resolved before
+// the outage: fyisp re-resolves every 60s and keeps the last good address
+// for one failed lookup, so the probes turn into DNS losses after the
+// second failed lookup.
 func TestVerdict(t *testing.T) {
 	h := newHarness(t)
 	h.profile = filepath.Join(h.dir, "verdict.yml")
@@ -182,11 +191,11 @@ func TestVerdict(t *testing.T) {
 		t.FailNow()
 	}
 
-	scenario := func(name, kind string, targets []string, apply, revert func()) {
+	scenario := func(name, kind string, targets []string, enter time.Duration, apply, revert func()) {
 		t.Run(name, func(t *testing.T) {
 			applied := time.Now()
 			apply()
-			v, raw := h.waitVerdict(t, kind, enterTimeout)
+			v, raw := h.waitVerdict(t, kind, enter)
 			t.Logf("entered %s after %s: %s", kind, time.Since(applied).Round(time.Second), strings.TrimSpace(string(raw)))
 			h.save(t, "verdict-"+name+".json", raw)
 			if targets != nil && !slices.Equal(v.Targets, targets) {
@@ -211,11 +220,13 @@ func TestVerdict(t *testing.T) {
 
 			list, rawList := h.incidents(t, applied.Add(-time.Minute))
 			h.save(t, "incidents-"+name+".json", rawList)
+			// The first incident that started under the fault (the list
+			// is newest first) must be of the expected kind.
 			var found *incidentAPI
 			for i, in := range list {
 				t.Logf("incident %s", in)
 				checkSummary(t, "incident", in.Summary)
-				if in.Kind == kind && found == nil {
+				if !in.Start.Before(applied.Add(-time.Second)) {
 					found = &list[i]
 				}
 				if in.End == nil {
@@ -225,6 +236,8 @@ func TestVerdict(t *testing.T) {
 			switch {
 			case found == nil:
 				t.Errorf("no %s incident recorded: %s", kind, rawList)
+			case found.Kind != kind:
+				t.Errorf("first incident under the fault is %s, want %s", found, kind)
 			case found.End == nil:
 				t.Errorf("%s incident not closed after recovery", kind)
 			case found.Start.Before(applied.Add(-time.Second)) || found.End.Before(reverted):
@@ -244,28 +257,31 @@ func TestVerdict(t *testing.T) {
 		})
 	}
 
-	scenario("b-lan", "lan", nil,
+	scenario("b-lan", "lan", nil, enterTimeout,
 		func() { h.nsRun(t, nsGW, "tc", "qdisc", "add", "dev", "g0", "root", "netem", "loss", "40%") },
 		func() { h.nsRun(t, nsGW, "tc", "qdisc", "del", "dev", "g0", "root") })
-	scenario("c-isp", "isp", nil,
+	scenario("c-isp", "isp", nil, enterTimeout,
 		func() { h.nsRun(t, nsISP, "tc", "qdisc", "add", "dev", "i0", "root", "netem", "loss", "40%") },
 		func() { h.nsRun(t, nsISP, "tc", "qdisc", "del", "dev", "i0", "root") })
-	scenario("d-upstream", "upstream", nil,
+	scenario("d-upstream", "upstream", nil, enterTimeout,
 		func() {
 			h.nft(t, "add rule inet fyt fault ip daddr { 1.1.1.1, 8.8.8.8, 9.9.9.9, 203.0.113.10, 203.0.113.11, 203.0.113.12 } drop")
 		},
 		func() { h.nft(t, "flush chain inet fyt fault") })
-	scenario("f-service", "service", []string{"bravo"},
+	scenario("f-service", "service", []string{"bravo"}, enterTimeout,
 		func() { h.nft(t, "add rule inet fyt fault ip daddr 203.0.113.11 drop") },
+		func() { h.nft(t, "flush chain inet fyt fault") })
+	scenario("e-dns-runtime", "dns", []string{"delta", "kilo"}, dnsEnterTimeout,
+		func() { h.nft(t, "add rule inet fyt fault ip daddr 203.0.113.53 drop") },
 		func() { h.nft(t, "flush chain inet fyt fault") })
 
 	h.stopFyisp(t, fy, 0)
 
-	// e) DNS: a fresh fyisp starts while the resolver is unreachable.
+	// e2) DNS: a fresh fyisp starts while the resolver is unreachable.
 	h.nft(t, "add rule inet fyt fault ip daddr 203.0.113.53 drop")
 	fy2 := h.startFyisp(t, "--ephemeral")
 	h.waitReady(t, fy2)
-	scenario("e-dns", "dns", []string{"delta", "kilo"},
+	scenario("e2-dns-at-start", "dns", []string{"delta", "kilo"}, enterTimeout,
 		func() {},
 		func() { h.nft(t, "flush chain inet fyt fault") })
 	h.stopFyisp(t, fy2, 0)

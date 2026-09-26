@@ -429,7 +429,9 @@ func newHarness(t *testing.T) *harness {
 	}
 	h.profile = filepath.Join(dir, "profile.yml")
 	mustWrite(t, h.profile, profileYAML)
-	mustWrite(t, filepath.Join(dir, "resolv.conf"), "nameserver "+dnsAddr.String()+"\noptions timeout:1 attempts:2\n")
+	// Three 1s attempts: under netem loss a lookup rarely fails, and two
+	// failed lookups in a row would turn delta's probes into DNS losses.
+	mustWrite(t, filepath.Join(dir, "resolv.conf"), "nameserver "+dnsAddr.String()+"\noptions timeout:1 attempts:3\n")
 	h.mkdirOwned(t, filepath.Join(dir, "home"), 0o700)
 	h.mkdirOwned(t, filepath.Join(dir, "tmp"), 0o700)
 
