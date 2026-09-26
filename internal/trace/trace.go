@@ -1,6 +1,11 @@
 // Package trace runs unprivileged traceroutes: always-on for targets marked
 // Trace in the profile, and on demand (Investigate) for any target. Each hop
 // becomes a KindTrace series; routes and route changes are reported.
+//
+// Hops that several traces share (the home gateway, the ISP's routers) are
+// measured once per round and that one measurement is reported in every
+// sharing trace's series, and each router gets at most Options.RouterRate
+// probes per second over all traces: see share.go.
 package trace
 
 import (
