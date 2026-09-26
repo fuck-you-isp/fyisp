@@ -1217,7 +1217,7 @@ class Investigate {
     const destRows = d.hops.filter((x) => x.hop === dest);
     const destLoss = destRows.reduce((m, x) => Math.max(m, x.loss), 0);
     const destAvg = destRows.find((x) => x.mean != null)?.mean;
-    const fake = d.hops.filter((x) => !x.loss_continues && x.loss >= REAL_LOSS && x.hop !== dest);
+    const fake = d.hops.filter((x) => !x.loss_continues && x.n > 0 && x.loss >= REAL_LOSS && x.hop !== dest);
     let kind = 'ok', head;
     if (rs) {
       const isp = !!(rs.asn && d.isp_asn && rs.asn === d.isp_asn);
@@ -1268,9 +1268,16 @@ class Investigate {
       const own = h('td', { class: 'own', 'data-label': 'Network' },
         hopOwner(x) ? h('span', { text: hopOwner(x) }) : h('span', { class: 'muted', text: x.private ? 'private network' : '—' }),
         isp ? h('span', { class: 'isp', title: 'Same network (ASN) as your ISP\'s first public hop', text: 'your ISP' }) : null);
+      // A router that never answers trace probes in this range is normal
+      // (many are configured that way): neutral "no reply", not 100% loss.
+      const silent = x.n === 0 && x.lost > 0 && x.hop !== dest;
       const lossCell = h('td', { class: 'loss', 'data-label': 'Loss' },
-        h('span', { class: 'lv' + (x.loss >= 0.05 ? ' bad' : x.loss >= REAL_LOSS ? ' warn' : ''), text: x.n + x.lost ? fmtPct(x.loss) : '—' }));
-      if (x.loss > 0 && x.loss_continues && x.loss >= REAL_LOSS) {
+        silent
+          ? h('span', { class: 'lv muted', title: 'This router does not answer trace probes. That is common and harmless: later hops still answer.', text: 'no reply' })
+          : h('span', { class: 'lv' + (x.loss >= 0.05 ? ' bad' : x.loss >= REAL_LOSS ? ' warn' : ''), text: x.n + x.lost ? fmtPct(x.loss) : '—' }));
+      if (silent) {
+        // nothing more to say
+      } else if (x.loss > 0 && x.loss_continues && x.loss >= REAL_LOSS) {
         lossCell.append(h('span', { class: 'lbadge real', title: 'Every later hop, up to the destination, loses at least as much: packets are really dropped here.', text: 'real loss, continues to destination' }));
       } else if (x.loss > 0 && !x.loss_continues && x.hop !== dest && !x.no_reply) {
         lossCell.append(h('span', { class: 'lnote', title: 'Later hops do not show this loss: the router only answers trace probes at a limited rate. Your traffic is not affected.', text: 'not real — router rate-limiting' }));
@@ -1284,7 +1291,7 @@ class Investigate {
         if (x.mean != null) { const t = h('span', { class: 'avg' }); t.style.left = pos(x.mean); bar.append(t); }
         if (x.max > top) bar.append(h('span', { class: 'over', title: `max ${fmtMs(x.max)} ms`, text: '›' }));
       }
-      const num = (/** @type {string} */ l, /** @type {number|null} */ v) => h('td', { class: 'num', 'data-label': l, text: fmtMs(v) });
+      const num = (/** @type {string} */ l, /** @type {number|null} */ v) => h('td', { class: 'num', 'data-label': l, text: x.n > 0 ? fmtMs(v) : '—' });
       const tr = h('tr', {
         class: (selected ? 'sel' : '') + (first ? '' : ' alt') + (x.hop === dest ? ' dest' : ''),
         tabindex: '0', 'aria-selected': String(selected),

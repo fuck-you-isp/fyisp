@@ -35,6 +35,12 @@ jobs:
             git checkout -- internal/asn/data
             echo "::warning::could not refresh the IP-to-ASN table; using the committed one"
           fi
+      # The image job builds with exactly this (tested) table.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: asn-table
+          path: internal/asn/data/
+          retention-days: 1
       - name: fmt, vet, test -race
         run: docker buildx build --target test .
       - name: launcher tests
@@ -98,6 +104,7 @@ jobs:
           gh release create "$VERSION" dist/* --verify-tag --title "fyisp $VERSION" --notes-file notes.md --generate-notes "${pre[@]}"
 
   image:
+    needs: binaries # reuse the IP-to-ASN table the binaries job tested
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,17 +119,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # Refresh the built-in IP-to-ASN table from iptoasn.com. If the download
-      # or conversion fails, the table committed in the repo is used instead.
-      # (Same step as in the binaries job, which also tests the fresh table.)
-      - name: refresh IP-to-ASN table
-        run: |
-          if timeout 600 docker buildx build --target asndb --output type=local,dest=. .; then
-            git diff --stat -- internal/asn/data
-          else
-            git checkout -- internal/asn/data
-            echo "::warning::could not refresh the IP-to-ASN table; using the committed one"
-          fi
+      # Same IP-to-ASN table as the released (and tested) binaries.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: asn-table
+          path: internal/asn/data/
       # The Dockerfile cross-compiles on the build platform and the image is
       # FROM scratch, so no QEMU is needed for the foreign platforms.
       - name: build and push
