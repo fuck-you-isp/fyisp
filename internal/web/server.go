@@ -112,6 +112,8 @@ const (
 	routeProfile
 	routePanel
 	routePanelCSV
+	routeVerdict
+	routeIncidents
 )
 
 func lookup(rel string) route {
@@ -126,6 +128,10 @@ func lookup(rel string) route {
 		return routePanel
 	case "api/panel.csv":
 		return routePanelCSV
+	case "api/verdict":
+		return routeVerdict
+	case "api/incidents":
+		return routeIncidents
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -155,6 +161,10 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		writeJSON(w, r, http.StatusOK, buildProfile(s.d.Profile()))
 	case routePanel, routePanelCSV:
 		s.servePanel(w, r, rt == routePanelCSV)
+	case routeVerdict:
+		s.serveVerdict(w, r)
+	case routeIncidents:
+		s.serveIncidents(w, r)
 	default:
 		http.NotFound(w, r)
 	}

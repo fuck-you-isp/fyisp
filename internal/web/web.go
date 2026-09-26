@@ -37,12 +37,14 @@ import (
 
 // Deps is everything the handlers need. Profile, Store and Status are
 // required; Metrics and Share may be nil (the routes then answer 404).
+// Verdict may be nil: the verdict banner and outage log are then hidden.
 type Deps struct {
 	Profile func() *model.Profile
 	Store   store.Reader
 	Status  func() Status
 	Metrics http.Handler
 	Share   ShareControl
+	Verdict VerdictSource // the verdict engine (internal/verdict.Engine)
 	Log     *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
