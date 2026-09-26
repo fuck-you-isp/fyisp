@@ -3,7 +3,7 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean}} TargetInfo */
 /** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
 /** @typedef {{target:string,kind:string,interval:number,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
@@ -49,8 +49,8 @@ const LAYERS = [
 /** @type {Object<string,string>} */
 const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
 
-/** @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean}} */
-const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false };
+/** @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, inv:string|null}} */
+const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false, inv: null };
 /** @type {any} */
 let status = null;
 /** @type {Panel[]} */
@@ -117,6 +117,7 @@ function themeChanged() {
   hatchPattern = null;
   for (const p of panels) p.render();
   renderLayers();
+  if (inv && state.inv) { inv.sig = ''; inv.render(); }
 }
 
 // ---------- colours ----------
@@ -202,6 +203,8 @@ function readHash() {
   const f = Number(p.get('from')), t = Number(p.get('to'));
   if (f > 0 && t > f) { state.from = f; state.to = t; } else { state.from = state.to = null; }
   state.log = p.get('o') === '1';
+  const ti = p.get('t');
+  state.inv = ti && traceOn ? ti : null;
   const k = p.get('k');
   if (k != null) {
     const ks = k.split(',').filter((x) => KINDS.includes(x));
@@ -214,6 +217,7 @@ function writeHash() {
   if (state.from != null && state.to != null) { p.set('from', String(state.from)); p.set('to', String(state.to)); }
   p.set('k', [...state.kinds].join(','));
   if (state.log) p.set('o', '1');
+  if (state.inv) p.set('t', state.inv);
   const s = '#' + p.toString();
   if (location.hash !== s) history.replaceState(null, '', s);
 }
@@ -308,8 +312,11 @@ class Panel {
     this.stripLegend = h('div', { class: 'strip-legend' });
     this.legend = h('ul', { class: 'legend', 'aria-label': `${group.title} targets` });
     this.layers = this.isPath ? h('ol', { class: 'layers', 'aria-label': 'Network path status' }) : null;
+    const pathTrace = this.isPath && traceOn && defaultTraceTarget()
+      ? h('button', { class: 'tbtn', type: 'button', title: 'Trace the path hop by hop: where does loss start?', text: 'Investigate path', onclick: () => openInvestigate(defaultTraceTarget()) })
+      : null;
     this.el = h('section', { class: this.isPath ? 'panel path' : 'panel', 'aria-label': group.title, id: 'panel-' + group.id },
-      h('div', { class: 'panel-head' }, h('h2', { text: group.title }), this.meta, this.csv),
+      h('div', { class: 'panel-head' }, h('h2', { text: group.title }), this.meta, pathTrace, this.csv),
       this.layers,
       this.chartEl,
       h('div', { class: 'strip-wrap' }, this.strip),
@@ -532,7 +539,8 @@ class Panel {
       sw,
       h('span', { class: 'name', text: t.name }),
       h('span', { class: 'val', text: cur }),
-      h('span', { class: 'loss' + (lossF > 0.005 ? ' bad' : ''), text: fmtPct(lossF) + ' loss' }));
+      h('span', { class: 'loss' + (lossF > 0.005 ? ' bad' : ''), text: fmtPct(lossF) + ' loss' }),
+      traceOn && t.trace ? traceButton(t.name, 'Trace') : null);
       items.push(li);
     }
     this.legend.replaceChildren(...items);
@@ -860,6 +868,637 @@ function incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
   return incidents.filter((inc) => Date.parse(inc.start) < to && (inc.end ? Date.parse(inc.end) : now) >= from);
 }
 
+// ---------- investigate (per-hop traces) ----------
+
+/** @typedef {{hop:number,ip?:string,no_reply?:boolean,private?:boolean,masked?:boolean,rdns?:string,asn?:number,owner?:string}} HopRef */
+/** @typedef {HopRef & {n:number,lost:number,loss:number,min:number|null,mean:number|null,max:number|null,p95:number|null,jitter:number|null,loss_continues:boolean}} HopRow */
+/** @typedef {{id:number,target:string,at:string,first_diff:number,from:HopRef[],to:HopRef[]}} RouteChange */
+/** @typedef {{target:string,traced:boolean,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigate_until?:number}} TraceData */
+
+const INV_REFRESH_MS = 5000;
+const KEEPALIVE_MS = 60000;
+const REAL_LOSS = 0.01; // loss below 1% is noise
+const INV_SYNC = 'fyisp-inv';
+
+let traceOn = false;
+/** @type {TargetInfo[]} */
+let allTargets = [];
+/** @type {Investigate|null} */
+let inv = null;
+
+function targetInfo(/** @type {string} */ name) { return allTargets.find((t) => t.name === name); }
+
+/** The target the path panel and path-level incidents open: a traced anycast target, else any traced one. */
+function defaultTraceTarget() {
+  const tr = allTargets.filter((t) => t.trace);
+  return (tr.find((t) => t.layer === 'anycast') || tr[0] || (MODE === 'local' ? allTargets.find((t) => !t.layer) : null) || { name: '' }).name;
+}
+
+/** The target an outage-log row offers to trace: the first affected one we can trace, else the path. */
+function incidentTraceTarget(/** @type {Incident} */ inc) {
+  if (!traceOn) return '';
+  for (const n of inc.targets || []) {
+    const t = targetInfo(n);
+    if (t && (t.trace || MODE === 'local')) return n;
+  }
+  return defaultTraceTarget();
+}
+
+function traceButton(/** @type {string} */ name, /** @type {string} */ label) {
+  return h('button', {
+    class: 'tbtn', type: 'button', title: `Investigate ${name} hop by hop`, text: label,
+    onclick: (/** @type {Event} */ e) => { e.stopPropagation(); openInvestigate(name); },
+    onkeydown: (/** @type {Event} */ e) => e.stopPropagation(),
+  });
+}
+
+function openInvestigate(/** @type {string} */ name) {
+  if (!traceOn || !inv || !name) return;
+  state.inv = name;
+  writeHash();
+  showView();
+  window.scrollTo({ top: 0 });
+  refreshAll();
+}
+function closeInvestigate() {
+  state.inv = null;
+  writeHash();
+  showView();
+  refreshAll();
+}
+/** Dashboard or Investigate view, per state.inv. */
+function showView() {
+  const on = !!(state.inv && inv);
+  document.body.classList.toggle('investigating', on);
+  if (inv) {
+    inv.el.hidden = !on;
+    if (on) inv.open(/** @type {string} */ (state.inv)); else inv.close();
+  }
+  updateRefreshLabel();
+}
+
+function hopAddr(/** @type {HopRef} */ x) {
+  if (x.no_reply) return 'no reply';
+  if (x.private) return x.ip || 'private hop';
+  return x.ip || '?';
+}
+function hopOwner(/** @type {HopRef} */ x) {
+  if (x.asn) return `AS${x.asn}` + (x.owner ? ` ${x.owner}` : '');
+  return x.owner || '';
+}
+/** One side of a route change: its network, or its address within one network. */
+function changeSide(/** @type {HopRef|undefined} */ x, /** @type {HopRef|undefined} */ other) {
+  if (!x) return 'nothing';
+  if (x.asn && (!other || other.asn !== x.asn)) return `AS${x.asn}` + (x.owner ? ` (${x.owner})` : '');
+  if (!x.asn && x.owner && (!other || other.owner !== x.owner)) return x.owner;
+  return hopAddr(x);
+}
+function hopColor(/** @type {number} */ hop) { return seriesColor(hop - 1); }
+
+class Investigate {
+  constructor() {
+    this.target = '';
+    /** @type {TraceData|null} */
+    this.data = null;
+    /** @type {PanelData|null} */
+    this.tl = null;
+    /** @type {Set<number>} */
+    this.sel = new Set();
+    this.userSel = false;
+    /** @type {any} */ this.rttU = null;
+    /** @type {any} */ this.lossU = null;
+    this.sig = '';
+    /** @type {AbortController|null} */
+    this.ctl = null;
+    this.lastPoke = 0;
+    this.poking = false;
+    this.invErr = '';
+    this.invUntil = 0;
+    this.hover = false;
+    /** @type {number[]} */
+    this.hops = [];
+    this.view = [0, 1];
+
+    this.picker = /** @type {HTMLSelectElement} */ (h('select', { class: 'inv-pick', 'aria-label': 'Target to investigate' }));
+    this.picker.addEventListener('change', () => openInvestigate(this.picker.value));
+    this.titleEl = h('h2', { text: 'Investigate' });
+    this.statusEl = h('span', { class: 'inv-status' });
+    this.summary = h('div', { class: 'inv-summary', 'aria-live': 'polite' });
+    this.tbody = h('tbody');
+    const cols = [['Hop', 'hn'], ['Address', 'addr'], ['Network', 'own'], ['Loss', 'loss'], ['Avg', 'num'], ['Min', 'num'], ['Max', 'num'], ['P95', 'num'], ['Jitter', 'num'], ['Latency (min–max, avg)', 'bar']];
+    this.table = h('table', { class: 'hops' },
+      h('thead', {}, h('tr', {}, ...cols.map(([t, c]) => h('th', { class: c, scope: 'col', text: t })))),
+      this.tbody);
+    this.tlMeta = h('span', { class: 'meta' });
+    this.rttEl = h('div', { class: 'chart inv-rtt' });
+    this.lossEl = h('div', { class: 'chart inv-loss' });
+    this.emptyEl = h('div', { class: 'empty', text: 'Loading…' });
+    this.rttEl.append(this.emptyEl);
+    this.chartLegend = h('ul', { class: 'legend inv-legend', 'aria-label': 'Hops on the timeline' });
+    this.changesEl = h('div', { class: 'inv-changes' });
+    this.el = h('section', { id: 'inv', class: 'inv', 'aria-label': 'Investigate a target hop by hop', hidden: true },
+      h('div', { class: 'inv-head' },
+        h('button', { class: 'btn', type: 'button', text: '← Dashboard', onclick: closeInvestigate }),
+        this.titleEl, this.picker, this.statusEl),
+      this.summary,
+      h('section', { class: 'panel', 'aria-label': 'Hops' },
+        h('div', { class: 'panel-head' }, h('h2', { text: 'Hops' }), h('span', { class: 'meta', text: 'Click a hop to add it to the timeline' })),
+        h('div', { class: 'hops-wrap' }, this.table)),
+      h('section', { class: 'panel', 'aria-label': 'Hop timeline' },
+        h('div', { class: 'panel-head' }, h('h2', { text: 'Timeline' }), this.tlMeta),
+        h('div', { class: 'inv-sub', text: 'Round-trip time (ms)' }),
+        this.rttEl,
+        h('div', { class: 'inv-sub', text: 'Loss (%)' }),
+        this.lossEl,
+        this.chartLegend),
+      h('section', { class: 'panel', 'aria-label': 'Route changes' },
+        h('div', { class: 'panel-head' }, h('h2', { text: 'Route changes' })),
+        this.changesEl),
+      h('details', { class: 'panel inv-help' },
+        h('summary', { text: 'How to read this' }),
+        h('p', { text: 'Each row is one router on the way to the destination (a hop), in order. Your router is hop 1; the rows marked "your ISP" belong to the same network as your ISP\'s first public hop.' }),
+        h('p', {}, h('b', { text: 'Loss that does not continue is not real. ' }),
+          'Routers forward your traffic in hardware but answer trace probes in software, at low priority and often rate-limited. A middle hop that drops replies while the hops after it (and the destination) do not is just busy answering: your traffic passes through it fine.'),
+        h('p', {}, h('b', { text: 'Real loss continues to the destination. ' }),
+          'When loss starts at one hop and every later hop shows at least as much, packets are really being dropped there, on that router or the link just before it. The first such hop is where to point the finger; if it is marked "your ISP", it is your ISP\'s network.'),
+        h('p', { text: 'Latency works the same way: a spike at one middle hop that later hops do not show is the router being slow to reply, not slow to forward. The latency bar shows each hop\'s min–max range with a tick at the average.' }),
+        MODE === 'public' ? h('p', { class: 'muted', text: 'Public view: addresses inside the home and the ISP\'s private network are hidden, the ISP\'s first public address is shortened, and router names are hidden for the first public hops.' }) : null));
+    new ResizeObserver(() => this.resize()).observe(this.rttEl);
+  }
+
+  /** @param {string} target */
+  open(target) {
+    if (target !== this.target) {
+      this.target = target;
+      this.data = null;
+      this.tl = null;
+      this.sel = new Set();
+      this.userSel = false;
+      this.invErr = '';
+      this.invUntil = 0;
+      this.lastPoke = 0;
+      this.tbody.replaceChildren();
+      this.summary.replaceChildren();
+      this.changesEl.replaceChildren();
+      this.chartLegend.replaceChildren();
+      this.emptyEl.textContent = 'Loading…';
+      this.emptyEl.hidden = false;
+      this.rttU?.destroy(); this.lossU?.destroy();
+      this.rttU = this.lossU = null;
+      this.sig = '';
+    }
+    this.fillPicker();
+    this.titleEl.textContent = 'Investigate';
+    this.renderStatus();
+    this.keepalive();
+  }
+
+  close() { this.ctl?.abort(); }
+
+  fillPicker() {
+    const opts = [];
+    const ok = (/** @type {TargetInfo} */ t) => t.trace || MODE === 'local';
+    const byGroup = new Map();
+    for (const p of panels) byGroup.set(p.group.id, p.group.title);
+    const groups = new Map();
+    for (const t of allTargets) {
+      if (!ok(t)) continue;
+      const g = byGroup.get(t.group) || t.group;
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(t);
+    }
+    const traced = allTargets.filter((t) => t.trace);
+    if (traced.length) {
+      opts.push(h('optgroup', { label: 'Always-on traces' }, ...traced.map((t) => h('option', { value: t.name, text: t.name }))));
+    }
+    if (MODE === 'local') {
+      for (const [g, ts] of groups) {
+        const rest = ts.filter((/** @type {TargetInfo} */ t) => !t.trace);
+        if (rest.length) opts.push(h('optgroup', { label: `${g} (on demand)` }, ...rest.map((/** @type {TargetInfo} */ t) => h('option', { value: t.name, text: t.name }))));
+      }
+    }
+    if (!allTargets.some((t) => t.name === this.target && ok(t))) opts.unshift(h('option', { value: this.target, text: this.target }));
+    this.picker.replaceChildren(...opts);
+    this.picker.value = this.target;
+  }
+
+  /** On-demand trace for a target without an always-on trace: POST now and every 60 s while open. */
+  keepalive() {
+    const t = targetInfo(this.target);
+    if (MODE !== 'local' || !t || t.trace || this.poking || document.hidden) return;
+    if (status && status.controls === 'disabled') {
+      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started without --admin-token';
+      this.renderStatus();
+      return;
+    }
+    if (Date.now() - this.lastPoke < KEEPALIVE_MS) return;
+    this.poke();
+  }
+
+  async poke() {
+    const target = this.target;
+    this.poking = true;
+    this.lastPoke = Date.now();
+    /** @type {Record<string,string>} */
+    const headers = { 'X-FYISP-Token': TOKEN };
+    if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+    try {
+      const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
+      if (target !== this.target) return;
+      this.invUntil = r.until;
+      this.invErr = '';
+    } catch (e) {
+      if (target !== this.target) return;
+      const err = /** @type {any} */ (e);
+      if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
+      this.invErr = err.message;
+    } finally {
+      this.poking = false;
+    }
+    this.renderStatus();
+  }
+
+  renderStatus() {
+    const t = targetInfo(this.target);
+    const d = this.data;
+    const kids = [];
+    if (t && t.trace) kids.push(h('span', { class: 'pill on', text: 'Always-on trace' }));
+    else if (MODE === 'local') {
+      if (this.invErr) kids.push(h('span', { class: 'pill err', text: `On-demand trace failed: ${this.invErr}` }));
+      else if (this.invUntil) kids.push(h('span', { class: 'pill on', title: 'The trace keeps running while this view is open, and stops about 2 minutes after you leave it.', text: 'On-demand trace running' }));
+      else kids.push(h('span', { class: 'pill', text: 'Starting on-demand trace…' }));
+    } else kids.push(h('span', { class: 'pill', text: 'No always-on trace for this target' }));
+    if (d && d.route) kids.push(h('span', { class: 'muted small', text: `route unchanged since ${fmtWhen(Date.parse(d.route.since))}` }));
+    this.statusEl.replaceChildren(...kids);
+  }
+
+  setView(/** @type {number} */ from, /** @type {number} */ to) {
+    this.view = [from / 1000, to / 1000];
+    for (const u of [this.rttU, this.lossU]) u?.setScale('x', { min: this.view[0], max: this.view[1] });
+  }
+
+  /** The destination: the last hop of the current route, else the deepest hop seen. */
+  dest() {
+    const d = this.data;
+    if (!d) return 0;
+    if (d.route && d.route.hops.length) return d.route.hops.length;
+    return d.hops.reduce((m, x) => Math.max(m, x.hop), 0);
+  }
+
+  /** The first hop whose loss is real (continues to the destination). */
+  realStart() {
+    const d = this.data;
+    if (!d) return null;
+    return d.hops.find((x) => x.loss_continues && x.loss >= REAL_LOSS) || null;
+  }
+
+  async load() {
+    if (!this.target) return;
+    this.ctl?.abort();
+    const ctl = this.ctl = new AbortController();
+    const target = this.target;
+    const { from, to } = queryRange();
+    this.rttEl.classList.add('loading');
+    try {
+      /** @type {TraceData} */
+      const d = await fetchJSON('api/trace?' + new URLSearchParams({ target, from, to }), { signal: ctl.signal });
+      if (ctl.signal.aborted || target !== this.target) return;
+      this.data = d;
+      if (d.investigate_until) this.invUntil = d.investigate_until;
+      const dest = this.dest();
+      if (!this.userSel) {
+        this.sel = new Set();
+        const rs = this.realStart();
+        if (rs && rs.hop !== dest) this.sel.add(rs.hop);
+      }
+      for (const x of [...this.sel]) if (x > Math.max(dest, 1)) this.sel.delete(x);
+      this.hops = [...new Set([...this.sel, dest])].filter((x) => x > 0).sort((a, b) => a - b);
+      this.renderTable();
+      this.renderSummary();
+      this.renderChanges();
+      this.renderStatus();
+      if (this.hops.length) {
+        const points = Math.min(1000, Math.max(50, Math.round(this.width() / 2)));
+        this.tl = await fetchJSON('api/trace/panel?' + new URLSearchParams({ target, hops: this.hops.join(','), from, to, points: String(points) }), { signal: ctl.signal });
+        if (ctl.signal.aborted || target !== this.target) return;
+      } else this.tl = null;
+      this.renderCharts();
+    } catch (e) {
+      if (/** @type {any} */ (e).name === 'AbortError') return;
+      this.emptyEl.textContent = `Could not load: ${/** @type {Error} */ (e).message}`;
+      this.emptyEl.hidden = false;
+    } finally {
+      if (this.ctl === ctl) this.rttEl.classList.remove('loading');
+    }
+  }
+
+  render() {
+    if (!this.data) return;
+    this.renderTable();
+    this.renderSummary();
+    this.renderChanges();
+    this.renderCharts();
+  }
+
+  /** The verdict-like one-liner above the table. */
+  renderSummary() {
+    const d = /** @type {TraceData} */ (this.data);
+    const dest = this.dest();
+    const kids = [];
+    if (!d.hops.length) {
+      const t = targetInfo(this.target);
+      const pending = MODE === 'local' && t && !t.trace && !this.invErr;
+      this.summary.className = 'inv-summary v-warming_up';
+      kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.' : 'No trace data in this range.' }));
+      this.summary.replaceChildren(...kids);
+      return;
+    }
+    const rs = this.realStart();
+    const destRows = d.hops.filter((x) => x.hop === dest);
+    const destLoss = destRows.reduce((m, x) => Math.max(m, x.loss), 0);
+    const destAvg = destRows.find((x) => x.mean != null)?.mean;
+    const fake = d.hops.filter((x) => !x.loss_continues && x.loss >= REAL_LOSS && x.hop !== dest);
+    let kind = 'ok', head;
+    if (rs) {
+      const isp = !!(rs.asn && d.isp_asn && rs.asn === d.isp_asn);
+      kind = isp ? 'isp' : 'upstream';
+      const net = hopOwner(rs) || hopAddr(rs);
+      head = `Real loss starts at hop ${rs.hop}${net ? ` (${net}${isp ? ', your ISP' : ''})` : ''} and continues to the destination: ${fmtPct(destLoss)} lost there.`;
+    } else if (destLoss >= REAL_LOSS) {
+      kind = 'service';
+      head = `The destination itself drops ${fmtPct(destLoss)} of probes, but no hop before it loses packets.`;
+    } else {
+      head = 'No real packet loss on this path in this range.';
+    }
+    this.summary.className = `inv-summary v-${kind}`;
+    kids.push(h('p', { class: 'is-head', text: head }));
+    const sub = [];
+    if (destAvg != null) sub.push(`Destination round trip ${fmtMs(destAvg)} ms on average.`);
+    if (fake.length) {
+      const list = fake.slice(0, 3).map((x) => `hop ${x.hop} (${fmtPct(x.loss)})`).join(', ');
+      sub.push(`${fake.length === 1 ? 'One hop drops' : `${fake.length} hops drop`} trace replies without it continuing: ${list}. That is router rate-limiting, not real loss.`);
+    }
+    if (sub.length) kids.push(h('p', { class: 'is-sub', text: sub.join(' ') }));
+    this.summary.replaceChildren(...kids);
+  }
+
+  renderTable() {
+    const d = /** @type {TraceData} */ (this.data);
+    const dest = this.dest();
+    const rows = [];
+    // Bar scale: up to the largest max, but not beyond 1.5x the largest P95 (one outlier would squash every bar).
+    let top = 0, p95 = 0;
+    for (const x of d.hops) { if (x.max != null) top = Math.max(top, x.max); if (x.p95 != null) p95 = Math.max(p95, x.p95); }
+    if (p95 > 0) top = Math.min(top, p95 * 1.5);
+    top = top > 0 ? top * 1.05 : 1;
+    const pos = (/** @type {number} */ v) => `${Math.min(100, Math.max(0, (v / top) * 100)).toFixed(2)}%`;
+    let lastHop = 0;
+    for (const x of d.hops) {
+      const first = x.hop !== lastHop;
+      lastHop = x.hop;
+      const selected = x.hop === dest || this.sel.has(x.hop);
+      const sw = h('span', { class: 'hsw' + (selected ? ' on' : '') });
+      if (selected) sw.style.background = hopColor(x.hop);
+      const isp = !!(x.asn && d.isp_asn && x.asn === d.isp_asn);
+      const addr = h('td', { class: 'addr', 'data-label': 'Address' },
+        h('div', { class: 'ip' + (x.private || x.no_reply ? ' muted' : ''), text: hopAddr(x) },
+          x.masked ? h('span', { class: 'masked', title: 'Shortened on the public link', text: ' (shortened)' }) : null,
+          x.private && MODE === 'local' ? h('span', { class: 'masked', text: ' private' }) : null),
+        x.rdns ? h('div', { class: 'rdns', title: x.rdns, text: x.rdns }) : null);
+      const own = h('td', { class: 'own', 'data-label': 'Network' },
+        hopOwner(x) ? h('span', { text: hopOwner(x) }) : h('span', { class: 'muted', text: x.private ? 'private network' : '—' }),
+        isp ? h('span', { class: 'isp', title: 'Same network (ASN) as your ISP\'s first public hop', text: 'your ISP' }) : null);
+      const lossCell = h('td', { class: 'loss', 'data-label': 'Loss' },
+        h('span', { class: 'lv' + (x.loss >= 0.05 ? ' bad' : x.loss >= REAL_LOSS ? ' warn' : ''), text: x.n + x.lost ? fmtPct(x.loss) : '—' }));
+      if (x.loss > 0 && x.loss_continues && x.loss >= REAL_LOSS) {
+        lossCell.append(h('span', { class: 'lbadge real', title: 'Every later hop, up to the destination, loses at least as much: packets are really dropped here.', text: 'real loss, continues to destination' }));
+      } else if (x.loss > 0 && !x.loss_continues && x.hop !== dest && !x.no_reply) {
+        lossCell.append(h('span', { class: 'lnote', title: 'Later hops do not show this loss: the router only answers trace probes at a limited rate. Your traffic is not affected.', text: 'not real — router rate-limiting' }));
+      }
+      const bar = h('div', { class: 'lbar' });
+      if (x.min != null && x.max != null) {
+        const rng = h('span', { class: 'rng' });
+        rng.style.left = pos(x.min);
+        rng.style.width = `calc(${pos(x.max)} - ${pos(x.min)} + 2px)`;
+        bar.append(rng);
+        if (x.mean != null) { const t = h('span', { class: 'avg' }); t.style.left = pos(x.mean); bar.append(t); }
+        if (x.max > top) bar.append(h('span', { class: 'over', title: `max ${fmtMs(x.max)} ms`, text: '›' }));
+      }
+      const num = (/** @type {string} */ l, /** @type {number|null} */ v) => h('td', { class: 'num', 'data-label': l, text: fmtMs(v) });
+      const tr = h('tr', {
+        class: (selected ? 'sel' : '') + (first ? '' : ' alt') + (x.hop === dest ? ' dest' : ''),
+        tabindex: '0', 'aria-selected': String(selected),
+        title: x.hop === dest ? 'The destination is always on the timeline' : selected ? 'Click to remove from the timeline' : 'Click to add to the timeline',
+        onclick: () => this.toggle(x.hop),
+        onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.toggle(x.hop); } },
+      },
+      h('td', { class: 'hn', 'data-label': 'Hop' }, sw, first ? String(x.hop) : ''),
+      addr, own, lossCell,
+      num('Avg', x.mean), num('Min', x.min), num('Max', x.max), num('P95', x.p95), num('Jitter', x.jitter),
+      h('td', { class: 'bar', 'data-label': 'Latency' }, bar));
+      rows.push(tr);
+    }
+    if (!rows.length) rows.push(h('tr', {}, h('td', { class: 'none muted', colspan: '10', text: 'No hops in this range.' })));
+    this.tbody.replaceChildren(...rows);
+  }
+
+  toggle(/** @type {number} */ hop) {
+    if (hop === this.dest()) return;
+    this.userSel = true;
+    if (this.sel.has(hop)) this.sel.delete(hop); else this.sel.add(hop);
+    this.renderTable();
+    this.load();
+  }
+
+  renderChanges() {
+    const d = /** @type {TraceData} */ (this.data);
+    if (!d.changes.length) {
+      this.changesEl.replaceChildren(h('p', { class: 'muted o-empty', text: 'No route changes in this range.' }));
+      return;
+    }
+    this.changesEl.replaceChildren(...d.changes.map((c) => {
+      const at = Date.parse(c.at);
+      const i = c.first_diff - 1;
+      const a = c.from[i], b = c.to[i];
+      return h('button', {
+        class: 'c-row', type: 'button', title: 'Zoom to this route change',
+        onclick: () => zoomTo(at - 15 * 60e3, Math.min(Date.now(), at + 15 * 60e3)),
+      },
+      h('span', { class: 'c-when', text: fmtWhen(at) }),
+      h('span', { class: 'c-what', text: `route changed at hop ${c.first_diff}: ${changeSide(a, b)} → ${changeSide(b, a)}` }),
+      h('span', { class: 'c-len muted', text: `${c.from.length} → ${c.to.length} hops` }));
+    }));
+  }
+
+  width() { return Math.max(200, this.rttEl.clientWidth); }
+
+  resize() {
+    const w = this.width();
+    for (const [u, ht] of [[this.rttU, 220], [this.lossU, 110]]) if (u && Math.abs(w - u.width) > 1) u.setSize({ width: w, height: ht });
+  }
+
+  renderCharts() {
+    const d = this.tl;
+    const td = this.data;
+    if (!d || !td) {
+      this.rttU?.destroy(); this.lossU?.destroy(); this.rttU = this.lossU = null; this.sig = '';
+      this.emptyEl.textContent = td && !td.hops.length ? 'No trace data in this range' : 'Loading…';
+      this.emptyEl.hidden = false;
+      this.chartLegend.replaceChildren();
+      return;
+    }
+    this.view = isRelative() ? [d.from / 1000, d.to / 1000] : [/** @type {number} */ (state.from) / 1000, /** @type {number} */ (state.to) / 1000];
+    this.tlMeta.textContent = `${fmtStep(d.step)} buckets`;
+    const xs = new Float64Array(d.len);
+    for (let i = 0; i < d.len; i++) xs[i] = (d.start + i * d.step) / 1000;
+    const series = d.series;
+    const rtt = [xs, ...series.map((s) => s.mean)];
+    const loss = [xs, ...series.map((s) => s.n.map((n, i) => (n + s.lost[i] ? (100 * s.lost[i]) / (n + s.lost[i]) : null)))];
+    const sig = effectiveTheme() + '|' + series.map((s) => /** @type {any} */ (s).hop).join(',');
+    if (!this.rttU || sig !== this.sig) {
+      this.rttU?.destroy(); this.lossU?.destroy();
+      this.emptyEl.remove();
+      this.rttU = this.makeChart(this.rttEl, series, rtt, 220, 'ms', false);
+      this.lossU = this.makeChart(this.lossEl, series, loss, 110, '%', true);
+      this.rttEl.append(this.emptyEl);
+      this.sig = sig;
+    } else {
+      this.rttU.setData(rtt);
+      this.lossU.setData(loss);
+    }
+    const any = series.some((s) => s.n.some((n) => n > 0) || s.lost.some((n) => n > 0));
+    this.emptyEl.textContent = any ? '' : 'No trace data in this range';
+    this.emptyEl.hidden = any;
+    const dest = this.dest();
+    const byHop = new Map(td.hops.map((x) => [x.hop, x]));
+    this.chartLegend.replaceChildren(...series.map((s) => {
+      const hop = /** @type {any} */ (s).hop;
+      const x = byHop.get(hop);
+      const sw = h('span', { class: 'sw' });
+      sw.style.background = hopColor(hop);
+      return h('li', {
+        title: hop === dest ? 'The destination is always shown' : 'Click to remove from the timeline',
+        tabindex: '0', role: 'button',
+        onclick: () => this.toggle(hop),
+        onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.toggle(hop); } },
+      }, sw,
+      h('span', { class: 'name', text: `Hop ${hop}${hop === dest ? ' · destination' : ''}` }),
+      h('span', { class: 'val', text: x ? hopAddr(x) : '' }));
+    }));
+  }
+
+  /**
+   * @param {HTMLElement} el @param {SeriesData[]} series @param {any[]} data
+   * @param {number} height @param {string} unit @param {boolean} isLoss
+   */
+  makeChart(el, series, data, height, unit, isLoss) {
+    const ink2 = css('--ink-2'), grid = css('--grid'), axis = css('--axis');
+    const font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+    const self = this;
+    const stepped = uPlot.paths && uPlot.paths.stepped ? uPlot.paths.stepped({ align: 1 }) : undefined;
+    const opts = {
+      width: this.width(),
+      height,
+      padding: [8, 8, 0, 0],
+      legend: { show: false },
+      scales: {
+        x: { time: true, range: () => self.view },
+        y: { range: (/** @type {any} */ u, /** @type {number} */ min, /** @type {number} */ max) => (isLoss ? [0, Math.max(10, Math.min(100, max * 1.15))] : [0, max > 0 ? max * 1.08 : 10]) },
+      },
+      axes: [
+        { stroke: ink2, font, grid: { stroke: grid, width: 1 }, ticks: { stroke: axis, width: 1, size: 4 } },
+        { stroke: ink2, font, size: 48, label: unit, labelSize: 14, labelFont: font, grid: { stroke: grid, width: 1 }, ticks: { stroke: axis, width: 1, size: 4 } },
+      ],
+      series: [{}, ...series.map((s) => {
+        const c = hopColor(/** @type {any} */ (s).hop);
+        return isLoss
+          ? { label: `hop ${/** @type {any} */ (s).hop}`, stroke: c, width: 1.25, fill: rgba(c, 0.12), paths: stepped, spanGaps: false, points: { show: false } }
+          : { label: `hop ${/** @type {any} */ (s).hop}`, stroke: c, width: 1.5, spanGaps: false, points: { show: false } };
+      })],
+      cursor: {
+        sync: { key: INV_SYNC, setSeries: false },
+        drag: { x: true, y: false, setScale: false },
+        points: { show: false },
+        bind: { dblclick: () => () => { resetZoom(); return null; } },
+      },
+      hooks: {
+        setSelect: [(/** @type {any} */ u) => {
+          const w = u.select.width;
+          if (w > 4) zoomTo(Math.round(u.posToVal(u.select.left, 'x') * 1000), Math.round(u.posToVal(u.select.left + w, 'x') * 1000));
+          u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
+        }],
+        setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
+        draw: [(/** @type {any} */ u) => self.drawChanges(u, !isLoss)],
+      },
+    };
+    const u = new uPlot(opts, data, el);
+    u.over.addEventListener('mouseenter', () => { self.hover = true; });
+    u.over.addEventListener('mouseleave', () => { self.hover = false; hideTip(); });
+    return u;
+  }
+
+  /** Route changes as dashed vertical lines (labelled on the RTT chart). */
+  drawChanges(/** @type {any} */ u, /** @type {boolean} */ label) {
+    const td = this.data;
+    if (!td || !td.changes.length) return;
+    const ctx = u.ctx;
+    const { left, top, width, height } = u.bbox;
+    const dpr = window.devicePixelRatio || 1;
+    const c = css('--v-upstream') || '#f09a3e';
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, top, width, height);
+    ctx.clip();
+    ctx.strokeStyle = c;
+    ctx.fillStyle = c;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.setLineDash([4 * dpr, 3 * dpr]);
+    ctx.font = `${11 * dpr}px system-ui, sans-serif`;
+    for (const ch of td.changes) {
+      const t = Date.parse(ch.at) / 1000;
+      if (t < u.scales.x.min || t > u.scales.x.max) continue;
+      const x = Math.round(u.valToPos(t, 'x', true)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, top + height);
+      ctx.stroke();
+      if (label) {
+        const txt = `route change (hop ${ch.first_diff})`;
+        const w = ctx.measureText(txt).width;
+        const tx = x + 4 * dpr + w > left + width ? x - 4 * dpr - w : x + 4 * dpr;
+        ctx.fillText(txt, tx, top + 12 * dpr);
+      }
+    }
+    ctx.restore();
+  }
+
+  onCursor(/** @type {any} */ u) {
+    if (!this.hover) return;
+    const d = this.tl;
+    const i = u.cursor.idx;
+    if (!d || i == null || u.cursor.left < 0) { hideTip(); return; }
+    const nodes = [h('div', { class: 't', text: fmtTime(d.start + i * d.step, d.to - d.from) })];
+    for (const s of d.series) {
+      const hop = /** @type {any} */ (s).hop;
+      const sw = h('span', { class: 'sw' });
+      sw.style.background = hopColor(hop);
+      const tot = s.n[i] + s.lost[i];
+      const rttTxt = s.mean[i] != null ? `${fmtMs(s.mean[i])} ms` : tot ? 'no reply' : 'no data';
+      nodes.push(h('div', { class: 'row' }, sw, h('span', { class: 'k', text: `hop ${hop}` }), `${rttTxt}${tot ? ` · ${fmtPct(s.lost[i] / tot)} loss` : ''}`));
+    }
+    const td = this.data;
+    if (td) {
+      const b0 = d.start + i * d.step, b1 = b0 + d.step;
+      for (const ch of td.changes) {
+        const t = Date.parse(ch.at);
+        if (t >= b0 && t < b1) nodes.push(h('div', { class: 'row inc' }, `route changed at hop ${ch.first_diff}`));
+      }
+    }
+    const rect = u.over.getBoundingClientRect();
+    showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
+  }
+}
+
 // ---------- zoom & refresh ----------
 
 function zoomTo(/** @type {number} */ from, /** @type {number} */ to) {
@@ -867,6 +1506,7 @@ function zoomTo(/** @type {number} */ from, /** @type {number} */ to) {
   state.from = Math.round(from); state.to = Math.round(to);
   writeHash();
   for (const p of panels) { p.view = [from / 1000, to / 1000]; p.u?.setScale('x', { min: p.view[0], max: p.view[1] }); }
+  inv?.setView(from, to);
   renderControls();
   refreshAll();
 }
@@ -883,7 +1523,8 @@ async function refreshAll() {
   refreshing = true;
   updateRefreshLabel();
   try {
-    await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), ...panels.map((p) => p.load())]);
+    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), inv.load()]);
+    else await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), ...panels.map((p) => p.load())]);
   } finally {
     refreshing = false;
     updateRefreshLabel();
@@ -992,7 +1633,7 @@ function renderOutages() {
     const a = Date.parse(inc.start), b = inc.end ? Date.parse(inc.end) : now;
     const info = VERDICTS[inc.kind] || { short: inc.kind };
     const kind = /^[a-z_]+$/.test(inc.kind) ? inc.kind : 'other';
-    return h('button', {
+    const row = h('button', {
       class: 'o-row' + (inc.end ? '' : ' ongoing'), type: 'button',
       title: 'Zoom all charts to this incident',
       onclick: () => zoomTo(a - 5 * 60e3, Math.min(Date.now(), b + 5 * 60e3)),
@@ -1002,6 +1643,13 @@ function renderOutages() {
     h('span', { class: `kbadge v-${kind}`, text: info.short }),
     h('span', { class: 'o-sum', text: inc.summary }),
     h('span', { class: 'o-peak', title: 'Worst one-minute loss', text: `peak ${fmtPct(inc.peak_loss)} loss` }));
+    const tt = incidentTraceTarget(inc);
+    if (!tt) return h('div', { class: 'o-item' }, row);
+    const tb = h('button', {
+      class: 'tbtn o-trace', type: 'button', title: `Trace ${tt} hop by hop during this incident`, text: `Trace ${tt}`,
+      onclick: () => { zoomTo(a - 5 * 60e3, Math.min(Date.now(), b + 5 * 60e3)); openInvestigate(tt); },
+    });
+    return h('div', { class: 'o-item' }, row, tb);
   }));
 }
 
@@ -1010,20 +1658,24 @@ function updateRefreshLabel() {
   if (refreshing) el.textContent = 'Updating…';
   else if (!isRelative()) el.textContent = 'Zoomed · auto-refresh off';
   else if (document.hidden) el.textContent = 'Paused';
-  else el.textContent = 'Auto-refresh 15s';
+  else el.textContent = `Auto-refresh ${refreshMs() / 1000}s`;
 }
+
+/** The Investigate view refreshes faster than the dashboard. */
+function refreshMs() { return state.inv ? INV_REFRESH_MS : REFRESH_MS; }
 
 setInterval(() => {
   if (document.hidden || refreshing) return;
-  if (isRelative() && Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+  if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   // The banner is always "now", even when zoomed; it is cheap to poll.
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
 }, 1000);
 document.addEventListener('visibilitychange', () => {
   updateRefreshLabel();
   if (document.hidden) return;
-  if (isRelative() && Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+  if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
+  if (inv && state.inv) inv.keepalive();
 });
 
 // ---------- header controls ----------
@@ -1178,10 +1830,13 @@ async function main() {
   const log = /** @type {HTMLDetailsElement} */ ($('#outages'));
   log.open = state.log;
   log.addEventListener('toggle', () => { if (state.log !== log.open) { state.log = log.open; writeHash(); } });
-  window.addEventListener('hashchange', () => { readHash(); log.open = state.log; renderControls(); refreshAll(); });
+  window.addEventListener('hashchange', () => { readHash(); log.open = state.log; renderControls(); showView(); refreshAll(); });
   renderShare();
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
+  traceOn = !!(prof.features && prof.features.trace);
+  allTargets = prof.targets;
+  readHash();
   if (status && status.caps && status.caps.icmp === 'unavailable') state.kinds.delete('icmp');
   if (!state.kinds.size) state.kinds.add('https');
   renderControls();
@@ -1194,6 +1849,11 @@ async function main() {
   panels = groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
   $('#panels').replaceChildren(...panels.map((p) => p.el));
   uPlot.sync(SYNC_KEY);
+  if (traceOn) {
+    inv = new Investigate();
+    $('#panels').after(inv.el);
+  }
+  showView();
   writeHash();
   await refreshAll();
 }
