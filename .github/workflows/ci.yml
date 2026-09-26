@@ -31,6 +31,11 @@ jobs:
           diff want got
       - name: cross-build release matrix
         run: docker buildx build --target dist --output type=local,dest=dist .
+      - name: launcher tests (run.sh, run.ps1) and systemd unit
+        run: |
+          docker buildx build --target launchertest .
+          docker buildx build --target launchertest-pwsh .
+          docker buildx build --target servicetest .
       - name: binary size budget (50 MB)
         run: |
           ls -l dist
@@ -41,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, macos-13]
+        os: [windows-latest, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
