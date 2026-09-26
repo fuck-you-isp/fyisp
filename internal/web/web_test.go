@@ -127,6 +127,7 @@ func fixture(t *testing.T, now time.Time) (*countingStore, Deps, *fakeShare) {
 		},
 		Metrics: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ping_rtt_seconds 1\n") }),
 		Share:   sh,
+		Verdict: cleanVerdict(now),
 	}
 	return cs, d, sh
 }
@@ -210,6 +211,7 @@ func TestPublicRedaction(t *testing.T) {
 	h := Public(d, testSecret)
 	base := "/s/" + testSecret + "/"
 	paths := []string{"", "api/status", "api/profile", "api/panel?group=common", "api/panel?group=lan&from=now-90d",
+		"api/verdict", "api/incidents", "api/incidents?from=now-90d", "api/incidents?from=x",
 		"api/panel.csv?group=lan", "static/app.js", "static/style.css", "nope", "api/panel?group=bad", "api/panel?from=x"}
 	check := func(p string) {
 		w := do(h, "GET", base+p, map[string]string{"Cf-Connecting-Ip": "198.51.100.7"})
@@ -379,7 +381,8 @@ func TestLocalRoutes(t *testing.T) {
 	for p, code := range map[string]int{
 		"/": 200, "/metrics": 200, "/api/status": 200, "/api/profile": 200, "/api/panel?group=lan": 200,
 		"/api/panel.csv?group=lan": 200, "/static/app.js": 200, "/debug/pprof/": 404, "/nope": 404,
-		"/static/index.html": 404, "/api/share/start": 405,
+		"/static/index.html": 404, "/api/share/start": 405, "/api/verdict": 200, "/api/incidents": 200,
+		"/api/verdict?from=now": 400, "/api/incidents?from=now&to=now-1h": 400,
 	} {
 		if w := do(h, "GET", p, host); w.Code != code {
 			t.Errorf("GET %s = %d, want %d", p, w.Code, code)

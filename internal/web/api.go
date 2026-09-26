@@ -673,8 +673,9 @@ func (pd *panelData) csvName() string {
 		pd.params.from.UTC().Format("20060102T150405Z"), pd.params.to.UTC().Format("20060102T150405Z"))
 }
 
-// profileJSON is /api/profile: names, groups and kinds only (never hosts,
-// ports or paths).
+// profileJSON is /api/profile: names, groups, kinds and path layers only
+// (never hosts, ports or paths; path targets' hosts such as "@gateway" are
+// resolved at runtime and never served either).
 type profileJSON struct {
 	Name    string          `json:"name"`
 	Groups  []groupJSON     `json:"groups"`
@@ -691,6 +692,7 @@ type targetSummary struct {
 	Group    string   `json:"group"`
 	Kinds    []string `json:"kinds"`
 	Interval int64    `json:"interval_ms"`
+	Layer    string   `json:"layer,omitempty"` // model.Layer* for path targets
 }
 
 func buildProfile(p *model.Profile) profileJSON {
@@ -711,6 +713,10 @@ func buildProfile(p *model.Profile) profileJSON {
 	}
 	for _, t := range p.Targets {
 		ts := targetSummary{Name: t.Name, Group: t.Group, Interval: intervalOf(t, model.KindHTTPS).Milliseconds()}
+		switch t.Layer {
+		case model.LayerGateway, model.LayerEdge, model.LayerAnycast:
+			ts.Layer = t.Layer
+		}
 		for _, k := range kindsOf(t) {
 			ts.Kinds = append(ts.Kinds, k.String())
 		}

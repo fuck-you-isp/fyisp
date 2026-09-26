@@ -29,11 +29,17 @@
   </div>
 </header>
 <div id="notices" class="notices" aria-live="polite"></div>
+<section id="verdict" class="verdict" aria-live="polite" aria-label="Current verdict" hidden></section>
+<details id="outages" class="outages" hidden>
+  <summary><span class="o-title">Outage log</span> <span id="outages-count" class="muted"></span></summary>
+  <div id="outages-list" class="o-list"></div>
+</details>
 <main id="panels" class="grid"></main>
 <div id="tip" class="tip" role="tooltip" hidden></div>
 <footer class="foot muted small">
   <span>Lines break where no probe succeeded. The strip under each chart shows lost samples by reason; grey hatching means not measured (fyisp was not running), which is not loss.</span>
   <span>Drag on a chart to zoom, double-click to reset. Click a legend entry to isolate it, Ctrl/Cmd-click to toggle.</span>
+  <span>Faint coloured bands on the charts mark incidents from the outage log; click an incident to zoom to it.</span>
 </footer>
 </body>
 </html>
