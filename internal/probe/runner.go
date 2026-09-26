@@ -19,8 +19,12 @@ import (
 )
 
 const (
-	defaultInterval  = 15 * time.Second
-	defaultTimeout   = time.Second
+	defaultInterval = 15 * time.Second
+	// defaultTimeout is the TCP/ICMP timeout: long enough that a slow
+	// success on a bufferbloated link is not recorded as loss, and below the
+	// default ICMP interval (5s). A series never waits longer than its
+	// interval: probes of one series run one at a time (schedule).
+	defaultTimeout   = 3 * time.Second
 	httpsTimeout     = 5 * time.Second
 	resolveTimeout   = 5 * time.Second
 	maxBody          = 64 << 10
@@ -65,6 +69,17 @@ func (r *runner) timeout(k model.ProbeKind) time.Duration {
 		return httpsTimeout
 	}
 	return defaultTimeout
+}
+
+// seriesTimeout is the timeout of one TCP/ICMP probe of s: the default is
+// capped at the series' interval, so a probe that times out does not also
+// skip the series' next slot.
+func (r *runner) seriesTimeout(s *series) time.Duration {
+	d := r.timeout(s.key.Kind)
+	if r.o.Timeout <= 0 && s.iv > 0 {
+		d = min(d, s.iv)
+	}
+	return d
 }
 
 // series is one (target, kind) and everything needed to probe it. Each
@@ -213,9 +228,9 @@ func (r *runner) probe(ctx context.Context, s *series, png pinger) model.Sample 
 	case model.KindHTTPS:
 		rtt, smp.Reused, reason, err = r.probeHTTPS(ctx, s)
 	case model.KindTCP:
-		rtt, reason, err = r.probeTCP(ctx, ip, s.port)
+		rtt, reason, err = r.probeTCP(ctx, ip, s.port, r.seriesTimeout(s))
 	case model.KindICMP:
-		rtt, reason, err = png.Ping(ctx, ip, s.idx, r.timeout(model.KindICMP))
+		rtt, reason, err = png.Ping(ctx, ip, s.idx, r.seriesTimeout(s))
 	}
 	if err != nil {
 		smp.Lost, smp.Reason, smp.Err = true, reason, err.Error()
@@ -225,8 +240,8 @@ func (r *runner) probe(ctx context.Context, s *series, png pinger) model.Sample 
 	return smp
 }
 
-func (r *runner) probeTCP(ctx context.Context, ip netip.Addr, port int) (time.Duration, model.Reason, error) {
-	d := net.Dialer{Timeout: r.timeout(model.KindTCP)}
+func (r *runner) probeTCP(ctx context.Context, ip netip.Addr, port int, timeout time.Duration) (time.Duration, model.Reason, error) {
+	d := net.Dialer{Timeout: timeout}
 	t0 := time.Now()
 	c, err := d.DialContext(ctx, "tcp4", netip.AddrPortFrom(ip, uint16(port)).String())
 	rtt := time.Since(t0)

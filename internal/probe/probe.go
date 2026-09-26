@@ -22,7 +22,7 @@ type Caps struct {
 
 // Options configures a Runner.
 type Options struct {
-	Timeout      time.Duration    // per probe; when zero: 1s for TCP/ICMP, 5s for HTTPS; when set: all kinds
+	Timeout      time.Duration    // per probe; when zero: 3s for TCP/ICMP (at most the interval), 5s for HTTPS; when set: all kinds
 	ResolveEvery time.Duration    // default 15m
 	RetryResolve time.Duration    // default 10s for unresolved hosts
 	Now          func() time.Time // wall clock for slot assignment; default time.Now
