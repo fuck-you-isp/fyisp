@@ -40,9 +40,21 @@ GCP-northamerica-northeast1 GCP-northamerica-northeast2 GCP-southamerica-east1 G
 GCP-europe-west3 GCP-europe-west4 GCP-europe-west6 GCP-europe-west8 GCP-europe-west9 GCP-europe-west10 GCP-europe-west12
 GCP-europe-north1 GCP-europe-southwest1 GCP-europe-central2`)
 
-// devProfile mirrors the default profile's 87 targets and 7 groups.
+// pathTargets mirror v0.2's network-path layers: the gateway and ISP edge
+// (hosts resolved at runtime) and three anycast resolvers.
+var pathTargets = []model.Target{
+	{Name: "Gateway", Host: model.HostGateway, Group: "path", Layer: model.LayerGateway, Kinds: []model.ProbeKind{model.KindICMP}},
+	{Name: "ISP-edge", Host: model.HostEdge, Group: "path", Layer: model.LayerEdge, Kinds: []model.ProbeKind{model.KindICMP}},
+	{Name: "Cloudflare-anycast", Host: "1.1.1.1", Group: "path", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
+	{Name: "Google-anycast", Host: "8.8.8.8", Group: "path", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
+	{Name: "Quad9-anycast", Host: "9.9.9.9", Group: "path", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
+}
+
+// devProfile mirrors the default profile's 87 targets and 7 groups, plus
+// the network-path group.
 func devProfile() *model.Profile {
 	p := &model.Profile{Name: "dev", Groups: []model.Group{
+		{ID: "path", Title: "Network path", Order: 0},
 		{ID: "common", Title: "Common Services (<100ms is good for audio/video calls)", Order: 1},
 		{ID: "dns", Title: "DNS", Order: 2},
 		{ID: "devtunnels", Title: "DevTunnels", Order: 3},
@@ -51,6 +63,10 @@ func devProfile() *model.Profile {
 		{ID: "hetzner", Title: "Hetzner", Order: 6},
 		{ID: "gcp", Title: "Google Cloud Platform", Order: 7},
 	}}
+	for _, t := range pathTargets {
+		t.Interval = 15 * time.Second
+		p.Targets = append(p.Targets, t)
+	}
 	for _, n := range names {
 		g := "common"
 		switch {
@@ -72,31 +88,63 @@ func devProfile() *model.Profile {
 	return p
 }
 
-// backfill writes synthetic history: a not-measured hole (fyisp "stopped")
-// and an outage with mixed reasons, so the UI has something to show.
+// Synthetic history windows, as fractions of the backfill range before now.
+// The ISP outage and the LAN blip match fakeVerdict's incidents.
+type window struct{ from, to time.Time }
+
+func (w window) has(t time.Time) bool { return !t.Before(w.from) && t.Before(w.to) }
+
+func windows(d time.Duration, now time.Time) (hole, isp, lan window) {
+	hole = window{now.Add(-d * 6 / 10), now.Add(-d*6/10 + d/20)}
+	isp = window{now.Add(-d * 3 / 10), now.Add(-d*3/10 + d/40)}
+	lan = window{now.Add(-d * 8 / 10), now.Add(-d*8/10 + d/80)}
+	return
+}
+
+func kindsOf(t model.Target) []model.ProbeKind {
+	if len(t.Kinds) > 0 {
+		return t.Kinds
+	}
+	return []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
+}
+
+// backfill writes synthetic history: a not-measured hole (fyisp "stopped"),
+// an ISP outage (gateway fine, everything past it lossy, mixed reasons) and
+// a short LAN blip (everything lossy), so the UI has something to show.
 func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time) {
 	r := mrand.New(mrand.NewPCG(1, 2))
-	holeFrom, holeTo := now.Add(-d*6/10), now.Add(-d*6/10+d/20)
-	outFrom, outTo := now.Add(-d*3/10), now.Add(-d*3/10+d/40)
+	hole, isp, lan := windows(d, now)
 	reasons := []model.Reason{model.ReasonTimeout, model.ReasonRefused, model.ReasonReset, model.ReasonDNS, model.ReasonTLS, model.ReasonUnreachable, model.ReasonNoNetwork}
 	for i, t := range p.Targets {
 		base := 5 + float64(i%30)*5
-		for _, k := range []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP} {
+		switch t.Layer {
+		case model.LayerGateway:
+			base = 1.5
+		case model.LayerEdge:
+			base = 7
+		case model.LayerAnycast:
+			base = 12 + float64(i%3)*2
+		}
+		for _, k := range kindsOf(t) {
 			iv := t.Interval
 			if k == model.KindICMP {
 				iv /= 3
 			}
 			for ts := now.Add(-d).Truncate(iv); ts.Before(now.Add(-2 * time.Second)); ts = ts.Add(iv) {
-				if !ts.Before(holeFrom) && ts.Before(holeTo) {
+				if hole.has(ts) {
 					continue
 				}
 				s := model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: k}, Slot: ts}
 				lossP := 0.003
-				if !ts.Before(outFrom) && ts.Before(outTo) {
+				reason := reasons[(i+int(k))%len(reasons)]
+				switch {
+				case isp.has(ts) && t.Layer != model.LayerGateway:
 					lossP = 0.6
+				case lan.has(ts):
+					lossP, reason = 0.8, model.ReasonTimeout
 				}
 				if r.Float64() < lossP {
-					s.Lost, s.Reason = true, reasons[(i+int(k))%len(reasons)]
+					s.Lost, s.Reason = true, reason
 				} else {
 					ms := base*(1+0.08*math.Sin(float64(ts.Unix())/900+float64(i))) + r.ExpFloat64()*1.5
 					if k == model.KindICMP {
@@ -162,6 +210,10 @@ func main() {
 	noICMP := flag.Bool("no-icmp", false, "report ICMP as unavailable")
 	admin := flag.String("admin-token", "", "admin token for share controls")
 	secret := flag.String("secret", "", "public path secret (random if empty)")
+	vCycle := flag.Duration("verdict-cycle", 20*time.Second, "how long each fake verdict kind lasts")
+	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, warming_up)")
+	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
+	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP-edge samples (shows \"discovering…\")")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -169,15 +221,26 @@ func main() {
 	defer stop()
 
 	p := devProfile()
+	// sink drops ISP-edge samples with -edge-undiscovered.
+	sink := func(inner model.Sink) model.Sink {
+		if !*noEdge {
+			return inner
+		}
+		return model.SinkFunc(func(s model.Sample) {
+			if s.Key.Target != "ISP-edge" {
+				inner.Observe(s)
+			}
+		})
+	}
 	st := store.NewFake()
 	var warm web.Warmup
 	now := time.Now()
 	if *bf > 0 {
 		log.Info("backfilling", "range", *bf)
-		backfill(st, p, *bf, now)
+		backfill(sink(st), p, *bf, now)
 	}
 	pr := &probe.Fake{Seed: 42, LossRate: *loss}
-	go func() { _ = pr.Run(ctx, p, model.Fanout{st, &warm}) }()
+	go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm})) }()
 
 	sec := *secret
 	if sec == "" {
@@ -201,6 +264,9 @@ func main() {
 		}),
 		Share: share,
 		Log:   log,
+	}
+	if !*noVerdict {
+		d.Verdict = newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge)
 	}
 	srv := func(addr string, h http.Handler) *http.Server {
 		return &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
