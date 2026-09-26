@@ -95,15 +95,16 @@ type baselineJSON struct {
 }
 
 type baselinesJSON struct {
-	Group  string         `json:"group"`
+	Group  string         `json:"group,omitempty"`
 	At     int64          `json:"at"`
 	Series []baselineJSON `json:"series"`
 }
 
 // serveBaselines answers /api/baselines?group=&at=: each series' normal
 // (median, p95, loss) as of `at` (default now), and the ratio of the mean
-// RTT over the BaselineNowWindow before `at` to the median. Numbers and
-// profile target names only; one store query.
+// RTT over the BaselineNowWindow before `at` to the median. Without group,
+// every group's series (the dashboard makes one request, not one per
+// panel). Numbers and profile target names only; one store query.
 func (s *server) serveBaselines(w http.ResponseWriter, r *http.Request) {
 	if s.d.Baselines == nil {
 		notFound(w, r)
@@ -115,8 +116,8 @@ func (s *server) serveBaselines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	group := q.Get("group")
-	if group == "" || len(group) > 64 {
-		writeErr(w, r, http.StatusBadRequest, "group is required")
+	if _, set := q["group"]; set && (group == "" || len(group) > 64) {
+		writeErr(w, r, http.StatusBadRequest, "bad group")
 		return
 	}
 	now := s.now()
@@ -147,9 +148,20 @@ func (s *server) serveBaselines(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) baselines(ctx context.Context, group string, when time.Time) (*baselinesJSON, error) {
-	_, series, _, err := resolveGroup(s.d.Profile(), group)
-	if err != nil {
-		return nil, errUnknownGroup
+	var series []panelSeries
+	if group == "" {
+		if p := s.d.Profile(); p != nil {
+			for _, t := range p.Targets {
+				for _, k := range kindsOf(t) {
+					series = append(series, panelSeries{key: model.SeriesKey{Target: t.Name, Kind: k}})
+				}
+			}
+		}
+	} else {
+		var err error
+		if _, series, _, err = resolveGroup(s.d.Profile(), group); err != nil {
+			return nil, errUnknownGroup
+		}
 	}
 	out := &baselinesJSON{Group: group, At: when.UnixMilli(), Series: []baselineJSON{}}
 	var keys []model.SeriesKey

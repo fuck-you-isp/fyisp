@@ -635,7 +635,7 @@ func TestBaselines(t *testing.T) {
 			p    string
 			code int
 		}{
-			{"api/baselines", 400}, {"api/baselines?group=nope", 404}, {"api/baselines?group=lan&at=x", 400},
+			{"api/baselines?group=", 400}, {"api/baselines?group=nope", 404}, {"api/baselines?group=lan&at=x", 400},
 			{"api/baselines?group=lan&x=1", 400}, {"api/baselines?group=lan&at=now-1h", 200},
 			{fmt.Sprintf("api/baselines?group=lan&at=%d", time.Now().Add(-time.Hour).UnixMilli()), 200},
 		} {
@@ -647,8 +647,14 @@ func TestBaselines(t *testing.T) {
 			t.Errorf("%s POST baselines = %d", tc.name, w.Code)
 		}
 	}
-	// An hour ago there was data (20 ms) too; long ago there was none.
+	// Without a group: every group's series in one response.
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
+	var all baselinesJSON
+	_ = json.Unmarshal(do(h, "GET", "/api/baselines", map[string]string{"Host": "127.0.0.1:3000"}).Body.Bytes(), &all)
+	if all.Group != "" || len(all.Series) != 3+1+3 { // Alpha 3 kinds, Beta 1, Router 3; NAS has none
+		t.Errorf("all baselines = %+v", all)
+	}
+	// Long ago there was no data: no ratio.
 	var b baselinesJSON
 	_ = json.Unmarshal(do(h, "GET", "/api/baselines?group=common&at=now-2d", map[string]string{"Host": "127.0.0.1:3000"}).Body.Bytes(), &b)
 	if len(b.Series) == 0 || b.Series[0].RatioNow != nil {

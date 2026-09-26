@@ -4,12 +4,15 @@
 // Two handlers share the same API code:
 //
 //   - Local is the owner's listener (default 127.0.0.1:3000). It adds /metrics
-//     and the POST routes that start and stop the public share link, protected
-//     by a Host allowlist, a same-origin check and a per-process CSRF token.
+//     and the write routes (share link, on-demand traces, notes, reports),
+//     protected by a Host allowlist, a same-origin check and a per-process
+//     CSRF token.
 //   - Public is the tunnel's origin. Everything lives under /s/<secret>/, only
 //     allowlisted GET/HEAD routes exist, requests are rate limited, panel
 //     queries are bounded and cached, and responses are redacted (no version,
-//     paths, LAN addresses or error strings).
+//     paths, LAN addresses or error strings). Private notes are never
+//     served; /s/<secret>/r/<id> serves a report snapshot only when it was
+//     built redacted and is marked public, under a strict CSP.
 //
 // The caller owns the http.Server. Recommended settings for both listeners:
 //

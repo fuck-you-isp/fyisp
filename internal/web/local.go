@@ -49,7 +49,9 @@ type localHandler struct {
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
-// /metrics, and POST /api/share/start|stop.
+// /metrics, and the write routes (POST /api/share/start|stop, POST
+// /api/investigate, POST/PUT/DELETE /api/annotations[/{id}] and
+// /api/reports[/{id}]), all behind controlAllowed.
 func Local(d Deps, o LocalOptions) http.Handler {
 	tok := o.CSRFToken
 	if tok == "" {
