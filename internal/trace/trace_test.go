@@ -35,6 +35,21 @@ type fakeNet struct {
 	inflight map[netip.Addr]int
 	maxIn    map[netip.Addr]int
 	delay    time.Duration
+
+	paths  map[netip.Addr][]string // per-destination routers (default: routers)
+	now    func() time.Time        // stamps log entries
+	log    []probeRec
+	jitter bool // RTT also grows with every probe sent: each measurement is unique
+	n      int  // probes sent
+}
+
+// probeRec is one probe the fake network saw.
+type probeRec struct {
+	at   time.Time
+	dst  netip.Addr
+	ttl  int
+	addr netip.Addr // who answered (invalid: nobody)
+	rtt  time.Duration
 }
 
 func newFakeNet(routers ...string) *fakeNet {
@@ -54,6 +69,26 @@ func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, _ time.Dur
 	f.inflight[dst]++
 	f.maxIn[dst] = max(f.maxIn[dst], f.inflight[dst])
 	routers, silent, err, delay := f.routers, f.silent[ttl], f.err, f.delay
+	if p, ok := f.paths[dst]; ok {
+		routers = p
+	}
+	f.n++
+	rtt := time.Duration(ttl) * time.Millisecond
+	if f.jitter {
+		rtt += time.Duration(f.n) * time.Microsecond
+	}
+	rec := probeRec{dst: dst, ttl: ttl, rtt: rtt}
+	if f.now != nil {
+		rec.at = f.now()
+	}
+	switch {
+	case err != nil || silent:
+	case ttl > len(routers):
+		rec.addr = dst
+	case routers[ttl-1] != "":
+		rec.addr = a(routers[ttl-1])
+	}
+	f.log = append(f.log, rec)
 	f.mu.Unlock()
 	defer func() { f.mu.Lock(); f.inflight[dst]--; f.mu.Unlock() }()
 	if delay > 0 {
@@ -68,7 +103,6 @@ func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, _ time.Dur
 	if silent {
 		return hops.Hop{}, nil
 	}
-	rtt := time.Duration(ttl) * time.Millisecond
 	if ttl > len(routers) {
 		return hops.Hop{Addr: dst, Reached: true, RTT: rtt}, nil
 	}
@@ -141,6 +175,9 @@ func roundTracer(t *testing.T, f *fakeNet, o Options) (*tracer, *target, *recSin
 	t.Helper()
 	o.Log = quiet()
 	o.open = func() (hops.Prober, error) { return f, nil }
+	if o.RouterRate == 0 {
+		o.RouterRate = -1 // rounds back to back: no per-router cap
+	}
 	if o.Now == nil {
 		// A clock that moves on every reading: rounds called back to back
 		// must not depend on the wall clock's resolution (about 0.5 ms on
@@ -397,6 +434,9 @@ func runTracer(t *testing.T, f *fakeNet, o Options, p *model.Profile) (*tracer, 
 	t.Helper()
 	o.Log = quiet()
 	o.open = func() (hops.Prober, error) { return f, nil }
+	if o.RouterRate == 0 {
+		o.RouterRate = -1 // intervals of milliseconds: no per-router cap
+	}
 	if o.ReverseDNS == nil {
 		o.ReverseDNS = func(context.Context, netip.Addr) string { return "" }
 	}

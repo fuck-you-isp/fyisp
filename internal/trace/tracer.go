@@ -28,6 +28,8 @@ const (
 	DefaultTimeout     = time.Second
 	DefaultParallel    = 4  // probes in flight per target
 	DefaultMaxInFlight = 32 // probes in flight in total
+	DefaultRouterRate  = 1  // probes per second per router
+	DefaultRevalidate  = 10 // rounds
 	resolveTimeout     = 5 * time.Second
 	rdnsTimeout        = time.Second
 	hopRefresh         = 24 * time.Hour
@@ -45,6 +47,16 @@ type Options struct {
 	Timeout     time.Duration // per hop (default 1s)
 	Parallel    int           // probes in flight per target (default 4)
 	MaxInFlight int           // probes in flight over all targets (default 32)
+
+	// RouterRate caps the probes answered by one router, over all traces
+	// (always-on and Investigate), per second (default 1; negative: no
+	// cap). A probe over the cap is not sent and its hop is not measured
+	// that round (see share.go).
+	RouterRate float64
+	// Revalidate: every Revalidate-th round, a trace probes its whole path
+	// itself instead of using hops shared with other traces (default 10;
+	// 1 never shares hops). See share.go.
+	Revalidate int
 
 	Now func() time.Time // wall clock for slots, route times and DNS refresh; default time.Now
 	Log *slog.Logger     // default slog.Default()
@@ -92,6 +104,12 @@ func newTracer(o Options) *tracer {
 	if o.MaxInFlight <= 0 {
 		o.MaxInFlight = DefaultMaxInFlight
 	}
+	if o.RouterRate == 0 {
+		o.RouterRate = DefaultRouterRate
+	}
+	if o.Revalidate <= 0 {
+		o.Revalidate = DefaultRevalidate
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -118,12 +136,16 @@ func newTracer(o Options) *tracer {
 	if o.open == nil {
 		o.open = hops.Open
 	}
-	return &tracer{o: o, inflight: make(chan struct{}, o.MaxInFlight)}
+	return &tracer{o: o, inflight: make(chan struct{}, o.MaxInFlight),
+		share: newShareCache(), lim: newLimiter(o.RouterRate)}
 }
 
 type tracer struct {
 	o        Options
 	inflight chan struct{} // global probe budget
+	share    *shareCache   // hops shared between traces (share.go)
+	lim      *limiter      // per-router probe cap (share.go)
+	gen      atomic.Uint64 // bumped on every route change: traces re-validate
 
 	mu      sync.Mutex
 	running bool
@@ -143,6 +165,7 @@ type target struct {
 	t     model.Target
 	host  string
 	phase float64 // fraction of the interval: spreads targets
+	idx   int     // profile order: staggers re-validation rounds
 	wake  chan struct{}
 
 	// tracer.mu
@@ -158,6 +181,10 @@ type target struct {
 	resolveAt time.Time // next lookup
 	resolving atomic.Bool
 	res       atomic.Pointer[resolution]
+	gen       uint64 // tracer.gen at the last round
+
+	umu  sync.Mutex
+	used map[int]time.Time // TTL -> time of the newest measurement emitted
 
 	rmu      sync.Mutex
 	hasRoute bool
@@ -199,8 +226,8 @@ func (tr *tracer) Run(ctx context.Context, p *model.Profile, sink Sink) error {
 	for i, t := range p.Targets {
 		tr.targets[t.Name] = &target{
 			t: t, host: t.HostFor(model.KindICMP),
-			phase: float64(i) / float64(len(p.Targets)),
-			wake:  make(chan struct{}, 1), sessions: map[uint64]time.Time{},
+			phase: float64(i) / float64(len(p.Targets)), idx: i,
+			wake: make(chan struct{}, 1), sessions: map[uint64]time.Time{},
 		}
 	}
 	n := 0
@@ -211,7 +238,8 @@ func (tr *tracer) Run(ctx context.Context, p *model.Profile, sink Sink) error {
 		}
 	}
 	tr.mu.Unlock()
-	tr.o.Log.Info("tracing", "targets", n, "interval", tr.o.Interval, "max_hops", tr.o.MaxHops)
+	tr.o.Log.Info("tracing", "targets", n, "interval", tr.o.Interval, "max_hops", tr.o.MaxHops,
+		"router_rate", tr.o.RouterRate, "revalidate", tr.o.Revalidate)
 
 	hopsDone := make(chan struct{})
 	go func() { defer close(hopsDone); tr.hops.run(ctx) }()
@@ -457,8 +485,75 @@ func (tr *tracer) resolve(ctx context.Context, st *target) {
 
 // hopResult is the outcome of one TTL in a round.
 type hopResult struct {
-	h   hops.Hop
-	err error
+	h       hops.Hop
+	err     error
+	skipped bool // not probed (router cap): not measured
+}
+
+// plan is what a round needs to probe: where, for which slot, and what the
+// target's route says about each TTL.
+type plan struct {
+	st       *target
+	dst      netip.Addr
+	from, to time.Time    // the slot's window: [slot, slot+interval)
+	hops     []netip.Addr // the route, when it leads to dst (else nil): hops[k-1] is TTL k
+	full     bool         // probe every TTL (re-validation): do not use others' measurements
+}
+
+// within returns t moved into p's window.
+func (p *plan) within(t time.Time) time.Time {
+	if t.Before(p.from) {
+		return p.from
+	}
+	if !t.Before(p.to) {
+		return p.to.Add(-time.Nanosecond)
+	}
+	return t
+}
+
+// dstTTL is the destination's TTL (0: unknown).
+func (p *plan) dstTTL() int { return len(p.hops) }
+
+// shareKey returns the prefix key of ttl, if ttl may be shared (before the
+// known destination).
+func (p *plan) shareKey(ttl int) (string, bool) {
+	if ttl >= p.dstTTL() {
+		return "", false
+	}
+	return prefixKey(p.hops[:ttl]), true
+}
+
+// limitKey returns the budget a probe at ttl is charged to; exempt: the
+// destination answers it (not capped).
+func (p *plan) limitKey(tr *tracer, ttl int) (k limitKey, exempt bool) {
+	if n := p.dstTTL(); n > 0 {
+		if ttl >= n {
+			return limitKey{}, true
+		}
+		if a := p.hops[ttl-1]; a.IsValid() {
+			return limitKey{addr: a}, a == p.dst
+		}
+	}
+	if a := tr.lim.predict(ttl); a.IsValid() {
+		return limitKey{addr: a}, a == p.dst
+	}
+	return limitKey{ttl: ttl}, false
+}
+
+// use records that st emits a measurement of ttl made at at; false (and
+// nothing recorded) if st already emitted one made at or after at, so that
+// one measurement never fills two slots of a series.
+func (st *target) use(ttl int, at time.Time) bool {
+	st.umu.Lock()
+	defer st.umu.Unlock()
+	if last, ok := st.used[ttl]; ok && !at.After(last) {
+		return false
+	}
+	if st.used == nil {
+		st.used = map[int]time.Time{}
+	}
+	st.used[ttl] = at
+	return true
 }
 
 // round traces st once and reports samples, hop sightings and the route.
@@ -468,7 +563,28 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 		tr.o.Log.Debug("trace: skipping round", "target", st.t.Name, "err", err)
 		return
 	}
-	res := tr.probeAll(ctx, dst)
+	tr.mu.Lock()
+	iv := st.curIv
+	tr.mu.Unlock()
+	if iv <= 0 {
+		iv = tr.o.Interval
+	}
+	p := &plan{st: st, dst: dst, from: slot, to: slot.Add(iv)}
+	st.rmu.Lock()
+	if st.hasRoute && st.dst == dst {
+		if h := st.route.Hops; len(h) > 0 && h[len(h)-1] == dst {
+			p.hops = slices.Clone(h)
+		}
+	}
+	pending := st.pending != nil
+	st.rmu.Unlock()
+	gen := tr.gen.Load()
+	rv := int64(tr.o.Revalidate)
+	turn := (slot.UnixNano()/int64(iv) + int64(st.idx)) % rv
+	p.full = p.hops == nil || pending || st.gen != gen || turn == 0 || turn == -rv
+	st.gen = gen
+
+	res := tr.probeAll(ctx, p)
 	if ctx.Err() != nil {
 		return // cancelled mid-round: not measured
 	}
@@ -495,6 +611,12 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 			}
 		}
 	}
+	if end > 0 && (p.dstTTL() == 0 || end < p.dstTTL()) && skipped(res, 1, end) {
+		// A TTL before the answer was not probed (router cap), and nothing
+		// says it was not the destination: the route's length is unknown.
+		tr.o.Log.Debug("trace: round incomplete (router cap)", "target", st.t.Name)
+		return
+	}
 	if end > 0 {
 		// The destination answers every TTL from its own on. If the probe
 		// at its known TTL got lost, a higher TTL may still reach it: that
@@ -520,6 +642,9 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 	addrs := make([]netip.Addr, n)
 	for ttl := 1; ttl <= n; ttl++ {
 		r := res[ttl]
+		if r.skipped {
+			continue // not measured: no sample
+		}
 		s := model.Sample{Key: model.SeriesKey{Target: st.t.Name, Kind: model.KindTrace, Hop: uint8(ttl)}, Slot: slot}
 		switch {
 		case r.h.Addr.IsValid():
@@ -533,23 +658,34 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 		}
 		sink.Observe(s)
 	}
-	tr.updateRoute(st, addrs)
+	tr.updateRoute(st, addrs, skipped(res, 1, n+1))
 }
 
-// probeAll sends TTL 1.. towards dst, at most Parallel at a time per target
-// and MaxInFlight overall, until the destination (or an unreachable) answers
-// or MaxHops. res[ttl] is the answer for ttl; res[0] is unused.
-func (tr *tracer) probeAll(ctx context.Context, dst netip.Addr) []hopResult {
+// probeAll sends TTL 1.. towards p.dst, at most Parallel at a time per
+// target and MaxInFlight overall, until the destination (or an unreachable)
+// answers or MaxHops. res[ttl] is the answer for ttl; res[0] is unused.
+func (tr *tracer) probeAll(ctx context.Context, p *plan) []hopResult {
 	res := make([]hopResult, tr.o.MaxHops+1)
 	var stop atomic.Int32 // lowest TTL that ended the route
 	stop.Store(int32(tr.o.MaxHops + 1))
 	per := make(chan struct{}, tr.o.Parallel)
 	var wg sync.WaitGroup
-	tr.mu.Lock()
-	pr := tr.prober
-	tr.mu.Unlock()
+	// With a known destination TTL, TTLs past it are sent only once it
+	// did not answer (it answers them all).
+	d := p.dstTTL()
+	dstDone := make(chan struct{})
 launch:
 	for ttl := 1; ttl <= tr.o.MaxHops; ttl++ {
+		if d > 0 && ttl == d+1 {
+			select {
+			case <-dstDone:
+			case <-ctx.Done():
+				break launch
+			}
+			if int32(ttl) > stop.Load() {
+				break
+			}
+		}
 		select {
 		case per <- struct{}{}:
 		case <-ctx.Done():
@@ -569,12 +705,12 @@ launch:
 		wg.Add(1)
 		go func() {
 			defer func() { <-tr.inflight; <-per; wg.Done() }()
-			h, err := pr.Probe(ctx, dst, ttl, tr.o.Timeout)
-			if h.Addr.IsValid() {
-				h.Addr = h.Addr.Unmap()
+			if ttl == d {
+				defer close(dstDone)
 			}
-			res[ttl] = hopResult{h: h, err: err}
-			if h.Addr.IsValid() && (h.Reached || h.Unreach) {
+			r := tr.hop(ctx, p, ttl)
+			res[ttl] = r
+			if h := r.h; h.Addr.IsValid() && (h.Reached || h.Unreach) {
 				for {
 					cur := stop.Load()
 					if int32(ttl) >= cur || stop.CompareAndSwap(cur, int32(ttl)) {
@@ -591,6 +727,115 @@ launch:
 		res[ttl] = hopResult{}
 	}
 	return res
+}
+
+// hop measures ttl for p: a measurement shared by another trace in this slot
+// when p's prefix allows, else a probe of its own (capped per router), else
+// a recent measurement of the same hop, else nothing (skipped). See share.go.
+func (tr *tracer) hop(ctx context.Context, p *plan, ttl int) hopResult {
+	key, share := p.shareKey(ttl)
+	var r hopResult
+	var at time.Time
+	sent := false
+	for share {
+		sp, owner := tr.share.claim(key, p.from, p.to, tr.o.Now())
+		if owner {
+			r, at = tr.send(ctx, p, ttl, sp.at)
+			sp.finish(r, !r.skipped && agrees(r, p.hops[ttl-1]))
+			sent = true
+			break
+		}
+		if p.full {
+			break
+		}
+		select {
+		case <-sp.done:
+		case <-ctx.Done():
+			return hopResult{skipped: true}
+		}
+		if !sp.ok {
+			continue // not shareable: claim again (probe it, or use another's)
+		}
+		if p.st.use(ttl, sp.at) {
+			return sp.res
+		}
+		break
+	}
+	if !sent {
+		r, at = tr.send(ctx, p, ttl, time.Time{})
+	}
+	if !r.skipped {
+		p.st.use(ttl, at)
+		return r
+	}
+	// Over the cap: a measurement of this hop made since the slot started
+	// or within the cap's interval stands in, if not emitted yet.
+	since := tr.o.Now().Add(-tr.lim.maxAge())
+	if p.from.Before(since) {
+		since = p.from
+	}
+	var sp *shareProbe
+	if share {
+		sp = tr.share.recent(key, since)
+	}
+	if k, _ := p.limitKey(tr, ttl); sp == nil && k.addr.IsValid() && k.addr != p.dst {
+		sp = tr.share.recentRouter(ttl, k.addr, since)
+	}
+	if sp != nil && p.st.use(ttl, sp.at) {
+		r = sp.res
+	}
+	return r
+}
+
+// agrees reports whether r may stand for every trace whose route has expect
+// at that TTL: expect answered, or nothing did.
+func agrees(r hopResult, expect netip.Addr) bool {
+	if r.err != nil || r.h.Reached || r.h.Unreach {
+		return false
+	}
+	return !r.h.Addr.IsValid() || r.h.Addr == expect
+}
+
+// send probes ttl towards p.dst unless the router cap refuses (skipped). at
+// is the time the measurement is filed under (within p's window); zero: now.
+func (tr *tracer) send(ctx context.Context, p *plan, ttl int, at time.Time) (hopResult, time.Time) {
+	now := tr.o.Now()
+	if at.IsZero() {
+		at = p.within(now)
+	}
+	k, exempt := p.limitKey(tr, ttl)
+	var keys []limitKey
+	if !exempt {
+		var ok bool
+		if keys, ok = tr.lim.take(k, now); !ok {
+			return hopResult{skipped: true}, at
+		}
+	}
+	tr.mu.Lock()
+	pr := tr.prober
+	tr.mu.Unlock()
+	h, err := pr.Probe(ctx, p.dst, ttl, tr.o.Timeout)
+	if h.Addr.IsValid() {
+		h.Addr = h.Addr.Unmap()
+	}
+	r := hopResult{h: h, err: err}
+	if h.Addr.IsValid() && !h.Reached {
+		tr.lim.answered(ttl, k.addr, h.Addr, keys, now)
+		if !h.Unreach {
+			tr.share.answered(ttl, r, at)
+		}
+	}
+	return r, at
+}
+
+// skipped reports whether a TTL in [from, to) was not probed.
+func skipped(res []hopResult, from, to int) bool {
+	for ttl := max(from, 1); ttl < to && ttl < len(res); ttl++ {
+		if res[ttl].skipped {
+			return true
+		}
+	}
+	return false
 }
 
 // silent reports whether no TTL in [from, to) answered.
@@ -614,8 +859,10 @@ func reasonOf(err error) model.Reason {
 }
 
 // updateRoute compares a round's hops with st's route. A different route
-// (see firstDiff) replaces it once it was seen in 2 consecutive rounds.
-func (tr *tracer) updateRoute(st *target, obs []netip.Addr) {
+// (see firstDiff) replaces it once it was seen in 2 consecutive rounds. A
+// round with hops that were not measured (partial) that fits both the route
+// and a pending different route neither confirms nor drops the pending one.
+func (tr *tracer) updateRoute(st *target, obs []netip.Addr, partial bool) {
 	now := tr.o.Now()
 	var change *model.RouteChange
 	st.rmu.Lock()
@@ -626,7 +873,9 @@ func (tr *tracer) updateRoute(st *target, obs []netip.Addr) {
 		st.pending = nil
 	case firstDiff(st.route.Hops, obs) == 0:
 		st.route.Hops = merge(st.route.Hops, obs)
-		st.pending = nil
+		if !partial || st.pending == nil || firstDiff(st.pending, obs) != 0 {
+			st.pending = nil
+		}
 	case st.pending != nil && firstDiff(st.pending, obs) == 0:
 		to := merge(st.pending, obs)
 		change = &model.RouteChange{Target: st.t.Name, At: now, From: slices.Clone(st.route.Hops), To: slices.Clone(to),
@@ -640,6 +889,7 @@ func (tr *tracer) updateRoute(st *target, obs []netip.Addr) {
 	r.Hops = slices.Clone(r.Hops)
 	st.rmu.Unlock()
 	if change != nil {
+		tr.gen.Add(1) // every trace re-validates its path (share.go)
 		tr.o.Log.Info("trace: route changed", "target", change.Target, "first_diff", change.FirstDiff,
 			"from_hops", len(change.From), "to_hops", len(change.To))
 		tr.sink.ObserveRouteChange(*change)
