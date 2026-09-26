@@ -237,3 +237,41 @@ type RouteChange struct {
 	// FirstDiff is the first TTL (1-based) that differs.
 	FirstDiff int `json:"first_diff"`
 }
+
+// Annotation is a user note on the timeline (e.g. "call dropped", "ISP ticket
+// opened"). End is zero for a point in time. Public notes are shown on the
+// public link; all notes can be included in reports.
+type Annotation struct {
+	ID      int64     `json:"id"`
+	At      time.Time `json:"at"`
+	End     time.Time `json:"end,omitempty"`
+	Text    string    `json:"text"`
+	Public  bool      `json:"public"`
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
+}
+
+// Baseline is a series' "normal" from its own recent history (default the
+// past 7 days, excluding the current hour). When HourOfDay is true the values
+// are for the same UTC hour of day as the time asked about.
+type Baseline struct {
+	Key       SeriesKey `json:"key"`
+	MedianMs  float64   `json:"median_ms"`
+	P95Ms     float64   `json:"p95_ms"`
+	Loss      float64   `json:"loss"` // fraction
+	Samples   int64     `json:"samples"`
+	HourOfDay bool      `json:"hour_of_day"`
+	From      time.Time `json:"from"`
+	To        time.Time `json:"to"`
+}
+
+// ReportMeta describes a stored evidence report snapshot.
+type ReportMeta struct {
+	ID      string    `json:"id"` // random, URL-safe
+	Title   string    `json:"title"`
+	From    time.Time `json:"from"`
+	To      time.Time `json:"to"`
+	Created time.Time `json:"created"`
+	Public  bool      `json:"public"` // served on the public link (redacted snapshot)
+	Bytes   int       `json:"bytes"`
+}
