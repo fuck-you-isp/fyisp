@@ -14,7 +14,7 @@ import (
 )
 
 // verdictProfileYAML keeps the built-in network path group (gateway, ISP
-// edge, the three anycast resolvers, which live on fyt-inet's loopback in
+// edge, the three anycast resolvers, which live on the internet namespace's loopback in
 // the lab). The internet targets: three IP literals and two names served by
 // the test resolver, in two groups.
 const verdictProfileYAML = `name: netns-verdict
@@ -45,7 +45,7 @@ const (
 // Summaries are shown on the public link: no addresses, no lab host names.
 var (
 	ipPattern = regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	labNames  = []string{"fyisp.test", dnsName, dnsName2, "fyt-", nsClient, nsGW, nsISP, nsInet}
+	labNames  = []string{"fyisp.test", dnsName, dnsName2, nsPrefix} // every namespace name starts with nsPrefix
 )
 
 type verdictAPI struct {
@@ -150,28 +150,21 @@ func checkSummary(t *testing.T, what, s string) {
 //	e) resolver unreachable while running        -> dns [delta kilo]
 //	e2) fyisp starting while it is unreachable   -> dns [delta kilo]
 //
-// Each fault must make its kind the first problem shown and the first
-// incident logged, and that incident must be closed once the verdict is
-// back to ok. e2 runs in a second fyisp. In e, the names resolved before
-// the outage: fyisp re-resolves every 60s and keeps the last good address
-// for one failed lookup, so the probes turn into DNS losses after the
-// second failed lookup.
+// Each scenario runs on its own topology and fyisp. Apart from e2, fyisp
+// first warms up to ok; then the fault must make its kind the first
+// problem shown and the first incident logged, and that incident must be
+// closed once the verdict is back to ok. In e2 the resolver is unreachable
+// before fyisp starts. In e, the names resolved before the outage: fyisp
+// re-resolves every 60s and keeps the last good address for one failed
+// lookup, so the probes turn into DNS losses after the second failed
+// lookup.
 func TestVerdict(t *testing.T) {
-	h := newHarness(t)
-	h.profile = filepath.Join(h.dir, "verdict.yml")
-	mustWrite(t, h.profile, verdictProfileYAML)
-
-	fy := h.startFyisp(t, "--ephemeral")
-	h.waitReady(t, fy)
-	_, raw, err := h.status(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("/api/status: %s", strings.TrimSpace(string(raw)))
-	checkUnprivileged(t, fy.cmd.Process.Pid)
-	start := time.Now()
+	parallel(t)
 
 	t.Run("a-baseline", func(t *testing.T) {
+		parallel(t)
+		h, _ := startVerdictLab(t)
+		start := time.Now()
 		v, raw := h.waitVerdict(t, "ok", 120*time.Second)
 		t.Logf("verdict: %s", strings.TrimSpace(string(raw)))
 		h.save(t, "verdict-a-baseline.json", raw)
@@ -187,14 +180,29 @@ func TestVerdict(t *testing.T) {
 			t.Errorf("incidents after a healthy start: %s", raw)
 		}
 	})
-	if t.Failed() {
-		t.FailNow()
-	}
 
-	scenario := func(name, kind string, targets []string, enter time.Duration, apply, revert func()) {
+	// A fault: apply and revert run on the scenario's own topology.
+	type fault func(h *harness, t *testing.T)
+	scenario := func(name, kind string, targets []string, enter time.Duration, atStart bool, apply, revert fault) {
 		t.Run(name, func(t *testing.T) {
-			applied := time.Now()
-			apply()
+			parallel(t)
+			var h *harness
+			var applied time.Time
+			if atStart {
+				// The fault is on before fyisp starts; it counts from
+				// the moment fyisp is ready.
+				h = newVerdictHarness(t)
+				apply(h, t)
+				fy := h.startFyisp(t, "--ephemeral")
+				h.waitReady(t, fy)
+				h.stopAtEnd(t, fy)
+				applied = time.Now()
+			} else {
+				h, _ = startVerdictLab(t)
+				h.waitVerdict(t, "ok", 120*time.Second)
+				applied = time.Now()
+				apply(h, t)
+			}
 			v, raw := h.waitVerdict(t, kind, enter)
 			t.Logf("entered %s after %s: %s", kind, time.Since(applied).Round(time.Second), strings.TrimSpace(string(raw)))
 			h.save(t, "verdict-"+name+".json", raw)
@@ -213,7 +221,7 @@ func TestVerdict(t *testing.T) {
 				t.Errorf("%s incident already closed while the fault is on: %s", kind, open)
 			}
 
-			revert()
+			revert(h, t)
 			reverted := time.Now()
 			_, raw = h.waitVerdict(t, "ok", recoverTimeout)
 			t.Logf("back to ok %s after the fault was removed", time.Since(reverted).Round(time.Second))
@@ -257,34 +265,52 @@ func TestVerdict(t *testing.T) {
 		})
 	}
 
-	scenario("b-lan", "lan", nil, enterTimeout,
-		func() { h.nsRun(t, nsGW, "tc", "qdisc", "add", "dev", "g0", "root", "netem", "loss", "40%") },
-		func() { h.nsRun(t, nsGW, "tc", "qdisc", "del", "dev", "g0", "root") })
-	scenario("c-isp", "isp", nil, enterTimeout,
-		func() { h.nsRun(t, nsISP, "tc", "qdisc", "add", "dev", "i0", "root", "netem", "loss", "40%") },
-		func() { h.nsRun(t, nsISP, "tc", "qdisc", "del", "dev", "i0", "root") })
-	scenario("d-upstream", "upstream", nil, enterTimeout,
-		func() {
-			h.nft(t, "add rule inet fyt fault ip daddr { 1.1.1.1, 8.8.8.8, 9.9.9.9, 203.0.113.10, 203.0.113.11, 203.0.113.12 } drop")
+	nft := func(rule string) fault { return func(h *harness, t *testing.T) { h.nft(t, rule) } }
+	flush := nft("flush chain inet fyt fault")
+	scenario("b-lan", "lan", nil, enterTimeout, false,
+		func(h *harness, t *testing.T) {
+			h.nsRun(t, h.gw, "tc", "qdisc", "add", "dev", "g0", "root", "netem", "loss", "40%")
 		},
-		func() { h.nft(t, "flush chain inet fyt fault") })
-	scenario("f-service", "service", []string{"bravo"}, enterTimeout,
-		func() { h.nft(t, "add rule inet fyt fault ip daddr 203.0.113.11 drop") },
-		func() { h.nft(t, "flush chain inet fyt fault") })
-	scenario("e-dns-runtime", "dns", []string{"delta", "kilo"}, dnsEnterTimeout,
-		func() { h.nft(t, "add rule inet fyt fault ip daddr 203.0.113.53 drop") },
-		func() { h.nft(t, "flush chain inet fyt fault") })
-
-	h.stopFyisp(t, fy, 0)
-
+		func(h *harness, t *testing.T) { h.nsRun(t, h.gw, "tc", "qdisc", "del", "dev", "g0", "root") })
+	scenario("c-isp", "isp", nil, enterTimeout, false,
+		func(h *harness, t *testing.T) {
+			h.nsRun(t, h.isp, "tc", "qdisc", "add", "dev", "i0", "root", "netem", "loss", "40%")
+		},
+		func(h *harness, t *testing.T) { h.nsRun(t, h.isp, "tc", "qdisc", "del", "dev", "i0", "root") })
+	scenario("d-upstream", "upstream", nil, enterTimeout, false,
+		nft("add rule inet fyt fault ip daddr { 1.1.1.1, 8.8.8.8, 9.9.9.9, 203.0.113.10, 203.0.113.11, 203.0.113.12 } drop"),
+		flush)
+	scenario("f-service", "service", []string{"bravo"}, enterTimeout, false,
+		nft("add rule inet fyt fault ip daddr 203.0.113.11 drop"), flush)
+	scenario("e-dns-runtime", "dns", []string{"delta", "kilo"}, dnsEnterTimeout, false,
+		nft("add rule inet fyt fault ip daddr 203.0.113.53 drop"), flush)
 	// e2) DNS: a fresh fyisp starts while the resolver is unreachable.
-	h.nft(t, "add rule inet fyt fault ip daddr 203.0.113.53 drop")
-	fy2 := h.startFyisp(t, "--ephemeral")
-	h.waitReady(t, fy2)
-	scenario("e2-dns-at-start", "dns", []string{"delta", "kilo"}, enterTimeout,
-		func() {},
-		func() { h.nft(t, "flush chain inet fyt fault") })
-	h.stopFyisp(t, fy2, 0)
+	scenario("e2-dns-at-start", "dns", []string{"delta", "kilo"}, enterTimeout, true,
+		nft("add rule inet fyt fault ip daddr 203.0.113.53 drop"), flush)
+}
+
+// newVerdictHarness: a fresh topology with the verdict profile.
+func newVerdictHarness(t *testing.T) *harness {
+	h := newHarness(t)
+	h.profile = filepath.Join(h.dir, "verdict.yml")
+	mustWrite(t, h.profile, verdictProfileYAML)
+	return h
+}
+
+// startVerdictLab starts fyisp with the verdict profile on a fresh
+// topology and waits until every target has been probed once.
+func startVerdictLab(t *testing.T) (*harness, *fyisp) {
+	h := newVerdictHarness(t)
+	fy := h.startFyisp(t, "--ephemeral")
+	h.waitReady(t, fy)
+	_, raw, err := h.status(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("/api/status: %s", strings.TrimSpace(string(raw)))
+	checkUnprivileged(t, fy.cmd.Process.Pid)
+	h.stopAtEnd(t, fy)
+	return h, fy
 }
 
 // findIncident returns the newest incident of kind that started after from.
