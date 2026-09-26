@@ -31,6 +31,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/verdict"
 	"github.com/fuck-you-isp/fyisp/internal/web"
 )
 
@@ -225,6 +226,10 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 
 	mc := metrics.New(func() *model.Profile { return prof })
 	var warm web.Warmup
+	// The verdict engine judges whose fault a problem is and keeps the
+	// outage log in the store; it must stop before the store closes.
+	eng := verdict.New(func() *model.Profile { return prof }, st, verdict.Options{Log: log})
+	mc.SetVerdictSource(verdict.MetricsSource(eng))
 	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version})
 	caps := runner.Caps()
 
@@ -252,6 +257,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(prof.Targets), Ready: warm.Ready()}
 		},
 		Metrics: mc.Handler(),
+		Verdict: eng,
 		Share:   share,
 		Log:     log,
 	}
@@ -293,17 +299,25 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	probeDone := make(chan struct{})
 	go func() {
 		defer close(probeDone)
-		if err := runner.Run(ctx, prof, model.Fanout{st, mc, &warm}); err != nil {
+		if err := runner.Run(ctx, prof, model.Fanout{st, mc, eng, &warm}); err != nil {
 			log.Error("probing stopped", "err", err)
 			stop()
 		}
 	}()
 	go maintain(ctx, st, c.retention, log)
+	verdictDone := make(chan struct{})
+	go func() {
+		defer close(verdictDone)
+		if err := eng.Run(ctx); err != nil {
+			log.Error("verdict engine stopped", "err", err)
+		}
+	}()
 
 	<-ctx.Done()
 	log.Info("shutting down")
 	stop() // restore default signal handling: a second Ctrl-C exits at once
 	<-probeDone
+	<-verdictDone // saves the open incident
 	flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := st.Flush(flushCtx); err != nil {
