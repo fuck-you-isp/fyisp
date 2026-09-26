@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark light">
+<meta name="fyisp-mode" content="{{mode}}">
+<meta name="fyisp-token" content="{{token}}">
+<title>F*** you ISP!</title>
+<link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/vendor/uPlot.min.css">
+<link rel="stylesheet" href="static/style.css">
+<script src="static/vendor/uPlot.iife.min.js" defer></script>
+<script src="static/app.js" type="module"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>F*** you ISP!</h1>
+    <span id="mode-badge" class="badge" hidden></span>
+  </div>
+  <div id="share" class="share" aria-live="polite"></div>
+  <div class="controls">
+    <div id="ranges" class="seg" role="group" aria-label="Time range"></div>
+    <div id="kinds" class="seg" role="group" aria-label="Probe kinds"></div>
+    <span id="refresh" class="muted small" aria-live="polite"></span>
+    <button id="theme" class="btn ghost" type="button" title="Toggle light/dark">Theme</button>
+  </div>
+</header>
+<div id="notices" class="notices" aria-live="polite"></div>
+<main id="panels" class="grid"></main>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<footer class="foot muted small">
+  <span>Lines break where no probe succeeded. The strip under each chart shows lost samples by reason; grey hatching means not measured (fyisp was not running), which is not loss.</span>
+  <span>Drag on a chart to zoom, double-click to reset. Click a legend entry to isolate it, Ctrl/Cmd-click to toggle.</span>
+</footer>
+</body>
+</html>
