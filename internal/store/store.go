@@ -10,6 +10,11 @@
 //	// running instance's PID and URL; exit 3.
 //	st.SetURL(url)                        // whenever the URL to show changes
 //	sink := model.Fanout{st, metrics}     // Observe never blocks
+//	tracer.Run(ctx, prof, traceSinks{st, metrics}) // both are trace.Sink (KindTrace
+//	                                      // hop samples, routes, route changes, hop info);
+//	                                      // Interval must return the trace round
+//	                                      // interval for KindTrace keys (0: 5s)
+//	web: st also implements TraceReader (Hops, Route, RouteChanges, HopInfo)
 //	every 60s:  st.Flush(ctx)             // error: shown via Stats().LastFlushErr, retried next time
 //	every 1h:   st.Prune(ctx, time.Now().Add(-retention))
 //	shutdown:   stop probes; st.Flush(ctx); close tunnel; stop HTTP; st.Close()

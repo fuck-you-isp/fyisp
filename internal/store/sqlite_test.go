@@ -567,7 +567,12 @@ func TestPrune(t *testing.T) {
 	var fl int64
 	s.db.w.QueryRow(`PRAGMA freelist_count`).Scan(&fl)
 	t.Logf("prune half: file+wal %d -> %d B, freelist %d, oldest %v -> %v", st1.FileBytes, st2.FileBytes, fl, st1.Oldest, st2.Oldest)
-	if st2.FileBytes > st1.FileBytes*65/100 || fl != 0 || !st2.Oldest.Equal(t0.Add(time.Duration(hours/2)*time.Hour)) {
+	// The fixed part of the file (page 1, a pointer-map page and one root
+	// page per table and index) does not shrink.
+	var roots int64
+	s.db.w.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE rootpage > 0`).Scan(&roots)
+	base := (roots + 2) * PageSize
+	if st2.FileBytes-base > (st1.FileBytes-base)*65/100 || fl != 0 || !st2.Oldest.Equal(t0.Add(time.Duration(hours/2)*time.Hour)) {
 		t.Fatal("prune did not shrink the file")
 	}
 	pts := rawAll(t, s, keysOf(ss), t0, now)

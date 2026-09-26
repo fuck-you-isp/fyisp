@@ -152,7 +152,7 @@ func TestFixtureV1ToV2(t *testing.T) {
 	dir := fixtureDir(t)
 	s := openT(t, dir, Options{Now: func() time.Time { return t0.Add(2*time.Hour + 30*time.Minute) }})
 	defer s.Close()
-	if v := pragmaInt(t, s.db.w, "user_version"); v != 2 || SchemaVersion() != 2 {
+	if v := pragmaInt(t, s.db.w, "user_version"); v != int64(SchemaVersion()) || SchemaVersion() < 2 {
 		t.Fatalf("user_version %d, SchemaVersion %d", v, SchemaVersion())
 	}
 	checkFixture(t, s)

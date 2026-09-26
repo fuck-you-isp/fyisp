@@ -104,6 +104,50 @@ CREATE TABLE incidents(
 );
 CREATE INDEX incidents_start ON incidents(start_ms);
 `,
+	// v3 (fyisp v0.2): traceroutes (see trace.go). A series gains the hop
+	// (TTL) of KindTrace series, 0 otherwise; the table is rebuilt because
+	// the UNIQUE constraint changes. Ids are copied, so samples and
+	// summary_1h rows keep pointing at the same series.
+	`
+CREATE TABLE series_v3(
+	id          INTEGER PRIMARY KEY,
+	target      TEXT    NOT NULL,
+	kind        INTEGER NOT NULL,
+	hop         INTEGER NOT NULL DEFAULT 0,
+	interval_ms INTEGER NOT NULL,
+	UNIQUE(target, kind, hop)
+);
+INSERT INTO series_v3(id, target, kind, hop, interval_ms) SELECT id, target, kind, 0, interval_ms FROM series;
+DROP TABLE series;
+ALTER TABLE series_v3 RENAME TO series;
+-- One row per router address seen on a traced path. Unknown rdns, asn and
+-- owner are NULL.
+CREATE TABLE hop_info(
+	ip            TEXT PRIMARY KEY,
+	rdns          TEXT,
+	asn           INTEGER,
+	owner         TEXT,
+	first_seen_ms INT NOT NULL,
+	last_seen_ms  INT NOT NULL
+);
+-- The hops columns are JSON arrays of addresses, "" for a hop that did not
+-- answer; element i is TTL i+1.
+CREATE TABLE route_changes(
+	id         INTEGER PRIMARY KEY,
+	target     TEXT NOT NULL,
+	at_ms      INT  NOT NULL,
+	from_hops  TEXT NOT NULL,
+	to_hops    TEXT NOT NULL,
+	first_diff INT  NOT NULL
+);
+CREATE INDEX route_changes_at ON route_changes(at_ms);
+-- The current route of every traced target.
+CREATE TABLE routes(
+	target   TEXT PRIMARY KEY,
+	hops     TEXT NOT NULL,
+	since_ms INT  NOT NULL
+);
+`,
 }
 
 // SchemaVersion is the schema version this build writes.
