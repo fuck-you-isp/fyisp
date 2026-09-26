@@ -191,7 +191,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		}
 	}
 
-	st, err := openStore(dir, log)
+	st, err := openStore(dir, prof, log)
 	if err != nil {
 		var locked *lockedError
 		if errors.As(err, &locked) {
@@ -200,7 +200,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		}
 		return err
 	}
-	defer st.Close()
+	defer st.Close() // last: final save, checkpoint, release the lock
 
 	mc := metrics.New(func() *model.Profile { return prof })
 	var warm web.Warmup

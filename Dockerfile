@@ -131,10 +131,14 @@ ARG TARGETOS TARGETARCH TARGETVARIANT VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     GOARM=$(case "$TARGETVARIANT" in v6) echo 6;; v7|v8) echo 7;; *) echo "";; esac) \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w -X main.version=$VERSION" -o /fyisp ./cmd/fyisp
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w -X main.version=$VERSION" -o /fyisp ./cmd/fyisp \
+ && mkdir -m 0700 /data
 
 FROM scratch AS image
 COPY --from=build-image /fyisp /fyisp
+# /data must exist in the image, owned by the runtime user: Docker copies its
+# ownership into new named volumes, otherwise they are root-owned and unwritable.
+COPY --from=build-image --chown=65532:65532 /data /data
 COPY LICENSE NOTICE /usr/share/doc/fyisp/
 COPY --from=licenses /THIRD_PARTY_LICENSES.txt /usr/share/doc/fyisp/
 USER 65532:65532
