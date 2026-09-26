@@ -37,15 +37,16 @@ func TestDefaultMatchesTemplate(t *testing.T) {
 		t.Fatalf("default profile invalid: %v", err)
 	}
 	names, hosts := templateTargets(t)
-	if len(names) != 87 || len(p.Targets) != 87 {
-		t.Fatalf("template has %d targets, default has %d; want 87", len(names), len(p.Targets))
+	legacy := withoutPath(p.Targets)
+	if len(names) != 87 || len(legacy) != 87 {
+		t.Fatalf("template has %d targets, default has %d outside the path group; want 87", len(names), len(legacy))
 	}
 	want := map[string]string{}
 	for i, n := range names {
 		want[n] = hosts[i]
 	}
 	var got []string
-	for _, tg := range p.Targets {
+	for _, tg := range legacy {
 		got = append(got, tg.Name)
 		h, ok := want[tg.Name]
 		if !ok {
@@ -64,6 +65,16 @@ func TestDefaultMatchesTemplate(t *testing.T) {
 	}
 }
 
+func withoutPath(ts []model.Target) []model.Target {
+	var out []model.Target
+	for _, tg := range ts {
+		if tg.Group != PathGroup {
+			out = append(out, tg)
+		}
+	}
+	return out
+}
+
 func TestDefaultGroups(t *testing.T) {
 	p, err := Default()
 	if err != nil {
@@ -73,16 +84,19 @@ func TestDefaultGroups(t *testing.T) {
 		"Common Services (<100ms is good for audio/video calls)", "DNS", "DevTunnels",
 		"Various Dev Related Services", "Amazon Web Services", "Hetzner", "Google Cloud Platform",
 	}
-	if len(p.Groups) != len(titles) {
+	if len(p.Groups) != len(titles)+1 {
 		t.Fatalf("%d groups", len(p.Groups))
 	}
-	for i, g := range p.Groups {
+	if g := p.Groups[0]; g.ID != PathGroup || g.Title != "Network path" || g.Order != 0 {
+		t.Errorf("first group %+v, want the network path group with order 0", g)
+	}
+	for i, g := range p.Groups[1:] {
 		if g.Title != titles[i] || g.Order != i+1 {
 			t.Errorf("group %d = %+v, want title %q order %d", i, g, titles[i], i+1)
 		}
 	}
 	count := map[string][]string{}
-	for _, tg := range p.Targets {
+	for _, tg := range withoutPath(p.Targets) {
 		count[tg.Group] = append(count[tg.Group], tg.Name)
 	}
 	if c := count["common"]; !slices.Equal(c, []string{"Google-Meet", "Microsoft-Teams", "Discord"}) {
@@ -156,10 +170,10 @@ add:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "mine" || len(p.Targets) != 86 {
+	if p.Name != "mine" || len(p.Targets) != 86+5 {
 		t.Fatalf("name %q, %d targets", p.Name, len(p.Targets))
 	}
-	if len(p.Groups) != 8 || p.Groups[7].ID != "home" || p.Groups[7].Order != 8 || p.Groups[1].Title != "Resolvers" {
+	if len(p.Groups) != 9 || p.Groups[0].ID != PathGroup || p.Groups[8].ID != "home" || p.Groups[8].Order != 8 || p.Groups[2].Title != "Resolvers" {
 		t.Errorf("groups %+v", p.Groups)
 	}
 	by := map[string]model.Target{}
@@ -195,27 +209,106 @@ targets:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Targets) != 2 || p.Targets[0].Port != 8443 || p.Groups[0].Order != 1 {
+	if len(p.Targets) != 2+5 || p.Targets[5].Port != 8443 || p.Groups[1].Order != 1 || p.Groups[0].ID != PathGroup {
 		t.Errorf("%+v", p)
+	}
+}
+
+func TestPathGroup(t *testing.T) {
+	p, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type row struct {
+		name, host, layer string
+		kinds             []model.ProbeKind
+		iv                time.Duration
+	}
+	icmp := []model.ProbeKind{model.KindICMP}
+	icmpTCP := []model.ProbeKind{model.KindICMP, model.KindTCP}
+	want := []row{
+		{"Gateway", "@gateway", "gateway", icmp, 3 * time.Second},
+		{"ISP edge", "@isp-edge", "isp-edge", icmp, 3 * time.Second},
+		{"Cloudflare DNS 1.1.1.1", "1.1.1.1", "anycast", icmpTCP, 15 * time.Second},
+		{"Google DNS 8.8.8.8", "8.8.8.8", "anycast", icmpTCP, 15 * time.Second},
+		{"Quad9 DNS 9.9.9.9", "9.9.9.9", "anycast", icmpTCP, 15 * time.Second},
+	}
+	for i, w := range want {
+		tg := p.Targets[i]
+		if tg.Name != w.name || tg.Host != w.host || tg.Layer != w.layer || tg.Group != PathGroup ||
+			!slices.Equal(tg.Kinds, w.kinds) || tg.Interval != w.iv {
+			t.Errorf("path target %d = %+v, want %+v", i, tg, w)
+		}
+	}
+	for _, tg := range p.Targets[len(want):] {
+		if tg.Layer != "" || tg.Group == PathGroup {
+			t.Errorf("non-path target %q in layer %q group %q", tg.Name, tg.Layer, tg.Group)
+		}
+	}
+	// Public (shared) limits accept the special hosts and the 3s interval.
+	if err := Validate(p, Limits{}); err != nil {
+		t.Error(err)
+	}
+
+	// Opting out, standalone and extending.
+	for _, body := range []string{
+		"path: false\ngroups: [{id: g}]\ntargets: [{name: a, host: a.com, group: g}]\n",
+		"path: false\nextends: [default]\n",
+	} {
+		p, err := Load(write(t, body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if indexGroup(p.Groups, PathGroup) >= 0 || indexTarget(p.Targets, "Gateway") >= 0 {
+			t.Errorf("path: false still has the path group: %+v", p.Groups)
+		}
+	}
+	p, err = Load(write(t, "path: true\nextends: [default]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Targets) != 92 || p.Groups[0].ID != PathGroup {
+		t.Errorf("path: true: %d targets, groups %+v", len(p.Targets), p.Groups)
+	}
+	// Negative orders still sort after the path group.
+	p, err = Load(write(t, "groups: [{id: g, order: -5}]\ntargets: [{name: a, host: a.com, group: g}]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Groups[0].Order >= -5 {
+		t.Errorf("path group order %d, other group -5", p.Groups[0].Order)
+	}
+	// A user target on a special host.
+	p, err = Load(write(t, "path: false\ngroups: [{id: g}]\ntargets: [{name: router, host: '@gateway', group: g, kinds: [icmp], interval: 3s}]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Targets[0].Host != model.HostGateway {
+		t.Errorf("%+v", p.Targets[0])
 	}
 }
 
 func TestLoadErrors(t *testing.T) {
 	cases := map[string]string{
-		"remove: no target":      "extends: [default]\nremove: [nope]\n",
-		"override: no target":    "extends: [default]\noverride: [{name: nope, port: 1}]\n",
-		"already exists":         "extends: [default]\nadd: [{name: Discord, host: x.com, group: dns}]\n",
-		"need `extends":          "remove: [Discord]\n",
-		"only [default]":         "extends: [other]\n",
-		"not allowed with":       "extends: [default]\ntargets: [{name: a, host: b, group: dns}]\n",
-		"unknown kind":           "extends: [default]\noverride: [{name: Discord, kinds: [udp]}]\n",
-		"field bogus not found":  "extends: [default]\nbogus: 1\n",
-		"interval":               "extends: [default]\noverride: [{name: Discord, interval: soon}]\n",
-		"below the minimum":      "extends: [default]\noverride: [{name: Discord, interval: 1s}]\n",
-		"unknown group":          "extends: [default]\nadd: [{name: x, host: x.com, group: nope}]\n",
-		"empty profile":          "",
-		"duplicate target name":  "groups: [{id: g}]\ntargets: [{name: a, host: a.com, group: g}, {name: a, host: b.com, group: g}]\n",
-		"not a hostname or IPv4": "groups: [{id: g}]\ntargets: [{name: a, host: 'https://a.com/', group: g}]\n",
+		"remove: no target":            "extends: [default]\nremove: [nope]\n",
+		"override: no target":          "extends: [default]\noverride: [{name: nope, port: 1}]\n",
+		"already exists":               "extends: [default]\nadd: [{name: Discord, host: x.com, group: dns}]\n",
+		"need `extends":                "remove: [Discord]\n",
+		"only [default]":               "extends: [other]\n",
+		"not allowed with":             "extends: [default]\ntargets: [{name: a, host: b, group: dns}]\n",
+		"unknown kind":                 "extends: [default]\noverride: [{name: Discord, kinds: [udp]}]\n",
+		"field bogus not found":        "extends: [default]\nbogus: 1\n",
+		"interval":                     "extends: [default]\noverride: [{name: Discord, interval: soon}]\n",
+		"below the minimum":            "extends: [default]\noverride: [{name: Discord, interval: 1s}]\n",
+		"unknown group":                "extends: [default]\nadd: [{name: x, host: x.com, group: nope}]\n",
+		"empty profile":                "",
+		"duplicate target name":        "groups: [{id: g}]\ntargets: [{name: a, host: a.com, group: g}, {name: a, host: b.com, group: g}]\n",
+		"not a hostname or IPv4":       "groups: [{id: g}]\ntargets: [{name: a, host: 'https://a.com/', group: g}]\n",
+		"ICMP only":                    "groups: [{id: g}]\ntargets: [{name: a, host: '@isp-edge', group: g}]\n",
+		"reserved":                     "groups: [{id: path}]\ntargets: [{name: a, host: a.com, group: path}]\n",
+		"name \"Gateway\" is reserved": "extends: [default]\nadd: [{name: Gateway, host: a.com, group: dns}]\n",
+		"below the minimum 5s":         "groups: [{id: g}]\ntargets: [{name: a, host: a.com, group: g, interval: 3s}]\n",
+		"not a hostname":               "groups: [{id: g}]\ntargets: [{name: a, host: '@router', group: g, kinds: [icmp]}]\n",
 	}
 	for want, body := range cases {
 		_, err := Load(write(t, body))
@@ -265,7 +358,11 @@ func TestValidate(t *testing.T) {
 			p.Targets[0].HostOverrides = map[model.ProbeKind]string{model.KindICMP: "10.1.2.3"}
 		}, Limits{}},
 		{"empty name", func(p *model.Profile) { p.Targets[0].Name = "" }, Limits{}},
-		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a b" }, Limits{}},
+		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a\tb" }, Limits{}},
+		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = " a" }, Limits{}},
+		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a  b" }, Limits{}},
+		{"below the minimum 5s", func(p *model.Profile) { p.Targets[0].Interval = 3 * time.Second }, Limits{}},
+		{"ICMP only", func(p *model.Profile) { p.Targets[0].Host = model.HostGateway }, Limits{}},
 		{"listed twice", func(p *model.Profile) { p.Targets[0].Kinds = []model.ProbeKind{1, 1} }, Limits{}},
 		{"unknown kind", func(p *model.Profile) { p.Targets[0].Kinds = []model.ProbeKind{9} }, Limits{}},
 		{"must start with /", func(p *model.Profile) { p.Targets[0].Path = "x" }, Limits{}},
@@ -288,6 +385,14 @@ func TestValidate(t *testing.T) {
 		}
 	}
 	p := base()
+	p.Targets[0].Name = "My router"
+	p.Targets[0].Host = model.HostGateway
+	p.Targets[0].Kinds = []model.ProbeKind{model.KindICMP}
+	p.Targets[0].Interval = 3 * time.Second
+	if err := Validate(p, Limits{}); err != nil {
+		t.Errorf("special host with 3s interval and a spaced name: %v", err)
+	}
+	p = base()
 	p.Targets[0].Host = "192.168.0.1"
 	if err := Validate(p, Limits{AllowPrivateIPs: true}); err != nil {
 		t.Errorf("private IP with AllowPrivateIPs: %v", err)
