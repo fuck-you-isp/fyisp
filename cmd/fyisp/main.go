@@ -18,6 +18,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -35,6 +36,29 @@ import (
 )
 
 var version = "dev"
+
+// GC defaults, unless GOGC / GOMEMLIMIT are set. The live heap is small
+// (~15 MB: probe connections, the store's current hours) but GOGC=100 lets
+// the heap grow to twice that between collections, and the runtime returns
+// freed heap to the OS only slowly, so RSS follows the peaks. GOGC=50 keeps
+// the peaks ~10-15 MB lower for about one more 3 ms collection a minute
+// (<0.1% of a core). The soft memory limit is a safety net: steady state
+// is far below it, and it only makes the GC work harder when a burst of
+// large dashboard queries would otherwise let the heap double.
+const (
+	defaultGCPercent   = 50
+	defaultMemoryLimit = 96 << 20
+)
+
+// tuneGC applies the GC defaults above where the environment sets none.
+func tuneGC() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(defaultGCPercent)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(defaultMemoryLimit)
+	}
+}
 
 const (
 	defaultListen = "127.0.0.1:3000"
@@ -191,6 +215,7 @@ func newLogger(c config, w io.Writer) *slog.Logger {
 }
 
 func run(ctx context.Context, stop context.CancelFunc, c config) error {
+	tuneGC()
 	log := newLogger(c, os.Stderr)
 	// Before probe.New: probe filters the standard logger's http2 noise.
 	slog.SetDefault(log)
