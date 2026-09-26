@@ -758,7 +758,7 @@ function renderShare() {
       kids.push(h('span', { class: 'muted', text: sh.phase === 'starting' ? 'Creating public link…' : sh.phase === 'reconnecting' ? 'Reconnecting public link…' : `Sharing: ${sh.phase}` }));
       if (!disabled) kids.push(h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => shareAction('stop') }));
   }
-  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: listening on all interfaces without --admin-token' }));
+  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started without --admin-token' }));
   el.replaceChildren(...kids);
 }
 
