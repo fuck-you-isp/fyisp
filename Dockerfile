@@ -3,6 +3,7 @@
 #   docker build --target test .                                   # vet + tests
 #   docker buildx build --target dist --output type=local,dest=dist .   # all release binaries
 #   docker buildx build --target modfiles --output type=local,dest=. .  # go mod tidy -> go.mod/go.sum
+#   docker buildx build --target fmt --output type=local,dest=. .       # gofmt -w all Go files
 #   docker build -t fyisp .                                         # runtime image (default target)
 
 ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
@@ -18,6 +19,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod tidy
 FROM scratch AS modfiles
 COPY --from=tidy /src/go.mod /src/go.sum /
+
+FROM base AS gofmt
+COPY . .
+RUN gofmt -w $(find . -name '*.go' -not -path './dist/*') && mkdir /out && find . -name '*.go' | tar cf - -T - | tar xf - -C /out
+FROM scratch AS fmt
+COPY --from=gofmt /out/ /
 
 FROM base AS deps
 COPY go.mod go.sum ./

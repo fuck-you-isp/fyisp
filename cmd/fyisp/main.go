@@ -4,8 +4,7 @@ package main
 import (
 	"fmt"
 
-	// Spike S1: link every heavy dependency to measure binary size and
-	// cross-compile coverage. Replaced by real wiring after the spikes.
+	// Linked for now so the binary size tracks every dependency.
 	_ "github.com/cloudflare/cloudflared/supervisor"
 	_ "github.com/klauspost/compress/zstd"
 	_ "golang.org/x/crypto/x509roots/fallback"
