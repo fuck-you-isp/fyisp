@@ -1,0 +1,310 @@
+# Main Config
+conf:
+  refresh: 15m
+
+# Specific Protocol settings
+icmp:
+  interval: 3s
+  timeout: 1s
+  count: 1
+
+mtr:
+  interval: 3s
+  timeout: 500ms
+  max-hops: 30
+  count: 6
+
+tcp:
+  interval: 3s
+  timeout: 1s
+
+http_get:
+  interval: 15m
+  timeout: 5s
+
+# Target list and settings
+targets:
+  - name: Google-Meet
+    host: lens.l.google.com
+    type: ICMP
+  - name: Microsoft-Teams
+    host: teams.microsoft.com
+    type: ICMP
+  - name: Discord
+    host: discord.gg
+    type: ICMP
+
+  # DNS
+  - name: google-dns
+    host: 8.8.8.8
+    type: ICMP
+  - name: cloudflare-dns
+    host: 1.1.1.1
+    type: ICMP
+  - name: quad9-dns
+    host: 9.9.9.9
+    type: ICMP
+  - name: open-dns
+    host: 208.67.222.222
+    type: ICMP  
+
+# Developer Services
+  - name: dev-GHCR
+    host: pkg-containers.githubusercontent.com
+    type: ICMP  
+  - name: dev-GitHub
+    host: github.com
+    type: ICMP  
+
+  # "devtunnel clusters --ping" gets a list of everything below except for the global endpoint
+  - name: DevTunnel-Global
+    host: global.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-UkSouth
+    host: uks1.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-NorthEurope
+    host: eun1.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-WestEurope
+    host: euw.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-EastUs
+    host: use.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-EastUs2
+    host: use2.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-WestUs3
+    host: usw3.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-WestUs2
+    host: usw2.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-SouthEastAsia
+    host: asse.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-BrazilSouth
+    host: brs.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-CentralIndia
+    host: inc1.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-AustraliaEast
+    host: aue.rel.tunnels.api.visualstudio.com
+    type: ICMP
+  - name: DevTunnel-AustraliaCentral
+    host: auc1.rel.tunnels.api.visualstudio.com
+    type: ICMP
+
+# hetzner: http://speed.hetzner.de/
+  - name: Hetzner-Falkenstein
+    host: fsn1-speed.hetzner.com
+    type: ICMP
+  - name: Hetzner-Nuremberg
+    host: nbg1-speed.hetzner.com
+    type: ICMP
+  - name: Hetzner-Helsinki
+    host: hel1-speed.hetzner.com
+    type: ICMP
+  - name: Hetzner-Ashburn
+    host: ash-speed.hetzner.com
+    type: ICMP
+  - name: Hetzner-Hillsboro
+    host: hil-speed.hetzner.com
+    type: ICMP
+  - name: Hetzner-Singapore
+    host: sin-speed.hetzner.com
+    type: ICMP
+
+# AWS US
+  - name: AWS-us-east-1
+    host: s3.us-east-1.amazonaws.com
+    type: ICMP
+  - name: AWS-us-east-2
+    host: s3.us-east-2.amazonaws.com
+    type: ICMP
+  - name: AWS-us-west-1
+    host: s3.us-west-1.amazonaws.com
+    type: ICMP
+  - name: AWS-us-west-2
+    host: s3.us-west-2.amazonaws.com
+    type: ICMP
+# AWS Africa
+  - name: AWS-af-south-1
+    host: s3.af-south-1.amazonaws.com
+    type: ICMP
+# AWS Asia Pacific
+  - name: AWS-ap-east-1
+    host: s3.ap-east-1.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-east-2
+    host: s3.ap-east-2.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-south-1
+    host: s3.ap-south-1.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-south-2
+    host: s3.ap-south-2.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-southeast-1
+    host: s3.ap-southeast-1.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-southeast-2
+    host: s3.ap-southeast-2.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-southeast-3
+    host: s3.ap-southeast-3.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-southeast-4
+    host: s3.ap-southeast-4.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-southeast-5
+    host: s3.ap-southeast-5.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-southeast-6
+    host: s3.ap-southeast-6.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-southeast-7
+    host: s3.ap-southeast-7.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-northeast-1
+    host: s3.ap-northeast-1.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-northeast-2
+    host: s3.ap-northeast-2.amazonaws.com
+    type: ICMP
+  - name: AWS-ap-northeast-3
+    host: s3.ap-northeast-3.amazonaws.com
+    type: ICMP
+# AWS Canada
+  - name: AWS-ca-central-1
+    host: s3.ca-central-1.amazonaws.com
+    type: ICMP
+  - name: AWS-ca-west-1
+    host: s3.ca-west-1.amazonaws.com
+    type: ICMP
+# AWS Europe
+  - name: AWS-eu-central-1
+    host: s3.eu-central-1.amazonaws.com
+    type: ICMP
+  - name: AWS-eu-central-2
+    host: s3.eu-central-2.amazonaws.com
+    type: ICMP
+  - name: AWS-eu-west-1
+    host: s3.eu-west-1.amazonaws.com
+    type: ICMP
+  - name: AWS-eu-west-2
+    host: s3.eu-west-2.amazonaws.com
+    type: ICMP
+  - name: AWS-eu-west-3
+    host: s3.eu-west-3.amazonaws.com
+    type: ICMP
+  - name: AWS-eu-north-1
+    host: s3.eu-north-1.amazonaws.com
+    type: ICMP
+  - name: AWS-eu-south-1
+    host: s3.eu-south-1.amazonaws.com
+    type: ICMP
+  - name: AWS-eu-south-2
+    host: s3.eu-south-2.amazonaws.com
+    type: ICMP
+# AWS Israel
+  - name: AWS-il-central-1
+    host: s3.il-central-1.amazonaws.com
+    type: ICMP
+# AWS Mexico
+  - name: AWS-mx-central-1
+    host: s3.mx-central-1.amazonaws.com
+    type: ICMP
+# AWS Middle East
+  - name: AWS-me-south-1
+    host: s3.me-south-1.amazonaws.com
+    type: ICMP
+  - name: AWS-me-central-1
+    host: s3.me-central-1.amazonaws.com
+    type: ICMP
+# AWS South America
+  - name: AWS-sa-east-1
+    host: s3.sa-east-1.amazonaws.com
+    type: ICMP
+
+
+ # Americas
+  - name: GCP-us-west1
+    host: storage.us-west1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-west2
+    host: storage.us-west2.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-west3
+    host: storage.us-west3.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-west4
+    host: storage.us-west4.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-central1
+    host: storage.us-central1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-east1
+    host: storage.us-east1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-east4
+    host: storage.us-east4.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-east5
+    host: storage.us-east5.rep.googleapis.com
+    type: ICMP
+  - name: GCP-us-south1
+    host: storage.us-south1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-northamerica-northeast1
+    host: storage.northamerica-northeast1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-northamerica-northeast2
+    host: storage.northamerica-northeast2.rep.googleapis.com
+    type: ICMP
+  - name: GCP-southamerica-east1
+    host: storage.southamerica-east1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-southamerica-west1
+    host: storage.southamerica-west1.rep.googleapis.com
+    type: ICMP
+  # Europe
+  - name: GCP-europe-west1
+    host: storage.europe-west1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west2
+    host: storage.europe-west2.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west3
+    host: storage.europe-west3.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west4
+    host: storage.europe-west4.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west6
+    host: storage.europe-west6.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west8
+    host: storage.europe-west8.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west9
+    host: storage.europe-west9.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west10
+    host: storage.europe-west10.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-west12
+    host: storage.europe-west12.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-north1
+    host: storage.europe-north1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-southwest1
+    host: storage.europe-southwest1.rep.googleapis.com
+    type: ICMP
+  - name: GCP-europe-central2
+    host: storage.europe-central2.rep.googleapis.com
+    type: ICMP
+

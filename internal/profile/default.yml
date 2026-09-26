@@ -1,0 +1,129 @@
+# fyisp default profile: 87 targets in 7 groups (one dashboard panel each).
+# Target names are identities: renaming one starts a new time series.
+#
+# Every target is probed over HTTPS (GET path, default "/"), TCP (connect to
+# port 443) and ICMP (echo). HTTPS/TCP run every `interval` (default 15s) and
+# ICMP every interval/3.
+name: default
+version: "1"
+
+groups:
+  - id: common
+    title: "Common Services (<100ms is good for audio/video calls)"
+    order: 1
+  - id: dns
+    title: "DNS"
+    order: 2
+  - id: devtunnels
+    title: "DevTunnels"
+    order: 3
+  - id: dev
+    title: "Various Dev Related Services"
+    order: 4
+  - id: aws
+    title: "Amazon Web Services"
+    order: 5
+  - id: hetzner
+    title: "Hetzner"
+    order: 6
+  - id: gcp
+    title: "Google Cloud Platform"
+    order: 7
+
+targets:
+  # Common Services (<100ms is good for audio/video calls)
+  # lens.l.google.com does not answer on TCP 443: HTTPS/TCP go to meet.google.com.
+  - {name: Google-Meet, host: lens.l.google.com, group: common, host_overrides: {https: meet.google.com, tcp: meet.google.com}}
+  - {name: Microsoft-Teams, host: teams.microsoft.com, group: common}
+  - {name: Discord, host: discord.gg, group: common}
+  # DNS
+  - {name: google-dns, host: 8.8.8.8, group: dns}
+  - {name: cloudflare-dns, host: 1.1.1.1, group: dns}
+  - {name: quad9-dns, host: 9.9.9.9, group: dns}
+  - {name: open-dns, host: 208.67.222.222, group: dns}
+  # DevTunnels
+  - {name: DevTunnel-Global, host: global.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-UkSouth, host: uks1.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-NorthEurope, host: eun1.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-WestEurope, host: euw.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-EastUs, host: use.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-EastUs2, host: use2.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-WestUs3, host: usw3.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-WestUs2, host: usw2.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-SouthEastAsia, host: asse.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-BrazilSouth, host: brs.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-CentralIndia, host: inc1.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-AustraliaEast, host: aue.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-AustraliaCentral, host: auc1.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  # Various Dev Related Services
+  - {name: dev-GHCR, host: pkg-containers.githubusercontent.com, group: dev}
+  # github.com "/" is 576 KB; robots.txt is tiny.
+  - {name: dev-GitHub, host: github.com, group: dev, path: /robots.txt}
+  # Amazon Web Services
+  - {name: AWS-us-east-1, host: s3.us-east-1.amazonaws.com, group: aws}
+  - {name: AWS-us-east-2, host: s3.us-east-2.amazonaws.com, group: aws}
+  - {name: AWS-us-west-1, host: s3.us-west-1.amazonaws.com, group: aws}
+  - {name: AWS-us-west-2, host: s3.us-west-2.amazonaws.com, group: aws}
+  - {name: AWS-af-south-1, host: s3.af-south-1.amazonaws.com, group: aws}
+  - {name: AWS-ap-east-1, host: s3.ap-east-1.amazonaws.com, group: aws}
+  - {name: AWS-ap-east-2, host: s3.ap-east-2.amazonaws.com, group: aws}
+  - {name: AWS-ap-south-1, host: s3.ap-south-1.amazonaws.com, group: aws}
+  - {name: AWS-ap-south-2, host: s3.ap-south-2.amazonaws.com, group: aws}
+  - {name: AWS-ap-southeast-1, host: s3.ap-southeast-1.amazonaws.com, group: aws}
+  - {name: AWS-ap-southeast-2, host: s3.ap-southeast-2.amazonaws.com, group: aws}
+  - {name: AWS-ap-southeast-3, host: s3.ap-southeast-3.amazonaws.com, group: aws}
+  - {name: AWS-ap-southeast-4, host: s3.ap-southeast-4.amazonaws.com, group: aws}
+  - {name: AWS-ap-southeast-5, host: s3.ap-southeast-5.amazonaws.com, group: aws}
+  - {name: AWS-ap-southeast-6, host: s3.ap-southeast-6.amazonaws.com, group: aws}
+  - {name: AWS-ap-southeast-7, host: s3.ap-southeast-7.amazonaws.com, group: aws}
+  - {name: AWS-ap-northeast-1, host: s3.ap-northeast-1.amazonaws.com, group: aws}
+  - {name: AWS-ap-northeast-2, host: s3.ap-northeast-2.amazonaws.com, group: aws}
+  - {name: AWS-ap-northeast-3, host: s3.ap-northeast-3.amazonaws.com, group: aws}
+  - {name: AWS-ca-central-1, host: s3.ca-central-1.amazonaws.com, group: aws}
+  - {name: AWS-ca-west-1, host: s3.ca-west-1.amazonaws.com, group: aws}
+  - {name: AWS-eu-central-1, host: s3.eu-central-1.amazonaws.com, group: aws}
+  - {name: AWS-eu-central-2, host: s3.eu-central-2.amazonaws.com, group: aws}
+  - {name: AWS-eu-west-1, host: s3.eu-west-1.amazonaws.com, group: aws}
+  - {name: AWS-eu-west-2, host: s3.eu-west-2.amazonaws.com, group: aws}
+  - {name: AWS-eu-west-3, host: s3.eu-west-3.amazonaws.com, group: aws}
+  - {name: AWS-eu-north-1, host: s3.eu-north-1.amazonaws.com, group: aws}
+  - {name: AWS-eu-south-1, host: s3.eu-south-1.amazonaws.com, group: aws}
+  - {name: AWS-eu-south-2, host: s3.eu-south-2.amazonaws.com, group: aws}
+  - {name: AWS-il-central-1, host: s3.il-central-1.amazonaws.com, group: aws}
+  - {name: AWS-mx-central-1, host: s3.mx-central-1.amazonaws.com, group: aws}
+  - {name: AWS-me-south-1, host: s3.me-south-1.amazonaws.com, group: aws}
+  - {name: AWS-me-central-1, host: s3.me-central-1.amazonaws.com, group: aws}
+  - {name: AWS-sa-east-1, host: s3.sa-east-1.amazonaws.com, group: aws}
+  # Hetzner
+  - {name: Hetzner-Falkenstein, host: fsn1-speed.hetzner.com, group: hetzner}
+  - {name: Hetzner-Nuremberg, host: nbg1-speed.hetzner.com, group: hetzner}
+  - {name: Hetzner-Helsinki, host: hel1-speed.hetzner.com, group: hetzner}
+  - {name: Hetzner-Ashburn, host: ash-speed.hetzner.com, group: hetzner}
+  - {name: Hetzner-Hillsboro, host: hil-speed.hetzner.com, group: hetzner}
+  - {name: Hetzner-Singapore, host: sin-speed.hetzner.com, group: hetzner}
+  # Google Cloud Platform
+  - {name: GCP-us-west1, host: storage.us-west1.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-west2, host: storage.us-west2.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-west3, host: storage.us-west3.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-west4, host: storage.us-west4.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-central1, host: storage.us-central1.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-east1, host: storage.us-east1.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-east4, host: storage.us-east4.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-east5, host: storage.us-east5.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-south1, host: storage.us-south1.rep.googleapis.com, group: gcp}
+  - {name: GCP-northamerica-northeast1, host: storage.northamerica-northeast1.rep.googleapis.com, group: gcp}
+  - {name: GCP-northamerica-northeast2, host: storage.northamerica-northeast2.rep.googleapis.com, group: gcp}
+  - {name: GCP-southamerica-east1, host: storage.southamerica-east1.rep.googleapis.com, group: gcp}
+  - {name: GCP-southamerica-west1, host: storage.southamerica-west1.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west1, host: storage.europe-west1.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west2, host: storage.europe-west2.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west3, host: storage.europe-west3.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west4, host: storage.europe-west4.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west6, host: storage.europe-west6.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west8, host: storage.europe-west8.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west9, host: storage.europe-west9.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west10, host: storage.europe-west10.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-west12, host: storage.europe-west12.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-north1, host: storage.europe-north1.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-southwest1, host: storage.europe-southwest1.rep.googleapis.com, group: gcp}
+  - {name: GCP-europe-central2, host: storage.europe-central2.rep.googleapis.com, group: gcp}
