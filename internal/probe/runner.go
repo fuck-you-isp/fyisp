@@ -35,10 +35,15 @@ const (
 // Run opens the ICMP socket/handle and closes it when done.
 func New(o Options) Runner {
 	if o.ResolveEvery <= 0 {
-		o.ResolveEvery = 15 * time.Minute
+		o.ResolveEvery = time.Minute
 	}
 	if o.RetryResolve <= 0 {
 		o.RetryResolve = 10 * time.Second
+	}
+	if o.Lookup == nil {
+		o.Lookup = func(ctx context.Context, host string) ([]netip.Addr, error) {
+			return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+		}
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -429,10 +434,13 @@ type hostState struct {
 }
 
 // resolution: ip is valid when known; err is set when the last lookup
-// failed (a previous ip is kept until a lookup succeeds again).
+// failed, fails counts consecutive failed lookups. The previous ip is kept
+// and used until fails reaches DNSFailLimit, then probes are lost with
+// ReasonDNS until a lookup succeeds again.
 type resolution struct {
-	ip  netip.Addr
-	err error
+	ip    netip.Addr
+	err   error
+	fails int
 }
 
 var errNotResolved = errors.New("not resolved yet")
@@ -455,7 +463,7 @@ func (hs *hostState) addr() (netip.Addr, error) {
 	switch {
 	case c == nil:
 		return netip.Addr{}, &net.DNSError{Err: errNotResolved.Error(), Name: hs.name}
-	case c.ip.IsValid():
+	case c.ip.IsValid() && c.fails < DNSFailLimit:
 		return c.ip, nil
 	}
 	return netip.Addr{}, c.err
@@ -467,7 +475,7 @@ func (r *runner) resolve(ctx context.Context, hs *hostState) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
-	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip4", hs.name)
+	ips, err := r.o.Lookup(ctx, hs.name)
 	if ctx.Err() != nil && err == nil {
 		err = ctx.Err()
 	}
@@ -487,16 +495,21 @@ func (r *runner) resolve(ctx context.Context, hs *hostState) {
 			err = &net.DNSError{Err: err.Error(), Name: hs.name}
 		}
 		next.err = err
+		next.fails = 1
 		if prev != nil {
-			next.ip = prev.ip // keep using the last good address
+			next.ip = prev.ip // keep using the last good address (for a while)
+			next.fails = prev.fails + 1
 		}
-		if prev == nil || prev.err == nil {
+		switch {
+		case prev == nil || prev.err == nil:
 			r.o.Log.Warn("dns lookup failed", "host", hs.name, "err", err, "keeping", next.ip)
+		case next.ip.IsValid() && next.fails == DNSFailLimit:
+			r.o.Log.Warn("dns lookup keeps failing; probes of this host count as lost", "host", hs.name, "err", err, "failed_lookups", next.fails)
 		}
 	} else {
 		next.ip = ips[0].Unmap()
 		if prev != nil && prev.err != nil {
-			r.o.Log.Info("dns lookup recovered", "host", hs.name)
+			r.o.Log.Info("dns lookup recovered", "host", hs.name, "failed_lookups", prev.fails)
 		}
 	}
 	hs.cur.Store(next)

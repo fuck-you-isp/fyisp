@@ -102,7 +102,7 @@ The prototype binary is 6.4 MB before the tunnel is added.
   - macOS: verify the IP header is stripped.
 - **Failure reasons:** timeout, refused, reset, unreachable, DNS, TLS, HTTP, no-network, other.
 - **Capabilities:** detected at startup and shown in the UI and log, e.g. "ICMP unavailable → TCP/HTTPS only (see `net.ipv4.ping_group_range`)". fyisp never elevates.
-- **DNS:** each host is re-resolved every 15 minutes; unresolved hosts are retried every 10s. Series are identified by target name, not IP.
+- **DNS:** each host is re-resolved every 60s; after a failed lookup it is retried every 10s. One failed lookup keeps the last good address; after two in a row the host's probes are lost with reason DNS until a lookup succeeds. Series are identified by target name, not IP.
 - **`Google-Meet`:** HTTPS/TCP go to `meet.google.com`, ICMP stays on `lens.l.google.com`. Verify during spike S4.
 
 ### Targets (`internal/profile`)
