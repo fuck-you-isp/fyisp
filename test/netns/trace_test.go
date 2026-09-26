@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -23,15 +24,15 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 )
 
-// TestTrace adds an alternative router to the lab, only for this test:
+// TestTrace adds an alternative router to its topology (namespace
+// fyt-R-N-alt):
 //
-//	fyt-isp (i2 10.99.4.1) <-> (a0 10.99.4.2) fyt-alt (a1 10.99.5.1) <-> (n2 10.99.5.2) fyt-inet
+//	isp (i2 10.99.4.1) <-> (a0 10.99.4.2) alt (a1 10.99.5.1) <-> (n2 10.99.5.2) net
 //
-// The traced target (hotel, on fyt-inet's loopback) is normally reached
-// through fyt-isp's direct uplink: hops [gw, isp, hotel]. A /32 route in
-// fyt-isp moves it behind fyt-alt: [gw, isp, alt, hotel].
+// The traced target (hotel, on the internet namespace's loopback) is
+// normally reached through the ISP's direct uplink: hops [gw, isp, hotel].
+// A /32 route in the ISP namespace moves it behind alt: [gw, isp, alt, hotel].
 const (
-	nsAlt         = "fyt-alt"
 	altAddr       = "10.99.4.2"
 	traceIv       = 2 * time.Second // below the kernel's ICMP error rate limit (1/s per router)
 	traceProbeEnv = "FYISP_NETNS_TRACEPROBE"
@@ -78,7 +79,7 @@ func (s *lineSink) ObserveRoute(r model.Route)             { s.emit(traceLine{Ro
 func (s *lineSink) ObserveRouteChange(c model.RouteChange) { s.emit(traceLine{Change: &c}) }
 
 // runTraceProbe traces hotel every traceIv with package trace, as uid 65532
-// in fyt-client, printing JSON lines on stdout.
+// in the client namespace, printing JSON lines on stdout.
 func runTraceProbe() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	tr := trace.New(trace.Options{Interval: traceIv, MaxHops: 8, Log: log,
@@ -144,23 +145,12 @@ func (tp *traceProc) routeChanges() []model.RouteChange {
 
 func (h *harness) startTraceProbe(t *testing.T) *traceProc {
 	t.Helper()
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	bin := filepath.Join(h.dir, "netns.test")
-	b, err := os.ReadFile(self)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(bin, b, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	bin := bins.test // readable by uid 65532 (see TestMain)
 	logf, err := os.Create(filepath.Join(h.dir, "traceprobe.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("ip", "netns", "exec", nsClient,
+	cmd := exec.Command("ip", "netns", "exec", h.cli,
 		"setpriv", "--reuid="+strconv.Itoa(runUID), "--regid="+strconv.Itoa(runUID), "--clear-groups",
 		"--inh-caps=-all", "--no-new-privs", "--pdeathsig=KILL",
 		bin, "-test.run=^$")
@@ -208,19 +198,30 @@ func (h *harness) startTraceProbe(t *testing.T) *traceProc {
 	return tp
 }
 
-// setupAlt adds fyt-alt and hotel to the lab topology.
+// setupAlt adds the alt namespace and hotel to h's topology. It is deleted
+// when the test ends, before the rest of the topology.
 func (h *harness) setupAlt(t *testing.T) {
-	delAlt := func() {
-		if _, err := os.Stat("/run/netns/" + nsAlt); err == nil {
-			if err := exec.Command("ip", "netns", "del", nsAlt).Run(); err != nil {
-				t.Errorf("deleting namespace %s: %v", nsAlt, err)
-			}
-		}
+	alt := strings.TrimSuffix(h.cli, "cli") + "alt"
+	topoMu.Lock()
+	out, err := exec.Command("ip", "netns", "add", alt).CombinedOutput()
+	topoMu.Unlock()
+	if err != nil {
+		t.Fatalf("ip netns add %s: %v\n%s", alt, err, out)
 	}
-	delAlt()
-	t.Cleanup(delAlt)
-	h.run(t, "ip", "netns", "add", nsAlt)
-	h.nsRun(t, nsAlt, "ip", "link", "set", "lo", "up")
+	t.Cleanup(func() {
+		var err error
+		for range 20 {
+			topoMu.Lock()
+			err = exec.Command("ip", "netns", "del", alt).Run()
+			topoMu.Unlock()
+			if err == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Errorf("deleting namespace %s: %v", alt, err)
+	})
+	h.nsRun(t, alt, "ip", "link", "set", "lo", "up")
 	pair := func(a, ifa, b, ifb, addrA, addrB string) {
 		h.run(t, "ip", "-n", a, "link", "add", "name", ifa, "type", "veth", "peer", "name", ifb, "netns", b)
 		h.run(t, "ip", "-n", a, "addr", "add", addrA, "dev", ifa)
@@ -228,25 +229,26 @@ func (h *harness) setupAlt(t *testing.T) {
 		h.run(t, "ip", "-n", a, "link", "set", ifa, "up")
 		h.run(t, "ip", "-n", b, "link", "set", ifb, "up")
 	}
-	pair(nsISP, "i2", nsAlt, "a0", "10.99.4.1/24", altAddr+"/24")
-	pair(nsAlt, "a1", nsInet, "n2", "10.99.5.1/24", "10.99.5.2/24")
-	h.nsRun(t, nsAlt, "sysctl", "-qw", "net.ipv4.ip_forward=1")
-	h.run(t, "ip", "-n", nsAlt, "route", "add", "default", "via", "10.99.4.1")
-	h.run(t, "ip", "-n", nsAlt, "route", "add", addrHotel.String()+"/32", "via", "10.99.5.2")
-	// Via fyt-alt, fyt-inet receives the client's packets on n2 but
-	// answers through its default route (n0): no reverse path filter.
-	h.nsRun(t, nsInet, "sysctl", "-qw", "net.ipv4.conf.all.rp_filter=0", "net.ipv4.conf.n2.rp_filter=0")
-	h.run(t, "ip", "-n", nsInet, "addr", "add", addrHotel.String()+"/32", "dev", "lo")
-	h.nsRun(t, nsClient, "ping", "-c1", "-W2", addrHotel.String())
+	pair(h.isp, "i2", alt, "a0", "10.99.4.1/24", altAddr+"/24")
+	pair(alt, "a1", h.inet, "n2", "10.99.5.1/24", "10.99.5.2/24")
+	h.nsRun(t, alt, "sysctl", "-qw", "net.ipv4.ip_forward=1")
+	h.run(t, "ip", "-n", alt, "route", "add", "default", "via", "10.99.4.1")
+	h.run(t, "ip", "-n", alt, "route", "add", addrHotel.String()+"/32", "via", "10.99.5.2")
+	// Via alt, the internet namespace receives the client's packets on n2
+	// but answers through its default route (n0): no reverse path filter.
+	h.nsRun(t, h.inet, "sysctl", "-qw", "net.ipv4.conf.all.rp_filter=0", "net.ipv4.conf.n2.rp_filter=0")
+	h.run(t, "ip", "-n", h.inet, "addr", "add", addrHotel.String()+"/32", "dev", "lo")
+	h.nsRun(t, h.cli, "ping", "-c1", "-W2", addrHotel.String())
 }
 
-// TestTrace: package trace, unprivileged in fyt-client, traces hotel every
-// 2s. It must find the hops [gw, isp, hotel]; netem loss on the gw -> isp
-// link shows as loss on hop 2 and every later hop ("loss that continues");
-// fyt-isp dropping only its own ICMP time-exceeded messages shows as loss
-// on hop 2 alone (like an ICMP rate limit: not real loss); moving hotel
-// behind fyt-alt gives exactly one route change, at TTL 3.
+// TestTrace: package trace, unprivileged in the client namespace, traces
+// hotel every 2s. It must find the hops [gw, isp, hotel]; netem loss on the
+// gw -> isp link shows as loss on hop 2 and every later hop ("loss that
+// continues"); the ISP router dropping only its own ICMP time-exceeded
+// messages shows as loss on hop 2 alone (like an ICMP rate limit: not real
+// loss); moving hotel behind alt gives exactly one route change, at TTL 3.
 func TestTrace(t *testing.T) {
+	parallel(t)
 	h := newHarness(t)
 	h.setupAlt(t)
 	tp := h.startTraceProbe(t)
@@ -314,27 +316,27 @@ func TestTrace(t *testing.T) {
 		}
 	}
 
-	// Loss that continues: netem on the gw -> isp link (fyt-gw's g1).
+	// Loss that continues: netem on the gw -> isp link (the gateway's g1).
 	st = window("netem", 60*time.Second,
-		func() { h.nsRun(t, nsGW, "tc", "qdisc", "add", "dev", "g1", "root", "netem", "loss", "30%") },
-		func() { h.nsRun(t, nsGW, "tc", "qdisc", "del", "dev", "g1", "root") })
+		func() { h.nsRun(t, h.gw, "tc", "qdisc", "add", "dev", "g1", "root", "netem", "loss", "40%") },
+		func() { h.nsRun(t, h.gw, "tc", "qdisc", "del", "dev", "g1", "root") })
 	expectHops("netem", st, 3)
 	if st[1].lost != 0 {
 		t.Errorf("netem after hop 1: hop 1 %s, want no loss", st[1])
 	}
 	for hop := 2; hop <= 3; hop++ {
-		if l := lossOf(st[hop]); l < 0.1 || l > 0.55 {
-			t.Errorf("netem 30%% after hop 1: hop %d %s, want about 30%% loss", hop, st[hop])
+		if l := lossOf(st[hop]); l < 0.15 || l > 0.7 {
+			t.Errorf("netem 40%% after hop 1: hop %d %s, want about 40%% loss", hop, st[hop])
 		}
 	}
 
-	// Not real loss: fyt-isp drops only the time-exceeded messages it sends.
+	// Not real loss: the ISP router drops only the time-exceeded messages it sends.
 	st = window("no-time-exceeded", 30*time.Second,
 		func() {
-			h.nsRun(t, nsISP, "nft", "add chain inet fyt traceout { type filter hook output priority 0; policy accept; }")
-			h.nsRun(t, nsISP, "nft", "add rule inet fyt traceout icmp type time-exceeded drop")
+			h.nsRun(t, h.isp, "nft", "add chain inet fyt traceout { type filter hook output priority 0; policy accept; }")
+			h.nsRun(t, h.isp, "nft", "add rule inet fyt traceout icmp type time-exceeded drop")
 		},
-		func() { h.nsRun(t, nsISP, "nft", "delete chain inet fyt traceout") })
+		func() { h.nsRun(t, h.isp, "nft", "delete chain inet fyt traceout") })
 	expectHops("no-time-exceeded", st, 3)
 	if st[2].ok != 0 {
 		t.Errorf("isp drops time-exceeded: hop 2 %s, want every probe lost", st[2])
@@ -348,8 +350,8 @@ func TestTrace(t *testing.T) {
 		t.Fatalf("route changes before the route was moved: %+v", c)
 	}
 
-	// Route change: fyt-isp sends hotel through fyt-alt.
-	h.run(t, "ip", "-n", nsISP, "route", "add", addrHotel.String()+"/32", "via", altAddr)
+	// Route change: the ISP router sends hotel through alt.
+	h.run(t, "ip", "-n", h.isp, "route", "add", addrHotel.String()+"/32", "via", altAddr)
 	moved := time.Now()
 	via := []netip.Addr{gw, isp, alt, addrHotel}
 	deadline = time.Now().Add(30 * time.Second)
