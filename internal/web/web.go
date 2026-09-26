@@ -94,6 +94,11 @@ type ShareControl interface {
 // Warmup counts distinct targets that have reported a sample (lost or not).
 // Put it in the sink fan-out and use Ready() for Status.Ready.
 type Warmup struct {
+	// Only, when set, limits counting to these target names. Path targets
+	// (gateway, ISP edge) may never report, e.g. before the edge is found,
+	// so they are left out of the warm-up count.
+	Only map[string]bool
+
 	mu   sync.Mutex
 	seen map[string]struct{}
 }
@@ -101,6 +106,9 @@ type Warmup struct {
 // Observe implements model.Sink.
 func (w *Warmup) Observe(s model.Sample) {
 	if s.Lost && s.Reason == model.ReasonGap {
+		return
+	}
+	if w.Only != nil && !w.Only[s.Key.Target] {
 		return
 	}
 	w.mu.Lock()

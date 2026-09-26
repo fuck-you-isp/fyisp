@@ -199,7 +199,8 @@ func TestNetworkFaults(t *testing.T) {
 		p := h.phase(t, "h-route-unreachable", 36*time.Second,
 			func() { h.nsRun(t, nsISP, "ip", "route", "add", "unreachable", "203.0.113.15/32") },
 			func() { h.nsRun(t, nsISP, "ip", "route", "del", "unreachable", "203.0.113.15/32") })
-		expectLost(t, p, "golf/tcp", "unreachable")
+		// A probe in flight when the route is withdrawn may time out.
+		expectLost(t, p, "golf/tcp", "unreachable", "timeout")
 		// The kept-alive connection first times out, new ones are unreachable.
 		expectLost(t, p, "golf/https", "unreachable", "timeout")
 		for _, k := range allKinds {
@@ -234,9 +235,11 @@ func TestNetworkFaults(t *testing.T) {
 				if ratio < 0.12 || ratio > 0.30 {
 					t.Errorf("icmp loss ratio %.3f, want 0.20 +- 0.08", ratio)
 				}
-			case "tcp": // a lost SYN is retransmitted after 1s = the probe timeout
-				if ratio < 0.08 || ratio > 0.35 {
-					t.Errorf("tcp loss ratio %.3f, want roughly 0.20", ratio)
+			case "tcp": // a lost SYN is retransmitted after 1s, within the 3s
+				// timeout, so only back-to-back losses (~4%) count as loss;
+				// the rest shows up as ~1s extra latency.
+				if ratio > 0.12 {
+					t.Errorf("tcp loss ratio %.3f, want well below the packet loss (SYN retransmit)", ratio)
 				}
 			case "https": // kept-alive connection: TCP retransmits within the 5s timeout
 				if ratio > 0.20 {

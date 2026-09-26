@@ -29,6 +29,7 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/metrics"
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
@@ -225,12 +226,25 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	defer st.Close() // last: final save, checkpoint, release the lock
 
 	mc := metrics.New(func() *model.Profile { return prof })
-	var warm web.Warmup
+	// Warm-up counts ordinary targets only (path targets may never report).
+	warm := web.Warmup{Only: map[string]bool{}}
+	for _, t := range prof.Targets {
+		if t.Layer == "" {
+			warm.Only[t.Name] = true
+		}
+	}
 	// The verdict engine judges whose fault a problem is and keeps the
 	// outage log in the store; it must stop before the store closes.
 	eng := verdict.New(func() *model.Profile { return prof }, st, verdict.Options{Log: log})
 	mc.SetVerdictSource(verdict.MetricsSource(eng))
-	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version})
+	// Path discovery (gateway, ISP edge) feeds the @gateway/@isp-edge targets.
+	ni := netinfo.New(netinfo.Options{Log: log})
+	go func() {
+		if err := ni.Run(ctx); err != nil {
+			log.Warn("network path discovery stopped", "err", err)
+		}
+	}()
+	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version, Path: ni.Current})
 	caps := runner.Caps()
 
 	// Listeners: the local dashboard (+ /metrics), and a loopback-only public
@@ -254,7 +268,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		Profile: func() *model.Profile { return prof },
 		Store:   st,
 		Status: func() web.Status {
-			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(prof.Targets), Ready: warm.Ready()}
+			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready()}
 		},
 		Metrics: mc.Handler(),
 		Verdict: eng,
