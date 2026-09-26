@@ -172,14 +172,29 @@ docker build --target launchertest-pwsh .                            # run.ps1 u
 docker build --target servicetest .                                  # systemd-analyze verify on the unit
 docker buildx build --target fmt --output type=local,dest=. .        # gofmt -w
 docker buildx build --target modfiles --output type=local,dest=. .   # go mod tidy
+docker buildx build --target asndb --output type=local,dest=. .      # refresh the built-in IP-to-ASN table
 ```
+
+Hop owners (AS number and name) come from a table built into the binary, [`internal/asn/data/ip2asn-v4.bin`](internal/asn/data), generated from the [iptoasn.com](https://iptoasn.com/) IPv4 data; fyisp never looks them up over the network. The `asndb` target downloads the latest file and regenerates the table; releases do this automatically and fall back to the committed table if iptoasn.com is unreachable.
 
 Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) from a `v*` tag using the same targets, and carry [build provenance attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations).
 
 ### Network-fault tests (Linux, sudo)
 
-`test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) creates the throwaway namespaces `fyt-client ↔ fyt-gw ↔ fyt-isp ↔ fyt-inet`, runs fyisp in `fyt-client` as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It also checks the path discovery (gateway and ISP edge) and, with the Network path group enabled, the verdict and outage log for each layer: loss between client and gateway (`lan`), between gateway and ISP (`isp`), anycast and most targets dropped (`upstream`), an unreachable resolver, both while running and at startup (`dns`), and one dropped target (`service`); the faulty layer must be the first problem shown. It takes about 30 minutes and deletes the namespaces on exit; `test/netns/run.sh -test.run TestVerdict` runs only the verdict scenarios. With a Go toolchain: `sudo -E go test -tags netns -v -timeout 50m ./test/netns`.
+`test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) builds throwaway network namespaces (client ↔ gateway ↔ ISP router ↔ internet), runs fyisp in the client namespace as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It also checks the path discovery (gateway and ISP edge) and, with the Network path group enabled, the verdict and outage log for each layer: loss between client and gateway (`lan`), between gateway and ISP (`isp`), anycast and most targets dropped (`upstream`), an unreachable resolver, both while running and at startup (`dns`), and one dropped target (`service`); the faulty layer must be the first problem shown.
+
+Every scenario gets its own topology (namespaces `fyt-<run>-<n>-{cli,gw,isp,net}`, responders, resolver, certificates, fyisp process and data directory), so the scenarios run in parallel and a full run takes about as long as the slowest one, about 5 minutes (almost all of it fyisp's own timings: the 60 s verdict warm-up, fault windows, the 60 s return to ok). The namespaces are deleted when each scenario ends, and `run.sh` checks that none of its run are left and prints the wall time.
+
+```sh
+test/netns/run.sh                              # everything, in parallel (~5 min)
+test/netns/run.sh -test.run TestVerdict        # only the verdict scenarios
+test/netns/run.sh -test.run 'Faults/b-nft-drop'
+FYISP_NETNS_PARALLEL=0 test/netns/run.sh       # one scenario at a time, for debugging (~35 min)
+FYISP_NETNS_OUT=out test/netns/run.sh          # keep API responses and logs, one directory per scenario
+```
+
+With a Go toolchain: `sudo -E go test -tags netns -v -timeout 20m ./test/netns` (`-parallel 1` and a longer timeout, e.g. `-timeout 90m`, run it serially).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). fyisp includes third-party code under its own licenses, see [NOTICE](NOTICE).
+MIT, see [LICENSE](LICENSE). fyisp includes third-party code under its own licenses, see [NOTICE](NOTICE). IP-to-ASN data from [iptoasn.com](https://iptoasn.com/) (PDDL).

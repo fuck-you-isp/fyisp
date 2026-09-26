@@ -191,3 +191,36 @@ func TestMigration(t *testing.T) {
 		t.Fatalf("backup user_version %d samples %d", uv, n)
 	}
 }
+
+// fixtureIncidents are the incidents of testdata/v2.db.
+func fixtureIncidents() []model.Incident {
+	return []model.Incident{
+		{Start: t0.Add(10 * time.Minute), End: t0.Add(25 * time.Minute), Kind: model.VerdictISP, Summary: "closed", Targets: []string{"github"}, PeakLoss: 0.5},
+		{Start: t0.Add(2 * time.Hour), Kind: model.VerdictUpstream, Summary: "ongoing", PeakLoss: 0.25},
+	}
+}
+
+// TestWriteFixtureV2 regenerates testdata/v2.db (FYISP_WRITE_FIXTURE=dir):
+// the v1 fixture's samples plus fixtureIncidents, written by a v2 build.
+// Never regenerate a released fixture: it pins the v2 on-disk format (a
+// newer build cannot write it, hence the skip).
+func TestWriteFixtureV2(t *testing.T) {
+	dir := os.Getenv("FYISP_WRITE_FIXTURE")
+	if dir == "" || SchemaVersion() != 2 {
+		t.Skip("set FYISP_WRITE_FIXTURE in a schema v2 build to regenerate testdata/v2.db")
+	}
+	s := openT(t, dir, Options{Version: "v0.2.0-fixture", Now: func() time.Time { return t0.Add(2*time.Hour + 20*time.Minute) }})
+	for _, x := range fixtureSamples() {
+		s.Observe(x)
+	}
+	for _, in := range fixtureIncidents() {
+		if err := s.SaveIncident(ctx, &in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(dir, LockName))
+	os.RemoveAll(filepath.Join(dir, "tmp"))
+}

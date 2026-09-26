@@ -53,6 +53,13 @@ Main components:
   and further small modules listed in THIRD_PARTY_LICENSES.txt
   (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0).
 
+Data:
+
+  IP-to-ASN data from iptoasn.com (https://iptoasn.com/) ... PDDL
+      (Open Data Commons Public Domain Dedication and License,
+      https://opendatacommons.org/licenses/pddl/). Built into the binaries as
+      internal/asn/data/ip2asn-v4.bin; the table's build date is its version.
+
 The Go standard library and runtime (https://go.dev/LICENSE) ... BSD-3-Clause
   Copyright 2009 The Go Authors.
 

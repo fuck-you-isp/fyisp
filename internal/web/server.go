@@ -87,8 +87,9 @@ type server struct {
 	public bool
 	index  []byte
 	now    func() time.Time
-	sem    chan struct{} // bounds concurrent panel queries (public only)
-	cache  *respCache    // public only
+	sem    chan struct{}   // bounds concurrent panel queries (public only)
+	cache  *respCache      // public only
+	inv    *investigations // on-demand traces; local only
 }
 
 func newServer(d Deps, public bool, token string) *server {
@@ -114,6 +115,9 @@ const (
 	routePanelCSV
 	routeVerdict
 	routeIncidents
+	routeTrace
+	routeTracePanel
+	routeRouteChanges
 )
 
 func lookup(rel string) route {
@@ -132,6 +136,12 @@ func lookup(rel string) route {
 		return routeVerdict
 	case "api/incidents":
 		return routeIncidents
+	case "api/trace":
+		return routeTrace
+	case "api/trace/panel":
+		return routeTracePanel
+	case "api/routes/changes":
+		return routeRouteChanges
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -158,13 +168,32 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 	case routeStatus:
 		writeJSON(w, r, http.StatusOK, s.status(r.Context()))
 	case routeProfile:
-		writeJSON(w, r, http.StatusOK, buildProfile(s.d.Profile()))
+		pj := buildProfile(s.d.Profile())
+		if s.d.Trace != nil {
+			pj.Features.Trace = true
+			tr := s.traced()
+			for i := range pj.Targets {
+				pj.Targets[i].Trace = tr[pj.Targets[i].Name]
+			}
+		}
+		writeJSON(w, r, http.StatusOK, pj)
 	case routePanel, routePanelCSV:
 		s.servePanel(w, r, rt == routePanelCSV)
 	case routeVerdict:
 		s.serveVerdict(w, r)
 	case routeIncidents:
 		s.serveIncidents(w, r)
+	case routeTrace, routeTracePanel, routeRouteChanges:
+		switch {
+		case s.d.Trace == nil:
+			writeErr(w, r, http.StatusNotFound, "not found")
+		case rt == routeTrace:
+			s.serveTrace(w, r)
+		case rt == routeTracePanel:
+			s.serveTracePanel(w, r)
+		default:
+			s.serveRouteChanges(w, r)
+		}
 	default:
 		http.NotFound(w, r)
 	}

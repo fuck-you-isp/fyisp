@@ -25,14 +25,14 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 )
 
-// Addresses netinfo must find from fyt-client.
+// Addresses netinfo must find from the client namespace.
 var (
-	gwAddr   = netip.MustParseAddr("10.99.1.1")    // fyt-gw on the client LAN
-	edgeAddr = netip.MustParseAddr("198.51.100.2") // fyt-isp towards fyt-gw (public-looking)
+	gwAddr   = netip.MustParseAddr("10.99.1.1")    // the gateway namespace on the client LAN
+	edgeAddr = netip.MustParseAddr("198.51.100.2") // the ISP namespace towards the gateway (public-looking)
 )
 
 // pathProbeEnv makes the test binary run runPathProbe: netinfo and the
-// probe runner with the built-in path targets, as uid 65532 in fyt-client,
+// probe runner with the built-in path targets, as uid 65532 in the client namespace,
 // printing JSON lines ({"path":...} and {"sample":...}) on stdout.
 const pathProbeEnv = "FYISP_NETNS_PATHPROBE"
 
@@ -143,24 +143,14 @@ func (pp *pathProc) samples(target string, from, to time.Time) (ok, lost int, re
 
 func (h *harness) startPathProbe(t *testing.T) *pathProc {
 	t.Helper()
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The test binary may live in a directory uid 65532 cannot read.
-	bin := filepath.Join(h.dir, "netns.test")
-	b, err := os.ReadFile(self)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(bin, b, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// The test binary may live in a directory uid 65532 cannot read: run
+	// the copy made in TestMain.
+	bin := bins.test
 	logf, err := os.Create(filepath.Join(h.dir, "pathprobe.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("ip", "netns", "exec", nsClient,
+	cmd := exec.Command("ip", "netns", "exec", h.cli,
 		"setpriv", "--reuid="+strconv.Itoa(runUID), "--regid="+strconv.Itoa(runUID), "--clear-groups",
 		"--inh-caps=-all", "--no-new-privs", "--pdeathsig=KILL",
 		bin, "-test.run=^$")
@@ -206,12 +196,13 @@ func (h *harness) startPathProbe(t *testing.T) *pathProc {
 	return pp
 }
 
-// TestNetworkPath: netinfo, running unprivileged in fyt-client, finds the
-// gateway (fyt-gw's LAN address) and the ISP edge (fyt-isp's public-looking
-// address, hop 2); the gateway and edge targets of the built-in path group
+// TestNetworkPath: netinfo, running unprivileged in the client namespace,
+// finds the gateway (its LAN address) and the ISP edge (the ISP router's
+// public-looking address, hop 2); the gateway and edge targets of the built-in path group
 // are probed over ICMP every second; netem loss between the client and the
 // gateway shows up as loss on the Gateway series.
 func TestNetworkPath(t *testing.T) {
+	parallel(t)
 	h := newHarness(t)
 	pp := h.startPathProbe(t)
 
@@ -246,11 +237,11 @@ func TestNetworkPath(t *testing.T) {
 	}
 
 	// netem loss on the gateway's LAN side (its replies to the client).
-	h.nsRun(t, nsGW, "tc", "qdisc", "add", "dev", "g0", "root", "netem", "loss", "30%")
+	h.nsRun(t, h.gw, "tc", "qdisc", "add", "dev", "g0", "root", "netem", "loss", "30%")
 	t0 = time.Now()
 	time.Sleep(60 * time.Second)
 	t1 = time.Now()
-	h.nsRun(t, nsGW, "tc", "qdisc", "del", "dev", "g0", "root")
+	h.nsRun(t, h.gw, "tc", "qdisc", "del", "dev", "g0", "root")
 	time.Sleep(4 * time.Second)
 	for _, name := range []string{"Gateway", "ISP edge"} {
 		ok, lost, by, mean := pp.samples(name, t0.Add(time.Second), t1.Add(-3*time.Second))
