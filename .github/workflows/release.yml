@@ -25,6 +25,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Refresh the built-in IP-to-ASN table from iptoasn.com. If the download
+      # or conversion fails, the table committed in the repo is used instead.
+      - name: refresh IP-to-ASN table
+        run: |
+          if timeout 600 docker buildx build --target asndb --output type=local,dest=. .; then
+            git diff --stat -- internal/asn/data
+          else
+            git checkout -- internal/asn/data
+            echo "::warning::could not refresh the IP-to-ASN table; using the committed one"
+          fi
       - name: fmt, vet, test -race
         run: docker buildx build --target test .
       - name: launcher tests
@@ -102,6 +112,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      # Refresh the built-in IP-to-ASN table from iptoasn.com. If the download
+      # or conversion fails, the table committed in the repo is used instead.
+      # (Same step as in the binaries job, which also tests the fresh table.)
+      - name: refresh IP-to-ASN table
+        run: |
+          if timeout 600 docker buildx build --target asndb --output type=local,dest=. .; then
+            git diff --stat -- internal/asn/data
+          else
+            git checkout -- internal/asn/data
+            echo "::warning::could not refresh the IP-to-ASN table; using the committed one"
+          fi
       # The Dockerfile cross-compiles on the build platform and the image is
       # FROM scratch, so no QEMU is needed for the foreign platforms.
       - name: build and push

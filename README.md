@@ -172,7 +172,10 @@ docker build --target launchertest-pwsh .                            # run.ps1 u
 docker build --target servicetest .                                  # systemd-analyze verify on the unit
 docker buildx build --target fmt --output type=local,dest=. .        # gofmt -w
 docker buildx build --target modfiles --output type=local,dest=. .   # go mod tidy
+docker buildx build --target asndb --output type=local,dest=. .      # refresh the built-in IP-to-ASN table
 ```
+
+Hop owners (AS number and name) come from a table built into the binary, [`internal/asn/data/ip2asn-v4.bin`](internal/asn/data), generated from the [iptoasn.com](https://iptoasn.com/) IPv4 data; fyisp never looks them up over the network. The `asndb` target downloads the latest file and regenerates the table; releases do this automatically and fall back to the committed table if iptoasn.com is unreachable.
 
 Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) from a `v*` tag using the same targets, and carry [build provenance attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations).
 
@@ -182,4 +185,4 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 ## License
 
-MIT, see [LICENSE](LICENSE). fyisp includes third-party code under its own licenses, see [NOTICE](NOTICE).
+MIT, see [LICENSE](LICENSE). fyisp includes third-party code under its own licenses, see [NOTICE](NOTICE). IP-to-ASN data from [iptoasn.com](https://iptoasn.com/) (PDDL).
