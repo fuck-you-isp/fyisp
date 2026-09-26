@@ -352,3 +352,26 @@ func TestLiveUnprivileged(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPSRTTFallbacks(t *testing.T) {
+	t0 := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+	at := func(ms int) time.Time { return t0.Add(time.Duration(ms) * time.Millisecond) }
+	var z time.Time
+	cases := []struct {
+		name                                      string
+		gotConn, wroteHeaders, wrote, first, done time.Time
+		want                                      time.Duration
+	}{
+		{"all events", at(0), at(1), at(2), at(12), at(13), 11 * time.Millisecond},
+		{"first before wrote (race)", at(0), at(1), at(5), at(3), at(6), 2 * time.Millisecond},
+		{"no WroteRequest yet (h2)", at(0), at(1), z, at(11), at(12), 10 * time.Millisecond},
+		{"no first byte event", at(0), at(1), at(2), z, at(20), 19 * time.Millisecond},
+		{"only GotConn", at(0), z, z, z, at(9), 9 * time.Millisecond},
+		{"nothing", z, z, z, z, at(9), 0},
+	}
+	for _, c := range cases {
+		if got := httpsRTT(c.gotConn, c.wroteHeaders, c.wrote, c.first, c.done); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

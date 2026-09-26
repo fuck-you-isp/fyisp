@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -274,22 +273,38 @@ func (r *runner) newClient(s *series) *http.Client {
 // probeHTTPS sends a GET on the target's kept-alive connection. RTT is the
 // time from the request being written to the first response byte, on new
 // and reused connections alike. Any HTTP status is a success.
+//
+// httptrace events run on transport goroutines and are not ordered: under
+// load GotFirstResponseByte can be observed before WroteRequest, and on
+// HTTP/2 WroteRequest may not have fired yet when Do returns. A completed
+// request is never reported as lost because of that: the start falls back
+// from WroteHeaders to WroteRequest to GotConn, and the end from
+// GotFirstResponseByte to the moment Do returned the response headers.
 func (r *runner) probeHTTPS(ctx context.Context, s *series) (time.Duration, bool, model.Reason, error) {
 	// Trace hooks may run on transport goroutines.
 	var (
-		mu              sync.Mutex
-		reused, tlsDone bool
-		wrote, first    time.Time
+		mu                    sync.Mutex
+		reused, tlsDone       bool
+		gotConn, wroteHeaders time.Time
+		wrote, first          time.Time
 	)
 	trace := &httptrace.ClientTrace{
 		GotConn: func(i httptrace.GotConnInfo) {
+			now := time.Now()
 			mu.Lock()
+			gotConn = now
 			reused, tlsDone = i.Reused, i.Reused
 			mu.Unlock()
 		},
 		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
 			mu.Lock()
 			tlsDone = err == nil
+			mu.Unlock()
+		},
+		WroteHeaders: func() {
+			now := time.Now()
+			mu.Lock()
+			wroteHeaders = now
 			mu.Unlock()
 		},
 		WroteRequest: func(i httptrace.WroteRequestInfo) {
@@ -315,6 +330,7 @@ func (r *runner) probeHTTPS(ctx context.Context, s *series) (time.Duration, bool
 	}
 	req.Header.Set("User-Agent", r.o.UserAgent)
 	resp, err := s.client.Do(req)
+	headersAt := time.Now()
 	mu.Lock()
 	defer mu.Unlock()
 	if err != nil {
@@ -328,10 +344,7 @@ func (r *runner) probeHTTPS(ctx context.Context, s *series) (time.Duration, bool
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBody))
 	_ = resp.Body.Close()
 	mu.Lock()
-	if wrote.IsZero() || first.IsZero() || first.Before(wrote) {
-		return 0, reused, model.ReasonOther, fmt.Errorf("https: incomplete trace")
-	}
-	return first.Sub(wrote), reused, 0, nil
+	return httpsRTT(gotConn, wroteHeaders, wrote, first, headersAt), reused, 0, nil
 }
 
 // hostState is the current resolution of one hostname, shared by every
@@ -432,4 +445,26 @@ func (r *runner) resolveLoop(ctx context.Context, hs *hostState) {
 		}
 		r.resolve(ctx, hs)
 	}
+}
+
+// httpsRTT picks the most precise available start and end (see probeHTTPS).
+// Zero times are missing events. The result is never negative.
+func httpsRTT(gotConn, wroteHeaders, wrote, first, headersAt time.Time) time.Duration {
+	start := gotConn
+	for _, t := range []time.Time{wrote, wroteHeaders} { // later entries win
+		if !t.IsZero() {
+			start = t
+		}
+	}
+	if start.IsZero() {
+		start = headersAt
+	}
+	end := first
+	if end.IsZero() || end.Before(start) || end.After(headersAt) {
+		end = headersAt
+	}
+	if end.Before(start) {
+		return 0
+	}
+	return end.Sub(start)
 }
