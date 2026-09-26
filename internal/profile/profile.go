@@ -18,6 +18,11 @@
 // Target fields: name, host, group, port (default 443), path (default "/"),
 // kinds (https|tcp|icmp, default all), interval (duration, default 15s; ICMP
 // runs at interval/3), host_overrides (kind -> host).
+//
+// An interval must be a whole number of seconds, divisible by 3 (so the ICMP
+// interval is whole seconds too) and divide an hour evenly, so that slots
+// line up with hour boundaries: 6s, 9s, 12s, 15s, 18s, 24s, 30s, 36s, 45s,
+// 60s, ... up to 3600s. It must also be at least Limits.MinIntervalSecs.
 package profile
 
 import (
@@ -395,9 +400,22 @@ func Validate(p *model.Profile, l Limits) error {
 		}
 		if t.Interval < 0 || (t.Interval != 0 && t.Interval < minIv) {
 			bad("target %q: interval %s is below the minimum %s", t.Name, t.Interval, minIv)
+		} else if t.Interval != 0 && !validInterval(t.Interval) {
+			bad("target %q: interval %s must be whole seconds, divisible by 3 and divide 1h evenly (e.g. 6s, 9s, 12s, 15s, 30s, 60s)", t.Name, t.Interval)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validInterval reports whether iv is whole seconds, divisible by 3 (ICMP
+// runs at iv/3, which must be whole seconds as well) and divides an hour, so
+// slots of both line up with hour boundaries.
+func validInterval(iv time.Duration) bool {
+	if iv <= 0 || iv%time.Second != 0 {
+		return false
+	}
+	secs := int64(iv / time.Second)
+	return secs%3 == 0 && 3600%secs == 0
 }
 
 func checkName(n string) error {
