@@ -3,7 +3,8 @@
 #
 # Every target is probed over HTTPS (GET path, default "/"), TCP (connect to
 # port 443) and ICMP (echo). HTTPS/TCP run every `interval` (default 15s) and
-# ICMP every interval/3.
+# ICMP every interval/3. An interval must be whole seconds, divisible by 3 and
+# divide an hour evenly (6s, 9s, 12s, 15s, 30s, 60s, ...).
 name: default
 version: "1"
 

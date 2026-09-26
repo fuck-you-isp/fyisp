@@ -370,11 +370,13 @@ func TestHTTPSRTTFallbacks(t *testing.T) {
 		gotConn, wroteHeaders, wrote, first, done time.Time
 		want                                      time.Duration
 	}{
-		{"all events", at(0), at(1), at(2), at(12), at(13), 11 * time.Millisecond},
+		{"all events", at(0), at(1), at(2), at(12), at(13), 10 * time.Millisecond},
 		{"first before wrote (race)", at(0), at(1), at(5), at(3), at(6), 2 * time.Millisecond},
 		{"no WroteRequest yet (h2)", at(0), at(1), z, at(11), at(12), 10 * time.Millisecond},
-		{"no first byte event", at(0), at(1), at(2), z, at(20), 19 * time.Millisecond},
+		{"no first byte event", at(0), at(1), at(2), z, at(20), 18 * time.Millisecond},
 		{"only GotConn", at(0), z, z, z, at(9), 9 * time.Millisecond},
+		{"WroteHeaders recorded after the response (h2)", at(0), at(15), z, at(10), at(11), 10 * time.Millisecond},
+		{"all request events late", z, at(15), at(16), at(10), at(11), 0},
 		{"nothing", z, z, z, z, at(9), 0},
 	}
 	for _, c := range cases {

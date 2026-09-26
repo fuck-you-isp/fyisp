@@ -29,9 +29,10 @@ type Options struct {
 	// URL is written into the lock file so a second instance can print it.
 	// It can be changed later with SetURL.
 	URL string
-	// Interval returns the slot interval of a series. It is read when a
-	// series starts a new hour; nil means 15s (ICMP 5s). Values are clamped
-	// to [100ms, 24h].
+	// Interval returns the slot interval of a series. It is read for every
+	// sample (keep it cheap): a new hour uses it, and an hour whose interval
+	// differs (restored after a profile change) is regridded to fit both;
+	// nil means 15s (ICMP 5s). Values are clamped to [100ms, 24h].
 	Interval func(model.SeriesKey) time.Duration
 	// Now is the clock used to close hours that stopped receiving samples
 	// (Flush) and to stamp meta.created_at. Default time.Now.
@@ -46,6 +47,12 @@ type Options struct {
 // closeGrace is how long after its end an hour without new samples stays
 // open; late samples for it are still accepted until then.
 const closeGrace = 2 * time.Minute
+
+// clockSlack is how far a series' last accepted slot may be ahead of
+// Options.Now before the store concludes the clock was wrong (it stepped back,
+// or a sample was stamped in the future), and how far ahead of Options.Now an
+// hour may start and still count as "now" when the store is opened.
+const clockSlack = time.Minute
 
 // SQLite is the real Store. Create it with Open.
 //
@@ -70,6 +77,8 @@ type SQLite struct {
 	ivs       map[model.SeriesKey]int64 // series.interval_ms as stored
 	dropped   int64                     // samples discarded because the buffer was full
 	rejected  int64                     // duplicate or backward samples
+	clockLog  time.Time                 // last "clock stepped back" warning
+	pruneLog  bool                      // "not pruning" warned once
 	lastFlush time.Time
 	lastErr   string
 	closed    bool
@@ -82,7 +91,12 @@ type block struct {
 	slot0   int64 // unix ms of slot 0
 	iv      int64 // ms
 	slots   []blob.Slot
-	flushed int // len(slots) as last written to the database
+	flushed int // len(slots) as last written to the database; -1: rewrite
+	// fresh: never written. Its first write merges with an hour already
+	// stored for the same series (after a clock correction), never
+	// replacing stored samples.
+	fresh bool
+	gen   int // bumped whenever slots, slot0 or iv are replaced (not appended)
 
 	// Set on closed blocks once encoded (then slots is released).
 	data []byte
@@ -211,8 +225,22 @@ func (s *SQLite) load(ctx context.Context) error {
 	if err := s.loadSeries(ctx); err != nil {
 		return err
 	}
+	// Hours that start after now (+clockSlack) were stamped by a clock that
+	// was ahead (or the clock is behind now). They are kept, but ignored
+	// for the floor and never restored as the current hour, so a wrong
+	// clock in the past does not stop recording; a later block for such an
+	// hour merges with it instead of replacing it.
+	limit := (s.o.Now().UnixMilli() + clockSlack.Milliseconds()) / hourMs
+	var future int64
+	if err := s.db.w.QueryRowContext(ctx, `SELECT count(*) FROM samples WHERE hour > ?`, limit).Scan(&future); err != nil {
+		return err
+	}
+	if future > 0 {
+		s.o.Log.Warn("store: ignoring hours stamped after the current time (the clock was or is wrong)",
+			"hours", future, "now", s.o.Now().UTC())
+	}
 	maxHour := map[int64]int64{}
-	rows, err := s.db.w.QueryContext(ctx, `SELECT series, max(hour) FROM samples GROUP BY series`)
+	rows, err := s.db.w.QueryContext(ctx, `SELECT series, max(hour) FROM samples WHERE hour <= ? GROUP BY series`, limit)
 	if err != nil {
 		return err
 	}
@@ -276,7 +304,7 @@ func (s *SQLite) load(ctx context.Context) error {
 			s.o.Log.Warn("store: skipping unreadable hour", "hour", h, "series", id, "err", err)
 			continue
 		}
-		if h == maxHour[id] {
+		if mh, ok := maxHour[id]; ok && h == mh {
 			s.cur[k] = &block{key: k, hour: h, slot0: b.Slot0, iv: b.Interval, slots: b.Slots, flushed: len(b.Slots)}
 			if len(b.Slots) > 0 {
 				s.floor[k] = b.Slot0 + int64(len(b.Slots)-1)*b.Interval
@@ -395,11 +423,17 @@ func (s *SQLite) interval(k model.SeriesKey) int64 {
 // Observe stores a sample in memory. It never blocks on I/O.
 //
 // Sample.Slot is authoritative. A slot at or before the series' last
-// accepted slot (clock stepped back, duplicate) is dropped and counted in
-// Stats.Rejected. Slots skipped over (sleep, restart, clock jumped forward)
-// stay "not measured" (code 0) and are never counted as loss. A sample in a
-// later hour closes the series' current hour. A slot that is not a multiple
-// of the interval from the hour's first slot is rounded down to one.
+// accepted slot (duplicate, small clock step back) is dropped and counted in
+// Stats.Rejected. When that last slot is more than a minute ahead of
+// Options.Now (the clock was ahead, or stepped back) and the sample is not,
+// the clock is taken as corrected: the series' current hour is closed and
+// samples are accepted again; a block for an hour that is already stored is
+// merged into it on Flush, stored samples win. Slots skipped over (sleep,
+// restart, clock jumped forward) stay "not measured" (code 0) and are never
+// counted as loss. A sample in a later hour closes the series' current hour.
+// A slot that is not a multiple of the interval from the hour's first slot
+// is rounded down to one. When the series' interval changes mid-hour, the
+// hour's slots are regridded to an interval that fits both.
 func (s *SQLite) Observe(x model.Sample) {
 	ms := x.Slot.UnixMilli()
 	if ms < 0 {
@@ -411,7 +445,7 @@ func (s *SQLite) Observe(x model.Sample) {
 	if s.closed || s.lock == nil {
 		return
 	}
-	if last, ok := s.floor[x.Key]; ok && ms <= last {
+	if last, ok := s.floor[x.Key]; ok && ms <= last && !s.clockBackLocked(x.Key, ms, last) {
 		s.rejected++
 		return
 	}
@@ -422,8 +456,10 @@ func (s *SQLite) Observe(x model.Sample) {
 	}
 	if b == nil {
 		iv := s.interval(x.Key)
-		b = &block{key: x.Key, hour: hour, iv: iv, slot0: hour*hourMs + (ms-hour*hourMs)%iv}
+		b = &block{key: x.Key, hour: hour, iv: iv, slot0: hour*hourMs + (ms-hour*hourMs)%iv, fresh: true}
 		s.cur[x.Key] = b
+	} else if iv := s.interval(x.Key); iv != b.iv {
+		b.regrid(iv)
 	}
 	idx := int((ms - b.slot0) / b.iv)
 	if ms < b.slot0 || idx < len(b.slots) || idx >= blob.MaxSlots {
@@ -435,6 +471,93 @@ func (s *SQLite) Observe(x model.Sample) {
 	}
 	b.slots = append(b.slots, toSlot(x))
 	s.floor[x.Key] = ms
+}
+
+// clockBackLocked handles a sample at or before the series' last accepted
+// slot. If that slot is ahead of the wall clock and the sample is not, the
+// clock was wrong (stamped in the future, or stepped back): the current hour
+// is closed and the floor dropped so the sample is accepted. It reports
+// whether the sample may be stored.
+func (s *SQLite) clockBackLocked(k model.SeriesKey, ms, last int64) bool {
+	now := s.o.Now()
+	slack := clockSlack.Milliseconds()
+	if last <= now.UnixMilli()+slack || ms > now.UnixMilli()+slack {
+		return false
+	}
+	if b := s.cur[k]; b != nil {
+		s.closeLocked(b)
+	}
+	delete(s.floor, k)
+	if now.Sub(s.clockLog) >= time.Minute || now.Before(s.clockLog) {
+		s.clockLog = now
+		s.o.Log.Warn("store: clock stepped back; recording from the current time again",
+			"series", k, "last_slot", time.UnixMilli(last).UTC(), "slot", time.UnixMilli(ms).UTC())
+	}
+	return true
+}
+
+// regrid switches b to a slot interval that fits both its own and iv (their
+// greatest common divisor), so a series whose interval changed mid-hour (a
+// new profile after a restart) keeps its earlier slots and places the new
+// ones exactly. Slots in between are "not measured". If the finer grid would
+// not fit in a blob, b is left as is (samples round down to its slots).
+func (b *block) regrid(iv int64) {
+	g := gcd(b.iv, iv)
+	if g == b.iv || hourMs/g > blob.MaxSlots {
+		return
+	}
+	b.slots = place(nil, b.slot0, g, b.slots, b.slot0, b.iv)
+	b.iv = g
+	b.gen++
+	b.flushed = -1
+}
+
+func gcd(a, b int64) int64 {
+	a, b = max(a, -a), max(b, -b)
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
+func isGap(x blob.Slot) bool { return !x.Valid && x.Code == 0 }
+
+// place copies the measured slots of src (grid s0, siv) into dst (grid d0,
+// div), extending dst with gaps as needed. Slots already measured in dst
+// win. Positions before d0 or past blob.MaxSlots are dropped.
+func place(dst []blob.Slot, d0, div int64, src []blob.Slot, s0, siv int64) []blob.Slot {
+	for i, x := range src {
+		if isGap(x) {
+			continue
+		}
+		off := s0 + int64(i)*siv - d0
+		if off < 0 || off/div >= blob.MaxSlots {
+			continue
+		}
+		pos := int(off / div)
+		for len(dst) <= pos {
+			dst = append(dst, blob.Gap())
+		}
+		if isGap(dst[pos]) {
+			dst[pos] = x
+		}
+	}
+	return dst
+}
+
+// mergeBlocks combines a stored hour with a new block for the same hour, on
+// a grid that fits both. Stored samples win. If no grid fits one blob, the
+// stored block is returned unchanged.
+func mergeBlocks(stored, mine blob.Block) blob.Block {
+	g := gcd(gcd(stored.Interval, mine.Interval), stored.Slot0-mine.Slot0)
+	s0 := min(stored.Slot0, mine.Slot0)
+	end := max(stored.Slot0+int64(len(stored.Slots))*stored.Interval, mine.Slot0+int64(len(mine.Slots))*mine.Interval)
+	if g <= 0 || (end-s0)/g > blob.MaxSlots {
+		return stored
+	}
+	out := place(nil, s0, g, stored.Slots, stored.Slot0, stored.Interval)
+	out = place(out, s0, g, mine.Slots, mine.Slot0, mine.Interval)
+	return blob.Block{Slot0: s0, Interval: g, Slots: out}
 }
 
 // closeLocked moves b from cur to pending.
@@ -470,12 +593,16 @@ func (s *SQLite) trimLocked() {
 
 // flushItem is one blob to write.
 type flushItem struct {
-	b     *block
-	n     int  // slots written (current hours)
-	final bool // closed hour: write the summary too
-	slots []blob.Slot
-	data  []byte
-	sum   *summary
+	b         *block
+	n         int  // slots written (current hours)
+	final     bool // closed hour: write the summary too
+	fresh     bool // first write: merge with a stored hour
+	gen       int
+	slot0, iv int64
+	slots     []blob.Slot
+	data      []byte
+	sum       *summary
+	merged    *blob.Block // what was written, when merged with a stored hour
 }
 
 // Flush writes every changed current hour and every closed hour in one short
@@ -508,19 +635,21 @@ func (s *SQLite) Flush(ctx context.Context) error {
 		}
 	}
 	for _, b := range s.pending {
-		items = append(items, &flushItem{b: b, final: true, slots: b.slots, data: b.data, sum: b.sum})
+		items = append(items, &flushItem{b: b, final: true, fresh: b.fresh, gen: b.gen, slot0: b.slot0, iv: b.iv,
+			slots: b.slots, data: b.data, sum: b.sum})
 	}
 	for _, b := range s.cur {
 		if len(b.slots) != b.flushed {
 			n := len(b.slots)
-			items = append(items, &flushItem{b: b, n: n, slots: b.slots[:n:n]})
+			items = append(items, &flushItem{b: b, n: n, fresh: b.fresh, gen: b.gen, slot0: b.slot0, iv: b.iv,
+				slots: b.slots[:n:n]})
 		}
 	}
 	for _, it := range items {
 		k := it.b.key
-		if iv, ok := s.ivs[k]; (!ok || iv != it.b.iv) && !upSeen[k] {
+		if iv, ok := s.ivs[k]; (!ok || iv != it.iv) && !upSeen[k] {
 			upSeen[k] = true
-			ups = append(ups, seriesUpsert{k, it.b.iv})
+			ups = append(ups, seriesUpsert{k, it.iv})
 		}
 	}
 	anyClosed := len(s.pending) > 0
@@ -538,7 +667,7 @@ func (s *SQLite) Flush(ctx context.Context) error {
 			continue
 		}
 		var err error
-		it.data, err = blob.Encode(&blob.Block{Slot0: it.b.slot0, Interval: it.b.iv, Slots: it.slots})
+		it.data, err = blob.Encode(&blob.Block{Slot0: it.slot0, Interval: it.iv, Slots: it.slots})
 		if err != nil {
 			return s.flushFailed(items, fmt.Errorf("store: encode %v: %w", it.b.key, err))
 		}
@@ -593,6 +722,11 @@ func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUp
 	sums := map[dayKey][]hourSummary{}
 	for _, it := range items {
 		id := ids[it.b.key]
+		if it.fresh {
+			if err := s.mergeStored(ctx, tx, id, it); err != nil {
+				return nil, err
+			}
+		}
 		if _, err := insSample.ExecContext(ctx, it.b.hour, id, it.data); err != nil {
 			return nil, err
 		}
@@ -621,10 +755,31 @@ func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUp
 	}
 	done := map[*block]bool{}
 	for _, it := range items {
-		if it.final {
-			done[it.b] = true
-		} else if it.n > it.b.flushed {
-			it.b.flushed = it.n
+		b := it.b
+		switch {
+		case it.final:
+			done[b] = true
+		case it.gen != b.gen:
+			// Regridded since the snapshot: written again next time
+			// (merging again if it was fresh; stored samples win).
+		case it.merged != nil:
+			// Continue from what was written: the stored samples plus
+			// ours, then what arrived since the snapshot.
+			m := it.merged
+			extra := b.slots[it.n:]
+			ns := place(slices.Clone(m.Slots), m.Slot0, m.Interval, extra, b.slot0+int64(it.n)*b.iv, b.iv)
+			b.slot0, b.iv, b.slots = m.Slot0, m.Interval, ns
+			b.gen++
+			b.fresh = false
+			b.flushed = -1
+			if len(extra) == 0 && len(ns) == len(m.Slots) {
+				b.flushed = len(ns)
+			}
+		default:
+			b.fresh = false
+			if it.n > b.flushed {
+				b.flushed = it.n
+			}
 		}
 	}
 	kept := s.pending[:0]
@@ -639,6 +794,40 @@ func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUp
 	s.pending = kept
 	s.lastFlush, s.lastErr = s.o.Now(), ""
 	return newIDs, nil
+}
+
+// mergeStored makes the first write of a block merge with the hour already
+// stored for its series (possible only after the clock was corrected), so
+// stored samples are never replaced.
+func (s *SQLite) mergeStored(ctx context.Context, tx *sql.Tx, id int64, it *flushItem) error {
+	var old []byte
+	err := tx.QueryRowContext(ctx, `SELECT data FROM samples WHERE hour = ? AND series = ?`, it.b.hour, id).Scan(&old)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	stored, err := blob.Decode(old)
+	if err != nil {
+		s.o.Log.Warn("store: replacing unreadable hour", "series", it.b.key, "hour", it.b.hour, "err", err)
+		return nil
+	}
+	mine := blob.Block{Slot0: it.slot0, Interval: it.iv, Slots: it.slots}
+	if it.slots == nil && it.data != nil {
+		if mine, err = blob.Decode(it.data); err != nil {
+			return err
+		}
+	}
+	m := mergeBlocks(stored, mine)
+	if it.data, err = blob.Encode(&m); err != nil {
+		return err
+	}
+	if it.final {
+		it.sum = summarize(m.Slots)
+	}
+	it.merged = &m
+	return nil
 }
 
 // flushFailed keeps the encoded closed hours (smaller than their slots) and
@@ -665,17 +854,58 @@ func (s *SQLite) flushFailed(items []*flushItem, err error) error {
 
 // Prune deletes every hour that ends at or before `before`, returns the free
 // pages to the OS (incremental_vacuum) and truncates the WAL.
+//
+// The retention it implies (Options.Now - before) is counted back from the
+// newest stored hour, not only from the clock: a clock far ahead (e.g. at
+// boot, before time sync) never deletes the history that the retention would
+// keep. Hours starting more than an hour after Options.Now are ignored for
+// this; if every stored hour is such a future hour, nothing is pruned.
 func (s *SQLite) Prune(ctx context.Context, before time.Time) error {
 	s.flushMu.Lock()
 	defer s.flushMu.Unlock()
 	if s.lock == nil {
 		return errors.New("store: read-only")
 	}
-	if err := s.prune(ctx, before.Unix()/3600); err != nil {
+	hour, ok, err := s.pruneHour(ctx, before)
+	if err != nil || !ok {
 		return err
 	}
-	_, err := checkpoint(ctx, s.db.w)
+	if err := s.prune(ctx, hour); err != nil {
+		return err
+	}
+	_, err = checkpoint(ctx, s.db.w)
 	return err
+}
+
+// pruneHour returns the first hour to keep, or ok=false to prune nothing.
+func (s *SQLite) pruneHour(ctx context.Context, before time.Time) (int64, bool, error) {
+	now := s.o.Now()
+	limit := floorHour(now.Add(time.Hour).UnixMilli())
+	var newest, future sql.NullInt64
+	if err := s.db.w.QueryRowContext(ctx, `SELECT (SELECT max(hour) FROM samples WHERE hour <= ?), (SELECT count(*) FROM samples WHERE hour > ?)`,
+		limit, limit).Scan(&newest, &future); err != nil {
+		return 0, false, err
+	}
+	s.mu.Lock()
+	for _, b := range append(slices.Clone(s.pending), mapValues(s.cur)...) {
+		if b.hour <= limit && (!newest.Valid || b.hour > newest.Int64) {
+			newest = sql.NullInt64{Int64: b.hour, Valid: true}
+		}
+	}
+	warned := s.pruneLog
+	s.pruneLog = s.pruneLog || (!newest.Valid && future.Int64 > 0)
+	s.mu.Unlock()
+	cut := before.UnixMilli()
+	if newest.Valid {
+		cut = min(cut, (newest.Int64+1)*hourMs-now.Sub(before).Milliseconds())
+	} else if future.Int64 > 0 {
+		if !warned {
+			s.o.Log.Warn("store: every stored hour is after the current time; not pruning until the clock is right",
+				"now", now.UTC(), "hours", future.Int64)
+		}
+		return 0, false, nil
+	}
+	return floorHour(cut), true, nil
 }
 
 // prune deletes hours before `hour` from samples and summary_1h (rewriting

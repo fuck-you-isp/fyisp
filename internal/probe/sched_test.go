@@ -139,7 +139,7 @@ func TestScheduleForwardJump(t *testing.T) {
 func TestScheduleBackwardJump(t *testing.T) {
 	iv, ph := 5*time.Second, time.Second
 	start := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
-	c := &fakeClock{t: start, jumps: map[int]time.Duration{4: -2 * time.Minute}}
+	c := &fakeClock{t: start, jumps: map[int]time.Duration{4: -50 * time.Second}}
 	fs := runSchedule(t, c, iv, ph, 12)
 	checkSlots(t, fs, iv, ph) // strictly increasing: no slot fires twice
 	for i := 1; i < len(fs); i++ {
@@ -147,9 +147,46 @@ func TestScheduleBackwardJump(t *testing.T) {
 			t.Errorf("gap %s between %s and %s: slots after catching up must resume in order", d, fs[i-1].slot, fs[i].slot)
 		}
 	}
-	// The clock needed 2 minutes to catch up: the fire after the jump
-	// happened only once the clock had passed the last slot again.
-	if c.sleeps < 4+int(2*time.Minute/iv) {
+	// The clock needed 50s to catch up: the fire after the jump happened
+	// only once the clock had passed the last slot again.
+	if c.sleeps < 4+int(50*time.Second/iv) {
 		t.Errorf("only %d sleeps; the schedule did not wait for the clock to catch up", c.sleeps)
+	}
+}
+
+// TestScheduleLargeBackwardJump: after the wall clock is stepped back 2h
+// (it was wrong and got corrected), probing resumes within about one
+// interval instead of 2h later.
+func TestScheduleLargeBackwardJump(t *testing.T) {
+	for _, iv := range []time.Duration{5 * time.Second, 15 * time.Second, 60 * time.Second} {
+		ph := iv / 3
+		start := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
+		c := &fakeClock{t: start, jumps: map[int]time.Duration{4: -2 * time.Hour}}
+		var fs []fired
+		ctx, cancel := context.WithCancel(context.Background())
+		schedule(ctx, clock{now: c.now, sleep: c.sleep}, iv, ph, func(slot time.Time) {
+			fs = append(fs, fired{slot, c.now()})
+			if len(fs) == 10 || c.sleeps > 100000 {
+				cancel()
+			}
+		})
+		cancel()
+		var before, after []fired
+		for _, f := range fs {
+			if f.at.Before(start) {
+				after = append(after, f)
+			} else {
+				before = append(before, f)
+			}
+		}
+		if len(before) == 0 || len(after) == 0 {
+			t.Fatalf("iv %s: fired %v", iv, fs)
+		}
+		// The step happened within one interval after the last fire before it.
+		stepped := before[len(before)-1].at.Add(-2 * time.Hour)
+		if d := after[0].at.Sub(stepped); d > 3*iv {
+			t.Errorf("iv %s: first probe %s after the step back, want within ~1 interval", iv, d)
+		}
+		checkSlots(t, after, iv, ph)
 	}
 }

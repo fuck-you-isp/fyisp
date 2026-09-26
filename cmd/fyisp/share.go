@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -19,35 +20,80 @@ type shareControl struct {
 	proto  string
 	log    *slog.Logger
 
-	mu     sync.Mutex
+	newTunnel func(tunnel.Options) tunnel.Tunnel // tunnel.New; tests replace it
+	stopWait  time.Duration                      // how long Stop waits for the tunnel
+
+	mu   sync.Mutex
+	run  *shareRun // the current run (nil: off)
+	prev *shareRun // a stopped run that had not exited when Stop gave up
+}
+
+// shareRun is one Start..Stop of the tunnel.
+type shareRun struct {
 	t      tunnel.Tunnel
 	cancel context.CancelFunc
-	done   chan struct{}
+	done   chan struct{} // closed when Run returned
+	err    error         // Run's error; read after done
+}
+
+func (r *shareRun) exited() bool {
+	select {
+	case <-r.done:
+		return true
+	default:
+		return false
+	}
 }
 
 func newShareControl(parent context.Context, origin, secret, proto string, log *slog.Logger) *shareControl {
-	return &shareControl{parent: parent, origin: origin, secret: secret, proto: proto, log: log}
+	return &shareControl{parent: parent, origin: origin, secret: secret, proto: proto, log: log,
+		newTunnel: tunnel.New, stopWait: 10 * time.Second}
 }
 
-func (s *shareControl) Start(context.Context) error {
+// errShareStopping is returned by Start while the previous tunnel is still
+// shutting down (its Stop timed out); starting another one now would fail.
+var errShareStopping = errors.New("the previous public link is still shutting down; try again in a few seconds")
+
+func (s *shareControl) Start(ctx context.Context) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.t != nil {
+	if s.run != nil && !s.run.exited() {
+		s.mu.Unlock()
 		return nil
 	}
-	t := tunnel.New(tunnel.Options{OriginURL: s.origin, Protocol: s.proto, Log: s.log})
-	ctx, cancel := context.WithCancel(s.parent)
-	done := make(chan struct{})
+	prev := s.prev
+	s.mu.Unlock()
+	// Only one tunnel can run per process: wait (within the caller's
+	// deadline) for one whose Stop timed out.
+	if prev != nil {
+		select {
+		case <-prev.done:
+		case <-ctx.Done():
+			return errShareStopping
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.prev == prev {
+		s.prev = nil
+	}
+	if s.run != nil && !s.run.exited() {
+		return nil // started concurrently
+	}
+	t := s.newTunnel(tunnel.Options{OriginURL: s.origin, Protocol: s.proto, Log: s.log})
+	runCtx, cancel := context.WithCancel(s.parent)
+	r := &shareRun{t: t, cancel: cancel, done: make(chan struct{})}
 	events, unsubscribe := t.Subscribe()
 	go func() {
-		defer close(done)
+		defer close(r.done)
 		defer unsubscribe()
-		if err := t.Run(ctx); err != nil {
+		if err := t.Run(runCtx); err != nil {
+			r.err = err
 			s.log.Error("public link failed", "err", err)
 		}
 	}()
 	go s.announce(events)
-	s.t, s.cancel, s.done = t, cancel, done
+	s.run = r
 	s.log.Warn("public link starting: anyone with the link can view your charts (redacted: no LAN addresses, no settings)")
 	return nil
 }
@@ -65,31 +111,42 @@ func (s *shareControl) announce(events <-chan tunnel.Event) {
 
 func (s *shareControl) Stop() error {
 	s.mu.Lock()
-	cancel, done := s.cancel, s.done
-	s.t, s.cancel, s.done = nil, nil, nil
+	r := s.run
+	s.run = nil
 	s.mu.Unlock()
-	if cancel == nil {
+	if r == nil {
 		return nil
 	}
-	cancel()
+	r.cancel()
 	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		s.log.Warn("public link did not stop within 10s")
+	case <-r.done:
+		s.log.Info("public link stopped")
+	case <-time.After(s.stopWait):
+		s.log.Warn("public link did not stop within the timeout; it keeps shutting down in the background", "timeout", s.stopWait)
+		s.mu.Lock()
+		s.prev = r
+		s.mu.Unlock()
 	}
-	s.log.Info("public link stopped")
 	return nil
 }
 
 func (s *shareControl) State() web.ShareState {
 	s.mu.Lock()
-	t := s.t
+	r := s.run
 	s.mu.Unlock()
-	if t == nil {
+	if r == nil {
 		return web.ShareState{Phase: web.ShareOff}
 	}
-	st := t.State()
+	st := r.t.State()
 	out := web.ShareState{Protocol: st.Protocol, LastErr: st.LastErr}
+	if r.exited() {
+		// Run returned without Stop: it failed to start (or the process is
+		// shutting down).
+		if r.err != nil {
+			return web.ShareState{Phase: web.ShareError, LastErr: r.err.Error()}
+		}
+		return web.ShareState{Phase: web.ShareOff, LastErr: st.LastErr}
+	}
 	switch st.Phase {
 	case tunnel.Connected:
 		out.Phase = web.ShareConnected

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -64,6 +65,45 @@ type panelParams struct {
 	from, to time.Time
 	points   int
 	key      string // normalized query, for caching
+	fk, tk   string // normalized from and to (see parseTime)
+	// fromAbs and toAbs report unix-millisecond bounds; fromDerived that
+	// from was clamped to to-MaxRange.
+	fromAbs, toAbs, fromDerived bool
+}
+
+func (p *panelParams) setKey() {
+	p.key = p.group + "\x00" + p.fk + "\x00" + p.tk + "\x00" + strconv.Itoa(p.points)
+}
+
+// quantize rounds absolute bounds outward to the bucket step the store
+// would use for this range (buckets are aligned to multiples of the step),
+// so absolute ranges that differ by less than a bucket share one cache key.
+// It adds at most one bucket at each end. A to rounded past now becomes now.
+func (p *panelParams) quantize(now time.Time) {
+	tier := store.TierRaw
+	if p.to.Sub(p.from) > store.RawMaxRange {
+		tier = store.TierHourly
+	}
+	step := store.BucketStep(p.from, p.to, p.points, tier)
+	if p.toAbs {
+		to := p.to.Truncate(step)
+		if to.Before(p.to) {
+			to = to.Add(step)
+		}
+		if to.After(now) {
+			p.to, p.tk, p.toAbs = now, "now", false
+		} else {
+			p.to, p.tk = to, strconv.FormatInt(to.UnixMilli(), 10)
+		}
+	}
+	switch {
+	case p.fromDerived:
+		p.from, p.fk = p.to.Add(-MaxRange), p.tk+"-90d"
+	case p.fromAbs:
+		p.from = p.from.Truncate(step)
+		p.fk = strconv.FormatInt(p.from.UnixMilli(), 10)
+	}
+	p.setKey()
 }
 
 // parseTime accepts "now", "now-<n><s|m|h|d>" and unix milliseconds. It
@@ -130,23 +170,23 @@ func parsePanelParams(q url.Values, now time.Time) (panelParams, error) {
 	if ts == "" {
 		ts = "now"
 	}
-	var fk, tk string
 	var err error
-	if p.from, fk, err = parseTime(fs, now); err != nil {
+	if p.from, p.fk, err = parseTime(fs, now); err != nil {
 		return p, err
 	}
-	if p.to, tk, err = parseTime(ts, now); err != nil {
+	if p.to, p.tk, err = parseTime(ts, now); err != nil {
 		return p, err
 	}
+	p.fromAbs, p.toAbs = !strings.HasPrefix(p.fk, "now"), !strings.HasPrefix(p.tk, "now")
 	if p.to.After(now) {
-		p.to, tk = now, "now"
+		p.to, p.tk, p.toAbs = now, "now", false
 	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
 	if p.to.Sub(p.from) > MaxRange {
 		p.from = p.to.Add(-MaxRange)
-		fk = tk + "-90d"
+		p.fk, p.fromAbs, p.fromDerived = p.tk+"-90d", false, true
 	}
 	p.points = DefaultPoints
 	if s := q.Get("points"); s != "" {
@@ -156,7 +196,7 @@ func parsePanelParams(q url.Values, now time.Time) (panelParams, error) {
 		}
 		p.points = min(max(n, minPoints), MaxPoints)
 	}
-	p.key = p.group + "\x00" + fk + "\x00" + tk + "\x00" + strconv.Itoa(p.points)
+	p.setKey()
 	return p, nil
 }
 
@@ -248,10 +288,14 @@ func (d *Deps) queryPanel(ctx context.Context, p panelParams, now time.Time) (*p
 	if err != nil {
 		return nil, err
 	}
-	// Before the store's oldest data fyisp never ran: that is not a gap.
-	floor := p.from
-	if st, err := d.Store.Stats(ctx); err == nil && st.Oldest.After(floor) {
-		floor = st.Oldest
+	// Before a series' first sample fyisp was not running or the target did
+	// not exist yet: that is not a gap. Series with no data have no gaps.
+	firsts, firstsOK := d.firstSamples(ctx, now)
+	var oldest time.Time
+	if !firstsOK {
+		if st, err := d.Store.Stats(ctx); err == nil {
+			oldest = st.Oldest
+		}
 	}
 	pd := &panelData{group: g, params: p, now: now, res: res, series: series}
 	byKey := make(map[model.SeriesKey]*store.SeriesCols, len(res.Series))
@@ -264,21 +308,101 @@ func (d *Deps) queryPanel(ctx context.Context, p panelParams, now time.Time) (*p
 	for i, s := range series {
 		c := byKey[s.key]
 		pd.cols[i] = c
+		floor := later(p.from, oldest)
+		if firstsOK {
+			first, ok := firsts[s.key]
+			if !ok {
+				pd.gap[i] = make([]uint32, pd.nb)
+				continue
+			}
+			floor = later(floor, first)
+		}
 		pd.gap[i] = notMeasured(res, c, s.interval, floor, p.to, now, pd.nb)
 	}
 	return pd, nil
 }
 
+// probeSettle is the longest a probe may run before it reports: the HTTPS
+// timeout in internal/probe (5s; TCP and ICMP use less). Raise it if a probe
+// timeout grows beyond it, or recent slots show as not measured during
+// outages.
+const probeSettle = 5 * time.Second
+
+// firstsTTL bounds how stale the cached first-sample times may be. A series
+// that appears meanwhile shows no "not measured" until the next refresh,
+// which is correct: there was nothing to measure before it.
+const firstsTTL = 30 * time.Second
+
+// firstCache caches each series' first sample time.
+type firstCache struct {
+	mu      sync.Mutex
+	at      time.Time
+	m       map[model.SeriesKey]time.Time
+	refined map[model.SeriesKey][2]time.Time // Series().First -> first real sample
+}
+
+var errStopRaw = errors.New("stop")
+
+// firstSamples returns each stored series' first real sample time. ok is
+// false when the store could not say. store.Reader.Series reports the start
+// of the first stored block, which may begin with not-measured slots (blocks
+// are per hour), so the first hour is scanned for the first real sample
+// once per series.
+func (d *Deps) firstSamples(ctx context.Context, now time.Time) (map[model.SeriesKey]time.Time, bool) {
+	fc := d.firsts
+	if fc == nil {
+		fc = &firstCache{}
+	}
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	if fc.m != nil && !now.Before(fc.at) && now.Sub(fc.at) < firstsTTL {
+		return fc.m, true
+	}
+	infos, err := d.Store.Series(ctx)
+	if err != nil {
+		d.log().Warn("store series", "err", err)
+		return nil, false
+	}
+	refined := make(map[model.SeriesKey][2]time.Time, len(infos))
+	m := make(map[model.SeriesKey]time.Time, len(infos))
+	for _, in := range infos {
+		first, keep := in.First, true
+		if r, ok := fc.refined[in.Key]; ok && r[0].Equal(in.First) {
+			first = r[1]
+		} else {
+			err := d.Store.Raw(ctx, []model.SeriesKey{in.Key}, in.First, in.First.Add(time.Hour), func(p store.RawPoint) error {
+				if p.Lost && p.Reason == model.ReasonGap {
+					return nil
+				}
+				first = p.TS
+				return errStopRaw
+			})
+			if err != nil && !errors.Is(err, errStopRaw) {
+				d.log().Warn("store raw", "series", in.Key, "err", err)
+				first, keep = in.First, false // retry next time
+			}
+		}
+		if keep {
+			refined[in.Key] = [2]time.Time{in.First, first}
+		}
+		m[in.Key] = first
+	}
+	fc.at, fc.m, fc.refined = now, m, refined
+	return m, true
+}
+
 // notMeasured estimates, per bucket, how many scheduled samples are missing
 // entirely (neither a result nor a loss): fyisp was not running, the machine
-// slept, or the clock jumped. It counts only whole slots inside [from, to),
-// older than one interval, so it never over-reports.
+// slept, or the clock jumped. It counts only whole slots inside [from, to)
+// that must have reported by now, so it never over-reports: a slot's probe
+// fires up to one interval after the slot start (its phase) and may run for
+// the probe timeout (see probeSettle).
 func notMeasured(res *store.PanelResult, c *store.SeriesCols, iv time.Duration, from, to, now time.Time, nb int) []uint32 {
 	gap := make([]uint32, nb)
 	if res.Step <= 0 || iv <= 0 {
 		return gap
 	}
-	settled := now.Add(-iv)
+	settled := now.Add(-iv - probeSettle)
 	for i := range nb {
 		bs := res.Start.Add(time.Duration(i) * res.Step)
 		be := bs.Add(res.Step)

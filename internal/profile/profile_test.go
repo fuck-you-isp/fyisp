@@ -150,7 +150,7 @@ override:
   - {name: dev-GitHub, interval: 30s, kinds: [https, icmp]}
   - {name: Google-Meet, host_overrides: {icmp: meet.google.com}}
 add:
-  - {name: router, host: 192.168.1.1, group: home, kinds: [icmp], interval: 5s}
+  - {name: router, host: 192.168.1.1, group: home, kinds: [icmp], interval: 6s}
 `)
 	p, err := Load(f)
 	if err != nil {
@@ -178,7 +178,7 @@ add:
 		t.Errorf("Google-Meet icmp host %s", h)
 	}
 	r := by["router"]
-	if r.Host != "192.168.1.1" || r.Group != "home" || r.Interval != 5*time.Second || len(r.Kinds) != 1 {
+	if r.Host != "192.168.1.1" || r.Group != "home" || r.Interval != 6*time.Second || len(r.Kinds) != 1 {
 		t.Errorf("router %+v", r)
 	}
 }
@@ -253,6 +253,10 @@ func TestValidate(t *testing.T) {
 		}, Limits{MaxTargets: 1}},
 		{"below the minimum 5s", func(p *model.Profile) { p.Targets[0].Interval = 4 * time.Second }, Limits{}},
 		{"below the minimum 10s", func(p *model.Profile) { p.Targets[0].Interval = 9 * time.Second }, Limits{MinIntervalSecs: 10}},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 10 * time.Second }, Limits{}},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 7500 * time.Millisecond }, Limits{}},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 21 * time.Second }, Limits{}},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 2 * time.Hour }, Limits{}},
 		{"unknown group", func(p *model.Profile) { p.Targets[0].Group = "x" }, Limits{}},
 		{"duplicate group id", func(p *model.Profile) { p.Groups = append(p.Groups, p.Groups[0]) }, Limits{}},
 		{"private address", func(p *model.Profile) { p.Targets[0].Host = "192.168.0.1" }, Limits{}},
@@ -274,6 +278,13 @@ func TestValidate(t *testing.T) {
 		err := Validate(p, c.l)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q: got %v", c.want, err)
+		}
+	}
+	for _, iv := range []time.Duration{6 * time.Second, 9 * time.Second, 12 * time.Second, 15 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute, time.Hour} {
+		p := base()
+		p.Targets[0].Interval = iv
+		if err := Validate(p, Limits{}); err != nil {
+			t.Errorf("interval %s: %v", iv, err)
 		}
 	}
 	p := base()

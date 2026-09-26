@@ -23,8 +23,11 @@
 [Unit]
 Description=fyisp internet quality monitor
 Documentation=https://github.com/fuck-you-isp/fyisp
-Wants=network-online.target
-After=network-online.target
+# time-sync.target: start after the clock is set (when a time sync service
+# provides it, e.g. systemd-timesyncd with systemd-time-wait-sync), so the
+# first samples are not stamped with a wrong boot-time clock.
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
 
 [Service]
 Type=simple

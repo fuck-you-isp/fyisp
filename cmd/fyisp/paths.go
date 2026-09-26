@@ -4,6 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +38,10 @@ func defaultDataDir() (string, error) {
 }
 
 // resolveDataDir creates the data directory (0700) and returns a cleanup func
-// that removes it only in --ephemeral mode.
+// that removes it only in --ephemeral mode. The permissions of a --data-dir
+// that already exists are the user's choice and are not changed; fyisp
+// warns if it is writable by group or others (the database files themselves
+// are always 0600).
 func resolveDataDir(c config) (string, func(), error) {
 	noop := func() {}
 	if c.ephemeral {
@@ -47,17 +52,43 @@ func resolveDataDir(c config) (string, func(), error) {
 		return d, func() { os.RemoveAll(d) }, nil
 	}
 	d := c.dataDir
-	if d == "" {
+	own := d == "" // fyisp's default directory: always kept private
+	if own {
 		var err error
 		if d, err = defaultDataDir(); err != nil {
 			return "", noop, err
 		}
 	}
+	if _, err := os.Stat(d); errors.Is(err, fs.ErrNotExist) {
+		own = true // created below
+	}
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return "", noop, fmt.Errorf("creating data directory: %w", err)
 	}
-	_ = os.Chmod(d, 0o700)
+	if own {
+		_ = os.Chmod(d, 0o700)
+	} else if w := writableByOthers(d); w != "" {
+		slog.Warn("data directory is writable by "+w+"; consider chmod 700", "dir", d)
+	}
 	return d, noop, nil
+}
+
+// writableByOthers returns "group", "others" or "group and others" when dir
+// is writable by them, else "" (always "" on Windows, which has no mode bits).
+func writableByOthers(dir string) string {
+	fi, err := os.Stat(dir)
+	if err != nil || runtime.GOOS == "windows" {
+		return ""
+	}
+	switch m := fi.Mode().Perm(); {
+	case m&0o022 == 0o022:
+		return "group and others"
+	case m&0o020 != 0:
+		return "group"
+	case m&0o002 != 0:
+		return "others"
+	}
+	return ""
 }
 
 func checkFreeSpace(dir string, need uint64) error {

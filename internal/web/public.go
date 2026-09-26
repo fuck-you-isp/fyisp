@@ -16,7 +16,16 @@ const (
 	PublicClientBurst = 20 // one page load is ~15 requests
 	PublicMaxQueries  = 8  // concurrent panel queries
 	PublicCacheTTL    = 10 * time.Second
-	MinSecretLen      = 16
+	// The response cache keeps at most PublicCacheEntries responses and
+	// PublicCacheBytes in total; single responses over PublicCacheMaxEntry
+	// are served but not kept.
+	PublicCacheEntries  = 512
+	PublicCacheBytes    = 32 << 20
+	PublicCacheMaxEntry = 4 << 20
+	// PublicCSVMaxPoints caps buckets per series in the public CSV export
+	// (the local listener allows MaxPoints).
+	PublicCSVMaxPoints = 500
+	MinSecretLen       = 16
 )
 
 type publicHandler struct {
@@ -35,7 +44,7 @@ func Public(d Deps, secret string) http.Handler {
 	}
 	s := newServer(d, true, "")
 	s.sem = make(chan struct{}, PublicMaxQueries)
-	s.cache = newRespCache(PublicCacheTTL, 512)
+	s.cache = newRespCache(PublicCacheTTL, PublicCacheEntries, PublicCacheBytes, PublicCacheMaxEntry)
 	return &publicHandler{
 		server: s,
 		prefix: "/s/" + secret + "/",
