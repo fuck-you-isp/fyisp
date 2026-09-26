@@ -35,10 +35,15 @@ const (
 // Run opens the ICMP socket/handle and closes it when done.
 func New(o Options) Runner {
 	if o.ResolveEvery <= 0 {
-		o.ResolveEvery = 15 * time.Minute
+		o.ResolveEvery = time.Minute
 	}
 	if o.RetryResolve <= 0 {
 		o.RetryResolve = 10 * time.Second
+	}
+	if o.Lookup == nil {
+		o.Lookup = func(ctx context.Context, host string) ([]netip.Addr, error) {
+			return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+		}
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -143,6 +148,9 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 		for _, k := range kindsOf(t) {
 			s := &series{key: model.SeriesKey{Target: t.Name, Kind: k}, idx: uint32(i), port: port, iv: iv}
 			s.host = hostOf(t.HostFor(k))
+			if s.host.special != "" && k != model.KindICMP {
+				continue // path layers are measured with ICMP only
+			}
 			switch k {
 			case model.KindHTTPS:
 				s.phase = phaseOf(i, n, iv, 0)
@@ -172,7 +180,7 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 	}
 	wg.Wait()
 	for _, hs := range hosts {
-		if hs.literal {
+		if hs.literal || hs.special != "" {
 			continue
 		}
 		wg.Add(1)
@@ -185,9 +193,9 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 		go func() {
 			defer wg.Done()
 			schedule(ctx, c, s.iv, s.phase, func(slot time.Time) {
-				smp := r.probe(ctx, s, png)
-				if ctx.Err() != nil {
-					return // shutting down: not a measurement
+				smp, ok := r.probe(ctx, s, png)
+				if !ok || ctx.Err() != nil {
+					return // not measured, or shutting down
 				}
 				smp.Slot = slot
 				sink.Observe(smp)
@@ -214,13 +222,26 @@ func httpsURL(host string, port int, path string) string {
 	return "https://" + hp + path
 }
 
-// probe runs one measurement. Slot is set by the caller.
-func (r *runner) probe(ctx context.Context, s *series, png pinger) model.Sample {
-	smp := model.Sample{Key: s.key}
-	ip, err := s.host.addr()
-	if err != nil {
+// probe runs one measurement. Slot is set by the caller. ok is false when
+// the slot is not measured (a special host whose address is not known).
+func (r *runner) probe(ctx context.Context, s *series, png pinger) (smp model.Sample, ok bool) {
+	smp = model.Sample{Key: s.key}
+	var (
+		ip  netip.Addr
+		err error
+	)
+	if s.host.special != "" {
+		ip, ok, err = r.pathAddr(s.host.special)
+		if !ok {
+			return smp, false
+		}
+		if err != nil {
+			smp.Lost, smp.Reason, smp.Err = true, model.ReasonNoNetwork, err.Error()
+			return smp, true
+		}
+	} else if ip, err = s.host.addr(); err != nil {
 		smp.Lost, smp.Reason, smp.Err = true, model.ReasonDNS, err.Error()
-		return smp
+		return smp, true
 	}
 	var (
 		rtt    time.Duration
@@ -236,10 +257,35 @@ func (r *runner) probe(ctx context.Context, s *series, png pinger) model.Sample 
 	}
 	if err != nil {
 		smp.Lost, smp.Reason, smp.Err = true, reason, err.Error()
-		return smp
+		return smp, true
 	}
 	smp.RTT = rtt
-	return smp
+	return smp, true
+}
+
+var errNoRoute = errors.New("no default route")
+
+// pathAddr resolves a special host from the current network path. ok is
+// false when the slot is not measured (no Path, or the address is not known
+// yet); err is set when there is no default route (the slot is lost).
+func (r *runner) pathAddr(special string) (ip netip.Addr, ok bool, err error) {
+	if r.o.Path == nil {
+		return netip.Addr{}, false, nil
+	}
+	p := r.o.Path()
+	switch special {
+	case model.HostGateway:
+		ip = p.Gateway
+	case model.HostEdge:
+		ip = p.Edge
+	}
+	switch {
+	case ip.IsValid():
+		return ip.Unmap(), true, nil
+	case p.NoRoute():
+		return netip.Addr{}, true, errNoRoute
+	}
+	return netip.Addr{}, false, nil
 }
 
 func (r *runner) probeTCP(ctx context.Context, ip netip.Addr, port int, timeout time.Duration) (time.Duration, model.Reason, error) {
@@ -382,21 +428,29 @@ func (r *runner) probeHTTPS(ctx context.Context, s *series) (time.Duration, bool
 type hostState struct {
 	name     string
 	literal  bool
+	special  string // model.HostGateway or model.HostEdge: resolved per probe from Options.Path
 	cur      atomic.Pointer[resolution]
 	onChange []func() // called when the address changes
 }
 
 // resolution: ip is valid when known; err is set when the last lookup
-// failed (a previous ip is kept until a lookup succeeds again).
+// failed, fails counts consecutive failed lookups. The previous ip is kept
+// and used until fails reaches DNSFailLimit, then probes are lost with
+// ReasonDNS until a lookup succeeds again.
 type resolution struct {
-	ip  netip.Addr
-	err error
+	ip    netip.Addr
+	err   error
+	fails int
 }
 
 var errNotResolved = errors.New("not resolved yet")
 
 func newHostState(h string) *hostState {
 	hs := &hostState{name: h}
+	if h == model.HostGateway || h == model.HostEdge {
+		hs.special = h
+		return hs
+	}
 	if a, err := netip.ParseAddr(h); err == nil {
 		hs.literal = true
 		hs.cur.Store(&resolution{ip: a.Unmap()})
@@ -409,19 +463,19 @@ func (hs *hostState) addr() (netip.Addr, error) {
 	switch {
 	case c == nil:
 		return netip.Addr{}, &net.DNSError{Err: errNotResolved.Error(), Name: hs.name}
-	case c.ip.IsValid():
+	case c.ip.IsValid() && c.fails < DNSFailLimit:
 		return c.ip, nil
 	}
 	return netip.Addr{}, c.err
 }
 
 func (r *runner) resolve(ctx context.Context, hs *hostState) {
-	if hs.literal {
+	if hs.literal || hs.special != "" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
-	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip4", hs.name)
+	ips, err := r.o.Lookup(ctx, hs.name)
 	if ctx.Err() != nil && err == nil {
 		err = ctx.Err()
 	}
@@ -441,16 +495,21 @@ func (r *runner) resolve(ctx context.Context, hs *hostState) {
 			err = &net.DNSError{Err: err.Error(), Name: hs.name}
 		}
 		next.err = err
+		next.fails = 1
 		if prev != nil {
-			next.ip = prev.ip // keep using the last good address
+			next.ip = prev.ip // keep using the last good address (for a while)
+			next.fails = prev.fails + 1
 		}
-		if prev == nil || prev.err == nil {
+		switch {
+		case prev == nil || prev.err == nil:
 			r.o.Log.Warn("dns lookup failed", "host", hs.name, "err", err, "keeping", next.ip)
+		case next.ip.IsValid() && next.fails == DNSFailLimit:
+			r.o.Log.Warn("dns lookup keeps failing; probes of this host count as lost", "host", hs.name, "err", err, "failed_lookups", next.fails)
 		}
 	} else {
 		next.ip = ips[0].Unmap()
 		if prev != nil && prev.err != nil {
-			r.o.Log.Info("dns lookup recovered", "host", hs.name)
+			r.o.Log.Info("dns lookup recovered", "host", hs.name, "failed_lookups", prev.fails)
 		}
 	}
 	hs.cur.Store(next)

@@ -408,3 +408,40 @@ func keys(m map[string]bool) []string {
 	sort.Strings(k)
 	return k
 }
+
+func TestVerdictGauges(t *testing.T) {
+	c := New(testProfile)
+	if m := scrape(t, c); m["fyisp_verdict"] != nil || m["fyisp_layer_healthy"] != nil {
+		t.Fatal("verdict series without a source")
+	}
+	yes, no := true, false
+	c.SetVerdictSource(func() (model.Verdict, map[string]*bool) {
+		return model.Verdict{Kind: model.VerdictISP}, map[string]*bool{
+			model.LayerGateway: &yes, model.LayerEdge: &no, model.LayerAnycast: nil,
+		}
+	})
+	m := scrape(t, c)
+	f := m["fyisp_verdict"]
+	if f == nil || f.typ != "gauge" || len(f.samples) != 8 {
+		t.Fatalf("fyisp_verdict: %+v", f)
+	}
+	for _, s := range f.samples {
+		want := 0.0
+		if s.labels["kind"] == "isp" {
+			want = 1
+		}
+		if s.value != want {
+			t.Errorf("fyisp_verdict%v = %v", s.labels, s.value)
+		}
+	}
+	l := m["fyisp_layer_healthy"]
+	if l == nil || len(l.samples) != 2 {
+		t.Fatalf("fyisp_layer_healthy: %+v", l)
+	}
+	if v, ok := l.find(map[string]string{"layer": "gateway"}); !ok || v != 1 {
+		t.Errorf("gateway %v %v", v, ok)
+	}
+	if v, ok := l.find(map[string]string{"layer": "isp-edge"}); !ok || v != 0 {
+		t.Errorf("isp-edge %v %v", v, ok)
+	}
+}

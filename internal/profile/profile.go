@@ -14,6 +14,7 @@
 //	override:                   # with extends: change fields of a target by name
 //	  - {name: dev-GitHub, interval: 30s}
 //	targets: [...]              # without extends: the full target list
+//	path: false                 # optional: leave out the built-in "Network path" group
 //
 // Target fields: name, host, group, port (default 443), path (default "/"),
 // kinds (https|tcp|icmp, default all), interval (duration, default 15s; ICMP
@@ -22,7 +23,19 @@
 // An interval must be a whole number of seconds, divisible by 3 (so the ICMP
 // interval is whole seconds too) and divide an hour evenly, so that slots
 // line up with hour boundaries: 6s, 9s, 12s, 15s, 18s, 24s, 30s, 36s, 45s,
-// 60s, ... up to 3600s. It must also be at least Limits.MinIntervalSecs.
+// 60s, ... up to 3600s. It must also be at least Limits.MinIntervalSecs,
+// except for targets on the special hosts below, which may use 3s.
+//
+// Special hosts: "@gateway" (the default gateway) and "@isp-edge" (the first
+// public hop towards the internet) are resolved at run time from the local
+// network path. Targets using them must have kinds [icmp].
+//
+// Network path group: Default and every loaded file (standalone or
+// extending the default) get a built-in group "path" ("Network path", shown
+// first) that measures the layers of the path: the gateway and the ISP edge
+// (ICMP every second), and three anycast resolvers (ICMP and TCP). A file
+// opts out with `path: false` at the top level. Its target names are
+// reserved while it is present.
 package profile
 
 import (
@@ -78,10 +91,56 @@ type fileProfile struct {
 	Add      []fileTarget  `yaml:"add"`
 	Remove   []string      `yaml:"remove"`
 	Override []fileTarget  `yaml:"override"`
+	// Path adds the built-in network path group unless false.
+	Path *bool `yaml:"path"`
 }
 
-// Default returns a fresh copy of the embedded default profile.
+// PathGroup is the ID of the built-in network path group.
+const PathGroup = "path"
+
+// PathInterval is the interval of the gateway and ISP edge targets: ICMP
+// every second.
+const PathInterval = 3 * time.Second
+
+// pathTargets are the built-in network path targets. Names are identities
+// (renaming one starts a new series) and differ from the DNS group's names
+// for the same resolvers, which measure them as services.
+func pathTargets() []model.Target {
+	icmp := []model.ProbeKind{model.KindICMP}
+	icmpTCP := []model.ProbeKind{model.KindICMP, model.KindTCP}
+	return []model.Target{
+		{Name: "Gateway", Host: model.HostGateway, Group: PathGroup, Layer: model.LayerGateway, Kinds: icmp, Interval: PathInterval},
+		{Name: "ISP edge", Host: model.HostEdge, Group: PathGroup, Layer: model.LayerEdge, Kinds: icmp, Interval: PathInterval},
+		{Name: "Cloudflare DNS 1.1.1.1", Host: "1.1.1.1", Group: PathGroup, Layer: model.LayerAnycast, Kinds: icmpTCP, Interval: DefaultInterval},
+		{Name: "Google DNS 8.8.8.8", Host: "8.8.8.8", Group: PathGroup, Layer: model.LayerAnycast, Kinds: icmpTCP, Interval: DefaultInterval},
+		{Name: "Quad9 DNS 9.9.9.9", Host: "9.9.9.9", Group: PathGroup, Layer: model.LayerAnycast, Kinds: icmpTCP, Interval: DefaultInterval},
+	}
+}
+
+// addPath puts the network path group first: its Order is below every
+// other group's, and its targets come before the others.
+func addPath(p *model.Profile) {
+	order := 0
+	for _, g := range p.Groups {
+		order = min(order, g.Order-1)
+	}
+	p.Groups = append([]model.Group{{ID: PathGroup, Title: "Network path", Order: order}}, p.Groups...)
+	p.Targets = append(pathTargets(), p.Targets...)
+}
+
+// Default returns a fresh copy of the embedded default profile, with the
+// network path group.
 func Default() (*model.Profile, error) {
+	p, err := defaultBase()
+	if err != nil {
+		return nil, err
+	}
+	addPath(p)
+	return p, nil
+}
+
+// defaultBase is the embedded default profile without the path group.
+func defaultBase() (*model.Profile, error) {
 	fp, err := decode(defaultYAML)
 	if err != nil {
 		return nil, fmt.Errorf("default profile: %w", err)
@@ -110,12 +169,32 @@ func Load(path string) (*model.Profile, error) {
 	return p, nil
 }
 
-// Parse builds a profile from YAML without validating it.
+// Parse builds a profile from YAML without validating it. The network path
+// group is added unless the file sets `path: false`.
 func Parse(b []byte) (*model.Profile, error) {
 	fp, err := decode(b)
 	if err != nil {
 		return nil, err
 	}
+	p, err := parse(fp)
+	if err != nil {
+		return nil, err
+	}
+	if fp.Path == nil || *fp.Path {
+		if indexGroup(p.Groups, PathGroup) >= 0 {
+			return nil, fmt.Errorf("group id %q is reserved for the network path group (set `path: false` to use it)", PathGroup)
+		}
+		for _, t := range pathTargets() {
+			if indexTarget(p.Targets, t.Name) >= 0 {
+				return nil, fmt.Errorf("target name %q is reserved for the network path group (set `path: false` to use it)", t.Name)
+			}
+		}
+		addPath(p)
+	}
+	return p, nil
+}
+
+func parse(fp *fileProfile) (*model.Profile, error) {
 	if len(fp.Extends) == 0 {
 		if len(fp.Add)+len(fp.Remove)+len(fp.Override) > 0 {
 			return nil, errors.New("add/remove/override need `extends: [default]`")
@@ -128,7 +207,7 @@ func Parse(b []byte) (*model.Profile, error) {
 	if len(fp.Targets) > 0 {
 		return nil, errors.New("targets: not allowed with extends; use add/remove/override")
 	}
-	base, err := Default()
+	base, err := defaultBase()
 	if err != nil {
 		return nil, err
 	}
@@ -375,6 +454,7 @@ func Validate(p *model.Profile, l Limits) error {
 		if err := checkHost(t.Host, l.AllowPrivateIPs); err != nil {
 			bad("target %q: host: %v", t.Name, err)
 		}
+		special := isSpecial(t.Host)
 		for k, h := range t.HostOverrides {
 			if k < model.KindHTTPS || k > model.KindICMP {
 				bad("target %q: host_overrides: unknown kind %d", t.Name, k)
@@ -382,6 +462,10 @@ func Validate(p *model.Profile, l Limits) error {
 			if err := checkHost(h, l.AllowPrivateIPs); err != nil {
 				bad("target %q: host_overrides[%s]: %v", t.Name, k, err)
 			}
+			special = special || isSpecial(h)
+		}
+		if special && (len(t.Kinds) != 1 || t.Kinds[0] != model.KindICMP) {
+			bad("target %q: %s and %s are probed with ICMP only: set kinds: [icmp]", t.Name, model.HostGateway, model.HostEdge)
 		}
 		if t.Port < 0 || t.Port > 65535 {
 			bad("target %q: port %d out of range", t.Name, t.Port)
@@ -398,8 +482,12 @@ func Validate(p *model.Profile, l Limits) error {
 			}
 			seen[k] = true
 		}
-		if t.Interval < 0 || (t.Interval != 0 && t.Interval < minIv) {
-			bad("target %q: interval %s is below the minimum %s", t.Name, t.Interval, minIv)
+		tMin := minIv
+		if special {
+			tMin = min(minIv, PathInterval) // pinging the own router/edge every second is fine
+		}
+		if t.Interval < 0 || (t.Interval != 0 && t.Interval < tMin) {
+			bad("target %q: interval %s is below the minimum %s", t.Name, t.Interval, tMin)
 		} else if t.Interval != 0 && !validInterval(t.Interval) {
 			bad("target %q: interval %s must be whole seconds, divisible by 3 and divide 1h evenly (e.g. 6s, 9s, 12s, 15s, 30s, 60s)", t.Name, t.Interval)
 		}
@@ -418,6 +506,8 @@ func validInterval(iv time.Duration) bool {
 	return secs%3 == 0 && 3600%secs == 0
 }
 
+// checkName allows single spaces between words (e.g. "ISP edge"), but no
+// other whitespace, control characters, or leading/trailing/double spaces.
 func checkName(n string) error {
 	if n == "" {
 		return errors.New("empty name")
@@ -426,18 +516,27 @@ func checkName(n string) error {
 		return errors.New("name longer than 64 bytes")
 	}
 	for _, r := range n {
-		if unicode.IsControl(r) || unicode.IsSpace(r) {
+		if unicode.IsControl(r) || (unicode.IsSpace(r) && r != ' ') {
 			return errors.New("name contains whitespace or control characters")
 		}
 	}
+	if strings.TrimSpace(n) != n || strings.Contains(n, "  ") {
+		return errors.New("name contains whitespace at the start or end, or double spaces")
+	}
 	return nil
 }
+
+// isSpecial reports whether h is resolved from the network path.
+func isSpecial(h string) bool { return h == model.HostGateway || h == model.HostEdge }
 
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
 func checkHost(h string, allowPrivate bool) error {
 	if h == "" {
 		return errors.New("empty")
+	}
+	if isSpecial(h) {
+		return nil
 	}
 	// IPv6 literals are not accepted in v0.1: probes are IPv4-only.
 	if len(h) > 253 || strings.ContainsAny(h, "/:@ \t\r\n?#[]") {

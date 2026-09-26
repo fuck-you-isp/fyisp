@@ -18,6 +18,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -29,12 +30,37 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/metrics"
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/verdict"
 	"github.com/fuck-you-isp/fyisp/internal/web"
 )
 
 var version = "dev"
+
+// GC defaults, unless GOGC / GOMEMLIMIT are set. The live heap is small
+// (~15 MB: probe connections, the store's current hours) but GOGC=100 lets
+// the heap grow to twice that between collections, and the runtime returns
+// freed heap to the OS only slowly, so RSS follows the peaks. GOGC=50 keeps
+// the peaks ~10-15 MB lower for about one more 3 ms collection a minute
+// (<0.1% of a core). The soft memory limit is a safety net: steady state
+// is far below it, and it only makes the GC work harder when a burst of
+// large dashboard queries would otherwise let the heap double.
+const (
+	defaultGCPercent   = 50
+	defaultMemoryLimit = 96 << 20
+)
+
+// tuneGC applies the GC defaults above where the environment sets none.
+func tuneGC() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(defaultGCPercent)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(defaultMemoryLimit)
+	}
+}
 
 const (
 	defaultListen = "127.0.0.1:3000"
@@ -191,6 +217,7 @@ func newLogger(c config, w io.Writer) *slog.Logger {
 }
 
 func run(ctx context.Context, stop context.CancelFunc, c config) error {
+	tuneGC()
 	log := newLogger(c, os.Stderr)
 	// Before probe.New: probe filters the standard logger's http2 noise.
 	slog.SetDefault(log)
@@ -224,8 +251,25 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	defer st.Close() // last: final save, checkpoint, release the lock
 
 	mc := metrics.New(func() *model.Profile { return prof })
-	var warm web.Warmup
-	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version})
+	// Warm-up counts ordinary targets only (path targets may never report).
+	warm := web.Warmup{Only: map[string]bool{}}
+	for _, t := range prof.Targets {
+		if t.Layer == "" {
+			warm.Only[t.Name] = true
+		}
+	}
+	// The verdict engine judges whose fault a problem is and keeps the
+	// outage log in the store; it must stop before the store closes.
+	eng := verdict.New(func() *model.Profile { return prof }, st, verdict.Options{Log: log})
+	mc.SetVerdictSource(verdict.MetricsSource(eng))
+	// Path discovery (gateway, ISP edge) feeds the @gateway/@isp-edge targets.
+	ni := netinfo.New(netinfo.Options{Log: log})
+	go func() {
+		if err := ni.Run(ctx); err != nil {
+			log.Warn("network path discovery stopped", "err", err)
+		}
+	}()
+	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version, Path: ni.Current})
 	caps := runner.Caps()
 
 	// Listeners: the local dashboard (+ /metrics), and a loopback-only public
@@ -249,9 +293,10 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		Profile: func() *model.Profile { return prof },
 		Store:   st,
 		Status: func() web.Status {
-			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(prof.Targets), Ready: warm.Ready()}
+			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready()}
 		},
 		Metrics: mc.Handler(),
+		Verdict: eng,
 		Share:   share,
 		Log:     log,
 	}
@@ -293,17 +338,25 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	probeDone := make(chan struct{})
 	go func() {
 		defer close(probeDone)
-		if err := runner.Run(ctx, prof, model.Fanout{st, mc, &warm}); err != nil {
+		if err := runner.Run(ctx, prof, model.Fanout{st, mc, eng, &warm}); err != nil {
 			log.Error("probing stopped", "err", err)
 			stop()
 		}
 	}()
 	go maintain(ctx, st, c.retention, log)
+	verdictDone := make(chan struct{})
+	go func() {
+		defer close(verdictDone)
+		if err := eng.Run(ctx); err != nil {
+			log.Error("verdict engine stopped", "err", err)
+		}
+	}()
 
 	<-ctx.Done()
 	log.Info("shutting down")
 	stop() // restore default signal handling: a second Ctrl-C exits at once
 	<-probeDone
+	<-verdictDone // saves the open incident
 	flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := st.Flush(flushCtx); err != nil {

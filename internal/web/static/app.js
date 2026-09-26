@@ -3,7 +3,9 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string}} TargetInfo */
+/** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>}} Verdict */
+/** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
 /** @typedef {{target:string,kind:string,interval:number,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
 
@@ -20,16 +22,47 @@ const KIND_DASH = { https: [], tcp: [6, 3], icmp: [1.5, 3] };
 const REASONS = ['timeout', 'refused', 'reset', 'unreachable', 'dns', 'tls', 'http', 'no_network', 'other'];
 const REASON_LABEL = { timeout: 'timeout', refused: 'refused', reset: 'reset', unreachable: 'unreachable', dns: 'DNS', tls: 'TLS', http: 'HTTP error', no_network: 'no network', other: 'other' };
 const REFRESH_MS = 15000;
+const VERDICT_MS = 5000;
 const SYNC_KEY = 'fyisp';
+const PATH_GROUP = 'path';
 
-/** @type {{range:string, from:number|null, to:number|null, kinds:Set<string>}} */
-const state = { range: '30m', from: null, to: null, kinds: new Set(['https']) };
+// Verdict kinds: headline, short badge, and what it means (the "?" tooltip).
+/** @type {Object<string,{label:string,short:string,why:string}>} */
+const VERDICTS = {
+  ok: { label: 'All good', short: 'OK', why: 'Your router, your ISP and the internet are all answering normally.' },
+  warming_up: { label: 'Warming up', short: 'Warming up', why: 'fyisp has just started and needs a couple of minutes of measurements before it can say whose fault a problem is.' },
+  lan: { label: 'Home network problem', short: 'LAN', why: 'Your router (the gateway) is not answering reliably, so the problem is inside your home: Wi-Fi, cables or the router itself. Your ISP is not to blame for this one.' },
+  isp: { label: 'ISP problem', short: 'ISP', why: 'Your router answers fine, but the first hop on your ISP\'s side does not. The problem is in your ISP\'s network.' },
+  upstream: { label: 'Internet problem beyond your ISP', short: 'Upstream', why: 'Your router and your ISP\'s first hop answer, but most of the internet (including the big anycast resolvers) does not: your ISP\'s upstream links or peering are failing.' },
+  dns: { label: 'DNS problem', short: 'DNS', why: 'The network path works, but name lookups are failing widely. The DNS resolver you use (often your router\'s or your ISP\'s) is the likely culprit.' },
+  service: { label: 'Some services are down', short: 'Service', why: 'Your connection is fine; only some services or regions are unhealthy. That is on their side, not yours or your ISP\'s.' },
+  no_network: { label: 'No network', short: 'No network', why: 'This machine has no route to the internet: Wi-Fi off, cable unplugged, or no network configured.' },
+};
+// The network path, left to right. key is the evidence prefix (<key>_loss, <key>_rtt_ms).
+const LAYERS = [
+  { id: 'gateway', key: 'gateway', label: 'Gateway', why: 'Your router: the first thing every packet goes through.' },
+  { id: 'isp-edge', key: 'edge', label: 'ISP edge', why: 'The first hop on your ISP\'s side of the line.' },
+  { id: 'anycast', key: 'anycast', label: 'Internet (anycast)', why: 'Big anycast resolvers (Cloudflare, Google, Quad9) that are close to almost every ISP.' },
+  { id: 'services', key: 'services', label: 'Services', why: 'The services and cloud regions in the panels below.' },
+];
+// Which layer each verdict kind blames.
+/** @type {Object<string,string>} */
+const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
+
+/** @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean}} */
+const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false };
 /** @type {any} */
 let status = null;
 /** @type {Panel[]} */
 let panels = [];
 let lastRefresh = 0;
 let refreshing = false;
+/** @type {Verdict|null} */
+let verdict = null;
+let lastVerdict = 0;
+/** @type {Incident[]} */
+let incidents = [];
+let incidentsLoaded = false;
 
 const $ = (/** @type {string} */ s) => /** @type {HTMLElement} */ (document.querySelector(s));
 
@@ -83,6 +116,7 @@ function themeChanged() {
   cssCache.clear();
   hatchPattern = null;
   for (const p of panels) p.render();
+  renderLayers();
 }
 
 // ---------- colours ----------
@@ -133,6 +167,25 @@ function fmtTime(/** @type {number} */ ms, /** @type {number} */ spanMs) {
   if (spanMs <= 24 * 3600e3) return time;
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
 }
+/** Clock time; with the date when not today. */
+function fmtWhen(/** @type {number} */ ms) {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
+}
+/** A duration in words: "45 s", "13 min", "2 h 5 min", "3 d 4 h". */
+function fmtDur(/** @type {number} */ ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  const hh = Math.floor(m / 60), mm = m % 60;
+  if (hh < 48) return mm ? `${hh} h ${mm} min` : `${hh} h`;
+  const dd = Math.floor(hh / 24), rh = hh % 24;
+  return rh ? `${dd} d ${rh} h` : `${dd} d`;
+}
+function verdictColor(/** @type {string} */ kind) { return css(`--v-${kind}`) || css('--muted') || '#898781'; }
 function fmtStep(/** @type {number} */ ms) {
   if (ms < 60e3) return `${Math.round(ms / 1e3)}s`;
   if (ms < 3600e3) return `${Math.round(ms / 60e3)}m`;
@@ -148,6 +201,7 @@ function readHash() {
   if (r && RANGES.some(([k]) => k === r)) state.range = r;
   const f = Number(p.get('from')), t = Number(p.get('to'));
   if (f > 0 && t > f) { state.from = f; state.to = t; } else { state.from = state.to = null; }
+  state.log = p.get('o') === '1';
   const k = p.get('k');
   if (k != null) {
     const ks = k.split(',').filter((x) => KINDS.includes(x));
@@ -159,6 +213,7 @@ function writeHash() {
   p.set('r', state.range);
   if (state.from != null && state.to != null) { p.set('from', String(state.from)); p.set('to', String(state.to)); }
   p.set('k', [...state.kinds].join(','));
+  if (state.log) p.set('o', '1');
   const s = '#' + p.toString();
   if (location.hash !== s) history.replaceState(null, '', s);
 }
@@ -242,6 +297,7 @@ class Panel {
     this.view = [0, 1];
     this.hover = false;
     this.colors = new Map(targets.map((t, i) => [t.name, i]));
+    this.isPath = group.id === PATH_GROUP;
 
     this.meta = h('span', { class: 'meta' });
     this.csv = h('a', { href: '#', download: '', title: 'Download this panel as CSV', text: 'CSV' });
@@ -251,8 +307,10 @@ class Panel {
     this.strip = /** @type {HTMLCanvasElement} */ (h('canvas', { class: 'strip', 'aria-hidden': 'true' }));
     this.stripLegend = h('div', { class: 'strip-legend' });
     this.legend = h('ul', { class: 'legend', 'aria-label': `${group.title} targets` });
-    this.el = h('section', { class: 'panel', 'aria-label': group.title },
+    this.layers = this.isPath ? h('ol', { class: 'layers', 'aria-label': 'Network path status' }) : null;
+    this.el = h('section', { class: this.isPath ? 'panel path' : 'panel', 'aria-label': group.title, id: 'panel-' + group.id },
       h('div', { class: 'panel-head' }, h('h2', { text: group.title }), this.meta, this.csv),
+      this.layers,
       this.chartEl,
       h('div', { class: 'strip-wrap' }, this.strip),
       this.stripLegend,
@@ -262,7 +320,23 @@ class Panel {
     new ResizeObserver(() => this.resize()).observe(this.chartEl);
   }
 
-  height() { return this.targets.length > 12 ? 300 : 240; }
+  height() { return this.isPath ? 200 : this.targets.length > 12 ? 300 : 240; }
+
+  /**
+   * Probe kinds this panel shows. Path targets are ICMP/TCP only: they follow
+   * the header's TCP/ICMP selection and fall back to ICMP (or TCP when ICMP
+   * is unavailable) when only HTTPS is selected.
+   * @returns {Set<string>}
+   */
+  kinds() {
+    if (!this.isPath) return state.kinds;
+    const avail = new Set(this.targets.flatMap((t) => t.kinds));
+    const icmpOff = status && status.caps && status.caps.icmp === 'unavailable';
+    const sel = [...state.kinds].filter((k) => avail.has(k) && !(k === 'icmp' && icmpOff));
+    if (sel.some((k) => k !== 'https')) return new Set(sel);
+    for (const k of ['icmp', 'tcp', 'https']) if (avail.has(k) && !(k === 'icmp' && icmpOff)) return new Set([k]);
+    return new Set(avail);
+  }
   width() { return Math.max(200, this.chartEl.clientWidth); }
 
   async load() {
@@ -294,11 +368,12 @@ class Panel {
     /** @type {Map<string, SeriesData>} */
     const byKey = new Map(d.series.map((s) => [s.target + '\0' + s.kind, s]));
     const smap = [];
+    const kinds = this.kinds();
     let si = 1;
     for (const t of this.targets) {
       const color = seriesColor(/** @type {number} */ (this.colors.get(t.name)));
       for (const k of KINDS) {
-        if (!state.kinds.has(k) || !t.kinds.includes(k)) continue;
+        if (!kinds.has(k) || !t.kinds.includes(k)) continue;
         const sd = byKey.get(t.name + '\0' + k) || null;
         smap.push({ si: si++, target: t.name, kind: k, role: 'mean', sd, color });
         if (k === 'https') {
@@ -335,6 +410,7 @@ class Panel {
     this.emptyEl.hidden = any;
     this.renderLegend();
     this.drawStrip();
+    if (this.isPath) this.renderLayers();
   }
 
   /** @param {any[]} smap @param {any[]} data */
@@ -342,11 +418,13 @@ class Panel {
     const ink2 = css('--ink-2'), grid = css('--grid'), axis = css('--axis');
     const series = [{}];
     const bands = [];
+    // One kind on screen needs no dash to tell kinds apart (the path panel's ICMP).
+    const solo = new Set(smap.map((m) => m.kind)).size === 1;
     for (const m of smap) {
       if (m.role === 'mean') {
         series.push({
           label: `${m.target} ${KIND_LABEL[/** @type {'https'} */ (m.kind)]}`,
-          stroke: m.color, width: m.kind === 'https' ? 1.5 : 1.25, dash: KIND_DASH[/** @type {'https'} */ (m.kind)],
+          stroke: m.color, width: m.kind === 'https' ? 1.5 : 1.25, dash: solo ? [] : KIND_DASH[/** @type {'https'} */ (m.kind)],
           spanGaps: false, points: { show: false },
         });
       } else {
@@ -391,7 +469,7 @@ class Panel {
           u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
         }],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [() => self.drawStrip()],
+        draw: [(/** @type {any} */ u) => { self.drawIncidents(u); self.drawStrip(); }],
       },
     };
     this.emptyEl.remove();
@@ -421,14 +499,16 @@ class Panel {
   /** Series that count for legend, strip and tooltip: selected kinds, visible targets. */
   visibleSeries() {
     if (!this.data) return [];
-    return this.data.series.filter((s) => state.kinds.has(s.kind) && !this.hidden.has(s.target));
+    const kinds = this.kinds();
+    return this.data.series.filter((s) => kinds.has(s.kind) && !this.hidden.has(s.target));
   }
 
   renderLegend() {
     const d = /** @type {PanelData} */ (this.data);
     const items = [];
+    const sel = this.kinds();
     for (const t of this.targets) {
-      const kinds = KINDS.filter((k) => state.kinds.has(k) && t.kinds.includes(k));
+      const kinds = KINDS.filter((k) => sel.has(k) && t.kinds.includes(k));
       if (!kinds.length) continue;
       const ss = d.series.filter((s) => s.target === t.name && kinds.includes(s.kind));
       let n = 0, lost = 0;
@@ -575,6 +655,7 @@ class Panel {
       if (dist < bestDist) { bestDist = dist; best = m; }
     }
     const nodes = [h('div', { class: 't', text: fmtTime(d.start + i * d.step, d.to - d.from) })];
+    const kinds = this.kinds();
     const target = best ? best.target : (this.targets.find((t) => !this.hidden.has(t.name)) || this.targets[0])?.name;
     if (target) {
       const sw = h('span', { class: 'sw' });
@@ -582,7 +663,7 @@ class Panel {
       nodes.push(h('div', { class: 'row' }, sw, h('b', { text: target })));
       let n = 0, lost = 0;
       for (const s of d.series) {
-        if (s.target !== target || !state.kinds.has(s.kind)) continue;
+        if (s.target !== target || !kinds.has(s.kind)) continue;
         n += s.n[i]; lost += s.lost[i];
         let txt;
         if (s.mean[i] != null) {
@@ -612,10 +693,171 @@ class Panel {
       for (const l of lossy.slice(0, 5)) nodes.push(h('div', { text: l }));
       if (lossy.length > 5) nodes.push(h('div', { class: 'muted', text: `+${lossy.length - 5} more` }));
     }
+    const hits = incidentsAt(d.start + i * d.step, d.start + (i + 1) * d.step);
+    if (hits.length) {
+      nodes.push(h('div', { class: 'sep' }));
+      for (const inc of hits.slice(0, 3)) {
+        const sw = h('span', { class: 'chip' });
+        sw.style.background = verdictColor(inc.kind);
+        nodes.push(h('div', { class: 'row inc' }, sw, `incident: ${inc.summary}`));
+      }
+    }
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
   }
 
+  /** Incidents as faint vertical bands (drawn after the series), with a
+   * stronger edge on top, coloured by verdict kind. */
+  drawIncidents(/** @type {any} */ u) {
+    if (!incidents.length) return;
+    const ctx = u.ctx;
+    const { left, top, width, height } = u.bbox;
+    const vmin = u.scales.x.min, vmax = u.scales.x.max;
+    const dpr = window.devicePixelRatio || 1;
+    const now = Date.now();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, top, width, height);
+    ctx.clip();
+    for (const inc of incidents) {
+      const a = Date.parse(inc.start) / 1000, b = (inc.end ? Date.parse(inc.end) : now) / 1000;
+      if (!(b >= vmin && a <= vmax)) continue;
+      let x0 = u.valToPos(a, 'x', true), x1 = u.valToPos(b, 'x', true);
+      if (x1 - x0 < 2 * dpr) { const m = (x0 + x1) / 2; x0 = m - dpr; x1 = m + dpr; }
+      const c = verdictColor(inc.kind);
+      ctx.fillStyle = rgba(c, 0.12);
+      ctx.fillRect(x0, top, x1 - x0, height);
+      ctx.fillStyle = rgba(c, 0.75);
+      ctx.fillRect(x0, top, x1 - x0, 2 * dpr);
+    }
+    ctx.restore();
+  }
+
+  /** Show only this target (the verdict banner's chips). */
+  isolate(/** @type {string} */ name) {
+    this.hidden = new Set(this.targets.map((t) => t.name).filter((n) => n !== name));
+    this.applyHidden();
+    this.renderLegend();
+    this.drawStrip();
+  }
+
+  /** The layer strip above the path chart: Gateway → ISP edge → Internet → Services. */
+  renderLayers() {
+    if (!this.layers) return;
+    const v = verdict && verdict.kind !== 'unknown' ? verdict : null;
+    const ev = (v && v.evidence) || {};
+    const blame = v ? blamedLayer(v, ev) : undefined;
+    const kinds = this.kinds();
+    const items = [];
+    for (const L of LAYERS) {
+      let stats = null, configured = true;
+      if (L.id === 'services') {
+        stats = servicesStats();
+      } else {
+        const names = new Set(this.targets.filter((t) => t.layer === L.id).map((t) => t.name));
+        configured = names.size > 0;
+        if (configured && this.data) stats = recentStats(this.data, (s) => names.has(s.target) && kinds.has(s.kind));
+      }
+      const eLoss = ev[L.key + '_loss'], eRtt = ev[L.key + '_rtt_ms'];
+      const hasE = typeof eLoss === 'number' && isFinite(eLoss);
+      const loss = hasE ? eLoss : stats ? stats.loss : NaN;
+      const rtt = typeof eRtt === 'number' && isFinite(eRtt) ? eRtt : stats ? stats.rtt : null;
+      let st = 'unknown', text;
+      if (!configured) text = 'not set up';
+      else if (!hasE && (!stats || stats.ever === 0)) text = this.data ? 'discovering…' : 'loading…';
+      else if (!isFinite(loss)) text = 'no recent data';
+      else {
+        st = loss >= 0.5 ? 'down' : loss >= 0.05 ? 'warn' : 'up';
+        text = st !== 'up' ? `${fmtPct(loss)} loss` : rtt != null ? `${fmtMs(rtt)} ms` : 'OK';
+      }
+      if (v && v.kind === 'no_network') { st = 'down'; text = 'unreachable'; }
+      const blamed = blame === L.id;
+      if (blamed && v) {
+        // The blamed pill agrees with the verdict: never "OK" or a bare RTT.
+        const soft = v.kind === 'service' || v.kind === 'dns';
+        st = soft ? 'warn' : 'down';
+        text = blamedText(v, L, ev, loss, rtt);
+      }
+      if (items.length) items.push(h('li', { class: 'arrow', 'aria-hidden': 'true', text: '→' }));
+      items.push(h('li', { class: `layer st-${st}${blamed ? ' blame' : ''}`, title: `${L.label}: ${L.why}` },
+        h('span', { class: 'ldot', 'aria-hidden': 'true' }),
+        h('span', { class: 'ln', text: L.label }),
+        h('span', { class: 'lv', text }),
+        blamed ? h('span', { class: 'lb', text: 'likely cause' }) : null));
+    }
+    this.layers.replaceChildren(...items);
+  }
+}
+
+/**
+ * The layer a verdict blames. "upstream" is the anycast layer when most of
+ * its targets are unhealthy, else the services (most of them are failing,
+ * or the anycast layer is unknown).
+ * @param {Verdict} v @param {Object<string,number>} ev
+ */
+function blamedLayer(v, ev) {
+  if (v.kind === 'upstream') {
+    const acBad = typeof ev.anycast_targets === 'number' && 2 * (ev.anycast_unhealthy || 0) > ev.anycast_targets;
+    return acBad ? 'anycast' : 'services';
+  }
+  return BLAME[v.kind];
+}
+
+/**
+ * The text of the layer pill the verdict blames, consistent with it:
+ * service/dns count the targets the verdict names; path kinds show the loss
+ * the engine judged (evidence), or the slow RTT, else "unhealthy".
+ * @param {Verdict} v @param {{key:string}} L @param {Object<string,number>} ev
+ * @param {number} loss @param {number|null} rtt
+ */
+function blamedText(v, L, ev, loss, rtt) {
+  const n = Array.isArray(v.targets) ? v.targets.length : 0;
+  if (v.kind === 'service') return n ? `${n} affected` : 'some affected';
+  if (v.kind === 'dns') return n ? `${n} not resolving` : 'lookups failing';
+  if (v.kind === 'upstream' && L.key === 'services') {
+    const bad = ev.internet_unhealthy, all = ev.internet_targets;
+    if (typeof bad === 'number' && typeof all === 'number' && all > 0) return `${bad} of ${all} failing`;
+  }
+  if (isFinite(loss) && loss >= 0.05) return `${fmtPct(loss)} loss`;
+  if (typeof ev[L.key + '_baseline_ms'] === 'number' && rtt != null) return `${fmtMs(rtt)} ms, slow`;
+  if (isFinite(loss) && loss > 0) return `${fmtPct(loss)} loss`;
+  return 'unhealthy';
+}
+
+/**
+ * Totals over the matching series: all samples in the range (ever), and
+ * loss and mean RTT over the last few buckets that have data.
+ * @param {PanelData} d @param {(s: SeriesData) => boolean} pred
+ */
+function recentStats(d, pred) {
+  const ss = d.series.filter(pred);
+  let ever = 0, n = 0, lost = 0, rttSum = 0, rttN = 0, used = 0;
+  for (const s of ss) for (let i = 0; i < d.len; i++) ever += s.n[i] + s.lost[i];
+  for (let i = d.len - 1; i >= 0 && used < 4; i--) {
+    let bn = 0, bl = 0;
+    for (const s of ss) { bn += s.n[i]; bl += s.lost[i]; }
+    if (bn + bl === 0) continue;
+    used++; n += bn; lost += bl;
+    if (rttN === 0) for (const s of ss) { const m = s.mean[i]; if (m != null) { rttSum += m; rttN++; } }
+  }
+  return { ever, n, lost, loss: n + lost ? lost / (n + lost) : NaN, rtt: rttN ? rttSum / rttN : null };
+}
+
+/** recentStats over every non-path panel (the "Services" layer). */
+function servicesStats() {
+  let ever = 0, n = 0, lost = 0;
+  for (const p of panels) {
+    if (p.isPath || !p.data) continue;
+    const r = recentStats(p.data, (s) => state.kinds.has(s.kind));
+    ever += r.ever; n += r.n; lost += r.lost;
+  }
+  return { ever, n, lost, loss: n + lost ? lost / (n + lost) : NaN, rtt: null };
+}
+
+/** Incidents overlapping [from, to) (milliseconds). */
+function incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
+  const now = Date.now();
+  return incidents.filter((inc) => Date.parse(inc.start) < to && (inc.end ? Date.parse(inc.end) : now) >= from);
 }
 
 // ---------- zoom & refresh ----------
@@ -641,11 +883,126 @@ async function refreshAll() {
   refreshing = true;
   updateRefreshLabel();
   try {
-    await Promise.all([loadStatus(), ...panels.map((p) => p.load())]);
+    await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), ...panels.map((p) => p.load())]);
   } finally {
     refreshing = false;
     updateRefreshLabel();
+    renderLayers();
   }
+}
+
+function renderLayers() { for (const p of panels) if (p.isPath) p.renderLayers(); }
+
+// ---------- verdict banner ----------
+
+/** Scroll to the panel that has this target and show only it. */
+function focusTarget(/** @type {string} */ name) {
+  const p = panels.find((x) => x.targets.some((t) => t.name === name));
+  if (!p) return;
+  p.isolate(name);
+  const top = p.el.getBoundingClientRect().top + window.scrollY - $('.top').offsetHeight - 8;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+
+/** A small "?" button that explains a verdict kind (hover, focus or tap). */
+function whyButton(/** @type {string} */ title, /** @type {string} */ text) {
+  const b = h('button', { class: 'why', type: 'button', 'aria-label': `What this means: ${text}`, text: '?' });
+  const show = () => {
+    const r = b.getBoundingClientRect();
+    showTip([h('div', { class: 't', text: 'What this means' }), h('div', { class: 'why-title', text: title }), h('div', { text })], r.left, r.bottom - 6);
+  };
+  b.addEventListener('mouseenter', show);
+  b.addEventListener('focus', show);
+  b.addEventListener('click', (e) => { e.stopPropagation(); if (tip.hidden) show(); else hideTip(); });
+  b.addEventListener('mouseleave', hideTip);
+  b.addEventListener('blur', hideTip);
+  return b;
+}
+
+function renderVerdict() {
+  const el = $('#verdict');
+  const v = verdict;
+  const on = !!v && v.kind !== 'unknown';
+  el.hidden = !on;
+  $('#outages').hidden = !on;
+  if (!on || !v) return;
+  const info = VERDICTS[v.kind] || { label: v.kind, short: v.kind, why: '' };
+  el.className = `verdict v-${/^[a-z_]+$/.test(v.kind) ? v.kind : 'other'}`;
+  const kids = [h('div', { class: 'v-head' },
+    h('span', { class: 'v-dot', 'aria-hidden': 'true' }),
+    h('span', { class: 'v-kind', text: info.label }),
+    info.why ? whyButton(info.label, info.why) : null)];
+  kids.push(h('p', { class: 'v-summary', text: v.summary || info.why }));
+  const since = v.since ? Date.parse(v.since) : NaN;
+  const meta = [];
+  if (isFinite(since) && since > 0) meta.push(h('span', { text: `since ${fmtWhen(since)} (${fmtDur(Date.now() - since)})` }));
+  if (v.targets && v.targets.length) {
+    meta.push(h('span', { class: 'v-aff', text: 'Affected:' }));
+    for (const name of v.targets) {
+      meta.push(h('button', { class: 'tchip', type: 'button', title: `Show ${name} on its chart`, text: name, onclick: () => focusTarget(name) }));
+    }
+  }
+  if (meta.length) kids.push(h('div', { class: 'v-meta' }, ...meta));
+  el.replaceChildren(...kids);
+}
+
+async function loadVerdict() {
+  lastVerdict = Date.now();
+  const prev = verdict && verdict.kind;
+  try {
+    verdict = await fetchJSON('api/verdict');
+  } catch {
+    return;
+  }
+  renderVerdict();
+  renderLayers();
+  // A new verdict usually means a new (or closed) incident.
+  if (prev != null && verdict && prev !== verdict.kind) loadIncidents();
+}
+
+// ---------- outage log ----------
+
+async function loadIncidents() {
+  if (verdict && verdict.kind === 'unknown') { incidents = []; return; }
+  const { from, to } = queryRange();
+  try {
+    const list = await fetchJSON('api/incidents?' + new URLSearchParams({ from, to }));
+    incidents = Array.isArray(list) ? list : [];
+    incidentsLoaded = true;
+  } catch {
+    return;
+  }
+  renderOutages();
+  for (const p of panels) p.u?.redraw(false);
+}
+
+function renderOutages() {
+  const n = incidents.length;
+  const ongoing = incidents.filter((i) => !i.end).length;
+  $('#outages-count').textContent = incidentsLoaded
+    ? `· ${n >= 500 ? '500+' : n} incident${n === 1 ? '' : 's'} in range${ongoing ? ` · ${ongoing} ongoing` : ''}`
+    : '';
+  const list = $('#outages-list');
+  if (!n) {
+    list.replaceChildren(h('p', { class: 'muted o-empty', text: 'No incidents in this range.' }));
+    return;
+  }
+  const now = Date.now();
+  list.replaceChildren(...incidents.map((inc) => {
+    const a = Date.parse(inc.start), b = inc.end ? Date.parse(inc.end) : now;
+    const info = VERDICTS[inc.kind] || { short: inc.kind };
+    const kind = /^[a-z_]+$/.test(inc.kind) ? inc.kind : 'other';
+    return h('button', {
+      class: 'o-row' + (inc.end ? '' : ' ongoing'), type: 'button',
+      title: 'Zoom all charts to this incident',
+      onclick: () => zoomTo(a - 5 * 60e3, Math.min(Date.now(), b + 5 * 60e3)),
+    },
+    h('span', { class: 'o-when' }, fmtWhen(a), ' – ', inc.end ? fmtWhen(b) : h('b', { text: 'ongoing' })),
+    h('span', { class: 'o-dur', text: fmtDur(b - a) }),
+    h('span', { class: `kbadge v-${kind}`, text: info.short }),
+    h('span', { class: 'o-sum', text: inc.summary }),
+    h('span', { class: 'o-peak', title: 'Worst one-minute loss', text: `peak ${fmtPct(inc.peak_loss)} loss` }));
+  }));
 }
 
 function updateRefreshLabel() {
@@ -657,12 +1014,16 @@ function updateRefreshLabel() {
 }
 
 setInterval(() => {
-  if (!isRelative() || document.hidden || refreshing) return;
-  if (Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+  if (document.hidden || refreshing) return;
+  if (isRelative() && Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+  // The banner is always "now", even when zoomed; it is cheap to poll.
+  else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
 }, 1000);
 document.addEventListener('visibilitychange', () => {
   updateRefreshLabel();
-  if (!document.hidden && isRelative() && Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+  if (document.hidden) return;
+  if (isRelative() && Date.now() - lastRefresh >= REFRESH_MS) refreshAll();
+  else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
 });
 
 // ---------- header controls ----------
@@ -685,6 +1046,7 @@ function renderControls() {
       if (state.kinds.has(k)) { if (state.kinds.size > 1) state.kinds.delete(k); } else state.kinds.add(k);
       writeHash(); renderControls();
       for (const p of panels) p.render();
+      renderLayers();
     },
   })));
   updateRefreshLabel();
@@ -810,8 +1172,13 @@ async function main() {
     themeChanged();
   });
   mqLight.addEventListener('change', () => { applyTheme(storageGet('fyisp-theme')); themeChanged(); });
+  // Taps elsewhere close a tooltip opened by tapping (touch screens have no hover).
+  document.addEventListener('click', hideTip);
   readHash();
-  window.addEventListener('hashchange', () => { readHash(); renderControls(); refreshAll(); });
+  const log = /** @type {HTMLDetailsElement} */ ($('#outages'));
+  log.open = state.log;
+  log.addEventListener('toggle', () => { if (state.log !== log.open) { state.log = log.open; writeHash(); } });
+  window.addEventListener('hashchange', () => { readHash(); log.open = state.log; renderControls(); refreshAll(); });
   renderShare();
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
@@ -822,7 +1189,9 @@ async function main() {
   renderNotices();
   /** @type {TargetInfo[]} */
   const targets = prof.targets;
-  panels = prof.groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
+  // The network path comes first, full width.
+  const groups = [...prof.groups].sort((/** @type {Group} */ a, /** @type {Group} */ b) => Number(b.id === PATH_GROUP) - Number(a.id === PATH_GROUP));
+  panels = groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
   $('#panels').replaceChildren(...panels.map((p) => p.el));
   uPlot.sync(SYNC_KEY);
   writeHash();

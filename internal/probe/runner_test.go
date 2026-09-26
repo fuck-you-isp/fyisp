@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"runtime"
@@ -385,3 +386,172 @@ func TestHTTPSRTTFallbacks(t *testing.T) {
 		}
 	}
 }
+
+// stubLookup resolves every name to addr while ok is set, else fails like
+// an unreachable resolver.
+type stubLookup struct {
+	mu    sync.Mutex
+	ok    bool
+	addr  netip.Addr
+	calls int
+}
+
+func (s *stubLookup) set(ok bool) { s.mu.Lock(); s.ok = ok; s.mu.Unlock() }
+
+func (s *stubLookup) lookup(_ context.Context, host string) ([]netip.Addr, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	if !s.ok {
+		return nil, &net.DNSError{Err: "i/o timeout", Name: host, IsTimeout: true}
+	}
+	return []netip.Addr{s.addr}, nil
+}
+
+// TestDNSFailuresBecomeLoss: a host keeps its last good address for one
+// failed lookup; after DNSFailLimit consecutive failures its probes are
+// lost with ReasonDNS; one successful lookup makes them work again.
+func TestDNSFailuresBecomeLoss(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	stub := &stubLookup{ok: true, addr: netip.MustParseAddr("127.0.0.1")}
+	r := New(Options{Log: quietLog(), Lookup: stub.lookup}).(*runner)
+	hs := newHostState("svc.example.test")
+	s := &series{key: model.SeriesKey{Target: "svc", Kind: model.KindTCP}, host: hs, port: port, iv: time.Second}
+	probe := func(step string) model.Sample {
+		t.Helper()
+		smp, ok := r.probe(tctx(t), s, nil)
+		if !ok {
+			t.Fatalf("%s: slot not measured", step)
+		}
+		return smp
+	}
+	wantOK := func(step string) {
+		t.Helper()
+		if smp := probe(step); smp.Lost {
+			t.Errorf("%s: lost (%v: %s), want ok", step, smp.Reason, smp.Err)
+		}
+	}
+	wantDNS := func(step string) {
+		t.Helper()
+		if smp := probe(step); !smp.Lost || smp.Reason != model.ReasonDNS {
+			t.Errorf("%s: lost=%v reason=%v, want lost with dns", step, smp.Lost, smp.Reason)
+		}
+	}
+
+	r.resolve(tctx(t), hs)
+	wantOK("resolved")
+	stub.set(false)
+	r.resolve(tctx(t), hs)
+	wantOK("one failed lookup: the last good address is used")
+	r.resolve(tctx(t), hs)
+	wantDNS("two failed lookups")
+	r.resolve(tctx(t), hs)
+	wantDNS("three failed lookups")
+	stub.set(true)
+	r.resolve(tctx(t), hs)
+	wantOK("recovered")
+	stub.set(false)
+	r.resolve(tctx(t), hs)
+	wantOK("one failed lookup after recovering")
+}
+
+// TestDNSOutageWhileRunning: the runner re-resolves on its own; a resolver
+// outage turns probes into DNS losses and they recover with it.
+func TestDNSOutageWhileRunning(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	stub := &stubLookup{ok: true, addr: netip.MustParseAddr("127.0.0.1")}
+	r := New(Options{Log: quietLog(), Lookup: stub.lookup, ResolveEvery: 100 * time.Millisecond, RetryResolve: 100 * time.Millisecond})
+	tg := model.Target{Name: "svc", Host: "svc.example.test", Port: port, Kinds: []model.ProbeKind{model.KindTCP}, Interval: 100 * time.Millisecond}
+	var (
+		mu    sync.Mutex
+		phase = "ok"
+		seen  = map[string][]model.Sample{}
+	)
+	c, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = r.Run(c, profileOf(tg), model.SinkFunc(func(s model.Sample) {
+			mu.Lock()
+			seen[phase] = append(seen[phase], s)
+			mu.Unlock()
+		}))
+	}()
+	setPhase := func(p string, ok bool, d time.Duration) {
+		mu.Lock()
+		phase = p
+		mu.Unlock()
+		stub.set(ok)
+		time.Sleep(d)
+	}
+	time.Sleep(time.Second)
+	setPhase("outage", false, 2*time.Second)
+	setPhase("recovered", true, 2*time.Second)
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	count := func(p string) (ok, dns int) {
+		for _, s := range seen[p] {
+			switch {
+			case !s.Lost:
+				ok++
+			case s.Reason == model.ReasonDNS:
+				dns++
+			}
+		}
+		return ok, dns
+	}
+	if ok, dns := count("ok"); ok == 0 || dns != 0 {
+		t.Errorf("before the outage: ok=%d dns=%d", ok, dns)
+	}
+	if _, dns := count("outage"); dns < 5 {
+		t.Errorf("during the outage: %d DNS losses, want most of ~20 probes", dns)
+	}
+	// The last second of the recovery phase is past the next lookup.
+	var late []model.Sample
+	for _, s := range seen["recovered"] {
+		if s.Slot.After(time.Now().Add(-time.Second)) {
+			late = append(late, s)
+		}
+	}
+	for _, s := range late {
+		if s.Lost {
+			t.Errorf("after recovering: lost %v (%s)", s.Reason, s.Err)
+		}
+	}
+	if len(late) == 0 {
+		t.Error("no samples after recovering")
+	}
+}
+
+func tctx(t *testing.T) context.Context { return t.Context() }

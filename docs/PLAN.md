@@ -102,7 +102,7 @@ The prototype binary is 6.4 MB before the tunnel is added.
   - macOS: verify the IP header is stripped.
 - **Failure reasons:** timeout, refused, reset, unreachable, DNS, TLS, HTTP, no-network, other.
 - **Capabilities:** detected at startup and shown in the UI and log, e.g. "ICMP unavailable → TCP/HTTPS only (see `net.ipv4.ping_group_range`)". fyisp never elevates.
-- **DNS:** each host is re-resolved every 15 minutes; unresolved hosts are retried every 10s. Series are identified by target name, not IP.
+- **DNS:** each host is re-resolved every 60s; after a failed lookup it is retried every 10s. One failed lookup keeps the last good address; after two in a row the host's probes are lost with reason DNS until a lookup succeeds. Series are identified by target name, not IP.
 - **`Google-Meet`:** HTTPS/TCP go to `meet.google.com`, ICMP stays on `lens.l.google.com`. Verify during spike S4.
 
 ### Targets (`internal/profile`)
@@ -132,7 +132,7 @@ The prototype binary is 6.4 MB before the tunnel is added.
   - `meta(...)`
   - `PRAGMA user_version` holds the schema version. Migrations are embedded and backed up first (`VACUUM INTO`), and a database from a newer version is refused.
 - **Blob format v1:**
-  - A version byte, then `uvarint(slot0_unix_ms)`, `uvarint(interval_ms)`, then one uvarint per slot, then zstd at max level (SpeedBestCompression, no dictionary).
+  - A version byte, then `uvarint(slot0_unix_ms)`, `uvarint(interval_ms)`, then one uvarint per slot, then zstd (SpeedBetterCompression, no dictionary; SpeedBestCompression held a 34 MB encoder table for the same size).
   - For each slot: if `u&1==0`, `u>>1` is the zigzag-encoded change from the previous value, in 10 µs units.
   - If `u&1==1`, the slot has no value and `code=u>>1`: **0 = not measured** (restart or sleep), **1–15 = loss reason**.
 - **Slots come from wall-clock UTC:** `slot = floor((now − hourStart − phase)/interval)`. Skipped slots are filled with code 0. If the clock steps backwards, samples are dropped until it catches up.

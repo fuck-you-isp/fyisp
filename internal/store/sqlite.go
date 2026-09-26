@@ -9,7 +9,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -39,8 +41,17 @@ const PageSize = 16384
 // hour close and prune.
 const (
 	writerParams = "?_busy_timeout=5000&_synchronous=NORMAL&_txlock=immediate&_pragma=wal_autocheckpoint(256)&_pragma=journal_size_limit(16777216)"
-	readerParams = "?_busy_timeout=5000&_query_only=1"
+	readerParams = "?_busy_timeout=5000&_query_only=1&_pragma=cache_size(-1024)"
 )
+
+// Reader pool memory. Each SQLite connection keeps its own page cache
+// (default 2000 KiB), outside the Go heap, for as long as it stays open, and
+// the pool opens up to max(4, GOMAXPROCS) of them. Panel queries scan far
+// more blob pages than any cache holds (the OS page cache serves those), so
+// readers get 1 MiB each, and a connection idle for readerIdleTime is
+// closed: a burst of dashboard panels opens several, a dashboard left open
+// keeps them busy, and a process nobody looks at holds none.
+const readerIdleTime = time.Minute
 
 // migrations[i] brings the schema from version i to i+1. Append only: never
 // edit a released migration. The schema version (PRAGMA user_version) is
@@ -79,6 +90,20 @@ CREATE TABLE meta(
 	value ANY
 ) WITHOUT ROWID;
 `,
+	// v2 (fyisp v0.2): the outage log (see incidents.go).
+	`
+CREATE TABLE incidents(
+	id         INTEGER PRIMARY KEY,
+	start_ms   INT  NOT NULL,
+	end_ms     INT,  -- NULL while ongoing
+	kind       TEXT NOT NULL,
+	summary    TEXT NOT NULL,
+	targets    TEXT, -- JSON array of target names, NULL if none
+	peak_loss  REAL,
+	updated_ms INT   -- last SaveIncident (store clock)
+);
+CREATE INDEX incidents_start ON incidents(start_ms);
+`,
 }
 
 // SchemaVersion is the schema version this build writes.
@@ -116,7 +141,7 @@ func openConns(ctx context.Context, path, version string, now time.Time) (_ *con
 	}
 	f.Close()
 
-	w, err := sql.Open("sqlite", path+writerParams)
+	w, err := sql.Open("sqlite", path+writerParams+tempDirParam(path))
 	if err != nil {
 		return nil, err
 	}
@@ -174,13 +199,14 @@ func openConns(ctx context.Context, path, version string, now time.Time) (_ *con
 }
 
 func openReader(ctx context.Context, path string) (*sql.DB, error) {
-	r, err := sql.Open("sqlite", path+readerParams)
+	r, err := sql.Open("sqlite", path+readerParams+tempDirParam(path))
 	if err != nil {
 		return nil, err
 	}
 	n := max(4, runtime.GOMAXPROCS(0))
 	r.SetMaxOpenConns(n)
 	r.SetMaxIdleConns(n)
+	r.SetConnMaxIdleTime(readerIdleTime)
 	if err := r.PingContext(ctx); err != nil {
 		r.Close()
 		return nil, err
@@ -269,3 +295,20 @@ func checkpoint(ctx context.Context, w *sql.DB) (busy bool, err error) {
 
 // inList returns "?,?,?" for n placeholders.
 func inList(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }
+
+// tempDirParam points SQLite's temporary files (used by VACUUM INTO backups
+// before migrations, and large sorts) at a private directory next to the
+// database. Minimal systems such as the scratch Docker image have no /tmp,
+// /var/tmp or TMPDIR, and SQLite then fails with SQLITE_IOERR_GETTEMPPATH
+// ("disk I/O error (6410)"). The environment cannot be used instead: the
+// transpiled libc snapshots it at process start. Windows uses GetTempPath.
+func tempDirParam(dbPath string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	dir := filepath.Join(filepath.Dir(dbPath), "tmp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	return "&_pragma=" + url.QueryEscape("temp_store_directory('"+strings.ReplaceAll(dir, "'", "''")+"')")
+}

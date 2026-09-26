@@ -68,6 +68,26 @@ var (
 		[]string{"name", "kind", "reason"}, nil)
 )
 
+// Verdict series (set with SetVerdictSource).
+var (
+	verdictDesc = prometheus.NewDesc("fyisp_verdict",
+		"Current verdict: 1 for the current kind, 0 for the others.",
+		[]string{"kind"}, nil)
+	layerDesc = prometheus.NewDesc("fyisp_layer_healthy",
+		"Whether a path layer (gateway, isp-edge, anycast) looks healthy over the last minute; absent while unknown.",
+		[]string{"layer"}, nil)
+)
+
+// verdictKinds are every fyisp_verdict kind label, in a stable order.
+var verdictKinds = []model.VerdictKind{
+	model.VerdictOK, model.VerdictWarmingUp, model.VerdictLAN, model.VerdictISP,
+	model.VerdictUpstream, model.VerdictDNS, model.VerdictService, model.VerdictNoNetwork,
+}
+
+// VerdictSource returns the current verdict and the health of each path
+// layer (nil: unknown). See verdict.MetricsSource.
+type VerdictSource func() (model.Verdict, map[string]*bool)
+
 // rttTypes are the ping_rtt_seconds "type" label values, in upstream order.
 var rttTypes = []string{"best", "worst", "mean", "sum", "sd", "usd", "csd", "range"}
 
@@ -84,8 +104,9 @@ type series struct {
 type Collector struct {
 	profile func() *model.Profile
 
-	mu     sync.Mutex
-	series map[model.SeriesKey]*series
+	mu      sync.Mutex
+	series  map[model.SeriesKey]*series
+	verdict VerdictSource
 
 	handler http.Handler
 }
@@ -112,6 +133,14 @@ func New(p func() *model.Profile) *Collector {
 
 // Handler serves the metrics in the Prometheus exposition format.
 func (c *Collector) Handler() http.Handler { return c.handler }
+
+// SetVerdictSource makes scrapes export fyisp_verdict and
+// fyisp_layer_healthy from f (called once per scrape; nil disables them).
+func (c *Collector) SetVerdictSource(f VerdictSource) {
+	c.mu.Lock()
+	c.verdict = f
+	c.mu.Unlock()
+}
 
 // Observe records a sample. "Not measured" gaps are ignored.
 func (c *Collector) Observe(s model.Sample) {
@@ -143,7 +172,7 @@ func (pc *promCollector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{
 		pingUpDesc, pingTargetsDesc, pingStatusDesc, pingRTTDesc, pingSntDesc,
 		pingSntFailDesc, pingSntTimeDesc, pingLossDesc,
-		httpsRTTDesc, tcpRTTDesc, samplesDesc, lostDesc,
+		httpsRTTDesc, tcpRTTDesc, samplesDesc, lostDesc, verdictDesc, layerDesc,
 	} {
 		ch <- d
 	}
@@ -190,6 +219,7 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 		snaps = append(snaps, snap{k, t.HostFor(k.Kind), st.last, st.sent, st.failed, st.rttTotal, lost})
 	}
+	vsrc := c.verdict
 	c.mu.Unlock()
 	sort.Slice(snaps, func(i, j int) bool {
 		if snaps[i].key.Target != snaps[j].key.Target {
@@ -207,6 +237,23 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 
 	gauge(pingUpDesc, 1)
 	gauge(pingTargetsDesc, float64(icmpTargets))
+
+	if vsrc != nil {
+		v, layers := vsrc()
+		for _, k := range verdictKinds {
+			gauge(verdictDesc, b2f(v.Kind == k), string(k))
+		}
+		names := make([]string, 0, len(layers))
+		for l := range layers {
+			names = append(names, l)
+		}
+		sort.Strings(names)
+		for _, l := range names {
+			if h := layers[l]; h != nil {
+				gauge(layerDesc, b2f(*h), l)
+			}
+		}
+	}
 
 	for _, s := range snaps {
 		name, kind := s.key.Target, s.key.Kind.String()
@@ -268,4 +315,11 @@ func hasKind(t model.Target, k model.ProbeKind) bool {
 // reasonLabel is a Prometheus-friendly spelling of r ("no network" -> "no_network").
 func reasonLabel(r model.Reason) string {
 	return strings.ReplaceAll(r.String(), " ", "_")
+}
+
+func b2f(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
 }

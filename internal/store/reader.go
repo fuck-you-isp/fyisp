@@ -481,14 +481,19 @@ func (s *SQLite) Raw(ctx context.Context, keys []model.SeriesKey, from, to time.
 	return nil
 }
 
-// Series lists every series with stored data. First and Last are the first
-// and last points Raw returns for it.
+// Series lists every series with stored data. First and Last are the times
+// of its first and last real slots (a measurement or a loss), which are the
+// first and last points Raw returns for it that are not "not measured": a
+// stored hour starts at the hour, so the slots before the first sample of a
+// series are not-measured gaps and are skipped. A series whose slots are all
+// not measured (never written in practice) reports the bounds of its stored
+// slots instead.
 func (s *SQLite) Series(ctx context.Context) ([]SeriesInfo, error) {
 	type span struct {
 		id               int64
-		first, last      time.Time
 		minHour, maxHour int64
-		hasDB            bool
+		first, last      time.Time
+		ok               bool // a real slot was found
 	}
 	spans := map[model.SeriesKey]*span{}
 	s.commitMu.RLock()
@@ -501,10 +506,10 @@ func (s *SQLite) Series(ctx context.Context) ([]SeriesInfo, error) {
 	for k, iv := range s.ivs {
 		ivs[k] = iv
 	}
-	var mem []*memBlock
+	mem := map[hourKey]*memBlock{}
 	for _, b := range append(slices.Clone(s.pending), mapValues(s.cur)...) {
-		mem = append(mem, &memBlock{key: b.key, hour: b.hour, slot0: b.slot0, iv: b.iv,
-			slots: b.slots[:len(b.slots):len(b.slots)], data: b.data, sum: b.sum})
+		mem[hourKey{b.key, b.hour}] = &memBlock{key: b.key, hour: b.hour, slot0: b.slot0, iv: b.iv,
+			slots: b.slots[:len(b.slots):len(b.slots)], data: b.data, sum: b.sum}
 		if _, ok := ivs[b.key]; !ok {
 			ivs[b.key] = b.iv
 		}
@@ -522,62 +527,117 @@ func (s *SQLite) Series(ctx context.Context) ([]SeriesInfo, error) {
 		return nil, err
 	}
 	for rows.Next() {
-		var sp span
+		sp := &span{}
 		if err := rows.Scan(&sp.id, &sp.minHour, &sp.maxHour); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		if k, ok := keys[sp.id]; ok {
-			sp.hasDB = true
-			spans[k] = &sp
+			spans[k] = sp
 		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	stored := func(id, hour int64) (blob.Block, error) {
-		var data []byte
-		if err := tx.QueryRowContext(ctx, `SELECT data FROM samples WHERE hour = ? AND series = ?`, hour, id).Scan(&data); err != nil {
-			return blob.Block{}, err
+
+	// merge widens sp with b's real slots (or, when b has none and sp has
+	// no real slot yet, with b's bounds as a fallback).
+	merge := func(sp *span, b *blob.Block) bool {
+		if len(b.Slots) == 0 {
+			return false
 		}
-		return blob.Decode(data)
-	}
-	for k, sp := range spans {
-		b, err := stored(sp.id, sp.minHour)
-		if err != nil {
-			return nil, fmt.Errorf("store: series %v: %w", k, err)
-		}
-		sp.first = time.UnixMilli(b.Slot0).UTC()
-		if sp.maxHour != sp.minHour {
-			if b, err = stored(sp.id, sp.maxHour); err != nil {
-				return nil, fmt.Errorf("store: series %v: %w", k, err)
+		lo, hi := -1, -1
+		for i, x := range b.Slots {
+			if !isGap(x) {
+				if lo < 0 {
+					lo = i
+				}
+				hi = i
 			}
 		}
-		sp.last = time.UnixMilli(b.Slot0 + int64(max(0, len(b.Slots)-1))*b.Interval).UTC()
+		found := lo >= 0
+		if !found {
+			if sp.ok {
+				return false
+			}
+			lo, hi = 0, len(b.Slots)-1
+		}
+		f := time.UnixMilli(b.Slot0 + int64(lo)*b.Interval).UTC()
+		l := time.UnixMilli(b.Slot0 + int64(hi)*b.Interval).UTC()
+		if found && !sp.ok {
+			sp.first, sp.last, sp.ok = f, l, true
+			return true
+		}
+		if sp.first.IsZero() || f.Before(sp.first) {
+			sp.first = f
+		}
+		if sp.last.IsZero() || l.After(sp.last) {
+			sp.last = l
+		}
+		return found
+	}
+	// scan walks a series' stored hours from its oldest (or newest) one
+	// until an hour with a real slot; that is normally the first row. Hours
+	// also held in memory are skipped: the memory block is what Raw returns
+	// for them. The hour bound makes the (hour, series) index start there.
+	var dec blob.Decoder
+	scan := func(k model.SeriesKey, sp *span, asc bool) error {
+		q := `SELECT hour, data FROM samples WHERE hour >= ? AND series = ? ORDER BY hour`
+		h := sp.minHour
+		if !asc {
+			q = `SELECT hour, data FROM samples WHERE hour <= ? AND series = ? ORDER BY hour DESC`
+			h = sp.maxHour
+		}
+		rows, err := tx.QueryContext(ctx, q, h, sp.id)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var hour int64
+			var data []byte
+			if err := rows.Scan(&hour, &data); err != nil {
+				return err
+			}
+			if _, ok := mem[hourKey{k, hour}]; ok {
+				continue
+			}
+			b, err := dec.Decode(data)
+			if err != nil {
+				return fmt.Errorf("hour %d: %w", hour, err)
+			}
+			if merge(sp, &b) {
+				return nil
+			}
+		}
+		return rows.Err()
+	}
+	for k, sp := range spans {
+		if err := scan(k, sp, true); err != nil {
+			return nil, fmt.Errorf("store: series %v: %w", k, err)
+		}
+		if err := scan(k, sp, false); err != nil {
+			return nil, fmt.Errorf("store: series %v: %w", k, err)
+		}
 	}
 	for _, m := range mem {
 		b, err := m.block()
 		if err != nil || len(b.Slots) == 0 {
 			continue
 		}
-		f := time.UnixMilli(b.Slot0).UTC()
-		l := time.UnixMilli(b.Slot0 + int64(len(b.Slots)-1)*b.Interval).UTC()
 		sp := spans[m.key]
 		if sp == nil {
-			sp = &span{first: f, last: l, minHour: m.hour, maxHour: m.hour}
+			sp = &span{}
 			spans[m.key] = sp
-			continue
 		}
-		if m.hour <= sp.minHour {
-			sp.first, sp.minHour = f, m.hour
-		}
-		if m.hour >= sp.maxHour {
-			sp.last, sp.maxHour = l, m.hour
-		}
+		merge(sp, &b)
 	}
 	out := make([]SeriesInfo, 0, len(spans))
 	for k, sp := range spans {
+		if sp.first.IsZero() {
+			continue // only hours held in memory for it, all empty
+		}
 		out = append(out, SeriesInfo{ID: sp.id, Key: k, Interval: time.Duration(ivs[k]) * time.Millisecond, First: sp.first, Last: sp.last})
 	}
 	slices.SortFunc(out, func(a, b SeriesInfo) int {

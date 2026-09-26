@@ -69,6 +69,16 @@ docker inspect fyisp --format '{{join .Args " "}}'   # shows the token again
 
 Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. That is why its *Create public link* / *Stop sharing* buttons are off by default and the UI says *Share controls disabled*. `--share` still starts the link at startup without them. With `--admin-token`, the buttons come back and the browser asks for the token once per tab. If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
 
+**Use host networking on Linux for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
+
+```sh
+docker run -d --name fyisp --restart unless-stopped --network host -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --listen=127.0.0.1:3000
+```
+
+With `--network host`, `-p` is ignored: fyisp listens on the host directly (the image's default `--listen=0.0.0.0:3000` makes it reachable from your network; the `--listen=127.0.0.1:3000` above keeps it on this machine).
+
+**Docker Desktop (macOS, Windows)** runs containers inside a Linux VM: the container's gateway is the VM's virtual network, every probe is NATed by the VM, and `--network host` means the VM's network, not your Mac's or PC's. The charts are still useful, but the Gateway and ISP edge layers (and so the *Wi-Fi/router* vs *ISP* verdicts) are not about your real network there. For layer-accurate verdicts, run the native binary on macOS and Windows (see [Quick start](#quick-start)).
+
 ### systemd (Linux service)
 
 ```sh
@@ -79,6 +89,26 @@ sudo systemctl daemon-reload && sudo systemctl enable --now fyisp
 ```
 
 [`packaging/fyisp.service`](packaging/fyisp.service) runs fyisp as a transient unprivileged user (`DynamicUser`) with a read-only system, no access to home directories and a system-call filter; data lives in `/var/lib/fyisp`. The comments in the unit show how to enable `--share` or `CAP_NET_RAW` with a drop-in (`sudo systemctl edit fyisp`).
+
+## Whose fault is it? (verdicts)
+
+Above the charts, fyisp shows one plain-English verdict, re-evaluated every 5 seconds over the last minute of probes, and keeps an outage log of every period that was not *ok*. A target is unhealthy when it loses at least 20% of its probes or its median latency is far above its own 30-minute baseline. The first matching kind wins:
+
+| Kind | Meaning |
+|---|---|
+| `no_network` | This device has no working connection (no route, every layer unreachable). |
+| `lan` | The *Gateway* (your router) is unhealthy: Wi-Fi, cable or the router itself. |
+| `isp` | The router is fine, the *ISP edge* (first public hop past it) is not: your ISP's access network. |
+| `upstream` | Router and ISP edge are fine, but the anycast resolvers or most monitored services (in more than one group) fail: beyond your ISP. |
+| `dns` | The path works, but at least 30% of the services can't be resolved. |
+| `service` | Only some services are unhealthy: their problem, not yours. |
+| `ok` / `warming_up` | Everything looks fine / the first minute after start. |
+
+Loss on an inner link shows on every layer beyond it, so the verdict blames the innermost lossy layer: the gateway or ISP edge is blamed once it has lost at least 5 probes and 10% of them and the layers beyond it lose at least half as much. A layer further out is blamed only when its loss is significantly higher than that of the layers inside it (a two-proportion test on the minute's counts), so a few unlucky probes can't point at the wrong layer.
+
+A new problem must hold for about 10 seconds before it is shown, and the verdict returns to *ok* only after a full minute without problems. Verdict summaries never contain addresses or host names, so they are safe on the public link. Every host name is looked up again every 60 seconds. After one failed lookup fyisp keeps probing the last good address; after two in a row (about 70 seconds into a resolver outage) the host's probes count as lost with reason *DNS*, as a real application would fail too, until a lookup succeeds again.
+
+The layers come from the built-in **Network path** group, shown first: the *Gateway* and the *ISP edge* (found automatically from the routing table and a short traceroute; pinged every second) and three public anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9; ICMP and TCP). A profile passed with `--config` keeps this group unless it sets `path: false` at the top level; without it fyisp can still tell `dns`, `service` and `upstream` apart, but not `lan` from `isp`.
 
 ## ICMP permissions
 
@@ -148,7 +178,7 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 ### Network-fault tests (Linux, sudo)
 
-`test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) creates the throwaway namespaces `fyt-client ↔ fyt-gw ↔ fyt-isp ↔ fyt-inet`, runs fyisp in `fyt-client` as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It takes about 10 minutes and deletes the namespaces on exit. With a Go toolchain: `sudo -E go test -tags netns -v -timeout 25m ./test/netns`.
+`test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) creates the throwaway namespaces `fyt-client ↔ fyt-gw ↔ fyt-isp ↔ fyt-inet`, runs fyisp in `fyt-client` as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It also checks the path discovery (gateway and ISP edge) and, with the Network path group enabled, the verdict and outage log for each layer: loss between client and gateway (`lan`), between gateway and ISP (`isp`), anycast and most targets dropped (`upstream`), an unreachable resolver, both while running and at startup (`dns`), and one dropped target (`service`); the faulty layer must be the first problem shown. It takes about 30 minutes and deletes the namespaces on exit; `test/netns/run.sh -test.run TestVerdict` runs only the verdict scenarios. With a Go toolchain: `sudo -E go test -tags netns -v -timeout 50m ./test/netns`.
 
 ## License
 

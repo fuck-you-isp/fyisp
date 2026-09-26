@@ -552,7 +552,9 @@ func appendStr(b []byte, s string) []byte {
 // panelJSON renders the columnar panel response. Bucket i starts at
 // start + i*step (milliseconds since the epoch).
 func (pd *panelData) JSON() []byte {
-	b := make([]byte, 0, 4096)
+	// Sized for ~32 bytes per series and bucket (six arrays) up front:
+	// growing from a small buffer allocates about twice the response.
+	b := make([]byte, 0, 4096+32*len(pd.series)*pd.nb)
 	b = append(b, `{"group":{"id":`...)
 	b = appendStr(b, pd.group.ID)
 	b = append(b, `,"title":`...)
@@ -673,8 +675,9 @@ func (pd *panelData) csvName() string {
 		pd.params.from.UTC().Format("20060102T150405Z"), pd.params.to.UTC().Format("20060102T150405Z"))
 }
 
-// profileJSON is /api/profile: names, groups and kinds only (never hosts,
-// ports or paths).
+// profileJSON is /api/profile: names, groups, kinds and path layers only
+// (never hosts, ports or paths; path targets' hosts such as "@gateway" are
+// resolved at runtime and never served either).
 type profileJSON struct {
 	Name    string          `json:"name"`
 	Groups  []groupJSON     `json:"groups"`
@@ -691,6 +694,7 @@ type targetSummary struct {
 	Group    string   `json:"group"`
 	Kinds    []string `json:"kinds"`
 	Interval int64    `json:"interval_ms"`
+	Layer    string   `json:"layer,omitempty"` // model.Layer* for path targets
 }
 
 func buildProfile(p *model.Profile) profileJSON {
@@ -711,6 +715,10 @@ func buildProfile(p *model.Profile) profileJSON {
 	}
 	for _, t := range p.Targets {
 		ts := targetSummary{Name: t.Name, Group: t.Group, Interval: intervalOf(t, model.KindHTTPS).Milliseconds()}
+		switch t.Layer {
+		case model.LayerGateway, model.LayerEdge, model.LayerAnycast:
+			ts.Layer = t.Layer
+		}
 		for _, k := range kindsOf(t) {
 			ts.Kinds = append(ts.Kinds, k.String())
 		}

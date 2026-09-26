@@ -1,5 +1,7 @@
 # fyisp default profile: 87 targets in 7 groups (one dashboard panel each).
 # Target names are identities: renaming one starts a new time series.
+# The built-in "Network path" group (gateway, ISP edge, anycast resolvers) is
+# added in code, before these groups (see package profile).
 #
 # Every target is probed over HTTPS (GET path, default "/"), TCP (connect to
 # port 443) and ICMP (echo). HTTPS/TCP run every `interval` (default 15s) and

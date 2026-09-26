@@ -153,20 +153,21 @@ func TestNotDatabase(t *testing.T) {
 	}
 }
 
-// TestMigration runs a (test-only) v2 migration over the v1 fixture: a
-// VACUUM INTO backup is written first and the data survives.
+// TestMigration runs the real migrations plus a (test-only) extra one over
+// the v1 fixture: a VACUUM INTO backup is written first and the data
+// survives.
 func TestMigration(t *testing.T) {
 	saved := migrations
-	migrations = append(migrations[:len(migrations):len(migrations)], `CREATE TABLE test_v2(x); INSERT INTO test_v2 VALUES(42);`)
+	migrations = append(migrations[:len(migrations):len(migrations)], `CREATE TABLE test_vx(x); INSERT INTO test_vx VALUES(42);`)
 	defer func() { migrations = saved }()
 	dir := fixtureDir(t)
 	s := openT(t, dir, Options{Now: func() time.Time { return t0.Add(2*time.Hour + 30*time.Minute) }})
 	defer s.Close()
-	if v := pragmaInt(t, s.db.w, "user_version"); v != 2 {
+	if v := pragmaInt(t, s.db.w, "user_version"); v != int64(len(migrations)) {
 		t.Fatalf("user_version %d", v)
 	}
 	var x int
-	if err := s.db.r.QueryRow(`SELECT x FROM test_v2`).Scan(&x); err != nil || x != 42 {
+	if err := s.db.r.QueryRow(`SELECT x FROM test_vx`).Scan(&x); err != nil || x != 42 {
 		t.Fatalf("migration not applied: %v", err)
 	}
 	checkFixture(t, s)

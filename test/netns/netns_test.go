@@ -8,12 +8,14 @@
 // runs the real fyisp binary in fyt-client as an unprivileged user, injects
 // faults on the path (nft drop/reject, netem loss/delay, a withdrawn route,
 // an unresolvable name, a restart) and checks what fyisp reports through
-// /api/panel, /api/status and /metrics.
+// /api/panel, /api/status and /metrics. TestNetworkPath (path_test.go)
+// covers gateway/ISP edge discovery, TestVerdict (verdict_test.go) the
+// verdict and the outage log.
 //
 // It needs root (namespaces, nft, tc) and Linux. Run it with
 // test/netns/run.sh (builds everything in Docker), or with a Go toolchain:
 //
-//	sudo -E go test -tags netns -v -timeout 20m ./test/netns
+//	sudo -E go test -tags netns -v -timeout 50m ./test/netns
 //
 // FYISP_BIN selects a prebuilt fyisp binary (default: go build ./cmd/fyisp).
 // FYISP_NETNS_OUT, if set, receives the raw API responses and fyisp's logs.
@@ -73,8 +75,19 @@ var (
 	dnsAddr       = netip.MustParseAddr("203.0.113.53") // the test resolver
 )
 
+// The anycast resolvers of the built-in network path group, also put on
+// fyt-inet's loopback so that TestVerdict can keep the path group enabled.
+var anycastAddrs = []netip.Addr{
+	netip.MustParseAddr("1.1.1.1"),
+	netip.MustParseAddr("8.8.8.8"),
+	netip.MustParseAddr("9.9.9.9"),
+}
+
+// The built-in network path group is left out here: it is covered by
+// TestNetworkPath (path_test.go).
 const profileYAML = `name: netns-lab
 version: "1"
+path: false
 groups:
   - {id: lab, title: Lab}
 targets:
@@ -107,6 +120,9 @@ func kindsFor(name string) []string {
 func TestMain(m *testing.M) {
 	if dir := os.Getenv(responderEnv); dir != "" {
 		runResponder(dir) // never returns
+	}
+	if os.Getenv(pathProbeEnv) != "" {
+		runPathProbe() // never returns
 	}
 	os.Exit(m.Run())
 }
@@ -193,7 +209,8 @@ func TestNetworkFaults(t *testing.T) {
 		p := h.phase(t, "h-route-unreachable", 36*time.Second,
 			func() { h.nsRun(t, nsISP, "ip", "route", "add", "unreachable", "203.0.113.15/32") },
 			func() { h.nsRun(t, nsISP, "ip", "route", "del", "unreachable", "203.0.113.15/32") })
-		expectLost(t, p, "golf/tcp", "unreachable")
+		// A probe in flight when the route is withdrawn may time out.
+		expectLost(t, p, "golf/tcp", "unreachable", "timeout")
 		// The kept-alive connection first times out, new ones are unreachable.
 		expectLost(t, p, "golf/https", "unreachable", "timeout")
 		for _, k := range allKinds {
@@ -228,9 +245,11 @@ func TestNetworkFaults(t *testing.T) {
 				if ratio < 0.12 || ratio > 0.30 {
 					t.Errorf("icmp loss ratio %.3f, want 0.20 +- 0.08", ratio)
 				}
-			case "tcp": // a lost SYN is retransmitted after 1s = the probe timeout
-				if ratio < 0.08 || ratio > 0.35 {
-					t.Errorf("tcp loss ratio %.3f, want roughly 0.20", ratio)
+			case "tcp": // a lost SYN is retransmitted after 1s, within the 3s
+				// timeout, so only back-to-back losses (~4%) count as loss;
+				// the rest shows up as ~1s extra latency.
+				if ratio > 0.12 {
+					t.Errorf("tcp loss ratio %.3f, want well below the packet loss (SYN retransmit)", ratio)
 				}
 			case "https": // kept-alive connection: TCP retransmits within the 5s timeout
 				if ratio > 0.20 {
@@ -330,6 +349,7 @@ func (h *harness) restart(t *testing.T) {
 type harness struct {
 	dir     string // 0755 work dir: binary, profile, certificates, resolv.conf
 	bin     string
+	profile string // the --config file fyisp runs with (default profile.yml)
 	out     string // evidence directory, may be ""
 	client  *http.Client
 	started time.Time
@@ -407,8 +427,11 @@ func newHarness(t *testing.T) *harness {
 	if err := writeCerts(dir, goodIPs, badTLSAddr); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(dir, "profile.yml"), profileYAML)
-	mustWrite(t, filepath.Join(dir, "resolv.conf"), "nameserver "+dnsAddr.String()+"\noptions timeout:1 attempts:2\n")
+	h.profile = filepath.Join(dir, "profile.yml")
+	mustWrite(t, h.profile, profileYAML)
+	// Three 1s attempts: under netem loss a lookup rarely fails, and two
+	// failed lookups in a row would turn delta's probes into DNS losses.
+	mustWrite(t, filepath.Join(dir, "resolv.conf"), "nameserver "+dnsAddr.String()+"\noptions timeout:1 attempts:3\n")
 	h.mkdirOwned(t, filepath.Join(dir, "home"), 0o700)
 	h.mkdirOwned(t, filepath.Join(dir, "tmp"), 0o700)
 
@@ -438,19 +461,25 @@ func (h *harness) setupTopology(t *testing.T) {
 		h.run(t, "ip", "-n", a, "link", "set", ifa, "up")
 		h.run(t, "ip", "-n", b, "link", "set", ifb, "up")
 	}
-	pair(nsClient, "c0", nsGW, "g0", "10.99.1.2/24", "10.99.1.1/24")
-	pair(nsGW, "g1", nsISP, "i0", "10.99.2.1/24", "10.99.2.2/24")
+	// The gw <-> isp link is numbered from TEST-NET-2, a public-looking
+	// range: like a real ISP's access router, fyt-isp answers the client's
+	// TTL-limited probes from a public address, which netinfo takes as the
+	// ISP edge (hop 2; hop 1 is the gateway's LAN address).
+	pair(nsClient, "c0", nsGW, "g0", "10.99.1.2/24", gwAddr.String()+"/24")
+	pair(nsGW, "g1", nsISP, "i0", "198.51.100.1/24", edgeAddr.String()+"/24")
 	pair(nsISP, ispUplink, nsInet, "n0", "10.99.3.1/24", "10.99.3.2/24")
 
-	h.run(t, "ip", "-n", nsClient, "route", "add", "default", "via", "10.99.1.1")
-	h.run(t, "ip", "-n", nsGW, "route", "add", "default", "via", "10.99.2.2")
-	h.run(t, "ip", "-n", nsISP, "route", "add", "10.99.1.0/24", "via", "10.99.2.1")
+	h.run(t, "ip", "-n", nsClient, "route", "add", "default", "via", gwAddr.String())
+	h.run(t, "ip", "-n", nsGW, "route", "add", "default", "via", edgeAddr.String())
+	h.run(t, "ip", "-n", nsISP, "route", "add", "10.99.1.0/24", "via", "198.51.100.1")
 	h.run(t, "ip", "-n", nsISP, "route", "add", "default", "via", "10.99.3.2")
 	h.run(t, "ip", "-n", nsInet, "route", "add", "default", "via", "10.99.3.1")
 	for _, ns := range []string{nsGW, nsISP} {
 		h.nsRun(t, ns, "sysctl", "-qw", "net.ipv4.ip_forward=1")
 	}
-	for _, a := range []netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr} {
+	// Targets live on fyt-inet's loopback; every namespace's default route
+	// leads there through the chain.
+	for _, a := range append([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr}, anycastAddrs...) {
 		h.run(t, "ip", "-n", nsInet, "addr", "add", a.String()+"/32", "dev", "lo")
 	}
 	// Unprivileged ICMP (ping sockets) is off in a new namespace
@@ -592,7 +621,7 @@ func (h *harness) startFyispOn(t *testing.T, addr string, args ...string) *fyisp
 		"sh", "-c", `mount --bind "$0" /etc/resolv.conf && exec "$@"`, filepath.Join(h.dir, "resolv.conf"),
 		"setpriv", "--reuid=" + strconv.Itoa(runUID), "--regid=" + strconv.Itoa(runUID), "--clear-groups",
 		"--inh-caps=-all", "--no-new-privs", "--pdeathsig=KILL",
-		h.bin, "--listen", addr, "--config", filepath.Join(h.dir, "profile.yml"),
+		h.bin, "--listen", addr, "--config", h.profile,
 		"--log-format", "json", "--open-browser=false"}
 	argv = append(argv, args...)
 	cmd := exec.Command("ip", argv...)
