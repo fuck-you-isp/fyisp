@@ -39,20 +39,25 @@ jobs:
       - name: pin the version in the launchers
         env:
           VERSION: ${{ github.ref_name }}
+          ATTESTED: ${{ !github.event.repository.private }}
         run: |
           set -eu
           case "$VERSION" in *[!A-Za-z0-9._-]*) echo "bad tag $VERSION"; exit 1;; esac
-          sed "s/^\(\s*\)FYISP_VERSION=\"@FYISP_VERSION@\"/\1FYISP_VERSION=\"$VERSION\"/" scripts/run.sh > dist/run.sh
-          sed "s/^\(\s*\)\$FyispVersion = '@FYISP_VERSION@'/\1\$FyispVersion = '$VERSION'/" scripts/run.ps1 > dist/run.ps1
+          sed -e "s/^\(\s*\)FYISP_VERSION=\"@FYISP_VERSION@\"/\1FYISP_VERSION=\"$VERSION\"/" \
+              -e "s/^\(\s*\)FYISP_ATTESTED=\"@FYISP_ATTESTED@\"/\1FYISP_ATTESTED=\"$ATTESTED\"/" scripts/run.sh > dist/run.sh
+          sed -e "s/^\(\s*\)\$FyispVersion = '@FYISP_VERSION@'/\1\$FyispVersion = '$VERSION'/" \
+              -e "s/^\(\s*\)\$FyispAttested = '@FYISP_ATTESTED@'/\1\$FyispAttested = '$ATTESTED'/" scripts/run.ps1 > dist/run.ps1
           chmod 0755 dist/run.sh
           grep -q "FYISP_VERSION=\"$VERSION\"" dist/run.sh
           grep -q "\$FyispVersion = '$VERSION'" dist/run.ps1
-          if grep -n '@FYISP_VERSION@' dist/run.sh dist/run.ps1; then echo "placeholder left"; exit 1; fi
+          if grep -n '@FYISP_VERSION@\|@FYISP_ATTESTED@' dist/run.sh dist/run.ps1; then echo "placeholder left"; exit 1; fi
           (cd dist && sha256sum run.sh run.ps1 >> SHA256SUMS && cat SHA256SUMS)
       - name: binary size budget (50 MB)
         run: |
           for f in dist/fyisp-*; do s=$(stat -c %s "$f"); [ "$s" -le 52428800 ] || { echo "$f is $s bytes"; exit 1; }; done
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      # Attestations need a public repo (or a paid plan); skipped while private.
+      - if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/fyisp-*
@@ -77,8 +82,8 @@ jobs:
 
           Docker: \`docker run -p 3000:3000 -v fyisp:/data ${IMAGE}:${VERSION}\`
 
-          Verify a download: \`sha256sum -c SHA256SUMS --ignore-missing\` and
-          \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
+          Verify a download: \`sha256sum -c SHA256SUMS --ignore-missing\`
+          (plus \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\` once the repo is public).
           EOF
           gh release create "$VERSION" dist/* --verify-tag --title "fyisp $VERSION" --notes-file notes.md --generate-notes "${pre[@]}"
 
@@ -115,7 +120,8 @@ jobs:
             --label "org.opencontainers.image.licenses=MIT" \
             "${tags[@]}" --push --metadata-file meta.json .
           echo "digest=$(jq -r '."containerimage.digest"' meta.json)" >> "$GITHUB_OUTPUT"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      - if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}
