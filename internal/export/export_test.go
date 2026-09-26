@@ -26,7 +26,8 @@ var (
 	t0  = time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 )
 
-// fill stores 5 hours of 4 series (every reason code, gaps) in a real store.
+// fill stores 5 hours of 6 series, 2 of them trace hops (every reason code,
+// gaps) in a real store.
 func fill(t *testing.T) (*store.SQLite, []model.SeriesKey) {
 	t.Helper()
 	now := t0
@@ -38,7 +39,10 @@ func fill(t *testing.T) (*store.SQLite, []model.SeriesKey) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	keys := []model.SeriesKey{{Target: "alpha", Kind: model.KindHTTPS}, {Target: "alpha", Kind: model.KindICMP}, {Target: "beta,\"quoted\"", Kind: model.KindTCP}, {Target: "gamma", Kind: model.KindHTTPS}}
+	// In Series order (target, kind, hop), which is the export order.
+	keys := []model.SeriesKey{{Target: "alpha", Kind: model.KindHTTPS}, {Target: "alpha", Kind: model.KindICMP},
+		{Target: "alpha", Kind: model.KindTrace, Hop: 1}, {Target: "alpha", Kind: model.KindTrace, Hop: 2},
+		{Target: "beta,\"quoted\"", Kind: model.KindTCP}, {Target: "gamma", Kind: model.KindHTTPS}}
 	for i, k := range keys {
 		g := synth.New(7, i)
 		iv := time.Duration(k.Kind) * 5 * time.Second
@@ -109,12 +113,15 @@ func parseReason(t *testing.T, s string) model.Reason {
 }
 
 // point rebuilds a RawPoint from exported columns.
-func point(t *testing.T, target, kind, ts string, rtt sql.NullFloat64, lost sql.NullInt64, reason string) store.RawPoint {
+func point(t *testing.T, target, kind, ts string, rtt sql.NullFloat64, lost sql.NullInt64, reason string, hop sql.NullInt64) store.RawPoint {
 	tt, err := time.Parse(TimeFormat, ts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := store.RawPoint{Key: model.SeriesKey{Target: target, Kind: parseKind(t, kind)}, TS: tt}
+	p := store.RawPoint{Key: model.SeriesKey{Target: target, Kind: parseKind(t, kind), Hop: uint8(hop.Int64)}, TS: tt}
+	if hop.Valid != (p.Key.Kind == model.KindTrace) || (hop.Valid && hop.Int64 < 1) {
+		t.Fatalf("bad hop %v for kind %s", hop, kind)
+	}
 	switch {
 	case !lost.Valid: // not measured
 		if rtt.Valid || reason != "not measured" {
@@ -168,7 +175,15 @@ func readCSV(t *testing.T, b []byte) []store.RawPoint {
 			v, _ := strconv.ParseInt(r[4], 10, 64)
 			lost = sql.NullInt64{Int64: v, Valid: true}
 		}
-		out = append(out, point(t, r[0], r[1], r[2], rtt, lost, r[5]))
+		var hop sql.NullInt64
+		if r[6] != "" {
+			v, err := strconv.ParseInt(r[6], 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hop = sql.NullInt64{Int64: v, Valid: true}
+		}
+		out = append(out, point(t, r[0], r[1], r[2], rtt, lost, r[5], hop))
 	}
 	return out
 }
@@ -224,7 +239,7 @@ func TestSQLiteRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT target, kind, ts_utc, rtt_ms, lost, coalesce(reason, '') FROM samples ORDER BY rowid`)
+	rows, err := db.Query(`SELECT target, kind, ts_utc, rtt_ms, lost, coalesce(reason, ''), hop FROM samples ORDER BY rowid`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,11 +248,11 @@ func TestSQLiteRoundTrip(t *testing.T) {
 	for rows.Next() {
 		var target, kind, ts, reason string
 		var rtt sql.NullFloat64
-		var lost sql.NullInt64
-		if err := rows.Scan(&target, &kind, &ts, &rtt, &lost, &reason); err != nil {
+		var lost, hop sql.NullInt64
+		if err := rows.Scan(&target, &kind, &ts, &rtt, &lost, &reason, &hop); err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, point(t, target, kind, ts, rtt, lost, reason))
+		got = append(got, point(t, target, kind, ts, rtt, lost, reason, hop))
 	}
 	from, to := storedRange(t, s)
 	equalPoints(t, got, raw(t, s, keys, from, to))
@@ -263,17 +278,18 @@ func TestHourly(t *testing.T) {
 	}
 	want := map[hk][2]int{}
 	for _, p := range raw(t, s, keys, t0, t0.Add(6*time.Hour)) {
-		c := want[hk{p.Key.Target + "/" + p.Key.Kind.String(), p.TS.Truncate(time.Hour).Format(TimeFormat)}]
+		id := hk{p.Key.Target + "/" + p.Key.Kind.String() + "/" + hopText(p.Key), p.TS.Truncate(time.Hour).Format(TimeFormat)}
+		c := want[id]
 		switch {
 		case !p.Lost:
 			c[0]++
 		case p.Reason != model.ReasonGap:
 			c[1]++
 		}
-		want[hk{p.Key.Target + "/" + p.Key.Kind.String(), p.TS.Truncate(time.Hour).Format(TimeFormat)}] = c
+		want[id] = c
 	}
 	for _, r := range recs[1:] {
-		w := want[hk{r[0] + "/" + r[1], r[2]}]
+		w := want[hk{r[0] + "/" + r[1] + "/" + r[8], r[2]}]
 		if fmt.Sprint(w[0]) != r[3] || fmt.Sprint(w[1]) != r[4] || r[5] == "" {
 			t.Fatalf("row %v, want n=%d lost=%d", r, w[0], w[1])
 		}
@@ -310,5 +326,44 @@ func TestFlags(t *testing.T) {
 	fs.Parse([]string{"--format", "sqlite"})
 	if _, err := build(now); err == nil {
 		t.Fatal("sqlite without --output accepted")
+	}
+}
+
+// TestTraceHops: --kind trace exports only the hop series, each row with
+// its hop, in CSV and SQLite.
+func TestTraceHops(t *testing.T) {
+	s, keys := fill(t)
+	from, to := storedRange(t, s)
+	var buf bytes.Buffer
+	o := Options{Kinds: []model.ProbeKind{parseKind(t, "trace")}}
+	if err := Write(ctx, s, &buf, o); err != nil {
+		t.Fatal(err)
+	}
+	got := readCSV(t, buf.Bytes())
+	equalPoints(t, got, raw(t, s, keys[2:4], from, to))
+	hops := map[uint8]int{}
+	for _, p := range got {
+		hops[p.Key.Hop]++
+	}
+	if len(hops) != 2 || hops[1] == 0 || hops[2] == 0 {
+		t.Fatalf("hops %v", hops)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte(",trace,")) {
+		t.Fatal("no trace rows")
+	}
+
+	path := filepath.Join(t.TempDir(), "h.db")
+	o.Format, o.Tier = FormatSQLite, TierHourly
+	if err := WriteFile(ctx, s, path, o); err != nil {
+		t.Fatal(err)
+	}
+	db, _ := sql.Open("sqlite", path)
+	defer db.Close()
+	var n, nullHops, distinct int
+	if err := db.QueryRow(`SELECT count(*), count(*) - count(hop), count(DISTINCT hop) FROM summary_1h WHERE kind = 'trace'`).Scan(&n, &nullHops, &distinct); err != nil {
+		t.Fatal(err)
+	}
+	if n != 10 || nullHops != 0 || distinct != 2 {
+		t.Fatalf("hourly trace rows %d, null hops %d, distinct %d", n, nullHops, distinct)
 	}
 }

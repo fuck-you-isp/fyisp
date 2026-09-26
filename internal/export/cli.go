@@ -15,7 +15,7 @@ import (
 // fs.Parse. Relative times are resolved against now.
 //
 //	--format csv|sqlite  --tier raw|1h  --from T  --to T
-//	--target NAME[,NAME]  --kind https,tcp,icmp  --output FILE (-o)
+//	--target NAME[,NAME]  --kind https,tcp,icmp,trace  --output FILE (-o)
 //
 // T is RFC 3339 ("2026-09-26T12:00:00Z"), a date ("2026-09-26", UTC
 // midnight), "now", or an age such as "24h", "90m", "7d" (that long ago).
@@ -27,7 +27,7 @@ func Flags(fs *flag.FlagSet) func(now time.Time) (Options, error) {
 	to := fs.String("to", "", "end time, same forms as --from (default: newest data)")
 	var targets, kinds multi
 	fs.Var(&targets, "target", "target name to export (repeatable or comma-separated; default all)")
-	fs.Var(&kinds, "kind", "probe kind: https, tcp, icmp (repeatable or comma-separated; default all)")
+	fs.Var(&kinds, "kind", "probe kind: https, tcp, icmp, trace (traceroute hops; repeatable or comma-separated; default all)")
 	out := fs.String("output", "", "output file, created with mode 0600 (default stdout; required for sqlite)")
 	fs.StringVar(out, "o", "", "shorthand for --output")
 	return func(now time.Time) (Options, error) {
@@ -77,14 +77,14 @@ func (m *multi) Set(v string) error {
 	return nil
 }
 
-// ParseKind parses "https", "tcp" or "icmp".
+// ParseKind parses "https", "tcp", "icmp" or "trace".
 func ParseKind(s string) (model.ProbeKind, error) {
-	for _, k := range []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP} {
+	for _, k := range []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP, model.KindTrace} {
 		if strings.EqualFold(s, k.String()) {
 			return k, nil
 		}
 	}
-	return 0, fmt.Errorf("unknown kind %q (https, tcp or icmp)", s)
+	return 0, fmt.Errorf("unknown kind %q (https, tcp, icmp or trace)", s)
 }
 
 // ParseTime parses the --from/--to forms; "" gives the zero time.

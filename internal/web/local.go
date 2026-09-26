@@ -58,6 +58,7 @@ func Local(d Deps, o LocalOptions) http.Handler {
 		tok = hex.EncodeToString(b[:])
 	}
 	h := &localHandler{server: newServer(d, false, tok), opts: o, csrf: tok, extra: map[string]bool{}}
+	h.inv = &investigations{m: map[string]*invSession{}, now: func() time.Time { return h.now() }}
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
 		ip := net.ParseIP(host)
@@ -140,6 +141,9 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/share/start", "/api/share/stop":
 		h.serveShare(w, r, p == "/api/share/start")
 		return
+	case "/api/investigate":
+		h.serveInvestigate(w, r)
+		return
 	}
 	if !strings.HasPrefix(p, "/") {
 		http.NotFound(w, r)
@@ -209,6 +213,29 @@ func tokenEqual(got, want string) bool {
 	return want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
+// controlAllowed applies the POST routes' protections: controls enabled,
+// same origin, CSRF token and (when set) the admin token. It writes the
+// refusal and returns false.
+func (h *localHandler) controlAllowed(w http.ResponseWriter, r *http.Request, what string) bool {
+	if h.controls == "disabled" {
+		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from the network (--listen) and --admin-token is not set")
+		return false
+	}
+	if !sameOrigin(r) {
+		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
+		return false
+	}
+	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
+		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
+		return false
+	}
+	if h.opts.AdminToken != "" && !tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
+		writeErr(w, r, http.StatusForbidden, "admin token required")
+		return false
+	}
+	return true
+}
+
 func (h *localHandler) serveShare(w http.ResponseWriter, r *http.Request, start bool) {
 	if h.d.Share == nil {
 		writeErr(w, r, http.StatusNotFound, "sharing is not available")
@@ -223,20 +250,7 @@ func (h *localHandler) serveShare(w http.ResponseWriter, r *http.Request, start 
 		writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
 		return
 	}
-	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, "share controls are disabled: the dashboard is reachable from the network (--listen) and --admin-token is not set")
-		return
-	}
-	if !sameOrigin(r) {
-		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
-		return
-	}
-	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
-		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
-		return
-	}
-	if h.opts.AdminToken != "" && !tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
-		writeErr(w, r, http.StatusForbidden, "admin token required")
+	if !h.controlAllowed(w, r, "share controls") {
 		return
 	}
 	var err error

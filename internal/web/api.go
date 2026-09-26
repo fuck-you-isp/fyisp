@@ -576,6 +576,9 @@ func (pd *panelData) JSON() []byte {
 		b = appendStr(b, s.key.Target)
 		b = append(b, `,"kind":`...)
 		b = appendStr(b, s.key.Kind.String())
+		if s.key.Hop > 0 {
+			b = fmt.Appendf(b, `,"hop":%d`, s.key.Hop)
+		}
 		b = fmt.Appendf(b, `,"interval":%d,"mean":`, s.interval.Milliseconds())
 		b = appendFloats(b, c.Mean, pd.nb)
 		b = append(b, `,"min":`...)
@@ -679,7 +682,10 @@ func (pd *panelData) csvName() string {
 // (never hosts, ports or paths; path targets' hosts such as "@gateway" are
 // resolved at runtime and never served either).
 type profileJSON struct {
-	Name    string          `json:"name"`
+	Name     string `json:"name"`
+	Features struct {
+		Trace bool `json:"trace"` // the Investigate view is available
+	} `json:"features"`
 	Groups  []groupJSON     `json:"groups"`
 	Targets []targetSummary `json:"targets"`
 }
@@ -695,6 +701,7 @@ type targetSummary struct {
 	Kinds    []string `json:"kinds"`
 	Interval int64    `json:"interval_ms"`
 	Layer    string   `json:"layer,omitempty"` // model.Layer* for path targets
+	Trace    bool     `json:"trace,omitempty"` // has an always-on trace
 }
 
 func buildProfile(p *model.Profile) profileJSON {

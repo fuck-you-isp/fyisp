@@ -18,7 +18,8 @@
 //
 // Target fields: name, host, group, port (default 443), path (default "/"),
 // kinds (https|tcp|icmp, default all), interval (duration, default 15s; ICMP
-// runs at interval/3), host_overrides (kind -> host).
+// runs at interval/3), host_overrides (kind -> host), trace (true: an
+// always-on traceroute to the target, every 5s; at most MaxTraced targets).
 //
 // An interval must be a whole number of seconds, divisible by 3 (so the ICMP
 // interval is whole seconds too) and divide an hour evenly, so that slots
@@ -62,6 +63,9 @@ type Limits struct {
 	AllowPrivateIPs bool // true only for local files
 }
 
+// MaxTraced is the most targets a profile may trace always-on.
+const MaxTraced = 20
+
 // DefaultInterval is the HTTPS/TCP interval of a target that sets none.
 const DefaultInterval = 15 * time.Second
 
@@ -80,6 +84,7 @@ type fileTarget struct {
 	Kinds         []string          `yaml:"kinds"`
 	Interval      string            `yaml:"interval"`
 	HostOverrides map[string]string `yaml:"host_overrides"`
+	Trace         *bool             `yaml:"trace"`
 }
 
 type fileProfile struct {
@@ -352,6 +357,9 @@ func (ft fileTarget) apply(t *model.Target) error {
 		}
 		t.Interval = d
 	}
+	if ft.Trace != nil {
+		t.Trace = *ft.Trace
+	}
 	if ft.HostOverrides != nil {
 		m := map[model.ProbeKind]string{}
 		for k, h := range ft.HostOverrides {
@@ -439,6 +447,15 @@ func Validate(p *model.Profile, l Limits) error {
 	}
 	if len(p.Targets) > l.MaxTargets {
 		bad("%d targets, at most %d allowed", len(p.Targets), l.MaxTargets)
+	}
+	traced := 0
+	for _, t := range p.Targets {
+		if t.Trace {
+			traced++
+		}
+	}
+	if traced > MaxTraced {
+		bad("%d targets have trace: true, at most %d allowed", traced, MaxTraced)
 	}
 	names := map[string]bool{}
 	for _, t := range p.Targets {

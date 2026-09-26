@@ -4,6 +4,7 @@
 #   docker buildx build --target dist --output type=local,dest=dist .   # all release binaries
 #   docker buildx build --target modfiles --output type=local,dest=. .  # go mod tidy -> go.mod/go.sum
 #   docker buildx build --target fmt --output type=local,dest=. .       # gofmt -w all Go files
+#   docker buildx build --target asndb --output type=local,dest=. .     # refresh internal/asn/data/ip2asn-v4.bin
 #   docker build -t fyisp .                                         # runtime image (default target)
 
 ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
@@ -37,6 +38,28 @@ FROM source AS test
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     test -z "$(gofmt -l . | tee /dev/stderr)" && go vet ./... && CGO_ENABLED=1 go test -race ./...
+
+# Built-in IP-to-ASN table: download the latest iptoasn.com IPv4 data (public
+# domain, PDDL) and convert it with internal/asn/cmd/asngen. ADD re-checks the
+# URL on every build, so a new upstream file is always picked up. The version
+# is the file's Last-Modified date (today if the server sent none).
+#   docker buildx build --target asndb --output type=local,dest=. .
+FROM source AS asndb-gen
+ARG ASNDB_URL=https://iptoasn.com/data/ip2asn-v4.tsv.gz
+ADD ${ASNDB_URL} /asndb/ip2asn-v4.tsv.gz
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build <<'SH'
+set -eu
+v=$(date -u -r /asndb/ip2asn-v4.tsv.gz +%F)
+case "$v" in 19*|20[01]*) v=$(date -u +%F);; esac
+ls -l /asndb/ip2asn-v4.tsv.gz
+mkdir -p /out internal/asn/data
+# asngen links internal/asn, which embeds the table: any placeholder will do.
+[ -e internal/asn/data/ip2asn-v4.bin ] || : > internal/asn/data/ip2asn-v4.bin
+go run ./internal/asn/cmd/asngen -in /asndb/ip2asn-v4.tsv.gz -out /out/ip2asn-v4.bin -version "$v" -source "$ASNDB_URL"
+SH
+FROM scratch AS asndb
+COPY --from=asndb-gen /out/ip2asn-v4.bin /internal/asn/data/
 
 # Live tunnel tests (need network; they hit trycloudflare.com). See internal/tunnel/live_test.go.
 #   docker build --target livetest -t fyisp-livetest .

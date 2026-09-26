@@ -18,7 +18,15 @@
 //     is 0 (upstream reports garbage for a single packet).
 //
 // HTTPS and TCP results are exported as fyisp_https_rtt_seconds and
-// fyisp_tcp_rtt_seconds, with loss and sample counters for every kind.
+// fyisp_tcp_rtt_seconds, with loss and sample counters for every kind except
+// trace hops.
+//
+// The Collector is also a trace.Sink: the current route of every traced
+// profile target is exported as fyisp_trace_hops{name} (its length) and one
+// fyisp_hop_info{name,hop,ip,asn,owner} 1 per hop (empty labels for a hop
+// that does not answer, or unknown values), plus fyisp_route_changes_total.
+// Hop samples themselves are not exported. /metrics is served on the local
+// listener only, so the ip label reveals nothing publicly.
 //
 // The Collector uses a private registry: cloudflared registers collectors
 // into (and fyisp's tunnel replaces) prometheus.DefaultRegisterer, so the
@@ -27,12 +35,15 @@ package metrics
 
 import (
 	"net/http"
+	"net/netip"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -67,6 +78,23 @@ var (
 		"Probes lost, by failure reason.",
 		[]string{"name", "kind", "reason"}, nil)
 )
+
+// Traceroute series (Collector as trace.Sink).
+var (
+	traceHopsDesc = prometheus.NewDesc("fyisp_trace_hops",
+		"Number of hops in the current route of a traced target.",
+		[]string{"name"}, nil)
+	hopInfoDesc = prometheus.NewDesc("fyisp_hop_info",
+		"One per hop of a traced target's current route (hop is the TTL; ip, asn and owner are empty when the hop does not answer or they are unknown).",
+		[]string{"name", "hop", "ip", "asn", "owner"}, nil)
+	routeChangesDesc = prometheus.NewDesc("fyisp_route_changes_total",
+		"Route changes seen for a traced target since fyisp started.",
+		[]string{"name"}, nil)
+)
+
+// maxHopInfo bounds the hop metadata kept; past it, addresses that are in no
+// current route are forgotten.
+const maxHopInfo = 1024
 
 // Verdict series (set with SetVerdictSource).
 var (
@@ -107,16 +135,20 @@ type Collector struct {
 	mu      sync.Mutex
 	series  map[model.SeriesKey]*series
 	verdict VerdictSource
+	routes  map[string]model.Route
+	hops    map[netip.Addr]model.HopInfo
+	changes map[string]uint64
 
 	handler http.Handler
 }
 
-var _ model.Sink = (*Collector)(nil)
+var _ trace.Sink = (*Collector)(nil)
 
 // New returns a Collector. p returns the current profile (it may change on
 // reload); it is called on every scrape and may return nil.
 func New(p func() *model.Profile) *Collector {
-	c := &Collector{profile: p, series: map[model.SeriesKey]*series{}}
+	c := &Collector{profile: p, series: map[model.SeriesKey]*series{},
+		routes: map[string]model.Route{}, hops: map[netip.Addr]model.HopInfo{}, changes: map[string]uint64{}}
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
 		(*promCollector)(c),
@@ -142,9 +174,9 @@ func (c *Collector) SetVerdictSource(f VerdictSource) {
 	c.mu.Unlock()
 }
 
-// Observe records a sample. "Not measured" gaps are ignored.
+// Observe records a sample. "Not measured" gaps and trace hops are ignored.
 func (c *Collector) Observe(s model.Sample) {
-	if s.Lost && s.Reason == model.ReasonGap {
+	if (s.Lost && s.Reason == model.ReasonGap) || s.Key.Kind == model.KindTrace {
 		return
 	}
 	c.mu.Lock()
@@ -164,6 +196,56 @@ func (c *Collector) Observe(s model.Sample) {
 	}
 }
 
+// ObserveHop records a router's metadata (for fyisp_hop_info).
+func (c *Collector) ObserveHop(info model.HopInfo) {
+	if !info.IP.IsValid() {
+		return
+	}
+	info.IP = info.IP.Unmap()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if old, ok := c.hops[info.IP]; ok {
+		if info.RDNS == "" {
+			info.RDNS = old.RDNS
+		}
+		if info.ASN == 0 {
+			info.ASN = old.ASN
+		}
+		if info.Owner == "" {
+			info.Owner = old.Owner
+		}
+	}
+	c.hops[info.IP] = info
+	if len(c.hops) > maxHopInfo {
+		inRoute := map[netip.Addr]bool{info.IP: true}
+		for _, r := range c.routes {
+			for _, h := range r.Hops {
+				inRoute[h.Unmap()] = true
+			}
+		}
+		for ip := range c.hops {
+			if !inRoute[ip] {
+				delete(c.hops, ip)
+			}
+		}
+	}
+}
+
+// ObserveRoute records a target's current route.
+func (c *Collector) ObserveRoute(r model.Route) {
+	r.Hops = append([]netip.Addr(nil), r.Hops...)
+	c.mu.Lock()
+	c.routes[r.Target] = r
+	c.mu.Unlock()
+}
+
+// ObserveRouteChange counts a route change.
+func (c *Collector) ObserveRouteChange(rc model.RouteChange) {
+	c.mu.Lock()
+	c.changes[rc.Target]++
+	c.mu.Unlock()
+}
+
 // promCollector is the prometheus.Collector view of a Collector (kept off the
 // exported API).
 type promCollector Collector
@@ -173,6 +255,7 @@ func (pc *promCollector) Describe(ch chan<- *prometheus.Desc) {
 		pingUpDesc, pingTargetsDesc, pingStatusDesc, pingRTTDesc, pingSntDesc,
 		pingSntFailDesc, pingSntTimeDesc, pingLossDesc,
 		httpsRTTDesc, tcpRTTDesc, samplesDesc, lostDesc, verdictDesc, layerDesc,
+		traceHopsDesc, hopInfoDesc, routeChangesDesc,
 	} {
 		ch <- d
 	}
@@ -220,7 +303,39 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 		snaps = append(snaps, snap{k, t.HostFor(k.Kind), st.last, st.sent, st.failed, st.rttTotal, lost})
 	}
 	vsrc := c.verdict
+	type hopRow struct{ ip, asn, owner string }
+	type routeSnap struct {
+		name    string
+		hops    []hopRow
+		changes uint64
+		traced  bool
+	}
+	var rsnaps []routeSnap
+	for name := range targets {
+		r, traced := c.routes[name]
+		n, changed := c.changes[name]
+		if !traced && !changed {
+			continue
+		}
+		rs := routeSnap{name: name, changes: n, traced: traced}
+		for _, ip := range r.Hops {
+			var h hopRow
+			if ip.IsValid() {
+				ip = ip.Unmap()
+				h.ip = ip.String()
+				if in, ok := c.hops[ip]; ok {
+					h.owner = in.Owner
+					if in.ASN != 0 {
+						h.asn = strconv.FormatUint(uint64(in.ASN), 10)
+					}
+				}
+			}
+			rs.hops = append(rs.hops, h)
+		}
+		rsnaps = append(rsnaps, rs)
+	}
 	c.mu.Unlock()
+	sort.Slice(rsnaps, func(i, j int) bool { return rsnaps[i].name < rsnaps[j].name })
 	sort.Slice(snaps, func(i, j int) bool {
 		if snaps[i].key.Target != snaps[j].key.Target {
 			return snaps[i].key.Target < snaps[j].key.Target
@@ -252,6 +367,17 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 			if h := layers[l]; h != nil {
 				gauge(layerDesc, b2f(*h), l)
 			}
+		}
+	}
+
+	for _, rs := range rsnaps {
+		counter(routeChangesDesc, float64(rs.changes), rs.name)
+		if !rs.traced {
+			continue
+		}
+		gauge(traceHopsDesc, float64(len(rs.hops)), rs.name)
+		for i, h := range rs.hops {
+			gauge(hopInfoDesc, 1, rs.name, strconv.Itoa(i+1), h.ip, h.asn, h.owner)
 		}
 	}
 

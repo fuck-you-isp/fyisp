@@ -7,6 +7,9 @@
 # port 443) and ICMP (echo). HTTPS/TCP run every `interval` (default 15s) and
 # ICMP every interval/3. An interval must be whole seconds, divisible by 3 and
 # divide an hour evenly (6s, 9s, 12s, 15s, 30s, 60s, ...).
+#
+# One target per group has `trace: true`: an always-on traceroute every 5s
+# (per-hop loss and latency, route changes).
 name: default
 version: "1"
 
@@ -38,14 +41,14 @@ targets:
   # lens.l.google.com does not answer on TCP 443: HTTPS/TCP go to meet.google.com.
   - {name: Google-Meet, host: lens.l.google.com, group: common, host_overrides: {https: meet.google.com, tcp: meet.google.com}}
   - {name: Microsoft-Teams, host: teams.microsoft.com, group: common}
-  - {name: Discord, host: discord.gg, group: common}
+  - {name: Discord, host: discord.gg, group: common, trace: true}
   # DNS
   - {name: google-dns, host: 8.8.8.8, group: dns}
-  - {name: cloudflare-dns, host: 1.1.1.1, group: dns}
+  - {name: cloudflare-dns, host: 1.1.1.1, group: dns, trace: true}
   - {name: quad9-dns, host: 9.9.9.9, group: dns}
   - {name: open-dns, host: 208.67.222.222, group: dns}
   # DevTunnels
-  - {name: DevTunnel-Global, host: global.rel.tunnels.api.visualstudio.com, group: devtunnels}
+  - {name: DevTunnel-Global, host: global.rel.tunnels.api.visualstudio.com, group: devtunnels, trace: true}
   - {name: DevTunnel-UkSouth, host: uks1.rel.tunnels.api.visualstudio.com, group: devtunnels}
   - {name: DevTunnel-NorthEurope, host: eun1.rel.tunnels.api.visualstudio.com, group: devtunnels}
   - {name: DevTunnel-WestEurope, host: euw.rel.tunnels.api.visualstudio.com, group: devtunnels}
@@ -61,9 +64,9 @@ targets:
   # Various Dev Related Services
   - {name: dev-GHCR, host: pkg-containers.githubusercontent.com, group: dev}
   # github.com "/" is 576 KB; robots.txt is tiny.
-  - {name: dev-GitHub, host: github.com, group: dev, path: /robots.txt}
+  - {name: dev-GitHub, host: github.com, group: dev, path: /robots.txt, trace: true}
   # Amazon Web Services
-  - {name: AWS-us-east-1, host: s3.us-east-1.amazonaws.com, group: aws}
+  - {name: AWS-us-east-1, host: s3.us-east-1.amazonaws.com, group: aws, trace: true}
   - {name: AWS-us-east-2, host: s3.us-east-2.amazonaws.com, group: aws}
   - {name: AWS-us-west-1, host: s3.us-west-1.amazonaws.com, group: aws}
   - {name: AWS-us-west-2, host: s3.us-west-2.amazonaws.com, group: aws}
@@ -98,7 +101,7 @@ targets:
   - {name: AWS-me-central-1, host: s3.me-central-1.amazonaws.com, group: aws}
   - {name: AWS-sa-east-1, host: s3.sa-east-1.amazonaws.com, group: aws}
   # Hetzner
-  - {name: Hetzner-Falkenstein, host: fsn1-speed.hetzner.com, group: hetzner}
+  - {name: Hetzner-Falkenstein, host: fsn1-speed.hetzner.com, group: hetzner, trace: true}
   - {name: Hetzner-Nuremberg, host: nbg1-speed.hetzner.com, group: hetzner}
   - {name: Hetzner-Helsinki, host: hel1-speed.hetzner.com, group: hetzner}
   - {name: Hetzner-Ashburn, host: ash-speed.hetzner.com, group: hetzner}
@@ -109,7 +112,7 @@ targets:
   - {name: GCP-us-west2, host: storage.us-west2.rep.googleapis.com, group: gcp}
   - {name: GCP-us-west3, host: storage.us-west3.rep.googleapis.com, group: gcp}
   - {name: GCP-us-west4, host: storage.us-west4.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-central1, host: storage.us-central1.rep.googleapis.com, group: gcp}
+  - {name: GCP-us-central1, host: storage.us-central1.rep.googleapis.com, group: gcp, trace: true}
   - {name: GCP-us-east1, host: storage.us-east1.rep.googleapis.com, group: gcp}
   - {name: GCP-us-east4, host: storage.us-east4.rep.googleapis.com, group: gcp}
   - {name: GCP-us-east5, host: storage.us-east5.rep.googleapis.com, group: gcp}

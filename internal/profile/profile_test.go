@@ -398,3 +398,60 @@ func TestValidate(t *testing.T) {
 		t.Errorf("private IP with AllowPrivateIPs: %v", err)
 	}
 }
+
+func TestTrace(t *testing.T) {
+	p, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var traced []string
+	perGroup := map[string]int{}
+	for _, tg := range p.Targets {
+		if tg.Trace {
+			traced = append(traced, tg.Name)
+			perGroup[tg.Group]++
+		}
+	}
+	want := []string{"Discord", "cloudflare-dns", "DevTunnel-Global", "dev-GitHub", "AWS-us-east-1", "Hetzner-Falkenstein", "GCP-us-central1"}
+	if !slices.Equal(traced, want) {
+		t.Errorf("traced targets %v, want %v", traced, want)
+	}
+	for _, g := range p.Groups {
+		if g.ID != PathGroup && perGroup[g.ID] != 1 {
+			t.Errorf("group %s: %d traced targets, want 1", g.ID, perGroup[g.ID])
+		}
+	}
+
+	f := write(t, `
+extends: [default]
+override:
+  - {name: Discord, trace: false}
+  - {name: google-dns, trace: true}
+  - {name: dev-GitHub, interval: 30s}
+add:
+  - {name: router, host: 192.168.1.1, group: common, kinds: [icmp], trace: true}
+`)
+	p, err = Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, tg := range p.Targets {
+		got[tg.Name] = tg.Trace
+	}
+	if got["Discord"] || !got["google-dns"] || !got["router"] || !got["dev-GitHub"] {
+		t.Errorf("trace after override/add: %v", got)
+	}
+
+	p = &model.Profile{Groups: []model.Group{{ID: "g"}}}
+	for i := range MaxTraced + 1 {
+		p.Targets = append(p.Targets, model.Target{Name: fmt.Sprintf("t%d", i), Host: "a.example", Group: "g", Trace: true})
+	}
+	if err := Validate(p, Limits{}); err == nil || !strings.Contains(err.Error(), "trace: true, at most 20") {
+		t.Errorf("21 traced targets: %v", err)
+	}
+	p.Targets[0].Trace = false
+	if err := Validate(p, Limits{}); err != nil {
+		t.Errorf("20 traced targets: %v", err)
+	}
+}

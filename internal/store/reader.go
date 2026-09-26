@@ -647,7 +647,10 @@ func (s *SQLite) Series(ctx context.Context) ([]SeriesInfo, error) {
 			}
 			return 1
 		}
-		return int(a.Key.Kind) - int(b.Key.Kind)
+		if a.Key.Kind != b.Key.Kind {
+			return int(a.Key.Kind) - int(b.Key.Kind)
+		}
+		return int(a.Key.Hop) - int(b.Key.Hop)
 	})
 	return out, nil
 }

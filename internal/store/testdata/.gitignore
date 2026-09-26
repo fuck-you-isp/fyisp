@@ -1,2 +1,3 @@
 # The schema fixture is committed on purpose (root .gitignore ignores *.db).
 !v1.db
+!v2.db

@@ -214,6 +214,7 @@ func main() {
 	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, warming_up)")
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
 	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP-edge samples (shows \"discovering…\")")
+	noTrace := flag.Bool("no-trace", false, "run without a trace source (Investigate view hidden)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -264,6 +265,11 @@ func main() {
 		}),
 		Share: share,
 		Log:   log,
+	}
+	if !*noTrace {
+		ft := newFakeTrace(st, now, *bf)
+		go ft.run(ctx)
+		d.Trace = ft
 	}
 	if !*noVerdict {
 		d.Verdict = newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge)

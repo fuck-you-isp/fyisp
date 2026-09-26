@@ -2,7 +2,10 @@
 // dependencies so any package can import it without cycles.
 package model
 
-import "time"
+import (
+	"net/netip"
+	"time"
+)
 
 // ProbeKind identifies how a target is measured.
 type ProbeKind uint8
@@ -11,6 +14,8 @@ const (
 	KindHTTPS ProbeKind = 1
 	KindTCP   ProbeKind = 2
 	KindICMP  ProbeKind = 3
+	// KindTrace is one hop of a traceroute: SeriesKey.Hop is the TTL (1..).
+	KindTrace ProbeKind = 4
 )
 
 func (k ProbeKind) String() string {
@@ -21,6 +26,8 @@ func (k ProbeKind) String() string {
 		return "tcp"
 	case KindICMP:
 		return "icmp"
+	case KindTrace:
+		return "trace"
 	}
 	return "unknown"
 }
@@ -86,6 +93,8 @@ type Target struct {
 	Path     string        `yaml:"path,omitempty" json:"-"` // HTTPS path, default "/"
 	Kinds    []ProbeKind   `yaml:"-" json:"kinds"`          // default: all three
 	Interval time.Duration `yaml:"-" json:"interval"`       // HTTPS/TCP interval, default 15s; ICMP runs at Interval/3
+	// Trace runs an always-on traceroute to this target (KindTrace series).
+	Trace bool `yaml:"-" json:"trace,omitempty"`
 	// Layer is LayerGateway, LayerEdge or LayerAnycast for path targets.
 	Layer string `yaml:"-" json:"layer,omitempty"`
 	// HostOverrides uses a different host for some kinds (e.g. Google Meet:
@@ -113,6 +122,8 @@ type Profile struct {
 type SeriesKey struct {
 	Target string    `json:"target"`
 	Kind   ProbeKind `json:"kind"`
+	// Hop is the TTL for KindTrace series (1 = first hop), 0 otherwise.
+	Hop uint8 `json:"hop,omitempty"`
 }
 
 // Sample is one probe result. Slot is the wall-clock UTC start of the
@@ -194,4 +205,35 @@ type Incident struct {
 	Summary  string      `json:"summary"`
 	Targets  []string    `json:"targets,omitempty"`
 	PeakLoss float64     `json:"peak_loss"` // worst 1-minute loss fraction seen
+}
+
+// HopInfo describes the router seen at one hop address. Stored once per IP,
+// not per sample. RDNS and Owner may reveal locations; the public view
+// redacts them for the first public hops.
+type HopInfo struct {
+	IP        netip.Addr `json:"ip"`
+	RDNS      string     `json:"rdns,omitempty"`
+	ASN       uint32     `json:"asn,omitempty"`
+	Owner     string     `json:"owner,omitempty"` // AS name, e.g. "COMCAST-7922"
+	FirstSeen time.Time  `json:"first_seen"`
+	LastSeen  time.Time  `json:"last_seen"`
+}
+
+// Route is the hop sequence of one traced target. Hops[i] is TTL i+1; an
+// invalid address means that hop did not answer.
+type Route struct {
+	Target string       `json:"target"`
+	Hops   []netip.Addr `json:"hops"`
+	Since  time.Time    `json:"since"`
+}
+
+// RouteChange records that a target's path changed.
+type RouteChange struct {
+	ID     int64        `json:"id"`
+	Target string       `json:"target"`
+	At     time.Time    `json:"at"`
+	From   []netip.Addr `json:"from"`
+	To     []netip.Addr `json:"to"`
+	// FirstDiff is the first TTL (1-based) that differs.
+	FirstDiff int `json:"first_diff"`
 }

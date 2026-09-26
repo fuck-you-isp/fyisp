@@ -32,7 +32,9 @@ type Options struct {
 	// Interval returns the slot interval of a series. It is read for every
 	// sample (keep it cheap): a new hour uses it, and an hour whose interval
 	// differs (restored after a profile change) is regridded to fit both;
-	// nil means 15s (ICMP 5s). Values are clamped to [100ms, 24h].
+	// nil or 0 means 15s (ICMP and KindTrace hops 5s). Values are clamped to
+	// [100ms, 24h]. KindTrace series (one per hop: SeriesKey.Hop is the TTL)
+	// must return the tracer's round interval.
 	Interval func(model.SeriesKey) time.Duration
 	// Now is the clock used to close hours that stopped receiving samples
 	// (Flush) and to stamp meta.created_at. Default time.Now.
@@ -82,6 +84,7 @@ type SQLite struct {
 	lastFlush time.Time
 	lastErr   string
 	closed    bool
+	tr        traceState // routes, route changes and hop info (trace.go)
 }
 
 // block is one series' hour in memory.
@@ -195,11 +198,12 @@ func newSQLite(dir string, db *conns, o Options) *SQLite {
 		ids:   map[model.SeriesKey]int64{},
 		keys:  map[int64]model.SeriesKey{},
 		ivs:   map[model.SeriesKey]int64{},
+		tr:    newTraceState(),
 	}
 }
 
 func (s *SQLite) loadSeries(ctx context.Context) error {
-	rows, err := s.db.r.QueryContext(ctx, `SELECT id, target, kind, interval_ms FROM series`)
+	rows, err := s.db.r.QueryContext(ctx, `SELECT id, target, kind, hop, interval_ms FROM series`)
 	if err != nil {
 		return err
 	}
@@ -207,7 +211,7 @@ func (s *SQLite) loadSeries(ctx context.Context) error {
 	for rows.Next() {
 		var id, iv int64
 		var k model.SeriesKey
-		if err := rows.Scan(&id, &k.Target, &k.Kind, &iv); err != nil {
+		if err := rows.Scan(&id, &k.Target, &k.Kind, &k.Hop, &iv); err != nil {
 			return err
 		}
 		s.ids[k], s.keys[id], s.ivs[k] = id, k, iv
@@ -223,6 +227,9 @@ func (s *SQLite) loadSeries(ctx context.Context) error {
 // hour's data are rejected afterwards.
 func (s *SQLite) load(ctx context.Context) error {
 	if err := s.loadSeries(ctx); err != nil {
+		return err
+	}
+	if err := s.loadTrace(ctx); err != nil {
 		return err
 	}
 	// Hours that start after now (+clockSlack) were stamped by a clock that
@@ -413,7 +420,7 @@ func (s *SQLite) interval(k model.SeriesKey) int64 {
 	}
 	if d <= 0 {
 		d = 15 * time.Second
-		if k.Kind == model.KindICMP {
+		if k.Kind == model.KindICMP || k.Kind == model.KindTrace {
 			d = 5 * time.Second
 		}
 	}
@@ -653,8 +660,9 @@ func (s *SQLite) Flush(ctx context.Context) error {
 		}
 	}
 	anyClosed := len(s.pending) > 0
+	tr := s.tr.snapshotLocked()
 	s.mu.Unlock()
-	if len(items) == 0 {
+	if len(items) == 0 && tr.empty() {
 		s.mu.Lock()
 		s.lastFlush, s.lastErr = s.o.Now(), ""
 		s.mu.Unlock()
@@ -676,7 +684,7 @@ func (s *SQLite) Flush(ctx context.Context) error {
 		}
 	}
 
-	if _, err := s.writeTx(ctx, items, ups); err != nil {
+	if _, err := s.writeTx(ctx, items, ups, tr); err != nil {
 		return s.flushFailed(items, err)
 	}
 	if anyClosed {
@@ -692,7 +700,7 @@ type seriesUpsert struct {
 	iv int64
 }
 
-func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUpsert) (map[model.SeriesKey]int64, error) {
+func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUpsert, tr *traceSnap) (map[model.SeriesKey]int64, error) {
 	tx, err := s.db.w.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -707,9 +715,9 @@ func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUp
 	newIDs := map[model.SeriesKey]int64{}
 	for _, u := range ups {
 		var id int64
-		if err := tx.QueryRowContext(ctx, `INSERT INTO series(target, kind, interval_ms) VALUES(?,?,?)
-			ON CONFLICT(target, kind) DO UPDATE SET interval_ms = excluded.interval_ms RETURNING id`,
-			u.k.Target, int(u.k.Kind), u.iv).Scan(&id); err != nil {
+		if err := tx.QueryRowContext(ctx, `INSERT INTO series(target, kind, hop, interval_ms) VALUES(?,?,?,?)
+			ON CONFLICT(target, kind, hop) DO UPDATE SET interval_ms = excluded.interval_ms RETURNING id`,
+			u.k.Target, int(u.k.Kind), int(u.k.Hop), u.iv).Scan(&id); err != nil {
 			return nil, err
 		}
 		ids[u.k], newIDs[u.k] = id, id
@@ -736,6 +744,9 @@ func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUp
 		}
 	}
 	if err := writeSummaries(ctx, tx, sums, -1); err != nil {
+		return nil, err
+	}
+	if err := writeTrace(ctx, tx, tr); err != nil {
 		return nil, err
 	}
 
@@ -792,6 +803,7 @@ func (s *SQLite) writeTx(ctx context.Context, items []*flushItem, ups []seriesUp
 	}
 	clear(s.pending[len(kept):])
 	s.pending = kept
+	s.tr.committedLocked(tr)
 	s.lastFlush, s.lastErr = s.o.Now(), ""
 	return newIDs, nil
 }
@@ -853,7 +865,8 @@ func (s *SQLite) flushFailed(items []*flushItem, err error) error {
 }
 
 // Prune deletes every hour that ends at or before `before` (and incidents
-// that ended before the first kept hour), returns the free pages to the OS
+// that ended, route changes that happened, and hop addresses last seen
+// before the first kept hour), returns the free pages to the OS
 // (incremental_vacuum) and truncates the WAL.
 //
 // The retention it implies (Options.Now - before) is counted back from the
@@ -924,6 +937,14 @@ func (s *SQLite) prune(ctx context.Context, hour int64) error {
 	// Incidents that ended before the first kept hour go with it; ongoing
 	// ones are always kept.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM incidents WHERE end_ms IS NOT NULL AND end_ms < ?`, hour*hourMs); err != nil {
+		return err
+	}
+	// Route changes before the first kept hour, and router addresses not
+	// seen since (the current routes are kept in the routes table).
+	if _, err := tx.ExecContext(ctx, `DELETE FROM route_changes WHERE at_ms < ?`, hour*hourMs); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hop_info WHERE last_seen_ms < ?`, hour*hourMs); err != nil {
 		return err
 	}
 	day := hour / 24
