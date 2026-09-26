@@ -8,12 +8,14 @@
 // runs the real fyisp binary in fyt-client as an unprivileged user, injects
 // faults on the path (nft drop/reject, netem loss/delay, a withdrawn route,
 // an unresolvable name, a restart) and checks what fyisp reports through
-// /api/panel, /api/status and /metrics.
+// /api/panel, /api/status and /metrics. TestNetworkPath (path_test.go)
+// covers gateway/ISP edge discovery, TestVerdict (verdict_test.go) the
+// verdict and the outage log.
 //
 // It needs root (namespaces, nft, tc) and Linux. Run it with
 // test/netns/run.sh (builds everything in Docker), or with a Go toolchain:
 //
-//	sudo -E go test -tags netns -v -timeout 20m ./test/netns
+//	sudo -E go test -tags netns -v -timeout 50m ./test/netns
 //
 // FYISP_BIN selects a prebuilt fyisp binary (default: go build ./cmd/fyisp).
 // FYISP_NETNS_OUT, if set, receives the raw API responses and fyisp's logs.
@@ -72,6 +74,14 @@ var (
 	addrGolf      = netip.MustParseAddr("203.0.113.15") // route withdrawn
 	dnsAddr       = netip.MustParseAddr("203.0.113.53") // the test resolver
 )
+
+// The anycast resolvers of the built-in network path group, also put on
+// fyt-inet's loopback so that TestVerdict can keep the path group enabled.
+var anycastAddrs = []netip.Addr{
+	netip.MustParseAddr("1.1.1.1"),
+	netip.MustParseAddr("8.8.8.8"),
+	netip.MustParseAddr("9.9.9.9"),
+}
 
 // The built-in network path group is left out here: it is covered by
 // TestNetworkPath (path_test.go).
@@ -339,6 +349,7 @@ func (h *harness) restart(t *testing.T) {
 type harness struct {
 	dir     string // 0755 work dir: binary, profile, certificates, resolv.conf
 	bin     string
+	profile string // the --config file fyisp runs with (default profile.yml)
 	out     string // evidence directory, may be ""
 	client  *http.Client
 	started time.Time
@@ -416,7 +427,8 @@ func newHarness(t *testing.T) *harness {
 	if err := writeCerts(dir, goodIPs, badTLSAddr); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(dir, "profile.yml"), profileYAML)
+	h.profile = filepath.Join(dir, "profile.yml")
+	mustWrite(t, h.profile, profileYAML)
 	mustWrite(t, filepath.Join(dir, "resolv.conf"), "nameserver "+dnsAddr.String()+"\noptions timeout:1 attempts:2\n")
 	h.mkdirOwned(t, filepath.Join(dir, "home"), 0o700)
 	h.mkdirOwned(t, filepath.Join(dir, "tmp"), 0o700)
@@ -463,7 +475,9 @@ func (h *harness) setupTopology(t *testing.T) {
 	for _, ns := range []string{nsGW, nsISP} {
 		h.nsRun(t, ns, "sysctl", "-qw", "net.ipv4.ip_forward=1")
 	}
-	for _, a := range []netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr} {
+	// Targets live on fyt-inet's loopback; every namespace's default route
+	// leads there through the chain.
+	for _, a := range append([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr}, anycastAddrs...) {
 		h.run(t, "ip", "-n", nsInet, "addr", "add", a.String()+"/32", "dev", "lo")
 	}
 	// Unprivileged ICMP (ping sockets) is off in a new namespace
@@ -605,7 +619,7 @@ func (h *harness) startFyispOn(t *testing.T, addr string, args ...string) *fyisp
 		"sh", "-c", `mount --bind "$0" /etc/resolv.conf && exec "$@"`, filepath.Join(h.dir, "resolv.conf"),
 		"setpriv", "--reuid=" + strconv.Itoa(runUID), "--regid=" + strconv.Itoa(runUID), "--clear-groups",
 		"--inh-caps=-all", "--no-new-privs", "--pdeathsig=KILL",
-		h.bin, "--listen", addr, "--config", filepath.Join(h.dir, "profile.yml"),
+		h.bin, "--listen", addr, "--config", h.profile,
 		"--log-format", "json", "--open-browser=false"}
 	argv = append(argv, args...)
 	cmd := exec.Command("ip", argv...)

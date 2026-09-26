@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Network-fault harness for fyisp (Linux, needs sudo). See netns_test.go.
 #
-#   test/netns/run.sh                      # build in Docker, run all scenarios (~9 min)
+#   test/netns/run.sh                      # build in Docker, run all scenarios (~30 min)
 #   test/netns/run.sh -test.run 'Faults/b' # extra args go to the test binary
 #
 # Builds fyisp and the test with the Go image pinned in the repo Dockerfile
@@ -37,4 +37,4 @@ docker buildx build -q -f "$root/test/netns/Dockerfile" --build-arg GO_IMAGE="$g
   --platform linux/amd64 --output type=local,dest="$bin" "$root" >/dev/null
 out_env=()
 [ -n "${FYISP_NETNS_OUT:-}" ] && out_env=(FYISP_NETNS_OUT="$(realpath -m "$FYISP_NETNS_OUT")")
-sudo env FYISP_BIN="$bin/fyisp" "${out_env[@]}" "$bin/netns.test" -test.v -test.timeout 25m "$@"
+sudo env FYISP_BIN="$bin/fyisp" "${out_env[@]}" "$bin/netns.test" -test.v -test.timeout 50m "$@"

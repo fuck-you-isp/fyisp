@@ -30,14 +30,15 @@ import (
 //   - HTTPS (and so TCP) on :443 of every address: a certificate from the
 //     test CA for the "good" addresses and svc.fyisp.test, a self-signed one
 //     for badTLSAddr;
-//   - DNS on dnsAddr:53/udp: svc.fyisp.test -> dnsTargetAddr, NXDOMAIN for
-//     everything else.
+//   - DNS on dnsAddr:53/udp: svc.fyisp.test and www.fyisp.test ->
+//     dnsTargetAddr, NXDOMAIN for everything else.
 //
 // ICMP echo is answered by the kernel.
 
 const (
 	responderEnv = "FYISP_NETNS_RESPONDER" // set to the directory holding the certificates
 	dnsName      = "svc.fyisp.test"
+	dnsName2     = "www.fyisp.test" // a second name for the same address (TestVerdict)
 )
 
 // writeCerts creates the test CA (ca.pem, trusted by fyisp via
@@ -102,7 +103,7 @@ func writeCerts(dir string, goodIPs []netip.Addr, badIP netip.Addr) error {
 		}
 		return writePEM(filepath.Join(dir, name+".key"), "EC PRIVATE KEY", kb)
 	}
-	if err := leaf("good", 2, goodIPs, []string{dnsName}, caCert, caKey); err != nil {
+	if err := leaf("good", 2, goodIPs, []string{dnsName, dnsName2}, caCert, caKey); err != nil {
 		return err
 	}
 	return leaf("bad", 3, []netip.Addr{badIP}, nil, nil, nil)
@@ -172,14 +173,15 @@ func serveDNS(pc net.PacketConn) {
 		}
 		rh := dnsmessage.Header{ID: h.ID, Response: true, Authoritative: true, RecursionDesired: h.RecursionDesired, RecursionAvailable: true}
 		name := strings.ToLower(strings.TrimSuffix(q.Name.String(), "."))
-		if name != dnsName {
+		known := name == dnsName || name == dnsName2
+		if !known {
 			rh.RCode = dnsmessage.RCodeNameError
 		}
 		b := dnsmessage.NewBuilder(make([]byte, 0, 512), rh)
 		b.EnableCompression()
 		_ = b.StartQuestions()
 		_ = b.Question(q)
-		if name == dnsName && q.Type == dnsmessage.TypeA && q.Class == dnsmessage.ClassINET {
+		if known && q.Type == dnsmessage.TypeA && q.Class == dnsmessage.ClassINET {
 			_ = b.StartAnswers()
 			_ = b.AResource(dnsmessage.ResourceHeader{Name: q.Name, Class: dnsmessage.ClassINET, TTL: 5},
 				dnsmessage.AResource{A: dnsTargetAddr.As4()})
