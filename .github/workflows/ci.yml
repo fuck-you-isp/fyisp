@@ -1,0 +1,52 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Linux: the same Dockerfile targets used locally (no Go on the host).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: fmt, vet, test -race
+        run: docker buildx build --target test .
+      - name: go mod tidy is clean
+        run: |
+          docker buildx build --target modfiles --output type=local,dest=. .
+          git diff --exit-code -- go.mod go.sum
+      - name: cloudflared replace directives match the pinned version
+        run: |
+          v=$(grep -oE 'github.com/cloudflare/cloudflared v[^ ]+' go.mod | awk '{print $2}' | sed 's/.*-//')
+          curl -fsSL "https://raw.githubusercontent.com/cloudflare/cloudflared/$v/go.mod" | grep '^replace' | grep -v golang_client | sort > want
+          grep '^replace' go.mod | sort > got
+          diff want got
+      - name: cross-build release matrix
+        run: docker buildx build --target dist --output type=local,dest=dist .
+      - name: binary size budget (50 MB)
+        run: |
+          ls -l dist
+          for f in dist/fyisp-*; do s=$(stat -c %s "$f"); [ "$s" -le 52428800 ] || { echo "$f is $s bytes"; exit 1; }; done
+
+  # Windows and macOS: native tests, because ICMP and paths are OS-specific.
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, macos-13]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+      - run: go vet ./...
+      - run: go test ./...
