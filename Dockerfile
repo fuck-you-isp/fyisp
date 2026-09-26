@@ -50,6 +50,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=livetest-build /tunnel.test /tunnel.test
 ENTRYPOINT ["/tunnel.test"]
 
+# License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
+# fyisp on any release platform, for the release assets and the image.
+FROM source AS licenses
+RUN --mount=type=cache,target=/go/pkg/mod <<'SH'
+set -eu
+for os in linux darwin windows; do
+  GOOS=$os go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{with .Replace}}(replaced-by:{{.Path}}@{{.Version}}){{end}} {{.Dir}}{{end}}{{end}}' ./cmd/fyisp
+done | sort -u > /tmp/mods
+out=/THIRD_PARTY_LICENSES.txt
+printf 'fyisp includes the following third-party Go modules. Their license and notice\nfiles follow. See NOTICE for a summary.\n\n' > $out
+while read -r path ver dir; do
+  printf '================================================================================\n%s %s\n================================================================================\n' "$path" "$ver" >> $out
+  found=0
+  for f in $(find "$dir" -maxdepth 1 -type f \( -iname 'LICEN[CS]E*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) | sort); do
+    printf -- '--- %s\n' "$(basename "$f")" >> $out; cat "$f" >> $out; printf '\n' >> $out; found=1
+  done
+  [ $found = 1 ] || { echo "no license file for $path in $dir" >&2; exit 1; }
+done < /tmp/mods
+wc -l /tmp/mods $out
+SH
+
 # Cross-compile the release matrix. VERSION is stamped into the binary.
 FROM source AS build-all
 ARG VERSION=dev
@@ -67,6 +88,42 @@ cd /out && sha256sum fyisp-* > SHA256SUMS && ls -l
 SH
 FROM scratch AS dist
 COPY --from=build-all /out/ /
+COPY --from=licenses /THIRD_PARTY_LICENSES.txt /
+
+# Launcher tests: scripts/run.sh (dash, bash, piped) and scripts/run.ps1
+# (PowerShell 7) download a fake release from 127.0.0.1; a good checksum must
+# run `fyisp --version`, a tampered binary must fail without running.
+#   docker build --target launchertest .
+#   docker build --target launchertest-pwsh .
+FROM source AS launcher-bin
+ARG TARGETOS TARGETARCH TARGETVARIANT
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build <<'SH'
+set -eu
+arm=""; name=fyisp-$TARGETOS-$TARGETARCH
+if [ "$TARGETARCH" = arm ]; then arm=7; name=fyisp-$TARGETOS-armv7; fi
+GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=$arm go build -ldflags "-s -w -X main.version=launcher-test" -o /lt/fyisp ./cmd/fyisp
+echo "$name" > /lt/asset
+SH
+FROM debian:stable-slim AS launchertest
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3 bash && rm -rf /var/lib/apt/lists/*
+COPY --from=launcher-bin /lt/ /lt/
+COPY scripts/ /lt/scripts/
+RUN sh /lt/scripts/launcher_test.sh /lt/scripts /lt/fyisp "$(cat /lt/asset)" sh bash
+
+FROM mcr.microsoft.com/powershell:latest@sha256:810c4f1e0c9d23022c3ec18c50a6205ee4b60766f1739d329b2948df1fd7d5b0 AS launchertest-pwsh
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3 && rm -rf /var/lib/apt/lists/*
+COPY --from=launcher-bin /lt/ /lt/
+COPY scripts/ /lt/scripts/
+RUN sh /lt/scripts/launcher_test.sh /lt/scripts /lt/fyisp "$(cat /lt/asset)" pwsh
+
+# systemd unit lint: docker build --target servicetest .
+FROM debian:stable-slim AS servicetest
+RUN apt-get update && apt-get install -y --no-install-recommends systemd && rm -rf /var/lib/apt/lists/*
+COPY --from=launcher-bin /lt/fyisp /usr/local/bin/fyisp
+COPY packaging/fyisp.service /etc/systemd/system/fyisp.service
+RUN out=$(systemd-analyze verify /etc/systemd/system/fyisp.service 2>&1); echo "$out"; \
+    ! echo "$out" | grep -v -e 'Failed to .* bus' -e 'System has not been booted' -e '^$' | grep .
 
 # Runtime image: one static binary, non-root.
 FROM source AS build-image
@@ -78,6 +135,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM scratch AS image
 COPY --from=build-image /fyisp /fyisp
+COPY LICENSE NOTICE /usr/share/doc/fyisp/
+COPY --from=licenses /THIRD_PARTY_LICENSES.txt /usr/share/doc/fyisp/
 USER 65532:65532
 VOLUME /data
 EXPOSE 3000

@@ -1,0 +1,47 @@
+# Captured 2026-09-26 from ghcr.io/fuck-you-isp/network-exporter:main (icmp count: 1).
+# Only the ping_* families; one successful and one lost target. Values are informative only;
+# the golden test compares metric names, HELP, TYPE and label names.
+# HELP ping_loss_percent Packet loss in percent
+# TYPE ping_loss_percent gauge
+ping_loss_percent{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37"} 1
+ping_loss_percent{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129"} 0
+# HELP ping_rtt_seconds Round Trip Time in seconds
+# TYPE ping_rtt_seconds gauge
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="best"} 0
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="csd"} 0
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="mean"} 0
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="range"} 0
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="sd"} 0
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="sum"} 0
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="usd"} 0
+ping_rtt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37",type="worst"} 0
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="best"} 0.001735711
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="csd"} -9.223372036854776e+09
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="mean"} 0.001735
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="range"} 0
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="sd"} 0
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="sum"} 0.001735711
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="usd"} 0
+ping_rtt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129",type="worst"} 0.001735711
+# HELP ping_rtt_snt_count Packet sent count
+# TYPE ping_rtt_snt_count gauge
+ping_rtt_snt_count{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37"} 18
+ping_rtt_snt_count{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129"} 18
+# HELP ping_rtt_snt_fail_count Packet sent fail count
+# TYPE ping_rtt_snt_fail_count gauge
+ping_rtt_snt_fail_count{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37"} 18
+ping_rtt_snt_fail_count{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129"} 0
+# HELP ping_rtt_snt_seconds Packet sent time total
+# TYPE ping_rtt_snt_seconds gauge
+ping_rtt_snt_seconds{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37"} 0
+ping_rtt_snt_seconds{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129"} 0
+# HELP ping_status Ping Status
+# TYPE ping_status gauge
+ping_status{name="AWS-me-south-1",target="52.95.172.37",target_ip="52.95.172.37"} 0
+ping_status{name="Google-Meet",target="74.125.250.129",target_ip="74.125.250.129"} 1
+# HELP ping_targets Number of active targets
+# TYPE ping_targets gauge
+ping_targets 87
+# HELP ping_up Exporter state
+# TYPE ping_up gauge
+ping_up 1

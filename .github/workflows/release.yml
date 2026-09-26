@@ -1,0 +1,122 @@
+name: release
+# On a v* tag: test, cross-build the release binaries through the Dockerfile,
+# fill the version into the launchers, publish a GitHub release with
+# SHA256SUMS and build provenance attestations, and push the multi-arch image
+# ghcr.io/fuck-you-isp/fyisp:<tag> (and :latest for non-prerelease tags).
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/fuck-you-isp/fyisp
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the release
+      id-token: write     # sign attestations
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: fmt, vet, test -race
+        run: docker buildx build --target test .
+      - name: launcher tests
+        run: |
+          docker buildx build --target launchertest .
+          docker buildx build --target launchertest-pwsh .
+          docker buildx build --target servicetest .
+      - name: cross-build release matrix
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: docker buildx build --target dist --build-arg "VERSION=$VERSION" --output type=local,dest=dist .
+      - name: pin the version in the launchers
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          case "$VERSION" in *[!A-Za-z0-9._-]*) echo "bad tag $VERSION"; exit 1;; esac
+          sed "s/^\(\s*\)FYISP_VERSION=\"@FYISP_VERSION@\"/\1FYISP_VERSION=\"$VERSION\"/" scripts/run.sh > dist/run.sh
+          sed "s/^\(\s*\)\$FyispVersion = '@FYISP_VERSION@'/\1\$FyispVersion = '$VERSION'/" scripts/run.ps1 > dist/run.ps1
+          chmod 0755 dist/run.sh
+          grep -q "FYISP_VERSION=\"$VERSION\"" dist/run.sh
+          grep -q "\$FyispVersion = '$VERSION'" dist/run.ps1
+          if grep -n '@FYISP_VERSION@' dist/run.sh dist/run.ps1; then echo "placeholder left"; exit 1; fi
+          (cd dist && sha256sum run.sh run.ps1 >> SHA256SUMS && cat SHA256SUMS)
+      - name: binary size budget (50 MB)
+        run: |
+          for f in dist/fyisp-*; do s=$(stat -c %s "$f"); [ "$s" -le 52428800 ] || { echo "$f is $s bytes"; exit 1; }; done
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/fyisp-*
+            dist/run.sh
+            dist/run.ps1
+      - name: create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          pre=()
+          case "$VERSION" in *-*) pre=(--prerelease);; esac
+          cat > notes.md <<EOF
+          Run without installing (verifies SHA256SUMS before running):
+
+              curl --proto '=https' --tlsv1.2 -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/run.sh | sh
+
+          Windows (PowerShell):
+
+              & ([scriptblock]::Create((irm https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/run.ps1)))
+
+          Docker: \`docker run -p 3000:3000 -v fyisp:/data ${IMAGE}:${VERSION}\`
+
+          Verify a download: \`sha256sum -c SHA256SUMS --ignore-missing\` and
+          \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`.
+          EOF
+          gh release create "$VERSION" dist/* --verify-tag --title "fyisp $VERSION" --notes-file notes.md --generate-notes "${pre[@]}"
+
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write     # push to ghcr.io
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # The Dockerfile cross-compiles on the build platform and the image is
+      # FROM scratch, so no QEMU is needed for the foreign platforms.
+      - name: build and push
+        id: push
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          tags=(-t "$IMAGE:$VERSION")
+          case "$VERSION" in *-*) ;; *) tags+=(-t "$IMAGE:latest");; esac
+          docker buildx build --target image \
+            --platform linux/amd64,linux/arm64,linux/arm/v7 \
+            --build-arg "VERSION=$VERSION" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.licenses=MIT" \
+            "${tags[@]}" --push --metadata-file meta.json .
+          echo "digest=$(jq -r '."containerimage.digest"' meta.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

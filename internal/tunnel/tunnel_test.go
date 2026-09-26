@@ -41,7 +41,7 @@ func TestOptionsValidate(t *testing.T) {
 	if err := ok.validate(); err != nil {
 		t.Fatalf("valid options: %v", err)
 	}
-	if ok.Protocol != "auto" || ok.QuickService != defaultQuickService || ok.ReprovisionAfter != 5*time.Minute {
+	if ok.Protocol != "auto" || ok.QuickService != defaultQuickService || ok.ReprovisionAfter != 5*time.Minute || ok.FallbackAfter != 30*time.Second {
 		t.Fatalf("defaults not applied: %+v", ok)
 	}
 	for _, o := range []Options{
@@ -212,6 +212,7 @@ func TestWatchdog(t *testing.T) {
 }
 
 func TestZerologBridge(t *testing.T) {
+	warnLimiter = &logLimiter{every: time.Minute, now: time.Now}
 	var buf bytes.Buffer
 	l := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	zl := newZerolog(func() *slogLogger { return l }, nil)
@@ -261,4 +262,98 @@ func TestCloudflaredVersionMatchesGoMod(t *testing.T) {
 		}
 	}
 	t.Skip("cloudflared not in build info deps")
+}
+
+func TestFallbackDue(t *testing.T) {
+	const after = 30 * time.Second
+	for _, c := range []struct {
+		proto   string
+		after   time.Duration
+		active  int
+		downFor time.Duration
+		want    bool
+	}{
+		{"auto", after, 0, 31 * time.Second, true},
+		{"auto", after, 0, 30 * time.Second, true},
+		{"auto", after, 0, 29 * time.Second, false}, // not yet
+		{"auto", after, 1, time.Hour, false},        // connected
+		{"quic", after, 0, time.Hour, false},        // explicit modes never switch
+		{"http2", after, 0, time.Hour, false},
+		{"auto", -1, 0, time.Hour, false}, // disabled
+	} {
+		if got := fallbackDue(c.proto, c.after, c.active, c.downFor); got != c.want {
+			t.Errorf("fallbackDue(%q, %v, %d, %v) = %v, want %v", c.proto, c.after, c.active, c.downFor, got, c.want)
+		}
+	}
+	if o := (Options{FallbackAfter: -1}).withDefaults(); o.FallbackAfter != -1 {
+		t.Errorf("negative FallbackAfter overridden: %v", o.FallbackAfter)
+	}
+
+	w := &watchdog{after: time.Minute, downSince: time.Now().Add(-40 * time.Second)}
+	if !fallbackDue("auto", after, w.active(), w.downFor()) {
+		t.Error("no fallback 40s after start without connection")
+	}
+	w.connected()
+	if w.downFor() != 0 || fallbackDue("auto", after, w.active(), w.downFor()) {
+		t.Error("fallback while connected")
+	}
+	w.disconnected() // the clock restarts at the disconnect
+	if fallbackDue("auto", after, w.active(), w.downFor()) {
+		t.Error("fallback right after a disconnect")
+	}
+}
+
+func TestLogLimiter(t *testing.T) {
+	now := time.Unix(1000, 0)
+	l := &logLimiter{every: time.Minute, now: func() time.Time { return now }}
+	if ok, n := l.allow("a"); !ok || n != 0 {
+		t.Fatalf("first a: %v %d", ok, n)
+	}
+	for i := 0; i < 5; i++ {
+		now = now.Add(5 * time.Second)
+		if ok, _ := l.allow("a"); ok {
+			t.Fatalf("repeat %d of a allowed within a minute", i)
+		}
+	}
+	if ok, _ := l.allow("b"); !ok {
+		t.Fatal("distinct message b suppressed")
+	}
+	now = now.Add(time.Minute)
+	if ok, n := l.allow("a"); !ok || n != 5 {
+		t.Fatalf("a after a minute: %v, suppressed %d (want 5)", ok, n)
+	}
+	// The map stays bounded.
+	for i := 0; i < 3*maxLimiterEntries; i++ {
+		now = now.Add(time.Second)
+		l.allow(strings.Repeat("x", i))
+	}
+	if len(l.seen) > maxLimiterEntries {
+		t.Errorf("limiter tracks %d messages", len(l.seen))
+	}
+}
+
+func TestZerologBridgeRateLimitsWarnings(t *testing.T) {
+	now := time.Unix(1000, 0)
+	warnLimiter = &logLimiter{every: time.Minute, now: func() time.Time { return now }}
+	defer func() { warnLimiter = &logLimiter{every: time.Minute, now: time.Now} }()
+	var buf bytes.Buffer
+	l := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	zl := newZerolog(func() *slogLogger { return l }, nil)
+	for i := 0; i < 10; i++ {
+		zl.Error().Int("attempt", i).Msg("Failed to dial a quic connection")
+		zl.Info().Msg("info is not rate-limited")
+		now = now.Add(time.Second)
+	}
+	now = now.Add(time.Minute)
+	zl.Warn().Msg("Failed to dial a quic connection")
+	out := buf.String()
+	if n := strings.Count(out, "Failed to dial"); n != 2 {
+		t.Errorf("warning logged %d times, want 2:\n%s", n, out)
+	}
+	if n := strings.Count(out, "info is not rate-limited"); n != 10 {
+		t.Errorf("info logged %d times, want 10", n)
+	}
+	if !strings.Contains(out, `"suppressed":9`) {
+		t.Errorf("suppressed count missing:\n%s", out)
+	}
 }

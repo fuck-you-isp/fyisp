@@ -200,9 +200,14 @@ func TestLiveAuto(t *testing.T) {
 	r := startLive(t, Options{Protocol: "auto", ReprovisionAfter: 10 * time.Minute}, "hello")
 	start := time.Now()
 	st := r.waitConnected(t, 8*time.Minute)
-	t.Logf("auto connected with %s after %v", st.Protocol, time.Since(start).Round(time.Second))
+	took := time.Since(start)
+	t.Logf("auto connected with %s after %v", st.Protocol, took.Round(time.Second))
 	if st.Protocol != want {
 		t.Errorf("auto chose %q, want %q", st.Protocol, want)
+	}
+	// Fast fallback: HTTP/2 about FallbackAfter (30s) after provisioning.
+	if want == "http2" && took > 75*time.Second {
+		t.Errorf("fallback to http2 took %v, want about 30-45s", took.Round(time.Second))
 	}
 	fetch(t, st.URL, "hello", 60*time.Second)
 	r.stop(t)

@@ -91,6 +91,12 @@ type Options struct {
 	// ReprovisionAfter re-provisions (new URL) after this long without an
 	// active edge connection (default 5m).
 	ReprovisionAfter time.Duration
+	// FallbackAfter applies to Protocol "auto" only: after this long without
+	// an edge connection, cloudflared is restarted with HTTP/2 for the rest of
+	// the current quick tunnel (same URL). cloudflared's own auto fallback
+	// takes minutes when UDP is silently dropped. Default 30s; negative
+	// disables the fast fallback.
+	FallbackAfter time.Duration
 	// Log receives tunnel state changes (Info) and cloudflared's own logs:
 	// cloudflared debug -> Debug-4, info -> Debug, warn and error -> Warn.
 	// Default: discard.
@@ -100,6 +106,7 @@ type Options struct {
 const (
 	defaultQuickService     = "https://api.trycloudflare.com"
 	defaultReprovisionAfter = 5 * time.Minute
+	defaultFallbackAfter    = 30 * time.Second
 )
 
 func (o Options) withDefaults() Options {
@@ -111,6 +118,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.ReprovisionAfter <= 0 {
 		o.ReprovisionAfter = defaultReprovisionAfter
+	}
+	if o.FallbackAfter == 0 {
+		o.FallbackAfter = defaultFallbackAfter
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -288,14 +298,22 @@ func (t *tunnel) serveQuickTunnel(ctx context.Context, qt *quickTunnel) {
 		*s = State{Phase: Connecting, URL: "https://" + qt.Hostname, LastErr: s.LastErr}
 	})
 	w := &watchdog{after: t.opts.ReprovisionAfter, downSince: time.Now()}
+	proto := t.opts.Protocol
 	for restarts := 0; ; restarts++ {
-		why, err := t.runSupervisor(ctx, qt, w)
+		if fallbackDue(proto, t.opts.FallbackAfter, w.active(), w.downFor()) {
+			proto = "http2"
+			t.log.Info("no tunnel connection yet, falling back to HTTP/2", "after", t.opts.FallbackAfter)
+		}
+		why, err := t.runSupervisor(ctx, qt, w, proto)
 		switch why {
 		case stopCtx:
 			return
 		case stopWatchdog:
 			t.log.Warn("no tunnel connection, provisioning a new quick tunnel", "down_for", t.opts.ReprovisionAfter)
 			return
+		case stopFallback:
+			restarts = -1 // restart at once with HTTP/2
+			continue
 		}
 		// The supervisor gave up on its own (e.g. initial connection retries
 		// exhausted). Retry with the same credentials (same URL) until the
@@ -363,6 +381,23 @@ func (w *watchdog) left() time.Duration {
 }
 
 func (w *watchdog) expired() bool { return w.left() <= 0 }
+
+// downFor is how long there has been no active connection (0 while connected).
+func (w *watchdog) downFor() time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.up > 0 {
+		return 0
+	}
+	return time.Since(w.downSince)
+}
+
+// fallbackDue reports whether a supervisor running protocol proto should be
+// restarted with HTTP/2: only "auto" falls back, and only once there has been
+// no connection for at least after (<= 0 disables the fast fallback).
+func fallbackDue(proto string, after time.Duration, active int, downFor time.Duration) bool {
+	return proto == "auto" && after > 0 && active == 0 && downFor >= after
+}
 
 func provisionBackoff(failures int, err error) time.Duration {
 	d := min(5*time.Second<<min(failures-1, 6), 5*time.Minute)

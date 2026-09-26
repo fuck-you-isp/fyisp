@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -74,6 +76,14 @@ func (b zerologBridge) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	msg, _ := m["message"].(string)
+	var suppressed int
+	if lvl >= slog.LevelWarn {
+		ok, n := warnLimiter.allow(msg)
+		if !ok {
+			return len(p), nil
+		}
+		suppressed = n
+	}
 	delete(m, "level")
 	delete(m, "message")
 	delete(m, "time")
@@ -97,6 +107,63 @@ func (b zerologBridge) Write(p []byte) (int, error) {
 			attrs = append(attrs, slog.String(k, fmt.Sprint(v)))
 		}
 	}
+	if suppressed > 0 {
+		attrs = append(attrs, slog.Int("suppressed", suppressed))
+	}
 	l.LogAttrs(context.Background(), lvl, msg, attrs...)
 	return len(p), nil
+}
+
+// warnLimiter rate-limits cloudflared warnings and errors per message: on a
+// network that blocks UDP, cloudflared repeats the same QUIC dial failure
+// every few seconds. It is process-wide so supervisor restarts don't reset it.
+var warnLimiter = &logLimiter{every: time.Minute, now: time.Now}
+
+// logLimiter lets each distinct message through at most once per every and
+// counts what it dropped in between.
+type logLimiter struct {
+	every time.Duration
+	now   func() time.Time
+
+	mu   sync.Mutex
+	seen map[string]*limitEntry
+}
+
+type limitEntry struct {
+	last       time.Time
+	suppressed int
+}
+
+const maxLimiterEntries = 256
+
+// allow reports whether msg may be logged now and, if so, how many copies
+// were suppressed since it was last logged.
+func (l *logLimiter) allow(msg string) (bool, int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	if l.seen == nil {
+		l.seen = map[string]*limitEntry{}
+	}
+	if e := l.seen[msg]; e != nil {
+		if now.Sub(e.last) < l.every {
+			e.suppressed++
+			return false, 0
+		}
+		n := e.suppressed
+		e.last, e.suppressed = now, 0
+		return true, n
+	}
+	if len(l.seen) >= maxLimiterEntries { // forget stale messages
+		for k, e := range l.seen {
+			if now.Sub(e.last) >= l.every {
+				delete(l.seen, k)
+			}
+		}
+		if len(l.seen) >= maxLimiterEntries {
+			return true, 0 // too many distinct messages: don't track
+		}
+	}
+	l.seen[msg] = &limitEntry{last: now}
+	return true, 0
 }

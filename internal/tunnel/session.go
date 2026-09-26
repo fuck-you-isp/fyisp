@@ -135,11 +135,13 @@ const (
 	stopCtx      stopReason = iota // Run's context was cancelled
 	stopWatchdog                   // no connection for ReprovisionAfter
 	stopExited                     // cloudflared's supervisor returned by itself
+	stopFallback                   // "auto" found no connection: retry with http2
 )
 
-// runSupervisor runs one cloudflared supervisor for qt until ctx is done, the
-// watchdog fires or the supervisor gives up.
-func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog) (stopReason, error) {
+// runSupervisor runs one cloudflared supervisor for qt with protocol proto
+// until ctx is done, the watchdog fires, the fast fallback fires (proto
+// "auto" only) or the supervisor gives up.
+func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog, proto string) (stopReason, error) {
 	var (
 		stopping    atomic.Bool
 		conns       = map[uint8]bool{}
@@ -185,7 +187,7 @@ func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog
 		}
 	}()
 
-	tc, orch, err := buildConfig(sctx, qt, t.opts, &zl)
+	tc, orch, err := buildConfig(sctx, qt, t.opts.OriginURL, proto, &zl)
 	if err != nil {
 		return stopExited, err
 	}
@@ -197,7 +199,11 @@ func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog
 	errC := make(chan error, 1)
 	go func() { errC <- sup.Run(sctx, signal.New(make(chan struct{}))) }()
 
-	tick := time.NewTicker(min(max(t.opts.ReprovisionAfter/10, 100*time.Millisecond), 5*time.Second))
+	period := min(max(t.opts.ReprovisionAfter/10, 100*time.Millisecond), 5*time.Second)
+	if proto == "auto" && t.opts.FallbackAfter > 0 {
+		period = min(period, max(t.opts.FallbackAfter/10, 100*time.Millisecond), time.Second)
+	}
+	tick := time.NewTicker(period)
 	defer tick.Stop()
 	for {
 		select {
@@ -212,6 +218,12 @@ func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog
 				cancel()
 				<-errC
 				return stopWatchdog, nil
+			}
+			if fallbackDue(proto, t.opts.FallbackAfter, w.active(), w.downFor()) {
+				stopping.Store(true)
+				cancel()
+				<-errC
+				return stopFallback, nil
 			}
 		case <-ctx.Done():
 			stopping.Store(true)
@@ -236,7 +248,7 @@ func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog
 
 // buildConfig mirrors cloudflared's prepareTunnelConfig + StartServer for a
 // quick tunnel, minus the CLI, metrics server, management, ICMP and updater.
-func buildConfig(ctx context.Context, qt *quickTunnel, o Options, zl *zerolog.Logger) (*supervisor.TunnelConfig, *orchestration.Orchestrator, error) {
+func buildConfig(ctx context.Context, qt *quickTunnel, originURL, proto string, zl *zerolog.Logger) (*supervisor.TunnelConfig, *orchestration.Orchestrator, error) {
 	fs, err := features.NewFeatureSelector(ctx, qt.AccountTag, nil, false, zl)
 	if err != nil {
 		return nil, nil, fmt.Errorf("feature selector: %w", err)
@@ -245,7 +257,7 @@ func buildConfig(ctx context.Context, qt *quickTunnel, o Options, zl *zerolog.Lo
 	if err != nil {
 		return nil, nil, err
 	}
-	ps, err := connection.NewProtocolSelector(o.Protocol, zl)
+	ps, err := connection.NewProtocolSelector(proto, zl)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -264,7 +276,7 @@ func buildConfig(ctx context.Context, qt *quickTunnel, o Options, zl *zerolog.Lo
 
 	// An http.Handler cannot be plugged in: the origin must be a URL.
 	rules, err := ingress.ParseIngress(&config.Configuration{
-		Ingress: []config.UnvalidatedIngressRule{{Service: o.OriginURL}},
+		Ingress: []config.UnvalidatedIngressRule{{Service: originURL}},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("ingress: %w", err)
@@ -313,7 +325,7 @@ func buildConfig(ctx context.Context, qt *quickTunnel, o Options, zl *zerolog.Lo
 		Ingress:             &rules,
 		WarpRouting:         warp,
 		OriginDialerService: dialer,
-		ConfigurationFlags:  map[string]string{"protocol": o.Protocol},
+		ConfigurationFlags:  map[string]string{"protocol": proto},
 	}, tags, nil, zl)
 	if err != nil {
 		return nil, nil, fmt.Errorf("orchestrator: %w", err)
