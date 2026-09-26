@@ -1,29 +1,40 @@
 //go:build netns && linux
 
-// Package netns is fyisp's network-fault harness. It builds a throwaway
-// topology of network namespaces
+// Package netns is fyisp's network-fault harness. Every scenario builds its
+// own throwaway topology of network namespaces
 //
-//	fyt-client (fyisp) <-> fyt-gw <-> fyt-isp <-> fyt-inet (targets)
+//	fyt-R-N-cli (fyisp) <-> fyt-R-N-gw <-> fyt-R-N-isp <-> fyt-R-N-net (targets)
 //
-// runs the real fyisp binary in fyt-client as an unprivileged user, injects
-// faults on the path (nft drop/reject, netem loss/delay, a withdrawn route,
-// an unresolvable name, a restart) and checks what fyisp reports through
+// (R: a per-run id, N: a per-topology counter), runs the real fyisp binary
+// in the client namespace as an unprivileged user, injects faults on the
+// path (nft drop/reject, netem loss/delay, a withdrawn route, an
+// unresolvable name, a restart) and checks what fyisp reports through
 // /api/panel, /api/status and /metrics. TestNetworkPath (path_test.go)
 // covers gateway/ISP edge discovery, TestVerdict (verdict_test.go) the
 // verdict and the outage log.
 //
+// The topologies share nothing (namespaces, responders, resolver, CA, data
+// directories, fyisp processes), so the scenarios run in parallel: a full
+// run takes about as long as the longest scenario. FYISP_NETNS_PARALLEL=0
+// (or -test.parallel=1) runs them one after the other.
+//
 // It needs root (namespaces, nft, tc) and Linux. Run it with
 // test/netns/run.sh (builds everything in Docker), or with a Go toolchain:
 //
-//	sudo -E go test -tags netns -v -timeout 50m ./test/netns
+//	sudo -E go test -tags netns -v -timeout 20m ./test/netns
 //
 // FYISP_BIN selects a prebuilt fyisp binary (default: go build ./cmd/fyisp).
-// FYISP_NETNS_OUT, if set, receives the raw API responses and fyisp's logs.
+// FYISP_NETNS_OUT, if set, receives the raw API responses and fyisp's logs,
+// one subdirectory per scenario. FYISP_NETNS_RUNID (4 hex digits, set by
+// run.sh) fixes the run id in the namespace names, so that a crashed run
+// can be cleaned up by name.
 package netns
 
 import (
 	"bufio"
 	"context"
+	crand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,10 +45,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -45,26 +58,25 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Topology. Namespace and interface names are fixed so that a crashed run
-// can be cleaned up by name (teardown runs before setup, and run.sh traps).
+// Topology. Namespace names are global, so each topology gets its own
+// prefix fyt-<run id>-<counter>- (see newHarness); interface names live in
+// the namespaces and are the same in every topology, and so are the
+// addresses.
 const (
-	nsClient = "fyt-client"
-	nsGW     = "fyt-gw"
-	nsISP    = "fyt-isp"
-	nsInet   = "fyt-inet"
-
-	ispUplink = "i1" // fyt-isp's interface towards fyt-inet: netem goes here
+	nsPrefix  = "fyt-"
+	ispUplink = "i1" // the ISP namespace's interface towards the internet one: netem goes here
 
 	runUID      = 65532 // fyisp runs as this uid/gid (like the container image)
 	listenAddr  = "127.0.0.1:3000"
 	probeIv     = 6 * time.Second // HTTPS/TCP interval; ICMP runs at probeIv/3
 	settle      = probeIv + time.Second
 	httpTimeout = 10 * time.Second
+
+	parallelEnv = "FYISP_NETNS_PARALLEL" // "0": run the scenarios one at a time
+	runIDEnv    = "FYISP_NETNS_RUNID"    // 4 hex digits; random if unset
 )
 
-var namespaces = []string{nsClient, nsGW, nsISP, nsInet}
-
-// Target addresses, all on fyt-inet's loopback (TEST-NET-3).
+// Target addresses, all on the internet namespace's loopback (TEST-NET-3).
 var (
 	addrAlpha     = netip.MustParseAddr("203.0.113.10") // control
 	addrBravo     = netip.MustParseAddr("203.0.113.11") // nft drop
@@ -76,7 +88,7 @@ var (
 )
 
 // The anycast resolvers of the built-in network path group, also put on
-// fyt-inet's loopback so that TestVerdict can keep the path group enabled.
+// the internet namespace's loopback so that TestVerdict can keep the path group enabled.
 var anycastAddrs = []netip.Addr{
 	netip.MustParseAddr("1.1.1.1"),
 	netip.MustParseAddr("8.8.8.8"),
@@ -124,36 +136,131 @@ func TestMain(m *testing.M) {
 	if os.Getenv(pathProbeEnv) != "" {
 		runPathProbe() // never returns
 	}
-	os.Exit(m.Run())
+	if os.Geteuid() == 0 {
+		bins.err = bins.prepare()
+	}
+	code := m.Run()
+	if bins.dir != "" {
+		_ = os.RemoveAll(bins.dir)
+	}
+	// Every topology deletes itself; anything left under this run's prefix
+	// is a harness bug.
+	if left := leftNamespaces(); len(left) > 0 {
+		fmt.Fprintf(os.Stderr, "netns: namespaces left behind: %s\n", strings.Join(left, " "))
+		code = 1
+	}
+	os.Exit(code)
+}
+
+// bins are the executables the scenarios run as uid 65532, prepared once
+// before any scenario starts: writing an executable while other goroutines
+// fork lets a child inherit the write descriptor, and exec then fails with
+// "text file busy".
+type binaries struct {
+	dir   string // 0755, readable by uid 65532
+	fyisp string // FYISP_BIN, or go build ./cmd/fyisp
+	test  string // a copy of this test binary (its own directory may be private)
+	err   error
+}
+
+var bins binaries
+
+func (b *binaries) prepare() error {
+	dir, err := os.MkdirTemp("", "fyisp-netns-bin-")
+	if err != nil {
+		return err
+	}
+	b.dir = dir
+	if err := os.Chmod(dir, 0o755); err != nil {
+		return err
+	}
+	b.fyisp = filepath.Join(dir, "fyisp")
+	if src := os.Getenv("FYISP_BIN"); src != "" {
+		if err := copyExe(src, b.fyisp); err != nil {
+			return err
+		}
+	} else {
+		cmd := exec.Command("go", "build", "-o", b.fyisp, "./cmd/fyisp")
+		cmd.Dir = "../.."
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("go build: %v\n%s", err, out)
+		}
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	b.test = filepath.Join(dir, "netns.test")
+	return copyExe(self, b.test)
+}
+
+func copyExe(src, dst string) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o755)
+}
+
+// parallel marks a scenario as parallel unless FYISP_NETNS_PARALLEL=0.
+func parallel(t *testing.T) {
+	if os.Getenv(parallelEnv) != "0" {
+		t.Parallel()
+	}
 }
 
 // ---------------------------------------------------------------------------
-// The test.
+// The test. Each scenario runs on its own topology and fyisp.
 
-func TestNetworkFaults(t *testing.T) {
+// startLab starts fyisp with the lab profile on a fresh topology and waits
+// until every target has been probed once.
+func startLab(t *testing.T) (*harness, *fyisp) {
 	h := newHarness(t)
 	fy := h.startFyisp(t, "--ephemeral")
 	h.waitReady(t, fy)
 	h.checkStatus(t, fy)
+	h.stopAtEnd(t, fy)
+	return h, fy
+}
+
+// stopAtEnd stops fy with SIGTERM once the scenario is done and expects a
+// clean exit (unless the scenario already failed: then it is just killed).
+func (h *harness) stopAtEnd(t *testing.T, fy *fyisp) {
+	t.Cleanup(func() {
+		if !t.Failed() {
+			h.stopFyisp(t, fy, 0)
+		}
+	})
+}
+
+func TestNetworkFaults(t *testing.T) {
+	parallel(t)
 
 	// a) baseline, f) DNS
-	base := h.phase(t, "a-baseline", 36*time.Second, nil, nil)
-	for _, n := range healthy {
-		for _, k := range kindsFor(n) {
-			expectOK(t, base, n+"/"+k)
+	t.Run("a-baseline", func(t *testing.T) {
+		parallel(t)
+		h, _ := startLab(t)
+		base := h.phase(t, "a-baseline", 36*time.Second, nil, nil)
+		for _, n := range healthy {
+			for _, k := range kindsFor(n) {
+				expectOK(t, base, n+"/"+k)
+			}
 		}
-	}
-	expectLost(t, base, "foxtrot/https", "tls")
-	t.Run("f-dns", func(t *testing.T) {
-		expectLost(t, base, "echo/tcp", "dns")
-		expectLost(t, base, "echo/icmp", "dns")
-		for _, k := range allKinds {
-			expectOK(t, base, "delta/"+k) // resolved through the test resolver
-		}
+		expectLost(t, base, "foxtrot/https", "tls")
+		t.Run("f-dns", func(t *testing.T) {
+			expectLost(t, base, "echo/tcp", "dns")
+			expectLost(t, base, "echo/icmp", "dns")
+			for _, k := range allKinds {
+				expectOK(t, base, "delta/"+k) // resolved through the test resolver
+			}
+		})
 	})
 
 	// b) nft drop
 	t.Run("b-nft-drop", func(t *testing.T) {
+		parallel(t)
+		h, _ := startLab(t)
 		var mt metricsText
 		var restored time.Time
 		p := h.phase(t, "b-nft-drop", 36*time.Second,
@@ -193,6 +300,8 @@ func TestNetworkFaults(t *testing.T) {
 
 	// c) nft reject with tcp reset
 	t.Run("c-nft-reject", func(t *testing.T) {
+		parallel(t)
+		h, _ := startLab(t)
 		p := h.phase(t, "c-nft-reject", 36*time.Second,
 			func() { h.nft(t, "add rule inet fyt fault ip daddr 203.0.113.12 tcp dport 443 reject with tcp reset") },
 			func() { h.nft(t, "flush chain inet fyt fault") })
@@ -206,9 +315,11 @@ func TestNetworkFaults(t *testing.T) {
 
 	// h) route withdrawn: the ISP router answers "host unreachable"
 	t.Run("h-route-unreachable", func(t *testing.T) {
+		parallel(t)
+		h, _ := startLab(t)
 		p := h.phase(t, "h-route-unreachable", 36*time.Second,
-			func() { h.nsRun(t, nsISP, "ip", "route", "add", "unreachable", "203.0.113.15/32") },
-			func() { h.nsRun(t, nsISP, "ip", "route", "del", "unreachable", "203.0.113.15/32") })
+			func() { h.nsRun(t, h.isp, "ip", "route", "add", "unreachable", "203.0.113.15/32") },
+			func() { h.nsRun(t, h.isp, "ip", "route", "del", "unreachable", "203.0.113.15/32") })
 		// A probe in flight when the route is withdrawn may time out.
 		expectLost(t, p, "golf/tcp", "unreachable", "timeout")
 		// The kept-alive connection first times out, new ones are unreachable.
@@ -220,9 +331,11 @@ func TestNetworkFaults(t *testing.T) {
 
 	// d) netem loss 20%
 	t.Run("d-netem-loss", func(t *testing.T) {
+		parallel(t)
+		h, _ := startLab(t)
 		p := h.phase(t, "d-netem-loss", 150*time.Second,
-			func() { h.nsRun(t, nsISP, "tc", "qdisc", "add", "dev", ispUplink, "root", "netem", "loss", "20%") },
-			func() { h.nsRun(t, nsISP, "tc", "qdisc", "del", "dev", ispUplink, "root") })
+			func() { h.nsRun(t, h.isp, "tc", "qdisc", "add", "dev", ispUplink, "root", "netem", "loss", "20%") },
+			func() { h.nsRun(t, h.isp, "tc", "qdisc", "del", "dev", ispUplink, "root") })
 		for _, k := range allKinds {
 			var n, lost int
 			for _, name := range healthy {
@@ -259,14 +372,19 @@ func TestNetworkFaults(t *testing.T) {
 		}
 	})
 
-	// e) netem delay 80ms
+	// e) netem delay 80ms, against a baseline taken on the same topology
+	// just before (so under the same load).
 	t.Run("e-netem-delay", func(t *testing.T) {
+		parallel(t)
+		h, _ := startLab(t)
+		base := h.phase(t, "e-baseline", 36*time.Second, nil, nil)
 		p := h.phase(t, "e-netem-delay", 36*time.Second,
-			func() { h.nsRun(t, nsISP, "tc", "qdisc", "add", "dev", ispUplink, "root", "netem", "delay", "80ms") },
-			func() { h.nsRun(t, nsISP, "tc", "qdisc", "del", "dev", ispUplink, "root") })
+			func() { h.nsRun(t, h.isp, "tc", "qdisc", "add", "dev", ispUplink, "root", "netem", "delay", "80ms") },
+			func() { h.nsRun(t, h.isp, "tc", "qdisc", "del", "dev", ispUplink, "root") })
 		for _, name := range healthy {
 			for _, k := range kindsFor(name) {
 				key := name + "/" + k
+				expectOK(t, base, key)
 				expectOK(t, p, key)
 				d := p.get(key).Mean() - base.get(key).Mean()
 				t.Logf("%-14s baseline %7.3f ms  delayed %7.3f ms  (+%.1f ms)", key, base.get(key).Mean(), p.get(key).Mean(), d)
@@ -277,10 +395,11 @@ func TestNetworkFaults(t *testing.T) {
 		}
 	})
 
-	h.stopFyisp(t, fy, 0)
-
 	// g) restart with a persistent data directory
-	t.Run("g-restart", func(t *testing.T) { h.restart(t) })
+	t.Run("g-restart", func(t *testing.T) {
+		parallel(t)
+		newHarness(t).restart(t)
+	})
 }
 
 // restart runs fyisp with --data-dir, stops it for a while and starts it
@@ -290,6 +409,7 @@ func (h *harness) restart(t *testing.T) {
 	h.mkdirOwned(t, data, 0o700)
 	fy := h.startFyisp(t, "--data-dir", data)
 	h.waitReady(t, fy)
+	h.checkStatus(t, fy)
 	t0 := time.Now()
 	time.Sleep(30 * time.Second)
 
@@ -353,6 +473,43 @@ type harness struct {
 	out     string // evidence directory, may be ""
 	client  *http.Client
 	started time.Time
+	runs    int // fyisp processes started (names their logs)
+
+	// This topology's namespaces: client (fyisp) <-> gw <-> isp <-> inet.
+	cli, gw, isp, inet string
+}
+
+func (h *harness) namespaces() []string { return []string{h.cli, h.gw, h.isp, h.inet} }
+
+// Namespace names: fyt-<run id>-<n>-<role>, at most 15 characters.
+var (
+	runID    = sync.OnceValue(newRunID)
+	topoMu   sync.Mutex // guards topoN; also serialises `ip netns add/del`
+	topoN    int
+	runIDHex = regexp.MustCompile(`^[0-9a-f]{4}$`)
+)
+
+func newRunID() string {
+	if id := os.Getenv(runIDEnv); runIDHex.MatchString(id) {
+		return id
+	}
+	var b [2]byte
+	_, _ = crand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func runPrefix() string { return nsPrefix + runID() + "-" }
+
+// leftNamespaces lists this run's namespaces that still exist.
+func leftNamespaces() []string {
+	ents, _ := os.ReadDir("/run/netns")
+	var left []string
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), runPrefix()) {
+			left = append(left, e.Name())
+		}
+	}
+	return left
 }
 
 func newHarness(t *testing.T) *harness {
@@ -371,10 +528,19 @@ func newHarness(t *testing.T) *harness {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{dir: dir, out: os.Getenv("FYISP_NETNS_OUT"), started: time.Now()}
+	h := &harness{dir: dir, started: time.Now()}
+	topoMu.Lock()
+	topoN++
+	pre := fmt.Sprintf("%s%02x-", runPrefix(), topoN)
+	topoMu.Unlock()
+	h.cli, h.gw, h.isp, h.inet = pre+"cli", pre+"gw", pre+"isp", pre+"net"
+	t.Logf("topology %s{cli,gw,isp,net}, work dir %s", pre, dir)
+	if out := os.Getenv("FYISP_NETNS_OUT"); out != "" {
+		h.out = filepath.Join(out, strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	}
 	t.Cleanup(func() {
 		if t.Failed() {
-			for _, f := range []string{"fyisp-1.log", "responder.log"} {
+			for _, f := range []string{"fyisp-1.log", "fyisp-2.log", "responder.log"} {
 				if b, err := os.ReadFile(filepath.Join(dir, f)); err == nil {
 					t.Logf("---- %s (tail) ----\n%s", f, tail(string(b), 40))
 				}
@@ -400,23 +566,10 @@ func newHarness(t *testing.T) *harness {
 		giveBack(h.out)
 	}
 
-	h.bin = filepath.Join(dir, "fyisp")
-	if src := os.Getenv("FYISP_BIN"); src != "" {
-		b, err := os.ReadFile(src)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(h.bin, b, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		cmd := exec.Command("go", "build", "-o", h.bin, "./cmd/fyisp")
-		cmd.Dir = "../.."
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("go build: %v\n%s", err, out)
-		}
+	if bins.err != nil {
+		t.Fatal(bins.err)
 	}
+	h.bin = bins.fyisp
 	if out, err := exec.Command(h.bin, "--version").CombinedOutput(); err != nil {
 		t.Fatalf("fyisp --version: %v\n%s", err, out)
 	} else {
@@ -435,21 +588,26 @@ func newHarness(t *testing.T) *harness {
 	h.mkdirOwned(t, filepath.Join(dir, "home"), 0o700)
 	h.mkdirOwned(t, filepath.Join(dir, "tmp"), 0o700)
 
-	teardown(t)
-	t.Cleanup(func() { teardown(t) })
+	t.Cleanup(func() { h.teardown(t) })
 	h.setupTopology(t)
 	h.startResponder(t)
 
 	h.client = &http.Client{
 		Timeout:   httpTimeout,
-		Transport: &http.Transport{DialContext: dialIn(nsClient), DisableKeepAlives: true},
+		Transport: &http.Transport{DialContext: dialIn(h.cli), DisableKeepAlives: true},
 	}
 	return h
 }
 
 func (h *harness) setupTopology(t *testing.T) {
-	for _, ns := range namespaces {
-		h.run(t, "ip", "netns", "add", ns)
+	for _, ns := range h.namespaces() {
+		// Concurrent `ip netns add` can race on setting up /run/netns.
+		topoMu.Lock()
+		out, err := exec.Command("ip", "netns", "add", ns).CombinedOutput()
+		topoMu.Unlock()
+		if err != nil {
+			t.Fatalf("ip netns add %s: %v\n%s", ns, err, out)
+		}
 		h.nsRun(t, ns, "ip", "link", "set", "lo", "up")
 	}
 	// veth pairs are created inside the namespaces: the host's own network
@@ -462,34 +620,34 @@ func (h *harness) setupTopology(t *testing.T) {
 		h.run(t, "ip", "-n", b, "link", "set", ifb, "up")
 	}
 	// The gw <-> isp link is numbered from TEST-NET-2, a public-looking
-	// range: like a real ISP's access router, fyt-isp answers the client's
+	// range: like a real ISP's access router, the ISP namespace answers the client's
 	// TTL-limited probes from a public address, which netinfo takes as the
 	// ISP edge (hop 2; hop 1 is the gateway's LAN address).
-	pair(nsClient, "c0", nsGW, "g0", "10.99.1.2/24", gwAddr.String()+"/24")
-	pair(nsGW, "g1", nsISP, "i0", "198.51.100.1/24", edgeAddr.String()+"/24")
-	pair(nsISP, ispUplink, nsInet, "n0", "10.99.3.1/24", "10.99.3.2/24")
+	pair(h.cli, "c0", h.gw, "g0", "10.99.1.2/24", gwAddr.String()+"/24")
+	pair(h.gw, "g1", h.isp, "i0", "198.51.100.1/24", edgeAddr.String()+"/24")
+	pair(h.isp, ispUplink, h.inet, "n0", "10.99.3.1/24", "10.99.3.2/24")
 
-	h.run(t, "ip", "-n", nsClient, "route", "add", "default", "via", gwAddr.String())
-	h.run(t, "ip", "-n", nsGW, "route", "add", "default", "via", edgeAddr.String())
-	h.run(t, "ip", "-n", nsISP, "route", "add", "10.99.1.0/24", "via", "198.51.100.1")
-	h.run(t, "ip", "-n", nsISP, "route", "add", "default", "via", "10.99.3.2")
-	h.run(t, "ip", "-n", nsInet, "route", "add", "default", "via", "10.99.3.1")
-	for _, ns := range []string{nsGW, nsISP} {
+	h.run(t, "ip", "-n", h.cli, "route", "add", "default", "via", gwAddr.String())
+	h.run(t, "ip", "-n", h.gw, "route", "add", "default", "via", edgeAddr.String())
+	h.run(t, "ip", "-n", h.isp, "route", "add", "10.99.1.0/24", "via", "198.51.100.1")
+	h.run(t, "ip", "-n", h.isp, "route", "add", "default", "via", "10.99.3.2")
+	h.run(t, "ip", "-n", h.inet, "route", "add", "default", "via", "10.99.3.1")
+	for _, ns := range []string{h.gw, h.isp} {
 		h.nsRun(t, ns, "sysctl", "-qw", "net.ipv4.ip_forward=1")
 	}
-	// Targets live on fyt-inet's loopback; every namespace's default route
+	// Targets live on the internet namespace's loopback; every namespace's default route
 	// leads there through the chain.
 	for _, a := range append([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr}, anycastAddrs...) {
-		h.run(t, "ip", "-n", nsInet, "addr", "add", a.String()+"/32", "dev", "lo")
+		h.run(t, "ip", "-n", h.inet, "addr", "add", a.String()+"/32", "dev", "lo")
 	}
 	// Unprivileged ICMP (ping sockets) is off in a new namespace
 	// (ping_group_range "1 0"); allow every group, as most distributions do.
-	h.nsRun(t, nsClient, "sysctl", "-qw", "net.ipv4.ping_group_range=0 2147483647")
+	h.nsRun(t, h.cli, "sysctl", "-qw", "net.ipv4.ping_group_range=0 2147483647")
 	// The fault-injection table on the ISP router.
-	h.nsRun(t, nsISP, "nft", "add table inet fyt")
-	h.nsRun(t, nsISP, "nft", "add chain inet fyt fault { type filter hook forward priority 0; policy accept; }")
+	h.nsRun(t, h.isp, "nft", "add table inet fyt")
+	h.nsRun(t, h.isp, "nft", "add chain inet fyt fault { type filter hook forward priority 0; policy accept; }")
 
-	h.nsRun(t, nsClient, "ping", "-c1", "-W2", addrAlpha.String())
+	h.nsRun(t, h.cli, "ping", "-c1", "-W2", addrAlpha.String())
 }
 
 func (h *harness) startResponder(t *testing.T) {
@@ -501,7 +659,7 @@ func (h *harness) startResponder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("ip", "netns", "exec", nsInet, self, "-test.run=^$")
+	cmd := exec.Command("ip", "netns", "exec", h.inet, self, "-test.run=^$")
 	cmd.Env = append(os.Environ(), responderEnv+"="+h.dir)
 	cmd.Stderr = logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
@@ -533,10 +691,10 @@ func (h *harness) startResponder(t *testing.T) {
 	}
 }
 
-// teardown kills whatever runs in the test namespaces and deletes them (and
-// with them their veths, routes, qdiscs and nft rules).
-func teardown(t *testing.T) {
-	for _, ns := range namespaces {
+// teardown kills whatever runs in the topology's namespaces and deletes
+// them (and with them their veths, routes, qdiscs and nft rules).
+func (h *harness) teardown(t *testing.T) {
+	for _, ns := range h.namespaces() {
 		if _, err := os.Stat("/run/netns/" + ns); err != nil {
 			continue
 		}
@@ -549,7 +707,10 @@ func teardown(t *testing.T) {
 		}
 		var err error
 		for range 20 { // processes may take a moment to go away
-			if err = exec.Command("ip", "netns", "del", ns).Run(); err == nil {
+			topoMu.Lock()
+			err = exec.Command("ip", "netns", "del", ns).Run()
+			topoMu.Unlock()
+			if err == nil {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -576,7 +737,7 @@ func (h *harness) nsRun(t *testing.T, ns string, args ...string) string {
 
 func (h *harness) nft(t *testing.T, rule string) {
 	t.Helper()
-	h.nsRun(t, nsISP, "nft", rule)
+	h.nsRun(t, h.isp, "nft", rule)
 }
 
 func (h *harness) mkdirOwned(t *testing.T, dir string, mode os.FileMode) {
@@ -600,24 +761,22 @@ type fyisp struct {
 	code int
 }
 
-var fyispRuns int
-
 func (h *harness) startFyisp(t *testing.T, args ...string) *fyisp {
 	return h.startFyispOn(t, listenAddr, args...)
 }
 
-// startFyispOn runs fyisp in fyt-client as uid/gid 65532 with no
+// startFyispOn runs fyisp in the client namespace as uid/gid 65532 with no
 // capabilities. It gets its own mount namespace from `ip netns exec`, where
 // the test resolv.conf is bind-mounted (nothing changes on the host), and
 // trusts the test CA through SSL_CERT_FILE.
 func (h *harness) startFyispOn(t *testing.T, addr string, args ...string) *fyisp {
 	t.Helper()
-	fyispRuns++
-	logf, err := os.Create(filepath.Join(h.dir, fmt.Sprintf("fyisp-%d.log", fyispRuns)))
+	h.runs++
+	logf, err := os.Create(filepath.Join(h.dir, fmt.Sprintf("fyisp-%d.log", h.runs)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	argv := []string{"netns", "exec", nsClient,
+	argv := []string{"netns", "exec", h.cli,
 		"sh", "-c", `mount --bind "$0" /etc/resolv.conf && exec "$@"`, filepath.Join(h.dir, "resolv.conf"),
 		"setpriv", "--reuid=" + strconv.Itoa(runUID), "--regid=" + strconv.Itoa(runUID), "--clear-groups",
 		"--inh-caps=-all", "--no-new-privs", "--pdeathsig=KILL",
@@ -651,7 +810,7 @@ func (h *harness) startFyispOn(t *testing.T, addr string, args ...string) *fyisp
 			<-fy.done
 		}
 	})
-	t.Logf("started fyisp #%d (pid %d): %s", fyispRuns, cmd.Process.Pid, strings.Join(args, " "))
+	t.Logf("started fyisp #%d (pid %d): %s", h.runs, cmd.Process.Pid, strings.Join(args, " "))
 	return fy
 }
 
