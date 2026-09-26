@@ -15,6 +15,10 @@
 //	                                      // Interval must return the trace round
 //	                                      // interval for KindTrace keys (0: 5s)
 //	web: st also implements TraceReader (Hops, Route, RouteChanges, HopInfo)
+//	v0.3: st (and *Fake) also implement AnnotationStore, ReportStore and
+//	      BaselineReader (v3api.go). Errors: ErrNotFound (404), ErrInvalid
+//	      (400, validation), writes on OpenReadOnly fail. Prune drops old
+//	      annotations; reports are never pruned (capped at MaxReports).
 //	every 60s:  st.Flush(ctx)             // error: shown via Stats().LastFlushErr, retried next time
 //	every 1h:   st.Prune(ctx, time.Now().Add(-retention))
 //	shutdown:   stop probes; st.Flush(ctx); close tunnel; stop HTTP; st.Close()

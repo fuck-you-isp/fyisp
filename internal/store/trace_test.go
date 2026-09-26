@@ -41,7 +41,7 @@ func seriesIDs(t *testing.T, db *sql.DB) map[model.SeriesKey]int64 {
 
 func checkV3Schema(t *testing.T, s *SQLite, bakFrom int) {
 	t.Helper()
-	if v := pragmaInt(t, s.db.w, "user_version"); v != 3 || SchemaVersion() != 3 {
+	if v := pragmaInt(t, s.db.w, "user_version"); v != int64(SchemaVersion()) || SchemaVersion() < 3 {
 		t.Fatalf("user_version %d, SchemaVersion %d", v, SchemaVersion())
 	}
 	for _, tbl := range []string{"hop_info", "route_changes", "routes", "incidents"} {
@@ -55,6 +55,7 @@ func checkV3Schema(t *testing.T, s *SQLite, bakFrom int) {
 	if idx != 1 {
 		t.Fatal("route_changes_at index missing")
 	}
+	checkV4Schema(t, s)
 	var hops int
 	if err := s.db.r.QueryRow(`SELECT count(*) FROM series WHERE hop = 0`).Scan(&hops); err != nil || hops != 3 {
 		t.Fatalf("series hop column: %d %v", hops, err)

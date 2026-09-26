@@ -367,3 +367,64 @@ func TestTraceHops(t *testing.T) {
 		t.Fatalf("hourly trace rows %d, null hops %d, distinct %d", n, nullHops, distinct)
 	}
 }
+
+func TestAnnotations(t *testing.T) {
+	s, err := store.Open(t.TempDir(), store.Options{Now: func() time.Time { return t0 }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, a := range []model.Annotation{
+		{At: t0.Add(time.Hour), End: t0.Add(90 * time.Minute), Text: "ISP ticket, \"urgent\"", Public: true},
+		{At: t0, Text: "  call dropped\nagain  "},
+	} {
+		if err := s.AddAnnotation(ctx, &a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fs := flag.NewFlagSet("x", flag.ContinueOnError)
+	parse := Flags(fs)
+	if err := fs.Parse([]string{"--annotations"}); err != nil {
+		t.Fatal(err)
+	}
+	o, err := parse(t0)
+	if err != nil || !o.Annotations {
+		t.Fatalf("flags: %+v %v", o, err)
+	}
+	var buf bytes.Buffer
+	if err := Run(ctx, s, o, &buf); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := csv.NewReader(&buf).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		AnnotationHeader,
+		{"2", "2026-09-01T00:00:00.000Z", "", "0", "call dropped\nagain"},
+		{"1", "2026-09-01T01:00:00.000Z", "2026-09-01T01:30:00.000Z", "1", "ISP ticket, \"urgent\""},
+	}
+	if fmt.Sprint(recs) != fmt.Sprint(want) {
+		t.Fatalf("got %q\nwant %q", recs, want)
+	}
+	// --from limits the range; to a file too.
+	o.From = t0.Add(30 * time.Minute)
+	path := filepath.Join(t.TempDir(), "notes.csv")
+	o.Output = path
+	if err := Run(ctx, s, o, nil); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if recs, _ := csv.NewReader(bytes.NewReader(b)).ReadAll(); len(recs) != 2 || recs[1][0] != "1" {
+		t.Fatalf("from: %q", recs)
+	}
+	fs = flag.NewFlagSet("x", flag.ContinueOnError)
+	parse = Flags(fs)
+	fs.Parse([]string{"--annotations", "--format", "sqlite", "-o", "x.db"})
+	if _, err := parse(t0); err == nil {
+		t.Fatal("sqlite annotations accepted")
+	}
+	if err := Write(ctx, store.NewFake(), &buf, Options{Annotations: true}); err != nil {
+		t.Fatalf("fake: %v", err)
+	}
+}

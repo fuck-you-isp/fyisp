@@ -15,9 +15,16 @@ import (
 // Fake is an in-memory Store for tests and UI development. It keeps every
 // sample and implements the same bucketing semantics as the real store.
 type Fake struct {
-	mu   sync.RWMutex
-	data map[model.SeriesKey][]model.Sample
-	tr   *fakeTrace
+	// Now stamps annotations and reports (default time.Now). Set it before
+	// use.
+	Now func() time.Time
+
+	mu      sync.RWMutex
+	data    map[model.SeriesKey][]model.Sample
+	tr      *fakeTrace
+	notes   []model.Annotation // by ID
+	noteSeq int64
+	reports map[string]fakeReport
 }
 
 func NewFake() *Fake { return &Fake{data: map[model.SeriesKey][]model.Sample{}} }
@@ -38,6 +45,7 @@ func (f *Fake) Prune(_ context.Context, before time.Time) error {
 		i := sort.Search(len(ss), func(i int) bool { return !ss[i].Slot.Before(before) })
 		f.data[k] = ss[i:]
 	}
+	f.notes = slices.DeleteFunc(f.notes, func(a model.Annotation) bool { return noteEnd(a).Before(before) })
 	if f.tr != nil {
 		f.tr.changes = slices.DeleteFunc(f.tr.changes, func(c model.RouteChange) bool { return c.At.Before(before) })
 		for ip, h := range f.tr.hops {
