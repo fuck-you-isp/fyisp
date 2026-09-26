@@ -39,7 +39,9 @@ import (
 // required; Metrics and Share may be nil (the routes then answer 404).
 // Verdict may be nil: the verdict banner and outage log are then hidden.
 // Trace may be nil: the trace routes then answer 404 and the UI hides the
-// Investigate view.
+// Investigate view. Annotations, Reports and Baselines may be nil: their
+// routes then answer 404 and the UI hides notes, reports and "normal"
+// badges. Slow may be nil (no "slower than your normal" line).
 type Deps struct {
 	Profile func() *model.Profile
 	Store   store.Reader
@@ -48,7 +50,17 @@ type Deps struct {
 	Share   ShareControl
 	Verdict VerdictSource // the verdict engine (internal/verdict.Engine)
 	Trace   TraceSource   // per-hop stats, routes and on-demand traces
-	Log     *slog.Logger
+	// Annotations keeps timeline notes (store.AnnotationStore).
+	Annotations AnnotationStore
+	// Reports builds and keeps evidence reports (report.Builder plus
+	// store.ReportStore; see ReportSource).
+	Reports ReportSource
+	// Baselines answers each series' normal (baseline.Source).
+	Baselines BaselineSource
+	// Slow lists targets currently slower than their normal (the verdict
+	// engine's baseline comparison), worst first.
+	Slow func() []SlowTarget
+	Log  *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }

@@ -93,6 +93,14 @@ func (h *publicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.prefix, http.StatusMovedPermanently)
 		return
 	}
+	if id, ok := strings.CutPrefix(rel, "r/"); ok {
+		if !allowGET(w, r) {
+			return
+		}
+		hd.Set("Cache-Control", "private, no-store")
+		h.servePublicReport(w, r, id)
+		return
+	}
 	rt := lookup(rel)
 	if rt == routeNone {
 		notFound(w, r)

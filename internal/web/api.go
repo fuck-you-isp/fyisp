@@ -684,7 +684,10 @@ func (pd *panelData) csvName() string {
 type profileJSON struct {
 	Name     string `json:"name"`
 	Features struct {
-		Trace bool `json:"trace"` // the Investigate view is available
+		Trace     bool `json:"trace"`     // the Investigate view is available
+		Notes     bool `json:"notes"`     // timeline notes (/api/annotations)
+		Reports   bool `json:"reports"`   // evidence reports (local only)
+		Baselines bool `json:"baselines"` // "normal" badges and band (/api/baselines)
 	} `json:"features"`
 	Groups  []groupJSON     `json:"groups"`
 	Targets []targetSummary `json:"targets"`

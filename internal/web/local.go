@@ -145,6 +145,14 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveInvestigate(w, r)
 		return
 	}
+	if rest, ok := strings.CutPrefix(p, "/api/annotations"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
+		h.serveNotes(w, r, strings.TrimPrefix(rest, "/"))
+		return
+	}
+	if rest, ok := strings.CutPrefix(p, "/api/reports"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
+		h.serveReports(w, r, strings.TrimPrefix(rest, "/"))
+		return
+	}
 	if !strings.HasPrefix(p, "/") {
 		http.NotFound(w, r)
 		return
