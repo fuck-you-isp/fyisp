@@ -31,6 +31,18 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     test -z "$(gofmt -l . | tee /dev/stderr)" && go vet ./... && CGO_ENABLED=1 go test -race ./...
 
+# Live tunnel tests (need network; they hit trycloudflare.com). See internal/tunnel/live_test.go.
+#   docker build --target livetest -t fyisp-livetest .
+#   docker run --rm -e FYISP_LIVE_TUNNEL=1 fyisp-livetest -test.run Live -test.v
+FROM source AS livetest-build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go test -c -race -o /tunnel.test ./internal/tunnel
+FROM debian:bookworm-slim AS livetest
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables && rm -rf /var/lib/apt/lists/*
+COPY --from=livetest-build /tunnel.test /tunnel.test
+ENTRYPOINT ["/tunnel.test"]
+
 # Cross-compile the release matrix. VERSION is stamped into the binary.
 FROM source AS build-all
 ARG VERSION=dev
