@@ -294,12 +294,15 @@ func TestRules(t *testing.T) {
 		},
 		{
 			name: "isp",
+			// This harness pings the layers every 5s (12 samples a minute):
+			// the edge must lose 6 of 12 to be significantly worse than
+			// the gateway.
 			fx: []behavior{
-				layer(model.LayerEdge, every(4, model.ReasonTimeout)),
-				internet(every(4, model.ReasonTimeout)),
+				layer(model.LayerEdge, every(2, model.ReasonTimeout)),
+				internet(every(2, model.ReasonTimeout)),
 			},
 			kind:    model.VerdictISP,
-			summary: "Your ISP's network is dropping packets: the router is fine, the first hop past it loses 25%.",
+			summary: "Your ISP's network is dropping packets: the router is fine, the first hop past it loses 50%.",
 		},
 		{
 			name: "upstream via anycast",

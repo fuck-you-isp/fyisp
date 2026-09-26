@@ -36,15 +36,40 @@ import (
 //  1. no_network: no samples at all; or nothing succeeded and most losses
 //     are "no network"/"unreachable"; or every known layer loses everything
 //     that way while no internet target succeeds.
-//  2. lan: the gateway layer is unhealthy.
-//  3. isp: the ISP-edge layer is unhealthy (the gateway is not).
-//  4. upstream: the anycast layer is unhealthy, or ≥ 50% of the internet
-//     (non-layer) targets are unhealthy ignoring DNS failures, with at least
-//     3 of them and spanning more than one group (one group failing alone is
-//     that service's problem).
+//  2. lan: the gateway layer is to blame (innermost lossy layer, below).
+//  3. isp: the ISP-edge layer is to blame (the gateway is not).
+//  4. upstream: the anycast layer is unhealthy and the loss did not start
+//     further in (below), or ≥ 50% of the internet (non-layer) targets are
+//     unhealthy ignoring DNS failures, with at least 3 of them and spanning
+//     more than one group (one group failing alone is that service's
+//     problem).
 //  5. dns: ≥ 30% of the internet targets lose ≥ 20% of probes to DNS.
 //  6. service: some internet targets are unhealthy.
 //  7. ok.
+//
+// Innermost lossy layer (rules 2-4). Loss on an inner link shows on every
+// layer beyond it too, and while the one-minute window fills after the
+// loss starts, a layer further out may cross a threshold first by chance:
+// early on each layer has only a few lost samples (gateway and edge are
+// probed ~60 times a minute, the anycast layer ~48). So:
+//
+//   - A layer is lossy when it lost ≥ 5 samples and ≥ 10% of them; no
+//     verdict blames a layer for loss with fewer than 5 lost samples.
+//   - The gateway (then the edge) is to blame when it is lossy and either
+//     unhealthy or every known layer beyond it loses at least half as much
+//     (the loss propagates outward).
+//   - A layer beyond the gateway is blamed for loss only when it is
+//     significantly worse than every known layer inside it: its loss
+//     exceeds theirs by more than 2.5 standard errors of a two-proportion
+//     test on the window's counts (pooled p). Otherwise the verdict waits
+//     until the inner layer is clearly lossy or clearly clean.
+//   - The anycast layer additionally needs every known inner layer below
+//     10% loss and below half the anycast loss. With no inner layer known
+//     it is judged alone.
+//
+// A latency spike needs no such rule: an inner spike makes that layer
+// unhealthy itself and is caught first; a layer unhealthy by latency alone
+// (loss < 10%) is not held back.
 const (
 	lossBad            = 0.2
 	spikeFactor        = 3.0
@@ -52,6 +77,10 @@ const (
 	upstreamShare      = 0.5
 	minUpstreamTargets = 3
 	dnsShare           = 0.3
+	lossInner          = 0.1 // a layer losing this much (and minLost samples) is lossy
+	minLost            = 5   // lost samples needed before a layer is blamed for loss
+	propagated         = 0.5 // outer layers must lose at least this share of the inner loss
+	zWorse             = 2.5 // standard errors by which an outer layer must be worse than an inner one
 )
 
 func spikeThreshold(baseMs float64) float64 { return max(spikeFactor*baseMs, baseMs+spikeMarginMs) }
@@ -187,11 +216,11 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 	}
 
 	// 2. LAN
-	if gw.unhealthy {
+	if innermost(gw, edge, ac) {
 		return set(model.VerdictLAN, gw.loss(), layerSentence(gw, "Your Wi-Fi or router"))
 	}
 	// 3. ISP
-	if edge.unhealthy {
+	if innermost(edge, ac) && worse(edge, gw) {
 		var s string
 		w := edge.worst
 		lead := "Your ISP's network is dropping packets: "
@@ -219,7 +248,7 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 	case gw.known:
 		beyond = "Problems beyond your router: "
 	}
-	if ac.unhealthy {
+	if ac.unhealthy && beyondInner(gw, edge, ac) {
 		what := "responding slowly"
 		unreach := true
 		for _, t := range ts {
@@ -264,6 +293,75 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		return set(model.VerdictService, worst, serviceSentence(bad, inet, names))
 	}
 	return set(model.VerdictOK, 0, "Everything looks fine.")
+}
+
+// lossy: the layer lost ≥ minLost samples and ≥ lossInner of them.
+func (l *layerStat) lossy() bool {
+	return l.known && l.lost >= minLost && l.loss() >= lossInner
+}
+
+// spikeOnly: unhealthy by latency, not by loss.
+func (l *layerStat) spikeOnly() bool { return l.unhealthy && l.loss() < lossInner }
+
+// innermost reports whether l is to blame, outer being the layers beyond
+// it: l is unhealthy by latency alone, or lossy and either unhealthy or
+// every known outer layer loses at least propagated × as much.
+func innermost(l *layerStat, outer ...*layerStat) bool {
+	switch {
+	case !l.known:
+		return false
+	case l.spikeOnly():
+		return true
+	case !l.lossy():
+		return false
+	case l.unhealthy:
+		return true
+	}
+	for _, o := range outer {
+		if o.known && o.loss() < propagated*l.loss() {
+			return false
+		}
+	}
+	return true
+}
+
+// worse reports whether the loss of out can be blamed on out rather than on
+// the inner layer in: in is unknown, or out is unhealthy by latency alone,
+// or out's loss exceeds in's by more than zWorse standard errors (pooled
+// two-proportion test on the window's counts).
+func worse(out, in *layerStat) bool {
+	if !in.known || out.spikeOnly() {
+		return true
+	}
+	if in.n == 0 || out.n == 0 {
+		return false
+	}
+	p := float64(in.lost+out.lost) / float64(in.n+out.n)
+	se := math.Sqrt(p * (1 - p) * (1/float64(in.n) + 1/float64(out.n)))
+	d := out.loss() - in.loss()
+	if se == 0 {
+		return d > 0
+	}
+	return d > zWorse*se
+}
+
+// beyondInner reports whether an unhealthy anycast layer is a problem
+// beyond the ISP: it is unhealthy by latency alone, or it lost ≥ minLost
+// samples and every known inner layer loses < lossInner, less than
+// propagated × the anycast loss, and significantly less (worse).
+func beyondInner(gw, edge, ac *layerStat) bool {
+	if ac.spikeOnly() {
+		return true
+	}
+	if ac.lost < minLost {
+		return false
+	}
+	for _, in := range []*layerStat{gw, edge} {
+		if in.known && !(in.loss() < lossInner && in.loss() < propagated*ac.loss() && worse(ac, in)) {
+			return false
+		}
+	}
+	return true
 }
 
 func layerSentence(l *layerStat, who string) string {
