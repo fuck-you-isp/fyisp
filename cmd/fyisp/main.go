@@ -53,6 +53,7 @@ type config struct {
 	configPath    string
 	openBrowser   bool
 	adminToken    string
+	allowHosts    hostList
 	pprofAddr     string
 	logFormat     string
 	logLevel      string
@@ -109,6 +110,7 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]`")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls when --listen is not loopback")
+	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn or error")
@@ -137,6 +139,25 @@ func parseFlags(args []string) (config, error) {
 		return c, fmt.Errorf("--ephemeral and --data-dir are mutually exclusive")
 	}
 	return c, nil
+}
+
+// hostList is --allow-host: Host header values, repeatable or comma-separated.
+type hostList []string
+
+func (h *hostList) String() string { return strings.Join(*h, ",") }
+
+func (h *hostList) Set(v string) error {
+	for _, s := range strings.Split(v, ",") {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		if strings.ContainsAny(s, "/ @?#") {
+			return fmt.Errorf("invalid host %q: want a name or name:port, e.g. nas.local", s)
+		}
+		*h = append(*h, s)
+	}
+	return nil
 }
 
 // parseRetention accepts Go durations plus a "d" (days) suffix.
@@ -235,7 +256,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		Log:     log,
 	}
 	localAddr := localLn.Addr().String()
-	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: c.adminToken}))
+	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: c.adminToken, ExtraHosts: c.allowHosts}))
 	publicSrv := newServer(web.Public(deps, secret))
 	serve := func(name string, s *http.Server, ln net.Listener) {
 		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

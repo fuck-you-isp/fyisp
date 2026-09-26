@@ -21,9 +21,10 @@ type LocalOptions struct {
 	// "fyisp.lan:3000" or "fyisp.lan" (any port). Compared case-insensitively.
 	ExtraHosts []string
 	// PublicBind reports that the listener accepts non-loopback clients
-	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an unspecified
-	// Addr host. Then any IP-literal Host is allowed (DNS rebinding needs a
-	// hostname), and the POST routes are disabled unless AdminToken is set.
+	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an Addr whose
+	// host is unspecified or a non-loopback IP (--listen 192.168.1.10:3000).
+	// Then any IP-literal Host is allowed (DNS rebinding needs a hostname),
+	// and the POST routes are disabled unless AdminToken is set.
 	PublicBind bool
 	// AdminToken, if set, must be sent as X-FYISP-Admin on POST routes.
 	AdminToken string
@@ -41,6 +42,7 @@ type localHandler struct {
 	*server
 	opts     LocalOptions
 	port     string
+	self     string // bound IP literal (normalized), "" for a wildcard bind
 	extra    map[string]bool
 	csrf     string
 	controls string
@@ -58,8 +60,15 @@ func Local(d Deps, o LocalOptions) http.Handler {
 	h := &localHandler{server: newServer(d, false, tok), opts: o, csrf: tok, extra: map[string]bool{}}
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
-		if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		ip := net.ParseIP(host)
+		switch {
+		case host == "" || (ip != nil && ip.IsUnspecified()):
 			h.opts.PublicBind = true
+		case ip != nil:
+			h.self = ip.String()
+			if !ip.IsLoopback() {
+				h.opts.PublicBind = true // a LAN address: same rules as 0.0.0.0
+			}
 		}
 	}
 	for _, e := range o.ExtraHosts {
@@ -99,6 +108,9 @@ func (h *localHandler) hostAllowed(hostport string) bool {
 	case "127.0.0.1", "localhost", "::1":
 		return portOK
 	}
+	if ip := net.ParseIP(host); ip != nil && h.self != "" && ip.String() == h.self {
+		return portOK // the address we are bound to
+	}
 	// IP literals cannot be DNS-rebound; allow them when LAN access is on.
 	return h.opts.PublicBind && net.ParseIP(host) != nil
 }
@@ -106,7 +118,8 @@ func (h *localHandler) hostAllowed(hostport string) bool {
 func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(w.Header())
 	if !h.hostAllowed(r.Host) {
-		writeErr(w, r, http.StatusMisdirectedRequest, "unknown host: open http://127.0.0.1"+portSuffix(h.port)+"/")
+		writeErr(w, r, http.StatusMisdirectedRequest, "unknown host: open "+h.localURL()+
+			" or allow this name with --allow-host (e.g. --allow-host nas.local)")
 		return
 	}
 	p := r.URL.Path
@@ -150,6 +163,18 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.serveGET(w, r, rt, rel)
+}
+
+// localURL is the address to suggest when the Host is refused.
+func (h *localHandler) localURL() string {
+	host := "127.0.0.1"
+	if h.self != "" {
+		host = h.self
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+	}
+	return "http://" + host + portSuffix(h.port) + "/"
 }
 
 func portSuffix(p string) string {
@@ -199,7 +224,7 @@ func (h *localHandler) serveShare(w http.ResponseWriter, r *http.Request, start 
 		return
 	}
 	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, "share controls are disabled: listening on all interfaces without --admin-token")
+		writeErr(w, r, http.StatusForbidden, "share controls are disabled: the dashboard is reachable from the network (--listen) and --admin-token is not set")
 		return
 	}
 	if !sameOrigin(r) {
