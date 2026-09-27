@@ -251,6 +251,9 @@ func (r *runner) probe(ctx context.Context, s *series, png pinger) (smp model.Sa
 			return smp, true
 		}
 	} else if ip, err = s.host.addr(); err != nil {
+		if s.host.pending() {
+			return smp, false // never resolved yet: not measured, not loss
+		}
 		smp.Lost, smp.Reason, smp.Err = true, model.ReasonDNS, err.Error()
 		return smp, true
 	}
@@ -482,6 +485,16 @@ func (hs *hostState) addr() (netip.Addr, error) {
 		return c.ip, nil
 	}
 	return netip.Addr{}, c.err
+}
+
+// pending reports a host that has never resolved and has not yet failed
+// DNSFailLimit lookups in a row. Its slots are not measured: a single
+// failed first lookup (a resolver busy at startup) is not loss, the same
+// grace a resolved host gets. After DNSFailLimit failures its probes are
+// lost with ReasonDNS.
+func (hs *hostState) pending() bool {
+	c := hs.cur.Load()
+	return c == nil || (!c.ip.IsValid() && c.fails < DNSFailLimit)
 }
 
 func (r *runner) resolve(ctx context.Context, hs *hostState) {

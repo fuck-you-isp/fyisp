@@ -625,3 +625,24 @@ func TestLookupsBounded(t *testing.T) {
 		t.Errorf("%d samples, %d lost to DNS; want every target probed without DNS loss", n, dns)
 	}
 }
+
+// TestDNSFirstLookupGrace: a host whose first lookup fails is not measured
+// (not lost) until DNSFailLimit lookups have failed, like a resolved host
+// keeping its last address; then its probes are DNS losses.
+func TestDNSFirstLookupGrace(t *testing.T) {
+	stub := &stubLookup{ok: false, addr: netip.MustParseAddr("127.0.0.1")}
+	r := New(Options{Log: quietLog(), Lookup: stub.lookup}).(*runner)
+	hs := newHostState("svc.example.test")
+	s := &series{key: model.SeriesKey{Target: "svc", Kind: model.KindTCP}, host: hs, port: 9, iv: time.Second}
+	if _, ok := r.probe(tctx(t), s, nil); ok {
+		t.Error("before the first lookup: measured, want not measured")
+	}
+	r.resolve(tctx(t), hs)
+	if smp, ok := r.probe(tctx(t), s, nil); ok {
+		t.Errorf("one failed first lookup: measured (%v %v), want not measured", smp.Lost, smp.Reason)
+	}
+	r.resolve(tctx(t), hs)
+	if smp, ok := r.probe(tctx(t), s, nil); !ok || !smp.Lost || smp.Reason != model.ReasonDNS {
+		t.Errorf("%d failed lookups: ok=%v lost=%v reason=%v, want a DNS loss", DNSFailLimit, ok, smp.Lost, smp.Reason)
+	}
+}
