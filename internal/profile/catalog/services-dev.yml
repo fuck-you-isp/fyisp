@@ -1,0 +1,255 @@
+provider: services-dev
+display: Developer Services
+kind: service
+category: [dev]
+sources:
+  - https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-githubs-ip-addresses
+  - https://docs.docker.com/desktop/setup/allow-list/
+  - https://docs.npmjs.com/cli/using-npm/registry
+  - https://docs.pypi.org/api/
+  - https://go.dev/ref/mod#goproxy-protocol
+  - https://doc.rust-lang.org/cargo/reference/registry-index.html#sparse-protocol
+  - https://platform.openai.com/docs/api-reference/models
+  - https://docs.anthropic.com/en/api/models-list
+  - https://ip-ranges.amazonaws.com/ip-ranges.json
+notes: >-
+  Code hosting, registries and AI APIs developers depend on. dev-GitHub and dev-GHCR keep
+  default.yml's names and hosts. Only unauthenticated, tiny responses: robots.txt,
+  registry /v2/ 401s, npm's 2-byte {}, the crates sparse-index config.json,
+  sum.golang.org/latest, and 401 JSON from the OpenAI/Anthropic /v1/models endpoints (no
+  key is sent; this checks reachability only). api.github.com was left out: its
+  unauthenticated limit (60 requests/hour) is below fyisp's 240/hour. All are anycast/CDN
+  or geo-DNS fronts except registry-1.docker.io, which is a fixed AWS us-east-1 load
+  balancer (so every docker pull manifest request crosses to Virginia). Verified from
+  Hetzner Helsinki on 2026-09-27.
+targets:
+  # github.com / is 576 KB; robots.txt is tiny. GitHub geo-routes between its own DCs
+  # (140.82.112.0/20). From Helsinki: ping 24 ms / TCP connect 25 ms.
+  - name: dev-GitHub
+    host: github.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [git]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6397
+  # GHCR blob download host (Fastly-fronted). From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: dev-GHCR
+    host: pkg-containers.githubusercontent.com
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [containers]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 470
+  # Unauthenticated /v2/ -> 401 (73 B). From Helsinki: ping 24 ms / TCP connect 25 ms.
+  - name: dev-GHCR-Registry
+    host: ghcr.io
+    kinds: [https, tcp, icmp]
+    path: /v2/
+    region: global
+    anycast: true
+    tags: [containers]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 73
+  # Cloudflare. From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: dev-GitLab
+    host: gitlab.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [git]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 3230
+  # registry-1.docker.io is an AWS us-east-1 ELB (IPs in us-east-1 per ip-ranges.json, ~110
+  # ms TCP from Helsinki); no ICMP; /v2/ -> 401 (87 B). From Helsinki: TCP connect 112 ms.
+  - name: dev-DockerHub-Registry
+    host: registry-1.docker.io
+    kinds: [https, tcp]
+    path: /v2/
+    region: us-east-1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [containers]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 401
+      bytes: 87
+  # Docker Hub layer blob CDN (Cloudflare); GET / -> 403 (48 B). From Helsinki: ping 1 ms /
+  # TCP connect 4 ms.
+  - name: dev-DockerHub-CDN
+    host: production.cloudflare.docker.com
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [containers]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 48
+  # GET / -> {} (2 B). From Helsinki: ping 1 ms / TCP connect 4 ms.
+  - name: dev-npm
+    host: registry.npmjs.org
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [packages]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2
+  # From Helsinki: ping 7 ms / TCP connect 8 ms.
+  - name: dev-PyPI
+    host: pypi.org
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [packages]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 325
+  # Fastly; GET / -> 404 (10 B). From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: dev-PyPI-Files
+    host: files.pythonhosted.org
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [packages]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 10
+  # From Helsinki: ping 3 ms / TCP connect 5 ms.
+  - name: dev-GoProxy
+    host: proxy.golang.org
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [packages]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 52
+  # /latest returns the signed tree head (~190 B). From Helsinki: ping 3 ms / TCP connect 5
+  # ms.
+  - name: dev-GoSumDB
+    host: sum.golang.org
+    kinds: [https, tcp, icmp]
+    path: /latest
+    region: global
+    anycast: true
+    tags: [packages]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 188
+  # Sparse index config.json (76 B). From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: dev-crates-index
+    host: index.crates.io
+    kinds: [https, tcp, icmp]
+    path: /config.json
+    region: global
+    anycast: true
+    tags: [packages]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 76
+  # crate download CDN; GET / -> 403 (~250 B). From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: dev-crates-static
+    host: static.crates.io
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [packages]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 243
+  # CloudFront. From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: dev-HuggingFace
+    host: huggingface.co
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [ml]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 68
+  # No credentials sent: /v1/models -> 401 JSON (~150 B). Reachability only. From Helsinki:
+  # ping 1 ms / TCP connect 3 ms.
+  - name: dev-OpenAI-API
+    host: api.openai.com
+    # TCP + ping only: unauthenticated API requests every 15 s from every
+    # fyisp user would look like abuse to the provider.
+    kinds: [tcp, icmp]
+    region: global
+    anycast: true
+    tags: [ml, api]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 151
+  # No credentials sent: /v1/models -> 401 JSON (~140 B). Reachability only. From Helsinki:
+  # ping 1 ms / TCP connect 4 ms.
+  - name: dev-Anthropic-API
+    host: api.anthropic.com
+    # TCP + ping only: unauthenticated API requests every 15 s from every
+    # fyisp user would look like abuse to the provider.
+    kinds: [tcp, icmp]
+    region: global
+    anycast: true
+    tags: [ml, api]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 141

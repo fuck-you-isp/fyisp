@@ -1,0 +1,424 @@
+provider: services-streaming
+display: Streaming & Media Services
+kind: service
+category: [streaming, video, audio]
+sources:
+  - https://ingest.twitch.tv/ingests
+  - https://help.twitch.tv/s/twitch-ingest-recommendation
+  - https://ip-ranges.amazonaws.com/ip-ranges.json
+  - https://apresolve.spotify.com/
+  - https://cloud.google.com/about/locations
+  - https://fast.com/
+  - https://openconnect.netflix.com/
+notes: >-
+  Video/music streaming. Front ends (YouTube, Netflix, Twitch, Spotify, Disney+, Prime
+  Video, Apple TV/Music) are anycast/CDN and measure the edge path users hit; YouTube's
+  /generate_204 is a 0-byte 204. The heavy media caches are per-client and not static:
+  YouTube's rrN---sn-* hosts (redirector.googlevideo.com is included as the stable entry)
+  and Netflix Open Connect appliances (fast.com hands them out per session with a token),
+  so neither can be catalogued. Regional targets that are published and stable: Twitch
+  ingest servers from the public ingest list (AWS IVS; region confirmed from ip-
+  ranges.json and RTT; RTMPS on 443, so TCP only), and Spotify client access points from
+  apresolve.spotify.com (ap-g<gcp-region>; region inferred from the naming and consistent
+  with RTT; binary protocol, TCP/ICMP only). Twitch ingest is the uplink path for
+  streamers, not viewers. Verified from Hetzner Helsinki on 2026-09-27.
+targets:
+  # /generate_204 returns 204 with empty body. From Helsinki: ping 1 ms / TCP connect 5 ms.
+  - name: YouTube
+    host: www.youtube.com
+    kinds: [https, tcp, icmp]
+    path: /generate_204
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 204
+      bytes: 0
+  # Video CDN redirector; the actual cache host (rrN---sn-*.googlevideo.com, often an ISP-
+  # embedded GGC node) is per-client and not static. From Helsinki: ping 3 ms / TCP connect
+  # 5 ms.
+  - name: YouTube-Video
+    host: redirector.googlevideo.com
+    kinds: [https, tcp, icmp]
+    path: /generate_204
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 204
+      bytes: 0
+  # Netflix-operated edge (AS2906). From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: Netflix
+    host: www.netflix.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 3790
+  # fast.com front (Akamai); the Open Connect appliances fast.com tests against are handed
+  # out per session with a token, so they can't be catalogued. From Helsinki: ping 7 ms /
+  # TCP connect 9 ms.
+  - name: Netflix-Fast
+    host: fast.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 41
+  # From Helsinki: ping 7 ms / TCP connect 8 ms.
+  - name: Twitch
+    host: www.twitch.tv
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1167
+  # Auto ingest (geo-DNS to nearest IVS region); RTMPS on 443 - TCP only. From Helsinki: TCP
+  # connect 13 ms.
+  - name: Twitch-Ingest-Global
+    host: ingest.global-contribute.live-video.net
+    kinds: [tcp]
+    region: global
+    anycast: true
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in eu-north-1 per ip-ranges.json); RTMPS on 443 -
+  # TCP only, no ICMP. From Helsinki: TCP connect 11 ms.
+  - name: Twitch-Ingest-eu-north-1
+    host: eun10.contribute.live-video.net
+    kinds: [tcp]
+    region: eu-north-1
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in eu-central-1 per ip-ranges.json); RTMPS on 443 -
+  # TCP only, no ICMP. From Helsinki: TCP connect 28 ms.
+  - name: Twitch-Ingest-eu-central-1
+    host: euc10.contribute.live-video.net
+    kinds: [tcp]
+    region: eu-central-1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in eu-west-1 per ip-ranges.json); RTMPS on 443 -
+  # TCP only, no ICMP. From Helsinki: TCP connect 42 ms.
+  - name: Twitch-Ingest-eu-west-1
+    host: euw10.contribute.live-video.net
+    kinds: [tcp]
+    region: eu-west-1
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in us-east-1 per ip-ranges.json); RTMPS on 443 -
+  # TCP only, no ICMP. From Helsinki: TCP connect 108 ms.
+  - name: Twitch-Ingest-us-east-1
+    host: use10.contribute.live-video.net
+    kinds: [tcp]
+    region: us-east-1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in us-west-2 per ip-ranges.json); RTMPS on 443 -
+  # TCP only, no ICMP. From Helsinki: TCP connect 169 ms.
+  - name: Twitch-Ingest-us-west-2
+    host: usw20.contribute.live-video.net
+    kinds: [tcp]
+    region: us-west-2
+    city: Boardman
+    country: US
+    geo: na
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in sa-east-1 per ip-ranges.json); RTMPS on 443 -
+  # TCP only, no ICMP. From Helsinki: TCP connect 187 ms.
+  - name: Twitch-Ingest-sa-east-1
+    host: sae10.contribute.live-video.net
+    kinds: [tcp]
+    region: sa-east-1
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in ap-south-1 per ip-ranges.json); RTMPS on 443 -
+  # TCP only, no ICMP. From Helsinki: TCP connect 144 ms.
+  - name: Twitch-Ingest-ap-south-1
+    host: aps30.contribute.live-video.net
+    kinds: [tcp]
+    region: ap-south-1
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in ap-southeast-1 per ip-ranges.json); RTMPS on 443
+  # - TCP only, no ICMP. From Helsinki: TCP connect 273 ms.
+  - name: Twitch-Ingest-ap-southeast-1
+    host: aps10.contribute.live-video.net
+    kinds: [tcp]
+    region: ap-southeast-1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in ap-northeast-1 per ip-ranges.json); RTMPS on 443
+  # - TCP only, no ICMP. From Helsinki: TCP connect 265 ms.
+  - name: Twitch-Ingest-ap-northeast-1
+    host: apn10.contribute.live-video.net
+    kinds: [tcp]
+    region: ap-northeast-1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # Published Twitch ingest (AWS IVS, IP in ap-southeast-2 per ip-ranges.json); RTMPS on 443
+  # - TCP only, no ICMP. From Helsinki: TCP connect 314 ms.
+  - name: Twitch-Ingest-ap-southeast-2
+    host: aps20.contribute.live-video.net
+    kinds: [tcp]
+    region: ap-southeast-2
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [video, streaming, ingest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # From Helsinki: ping 7 ms / TCP connect 8 ms.
+  - name: Spotify
+    host: open.spotify.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1859
+  # Access-point resolver clients query at startup (169 B JSON). From Helsinki: ping 1 ms /
+  # TCP connect 4 ms.
+  - name: Spotify-APResolve
+    host: apresolve.spotify.com
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 169
+  # Spotify client access point on GCP europe-west1 (location inferred from Spotify's
+  # g<region> naming; RTT consistent); binary protocol - TCP/ICMP only. From Helsinki: ping
+  # 33 ms / TCP connect 35 ms.
+  - name: Spotify-AP-gew1
+    host: ap-gew1.spotify.com
+    kinds: [tcp, icmp]
+    region: gew1
+    city: St. Ghislain
+    country: BE
+    geo: eu
+    anycast: false
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # Spotify client access point on GCP europe-west4 (location inferred from Spotify's
+  # g<region> naming; RTT consistent); binary protocol - TCP/ICMP only. From Helsinki: ping
+  # 33 ms / TCP connect 35 ms.
+  - name: Spotify-AP-gew4
+    host: ap-gew4.spotify.com
+    kinds: [tcp, icmp]
+    region: gew4
+    city: Eemshaven
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # Spotify client access point on GCP us-east1 (location inferred from Spotify's g<region>
+  # naming; RTT consistent); binary protocol - TCP/ICMP only. From Helsinki: ping 114 ms.
+  - name: Spotify-AP-gue1
+    host: ap-gue1.spotify.com
+    kinds: [tcp, icmp]
+    region: gue1
+    city: Moncks Corner
+    country: US
+    geo: na
+    anycast: false
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # Spotify client access point on GCP us-central1 (location inferred from Spotify's
+  # g<region> naming; RTT consistent); binary protocol - TCP/ICMP only; occasional TCP RST
+  # seen. From Helsinki: ping 126 ms / TCP connect 128 ms.
+  - name: Spotify-AP-guc3
+    host: ap-guc3.spotify.com
+    kinds: [tcp, icmp]
+    region: guc3
+    city: Council Bluffs
+    country: US
+    geo: na
+    anycast: false
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # Spotify client access point on GCP asia-east2 (location inferred from Spotify's
+  # g<region> naming; RTT consistent); binary protocol - TCP/ICMP only. From Helsinki: ping
+  # 270 ms / TCP connect 237 ms.
+  - name: Spotify-AP-gae2
+    host: ap-gae2.spotify.com
+    kinds: [tcp, icmp]
+    region: gae2
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # From Helsinki: ping 25 ms / TCP connect 27 ms.
+  - name: Disney-Plus
+    host: www.disneyplus.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2794
+  # CloudFront. From Helsinki: ping 1 ms / TCP connect 2 ms.
+  - name: Prime-Video
+    host: www.primevideo.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4348
+  # From Helsinki: ping 7 ms / TCP connect 8 ms.
+  - name: Apple-TV
+    host: tv.apple.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [video, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1219
+  # From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: Apple-Music
+    host: music.apple.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [audio, streaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 850

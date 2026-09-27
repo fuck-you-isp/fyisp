@@ -1,0 +1,102 @@
+provider: services-social
+display: Social Media
+kind: service
+category: [social]
+sources:
+  - https://www.facebook.com/robots.txt
+  - https://www.instagram.com/robots.txt
+  - https://x.com/robots.txt
+  - https://www.tiktok.com/robots.txt
+  - https://www.reddit.com/robots.txt
+  - https://www.linkedin.com/robots.txt
+notes: >-
+  Main web entrypoints of the big social networks. All are anycast/CDN fronts (Meta edge,
+  Cloudflare, Akamai, Fastly) - they measure the path to the nearest edge, which is what
+  the apps use. robots.txt is used where it is small; Facebook (50 KB) and LinkedIn (120
+  KB) use /favicon.ico instead (20-25 KB). Verified from Hetzner Helsinki on 2026-09-27.
+targets:
+  # favicon (20 KB) - robots.txt is 50 KB and / is larger. From Helsinki: ping 1 ms / TCP
+  # connect 2 ms.
+  - name: Facebook
+    host: www.facebook.com
+    kinds: [https, tcp, icmp]
+    path: /favicon.ico
+    region: global
+    anycast: true
+    tags: [social]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 20366
+  # From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: Instagram
+    host: www.instagram.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [social]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6184
+  # From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: X-Twitter
+    host: x.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [social]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2678
+  # From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: TikTok
+    host: www.tiktok.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [social]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1567
+  # From Helsinki: ping 7 ms / TCP connect 8 ms.
+  - name: Reddit
+    host: www.reddit.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [social]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 538
+  # favicon (24 KB) - robots.txt is 120 KB. From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: LinkedIn
+    host: www.linkedin.com
+    kinds: [https, tcp, icmp]
+    path: /favicon.ico
+    region: global
+    anycast: true
+    tags: [social]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 24838
