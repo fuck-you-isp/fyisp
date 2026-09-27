@@ -1,0 +1,98 @@
+provider: mythic-beasts
+display: Mythic Beasts
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://www.mythic-beasts.com/article/infrastructure
+  - https://www.mythic-beasts.com/servers/virtual
+notes: >-
+  Mythic Beasts data centres (infrastructure page, 2026-09-27): London THS (Telehouse South), SOV
+  (Sovereign House), CLL (City Lifeline), Cambridge, Amsterdam (Equinix AM5) and Fremont (HE FMT2);
+  VPS zones are London CLL/THS, Cambridge, Amsterdam and Fremont. No speed-test or looking-glass host
+  is published. SOV and Cambridge use the official public mirror nodes mirror-<site>-a.mythic-beasts.com
+  (GET / is a ~2.3 KB index). THS, CLL and Amsterdam only have per-site infrastructure hosts
+  infra-<site>-<x>.mythic-beasts.com that answer ping but have no open web port, so they are ICMP only.
+  Fremont has no host at all except its edge routers router-fmt2-{a,b} (ICMP only; router control
+  planes may rate-limit or deprioritise echo, so expect some jitter). Every host's rDNS names its site
+  and traceroutes end behind router-<site>-* routers.
+targets:
+  - name: MythicBeasts-London-THS
+    host: infra-ths-a.mythic-beasts.com
+    kinds: [icmp]
+    region: ths
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    notes: "infrastructure host; ping only"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: MythicBeasts-London-SOV
+    host: mirror-sov-a.mythic-beasts.com
+    kinds: [https, tcp, icmp]
+    region: sov
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2348
+  - name: MythicBeasts-London-CLL
+    host: infra-cll-a.mythic-beasts.com
+    kinds: [icmp]
+    region: cll
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    notes: "infrastructure host; ping only"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: MythicBeasts-Cambridge
+    host: mirror-cam-a.mythic-beasts.com
+    kinds: [https, tcp, icmp]
+    region: cam
+    city: Cambridge
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2348
+  - name: MythicBeasts-Amsterdam
+    host: infra-ams-c.mythic-beasts.com
+    kinds: [icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    notes: "infrastructure host; ping only"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: MythicBeasts-Fremont
+    host: router-fmt2-a.mythic-beasts.com
+    kinds: [icmp]
+    region: fmt2
+    city: Fremont
+    country: US
+    geo: na
+    anycast: false
+    notes: "edge router (HE Fremont 2, geo-IP Fremont, ~165 ms from Helsinki); ping only"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false

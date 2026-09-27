@@ -1,0 +1,59 @@
+provider: otc
+display: Open Telekom Cloud
+kind: cloud
+category: [iaas]
+sources:
+  - https://www.open-telekom-cloud.com/en/support/tutorials/regions-and-availability-zones
+  - https://docs.otc.t-systems.com/regions-and-endpoints/
+notes: >-
+  Open Telekom Cloud (T-Systems, Huawei stack) has three regions: eu-de (Magdeburg/Biere), eu-nl
+  (Amsterdam) and eu-ch2 (Swiss OTC, Bern area). No public speedtest hosts. The regional IAM
+  (Keystone) endpoint answers ICMP and GET / with a ~260 B JSON 300 version list. eu-ch2 uses the
+  public iam-pub.eu-ch2.sc host.
+targets:
+  - name: OTC-eu-de
+    host: iam.eu-de.otc.t-systems.com
+    kinds: [https, tcp, icmp]
+    region: eu-de
+    city: Magdeburg
+    country: DE
+    geo: eu
+    anycast: false
+    notes: >-
+      Geo-IP says Hannover (T-Systems block); the DCs are in Magdeburg/Biere.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 260
+  - name: OTC-eu-nl
+    host: iam.eu-nl.otc.t-systems.com
+    kinds: [https, tcp, icmp]
+    region: eu-nl
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 260
+  - name: OTC-eu-ch2
+    host: iam-pub.eu-ch2.sc.otc.t-systems.com
+    kinds: [https, tcp, icmp]
+    region: eu-ch2
+    city: Bern
+    country: CH
+    geo: eu
+    anycast: false
+    notes: >-
+      Geo-IP says Muenchenbuchsee (near Bern).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 268

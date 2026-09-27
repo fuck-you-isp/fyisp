@@ -1,0 +1,67 @@
+provider: serverius
+display: Serverius
+kind: cloud
+category: [colocation, bare-metal]
+sources:
+  - https://speedtest1.serverius.net/
+  - https://lg.serverius.net/
+  - https://www.datacenters.com/providers/serverius-it-infrastructure/data-center-locations
+notes: >-
+  Official speed-test hosts speedtest<N>.serverius.net, one per Serverius datacenter (DataCenter1 =
+  SDC1 Dronten, DataCenter2 = SDC2 Meppel, DataCenter3 = SDC3 Apeldoorn per the page footer and the
+  lg.serverius.net router list). GET / is a 3.4 KB page; never fetch /files/*.bin. Only speedtest1
+  answers ICMP. geo-IP puts all of AS50673 in Dronten/Arnhem, so the per-DC mapping relies on
+  Serverius' own labels. NL4 Amsterdam has no published test host.
+targets:
+  - name: Serverius-Dronten
+    host: speedtest1.serverius.net
+    kinds: [https, tcp, icmp]
+    region: SDC1
+    city: Dronten
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 3365
+  - name: Serverius-Meppel
+    host: speedtest2.serverius.net
+    kinds: [https, tcp]
+    region: SDC2
+    city: Meppel
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 3363
+  - name: Serverius-Apeldoorn
+    host: speedtest3.serverius.net
+    kinds: [https, tcp]
+    region: SDC3
+    city: Apeldoorn
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 3368
+  - name: Serverius-Amsterdam
+    host: lg.serverius.net
+    kinds: []
+    region: NL4
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: 'No per-DC test host for NL4 Amsterdam; lg.serverius.net is the central looking glass, not in Amsterdam.'

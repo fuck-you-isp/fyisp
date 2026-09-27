@@ -1,0 +1,111 @@
+provider: cherry-servers
+display: Cherry Servers
+kind: cloud
+category: [bare-metal, vps]
+sources:
+  - https://api.cherryservers.com/v1/regions
+  - https://speedtest.lt.cherryservers.com/
+notes: >-
+  Official Cherry Servers speed-test hosts speedtest.<cc>.cherryservers.com, one per region in the
+  public regions API (/v1/regions: 7 regions on 2026-09-27). Each host sits in the region's own
+  AS/prefix (rDNS *.ptr.cherryservers.net). GET / is a ~2.7 KB page; never fetch the test-10mb /
+  100mb / 1000mb files.
+targets:
+  - name: Cherry-Siauliai
+    host: speedtest.lt.cherryservers.com
+    kinds: [https, tcp, icmp]
+    region: LT-Siauliai
+    city: Siauliai
+    country: LT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2692
+  - name: Cherry-Amsterdam
+    host: speedtest.nl.cherryservers.com
+    kinds: [https, tcp, icmp]
+    region: NL-Amsterdam
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2692
+  - name: Cherry-Frankfurt
+    host: speedtest.de.cherryservers.com
+    kinds: [https, tcp, icmp]
+    region: DE-Frankfurt
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2692
+  - name: Cherry-Stockholm
+    host: speedtest.se.cherryservers.com
+    kinds: [https, tcp, icmp]
+    region: SE-Stockholm
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2692
+  - name: Cherry-Chicago
+    host: speedtest.us.cherryservers.com
+    kinds: [https, tcp, icmp]
+    region: US-Chicago
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2692
+  - name: Cherry-Singapore
+    host: speedtest.sg.cherryservers.com
+    kinds: [https, tcp, icmp]
+    region: SG-Singapore
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2692
+  - name: Cherry-Tokyo
+    host: speedtest.jp.cherryservers.com
+    kinds: [https, tcp, icmp]
+    region: JP-Tokyo
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2692
