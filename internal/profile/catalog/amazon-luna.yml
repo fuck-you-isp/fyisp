@@ -10,7 +10,7 @@ notes: >-
 targets:
   - name: Luna-web
     host: luna.amazon.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     country: US

@@ -54,7 +54,7 @@ func TestDefaultMatchesTemplate(t *testing.T) {
 		} else if tg.Host != h {
 			t.Errorf("target %q host %q, template %q", tg.Name, tg.Host, h)
 		}
-		if tg.Interval != 15*time.Second || len(tg.Kinds) != 3 {
+		if tg.Interval != 15*time.Second || !slices.Equal(tg.Kinds, []model.ProbeKind{model.KindTCP}) {
 			t.Errorf("target %q: interval %s kinds %v", tg.Name, tg.Interval, tg.Kinds)
 		}
 	}
@@ -211,6 +211,60 @@ targets:
 	}
 	if len(p.Targets) != 2+5 || p.Targets[5].Port != 8443 || p.Groups[1].Order != 1 || p.Groups[0].ID != PathGroup {
 		t.Errorf("%+v", p)
+	}
+	// Targets without kinds get a TCP connect only.
+	for _, tg := range p.Targets[5:] {
+		if !slices.Equal(tg.Kinds, []model.ProbeKind{model.KindTCP}) {
+			t.Errorf("%s: kinds %v, want [tcp]", tg.Name, tg.Kinds)
+		}
+	}
+}
+
+// TestShippedProfilesTCPOnly checks that the default profile and every
+// named profile probe their targets over TCP only, while the network path
+// keeps ICMP.
+func TestShippedProfilesTCPOnly(t *testing.T) {
+	r, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles := map[string]*model.Profile{}
+	for _, d := range r.Definitions() {
+		p, err := r.Resolve([]string{d.Name}, ResolveOptions{})
+		if err != nil {
+			t.Fatalf("%s: %v", d.Name, err)
+		}
+		profiles[d.Name] = p
+	}
+	if profiles["all"] == nil || len(profiles["all"].Targets) < 1000 {
+		t.Fatal("profile all missing or small")
+	}
+	tcp := []model.ProbeKind{model.KindTCP}
+	for name, p := range profiles {
+		pathICMP := 0
+		for _, tg := range p.Targets {
+			if tg.Group == PathGroup {
+				if slices.Contains(tg.Kinds, model.KindICMP) {
+					pathICMP++
+				}
+				continue
+			}
+			if !slices.Equal(tg.ProbeKinds(), tcp) {
+				t.Errorf("%s: target %s kinds %v, want [tcp]", name, tg.Name, tg.ProbeKinds())
+			}
+		}
+		if pathICMP != 5 {
+			t.Errorf("%s: %d path targets with ICMP, want 5", name, pathICMP)
+		}
+	}
+	for _, tg := range def.Targets {
+		if tg.Name == "Google-Meet" && tg.HostFor(model.KindTCP) != "meet.google.com" {
+			t.Errorf("Google-Meet TCP host %s, want meet.google.com", tg.HostFor(model.KindTCP))
+		}
 	}
 }
 

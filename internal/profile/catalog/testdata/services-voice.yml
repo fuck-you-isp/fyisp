@@ -6,13 +6,13 @@ notes: Sample data for tests.
 targets:
   - name: Discord
     host: discord.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     anycast: true
     geo: eu            # anycast wins: never in a regional profile
     tags: [chat]
   - name: Zoom-eu
     host: zoom-eu.example.com
-    kinds: [https]
+    kinds: [tcp]
     country: NL
     geo: eu
     host_overrides: {icmp: zoom-icmp.example.com}

@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: controld-doh
     host: freedns.controld.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/p0?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]
@@ -24,7 +24,7 @@ targets:
       bytes: 65
   - name: controld-dns
     host: 76.76.2.0
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: []
     notes: >-
@@ -35,7 +35,7 @@ targets:
       tcp: true
   - name: controld-dns-2
     host: 76.76.10.0
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: [secondary]
     notes: >-

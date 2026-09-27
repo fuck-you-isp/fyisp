@@ -1,0 +1,42 @@
+provider: fpt-cloud
+display: FPT Smart Cloud
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://fptcloud.com/en/documents/object-storage/
+  - https://fptcloud.com/en/
+notes: >-
+  FPT Smart Cloud (Vietnam) runs regions in Hanoi (HAN) and Ho Chi Minh City (SGN). Its S3 object
+  storage has one endpoint per data centre, s3-<dc>.fptcloud.com; an anonymous GET / is a tiny
+  ListAllMyBuckets or 403. Hosts resolve to FPT addresses in Vietnam (RTT ~250 ms from Helsinki).
+  s3-han01 and s3-sgn01 do not resolve. FPT's Japan and Malaysia regions have no public endpoint
+  that answered and are not listed.
+targets:
+  - name: FPTCloud-HAN02
+    host: s3-han02.fptcloud.com
+    kinds: [tcp]
+    region: han02
+    city: Hanoi
+    country: VN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: FPTCloud-SGN10
+    host: s3-sgn10.fptcloud.com
+    kinds: [tcp]
+    region: sgn10
+    city: Ho Chi Minh City
+    country: VN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214

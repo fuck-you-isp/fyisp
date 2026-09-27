@@ -6,17 +6,21 @@ sources:
   - https://speedtest1.serverius.net/
   - https://lg.serverius.net/
   - https://www.datacenters.com/providers/serverius-it-infrastructure/data-center-locations
+  - https://kolodc.com/data-centers
 notes: >-
   Official speed-test hosts speedtest<N>.serverius.net, one per Serverius datacenter (DataCenter1 =
   SDC1 Dronten, DataCenter2 = SDC2 Meppel, DataCenter3 = SDC3 Apeldoorn per the page footer and the
   lg.serverius.net router list). GET / is a 3.4 KB page; never fetch /files/*.bin. Only speedtest1
   answers ICMP. geo-IP puts all of AS50673 in Dronten/Arnhem, so the per-DC mapping relies on
-  Serverius' own labels. NL4 Amsterdam has no published test host.
+  Serverius' own labels. NL4 Amsterdam has no published test host (speedtest4+ do not resolve).
+  Serverius is now part of Kolo (kolodc.com, 2026); Kolo's Danish and Swedish sites came from Fuzion
+  and are not Serverius (AS50673) locations, so only NL1-NL4 are listed here. Re-checked 2026-09-27:
+  speedtest2/3 still do not answer ICMP; TCP and HTTPS were stable on all three.
 targets:
   - name: Serverius-Dronten
     host: speedtest1.serverius.net
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SDC1
     city: Dronten
     country: NL
@@ -31,7 +35,7 @@ targets:
   - name: Serverius-Meppel
     host: speedtest2.serverius.net
     path: /robots.txt
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: SDC2
     city: Meppel
     country: NL
@@ -46,7 +50,7 @@ targets:
   - name: Serverius-Apeldoorn
     host: speedtest3.serverius.net
     path: /robots.txt
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: SDC3
     city: Apeldoorn
     country: NL

@@ -1,0 +1,74 @@
+provider: servers-australia
+display: Servers Australia
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://www.serversaustralia.com.au/data-centres
+  - https://speedtest.mirror.serversaustralia.com.au/
+notes: >-
+  Australian VPS and dedicated-server provider with data centres in Sydney (Equinix SY3/SY4),
+  Melbourne (ME1), Brisbane (BR1) and Perth (PE2). Its public Speedtest Custom host
+  speedtest.mirror.serversaustralia.com.au is in Sydney; GET / is a 725-byte page.
+targets:
+  - name: ServersAustralia-Sydney
+    host: speedtest.mirror.serversaustralia.com.au
+    kinds: [tcp]
+    region: syd
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 725
+  - name: ServersAustralia-Melbourne
+    host: speedtest.mirror.serversaustralia.com.au
+    kinds: []
+    region: mel
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      No per-location speed-test or looking-glass host found; the only published one is in
+      Sydney.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: ServersAustralia-Brisbane
+    host: speedtest.mirror.serversaustralia.com.au
+    kinds: []
+    region: bne
+    city: Brisbane
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      No per-location speed-test or looking-glass host found; the only published one is in
+      Sydney.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: ServersAustralia-Perth
+    host: speedtest.mirror.serversaustralia.com.au
+    kinds: []
+    region: per
+    city: Perth
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      No per-location speed-test or looking-glass host found; the only published one is in
+      Sydney.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

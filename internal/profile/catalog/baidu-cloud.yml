@@ -6,27 +6,30 @@ sources:
   - https://cloud.baidu.com/doc/BOS/s/xjwvyq9l4
   - https://intl.cloud.baidu.com/zh/doc/BOS/s/xjwvyq9l4-intl
   - https://cloud.baidu.com/doc/Reference/index.html
+  - https://cloud.baidu.com/doc/BCC/s/0jwvyo603
 notes: >-
-  Baidu AI Cloud regions: bj (Beijing), gz (Guangzhou), su (Suzhou), bd (Baoding), yq (Yangquan), cd
-  (Chengdu), nj (Nanjing), fwh (Wuhan finance), fsh (Shanghai finance), hkg (Hong Kong) and sin
-  (Singapore). Baidu's shifen.com GSLB sends non-Chinese resolvers to shared entry points:
-  bj/gz/su.bcebos.com all resolve to one Hong Kong front (103.235.47.0/24), and several API gateways
-  share addresses. So for each region the endpoint whose address geolocates to that region was picked:
-  BOS (<r>.bcebos.com, 101-byte 403), BLS log ingest (bls-log.<r>.baidubce.com, 128-byte 401) or the BCC
-  API gateway (bcc.<r>.baidubce.com, 130-byte 400). bj's BLS host geolocates to Shijiazhuang (Hebei,
-  next to Baidu's northern data centres), not Beijing city. Chinese geo-IP is coarse, and GSLB answers
-  may differ for resolvers inside China. No in-region endpoint was found for fwh, fsh or sin (they
-  resolve to Nanjing/Xi'an, Beijing or Hong Kong, or do not answer), so those are kept with kinds [].
+  Baidu AI Cloud regions (BCC list, 2026-09-27): bj (Beijing), bd (Baoding), gz (Guangzhou), su
+  (Suzhou), cd (Chengdu), fwh (Wuhan) and hkg (Hong Kong); BOS adds yq (Yangquan) and fsh (Shanghai
+  finance). nj (Nanjing) is no longer in the BCC or BOS docs, but its BLS endpoint still answers from
+  Nanjing. sin (Singapore) is gone: bcc.sin CNAMEs to domain-offline.baidu.com. Baidu's shifen.com GSLB
+  splits answers by carrier (EDNS client-subnet test, 2026-09-27): China Telecom clients get Telecom
+  addresses, and Unicom and foreign clients get Unicom ones. Both stay in the region's area, but for bj
+  the foreign answer is in Chengde (Hebei), not Beijing. Non-Chinese resolvers also get shared entry
+  points: bj/gz/su.bcebos.com all resolve to one Hong Kong front (103.235.47.0/24), and several API
+  gateways share addresses. So for each region the endpoint whose address geolocates to that region was
+  picked: BOS (<r>.bcebos.com, 101-byte 403), BLS log ingest (bls-log.<r>.baidubce.com, 128-byte 401) or
+  the BCC API gateway (bcc.<r>.baidubce.com, 130-byte 400). Chinese geo-IP is coarse. No in-region
+  endpoint was found for fwh or fsh, so they are kept with kinds [].
 targets:
   - name: Baidu-bj
     host: bls-log.bj.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bj
     city: Beijing
     country: CN
     geo: as
     anycast: false
-    notes: geo-IP Shijiazhuang (Hebei)
+    notes: "GeoDNS: Telecom clients get 220.181.111.0/24 (Beijing), Unicom and foreign clients 110.242.69.0/24 (Chengde, Hebei)"
     verified:
       date: 2026-09-27
       icmp: true
@@ -35,7 +38,7 @@ targets:
       bytes: 128
   - name: Baidu-gz
     host: bls-log.gz.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: gz
     city: Guangzhou
     country: CN
@@ -49,7 +52,7 @@ targets:
       bytes: 128
   - name: Baidu-su
     host: bcc.su.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: su
     city: Suzhou
     country: CN
@@ -63,12 +66,13 @@ targets:
       bytes: 130
   - name: Baidu-nj
     host: bls-log.nj.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nj
     city: Nanjing
     country: CN
     geo: as
     anycast: false
+    notes: nj is no longer in the BCC/BOS region docs; this BLS endpoint still answers from Nanjing (2026-09-27)
     verified:
       date: 2026-09-27
       icmp: true
@@ -77,7 +81,7 @@ targets:
       bytes: 128
   - name: Baidu-cd
     host: bls-log.cd.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cd
     city: Chengdu
     country: CN
@@ -91,7 +95,7 @@ targets:
       bytes: 128
   - name: Baidu-bd
     host: bd.bcebos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bd
     city: Baoding
     country: CN
@@ -106,13 +110,13 @@ targets:
       bytes: 101
   - name: Baidu-yq
     host: yq.bcebos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: yq
     city: Yangquan
     country: CN
     geo: as
     anycast: false
-    notes: geo-IP Taiyuan (Shanxi)
+    notes: "both carrier answers geolocate to Beijing (220.181.38.0/24, 116.179.34.0/24); Yangquan unconfirmed"
     verified:
       date: 2026-09-27
       icmp: true
@@ -121,7 +125,7 @@ targets:
       bytes: 101
   - name: Baidu-hkg
     host: hkg.bcebos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hkg
     city: Hong Kong
     country: HK
@@ -142,7 +146,7 @@ targets:
     geo: as
     anycast: false
     tags: [unreachable]
-    notes: "resolves to Hebei/Xi'an addresses, not Wuhan; no in-region endpoint visible from outside China"
+    notes: "fwh is a listed BCC region, but every endpoint resolves outside Wuhan: BOS to Jiangsu/Xi'an/Hebei by carrier, BLS to Nanjing, BCC to Beijing (2026-09-27)"
     verified:
       date: 2026-09-27
       icmp: true
@@ -173,8 +177,8 @@ targets:
     country: SG
     geo: as
     anycast: false
-    tags: [unreachable]
-    notes: resolves to a Hong Kong address that did not answer; API gateway resolves to Beijing
+    tags: [unreachable, closed]
+    notes: "not in the current BCC/BOS region docs; bcc.sin CNAMEs to domain-offline.baidu.com, and sin.bcebos.com (154.85.46.14) did not answer (2026-09-27)"
     verified:
       date: 2026-09-27
       icmp: false

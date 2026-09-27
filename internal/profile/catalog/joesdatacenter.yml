@@ -1,0 +1,26 @@
+provider: joesdatacenter
+display: Joe's Datacenter
+kind: cloud
+category: [bare-metal, colocation]
+sources:
+  - https://joesdatacenter.com/
+  - http://lg.joesdatacenter.com/
+notes: >-
+  Joe's Datacenter (AS19969) runs one facility in Kansas City, Missouri. The target is its looking
+  glass lg.joesdatacenter.com (AS19969, geo-IP Kansas City, 131 ms from Helsinki). The HTTPS
+  certificate on that host does not validate and the HTTP page is 91 KB, so only TCP 443 and ICMP
+  are probed.
+targets:
+  - name: JoesDC-KansasCity
+    host: lg.joesdatacenter.com
+    kinds: [tcp]
+    region: kc
+    city: Kansas City
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      bytes: 0

@@ -6,16 +6,17 @@ sources:
   - https://doc.conoha.jp/products/vps-v3/
   - https://www.conoha.jp/conoha/vps/features/location/
 notes: >-
-  ConoHa VPS (GMO Internet) regions: VPS 2.0 tyo1, tyo2 and tyo3 (Tokyo) and sin1 (Singapore; sjc1 San
-  Jose was closed), and VPS 3.0 c3j1 (Japan). Each region is probed via its public OpenStack Identity
-  endpoint identity.<region>.conoha.io, whose GET / returns a small (~0.3 KB) version list. c3j1
-  geolocates to Osaka (AS58791), while the tyo* regions geolocate to Tokyo (AS7506). ConoHa describes
-  its Japan location only as Tokyo, so c3j1's city is unconfirmed. identity.sin1 still resolves but did
-  not answer on 2026-09-27.
+  ConoHa VPS (GMO Internet) regions: VPS 3.0 c3j1 (Japan) and the legacy VPS 2.0 tyo1, tyo2 and tyo3
+  (Tokyo) and sin1 (Singapore). sjc1 (San Jose) has no DNS records any more, and sin1 is probably
+  winding down (its identity host resolves but does not answer; object-storage.sin1 does not resolve).
+  Each region is probed via its public OpenStack Identity endpoint identity.<region>.conoha.io, whose
+  GET / returns a small (~0.3 KB) version list. ConoHa publishes only 'Japan' for c3j1: its AS58791
+  address geolocates to Osaka (ipinfo) or Tokyo (ip-api) and is 8 ms farther from Europe than tyo*, so
+  its city is unconfirmed and left as Tokyo.
 targets:
   - name: ConoHa-tyo1
     host: identity.tyo1.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tyo1
     city: Tokyo
     country: JP
@@ -29,7 +30,7 @@ targets:
       bytes: 327
   - name: ConoHa-tyo2
     host: identity.tyo2.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tyo2
     city: Tokyo
     country: JP
@@ -43,7 +44,7 @@ targets:
       bytes: 327
   - name: ConoHa-tyo3
     host: identity.tyo3.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tyo3
     city: Tokyo
     country: JP
@@ -57,13 +58,13 @@ targets:
       bytes: 327
   - name: ConoHa-c3j1
     host: identity.c3j1.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: c3j1
     city: Tokyo
     country: JP
     geo: as
     anycast: false
-    notes: geo-IP says Osaka (AS58791); ConoHa only publishes Japan/Tokyo
+    notes: "geo-IP Osaka (ipinfo) or Tokyo (ip-api), AS58791; ConoHa publishes only Japan"
     verified:
       date: 2026-09-27
       icmp: true
@@ -79,7 +80,7 @@ targets:
     geo: as
     anycast: false
     tags: [unreachable]
-    notes: resolves but no ICMP/TCP answer on 2026-09-27
+    notes: resolves but no ICMP/TCP answer on 2026-09-27; object-storage.sin1 no longer resolves
     verified:
       date: 2026-09-27
       icmp: false

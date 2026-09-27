@@ -5,24 +5,30 @@ category: [vps, storage]
 sources:
   - https://www.volcengine.com/docs/6349/107356
   - https://docs.volcengine.com/docs/TorchObjectStorage/Regionsandendpoints?lang=zh
+  - https://github.com/volcengine/mcp-server/blob/main/server/mcp_server_vke/README.md
 notes: >-
   Volcano Engine (ByteDance, mainland China) regions: cn-beijing (North China 2, Beijing), cn-shanghai
-  (East China 2) and cn-guangzhou (South China 1). Each is probed via its TOS object-storage endpoint
-  tos-<region>.volces.com; GET / returns a ~216-byte 403. The overseas regions (cn-hongkong,
-  ap-southeast-1 Johor, ap-southeast-3 Jakarta) use the same infrastructure as BytePlus and are in
-  byteplus.yml. Geo-IP: Beijing = Beijing; Shanghai = Jiangsu (Nanjing) addresses, as is common for East
-  China multi-line IDCs; Guangzhou = China Mobile addresses geolocated to Xiamen (Fujian); Chinese
-  geo-IP is coarse. The GSLB returns several multi-carrier addresses. cn-beijing2 / cn-wulanchabu
-  resolve to one Langfang address and are not included because their mapping is not documented.
+  (East China 2) and cn-guangzhou (South China 1), plus the compute-only cn-beijing2, cn-datong and
+  cn-wulanchabu (listed in Volcano Engine's own GitHub repos, not the TOS doc). The overseas regions
+  (cn-hongkong, ap-southeast-1 Johor, ap-southeast-3 Jakarta) use the same infrastructure as BytePlus
+  and are in byteplus.yml. The TOS object-storage GSLB splits answers by carrier (Telecom, Unicom,
+  Mobile) and hands foreign clients a mix of all three, so RTT jumps between addresses; for cn-shanghai
+  and cn-guangzhou its addresses also geolocate outside the city (Nanjing/Beijing and Fujian). Those two
+  are therefore probed via the ECS regional API ecs.<region>.volcengineapi.com (Volcano Engine's own
+  AS137718, geo-IP matches the city, same /24 for every client subnet; GET / is a 175-byte 400).
+  cn-beijing stays on TOS (tos-cn-beijing.volces.com, ~216-byte 403), whose carrier addresses are all
+  Beijing or Hebei. The compute-only regions have no in-region public endpoint: their ecs.<r> names
+  resolve to the shared Beijing/Langfang API pool, and tos-<r> names CNAME to cn-beijing.
 targets:
   - name: Volcengine-cn-beijing
     host: tos-cn-beijing.volces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-beijing
     city: Beijing
     country: CN
     geo: as
     anycast: false
+    notes: "carrier-split GSLB: Beijing Telecom or Hebei Unicom/Mobile addresses; RTT spread 166-300 ms (2026-09-27)"
     verified:
       date: 2026-09-27
       icmp: true
@@ -30,32 +36,80 @@ targets:
       https: 403
       bytes: 216
   - name: Volcengine-cn-shanghai
-    host: tos-cn-shanghai.volces.com
-    kinds: [https, tcp, icmp]
+    host: ecs.cn-shanghai.volcengineapi.com
+    kinds: [tcp]
     region: cn-shanghai
     city: Shanghai
     country: CN
     geo: as
     anycast: false
-    notes: geo-IP Nanjing (Jiangsu)
+    notes: "ECS regional API (AS137718, geo-IP Shanghai); the TOS endpoint answered from Nanjing/Beijing carrier addresses"
     verified:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 403
-      bytes: 213
+      https: 400
+      bytes: 175
   - name: Volcengine-cn-guangzhou
-    host: tos-cn-guangzhou.volces.com
-    kinds: [https, tcp, icmp]
+    host: ecs.cn-guangzhou.volcengineapi.com
+    kinds: [tcp]
     region: cn-guangzhou
     city: Guangzhou
     country: CN
     geo: as
     anycast: false
-    notes: geo-IP Xiamen (China Mobile)
+    notes: "ECS regional API (AS137718, geo-IP Guangzhou); the TOS endpoint answered only from Fujian (Xiamen/Quanzhou) carrier addresses"
     verified:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 403
-      bytes: 216
+      https: 400
+      bytes: 175
+  - name: Volcengine-cn-beijing2
+    host: ecs.cn-beijing2.volcengineapi.com
+    kinds: []
+    region: cn-beijing2
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "compute-only region; its ECS API name resolves to the shared Beijing/Langfang API pool and tos-cn-beijing2 CNAMEs to cn-beijing, so no in-region endpoint (2026-09-27)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 175
+  - name: Volcengine-cn-datong
+    host: ecs.cn-datong.volcengineapi.com
+    kinds: []
+    region: cn-datong
+    city: Datong
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "compute-only region; its ECS API name resolves to the shared Beijing/Langfang API pool and tos-cn-datong CNAMEs to cn-beijing, so no in-region endpoint (2026-09-27)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 175
+  - name: Volcengine-cn-wulanchabu
+    host: ecs.cn-wulanchabu.volcengineapi.com
+    kinds: []
+    region: cn-wulanchabu
+    city: Ulanqab
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "compute-only region; its ECS API name resolves to the shared Beijing/Langfang API pool and tos-cn-wulanchabu CNAMEs to cn-beijing, so no in-region endpoint (2026-09-27)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 175

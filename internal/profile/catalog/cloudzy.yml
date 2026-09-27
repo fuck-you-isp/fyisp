@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: Cloudzy-us-utah-1
     host: lg-utah.cloudzy.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: us-utah-1
     city: Salt Lake City
     country: US
@@ -25,7 +25,7 @@ targets:
   - name: Cloudzy-us-dal-1
     host: lg-dallas.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-dal-1
     city: Dallas
     country: US
@@ -40,7 +40,7 @@ targets:
   - name: Cloudzy-us-lax-1
     host: lg-los-angeles.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-lax-1
     city: Los Angeles
     country: US
@@ -55,7 +55,7 @@ targets:
   - name: Cloudzy-us-nyc-1
     host: lg-newyorkcity.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-nyc-1
     city: New York
     country: US
@@ -70,7 +70,7 @@ targets:
   - name: Cloudzy-us-mia-1
     host: lg-miami.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-mia-1
     city: Miami
     country: US
@@ -85,7 +85,7 @@ targets:
   - name: Cloudzy-us-lvg-1
     host: lg-lasvegas.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-lvg-1
     city: Las Vegas
     country: US
@@ -100,7 +100,7 @@ targets:
   - name: Cloudzy-eu-lon-1
     host: lg-london.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-lon-1
     city: London
     country: GB
@@ -115,7 +115,7 @@ targets:
   - name: Cloudzy-eu-ams-1
     host: lg-amsterdam.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-ams-1
     city: Amsterdam
     country: NL
@@ -130,7 +130,7 @@ targets:
   - name: Cloudzy-eu-fra-1
     host: lg-frankfurt.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-fra-1
     city: Frankfurt
     country: DE
@@ -145,7 +145,7 @@ targets:
   - name: Cloudzy-eu-brn-1
     host: lg-switzerland.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-brn-1
     city: Bern
     country: CH
@@ -160,7 +160,7 @@ targets:
   - name: Cloudzy-me-dxb-1
     host: lg-dubai.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-dxb-1
     city: Dubai
     country: AE
@@ -175,7 +175,7 @@ targets:
   - name: Cloudzy-ap-sgp-1
     host: lg-singapore.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-sgp-1
     city: Singapore
     country: SG
@@ -191,7 +191,7 @@ targets:
   - name: Cloudzy-ap-syd-1
     host: lg-sydney.cloudzy.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-syd-1
     city: Sydney
     country: AU

@@ -1,0 +1,112 @@
+provider: nifcloud
+display: NIFCLOUD (FJcloud-V)
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.nifcloud.com/api/endpoint.htm
+  - https://docs.nifcloud.com/common/spec/zone_table.htm
+notes: >-
+  Fujitsu's Japanese public cloud (sold as FJcloud-V). The official endpoint list names six
+  regions: jp-east-1..4 and jp-west-1..2. Object storage (tiny 213-byte 400 at GET /) exists only
+  in jp-east-1 and jp-west-2; for the other four the documented regional RDB API endpoint
+  (269-byte 400) is used, as each resolves to its own address. The computing API is not used:
+  every region's *.computing.api.nifcloud.com resolves to the same one or two front addresses.
+targets:
+  - name: NIFCLOUD-jp-east-1
+    host: jp-east-1.storage.api.nifcloud.com
+    kinds: [tcp]
+    region: jp-east-1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    notes: >-
+      Object storage endpoint; geo-IP Tokyo (AS55374 Fujitsu). Drops ICMP.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: NIFCLOUD-jp-east-2
+    host: jp-east-2.rdb.api.nifcloud.com
+    kinds: [tcp]
+    region: jp-east-2
+    country: JP
+    geo: as
+    anycast: false
+    notes: >-
+      No object storage in this region; the regional RDB API endpoint is used instead. Geo-IP
+      Tokyo.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 269
+  - name: NIFCLOUD-jp-east-3
+    host: jp-east-3.rdb.api.nifcloud.com
+    kinds: [tcp]
+    region: jp-east-3
+    country: JP
+    geo: as
+    anycast: false
+    notes: >-
+      Regional RDB API endpoint. Geo-IP Tokyo.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 269
+  - name: NIFCLOUD-jp-east-4
+    host: jp-east-4.rdb.api.nifcloud.com
+    kinds: [tcp]
+    region: jp-east-4
+    country: JP
+    geo: as
+    anycast: false
+    notes: >-
+      Regional RDB API endpoint. Geo-IP Tokyo.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 269
+  - name: NIFCLOUD-jp-west-1
+    host: jp-west-1.rdb.api.nifcloud.com
+    kinds: [tcp]
+    region: jp-west-1
+    country: JP
+    geo: as
+    anycast: false
+    notes: >-
+      Regional RDB API endpoint. Geo-IP says Tokyo but RTT is ~7 ms above the east-region
+      hosts, which fits western Japan; Fujitsu does not publish the city.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 269
+  - name: NIFCLOUD-jp-west-2
+    host: jp-west-2.storage.api.nifcloud.com
+    kinds: [tcp]
+    region: jp-west-2
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    notes: >-
+      Object storage endpoint; geo-IP Osaka (AS55386 Fujitsu). Drops ICMP.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 213

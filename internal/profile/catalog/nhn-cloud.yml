@@ -13,7 +13,9 @@ notes: >-
 targets:
   - name: NHN-kr1
     host: kr1-api-object-storage.nhncloudservice.com
-    kinds: [https, tcp]
+    kinds: []
+    notes: "not measured: about half of TCP/HTTPS connects from abroad time out (seen in fyisp and with curl on 2026-09-27); too flaky to measure"
+    tags: [unreachable, flaky]
     region: KR1
     city: Pangyo
     country: KR
@@ -27,7 +29,7 @@ targets:
       bytes: 70
   - name: NHN-kr2
     host: kr2-api-object-storage.nhncloudservice.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: KR2
     city: Pyeongchon
     country: KR
@@ -41,7 +43,9 @@ targets:
       bytes: 70
   - name: NHN-kr3
     host: kr3-api-object-storage.nhncloudservice.com
-    kinds: [https, tcp]
+    kinds: []
+    notes: "not measured: about half of TCP/HTTPS connects from abroad time out (seen in fyisp and with curl on 2026-09-27); too flaky to measure"
+    tags: [unreachable, flaky]
     region: KR3
     city: Gwangju
     country: KR
@@ -55,7 +59,7 @@ targets:
       bytes: 70
   - name: NHN-jp1
     host: jp1-api-object-storage.nhncloudservice.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: JP1
     city: Tokyo
     country: JP

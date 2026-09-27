@@ -13,14 +13,16 @@ notes: >-
 targets:
   - name: OTC-eu-de
     host: iam.eu-de.otc.t-systems.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-de
     city: Magdeburg
     country: DE
     geo: eu
     anycast: false
     notes: >-
-      Geo-IP says Hannover (T-Systems block); the DCs are in Magdeburg/Biere.
+      Geo-IP says Hannover (T-Systems block); the DCs are in Magdeburg/Biere. The host round-robins over two addresses
+      (80.158.48.93/.108) whose ICMP RTT from Helsinki differs by ~6 ms (36 vs 42 ms), so RTT can look
+      bimodal.
     verified:
       date: 2026-09-27
       icmp: true
@@ -29,7 +31,7 @@ targets:
       bytes: 260
   - name: OTC-eu-nl
     host: iam.eu-nl.otc.t-systems.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-nl
     city: Amsterdam
     country: NL
@@ -43,7 +45,7 @@ targets:
       bytes: 260
   - name: OTC-eu-ch2
     host: iam-pub.eu-ch2.sc.otc.t-systems.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-ch2
     city: Bern
     country: CH

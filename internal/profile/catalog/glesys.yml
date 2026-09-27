@@ -1,0 +1,89 @@
+provider: glesys
+display: Glesys
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://glesys.com/pricing/
+  - https://glesys.com/locations/our-data-centers/falkenberg/
+notes: >-
+  Glesys (Sweden) runs its own data centres in Falkenberg and Stockholm (Sweden) and Oulu, Pori and
+  Tampere (Finland); cloud products are sold in Falkenberg and Stockholm, some also in Oulu. The
+  Amsterdam, Frankfurt, London and Oslo "partner data centres" are colocation/PoP sites and are not
+  listed. No speed-test or looking-glass host is published. Falkenberg and Stockholm use the per-DC
+  object-storage endpoints objects.dc-<fbg1|sto1>.glesys.net (GET / is a 187 B anonymous bucket list;
+  answer ping); RTT from Helsinki ~16 ms (Falkenberg) and ~7 ms (Stockholm) fits the locations. No
+  public host could be tied to the Finnish sites, so they are kept with kinds: [].
+targets:
+  - name: Glesys-Falkenberg
+    host: objects.dc-fbg1.glesys.net
+    kinds: [tcp]
+    region: dc-fbg1
+    city: Falkenberg
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187
+  - name: Glesys-Stockholm
+    host: objects.dc-sto1.glesys.net
+    kinds: [tcp]
+    region: dc-sto1
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187
+  - name: Glesys-Oulu
+    host: objects.dc-sto1.glesys.net
+    kinds: []
+    region: oulu
+    city: Oulu
+    country: FI
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "no public host located in Oulu found; placeholder host (Stockholm)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: Glesys-Pori
+    host: objects.dc-sto1.glesys.net
+    kinds: []
+    region: pori
+    city: Pori
+    country: FI
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "no public host located in Pori found; placeholder host (Stockholm)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: Glesys-Tampere
+    host: objects.dc-sto1.glesys.net
+    kinds: []
+    region: tampere
+    city: Tampere
+    country: FI
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "no public host located in Tampere found; placeholder host (Stockholm)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0

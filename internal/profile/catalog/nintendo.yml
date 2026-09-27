@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: Nintendo-ctest
     host: ctest.cdn.nintendo.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: global
     country: JP
@@ -29,7 +29,7 @@ targets:
       tcp: true
   - name: Nintendo-ctest-switch2
     host: ctest.p01.ctest.srv.nintendo.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: global
     country: JP
@@ -56,7 +56,7 @@ targets:
       tcp: true
   - name: Nintendo-accounts
     host: accounts.nintendo.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     country: JP

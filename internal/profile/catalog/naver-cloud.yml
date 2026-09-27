@@ -5,18 +5,20 @@ category: [vps, storage]
 sources:
   - https://api.ncloud-docs.com/docs/en/storage-objectstorage
   - https://guide.ncloud-docs.com/docs/en/objectstorage-start
+  - https://api.ncloud-docs.com/docs/platform-region-getregionlist
   - https://www.gov-ncloud.com/
   - https://www.fin-ncloud.com/
 notes: >-
-  NAVER Cloud Platform regions: Korea (KR), US West (San Jose), Singapore, Japan (Tokyo) and Germany
-  (Frankfurt), plus the separate Korean public-sector (gov) and financial (fin) clouds. Each is probed
-  via its regional Object Storage S3 endpoint; GET / returns a ~0.2 KB 403. Only the fin and jp
+  NAVER Cloud Platform regions (getRegionList, 2026-09-27): Korea (KR), US West (San Jose), Singapore,
+  Japan (Tokyo) and Germany (Frankfurt), plus the separate Korean public-sector (gov) and financial
+  (fin) clouds. Hong Kong is no longer listed and has no object-storage DNS record. Each region is
+  probed via its regional Object Storage S3 endpoint; GET / returns a ~0.2 KB 403. Only the fin and jp
   endpoints answered ICMP. Every IP geolocates to its region (the NAVER ASNs AS23576/AS135354; fin is on
   AS9526 KOSCOM).
 targets:
   - name: Naver-kr
     host: kr.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: kr-standard
     city: Seoul
     country: KR
@@ -30,7 +32,7 @@ targets:
       bytes: 255
   - name: Naver-gov-kr
     host: kr.object.gov-ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: gov-kr
     city: Seoul
     country: KR
@@ -44,7 +46,9 @@ targets:
       bytes: 255
   - name: Naver-fin-kr
     host: kr.object.fin-ncloudstorage.com
-    kinds: [https, tcp, icmp]
+    kinds: []
+    notes: "not measured: about half of TCP/HTTPS connects from abroad time out (seen in fyisp and with curl on 2026-09-27); too flaky to measure"
+    tags: [unreachable, flaky]
     region: fin-kr
     city: Seoul
     country: KR
@@ -58,7 +62,7 @@ targets:
       bytes: 255
   - name: Naver-jp
     host: jp.object.ncpstorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-standard
     city: Tokyo
     country: JP
@@ -72,7 +76,7 @@ targets:
       bytes: 218
   - name: Naver-sg
     host: sg.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: sg-standard
     city: Singapore
     country: SG
@@ -86,7 +90,7 @@ targets:
       bytes: 255
   - name: Naver-us
     host: us.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: us-standard
     city: San Jose
     country: US
@@ -100,7 +104,7 @@ targets:
       bytes: 255
   - name: Naver-de
     host: de.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: de-standard
     city: Frankfurt
     country: DE

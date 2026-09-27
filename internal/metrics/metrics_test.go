@@ -139,12 +139,14 @@ next:
 
 // ---- fixtures ----
 
+var allKinds = []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
+
 func testProfile() *model.Profile {
 	return &model.Profile{
 		Name: "test",
 		Targets: []model.Target{
-			{Name: "Google-Meet", Host: "meet.google.com", HostOverrides: map[model.ProbeKind]string{model.KindICMP: "lens.l.google.com"}},
-			{Name: "AWS-me-south-1", Host: "ec2.me-south-1.amazonaws.com"},
+			{Name: "Google-Meet", Host: "meet.google.com", HostOverrides: map[model.ProbeKind]string{model.KindICMP: "lens.l.google.com"}, Kinds: allKinds},
+			{Name: "AWS-me-south-1", Host: "ec2.me-south-1.amazonaws.com", Kinds: allKinds},
 			{Name: "TCP-only", Host: "tcp.example", Kinds: []model.ProbeKind{model.KindTCP}},
 		},
 	}
@@ -315,6 +317,39 @@ func TestHTTPSAndTCP(t *testing.T) {
 	}
 	if _, ok := m["ping_status"]; ok && len(m["ping_status"].samples) > 0 {
 		t.Error("ping_status exported without ICMP samples")
+	}
+}
+
+// TestShippedShape covers what shipped profiles look like: path targets
+// with ICMP (ping_*), services without kinds (TCP only: no ping_*).
+func TestShippedShape(t *testing.T) {
+	p := &model.Profile{Name: "default", Targets: []model.Target{
+		{Name: "Gateway", Host: model.HostGateway, Layer: model.LayerGateway, Kinds: []model.ProbeKind{model.KindICMP}},
+		{Name: "Quad9 DNS 9.9.9.9", Host: "9.9.9.9", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
+		{Name: "AWS-us-east-1", Host: "dynamodb.us-east-1.amazonaws.com"},
+	}}
+	c := New(func() *model.Profile { return p })
+	c.Observe(sample("Gateway", model.KindICMP, 2*time.Millisecond))
+	c.Observe(sample("Quad9 DNS 9.9.9.9", model.KindICMP, 9*time.Millisecond))
+	c.Observe(sample("Quad9 DNS 9.9.9.9", model.KindTCP, 10*time.Millisecond))
+	c.Observe(sample("AWS-us-east-1", model.KindTCP, 30*time.Millisecond))
+	m := scrape(t, c)
+	if v, ok := m["ping_targets"].find(nil); !ok || v != 2 {
+		t.Errorf("ping_targets = %v %v, want 2 (the path's ICMP targets)", v, ok)
+	}
+	var pinged []string
+	for _, s := range m["ping_status"].samples {
+		pinged = append(pinged, s.labels["name"])
+	}
+	slices.Sort(pinged)
+	if !slices.Equal(pinged, []string{"Gateway", "Quad9 DNS 9.9.9.9"}) {
+		t.Errorf("ping_status for %v, want the path targets only", pinged)
+	}
+	if v, ok := m["fyisp_tcp_rtt_seconds"].find(map[string]string{"name": "AWS-us-east-1", "target": "dynamodb.us-east-1.amazonaws.com"}); !ok || v != 0.030 {
+		t.Errorf("tcp rtt = %v %v", v, ok)
+	}
+	if f := m["fyisp_https_rtt_seconds"]; f != nil && len(f.samples) > 0 {
+		t.Error("https rtt exported without HTTPS samples")
 	}
 }
 

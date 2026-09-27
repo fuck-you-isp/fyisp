@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Battlenet-us
     host: us.actual.battle.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 1119
     region: "gcp:us-west4"
     city: Las Vegas
@@ -31,7 +31,7 @@ targets:
       tcp: true
   - name: Battlenet-eu
     host: eu.actual.battle.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 1119
     region: "gcp:europe-west4"
     city: Eemshaven
@@ -45,7 +45,7 @@ targets:
       tcp: true
   - name: Battlenet-kr
     host: kr.actual.battle.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 1119
     region: "gcp:asia-northeast3"
     city: Seoul
@@ -59,7 +59,7 @@ targets:
       tcp: true
   - name: Battlenet-web
     host: us.battle.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     country: US

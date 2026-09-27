@@ -3,7 +3,7 @@ display: BizFly Cloud
 kind: cloud
 category: [vps, storage]
 sources:
-  - https://docs.bizflycloud.vn/simple_storage/
+  - https://bizflycloud.vn/docs/simple_storage/
   - https://bizflycloud.vn/simple-storage
 notes: >-
   BizFly Cloud (VCCorp, Vietnam) regions: Hanoi (HN) and Ho Chi Minh City (HCM). Each is probed via its
@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: BizFly-HN
     host: hn.ss.bfcplatform.vn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: HN
     city: Hanoi
     country: VN
@@ -27,7 +27,7 @@ targets:
       bytes: 154
   - name: BizFly-HCM
     host: hcm.ss.bfcplatform.vn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: HCM
     city: Ho Chi Minh City
     country: VN

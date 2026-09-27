@@ -9,12 +9,13 @@ sources:
 notes: >-
   Official BinaryLane looking-glass hosts <loc>-lg.binarylane.cloud, one per location: five NEXTDC sites
   in Australia (S1 Sydney, M2 Melbourne, B2 Brisbane, P1 Perth, A1 Adelaide) and Equinix SG3 in
-  Singapore. GET / is a ~9 KB HTML looking-glass page; never fetch the 10/100/500 MB test files.
+  Singapore. GET / is a ~9 KB HTML looking-glass page and /favicon.ico is 32 KB, so path /robots.txt is
+  used (a 146-byte nginx 404, re-checked on 2026-09-27); never fetch the 10/100/500 MB test files.
 targets:
   - name: BinaryLane-syd
     host: syd-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: syd
     city: Sydney
     country: AU
@@ -29,7 +30,7 @@ targets:
   - name: BinaryLane-mel
     host: mel-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mel
     city: Melbourne
     country: AU
@@ -44,7 +45,7 @@ targets:
   - name: BinaryLane-bne
     host: bne-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bne
     city: Brisbane
     country: AU
@@ -59,7 +60,7 @@ targets:
   - name: BinaryLane-per
     host: per-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: per
     city: Perth
     country: AU
@@ -74,7 +75,7 @@ targets:
   - name: BinaryLane-adl
     host: adl-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: adl
     city: Adelaide
     country: AU
@@ -89,7 +90,7 @@ targets:
   - name: BinaryLane-sin
     host: sin-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sin
     city: Singapore
     country: SG

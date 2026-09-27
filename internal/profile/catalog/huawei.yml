@@ -22,8 +22,8 @@ notes: >-
   but refused TCP 443 and ICMP; and my-kualalumpur-1, whose host is an API-gateway
   front (404 'apig'), not OBS. Also left out are China-only IDs whose city we could
   not confirm from a source: cn-north-2, cn-north-11, cn-north-12,
-  cn-east-4, cn-south-2, cn-south-4 (friendly-user environment) and cn-southwest-3.
-  All of them answer OBS from Helsinki at 164-231 ms and can be added once mapped.
+  cn-east-4, cn-south-4 (friendly-user environment); cn-south-2 and
+  cn-southwest-3 were later placed by traceroute (see below).
   Mainland regions (tagged mainland-china) answered at 178-265 ms. Regionality was
   checked by RTT from Helsinki, FI: Istanbul 62 ms, Cairo 87 ms, Riyadh 104 ms,
   Mexico 180-188 ms, Southeast Asia 193-214 ms, Johannesburg 207 ms, Sao
@@ -34,15 +34,33 @@ notes: >-
   sa-peru-1 / sa-argentina-1 (LA-Lima1 / LA-Buenos Aires1; both are on Huawei's
   Chinese region guide but not on the international data-protection page).
   Their OBS hosts CNAME to obs.lz01.<region> and answer at 204 / 251 ms. Also
-  answering but left out: ru-northwest-2 (Russia, 24 ms, not on any current
-  region page), cn-northwest-1 (Xi'an per third-party tables, 256 ms, not on
+  answering but left out at first: ru-northwest-2 (added in the second pass,
+  see below), cn-northwest-1 (Xi'an per third-party tables, 256 ms, not on
   Huawei's pages), and cn-south-4 (friendly-user environment in Guangzhou).
   Huawei's Chinese guide also names Karamay, Wuhu, Horinger, Dublin and Nigeria;
   there is no confirmed region ID with a working OBS host for them.
+  2026-09-27 audit (second pass): GeoDNS was checked by resolving every OBS
+  host through 8.8.8.8 with EDNS client subnets from Helsinki, the three
+  Chinese carriers, US, HK, SG and BR. All return one answer set for every
+  client except cn-east-2 (Chinese carriers also get a China Unicom Shanghai
+  address) and af-south-1 (a second Johannesburg address); both stay
+  in-region, so there is no Hong Kong or overseas front. The unmapped China
+  IDs were placed by traceroute, since Huawei's AS55990 addresses all
+  geolocate to Beijing: cn-southwest-3 enters through China Telecom Guizhou
+  (AS139203) and is added as Guiyang, the only Guizhou city Huawei lists;
+  cn-south-2 enters through China Telecom Guangdong and is added without a
+  city (Guangzhou or Shenzhen). cn-north-2, cn-north-11, cn-north-12 and
+  cn-northwest-1 enter at China Telecom's Beijing IDC and cn-east-4 at China
+  Telecom Shanghai, which does not place them, so they stay out. Also added:
+  ru-northwest-2, which is in Huawei's official OBS SDK region list and
+  answers from a Huawei Russia address (geo-IP Moscow, 22 ms from Helsinki);
+  no current Huawei region page names its city, so it has none.
+  ae-ad-1, eu-west-101 and ru-moscow-1 are still NXDOMAIN; eu-west-0 still
+  refuses TCP 443 and ICMP.
 targets:
   - name: Huawei-af-north-1
     host: obs.af-north-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: af-north-1
     city: Cairo
     country: EG
@@ -56,7 +74,7 @@ targets:
       bytes: 298
   - name: Huawei-af-south-1
     host: obs.af-south-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: af-south-1
     city: Johannesburg
     country: ZA
@@ -70,7 +88,7 @@ targets:
       bytes: 298
   - name: Huawei-ap-southeast-1
     host: obs.ap-southeast-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-1
     city: Hong Kong
     country: HK
@@ -84,7 +102,8 @@ targets:
       bytes: 298
   - name: Huawei-ap-southeast-2
     host: obs.ap-southeast-2.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: ap-southeast-2
     city: Bangkok
     country: TH
@@ -98,7 +117,7 @@ targets:
       bytes: 298
   - name: Huawei-ap-southeast-3
     host: obs.ap-southeast-3.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-3
     city: Singapore
     country: SG
@@ -112,7 +131,7 @@ targets:
       bytes: 298
   - name: Huawei-ap-southeast-4
     host: obs.ap-southeast-4.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-4
     city: Jakarta
     country: ID
@@ -126,7 +145,7 @@ targets:
       bytes: 298
   - name: Huawei-ap-southeast-5
     host: obs.ap-southeast-5.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-5
     city: Manila
     country: PH
@@ -140,7 +159,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-north-4
     host: obs.cn-north-4.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-north-4
     city: Beijing
     country: CN
@@ -155,7 +174,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-north-1
     host: obs.cn-north-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-north-1
     city: Beijing
     country: CN
@@ -170,7 +189,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-east-3
     host: obs.cn-east-3.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-3
     city: Shanghai
     country: CN
@@ -185,7 +204,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-east-2
     host: obs.cn-east-2.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-2
     city: Shanghai
     country: CN
@@ -200,7 +219,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-east-5
     host: obs.cn-east-5.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-5
     city: Qingdao
     country: CN
@@ -215,7 +234,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-south-1
     host: obs.cn-south-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-south-1
     city: Guangzhou
     country: CN
@@ -230,7 +249,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-southwest-2
     host: obs.cn-southwest-2.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-southwest-2
     city: Guiyang
     country: CN
@@ -245,7 +264,7 @@ targets:
       bytes: 298
   - name: Huawei-la-north-2
     host: obs.la-north-2.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: la-north-2
     city: Mexico City
     country: MX
@@ -259,7 +278,7 @@ targets:
       bytes: 298
   - name: Huawei-na-mexico-1
     host: obs.na-mexico-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: na-mexico-1
     city: Mexico City
     country: MX
@@ -273,7 +292,8 @@ targets:
       bytes: 298
   - name: Huawei-la-south-2
     host: obs.la-south-2.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: la-south-2
     city: Santiago
     country: CL
@@ -287,7 +307,8 @@ targets:
       bytes: 298
   - name: Huawei-sa-brazil-1
     host: obs.sa-brazil-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: sa-brazil-1
     city: Sao Paulo
     country: BR
@@ -301,7 +322,7 @@ targets:
       bytes: 298
   - name: Huawei-tr-west-1
     host: obs.tr-west-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tr-west-1
     city: Istanbul
     country: TR
@@ -315,7 +336,7 @@ targets:
       bytes: 298
   - name: Huawei-me-east-1
     host: obs.me-east-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-east-1
     city: Riyadh
     country: SA
@@ -329,7 +350,7 @@ targets:
       bytes: 298
   - name: Huawei-cn-north-9                # CN North-Ulanqab1 (华北-乌兰察布一)
     host: obs.cn-north-9.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-north-9
     city: Ulanqab
     country: CN
@@ -344,7 +365,7 @@ targets:
       bytes: 298
   - name: Huawei-sa-peru-1                # LA-Lima1
     host: obs.sa-peru-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-peru-1
     city: Lima
     country: PE
@@ -358,12 +379,41 @@ targets:
       bytes: 298
   - name: Huawei-sa-argentina-1                # LA-Buenos Aires1
     host: obs.sa-argentina-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-argentina-1
     city: Buenos Aires
     country: AR
     geo: sa
     anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 298
+  - name: Huawei-cn-southwest-3                # Guizhou, placed by traceroute
+    host: obs.cn-southwest-3.myhuaweicloud.com
+    kinds: [tcp]
+    region: cn-southwest-3
+    city: Guiyang
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 298
+  - name: Huawei-cn-south-2                # Guangdong, placed by traceroute
+    host: obs.cn-south-2.myhuaweicloud.com
+    kinds: [tcp]
+    region: cn-south-2
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
     verified:
       date: 2026-09-27
       icmp: true

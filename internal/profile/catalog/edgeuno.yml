@@ -1,0 +1,408 @@
+provider: edgeuno
+display: EdgeUno
+kind: cloud
+category: [bare-metal, edge]
+sources:
+  - https://edgeuno.com/locations/
+  - https://lg.edgeuno.com/
+notes: >-
+  EdgeUno (AS7195) runs bare-metal/edge sites across Latin America plus a few in the US, Europe and
+  Turkey (edgeuno.com/locations; Seattle is "coming soon" and not listed here). Bogota uses EdgeUno's published speed-test host speedtest.bog.edgeuno.com (/robots.txt answers a
+  16 B 404); speedtest.lim/mia exist but give a 502 or an invalid certificate, so Lima and Miami use
+  the stats hosts behind them. The other sites have no published speed-test name, so they use the same per-site
+  speed-test/stats servers under the naming EdgeUno gives them, stats.<site>.edgeuno.net
+  (speedtest.bog/lim/mia resolve to stats.bog/lim1/mia1 servers; valid TLS; /robots.txt answers a
+  146-162 B 403 or a 26 B 200). All are unicast in EdgeUno's 200.25.0.0/16 or 76.72.x ranges;
+  geo-IP and RTT from Helsinki fit each city. Vinhedo (VCP2) has no stats host and is kept with
+  kinds: []. speedtest.nyc/stats.nyc1 are dead; New York uses stats.jfk1.
+targets:
+  - name: EdgeUno-BuenosAires
+    host: stats.eze1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: eze1
+    city: Buenos Aires
+    country: AR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-LaPaz
+    host: stats.lpb1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: lpb1
+    city: La Paz
+    country: BO
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153
+  - name: EdgeUno-SaoPaulo
+    host: stats.gru1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: gru1
+    city: Barueri
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-RioDeJaneiro
+    host: stats.rio1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: rio1
+    city: Rio de Janeiro
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-Brasilia
+    host: stats.bsb1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: bsb1
+    city: Brasilia
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-PortoAlegre
+    host: stats.poa1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: poa1
+    city: Porto Alegre
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-Curitiba
+    host: stats.cwb1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: cwb1
+    city: Curitiba
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-Fortaleza
+    host: stats.for1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: for1
+    city: Fortaleza
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 162
+  - name: EdgeUno-Vinhedo
+    host: stats.vcp2.edgeuno.net
+    kinds: []
+    region: vcp2
+    city: Vinhedo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: "no speed-test or stats host found for VCP2 (NXDOMAIN)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: EdgeUno-Santiago
+    host: stats.scl1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: scl1
+    city: Santiago
+    country: CL
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-Barranquilla
+    host: stats.baq1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: baq1
+    city: Barranquilla
+    country: CO
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: EdgeUno-Bogota
+    host: speedtest.bog.edgeuno.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: bog
+    city: Bogota
+    country: CO
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 16
+  - name: EdgeUno-Quito
+    host: stats.uio1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: uio1
+    city: Quito
+    country: EC
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-Lima
+    host: stats.lim1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: lim1
+    city: Lima
+    country: PE
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153
+  - name: EdgeUno-Guadalajara
+    host: stats.gdl1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: gdl1
+    city: Guadalajara
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 162
+  - name: EdgeUno-MexicoCity
+    host: stats.mex1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: mex1
+    city: Mexico City
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-Queretaro
+    host: stats.qro1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: qro1
+    city: Queretaro
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-SanJuan
+    host: stats.sju1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: sju1
+    city: San Juan
+    country: PR
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-Miami
+    host: stats.mia1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: mia1
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153
+  - name: EdgeUno-Dallas
+    host: stats.dal1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: dal1
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153
+  - name: EdgeUno-Ashburn
+    host: stats.iad1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: iad1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: EdgeUno-NewYork
+    host: stats.jfk1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: jfk1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146
+  - name: EdgeUno-LosAngeles
+    host: stats.lax1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: lax1
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: EdgeUno-Frankfurt
+    host: stats.fra1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: fra1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: EdgeUno-London
+    host: stats.lon1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: lon1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: EdgeUno-Istanbul
+    host: stats.ist1.edgeuno.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: ist1
+    city: Istanbul
+    country: TR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 146

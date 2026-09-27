@@ -1,0 +1,88 @@
+provider: ramnode
+display: RamNode
+kind: cloud
+category: [vps]
+sources:
+  - https://ramnode.com/support/documentation/cloud-vps/data-centers
+  - https://ramnode.com/looking-glass
+notes: >-
+  RamNode (part of InMotion Hosting, AS3842/AS22611) has five cloud regions: EWR (Piscataway NJ),
+  ATL, LAX, SEA (listed as "pnw") and NLX (Amsterdam). Its looking-glass page links one
+  lg.<region>.ramnode.com host per region; those are the targets. Unicast, rDNS *.cloud.ramnode.com,
+  geo-IP and RTT from Helsinki match each city. GET /robots.txt answers a 207 B 404 (/ is a 20 KB page).
+targets:
+  - name: RamNode-EWR
+    host: lg.ewr.ramnode.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: ewr
+    city: Piscataway
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 207
+  - name: RamNode-ATL
+    host: lg.atl.ramnode.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 207
+  - name: RamNode-LAX
+    host: lg.lax.ramnode.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: lax
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 207
+  - name: RamNode-SEA
+    host: lg.pnw.ramnode.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 207
+  - name: RamNode-NLX
+    host: lg.nlx.ramnode.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: nlx
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 207

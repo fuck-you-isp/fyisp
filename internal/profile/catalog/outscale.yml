@@ -1,0 +1,90 @@
+provider: outscale
+display: 3DS Outscale
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.outscale.com/en/userguide/About-Regions-and-Subregions.html
+notes: >-
+  Outscale (Dassault Systemes) has five public regions: eu-west-2 (Paris area: PAR1 Magny-les-Hameaux,
+  PAR4 Pantin, PAR7 Aubergenville), cloudgouv-eu-west-1 (SecNumCloud, same three Paris-area sites),
+  us-east-2 (New Jersey: Clifton, Secaucus), us-west-1 (San Jose / Santa Clara) and ap-northeast-1
+  (Tokyo). No speed-test hosts are published. The targets are the documented regional endpoints: the
+  FCU/OAPI API host api.<region>.outscale.com (GET / answers a 201 B 404 and it answers ping) where it
+  exists, otherwise the object-storage endpoint oos.<region>.outscale.com (GET / is a 174 B 403; no
+  ICMP). rDNS of every address is ows-*.<region>.compute.outscale.com and RTTs from Helsinki fit the
+  location (Paris ~42 ms, NJ ~103 ms, California ~165 ms, Tokyo ~263 ms). The legacy eu-west-1 region
+  is closed; its API name now points into eu-west-2.
+targets:
+  - name: Outscale-eu-west-2
+    host: api.eu-west-2.outscale.com
+    kinds: [tcp]
+    region: eu-west-2
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 201
+  - name: Outscale-cloudgouv-eu-west-1
+    host: api.cloudgouv-eu-west-1.outscale.com
+    kinds: [tcp]
+    region: cloudgouv-eu-west-1
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    notes: "SecNumCloud region"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 201
+  - name: Outscale-us-east-2
+    host: api.us-east-2.outscale.com
+    kinds: [tcp]
+    region: us-east-2
+    city: Clifton, New Jersey
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 201
+  - name: Outscale-us-west-1
+    host: oos.us-west-1.outscale.com
+    kinds: [tcp]
+    region: us-west-1
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    notes: "object-storage endpoint (no public API host in this region); no ICMP"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 403
+      bytes: 174
+  - name: Outscale-ap-northeast-1
+    host: oos.ap-northeast-1.outscale.com
+    kinds: [tcp]
+    region: ap-northeast-1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    notes: "object-storage endpoint (no public API host in this region); no ICMP"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 403
+      bytes: 174

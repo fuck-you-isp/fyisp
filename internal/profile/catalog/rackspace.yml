@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: Rackspace-DFW
     host: storage101.dfw1.clouddrive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DFW
     city: Dallas
     country: US
@@ -29,7 +29,7 @@ targets:
       bytes: 70
   - name: Rackspace-ORD
     host: storage101.ord1.clouddrive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ORD
     city: Chicago
     country: US
@@ -43,7 +43,7 @@ targets:
       bytes: 70
   - name: Rackspace-IAD
     host: storage101.iad3.clouddrive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: IAD
     city: Ashburn
     country: US
@@ -57,7 +57,7 @@ targets:
       bytes: 70
   - name: Rackspace-LON
     host: storage101.lon3.clouddrive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LON
     city: London
     country: GB
@@ -71,7 +71,7 @@ targets:
       bytes: 70
   - name: Rackspace-HKG
     host: storage101.hkg1.clouddrive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: HKG
     city: Hong Kong
     country: HK
@@ -85,7 +85,7 @@ targets:
       bytes: 70
   - name: Rackspace-SYD
     host: storage101.syd2.clouddrive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SYD
     city: Sydney
     country: AU
@@ -99,7 +99,7 @@ targets:
       bytes: 70
   - name: Rackspace-Flex-DFW3
     host: swift.api.dfw3.rackspacecloud.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: DFW3
     city: Dallas
     country: US
@@ -113,7 +113,7 @@ targets:
       bytes: 70
   - name: Rackspace-Flex-SJC3
     host: swift.api.sjc3.rackspacecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SJC3
     city: San Jose
     country: US
@@ -127,7 +127,7 @@ targets:
       bytes: 70
   - name: Rackspace-Flex-IAD3
     host: swift.api.iad3.rackspacecloud.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: IAD3
     city: Ashburn
     country: US

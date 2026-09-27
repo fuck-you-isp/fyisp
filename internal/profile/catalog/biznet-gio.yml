@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: BiznetGio-wjv-1
     host: nos.wjv-1.neo.id
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: wjv-1
     city: Bogor
     country: ID

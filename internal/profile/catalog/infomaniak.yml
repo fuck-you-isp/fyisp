@@ -7,13 +7,17 @@ sources:
   - https://www.infomaniak.com/en/hosting/public-cloud
 notes: >-
   Infomaniak Public Cloud (OpenStack) has two regions: dc3-a (pub1, Geneva) and dc4-a (pub2,
-  Winterthur). No public speedtest/looking-glass hosts. The regional OpenStack API front
-  api.pubN.infomaniak.cloud answers ICMP and GET / with an empty 302 to Horizon. Both hosts geo-IP to
-  Geneva and show identical RTT from Helsinki, so the pub2 front may sit in Geneva.
+  Geneva/Plan-les-Ouates). No public speedtest/looking-glass hosts. The regional OpenStack API front
+  api.pubN.infomaniak.cloud answers ICMP and GET / with an empty 302 to Horizon. Re-checked on
+  2026-09-27: both fronts geo-IP to Geneva with identical RTT (34.7 ms from Helsinki). pub1's
+  traceroute ends at the bdb-* routers, and pub2's ends at plo-cr02 / plo-ab-sp3.net.infomaniak.ch
+  (plo = Plan-les-Ouates, Geneva, going by the router names). pub2's API and its S3 front
+  (45.157.188.0/24, shared with pub1's S3) are therefore in Geneva. The earlier Winterthur label is not
+  supported by any evidence, so dc4-a is now labelled Geneva (Plan-les-Ouates).
 targets:
   - name: Infomaniak-dc3-a
     host: api.pub1.infomaniak.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc3-a
     city: Geneva
     country: CH
@@ -29,14 +33,15 @@ targets:
       bytes: 0
   - name: Infomaniak-dc4-a
     host: api.pub2.infomaniak.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc4-a
-    city: Winterthur
+    city: Geneva
     country: CH
     geo: eu
     anycast: false
     notes: >-
-      OpenStack API front for pub2; GET / is an empty 302. Suspicious: geo-IP says Geneva and RTT equals pub1, so this front may not be in Winterthur.
+      OpenStack API front for pub2; GET / is an empty 302. Traceroute ends via plo-* (Plan-les-Ouates,
+      Geneva) routers; geo-IP Geneva. City changed from Winterthur on 2026-09-27.
     verified:
       date: 2026-09-27
       icmp: true

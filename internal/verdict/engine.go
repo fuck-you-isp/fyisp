@@ -624,7 +624,11 @@ func (t *tstat) lossNoDNS() float64 {
 	return float64(t.lost-t.dns) / float64(t.n-t.dns)
 }
 
-func (t *tstat) unhealthy() bool { return t.n > 0 && (t.loss() >= lossBad || t.spike) }
+// unhealthy: lossy (≥ lossBad, and at least minTargetLost samples), or a
+// latency spike.
+func (t *tstat) unhealthy() bool {
+	return t.n > 0 && ((t.lost >= minTargetLost && t.loss() >= lossBad) || t.spike)
+}
 
 // collect trims old samples and summarizes the window (now-window, now] for
 // every target of p. Called with e.mu held.

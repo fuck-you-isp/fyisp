@@ -27,7 +27,7 @@ targets:
   # (140.82.112.0/20). From Helsinki: ping 24 ms / TCP connect 25 ms.
   - name: dev-GitHub
     host: github.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -41,7 +41,7 @@ targets:
   # GHCR blob download host (Fastly-fronted). From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: dev-GHCR
     host: pkg-containers.githubusercontent.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [containers]
@@ -54,7 +54,7 @@ targets:
   # Unauthenticated /v2/ -> 401 (73 B). From Helsinki: ping 24 ms / TCP connect 25 ms.
   - name: dev-GHCR-Registry
     host: ghcr.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /v2/
     region: global
     anycast: true
@@ -68,7 +68,7 @@ targets:
   # Cloudflare. From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: dev-GitLab
     host: gitlab.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -83,7 +83,7 @@ targets:
   # ms TCP from Helsinki); no ICMP; /v2/ -> 401 (87 B). From Helsinki: TCP connect 112 ms.
   - name: dev-DockerHub-Registry
     host: registry-1.docker.io
-    kinds: [https, tcp]
+    kinds: [tcp]
     path: /v2/
     region: us-east-1
     city: Ashburn
@@ -101,7 +101,7 @@ targets:
   # TCP connect 4 ms.
   - name: dev-DockerHub-CDN
     host: production.cloudflare.docker.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [containers]
@@ -114,7 +114,7 @@ targets:
   # GET / -> {} (2 B). From Helsinki: ping 1 ms / TCP connect 4 ms.
   - name: dev-npm
     host: registry.npmjs.org
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [packages]
@@ -127,7 +127,7 @@ targets:
   # From Helsinki: ping 7 ms / TCP connect 8 ms.
   - name: dev-PyPI
     host: pypi.org
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -141,7 +141,7 @@ targets:
   # Fastly; GET / -> 404 (10 B). From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: dev-PyPI-Files
     host: files.pythonhosted.org
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [packages]
@@ -154,7 +154,7 @@ targets:
   # From Helsinki: ping 3 ms / TCP connect 5 ms.
   - name: dev-GoProxy
     host: proxy.golang.org
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -169,7 +169,7 @@ targets:
   # ms.
   - name: dev-GoSumDB
     host: sum.golang.org
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /latest
     region: global
     anycast: true
@@ -183,7 +183,7 @@ targets:
   # Sparse index config.json (76 B). From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: dev-crates-index
     host: index.crates.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /config.json
     region: global
     anycast: true
@@ -197,7 +197,7 @@ targets:
   # crate download CDN; GET / -> 403 (~250 B). From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: dev-crates-static
     host: static.crates.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [packages]
@@ -210,7 +210,7 @@ targets:
   # CloudFront. From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: dev-HuggingFace
     host: huggingface.co
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -227,7 +227,7 @@ targets:
     host: api.openai.com
     # TCP + ping only: unauthenticated API requests every 15 s from every
     # fyisp user would look like abuse to the provider.
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [ml, api]
@@ -243,7 +243,7 @@ targets:
     host: api.anthropic.com
     # TCP + ping only: unauthenticated API requests every 15 s from every
     # fyisp user would look like abuse to the provider.
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [ml, api]

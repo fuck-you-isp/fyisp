@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: Hivelocity-alb1
     host: speedtest.alb1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ALB1
     city: Albany
     country: US
@@ -32,7 +32,7 @@ targets:
       bytes: 265
   - name: Hivelocity-iad3
     host: speedtest.iad3.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: IAD3
     city: Ashburn
     country: US
@@ -46,7 +46,7 @@ targets:
       bytes: 265
   - name: Hivelocity-atl2
     host: speedtest.atl.hivelocity.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: ATL2
     city: Atlanta
     country: US
@@ -60,7 +60,8 @@ targets:
       bytes: 265
   - name: Hivelocity-ord1
     host: speedtest.ord1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: ORD1
     city: Chicago
     country: US
@@ -88,7 +89,7 @@ targets:
       tcp: false
   - name: Hivelocity-ord3
     host: speedtest.ord3.hivelocity.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ORD3
     city: Chicago
     country: US
@@ -101,7 +102,7 @@ targets:
       tcp: true
   - name: Hivelocity-cos1
     host: speedtest.cos1.hivelocity.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: COS1
     city: Colorado Springs
     country: US
@@ -114,7 +115,8 @@ targets:
       tcp: true
   - name: Hivelocity-dal1
     host: speedtest.dal.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: DAL1
     city: Dallas
     country: US
@@ -128,7 +130,7 @@ targets:
       bytes: 265
   - name: Hivelocity-lax2
     host: speedtest.lax.hivelocity.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: LAX2
     city: Los Angeles
     country: US
@@ -142,7 +144,7 @@ targets:
       bytes: 265
   - name: Hivelocity-mia1
     host: speedtest.mia1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: MIA1
     city: Miami
     country: US
@@ -156,7 +158,7 @@ targets:
       bytes: 265
   - name: Hivelocity-mia2
     host: speedtest.mia2.hivelocity.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: MIA2
     city: Miami
     country: US
@@ -183,7 +185,7 @@ targets:
       tcp: false
   - name: Hivelocity-sea1
     host: speedtest.sea1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SEA1
     city: Seattle
     country: US
@@ -197,7 +199,7 @@ targets:
       bytes: 265
   - name: Hivelocity-tpa1
     host: speedtest.tpa.hivelocity.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: TPA1
     city: Tampa
     country: US
@@ -211,7 +213,7 @@ targets:
       bytes: 265
   - name: Hivelocity-tpa2
     host: speedtest.tpa2.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: TPA2
     city: Tampa
     country: US
@@ -253,7 +255,8 @@ targets:
       tcp: false
   - name: Hivelocity-ams1
     host: speedtest.ams1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: AMS1
     city: Amsterdam
     country: NL
@@ -267,7 +270,7 @@ targets:
       bytes: 265
   - name: Hivelocity-ams2
     host: speedtest.ams2.hivelocity.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: AMS2
     city: Amsterdam
     country: NL
@@ -280,7 +283,7 @@ targets:
       tcp: true
   - name: Hivelocity-fra1
     host: speedtest.fra1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: FRA1
     city: Frankfurt
     country: DE
@@ -322,7 +325,7 @@ targets:
       tcp: false
   - name: Hivelocity-mxp1
     host: speedtest.mxp1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: MXP1
     city: Milan
     country: IT
@@ -336,7 +339,7 @@ targets:
       bytes: 303
   - name: Hivelocity-jhb1
     host: speedtest.jhb1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: JHB1
     city: Johannesburg
     country: ZA
@@ -350,7 +353,7 @@ targets:
       bytes: 303
   - name: Hivelocity-los1
     host: speedtest.los1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LOS1
     city: Lagos
     country: NG
@@ -362,18 +365,6 @@ targets:
       tcp: true
       https: 200
       bytes: 303
-  - name: Hivelocity-bom1
-    host: speedtest.bom1.hivelocity.net
-    kinds: [icmp]
-    region: BOM1
-    city: Mumbai
-    country: IN
-    geo: as
-    anycast: false
-    notes: IP geolocates to Mumbai (AS29802 Hivelocity) but rDNS names a HetrixTools monitoring node; only ICMP answered on 2026-09-27
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: Hivelocity-iad1
     host: speedtest.iad1.hivelocity.net
     kinds: []

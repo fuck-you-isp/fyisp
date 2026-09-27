@@ -26,7 +26,7 @@ targets:
   # /generate_204 returns 204 with empty body. From Helsinki: ping 1 ms / TCP connect 5 ms.
   - name: YouTube
     host: www.youtube.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /generate_204
     region: global
     anycast: true
@@ -42,7 +42,7 @@ targets:
   # 5 ms.
   - name: YouTube-Video
     host: redirector.googlevideo.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /generate_204
     region: global
     anycast: true
@@ -56,7 +56,7 @@ targets:
   # Netflix-operated edge (AS2906). From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: Netflix
     host: www.netflix.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -72,7 +72,7 @@ targets:
   # TCP connect 9 ms.
   - name: Netflix-Fast
     host: fast.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -86,7 +86,7 @@ targets:
   # From Helsinki: ping 7 ms / TCP connect 8 ms.
   - name: Twitch
     host: www.twitch.tv
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -262,7 +262,7 @@ targets:
   # From Helsinki: ping 7 ms / TCP connect 8 ms.
   - name: Spotify
     host: open.spotify.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -277,7 +277,7 @@ targets:
   # TCP connect 4 ms.
   - name: Spotify-APResolve
     host: apresolve.spotify.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [audio, streaming]
@@ -292,7 +292,7 @@ targets:
   # 33 ms / TCP connect 35 ms.
   - name: Spotify-AP-gew1
     host: ap-gew1.spotify.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: gew1
     city: St. Ghislain
     country: BE
@@ -308,7 +308,7 @@ targets:
   # 33 ms / TCP connect 35 ms.
   - name: Spotify-AP-gew4
     host: ap-gew4.spotify.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: gew4
     city: Eemshaven
     country: NL
@@ -323,7 +323,7 @@ targets:
   # naming; RTT consistent); binary protocol - TCP/ICMP only. From Helsinki: ping 114 ms.
   - name: Spotify-AP-gue1
     host: ap-gue1.spotify.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: gue1
     city: Moncks Corner
     country: US
@@ -339,7 +339,7 @@ targets:
   # seen. From Helsinki: ping 126 ms / TCP connect 128 ms.
   - name: Spotify-AP-guc3
     host: ap-guc3.spotify.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: guc3
     city: Council Bluffs
     country: US
@@ -355,7 +355,7 @@ targets:
   # 270 ms / TCP connect 237 ms.
   - name: Spotify-AP-gae2
     host: ap-gae2.spotify.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: gae2
     city: Hong Kong
     country: HK
@@ -369,7 +369,7 @@ targets:
   # From Helsinki: ping 25 ms / TCP connect 27 ms.
   - name: Disney-Plus
     host: www.disneyplus.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -383,7 +383,7 @@ targets:
   # CloudFront. From Helsinki: ping 1 ms / TCP connect 2 ms.
   - name: Prime-Video
     host: www.primevideo.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -397,7 +397,7 @@ targets:
   # From Helsinki: ping 7 ms / TCP connect 8 ms.
   - name: Apple-TV
     host: tv.apple.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -411,7 +411,7 @@ targets:
   # From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: Apple-Music
     host: music.apple.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true

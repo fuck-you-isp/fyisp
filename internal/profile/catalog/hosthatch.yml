@@ -13,7 +13,7 @@ targets:
   - name: HostHatch-Amsterdam
     host: lg.ams.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ams
     city: Amsterdam
     country: NL
@@ -28,7 +28,7 @@ targets:
   - name: HostHatch-Stockholm
     host: lg.sto.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sto
     city: Stockholm
     country: SE
@@ -43,7 +43,7 @@ targets:
   - name: HostHatch-Oslo
     host: lg.osl.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: osl
     city: Oslo
     country: NO
@@ -58,7 +58,7 @@ targets:
   - name: HostHatch-London
     host: lg.lon.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lon
     city: London
     country: GB
@@ -73,7 +73,7 @@ targets:
   - name: HostHatch-Vienna
     host: lg.vie.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: vie
     city: Vienna
     country: AT
@@ -88,7 +88,7 @@ targets:
   - name: HostHatch-Zurich
     host: lg.zrh.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: zrh
     city: Zurich
     country: CH
@@ -103,7 +103,7 @@ targets:
   - name: HostHatch-New-York
     host: lg.nyc.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nyc
     city: Secaucus
     country: US
@@ -119,7 +119,7 @@ targets:
   - name: HostHatch-Chicago
     host: lg.chi.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: chi
     city: Chicago
     country: US
@@ -134,7 +134,7 @@ targets:
   - name: HostHatch-Los-Angeles
     host: lg.lax.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lax
     city: Los Angeles
     country: US
@@ -149,7 +149,7 @@ targets:
   - name: HostHatch-Hong-Kong
     host: lg.hkg.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hkg
     city: Hong Kong
     country: HK
@@ -164,7 +164,7 @@ targets:
   - name: HostHatch-Singapore
     host: lg.sgp.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sgp
     city: Singapore
     country: SG
@@ -179,7 +179,7 @@ targets:
   - name: HostHatch-Tokyo
     host: lg.tok.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tok
     city: Tokyo
     country: JP
@@ -194,7 +194,7 @@ targets:
   - name: HostHatch-Seoul
     host: lg.sel.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sel
     city: Seoul
     country: KR
@@ -209,7 +209,7 @@ targets:
   - name: HostHatch-Sydney
     host: lg.syd.hosthatch.com
     path: /api/health
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: syd
     city: Sydney
     country: AU

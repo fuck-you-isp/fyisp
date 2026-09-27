@@ -1,0 +1,120 @@
+provider: 3hcloud
+display: 3HCloud
+kind: cloud
+category: [vps, dedicated]
+sources:
+  - https://3hcloud.com/
+  - https://speedtest.3hcloud.com/
+notes: >-
+  3HCloud (Newserverlife, AS49791) sells cloud and dedicated servers in Miami, Dallas, San Francisco,
+  Warsaw, Almaty and the Philippines. Its speed-test page lists one LibreSpeed host per location
+  (speedtest.3hcloud.com is Miami, mia2- is its second Miami-area site, speedtest.3hcloud.kz is Almaty).
+  All have valid certificates; GET /robots.txt answers a 19 B 404. Every host geolocates to its city in
+  AS49791 and RTTs from Helsinki fit. speedtest.3hcloud.ph points at a Linode address, not 3HCloud's
+  network, so the Philippines location is kept with kinds: [].
+targets:
+  - name: 3HCloud-Miami
+    host: speedtest.3hcloud.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: mia
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 19
+  - name: 3HCloud-Miami2
+    host: mia2-speedtest.3hcloud.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: mia2
+    city: Hollywood
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 19
+  - name: 3HCloud-Dallas
+    host: dfw-speedtest.3hcloud.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: dfw
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 19
+  - name: 3HCloud-SanFrancisco
+    host: sfo-speedtest.3hcloud.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: sfo
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 19
+  - name: 3HCloud-Warsaw
+    host: waw-speedtest.3hcloud.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: waw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 19
+  - name: 3HCloud-Almaty
+    host: speedtest.3hcloud.kz
+    kinds: [tcp]
+    path: /robots.txt
+    region: ala
+    city: Almaty
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 19
+  - name: 3HCloud-Manila
+    host: speedtest.3hcloud.ph
+    kinds: []
+    region: mnl
+    city: Manila
+    country: PH
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "speedtest.3hcloud.ph resolves to a Linode address, not AS49791; no host of 3HCloud's own found"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0

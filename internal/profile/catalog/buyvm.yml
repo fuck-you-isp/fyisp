@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: BuyVM-Las-Vegas
     host: speedtest.lv.buyvm.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: lv
     city: Las Vegas
     country: US
@@ -28,7 +28,7 @@ targets:
       bytes: 10549
   - name: BuyVM-New-York
     host: speedtest.ny.buyvm.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ny
     city: Piscataway
     country: US
@@ -42,7 +42,7 @@ targets:
       bytes: 10612
   - name: BuyVM-Miami
     host: speedtest.mia.buyvm.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: mia
     city: Miami
     country: US
@@ -56,7 +56,7 @@ targets:
       bytes: 9859
   - name: BuyVM-Luxembourg
     host: speedtest.lu.buyvm.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: lu
     city: Roost
     country: LU

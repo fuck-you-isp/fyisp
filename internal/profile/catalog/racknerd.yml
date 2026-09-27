@@ -16,7 +16,7 @@ targets:
   - name: RackNerd-Los-Angeles-DC03
     host: lg-lax03.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lax03
     city: Los Angeles
     country: US
@@ -31,7 +31,7 @@ targets:
   - name: RackNerd-San-Jose
     host: lg-sj.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sj
     city: San Jose
     country: US
@@ -46,7 +46,7 @@ targets:
   - name: RackNerd-Seattle
     host: lg-sea.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sea
     city: Seattle
     country: US
@@ -61,7 +61,7 @@ targets:
   - name: RackNerd-Dallas
     host: lg-dal.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dal
     city: Dallas
     country: US
@@ -76,7 +76,7 @@ targets:
   - name: RackNerd-Chicago
     host: lg-chi.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: chi
     city: Chicago
     country: US
@@ -91,7 +91,7 @@ targets:
   - name: RackNerd-New-York
     host: lg-ny.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ny
     city: New York
     country: US
@@ -106,7 +106,7 @@ targets:
   - name: RackNerd-Ashburn
     host: lg-ash.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ash
     city: Ashburn
     country: US
@@ -121,7 +121,7 @@ targets:
   - name: RackNerd-Atlanta
     host: lg-atl.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: atl
     city: Atlanta
     country: US
@@ -136,7 +136,7 @@ targets:
   - name: RackNerd-Toronto
     host: lg-tor.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tor
     city: Toronto
     country: CA
@@ -151,7 +151,7 @@ targets:
   - name: RackNerd-Strasbourg
     host: lg-fr.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fr
     city: Strasbourg
     country: FR
@@ -166,7 +166,7 @@ targets:
   - name: RackNerd-Amsterdam
     host: lg-ams.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ams
     city: Amsterdam
     country: NL
@@ -181,7 +181,7 @@ targets:
   - name: RackNerd-Dublin
     host: lg-dub.racknerd.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dub
     city: Dublin
     country: IE

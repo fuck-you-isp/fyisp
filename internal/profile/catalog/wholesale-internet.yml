@@ -1,0 +1,28 @@
+provider: wholesale-internet
+display: WholeSale Internet / NOCIX
+kind: cloud
+category: [bare-metal]
+sources:
+  - https://www.wholesaleinternet.net/
+  - https://www.nocix.net/
+notes: >-
+  WholeSale Internet (AS32097) and its budget brand NOCIX sell dedicated servers from a single data
+  centre at 1102 Grand, Kansas City, Missouri. The target is NOCIX's speed-test host
+  speedtest.nocix.net (rDNS 200g-speedtest.nocix.net, AS32097, geo-IP Kansas City, 129 ms from
+  Helsinki). GET /robots.txt answers a 162 B 404. Both websites block non-browser clients.
+targets:
+  - name: WholesaleInternet-KansasCity
+    host: speedtest.nocix.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: kc
+    city: Kansas City
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 162

@@ -156,7 +156,7 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 		if port == 0 {
 			port = 443
 		}
-		for _, k := range kindsOf(t) {
+		for _, k := range t.ProbeKinds() {
 			s := &series{key: model.SeriesKey{Target: t.Name, Kind: k}, idx: uint32(i), port: port, iv: iv}
 			s.host = hostOf(t.HostFor(k))
 			if s.host.special != "" && k != model.KindICMP {

@@ -6,17 +6,21 @@ sources:
   - https://github.com/Arubacloud/pyArubaCloud#readme
   - https://www.arubacloud.com/infrastructures/
   - https://www.datacenters.com/providers/aruba-cloud
+  - https://www.arubacloud.com/why-choose-aruba/datacenter
 notes: >-
   Aruba Cloud has 8 datacentres in its cloud API: DC1/DC2 Italy (Arezzo), DC3 Czech Republic, DC4
   France, DC5 Germany, DC6 UK, DC7 Italy 3 (Ponte San Pietro/Bergamo), DC8 Poland. No per-DC speedtest
   hosts; each DC has its own API front api.dcN.computing.cloud.it (GET / = 1233 B 403, TCP/HTTPS
   only). Where an Aruba host in the same DC answers ICMP it is used via host_overrides:
   r1-it.storage.cloud.it (Arezzo object storage) and speedtest.aruba.it (Bergamo). Geo-IP matches
-  every DC; DC7 is reached via Aruba's Italian backbone.
+  every DC; DC7 is reached via Aruba's Italian backbone. The official data-center page (2026-09-27)
+  lists nine sites: IT1/IT2 Arezzo, IT3 Bergamo, IT4 Rome, CZ1, DE1, FR1, PL1, UK1. IT4 Rome (Hyper
+  Cloud Data Center) has no legacy dcN API front and no object-storage host (the only S3 hosts are
+  r1-it Arezzo, r3-it Bergamo and r1-de Frankfurt), so it is listed as unreachable.
 targets:
   - name: Aruba-dc1-Arezzo
     host: api.dc1.computing.cloud.it
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     host_overrides:
       icmp: r1-it.storage.cloud.it
     region: dc1
@@ -34,7 +38,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc2-Arezzo
     host: api.dc2.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc2
     city: Arezzo
     country: IT
@@ -50,7 +54,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc3-Czechia
     host: api.dc3.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc3
     city: Ktis
     country: CZ
@@ -66,7 +70,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc4-Paris
     host: api.dc4.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc4
     city: Saint-Denis
     country: FR
@@ -82,7 +86,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc5-Frankfurt
     host: api.dc5.computing.cloud.it
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc5
     city: Frankfurt
     country: DE
@@ -98,7 +102,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc6-UK
     host: api.dc6.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc6
     city: Slough
     country: GB
@@ -114,7 +118,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc7-Bergamo
     host: api.dc7.computing.cloud.it
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     host_overrides:
       icmp: speedtest.aruba.it
     region: dc7
@@ -132,7 +136,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc8-Poland
     host: api.dc8.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc8
     city: Psary
     country: PL
@@ -146,3 +150,15 @@ targets:
       tcp: true
       https: 403
       bytes: 1233
+  - name: Aruba-it4-Rome
+    host: www.arubacloud.com
+    kinds: []
+    region: it4
+    city: Rome
+    country: IT
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      IT4 Rome is on Aruba's data-center list but has no public per-DC endpoint (no
+      api.dc9.computing.cloud.it, no rN-it storage host). Placeholder host, never probed.

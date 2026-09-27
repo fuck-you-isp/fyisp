@@ -10,7 +10,7 @@ notes: >-
 targets:
   - name: Epic-launcher-api
     host: launcher-public-service-prod06.ol.epicgames.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     country: US
     geo: na

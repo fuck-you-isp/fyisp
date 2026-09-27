@@ -1,0 +1,25 @@
+provider: idcloudhost
+display: IDCloudHost
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://idcloudhost.com/
+notes: >-
+  Indonesian cloud and VPS provider. The S3 object storage endpoint is.cloudhost.id resolves to
+  two IDCloudHost addresses in Jakarta (rDNS is3.cloudhost.id); GET / is a 214-byte
+  ListAllMyBuckets response. *.is3.cloudhost.id is a wildcard for buckets, not other regions.
+targets:
+  - name: IDCloudHost-Jakarta
+    host: is3.cloudhost.id
+    kinds: [tcp]
+    region: jkt
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214

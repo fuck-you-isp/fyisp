@@ -5,20 +5,24 @@ category: [vps, storage]
 sources:
   - https://docs.ksyun.com/documents/6761
 notes: >-
-  Kingsoft Cloud (Ksyun) KS3 object-storage regions, each probed via ks3-<region>.ksyuncs.com (GET / is
-  a ~240-byte 403): Beijing, Shanghai, Guangzhou, Hong Kong, Russia (Moscow), Singapore, Qingyang
-  (Gansu), and the finance clouds jr-beijing and jr-shanghai. Chinese geo-IP is coarse: Shanghai
-  geolocates to Jiangsu (Suzhou IDC), and Guangzhou geolocates to a Hebei IDC range, so its location is
-  unconfirmed. ks3-cn-hk-1 resolves (Hong Kong) but did not answer on 2026-09-27.
+  Kingsoft Cloud (Ksyun) KS3 object-storage regions (docs.ksyun.com/documents/6761, 2026-09-27):
+  cn-beijing, cn-shanghai, cn-guangzhou, cn-qinghai, cn-qingyang, cn-ningxia, sgp (Singapore) and the
+  finance clouds jr-beijing and jr-shanghai. Each is probed via ks3-<region>.ksyuncs.com (GET / is a
+  ~240-byte 403). Hong Kong (cn-hk-1) and Russia (rus) are no longer in the KS3 list; rus still answers
+  from Moscow and is kept, cn-hk-1 does not. Chinese geo-IP is coarse: Shanghai geolocates to Jiangsu
+  (Suzhou IDC). cn-guangzhou's KS3 endpoint is served from a Shijiazhuang (Hebei) IDC, so it is kept
+  with kinds []. cn-beijing is carrier-split (Kingsoft Beijing or Tianjin Unicom addresses); the others
+  return one answer to every client subnet.
 targets:
   - name: Kingsoft-cn-beijing
     host: ks3-cn-beijing.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-beijing
     city: Beijing
     country: CN
     geo: as
     anycast: false
+    notes: "carrier-split: Kingsoft Beijing (AS59019) or Tianjin Unicom addresses"
     verified:
       date: 2026-09-27
       icmp: true
@@ -27,7 +31,7 @@ targets:
       bytes: 238
   - name: Kingsoft-cn-shanghai
     host: ks3-cn-shanghai.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-shanghai
     city: Shanghai
     country: CN
@@ -42,13 +46,14 @@ targets:
       bytes: 238
   - name: Kingsoft-cn-guangzhou
     host: ks3-cn-guangzhou.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: []
     region: cn-guangzhou
     city: Guangzhou
     country: CN
     geo: as
     anycast: false
-    notes: geo-IP says Hebei; location unconfirmed
+    tags: [unreachable]
+    notes: "the KS3 cn-guangzhou endpoint (43.250.35.0/24, AS134760 Shijiazhuang IDC, CHINANET Hebei) is in Hebei: traceroute passes Shijiazhuang (sj.he.163data) and RTT from Helsinki is 167 ms against 180 ms for Beijing. No in-Guangzhou endpoint found (2026-09-27)"
     verified:
       date: 2026-09-27
       icmp: true
@@ -57,7 +62,7 @@ targets:
       bytes: 263
   - name: Kingsoft-cn-qingyang
     host: ks3-cn-qingyang.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-qingyang
     city: Qingyang
     country: CN
@@ -69,9 +74,39 @@ targets:
       tcp: true
       https: 403
       bytes: 263
+  - name: Kingsoft-cn-qinghai
+    host: ks3-cn-qinghai.ksyuncs.com
+    kinds: [tcp]
+    region: cn-qinghai
+    city: Xining
+    country: CN
+    geo: as
+    anycast: false
+    notes: geo-IP Xining (AS59223 CHINANET Qinghai IDC)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 238
+  - name: Kingsoft-cn-ningxia
+    host: ks3-cn-ningxia.ksyuncs.com
+    kinds: [tcp]
+    region: cn-ningxia
+    city: Zhongwei
+    country: CN
+    geo: as
+    anycast: false
+    notes: AS134761 CHINANET Ningxia Zhongwei IDC; geo-IP Yinchuan
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 238
   - name: Kingsoft-jr-beijing
     host: ks3-jr-beijing.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jr-beijing
     city: Beijing
     country: CN
@@ -85,7 +120,7 @@ targets:
       bytes: 238
   - name: Kingsoft-jr-shanghai
     host: ks3-jr-shanghai.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jr-shanghai
     city: Shanghai
     country: CN
@@ -105,36 +140,23 @@ targets:
     country: HK
     geo: as
     anycast: false
-    tags: [unreachable]
-    notes: resolves but no answer on 2026-09-27
+    tags: [unreachable, closed]
+    notes: not in the current KS3 region list; resolves (Zenlayer Hong Kong) but no answer on 2026-09-27
     verified:
       date: 2026-09-27
       icmp: false
       tcp: false
       https: 0
       bytes: 0
-  - name: Kingsoft-rus
-    host: ks3-rus.ksyuncs.com
-    kinds: [https, tcp, icmp]
-    region: rus
-    city: Moscow
-    country: RU
-    geo: eu
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
-      tcp: true
-      https: 403
-      bytes: 263
   - name: Kingsoft-sgp
     host: ks3-sgp.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sgp
     city: Singapore
     country: SG
     geo: as
     anycast: false
+    notes: traceroute via Zenlayer Singapore; geo-IP Singapore (ipinfo) or Hong Kong (ip-api)
     verified:
       date: 2026-09-27
       icmp: true

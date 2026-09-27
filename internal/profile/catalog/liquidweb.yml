@@ -5,31 +5,34 @@ category: [vps, bare-metal]
 sources:
   - https://www.liquidweb.com/data-centers/
   - https://www.liquidweb.com/help-docs/performance/server-optimization/testing-your-networks-speed-and-reliability/
+  - https://lg.liquidweb.com/speed_test/
 notes: >-
-  Official Liquid Web network-test hosts from the help doc: lg.liquidweb.com (Lansing),
-  phoenix-test.liquidweb.com (Phoenix, HTTPS index ~600 B) and amsterdam-test.liquidweb.name
-  (Amsterdam, HTTP-only). lg.liquidweb.com has an invalid certificate on 443, so tcp + icmp only.
-  Never fetch the *.bin test files. The other Liquid Web datacenters on the locations page
-  (Southfield, San Jose, Ashburn, London, West Sussex, Sydney) have no published test host and are
-  kept as kinds: []. The servers.com locations resold on the same page are a different operator and
-  are not included.
+  Official Liquid Web network-test hosts from the help doc and the looking glass's speed-test page:
+  lg.liquidweb.com (Lansing), phoenix-test.liquidweb.com (Phoenix; GET /robots.txt is a 153-byte 404)
+  and amsterdam-test.liquidweb.name (Amsterdam, HTTP-only; 443 times out). lg.liquidweb.com's
+  certificate expired on 2025-02-15, so tcp + icmp only. Never fetch the *.bin test files. The other
+  Liquid Web datacenters on the locations page (Southfield, San Jose, Ashburn, London, West Sussex,
+  Sydney) have no published test host (the looking glass lists only Lansing, Phoenix and Amsterdam;
+  <city>-test names do not resolve) and are kept as kinds: []. The 11 servers.com locations resold on
+  the same page are a different operator and are not included.
 targets:
   - name: LiquidWeb-Lansing
     host: lg.liquidweb.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: lan
     city: Lansing
     country: US
     geo: na
     anycast: false
-    notes: TLS certificate invalid on 443; tcp/icmp only
+    notes: TLS certificate expired 2025-02-15; tcp/icmp only
     verified:
       date: 2026-09-27
       icmp: true
       tcp: true
   - name: LiquidWeb-Phoenix
     host: phoenix-test.liquidweb.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    path: /robots.txt
     region: phx
     city: Phoenix
     country: US
@@ -39,11 +42,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 612
+      https: 404
+      bytes: 153
   - name: LiquidWeb-Amsterdam
     host: amsterdam-test.liquidweb.name
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: ams
     city: Amsterdam

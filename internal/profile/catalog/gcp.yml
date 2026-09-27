@@ -10,6 +10,7 @@ sources:
   - https://docs.cloud.google.com/docs/security/compliance/endpoints
   - https://cloud.google.com/blog/products/infrastructure/google-cloud-launches-new-region-in-bangkok-thailand
   - https://gcping.com/api/endpoints
+  - https://www.gstatic.com/ipranges/cloud.json
 notes: >-
   One target per Google Cloud region (43 regions as of 2026-09; list cross-checked
   against the regions-zones docs table and gcping.com/api/endpoints). Each region uses
@@ -30,15 +31,26 @@ notes: >-
   same Storage API (storage.googleapis.com) for an apples-to-apples edge baseline.
   2026-09-27 audit: the regions-zones table still lists the same 43 regions, and
   storage.asia-southeast3.rep.googleapis.com still does not resolve. Regional
-  API hosts also exist for europe-west15, us-east7 and us-central2, but none
-  of them is in the public region list (restricted or pre-launch), so they are
-  left out. Google sovereign offerings (S3NS, T-Systems) run under their own
+  API hosts also exist for europe-west15, us-east7, us-central2 and us-west8
+  (all four are scopes in gstatic.com/ipranges/cloud.json), but none of them
+  is in the public region list (restricted or pre-launch), so they are
+  left out. Regionality re-checked: each storage.<region>.rep host
+  returns one static IP for every EDNS client subnet (no GeoDNS), and
+  Globalping probes confirm the address answers only in its region
+  (asia-northeast1: 3 ms from Tokyo, 227 ms from Frankfurt; us-west1: 7 ms
+  from Seattle; europe-north1: 40 ms from Frankfurt, 267 ms from Tokyo),
+  so these are not globally fronted. The suggested alternatives are worse:
+  <region>-docker.pkg.dev and <region>-run.googleapis.com resolve to the
+  shared global GFE pools (172.253/172.217), not per-region addresses.
+  For asia-southeast3, pubsub, compute and secretmanager .rep hosts all
+  give the same 1.5 KB 404 (logging.rep gives a 19 B 503 but is a
+  failure response, so it was not used). Google sovereign offerings (S3NS, T-Systems) run under their own
   partner domains and are not covered here.
 targets:
   # africa-south1: ping 194 ms / TCP connect 200 ms from Helsinki
   - name: GCP-africa-south1
     host: storage.africa-south1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: africa-south1
     city: Johannesburg
     country: ZA
@@ -53,7 +65,7 @@ targets:
   # asia-east1: ping 224 ms / TCP connect 195 ms from Helsinki
   - name: GCP-asia-east1
     host: storage.asia-east1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-east1
     city: Changhua County
     country: TW
@@ -68,7 +80,7 @@ targets:
   # asia-east2: ping 261 ms / TCP connect 263 ms from Helsinki
   - name: GCP-asia-east2
     host: storage.asia-east2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-east2
     city: Hong Kong
     country: HK
@@ -83,7 +95,7 @@ targets:
   # asia-northeast1: ping 256 ms / TCP connect 257 ms from Helsinki
   - name: GCP-asia-northeast1
     host: storage.asia-northeast1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-northeast1
     city: Tokyo
     country: JP
@@ -98,7 +110,7 @@ targets:
   # asia-northeast2: ping 271 ms / TCP connect 262 ms from Helsinki
   - name: GCP-asia-northeast2
     host: storage.asia-northeast2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-northeast2
     city: Osaka
     country: JP
@@ -113,7 +125,7 @@ targets:
   # asia-northeast3: ping 310 ms / TCP connect 296 ms from Helsinki
   - name: GCP-asia-northeast3
     host: storage.asia-northeast3.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-northeast3
     city: Seoul
     country: KR
@@ -128,7 +140,7 @@ targets:
   # asia-south1: ping 280 ms / TCP connect 277 ms from Helsinki
   - name: GCP-asia-south1
     host: storage.asia-south1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-south1
     city: Mumbai
     country: IN
@@ -143,7 +155,7 @@ targets:
   # asia-south2: ping 281 ms / TCP connect 278 ms from Helsinki
   - name: GCP-asia-south2
     host: storage.asia-south2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-south2
     city: Delhi
     country: IN
@@ -158,7 +170,7 @@ targets:
   # asia-southeast1: ping 251 ms / TCP connect 254 ms from Helsinki
   - name: GCP-asia-southeast1
     host: storage.asia-southeast1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-southeast1
     city: Jurong West
     country: SG
@@ -173,7 +185,7 @@ targets:
   # asia-southeast2: ping 266 ms / TCP connect 269 ms from Helsinki
   - name: GCP-asia-southeast2
     host: storage.asia-southeast2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-southeast2
     city: Jakarta
     country: ID
@@ -188,7 +200,7 @@ targets:
   # asia-southeast3: no storage regional endpoint yet; Pub/Sub regional endpoint ~290 ms from Helsinki
   - name: GCP-asia-southeast3
     host: pubsub.asia-southeast3.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: asia-southeast3
     city: Bangkok
     country: TH
@@ -203,7 +215,7 @@ targets:
   # australia-southeast1: ping 375 ms / TCP connect 378 ms from Helsinki
   - name: GCP-australia-southeast1
     host: storage.australia-southeast1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: australia-southeast1
     city: Sydney
     country: AU
@@ -218,7 +230,7 @@ targets:
   # australia-southeast2: ping 387 ms / TCP connect 391 ms from Helsinki
   - name: GCP-australia-southeast2
     host: storage.australia-southeast2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: australia-southeast2
     city: Melbourne
     country: AU
@@ -233,7 +245,7 @@ targets:
   # europe-central2: ping 36 ms / TCP connect 38 ms from Helsinki
   - name: GCP-europe-central2
     host: storage.europe-central2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-central2
     city: Warsaw
     country: PL
@@ -248,7 +260,7 @@ targets:
   # europe-north1: ping 9 ms / TCP connect 11 ms from Helsinki
   - name: GCP-europe-north1
     host: storage.europe-north1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-north1
     city: Hamina
     country: FI
@@ -263,7 +275,7 @@ targets:
   # europe-north2: ping 12 ms / TCP connect 14 ms from Helsinki
   - name: GCP-europe-north2
     host: storage.europe-north2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-north2
     city: Stockholm
     country: SE
@@ -278,7 +290,7 @@ targets:
   # europe-southwest1: ping 53 ms / TCP connect 57 ms from Helsinki
   - name: GCP-europe-southwest1
     host: storage.europe-southwest1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-southwest1
     city: Madrid
     country: ES
@@ -293,7 +305,7 @@ targets:
   # europe-west1: ping 31 ms / TCP connect 36 ms from Helsinki
   - name: GCP-europe-west1
     host: storage.europe-west1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west1
     city: St. Ghislain
     country: BE
@@ -308,7 +320,7 @@ targets:
   # europe-west2: ping 38 ms / TCP connect 39 ms from Helsinki
   - name: GCP-europe-west2
     host: storage.europe-west2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west2
     city: London
     country: GB
@@ -323,7 +335,7 @@ targets:
   # europe-west3: ping 31 ms / TCP connect 33 ms from Helsinki
   - name: GCP-europe-west3
     host: storage.europe-west3.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west3
     city: Frankfurt
     country: DE
@@ -338,7 +350,7 @@ targets:
   # europe-west4: ping 33 ms / TCP connect 33 ms from Helsinki
   - name: GCP-europe-west4
     host: storage.europe-west4.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west4
     city: Eemshaven
     country: NL
@@ -353,7 +365,7 @@ targets:
   # europe-west6: ping 43 ms / TCP connect 46 ms from Helsinki
   - name: GCP-europe-west6
     host: storage.europe-west6.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west6
     city: Zurich
     country: CH
@@ -368,7 +380,7 @@ targets:
   # europe-west8: ping 48 ms / TCP connect 51 ms from Helsinki
   - name: GCP-europe-west8
     host: storage.europe-west8.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west8
     city: Milan
     country: IT
@@ -383,7 +395,7 @@ targets:
   # europe-west9: ping 36 ms / TCP connect 38 ms from Helsinki
   - name: GCP-europe-west9
     host: storage.europe-west9.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west9
     city: Paris
     country: FR
@@ -398,7 +410,7 @@ targets:
   # europe-west10: ping 27 ms / TCP connect 30 ms from Helsinki
   - name: GCP-europe-west10
     host: storage.europe-west10.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west10
     city: Berlin
     country: DE
@@ -413,7 +425,7 @@ targets:
   # europe-west12: ping 50 ms / TCP connect 52 ms from Helsinki
   - name: GCP-europe-west12
     host: storage.europe-west12.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: europe-west12
     city: Turin
     country: IT
@@ -428,7 +440,7 @@ targets:
   # me-central1: ping 138 ms / TCP connect 139 ms from Helsinki
   - name: GCP-me-central1
     host: storage.me-central1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-central1
     city: Doha
     country: QA
@@ -443,7 +455,7 @@ targets:
   # me-central2: ping 139 ms / TCP connect 135 ms from Helsinki
   - name: GCP-me-central2
     host: storage.me-central2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-central2
     city: Dammam
     country: SA
@@ -458,7 +470,7 @@ targets:
   # me-west1: ping 96 ms / TCP connect 98 ms from Helsinki
   - name: GCP-me-west1
     host: storage.me-west1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-west1
     city: Tel Aviv
     country: IL
@@ -473,7 +485,7 @@ targets:
   # northamerica-northeast1: ping 115 ms / TCP connect 117 ms from Helsinki
   - name: GCP-northamerica-northeast1
     host: storage.northamerica-northeast1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: northamerica-northeast1
     city: Montréal
     country: CA
@@ -488,7 +500,7 @@ targets:
   # northamerica-northeast2: ping 113 ms / TCP connect 117 ms from Helsinki
   - name: GCP-northamerica-northeast2
     host: storage.northamerica-northeast2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: northamerica-northeast2
     city: Toronto
     country: CA
@@ -503,7 +515,7 @@ targets:
   # northamerica-south1: ping 162 ms / TCP connect 165 ms from Helsinki
   - name: GCP-northamerica-south1
     host: storage.northamerica-south1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: northamerica-south1
     city: Querétaro
     country: MX
@@ -518,7 +530,7 @@ targets:
   # southamerica-east1: ping 217 ms / TCP connect 220 ms from Helsinki
   - name: GCP-southamerica-east1
     host: storage.southamerica-east1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: southamerica-east1
     city: Osasco (São Paulo)
     country: BR
@@ -533,7 +545,7 @@ targets:
   # southamerica-west1: ping 250 ms / TCP connect 253 ms from Helsinki
   - name: GCP-southamerica-west1
     host: storage.southamerica-west1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: southamerica-west1
     city: Santiago
     country: CL
@@ -548,7 +560,7 @@ targets:
   # us-central1: ping 132 ms / TCP connect 139 ms from Helsinki
   - name: GCP-us-central1
     host: storage.us-central1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-central1
     city: Council Bluffs
     country: US
@@ -563,7 +575,7 @@ targets:
   # us-east1: ping 121 ms / TCP connect 123 ms from Helsinki
   - name: GCP-us-east1
     host: storage.us-east1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east1
     city: Moncks Corner
     country: US
@@ -578,7 +590,7 @@ targets:
   # us-east4: ping 111 ms / TCP connect 112 ms from Helsinki
   - name: GCP-us-east4
     host: storage.us-east4.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east4
     city: Ashburn
     country: US
@@ -593,7 +605,7 @@ targets:
   # us-east5: ping 118 ms / TCP connect 122 ms from Helsinki
   - name: GCP-us-east5
     host: storage.us-east5.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east5
     city: Columbus
     country: US
@@ -608,7 +620,7 @@ targets:
   # us-south1: ping 137 ms / TCP connect 140 ms from Helsinki
   - name: GCP-us-south1
     host: storage.us-south1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-south1
     city: Dallas
     country: US
@@ -623,7 +635,7 @@ targets:
   # us-west1: ping 170 ms / TCP connect 171 ms from Helsinki
   - name: GCP-us-west1
     host: storage.us-west1.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west1
     city: The Dalles
     country: US
@@ -638,7 +650,7 @@ targets:
   # us-west2: ping 172 ms / TCP connect 181 ms from Helsinki
   - name: GCP-us-west2
     host: storage.us-west2.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west2
     city: Los Angeles
     country: US
@@ -653,7 +665,7 @@ targets:
   # us-west3: ping 174 ms / TCP connect 176 ms from Helsinki
   - name: GCP-us-west3
     host: storage.us-west3.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west3
     city: Salt Lake City
     country: US
@@ -668,7 +680,7 @@ targets:
   # us-west4: ping 174 ms / TCP connect 175 ms from Helsinki
   - name: GCP-us-west4
     host: storage.us-west4.rep.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west4
     city: Las Vegas
     country: US
@@ -683,7 +695,7 @@ targets:
   # Google global front (anycast GFE) for the same API; ~3 ms from Helsinki
   - name: GCP-global
     host: storage.googleapis.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     verified:

@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: Civo-LON1
     host: objectstore.lon1.civo.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LON1
     city: London
     country: GB
@@ -27,7 +27,7 @@ targets:
       bytes: 214
   - name: Civo-FRA1
     host: objectstore.fra1.civo.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: FRA1
     city: Frankfurt
     country: DE
@@ -41,7 +41,7 @@ targets:
       bytes: 214
   - name: Civo-NYC1
     host: objectstore.nyc1.civo.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: NYC1
     city: New York
     country: US
@@ -55,7 +55,7 @@ targets:
       bytes: 214
   - name: Civo-MUM1
     host: objectstore.mum1.civo.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: MUM1
     city: Mumbai
     country: IN

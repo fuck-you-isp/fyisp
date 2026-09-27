@@ -4,13 +4,13 @@ kind: cloud
 targets:
   - name: Hetzner-Falkenstein
     host: fsn1-speed.hetzner.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     city: Falkenstein
     country: DE
     geo: eu
   - name: Hetzner-Ashburn
     host: ash-speed.hetzner.com
-    kinds: [icmp]
+    kinds: [tcp]
     port: 80
     city: Ashburn
     country: US

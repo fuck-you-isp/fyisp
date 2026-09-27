@@ -7,11 +7,12 @@ sources:
 notes: >-
   Filebase exposes a single S3 endpoint, s3.filebase.com, which is GeoDNS-routed (US, Singapore and
   European addresses on OVHcloud depending on the client), so it is listed once as anycast. Anonymous
-  GET / returns a 403 XML body (191 B).
+  GET / returns a 403 XML body (191 B). Re-checked 2026-09-27 with EDNS client subnets: Frankfurt,
+  Portland and Singapore OVH fronts; no regional names exist (s3.<region>.filebase.com is NXDOMAIN).
 targets:
   - name: Filebase
     host: s3.filebase.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     anycast: true
     notes: >-
       GeoDNS: US, Singapore or European front depending on the client.

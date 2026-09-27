@@ -1,0 +1,123 @@
+provider: qiniu
+display: Qiniu Cloud
+kind: cloud
+category: [storage]
+sources:
+  - https://developer.qiniu.com/kodo/4088/s3-access-domainname
+  - https://github.com/rclone/rclone/blob/master/backend/s3/provider/Qiniu.yaml
+notes: >-
+  Qiniu Kodo object storage. Each region has an S3-compatible endpoint s3-<region>.qiniucs.com; an
+  anonymous GET / is a 159-byte 400. The Chinese regions are round-robin pools of many addresses
+  inside one province. cn-south-1 resolves to a nearby CDN edge and ap-northeast-1 shares the
+  Singapore addresses, so both are kept with kinds: [].
+targets:
+  - name: Qiniu-cn-east-1
+    host: s3-cn-east-1.qiniucs.com
+    kinds: [tcp]
+    region: cn-east-1
+    country: CN
+    geo: as
+    anycast: false
+    notes: >-
+      Round-robin over ~20 China Telecom addresses in Jiangsu and Zhejiang (geo-IP Nanjing,
+      Shaoxing), so the exact city varies per answer.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 159
+  - name: Qiniu-cn-east-2
+    host: s3-cn-east-2.qiniucs.com
+    kinds: [tcp]
+    region: cn-east-2
+    country: CN
+    geo: as
+    anycast: false
+    notes: >-
+      Round-robin over ~14 addresses in Zhejiang (geo-IP Ningbo/Wenzhou).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 159
+  - name: Qiniu-cn-north-1
+    host: s3-cn-north-1.qiniucs.com
+    kinds: [tcp]
+    region: cn-north-1
+    city: Shijiazhuang
+    country: CN
+    geo: as
+    anycast: false
+    notes: >-
+      Round-robin over ~13 addresses, all geolocated to Shijiazhuang, Hebei.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 159
+  - name: Qiniu-cn-south-1
+    host: s3-cn-south-1.qiniucs.com
+    kinds: []
+    region: cn-south-1
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to an Alibaba (AS24429) edge 7 ms from Helsinki (geo-IP Stockholm), so it is a
+      CDN front, not the South China region.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Qiniu-us-north-1
+    host: s3-us-north-1.qiniucs.com
+    kinds: [tcp]
+    region: us-north-1
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    notes: >-
+      Geo-IP (AS63199) and RTT (~134 ms from Helsinki) both point at Dallas; Qiniu only says
+      North America.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 159
+  - name: Qiniu-ap-southeast-1
+    host: s3-ap-southeast-1.qiniucs.com
+    kinds: [tcp]
+    region: ap-southeast-1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    notes: >-
+      Qiniu's own AS152644; geo-IP Singapore.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 159
+  - name: Qiniu-ap-northeast-1
+    host: s3-ap-northeast-1.qiniucs.com
+    kinds: []
+    region: ap-northeast-1
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to exactly the same three Singapore addresses as ap-southeast-1, so it does not
+      measure Northeast Asia. Country is a guess (Qiniu does not publish the city).
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

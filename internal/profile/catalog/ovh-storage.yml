@@ -9,13 +9,15 @@ notes: >-
   OVHcloud Public Cloud Object Storage S3 endpoints s3.<region>.io.cloud.ovh.net (.ovh.us for the US
   regions), one per region. Anonymous GET / returns a 307 redirect with a ~247 B body. Complements the
   ovh provider (Proof speed-test servers) and fills its gaps: Warsaw, Limburg (de), Toronto and Milan.
-  Caveat: gra, sbg and rbx resolve into the same /24 (141.95.161.0/24); their RTTs differ slightly
-  (26-34 ms from Helsinki) and fit northern/eastern France, but they may share a network front. The
-  .perf. hostnames are the same addresses and are not listed separately.
+  gra, sbg and rbx resolve into the same /24 (141.95.161.0/24, .76/.68/.92) but are not a shared
+  front. Re-checked on 2026-09-27: each traceroute's last named hop is that site's own DC router
+  (be105.lil2-gra1-sbb2, be101.sbg-g2, be104.lil1-rbx8-sbb2). The RTTs from Helsinki (31.7 / 26.3 / 33.9 ms)
+  match the Proof servers of the same DCs (34.6 / 26.3 / 33.9 ms). The .perf. hostnames are the same
+  addresses and are not listed separately.
 targets:
   - name: OVHObj-gra
     host: s3.gra.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: gra
     city: Gravelines
     country: FR
@@ -29,7 +31,7 @@ targets:
       bytes: 247
   - name: OVHObj-sbg
     host: s3.sbg.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sbg
     city: Strasbourg
     country: FR
@@ -43,7 +45,7 @@ targets:
       bytes: 247
   - name: OVHObj-rbx
     host: s3.rbx.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: rbx
     city: Roubaix
     country: FR
@@ -57,7 +59,7 @@ targets:
       bytes: 247
   - name: OVHObj-de
     host: s3.de.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de
     city: Limburg
     country: DE
@@ -71,7 +73,7 @@ targets:
       bytes: 247
   - name: OVHObj-uk
     host: s3.uk.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uk
     city: London
     country: GB
@@ -85,7 +87,7 @@ targets:
       bytes: 247
   - name: OVHObj-waw
     host: s3.waw.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: waw
     city: Warsaw
     country: PL
@@ -99,7 +101,7 @@ targets:
       bytes: 247
   - name: OVHObj-eu-west-par
     host: s3.eu-west-par.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-par
     city: Paris
     country: FR
@@ -113,7 +115,7 @@ targets:
       bytes: 247
   - name: OVHObj-eu-south-mil
     host: s3.eu-south-mil.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-south-mil
     city: Milan
     country: IT
@@ -127,7 +129,7 @@ targets:
       bytes: 247
   - name: OVHObj-bhs
     host: s3.bhs.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bhs
     city: Beauharnois
     country: CA
@@ -141,7 +143,7 @@ targets:
       bytes: 247
   - name: OVHObj-ca-east-tor
     host: s3.ca-east-tor.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-east-tor
     city: Toronto
     country: CA
@@ -155,7 +157,7 @@ targets:
       bytes: 247
   - name: OVHObj-us-east-va
     host: s3.us-east-va.io.cloud.ovh.us
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-va
     city: Vint Hill
     country: US
@@ -169,7 +171,7 @@ targets:
       bytes: 243
   - name: OVHObj-us-west-or
     host: s3.us-west-or.io.cloud.ovh.us
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-or
     city: Hillsboro
     country: US
@@ -183,7 +185,7 @@ targets:
       bytes: 243
   - name: OVHObj-sgp
     host: s3.sgp.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sgp
     city: Singapore
     country: SG
@@ -197,7 +199,7 @@ targets:
       bytes: 247
   - name: OVHObj-ap-south-mum
     host: s3.ap-south-mum.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-south-mum
     city: Mumbai
     country: IN
@@ -211,7 +213,7 @@ targets:
       bytes: 247
   - name: OVHObj-ap-southeast-syd
     host: s3.ap-southeast-syd.io.cloud.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-syd
     city: Sydney
     country: AU

@@ -1,0 +1,90 @@
+provider: syseleven
+display: SysEleven
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://documentation.syseleven.de/en/discover/apis-and-regions/
+  - https://documentation.syseleven.de/en/discover/apis-and-regions/object-storage/
+  - https://documentation.syseleven.de/en/prior-docs/openstack-cloud/reference/regions/
+notes: >-
+  SysEleven (Berlin) operates two current OpenStack regions, HAM1 (Hamburg) and DUS2 (Duesseldorf),
+  plus three older regions still documented as available: cbk and dbl (Berlin) and fes (Frankfurt).
+  No speed-test host is published. The targets are the documented per-region S3 endpoints:
+  objectstorage-replicated.<ham1|dus2>.cloud.syseleven.net for the new regions (GET / is a 187 B
+  anonymous bucket list) and s3.<cbk|dbl|fes>.cloud.syseleven.net for the old ones (174 B 403 / 257 B
+  404). All answer ping and sit in SysEleven's AS25291; rDNS of the ham1/dus2 addresses points at
+  SysEleven border routers (bak1 = Hamburg, box1 = Duesseldorf). RTT from Helsinki ~27-36 ms.
+targets:
+  - name: SysEleven-ham1
+    host: objectstorage-replicated.ham1.cloud.syseleven.net
+    kinds: [tcp]
+    region: ham1
+    city: Hamburg
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187
+  - name: SysEleven-dus2
+    host: objectstorage-replicated.dus2.cloud.syseleven.net
+    kinds: [tcp]
+    region: dus2
+    city: Duesseldorf
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187
+  - name: SysEleven-cbk
+    host: s3.cbk.cloud.syseleven.net
+    kinds: [tcp]
+    region: cbk
+    city: Berlin
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "older region"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 174
+  - name: SysEleven-dbl
+    host: s3.dbl.cloud.syseleven.net
+    kinds: [tcp]
+    region: dbl
+    city: Berlin
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "older region"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 174
+  - name: SysEleven-fes
+    host: s3.fes.cloud.syseleven.net
+    kinds: [tcp]
+    region: fes
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "older region"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 257

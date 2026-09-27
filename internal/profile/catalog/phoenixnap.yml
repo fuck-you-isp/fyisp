@@ -6,17 +6,20 @@ sources:
   - https://phoenixnap.com/network/speed-test
   - https://phoenixnap.com/data-center
   - https://phoenixnap.com/bare-metal-cloud
+  - https://github.com/phoenixnap/go-sdk-bmc/blob/develop/billingapi/model_location_enum.go
 notes: >-
   Official phoenixNAP speed-test hosts from the network speed-test page (speedtest/speed<site>.phoenixnap.com),
-  one per site: Phoenix, Ashburn, Atlanta, Chicago, Amsterdam, Singapore and Belgrade. The hosts serve a certificate for another name, so
-  HTTPS cannot verify: TCP 443 + ICMP only. Never
-  fetch the <site>-1gb.test files. Bare Metal Cloud also lists Seattle (SEA) and Austin (AUS), which have no
+  one per site: Phoenix, Ashburn, Atlanta, Chicago, Amsterdam, Singapore and Belgrade. The hosts serve a
+  *.phoenixnap.com certificate (the name matches) without its intermediate chain, so HTTPS cannot verify;
+  speedash's certificate also expired on 2026-05-28. TCP 443 + ICMP only. Never fetch the <site>-1gb.test
+  files. The Bare Metal Cloud API location list also has Seattle (SEA) and Austin (AUS), which have no
   speed-test host: *.phoenixnap.com is a Cloudflare wildcard, so guessed names resolve to anycast Cloudflare
-  and are useless; those two are kept with kinds: [].
+  and are useless; those two are kept with kinds: []. The other cities on the data-center page are network
+  nodes (PoPs), not hosting sites.
 targets:
   - name: phoenixNAP-phx
     host: speedtest.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: PHX
     city: Phoenix
     country: US
@@ -28,7 +31,8 @@ targets:
       tcp: true
   - name: phoenixNAP-ash
     host: speedash.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
+    notes: TLS certificate expired 2026-05-28 (and no intermediate chain); tcp/icmp only
     region: ASH
     city: Ashburn
     country: US
@@ -40,7 +44,7 @@ targets:
       tcp: true
   - name: phoenixNAP-atl
     host: speedatl.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ATL
     city: Atlanta
     country: US
@@ -52,7 +56,7 @@ targets:
       tcp: true
   - name: phoenixNAP-chi
     host: speedchi.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: CHI
     city: Chicago
     country: US
@@ -64,7 +68,7 @@ targets:
       tcp: true
   - name: phoenixNAP-nld
     host: speednld.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: NLD
     city: Amsterdam
     country: NL
@@ -76,7 +80,7 @@ targets:
       tcp: true
   - name: phoenixNAP-sgp
     host: speedsin.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: SGP
     city: Singapore
     country: SG
@@ -88,7 +92,7 @@ targets:
       tcp: true
   - name: phoenixNAP-srb
     host: speedsrb.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: SRB
     city: Belgrade
     country: RS

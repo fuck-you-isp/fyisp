@@ -5,15 +5,19 @@ category: [vps, storage]
 sources:
   - https://viettelidc.com.vn/cloud-storage
   - https://viettelidc.com.vn/
+  - https://www.speedtest.net/api/js/servers?engine=js&search=viettel%20idc
 notes: >-
-  Viettel IDC (Vietnam) runs data centres in Hanoi, Ho Chi Minh City and elsewhere. The only public
-  regional endpoint found is its S3 object storage s3-north.viettelidc.com.vn (Hanoi, AS38731; GET / is
-  a 218-byte 403). The generic name s3.viettelidc.com.vn did not answer, and no south/HCM endpoint
-  resolves.
+  Viettel IDC (Vietnam) runs data centres in the north (Hanoi: Hoa Lac, Phap Van) and the south (Ho Chi
+  Minh City, Binh Duong). The north is probed via its S3 object storage s3-north.viettelidc.com.vn
+  (Hanoi, AS38731; GET / is a 218-byte 403). No southern S3 endpoint resolves (s3-south does not exist),
+  so the south uses Viettel IDC's own Ookla speed-test server in Thuan An, Binh Duong
+  (bdg-speedtest.viettelidc.com.vn, AS38731, geo-IP Ho Chi Minh City). The Ookla daemon speaks TLS on
+  port 8080 with a valid certificate only for the *.prod.hosts.ooklaserver.net alias, so that name is
+  used; GET /hello returns 44 bytes. Never fetch the speed-test files.
 targets:
   - name: ViettelIDC-North
     host: s3-north.viettelidc.com.vn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: north
     city: Hanoi
     country: VN
@@ -25,3 +29,19 @@ targets:
       tcp: true
       https: 403
       bytes: 218
+  - name: ViettelIDC-South
+    host: bdg-speedtest.viettelidc.com.vn.prod.hosts.ooklaserver.net
+    kinds: [tcp]
+    port: 8080
+    path: /hello
+    region: south
+    city: Thuan An
+    country: VN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 44

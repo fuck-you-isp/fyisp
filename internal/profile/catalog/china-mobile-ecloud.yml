@@ -1,0 +1,492 @@
+provider: china-mobile-ecloud
+display: China Mobile eCloud
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://ecloud.10086.cn/
+  - https://github.com/rclone/rclone/blob/master/backend/s3/provider/ChinaMobile.yaml
+notes: >-
+  China Mobile's public cloud. Each resource pool has its own S3-compatible Elastic Object Storage
+  (EOS) endpoint eos-<pool>.cmecloud.cn; an anonymous GET / is a 214-byte ListAllMyBuckets
+  response. Every pool resolves to a distinct China Mobile (AS9808 and provincial AS) address, and
+  geo-IP matched the named city for every one sampled (Suzhou, Beijing, Guangzhou, Chengdu, Xi'an,
+  Changchun, Kunming, Changsha, Huainan). Most pools drop ICMP from abroad, so icmp is enabled
+  only where replies came back. Pools that are extra capacity in the same city (suzhou-2..4,
+  dongguan-2..5, chengdu-2..5 and so on) are left out. eos-qinghai-1 resolves but refused TCP, so
+  it is not listed. Expect higher loss than usual on the cross-border path.
+targets:
+  - name: CMeCloud-wuxi-1
+    host: eos-wuxi-1.cmecloud.cn
+    kinds: [tcp]
+    region: wuxi-1
+    city: Suzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-jinan-1
+    host: eos-jinan-1.cmecloud.cn
+    kinds: [tcp]
+    region: jinan-1
+    city: Jinan
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-ningbo-1
+    host: eos-ningbo-1.cmecloud.cn
+    kinds: [tcp]
+    region: ningbo-1
+    city: Hangzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-shanghai-1
+    host: eos-shanghai-1.cmecloud.cn
+    kinds: [tcp]
+    region: shanghai-1
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-zhengzhou-1
+    host: eos-zhengzhou-1.cmecloud.cn
+    kinds: [tcp]
+    region: zhengzhou-1
+    city: Zhengzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-hunan-1
+    host: eos-hunan-1.cmecloud.cn
+    kinds: [tcp]
+    region: hunan-1
+    city: Changsha
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-zhuzhou-1
+    host: eos-zhuzhou-1.cmecloud.cn
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
+    region: zhuzhou-1
+    city: Changsha
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-guangzhou-1
+    host: eos-guangzhou-1.cmecloud.cn
+    kinds: [tcp]
+    region: guangzhou-1
+    city: Guangzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-dongguan-1
+    host: eos-dongguan-1.cmecloud.cn
+    kinds: [tcp]
+    region: dongguan-1
+    city: Dongguan
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-beijing-1
+    host: eos-beijing-1.cmecloud.cn
+    kinds: [tcp]
+    region: beijing-1
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-beijing-2
+    host: eos-beijing-2.cmecloud.cn
+    kinds: [tcp]
+    region: beijing-2
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-beijing-4
+    host: eos-beijing-4.cmecloud.cn
+    kinds: [tcp]
+    region: beijing-4
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-huhehaote-1
+    host: eos-huhehaote-1.cmecloud.cn
+    kinds: [tcp]
+    region: huhehaote-1
+    city: Hohhot
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-chengdu-1
+    host: eos-chengdu-1.cmecloud.cn
+    kinds: [tcp]
+    region: chengdu-1
+    city: Chengdu
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-chongqing-1
+    host: eos-chongqing-1.cmecloud.cn
+    kinds: [tcp]
+    region: chongqing-1
+    city: Chongqing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-guiyang-1
+    host: eos-guiyang-1.cmecloud.cn
+    kinds: [tcp]
+    region: guiyang-1
+    city: Guiyang
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-xian-1
+    host: eos-xian-1.cmecloud.cn
+    kinds: [tcp]
+    region: xian-1
+    city: Xi'an
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-yunnan
+    host: eos-yunnan.cmecloud.cn
+    kinds: []
+    region: yunnan
+    city: Kunming
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to 39.130.150.16 but TCP 443 and ICMP got no answer on 2026-09-27. Kunming is
+      still measurable through CMeCloud-yunnan-2.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: CMeCloud-yunnan-2
+    host: eos-yunnan-2.cmecloud.cn
+    kinds: [tcp]
+    region: yunnan-2
+    city: Kunming
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-tianjin-1
+    host: eos-tianjin-1.cmecloud.cn
+    kinds: [tcp]
+    region: tianjin-1
+    city: Tianjin
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-jilin-1
+    host: eos-jilin-1.cmecloud.cn
+    kinds: [tcp]
+    region: jilin-1
+    city: Changchun
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-hubei-1
+    host: eos-hubei-1.cmecloud.cn
+    kinds: [tcp]
+    region: hubei-1
+    city: Xiangyang
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-jiangxi-1
+    host: eos-jiangxi-1.cmecloud.cn
+    kinds: [tcp]
+    region: jiangxi-1
+    city: Nanchang
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-gansu-1
+    host: eos-gansu-1.cmecloud.cn
+    kinds: [tcp]
+    region: gansu-1
+    city: Lanzhou
+    country: CN
+    geo: as
+    anycast: false
+    notes: >-
+      One of three GETs timed out on 2026-09-27 (cross-border path).
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-shanxi-1
+    host: eos-shanxi-1.cmecloud.cn
+    kinds: [tcp]
+    region: shanxi-1
+    city: Taiyuan
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-liaoning-1
+    host: eos-liaoning-1.cmecloud.cn
+    kinds: [tcp]
+    region: liaoning-1
+    city: Shenyang
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-hebei-1
+    host: eos-hebei-1.cmecloud.cn
+    kinds: [tcp]
+    region: hebei-1
+    city: Shijiazhuang
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-fujian-1
+    host: eos-fujian-1.cmecloud.cn
+    kinds: [tcp]
+    region: fujian-1
+    city: Xiamen
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-guangxi-1
+    host: eos-guangxi-1.cmecloud.cn
+    kinds: [tcp]
+    region: guangxi-1
+    city: Nanning
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-anhui-1
+    host: eos-anhui-1.cmecloud.cn
+    kinds: [tcp]
+    region: anhui-1
+    city: Huainan
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-xinjiang-1
+    host: eos-xinjiang-1.cmecloud.cn
+    kinds: [tcp]
+    region: xinjiang-1
+    country: CN
+    geo: as
+    anycast: false
+    notes: >-
+      Live EOS pool not in the rclone endpoint list; found by resolving eos-<province>-1. City
+      not published. One of three GETs timed out on 2026-09-27 (cross-border path).
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-hainan-1
+    host: eos-hainan-1.cmecloud.cn
+    kinds: [tcp]
+    region: hainan-1
+    country: CN
+    geo: as
+    anycast: false
+    notes: >-
+      Live EOS pool not in the rclone endpoint list; found by resolving eos-<province>-1. City
+      not published. Geo-IP says Yunfu (Guangdong), so treat the Hainan location as
+      unconfirmed.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: CMeCloud-heilongjiang-1
+    host: eos-heilongjiang-1.cmecloud.cn
+    kinds: [tcp]
+    region: heilongjiang-1
+    city: Harbin
+    country: CN
+    geo: as
+    anycast: false
+    notes: >-
+      Live EOS pool not in the rclone endpoint list; found by resolving eos-<province>-1. City
+      not published.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214

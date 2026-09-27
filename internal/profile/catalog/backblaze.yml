@@ -13,11 +13,13 @@ notes: >-
   US East (Reston), EU Central (Amsterdam), CA East (Toronto). Backblaze does not publish which US
   West data center hosts which cluster, so city is left empty for us-west-*; RTTs from northern Europe
   (158-178 ms) fit the US West coast/southwest. us-west-000 is a legacy cluster (no PTR record) but
-  still answers.
+  still answers. Re-checked 2026-09-27: no new clusters (000-010 across us-west, us-east, eu-central,
+  eu-west, ca-east, ca-central, ap-southeast), no redirects, all steady; geo-IP of Backblaze's own
+  ranges is not trusted for the us-west cities.
 targets:
   - name: Backblaze-us-west-000
     host: s3.us-west-000.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-000
     country: US
     geo: na
@@ -30,7 +32,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-west-001
     host: s3.us-west-001.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-001
     country: US
     geo: na
@@ -43,7 +45,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-west-002
     host: s3.us-west-002.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-002
     country: US
     geo: na
@@ -56,7 +58,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-west-004
     host: s3.us-west-004.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-004
     country: US
     geo: na
@@ -69,7 +71,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-east-005
     host: s3.us-east-005.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-005
     city: Reston
     country: US
@@ -83,7 +85,7 @@ targets:
       bytes: 180
   - name: Backblaze-eu-central-003
     host: s3.eu-central-003.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-003
     city: Amsterdam
     country: NL
@@ -97,7 +99,7 @@ targets:
       bytes: 180
   - name: Backblaze-ca-east-006
     host: s3.ca-east-006.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-east-006
     city: Toronto
     country: CA

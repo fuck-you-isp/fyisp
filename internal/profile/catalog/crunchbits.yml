@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: Crunchbits-Spokane
     host: lg-spo.synteq.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: spo
     city: Spokane
     country: US
@@ -27,7 +27,7 @@ targets:
       bytes: 57
   - name: Crunchbits-Dallas
     host: lg-dfw.synteq.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dfw
     city: Dallas
     country: US
@@ -41,7 +41,7 @@ targets:
       bytes: 57
   - name: Crunchbits-Valley-Forge
     host: lg-vfo.synteq.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: vfo
     city: Valley Forge
     country: US
@@ -55,7 +55,7 @@ targets:
       bytes: 57
   - name: Crunchbits-Sofia
     host: lg-sof.synteq.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sof
     city: Sofia
     country: BG

@@ -1,0 +1,103 @@
+provider: tiernet
+display: Tier.Net
+kind: cloud
+category: [vps, bare-metal, colocation]
+sources:
+  - https://www.tier.net/colocation
+notes: >-
+  Tier.Net (AS397423) lists six US data centres: Ashburn VA, Bend OR, Binghamton NY, Charlotte NC,
+  Dallas TX and Manhattan NY, and publishes looking-glass hosts lg.<site>.tier.net for five of them.
+  Dallas has no published name but lg.tx.tier.net exists with the same setup (rDNS matches, geo-IP
+  Dallas). All targets are unicast in AS397423; geo-IP and RTT from Helsinki fit each city. GET
+  /robots.txt answers a 196 B 404.
+targets:
+  - name: TierNet-Ashburn
+    host: lg.va.tier.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: va
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: TierNet-Bend
+    host: lg.or.tier.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: or
+    city: Bend
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: TierNet-Binghamton
+    host: lg.ny.tier.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: ny
+    city: Binghamton
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: TierNet-Charlotte
+    host: lg.nc.tier.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: nc
+    city: Charlotte
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: TierNet-Dallas
+    host: lg.tx.tier.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: tx
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: TierNet-Manhattan
+    host: lg.ny2.tier.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: ny2
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196

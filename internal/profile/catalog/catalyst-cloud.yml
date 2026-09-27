@@ -8,13 +8,15 @@ sources:
 notes: >-
   Catalyst Cloud (New Zealand) regions: nz-por-1 (Porirua, Wellington region) and nz-hlz-1 (Hamilton).
   Each is probed via its object-storage endpoint on port 443 (GET / returns a 70-byte 404). The
-  OpenStack APIs listen on other ports (e.g. identity on 5000). The older nz-wlg-2 name only resolves as
-  an alias of the Porirua object store and is not listed separately. Geo-IP puts both at the
+  OpenStack APIs listen on other ports (e.g. identity on 5000). Catalyst also runs a third,
+  object-storage-only replication region (nz-wlg-2, Wellington); its endpoint name resolves to the same
+  address as the Porirua object store, so it cannot be measured on its own and is an unreachable
+  placeholder. Geo-IP puts both at the
   registrant's address (Cambridge NZ); rDNS and RTT match their regions.
 targets:
   - name: Catalyst-nz-por-1
     host: object-storage.nz-por-1.catalystcloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nz-por-1
     city: Porirua
     country: NZ
@@ -28,7 +30,7 @@ targets:
       bytes: 70
   - name: Catalyst-nz-hlz-1
     host: object-storage.nz-hlz-1.catalystcloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nz-hlz-1
     city: Hamilton
     country: NZ
@@ -40,3 +42,19 @@ targets:
       tcp: true
       https: 404
       bytes: 70
+  - name: Catalyst-nz-wlg-2
+    host: object-storage.nz-wlg-2.catalystcloud.io
+    kinds: []
+    region: nz-wlg-2
+    city: Wellington
+    country: NZ
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: storage-only replication region; its endpoint is an alias of the nz-por-1 address (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

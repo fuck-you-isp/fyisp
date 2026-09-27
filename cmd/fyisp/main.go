@@ -1,5 +1,6 @@
 // Command fyisp is a single-binary internet quality monitor: it probes
-// hyperscalers and popular services over HTTPS, TCP and ICMP, keeps every
+// hyperscalers and popular services with TCP connects (and the network path
+// to them with ICMP), keeps every
 // sample for up to 90 days in a local SQLite file, serves a dashboard, and can
 // share a redacted read-only view over a Cloudflare quick tunnel.
 package main
@@ -25,7 +26,8 @@ import (
 	"time"
 
 	// Embedded CA roots, used only when the OS has none (scratch image,
-	// minimal systems), so HTTPS probes and the tunnel still work.
+	// minimal systems), so the tunnel (and HTTPS probes of --config files)
+	// still work.
 	_ "golang.org/x/crypto/x509roots/fallback"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
@@ -50,9 +52,10 @@ var version = "dev"
 // (<0.1% of a core). The soft memory limit is a safety net: steady state
 // is well below it, and it only makes the GC work harder when a burst of
 // large dashboard queries would otherwise let the heap double. It grows
-// with the target count (each target keeps an HTTPS connection, ~60 KB
-// live): a fixed 96 MB limit made an 800-target run collect every second
-// and spend 60% of its CPU in the GC.
+// with the target count (a target probed over HTTPS keeps a connection,
+// ~60 KB live; shipped profiles use TCP only, which needs far less): a fixed
+// 96 MB limit made an 800-target HTTPS run collect every second and spend
+// 60% of its CPU in the GC.
 const (
 	defaultGCPercent     = 50
 	baseMemoryLimit      = 96 << 20

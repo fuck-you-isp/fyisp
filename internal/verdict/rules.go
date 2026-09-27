@@ -13,9 +13,17 @@ import (
 
 // Rules, evaluated every 5s over the last 60s of samples (not-measured gaps
 // ignored). A target (or a layer) is unhealthy when it loses ≥ 20% of its
-// probes, or when the median RTT of one of its kinds (over ≥ 3 successes)
-// spikes. A kind that never succeeded is ignored when another kind of the
-// same target did (e.g. a target that blocks ICMP).
+// probes and at least 2 of them, or when the median RTT of one of its kinds
+// (over ≥ 3 successes) spikes. A kind that never succeeded is ignored when
+// another kind of the same target did (e.g. a target that blocks ICMP).
+//
+// Why at least 2 lost: services are probed with a TCP connect only, every
+// 15s by default, so a window holds 4 of their samples and a single lost
+// SYN would be 25% loss. With a thousand targets some connect somewhere
+// always times out once; that is noise, not an outage. Two in a minute
+// (or 20% of more frequent probes) is not. The path layers are probed
+// every second (gateway, ISP edge) or 16 times a minute (anycast), where
+// 20% is already 4 samples or more, so the rule changes nothing there.
 //
 // Latency spikes. When Options.Baseline knows the series' long-term normal
 // (7 days, same UTC hour of day once 6 such hours exist; see
@@ -75,7 +83,8 @@ import (
 //     unhealthy ignoring DNS failures, with at least 3 of them and spanning
 //     more than one group (one group failing alone is that service's
 //     problem).
-//  5. dns: ≥ 30% of the internet targets lose ≥ 20% of probes to DNS.
+//  5. dns: ≥ 30% of the internet targets lose ≥ 20% of probes (and at
+//     least 2) to DNS.
 //  6. service: some internet targets are unhealthy.
 //  7. ok.
 //
@@ -104,6 +113,7 @@ import (
 // (loss < 10%) is not held back.
 const (
 	lossBad            = 0.2
+	minTargetLost      = 2 // lost samples a target needs before its loss counts (rules 4-6 too)
 	spikeFactor        = 3.0
 	spikeMarginMs      = 50.0
 	upstreamShare      = 0.5
@@ -240,10 +250,10 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 	}
 	var badUp, dnsBad, bad []*tstat
 	for _, t := range inet {
-		if t.lossNoDNS() >= lossBad || t.spike {
+		if (t.lost-t.dns >= minTargetLost && t.lossNoDNS() >= lossBad) || t.spike {
 			badUp = append(badUp, t)
 		}
-		if float64(t.dns) >= lossBad*float64(t.n) {
+		if t.dns >= minTargetLost && float64(t.dns) >= lossBad*float64(t.n) {
 			dnsBad = append(dnsBad, t)
 		}
 		if t.unhealthy() {

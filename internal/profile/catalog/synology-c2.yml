@@ -6,14 +6,16 @@ sources:
   - https://kb.synology.com/en-us/C2/tutorial/C2_Object_Storage_API
   - https://c2.synology.com/en-global/object-storage/overview
 notes: >-
-  Every Synology C2 Object Storage region endpoint <region>.s3.synologyc2.net (eu-001..004,
-  us-001..003, tw-001). Anonymous GET / returns a 404 body (70 B). The regions are storage clusters in
+  Every Synology C2 Object Storage region endpoint <region>.s3.synologyc2.net (eu-001..005,
+  us-001..004, tw-001; eu-005 and us-004 were found by DNS on 2026-09-27, the KB only shows eu-001 and
+  us-001 as examples, and eu/us-006..010, tw-002..004 and other country prefixes are NXDOMAIN). Anonymous GET / returns a 404 body (70 B). The regions are storage clusters in
   three data centers: EU (Frankfurt), US (Seattle) and Taiwan; RTTs matched (all EU ~21 ms from
-  Helsinki, all US ~157 ms, like other Seattle hosts). tw-001 (HiNet addresses) does not answer ICMP.
+  Helsinki, US 157-170 ms, like other Seattle hosts; eu-005 is AS44066 firstcolo Frankfurt, us-004
+  geolocates to Seattle). tw-001 (HiNet addresses) does not answer ICMP.
 targets:
   - name: SynologyC2-eu-001
     host: eu-001.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-001
     city: Frankfurt
     country: DE
@@ -27,7 +29,7 @@ targets:
       bytes: 70
   - name: SynologyC2-eu-002
     host: eu-002.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-002
     city: Frankfurt
     country: DE
@@ -41,7 +43,7 @@ targets:
       bytes: 70
   - name: SynologyC2-eu-003
     host: eu-003.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-003
     city: Frankfurt
     country: DE
@@ -55,8 +57,22 @@ targets:
       bytes: 70
   - name: SynologyC2-eu-004
     host: eu-004.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-004
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-eu-005
+    host: eu-005.s3.synologyc2.net
+    kinds: [tcp]
+    region: eu-005
     city: Frankfurt
     country: DE
     geo: eu
@@ -69,7 +85,7 @@ targets:
       bytes: 70
   - name: SynologyC2-us-001
     host: us-001.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-001
     city: Seattle
     country: US
@@ -83,7 +99,7 @@ targets:
       bytes: 70
   - name: SynologyC2-us-002
     host: us-002.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-002
     city: Seattle
     country: US
@@ -97,8 +113,22 @@ targets:
       bytes: 70
   - name: SynologyC2-us-003
     host: us-003.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-003
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-us-004
+    host: us-004.s3.synologyc2.net
+    kinds: [tcp]
+    region: us-004
     city: Seattle
     country: US
     geo: na
@@ -111,7 +141,7 @@ targets:
       bytes: 70
   - name: SynologyC2-tw-001
     host: tw-001.s3.synologyc2.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: tw-001
     country: TW
     geo: as

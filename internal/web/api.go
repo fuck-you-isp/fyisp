@@ -206,13 +206,6 @@ type panelSeries struct {
 	interval time.Duration
 }
 
-func kindsOf(t model.Target) []model.ProbeKind {
-	if len(t.Kinds) > 0 {
-		return t.Kinds
-	}
-	return []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
-}
-
 func intervalOf(t model.Target, k model.ProbeKind) time.Duration {
 	iv := t.Interval
 	if iv <= 0 {
@@ -247,7 +240,7 @@ func resolveGroup(p *model.Profile, id string) (model.Group, []panelSeries, time
 		if t.Group != id {
 			continue
 		}
-		for _, k := range kindsOf(t) {
+		for _, k := range t.ProbeKinds() {
 			iv := intervalOf(t, k)
 			maxIv = max(maxIv, iv)
 			out = append(out, panelSeries{key: model.SeriesKey{Target: t.Name, Kind: k}, interval: iv})
@@ -735,7 +728,7 @@ func buildProfile(p *model.Profile) profileJSON {
 		titles[g.ID] = g.Title
 	}
 	for _, t := range p.Targets {
-		ts := targetSummary{Name: t.Name, Group: t.Group, Interval: intervalOf(t, model.KindHTTPS).Milliseconds()}
+		ts := targetSummary{Name: t.Name, Group: t.Group, Interval: intervalOf(t, model.KindTCP).Milliseconds()}
 		switch t.Layer {
 		case model.LayerGateway, model.LayerEdge, model.LayerAnycast:
 			ts.Layer = t.Layer
@@ -744,7 +737,7 @@ func buildProfile(p *model.Profile) profileJSON {
 			ts.Provider, ts.ProviderTitle = providerOf(t, titles)
 			ts.ProviderKind, ts.City, ts.Country, ts.Geo = t.ProviderKind, t.City, t.Country, t.Geo
 		}
-		for _, k := range kindsOf(t) {
+		for _, k := range t.ProbeKinds() {
 			ts.Kinds = append(ts.Kinds, k.String())
 		}
 		out.Targets = append(out.Targets, ts)

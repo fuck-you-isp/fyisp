@@ -6,15 +6,18 @@ sources:
   - https://www.latitude.sh/locations
   - https://www.latitude.sh/docs/storage/object-storage
 notes: >-
-  Latitude.sh publishes no per-site speed-test or looking-glass host (lg.latitude.sh no longer resolves),
-  so the endpoints are the regional high-performance object-storage S3 APIs objects.<site>.storage.sh
-  (documented format; Latitude-owned 152.236.0.0/16). An unauthenticated GET / returns a tiny S3 error.
-  Only NYC, ASH, CHI, LAX2 and LON2 have such an endpoint today; the other 21 of the 26 listed sites are
-  kept with kinds: [] (the objects.<site>.storage.sh name does not resolve).
+  Latitude.sh publishes no per-site speed-test or ping host. lg.latitude.sh is a hyperglass looking glass
+  behind Cloudflare that runs queries from Latitude routers; it offers nothing to probe. The endpoints are
+  the regional high-performance object-storage S3 APIs objects.<region>.storage.sh (documented format;
+  Latitude-owned 152.236.0.0/16, several round-robin IPs per region). An unauthenticated GET / returns a
+  tiny S3 error. Such an endpoint exists for NYC, ASH, CHI, LAX2, LON2 and Tokyo (objects.tyo.storage.sh;
+  Latitude does not say whether it sits in TYO3 or TYO4, so it is its own Latitude-tyo target). That
+  covers 7 of the 26 listed sites counting both Tokyo sites; the other 19 are kept with kinds: [] (no
+  objects.<site>.storage.sh name resolves for them, checked against 1.1.1.1 on 2026-09-27).
 targets:
   - name: Latitude-ash
     host: objects.ash.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ASH
     city: Ashburn
     country: US
@@ -28,7 +31,7 @@ targets:
       bytes: 180
   - name: Latitude-chi
     host: objects.chi.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: CHI
     city: Chicago
     country: US
@@ -70,7 +73,7 @@ targets:
       tcp: false
   - name: Latitude-lax2
     host: objects.lax2.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LAX2
     city: Los Angeles
     country: US
@@ -98,7 +101,7 @@ targets:
       tcp: false
   - name: Latitude-nyc
     host: objects.nyc.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: NYC
     city: New York
     country: US
@@ -238,7 +241,7 @@ targets:
       tcp: false
   - name: Latitude-lon2
     host: objects.lon2.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LON2
     city: London
     country: GB
@@ -301,7 +304,7 @@ targets:
     geo: as
     anycast: false
     tags: [unreachable]
-    notes: no per-site endpoint published (no speed-test host; objects.tyo3.storage.sh does not resolve)
+    notes: objects.tyo3.storage.sh does not resolve; Tokyo is measured by Latitude-tyo (site not published)
     verified:
       date: 2026-09-27
       icmp: false
@@ -315,11 +318,26 @@ targets:
     geo: as
     anycast: false
     tags: [unreachable]
-    notes: no per-site endpoint published (no speed-test host; objects.tyo4.storage.sh does not resolve)
+    notes: objects.tyo4.storage.sh does not resolve; Tokyo is measured by Latitude-tyo (site not published)
     verified:
       date: 2026-09-27
       icmp: false
       tcp: false
+  - name: Latitude-tyo
+    host: objects.tyo.storage.sh
+    kinds: [tcp]
+    region: TYO
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    notes: Tokyo high-performance object storage; Latitude does not say whether it is in TYO3 or TYO4
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 180
   - name: Latitude-sgp
     host: objects.sgp.storage.sh
     kinds: []

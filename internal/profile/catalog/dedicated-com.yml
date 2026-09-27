@@ -1,0 +1,119 @@
+provider: dedicated-com
+display: Dedicated.com
+kind: cloud
+category: [bare-metal, colocation]
+sources:
+  - https://dedicated.com/
+  - https://dedicated.com/atlanta-datacenter
+notes: >-
+  Dedicated.com (AS63018) lists seven data centres: Atlanta, Chicago, Dallas, Los Angeles, Montreal,
+  New York and Seattle. Each data-centre page publishes a looking-glass host lg.<site>.dedicated.com;
+  those are the targets (unicast in AS63018; geo-IP and RTT from Helsinki fit each city; Montreal
+  geolocates to suburban Pointe-Claire). GET /robots.txt answers a 138 B 302 to
+  looking-glass.dedicated.com (not followed).
+targets:
+  - name: DedicatedCom-Atlanta
+    host: lg.atl.dedicated.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 138
+  - name: DedicatedCom-Chicago
+    host: lg.chi.dedicated.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 138
+  - name: DedicatedCom-Dallas
+    host: lg.dal.dedicated.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 138
+  - name: DedicatedCom-LosAngeles
+    host: lg.la.dedicated.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: la
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 138
+  - name: DedicatedCom-Montreal
+    host: lg.mtl.dedicated.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: mtl
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 138
+  - name: DedicatedCom-NewYork
+    host: lg.nyc.dedicated.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: nyc
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 138
+  - name: DedicatedCom-Seattle
+    host: lg.sea.dedicated.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 138

@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: Hetzner-Falkenstein
     host: fsn1-speed.hetzner.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fsn1
     city: Falkenstein
     country: DE
@@ -25,7 +25,7 @@ targets:
       bytes: 324
   - name: Hetzner-Nuremberg
     host: nbg1-speed.hetzner.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nbg1
     city: Nuremberg
     country: DE
@@ -39,7 +39,7 @@ targets:
       bytes: 324
   - name: Hetzner-Helsinki
     host: hel1-speed.hetzner.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hel1
     city: Helsinki
     country: FI
@@ -53,7 +53,7 @@ targets:
       bytes: 324
   - name: Hetzner-Ashburn
     host: ash-speed.hetzner.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ash
     city: Ashburn
     country: US
@@ -67,7 +67,7 @@ targets:
       bytes: 323
   - name: Hetzner-Hillsboro
     host: hil-speed.hetzner.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hil
     city: Hillsboro
     country: US
@@ -81,7 +81,7 @@ targets:
       bytes: 323
   - name: Hetzner-Singapore
     host: sin-speed.hetzner.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sin
     city: Singapore
     country: SG

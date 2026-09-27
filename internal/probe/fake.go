@@ -40,7 +40,7 @@ func (f *Fake) Run(ctx context.Context, p *model.Profile, sink model.Sink) error
 				iv = 15 * time.Second
 			}
 			base := 5 + float64(i%30)*5 // ms
-			for _, k := range kindsOf(tg) {
+			for _, k := range tg.ProbeKinds() {
 				kiv := iv
 				if k == model.KindICMP {
 					kiv = iv / 3
@@ -60,11 +60,4 @@ func (f *Fake) Run(ctx context.Context, p *model.Profile, sink model.Sink) error
 			}
 		}
 	}
-}
-
-func kindsOf(t model.Target) []model.ProbeKind {
-	if len(t.Kinds) > 0 {
-		return t.Kinds
-	}
-	return []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
 }

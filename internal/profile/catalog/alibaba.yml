@@ -5,6 +5,8 @@ category: [storage]
 sources:
   - https://www.alibabacloud.com/help/en/oss/user-guide/regions-and-endpoints
   - https://www.alibabacloud.com/help/en/ecs/user-guide/regions-and-zones
+  - https://api.aliyun.com/meta/v1/products/Ecs/endpoints.json?language=EN_US
+  - https://api.aliyun.com/meta/v1/products/Oss/endpoints.json?language=EN_US
 notes: >-
   Alibaba publishes no ping host, so each region uses the public OSS endpoint
   oss-<region>.aliyuncs.com. An unauthenticated GET / returns 403 AccessDenied
@@ -21,17 +23,24 @@ notes: >-
   than mainland China from here because of routing, but each has its own IP. Gaps:
   ap-south-1 (Mumbai) and ap-southeast-2 (Sydney) were closed and are NXDOMAIN. The
   finance-cloud endpoints resolve to private 100.64/10 addresses and are left out.
-  oss-eu-west-3 resolves and answers at 28 ms but is not in the docs yet, likely the
-  Netherlands region announced for October 2026. Add it once it is listed. One GET
-  per 15 s is negligible.
-  2026-09-27 audit: the OSS table and the ECS regions-and-zones page still list
-  the same regions, so nothing was added. oss-eu-west-3 (403, 28 ms) is still
-  not documented. oss-cn-zhengzhou-jva (a Zhengzhou joint-venture region,
-  216 ms) answers too but is not on either page, so it is left out.
+  One GET per 15 s is negligible.
+  2026-09-27 audit (second pass): Alibaba's OpenAPI endpoint metadata
+  (api.aliyun.com/meta/v1/products/Ecs|Vpc/endpoints.json) now lists three
+  regions missing here, all added: eu-west-3 Netherlands (Amsterdam, 28 ms),
+  us-southeast-1 US (Atlanta, 123 ms) and cn-zhengzhou-jva (Zhengzhou, China
+  Unicom joint venture, 211 ms, China Unicom Henan address). Their OSS hosts
+  answer the same 403. GeoDNS check: every OSS host was resolved through
+  8.8.8.8 with EDNS client subnets from Helsinki, China Telecom, China Unicom,
+  China Mobile, US, Hong Kong, Singapore and Brazil; all return the same
+  single IP to every client, so there is no overseas or Hong Kong front.
+  Still left out: the finance regions, cn-north-2-gov-1 (Beijing government
+  cloud, restricted) and cn-heyuan-acdr-1 / cn-wulanchabu-gic-1 (special
+  industry regions; their OSS hosts are NXDOMAIN). Mainland paths drop the
+  odd ping (4/5 on a few regions); TCP and HTTPS were clean.
 targets:
   - name: Alibaba-cn-hangzhou
     host: oss-cn-hangzhou.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-hangzhou
     city: Hangzhou
     country: CN
@@ -46,7 +55,7 @@ targets:
       bytes: 361
   - name: Alibaba-cn-shanghai
     host: oss-cn-shanghai.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-shanghai
     city: Shanghai
     country: CN
@@ -61,7 +70,7 @@ targets:
       bytes: 361
   - name: Alibaba-cn-nanjing
     host: oss-cn-nanjing.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-nanjing
     city: Nanjing
     country: CN
@@ -76,7 +85,7 @@ targets:
       bytes: 360
   - name: Alibaba-cn-qingdao
     host: oss-cn-qingdao.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-qingdao
     city: Qingdao
     country: CN
@@ -91,7 +100,7 @@ targets:
       bytes: 360
   - name: Alibaba-cn-beijing
     host: oss-cn-beijing.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-beijing
     city: Beijing
     country: CN
@@ -106,7 +115,7 @@ targets:
       bytes: 360
   - name: Alibaba-cn-zhangjiakou
     host: oss-cn-zhangjiakou.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-zhangjiakou
     city: Zhangjiakou
     country: CN
@@ -121,7 +130,7 @@ targets:
       bytes: 364
   - name: Alibaba-cn-huhehaote
     host: oss-cn-huhehaote.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-huhehaote
     city: Hohhot
     country: CN
@@ -136,7 +145,7 @@ targets:
       bytes: 362
   - name: Alibaba-cn-wulanchabu
     host: oss-cn-wulanchabu.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-wulanchabu
     city: Ulanqab
     country: CN
@@ -151,7 +160,7 @@ targets:
       bytes: 363
   - name: Alibaba-cn-shenzhen
     host: oss-cn-shenzhen.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-shenzhen
     city: Shenzhen
     country: CN
@@ -166,7 +175,7 @@ targets:
       bytes: 361
   - name: Alibaba-cn-heyuan
     host: oss-cn-heyuan.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-heyuan
     city: Heyuan
     country: CN
@@ -181,7 +190,7 @@ targets:
       bytes: 359
   - name: Alibaba-cn-guangzhou
     host: oss-cn-guangzhou.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-guangzhou
     city: Guangzhou
     country: CN
@@ -196,7 +205,7 @@ targets:
       bytes: 362
   - name: Alibaba-cn-chengdu
     host: oss-cn-chengdu.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-chengdu
     city: Chengdu
     country: CN
@@ -211,7 +220,7 @@ targets:
       bytes: 360
   - name: Alibaba-cn-zhongwei
     host: oss-cn-zhongwei.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-zhongwei
     city: Zhongwei
     country: CN
@@ -226,7 +235,8 @@ targets:
       bytes: 367
   - name: Alibaba-cn-fuzhou
     host: oss-cn-fuzhou.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: cn-fuzhou
     city: Fuzhou
     country: CN
@@ -241,7 +251,7 @@ targets:
       bytes: 359
   - name: Alibaba-cn-wuhan-lr
     host: oss-cn-wuhan-lr.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-wuhan-lr
     city: Wuhan
     country: CN
@@ -256,7 +266,7 @@ targets:
       bytes: 361
   - name: Alibaba-cn-hongkong
     host: oss-cn-hongkong.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-hongkong
     city: Hong Kong
     country: HK
@@ -270,7 +280,7 @@ targets:
       bytes: 361
   - name: Alibaba-ap-northeast-1
     host: oss-ap-northeast-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-northeast-1
     city: Tokyo
     country: JP
@@ -284,7 +294,7 @@ targets:
       bytes: 370
   - name: Alibaba-ap-northeast-2
     host: oss-ap-northeast-2.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-northeast-2
     city: Seoul
     country: KR
@@ -298,7 +308,7 @@ targets:
       bytes: 370
   - name: Alibaba-ap-southeast-1
     host: oss-ap-southeast-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-1
     city: Singapore
     country: SG
@@ -312,7 +322,7 @@ targets:
       bytes: 370
   - name: Alibaba-ap-southeast-3
     host: oss-ap-southeast-3.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-3
     city: Kuala Lumpur
     country: MY
@@ -326,7 +336,7 @@ targets:
       bytes: 370
   - name: Alibaba-ap-southeast-5
     host: oss-ap-southeast-5.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-5
     city: Jakarta
     country: ID
@@ -340,7 +350,7 @@ targets:
       bytes: 370
   - name: Alibaba-ap-southeast-6
     host: oss-ap-southeast-6.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-6
     city: Manila
     country: PH
@@ -354,7 +364,7 @@ targets:
       bytes: 370
   - name: Alibaba-ap-southeast-7
     host: oss-ap-southeast-7.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-7
     city: Bangkok
     country: TH
@@ -368,7 +378,7 @@ targets:
       bytes: 370
   - name: Alibaba-ap-southeast-8
     host: oss-ap-southeast-8.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-8
     city: Johor
     country: MY
@@ -382,7 +392,7 @@ targets:
       bytes: 370
   - name: Alibaba-sa-east-1
     host: oss-sa-east-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-east-1
     city: Sao Paulo
     country: BR
@@ -396,7 +406,7 @@ targets:
       bytes: 365
   - name: Alibaba-eu-central-1
     host: oss-eu-central-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-1
     city: Frankfurt
     country: DE
@@ -410,7 +420,7 @@ targets:
       bytes: 368
   - name: Alibaba-eu-west-1
     host: oss-eu-west-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-1
     city: London
     country: GB
@@ -424,7 +434,7 @@ targets:
       bytes: 365
   - name: Alibaba-eu-west-2
     host: oss-eu-west-2.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-2
     city: Paris
     country: FR
@@ -438,7 +448,7 @@ targets:
       bytes: 365
   - name: Alibaba-us-west-1
     host: oss-us-west-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-1
     city: Silicon Valley
     country: US
@@ -452,7 +462,7 @@ targets:
       bytes: 365
   - name: Alibaba-us-east-1
     host: oss-us-east-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-1
     city: Virginia
     country: US
@@ -467,7 +477,7 @@ targets:
   # Alibaba publishes only "Mexico" for this region
   - name: Alibaba-na-south-1
     host: oss-na-south-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: na-south-1
     country: MX
     geo: na
@@ -480,7 +490,7 @@ targets:
       bytes: 366
   - name: Alibaba-me-east-1
     host: oss-me-east-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-east-1
     city: Dubai
     country: AE
@@ -494,7 +504,7 @@ targets:
       bytes: 365
   - name: Alibaba-me-central-1
     host: oss-me-central-1.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-central-1
     city: Riyadh
     country: SA
@@ -506,3 +516,46 @@ targets:
       tcp: true
       https: 403
       bytes: 368
+  - name: Alibaba-cn-zhengzhou-jva
+    host: oss-cn-zhengzhou-jva.aliyuncs.com
+    kinds: [tcp]
+    region: cn-zhengzhou-jva
+    city: Zhengzhou
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 366
+  - name: Alibaba-eu-west-3
+    host: oss-eu-west-3.aliyuncs.com
+    kinds: [tcp]
+    region: eu-west-3
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 365
+  - name: Alibaba-us-southeast-1
+    host: oss-us-southeast-1.aliyuncs.com
+    kinds: [tcp]
+    region: us-southeast-1
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 370

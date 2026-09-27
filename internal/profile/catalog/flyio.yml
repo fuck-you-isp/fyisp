@@ -15,11 +15,19 @@ notes: >-
   the NetActuate/CacheFly upstream; geo-IP matched each region and RTTs are plausible) and answer ICMP and
   TCP 443, but TLS there uses a private CA, so https is not recorded. They are not published as latency
   test hosts; the load (1 TCP connect + 3 pings per 15 s) is tiny. Region list: 18 regions from the
-  public api.machines.dev/v1/platform/regions (bom is marked deprecated but still has a gateway).
+  public api.machines.dev/v1/platform/regions; the docs page lists 17 (bom is deprecated in the API and
+  gone from the docs, but its gateway still answers, so Fly-bom stays measurable with tags: [deprecated]).
+  Re-audited 2026-09-27: no better per-region endpoint exists. *.fly.dev, api.machines.dev, api.fly.io and
+  registry.fly.io are all anycast, and _region.<code>.internal only resolves inside 6PN. The gateways are
+  kept because they are the only in-region handles and every one sits where claimed: rDNS gw-nac-<site>
+  or geo-IP (CacheFly AS30081 / NetActuate AS36236) matches the region, RTTs agree with other providers'
+  hosts in the same city, and 5/5 pings plus 3/3 TCP connects succeeded for all 18. Caveat: the API marks
+  arn, ewr, gru, jnb and bom as gateway_available: false, so those five may disappear without notice; if
+  one goes NXDOMAIN, set kinds: [] and tags: [unreachable].
 targets:
   - name: Fly-anycast
     host: debug.fly.dev
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     verified:
@@ -30,7 +38,7 @@ targets:
       bytes: 548
   - name: Fly-ams
     host: ams1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ams
     city: Amsterdam
     country: NL
@@ -42,7 +50,7 @@ targets:
       tcp: true
   - name: Fly-arn
     host: arn1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: arn
     city: Stockholm
     country: SE
@@ -54,7 +62,7 @@ targets:
       tcp: true
   - name: Fly-cdg
     host: cdg1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: cdg
     city: Paris
     country: FR
@@ -66,7 +74,7 @@ targets:
       tcp: true
   - name: Fly-fra
     host: fra1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: fra
     city: Frankfurt
     country: DE
@@ -78,7 +86,7 @@ targets:
       tcp: true
   - name: Fly-lhr
     host: lhr1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: lhr
     city: London
     country: GB
@@ -90,7 +98,7 @@ targets:
       tcp: true
   - name: Fly-iad
     host: iad1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: iad
     city: Ashburn
     country: US
@@ -102,7 +110,7 @@ targets:
       tcp: true
   - name: Fly-ewr
     host: ewr1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ewr
     city: Secaucus
     country: US
@@ -114,7 +122,7 @@ targets:
       tcp: true
   - name: Fly-ord
     host: ord1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ord
     city: Chicago
     country: US
@@ -126,7 +134,7 @@ targets:
       tcp: true
   - name: Fly-dfw
     host: dfw1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: dfw
     city: Dallas
     country: US
@@ -138,7 +146,7 @@ targets:
       tcp: true
   - name: Fly-lax
     host: lax1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: lax
     city: Los Angeles
     country: US
@@ -150,7 +158,7 @@ targets:
       tcp: true
   - name: Fly-sjc
     host: sjc1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: sjc
     city: San Jose
     country: US
@@ -162,7 +170,7 @@ targets:
       tcp: true
   - name: Fly-yyz
     host: yyz2.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: yyz
     city: Toronto
     country: CA
@@ -174,7 +182,7 @@ targets:
       tcp: true
   - name: Fly-gru
     host: gru1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: gru
     city: Sao Paulo
     country: BR
@@ -186,7 +194,7 @@ targets:
       tcp: true
   - name: Fly-jnb
     host: jnb1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: jnb
     city: Johannesburg
     country: ZA
@@ -198,19 +206,20 @@ targets:
       tcp: true
   - name: Fly-bom
     host: bom1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: bom
     city: Mumbai
     country: IN
     geo: as
     anycast: false
+    tags: [deprecated]
     verified:
       date: 2026-09-27
       icmp: true
       tcp: true
   - name: Fly-sin
     host: sin1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: sin
     city: Singapore
     country: SG
@@ -222,7 +231,7 @@ targets:
       tcp: true
   - name: Fly-nrt
     host: nrt1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: nrt
     city: Tokyo
     country: JP
@@ -234,7 +243,7 @@ targets:
       tcp: true
   - name: Fly-syd
     host: syd1.gateway.6pn.dev
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: syd
     city: Sydney
     country: AU

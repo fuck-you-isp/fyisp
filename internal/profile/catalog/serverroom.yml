@@ -1,0 +1,90 @@
+provider: serverroom
+display: Server Room
+kind: cloud
+category: [bare-metal]
+sources:
+  - https://www.serverroom.net/datacenters
+notes: >-
+  Server Room (Data Room, Inc., AS19624) rents dedicated servers from five sites: New York, Miami,
+  San Francisco, Amsterdam and Bucharest. Its homepage publishes speed-test hosts
+  speedtest-<site>.serverroom.net (ny, mia, ams, buc); speedtest-sf exists with the same setup and is
+  used for San Francisco. Unicast, valid TLS; addresses are in AS19624 or its Cogent-assigned ranges
+  (geo-IP for Cogent space is imprecise, e.g. Miami shows New York, but RTT from Helsinki separates
+  them: NY 103 ms, Miami 148 ms, SF 163 ms). Some PTR records are stale customer names. GET /robots.txt
+  answers a 153 B 404.
+targets:
+  - name: ServerRoom-NewYork
+    host: speedtest-ny.serverroom.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: ny
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
+  - name: ServerRoom-Miami
+    host: speedtest-mia.serverroom.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: mia
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
+  - name: ServerRoom-SanFrancisco
+    host: speedtest-sf.serverroom.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: sf
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
+  - name: ServerRoom-Amsterdam
+    host: speedtest-ams.serverroom.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
+  - name: ServerRoom-Bucharest
+    host: speedtest-buc.serverroom.net
+    kinds: [tcp]
+    path: /robots.txt
+    region: buc
+    city: Bucharest
+    country: RO
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153

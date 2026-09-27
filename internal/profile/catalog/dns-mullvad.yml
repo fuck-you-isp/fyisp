@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: mullvad-doh
     host: dns.mullvad.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]

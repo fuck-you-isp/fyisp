@@ -152,7 +152,7 @@ func (s *server) baselines(ctx context.Context, group string, when time.Time) (*
 	if group == "" {
 		if p := s.d.Profile(); p != nil {
 			for _, t := range p.Targets {
-				for _, k := range kindsOf(t) {
+				for _, k := range t.ProbeKinds() {
 					series = append(series, panelSeries{key: model.SeriesKey{Target: t.Name, Kind: k}})
 				}
 			}

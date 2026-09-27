@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Xbox-auth
     host: user.auth.xboxlive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     country: US
     geo: na
@@ -31,7 +31,7 @@ targets:
       bytes: 315
   - name: Xbox-peoplehub
     host: peoplehub.xboxlive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     country: US
     geo: na
@@ -45,7 +45,7 @@ targets:
       bytes: 315
   - name: Xbox-cloud-gaming
     host: xgpuweb.gssv-play-prod.xboxlive.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     country: US
     geo: na

@@ -21,7 +21,7 @@ notes: >-
 targets:
   - name: CDN-Cloudflare
     host: www.cloudflare.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/cdn-cgi/trace"
     anycast: true
     tags: [edge-trace]
@@ -35,7 +35,7 @@ targets:
       bytes: 207
   - name: CDN-Cloudflare-speedtest
     host: speed.cloudflare.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/__down?bytes=0"
     anycast: true
     tags: [speedtest]

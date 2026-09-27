@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: cleanbrowsing-doh
     host: doh.cleanbrowsing.org
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/doh/security-filter/?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, filtering]
@@ -24,7 +24,7 @@ targets:
       bytes: 65
   - name: cleanbrowsing-dns
     host: 185.228.168.9
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: [filtering]
     notes: >-

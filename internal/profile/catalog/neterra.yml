@@ -1,0 +1,26 @@
+provider: neterra
+display: Neterra
+kind: cloud
+category: [vps, colocation]
+sources:
+  - https://www.neterra.net/
+  - https://speedtest.neterra.net/
+notes: >-
+  Neterra (AS34224) is a Bulgarian carrier running Neterra.Cloud and its data centre in Sofia. Its public
+  speed-test host speedtest.neterra.net answers GET / with a 10 B body and a valid certificate, answers
+  ping, and geolocates to Sofia (48 ms from Helsinki).
+targets:
+  - name: Neterra-Sofia
+    host: speedtest.neterra.net
+    kinds: [tcp]
+    region: sof
+    city: Sofia
+    country: BG
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 10

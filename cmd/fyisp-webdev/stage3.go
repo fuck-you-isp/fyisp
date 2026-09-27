@@ -157,7 +157,7 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px;border-bott
 		fmt.Fprintf(&b, `<tr><td>%s – %s</td><td><span class="tag">%s</span></td><td>%s</td><td>%.0f%%</td></tr>`,
 			tf(in.Start), end, esc(string(in.Kind)), esc(in.Summary), in.PeakLoss*100)
 	}
-	b.WriteString(`</table><h2>Latency (AWS-us-east-1, HTTPS)</h2>`)
+	b.WriteString(`</table><h2>Latency (AWS-us-east-1, TCP)</h2>`)
 	b.WriteString(f.sparkline(ctx, o.From, o.To))
 	b.WriteString(`<h2>Notes</h2><ul>`)
 	notes, _ := f.notes.Annotations(ctx, o.From, o.To, o.Redact)
@@ -177,7 +177,7 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px;border-bott
 
 // sparkline draws one series as an inline SVG polyline.
 func (f *fakeReports) sparkline(ctx context.Context, from, to time.Time) string {
-	res, err := f.st.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{{Target: "AWS-us-east-1", Kind: model.KindHTTPS}}, From: from, To: to, MaxPoints: 300})
+	res, err := f.st.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{{Target: "AWS-us-east-1", Kind: model.KindTCP}}, From: from, To: to, MaxPoints: 300})
 	if err != nil || len(res.Series) == 0 {
 		return `<p class="m">No data.</p>`
 	}
@@ -278,7 +278,7 @@ func newFakeBaselines(ctx context.Context, st store.Reader, p *model.Profile, no
 		return fb
 	}
 	for _, t := range p.Targets {
-		for _, k := range kindsOf(t) {
+		for _, k := range t.ProbeKinds() {
 			key := model.SeriesKey{Target: t.Name, Kind: k}
 			var rtts []float64
 			var lost int64
@@ -309,7 +309,7 @@ func (f *fakeBaselines) Get(key model.SeriesKey, _ time.Time) (model.Baseline, b
 	return b, ok
 }
 
-// slow lists HTTPS series whose last 5 minutes are ≥1.5× their median.
+// slow lists TCP series whose last 5 minutes are ≥1.5× their median.
 func (f *fakeBaselines) slow(st store.Reader, p *model.Profile) func() []web.SlowTarget {
 	var mu sync.Mutex
 	var at time.Time
@@ -323,7 +323,7 @@ func (f *fakeBaselines) slow(st store.Reader, p *model.Profile) func() []web.Slo
 		}
 		var keys []model.SeriesKey
 		for _, t := range p.Targets {
-			k := model.SeriesKey{Target: t.Name, Kind: model.KindHTTPS}
+			k := model.SeriesKey{Target: t.Name, Kind: model.KindTCP}
 			if _, ok := f.m[k]; ok {
 				keys = append(keys, k)
 			}

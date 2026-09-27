@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: GreenCloud-Los-Angeles
     host: 64.185.232.162
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: lax
     city: Los Angeles
     country: US
@@ -25,7 +25,7 @@ targets:
       tcp: true
   - name: GreenCloud-San-Jose
     host: 173.249.206.247
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: sjc
     city: San Jose
@@ -38,7 +38,7 @@ targets:
       tcp: true
   - name: GreenCloud-Phoenix
     host: 173.249.203.193
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: phx
     city: Phoenix
@@ -49,20 +49,9 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-  - name: GreenCloud-Seattle
-    host: 208.115.113.1
-    kinds: [icmp]
-    region: sea
-    city: Seattle
-    country: US
-    geo: na
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: GreenCloud-Ashburn
     host: 104.225.11.54
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: iad
     city: Ashburn
     country: US
@@ -75,7 +64,7 @@ targets:
       tcp: true
   - name: GreenCloud-Dallas
     host: 64.44.147.6
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: dfw
     city: Dallas
     country: US
@@ -87,7 +76,7 @@ targets:
       tcp: true
   - name: GreenCloud-Chicago
     host: 167.88.10.4
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: chi1
     city: Chicago
     country: US
@@ -99,7 +88,7 @@ targets:
       tcp: true
   - name: GreenCloud-Chicago-2
     host: 173.249.214.11
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: chi2
     city: Chicago
     country: US
@@ -111,7 +100,7 @@ targets:
       tcp: true
   - name: GreenCloud-Jacksonville
     host: 64.44.162.14
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: jax
     city: Jacksonville
     country: US
@@ -123,7 +112,7 @@ targets:
       tcp: true
   - name: GreenCloud-Buffalo
     host: 96.9.249.58
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: buf
     city: Buffalo
     country: US
@@ -135,7 +124,7 @@ targets:
       tcp: true
   - name: GreenCloud-Kansas-City
     host: 72.18.215.71
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: mci
     city: Kansas City
@@ -148,7 +137,7 @@ targets:
       tcp: true
   - name: GreenCloud-Ogden
     host: 108.171.216.251
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ogd
     city: Ogden
     country: US
@@ -161,7 +150,7 @@ targets:
       tcp: true
   - name: GreenCloud-Staten-Island
     host: 108.171.198.77
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: nyc
     city: Staten Island
     country: US
@@ -172,20 +161,9 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-  - name: GreenCloud-Toronto
-    host: 172.93.167.178
-    kinds: [icmp]
-    region: yyz
-    city: Toronto
-    country: CA
-    geo: na
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: GreenCloud-Amsterdam
     host: 185.214.10.103
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: ams
     city: Amsterdam
@@ -198,7 +176,7 @@ targets:
       tcp: true
   - name: GreenCloud-Paris
     host: 185.94.189.162
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: par
     city: Paris
     country: FR
@@ -209,20 +187,9 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-  - name: GreenCloud-Frankfurt
-    host: 109.94.170.85
-    kinds: [icmp]
-    region: fra
-    city: Frankfurt
-    country: DE
-    geo: eu
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: GreenCloud-Coventry
     host: 94.229.65.150
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: cvt
     city: Coventry
     country: GB
@@ -234,7 +201,7 @@ targets:
       tcp: true
   - name: GreenCloud-Manchester
     host: 89.238.129.146
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: man
     city: Manchester
     country: GB
@@ -247,7 +214,7 @@ targets:
       tcp: true
   - name: GreenCloud-Bucharest
     host: 185.45.12.22
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: buh
     city: Bucharest
@@ -261,7 +228,7 @@ targets:
       tcp: true
   - name: GreenCloud-Sofia
     host: 94.156.35.72
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: sof
     city: Sofia
     country: BG
@@ -273,7 +240,7 @@ targets:
       tcp: true
   - name: GreenCloud-Tokyo-Softbank
     host: 103.201.131.7
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: tyo-sb
     city: Tokyo
     country: JP
@@ -285,7 +252,7 @@ targets:
       tcp: true
   - name: GreenCloud-Tokyo-IIJ
     host: 91.200.242.41
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: tyo-iij
     city: Tokyo
@@ -298,7 +265,7 @@ targets:
       tcp: true
   - name: GreenCloud-Tokyo-Premium
     host: 45.94.40.13
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: tyo-prem
     city: Tokyo
     country: JP
@@ -310,7 +277,7 @@ targets:
       tcp: true
   - name: GreenCloud-Singapore
     host: 96.9.213.188
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: sgp1
     city: Singapore
@@ -324,7 +291,7 @@ targets:
       tcp: true
   - name: GreenCloud-Singapore-2
     host: 103.254.153.18
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: sgp2
     city: Singapore
     country: SG
@@ -336,7 +303,7 @@ targets:
       tcp: true
   - name: GreenCloud-Singapore-Premium
     host: 45.135.43.11
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: sgp-prem
     city: Singapore
     country: SG
@@ -348,7 +315,7 @@ targets:
       tcp: true
   - name: GreenCloud-Hong-Kong
     host: 45.128.220.22
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: hkg1
     city: Hong Kong
@@ -361,7 +328,7 @@ targets:
       tcp: true
   - name: GreenCloud-Hong-Kong-2
     host: 43.249.36.49
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: hkg2
     city: Hong Kong
     country: HK
@@ -373,7 +340,7 @@ targets:
       tcp: true
   - name: GreenCloud-Hanoi
     host: 103.199.17.252
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: han
     city: Hanoi
@@ -386,7 +353,7 @@ targets:
       tcp: true
   - name: GreenCloud-Ho-Chi-Minh
     host: 103.186.65.98
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: sgn
     city: Ho Chi Minh City
@@ -399,7 +366,7 @@ targets:
       tcp: true
   - name: GreenCloud-Sydney
     host: 146.19.0.4
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: syd
     city: Sydney
     country: AU

@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: Webdock-Denmark
     host: api.webdock.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /v1/ping
     region: dk
     city: Baaring

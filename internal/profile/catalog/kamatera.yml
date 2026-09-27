@@ -10,30 +10,32 @@ notes: >-
   2.7 KB speed-test page; never fetch its test files. Geo-IP of every IP matches the city. The four
   extra Israeli sites (il, il-rh, il-pt, il-ha) are not on the public page but have the same kind of
   host on Kamatera's Israeli network (AS44709/AS25052); geo-IP matches. Stockholm answers at ~26 ms
-  from Helsinki (routed via Frankfurt), geo-IP says Stockholm. Miami (us-mi) resolves but answered
-  nothing today.
+  from Helsinki (routed via Frankfurt), geo-IP says Stockholm. Miami (us-mi) has no latency URL on the
+  page and us-mi-speedtest resolves to a dead IP; the same-pattern host us-mi2-speedtest.kamatera.com
+  (AS36007 Kamatera, geo-IP Miami, ~144 ms from Helsinki) answers and is used instead. Some hosts drop
+  an occasional echo (1-2 of 5 on 2026-09-27; us-tx, us-sc), TCP/HTTPS never failed.
 targets:
   - name: Kamatera-eu
     host: eu-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: eu
     city: Amsterdam
     country: NL
     geo: eu
     anycast: false
-    notes: >-
-      No ICMP reply today.
     verified:
       date: 2026-09-27
-      icmp: false
+      icmp: true
       tcp: true
       https: 200
       bytes: 26
   - name: Kamatera-eu-bu
     host: eu-bu-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: eu-bu
     city: Bucharest
     country: RO
@@ -48,7 +50,8 @@ targets:
   - name: Kamatera-eu-fr
     host: eu-fr-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: eu-fr
     city: Frankfurt
     country: DE
@@ -63,7 +66,8 @@ targets:
   - name: Kamatera-eu-lo
     host: eu-lo-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: eu-lo
     city: London
     country: GB
@@ -78,7 +82,8 @@ targets:
   - name: Kamatera-eu-md
     host: eu-md-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: eu-md
     city: Madrid
     country: ES
@@ -93,7 +98,8 @@ targets:
   - name: Kamatera-eu-ml
     host: eu-ml-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: eu-ml
     city: Milan
     country: IT
@@ -108,7 +114,8 @@ targets:
   - name: Kamatera-eu-st
     host: eu-st-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: eu-st
     city: Stockholm
     country: SE
@@ -123,7 +130,8 @@ targets:
   - name: Kamatera-us-at
     host: us-at-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: us-at
     city: Atlanta
     country: US
@@ -138,7 +146,8 @@ targets:
   - name: Kamatera-us-ch
     host: us-ch-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: us-ch
     city: Chicago
     country: US
@@ -153,7 +162,8 @@ targets:
   - name: Kamatera-us-tx
     host: us-tx-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: us-tx
     city: Dallas
     country: US
@@ -168,7 +178,8 @@ targets:
   - name: Kamatera-us-la
     host: us-la-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: us-la
     city: Los Angeles
     country: US
@@ -183,7 +194,8 @@ targets:
   - name: Kamatera-us-ny2
     host: us-ny2-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: us-ny2
     city: New York
     country: US
@@ -198,7 +210,8 @@ targets:
   - name: Kamatera-us-sc
     host: us-sc-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: us-sc
     city: Santa Clara
     country: US
@@ -213,7 +226,8 @@ targets:
   - name: Kamatera-us-se
     host: us-se-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: us-se
     city: Seattle
     country: US
@@ -228,7 +242,8 @@ targets:
   - name: Kamatera-ca-tr
     host: ca-tr-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: ca-tr
     city: Toronto
     country: CA
@@ -243,7 +258,8 @@ targets:
   - name: Kamatera-as
     host: as-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: as
     city: Hong Kong
     country: HK
@@ -258,7 +274,8 @@ targets:
   - name: Kamatera-as-sg
     host: as-sg-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: as-sg
     city: Singapore
     country: SG
@@ -273,7 +290,8 @@ targets:
   - name: Kamatera-as-ty
     host: as-ty-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: as-ty
     city: Tokyo
     country: JP
@@ -288,7 +306,8 @@ targets:
   - name: Kamatera-au-sy
     host: au-sy-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: Kamatera speed-test hosts rate-limit ICMP (20-93% loss in fyisp runs on 2026-09-27 while TCP/HTTPS were clean)"
     region: au-sy
     city: Sydney
     country: AU
@@ -303,7 +322,8 @@ targets:
   - name: Kamatera-il-ta
     host: il-ta-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: il-ta
     city: Tel Aviv
     country: IL
@@ -318,7 +338,7 @@ targets:
   - name: Kamatera-il
     host: il-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: il
     city: Rosh HaAyin
     country: IL
@@ -335,7 +355,7 @@ targets:
   - name: Kamatera-il-rh
     host: il-rh-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: il-rh
     city: Rosh HaAyin
     country: IL
@@ -343,6 +363,7 @@ targets:
     anycast: false
     notes: >-
       Not on the public data-centers page; Kamatera Israeli network.
+      ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured
     verified:
       date: 2026-09-27
       icmp: true
@@ -352,7 +373,7 @@ targets:
   - name: Kamatera-il-pt
     host: il-pt-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: il-pt
     city: Petah Tikva
     country: IL
@@ -369,7 +390,7 @@ targets:
   - name: Kamatera-il-ha
     host: il-ha-speedtest.kamatera.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: il-ha
     city: Haifa
     country: IL
@@ -377,6 +398,7 @@ targets:
     anycast: false
     notes: >-
       Not on the public data-centers page; Kamatera Israeli network.
+      ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured
     verified:
       date: 2026-09-27
       icmp: true
@@ -384,17 +406,21 @@ targets:
       https: 200
       bytes: 26
   - name: Kamatera-us-mi
-    host: us-mi-speedtest.kamatera.com
-    kinds: []
+    host: us-mi2-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [tcp]
     region: us-mi
     city: Miami
     country: US
     geo: na
     anycast: false
-    tags: [unreachable]
     notes: >-
-      Listed on the data-centers page without a latency URL; this host resolves (geo-IP Miami) but no ping, TCP or HTTPS on 2026-09-27.
+      The data-centers page lists Miami (id us-mi) without a latency URL, and us-mi-speedtest.kamatera.com
+      (195.88.57.249) answers nothing. us-mi2-speedtest.kamatera.com follows the official naming, is on
+      Kamatera AS36007 with geo-IP Miami and answers at ~144 ms from Helsinki.
     verified:
       date: 2026-09-27
-      icmp: false
-      tcp: false
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26

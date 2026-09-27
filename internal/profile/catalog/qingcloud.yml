@@ -3,21 +3,26 @@ display: QingCloud
 kind: cloud
 category: [vps, storage]
 sources:
+  - https://docsv4.qingcloud.com/user_guide/storage/object_storage/intro/product/
   - https://docsv4.qingcloud.com/user_guide/storage/object_storage/
+  - https://docsv4.qingcloud.com/user_guide/network/vpc/billing/price/
 notes: >-
-  QingCloud QingStor object-storage zones, each probed via <zone>.qingstor.com (GET / is a 231-byte
-  403): pek3a and pek3b (Beijing 3), sh1a (Shanghai 1) and gd2 (Guangdong 2). Every address geolocates
-  to its city. ap3 (Jakarta) resolves but did not answer. gd3.qingstor.com answers from a
-  Beijing-registered Yunify range with a different API and is not included.
+  QingCloud QingStor object-storage zones pek3a and pek3b (Beijing 3), sh1a (Shanghai 1) and gd2
+  (Guangdong 2) are probed via the documented endpoints <zone>.qsstor.com (GET / is a 231-byte 403); the
+  older <zone>.qingstor.com names still work. Every address geolocates to its city and every client
+  subnet gets the same answer. The compute-only zones jn1 (Jinan) and ap2a (Hong Kong) have no
+  object-storage endpoint: <zone>.qsstor.com for them hits a Beijing wildcard catch-all (139.198.8.201).
+  ap3 (Jakarta) is no longer in the zone lists and did not answer.
 targets:
   - name: QingCloud-pek3a
-    host: pek3a.qingstor.com
-    kinds: [https, tcp, icmp]
+    host: pek3a.qsstor.com
+    kinds: [tcp]
     region: pek3a
     city: Beijing
     country: CN
     geo: as
     anycast: false
+    notes: "AS59078 Yunify, Beijing"
     verified:
       date: 2026-09-27
       icmp: true
@@ -25,8 +30,8 @@ targets:
       https: 403
       bytes: 231
   - name: QingCloud-pek3b
-    host: pek3b.qingstor.com
-    kinds: [https, tcp, icmp]
+    host: pek3b.qsstor.com
+    kinds: [tcp]
     region: pek3b
     city: Beijing
     country: CN
@@ -39,8 +44,8 @@ targets:
       https: 403
       bytes: 231
   - name: QingCloud-sh1a
-    host: sh1a.qingstor.com
-    kinds: [https, tcp, icmp]
+    host: sh1a.qsstor.com
+    kinds: [tcp]
     region: sh1a
     city: Shanghai
     country: CN
@@ -53,8 +58,9 @@ targets:
       https: 403
       bytes: 231
   - name: QingCloud-gd2
-    host: gd2.qingstor.com
-    kinds: [https, tcp, icmp]
+    host: gd2.qsstor.com
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: gd2
     city: Guangzhou
     country: CN
@@ -66,6 +72,38 @@ targets:
       tcp: true
       https: 403
       bytes: 231
+  - name: QingCloud-ap2a
+    host: ap2a.qsstor.com
+    kinds: []
+    region: ap2a
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: compute-only zone with no object-storage endpoint; ap2a.qsstor.com hits the Beijing wildcard catch-all (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 164
+  - name: QingCloud-jn1
+    host: jn1.qsstor.com
+    kinds: []
+    region: jn1
+    city: Jinan
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: compute-only zone with no object-storage endpoint; jn1.qsstor.com hits the Beijing wildcard catch-all (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 164
   - name: QingCloud-ap3
     host: ap3.qingstor.com
     kinds: []
@@ -74,8 +112,8 @@ targets:
     country: ID
     geo: as
     anycast: false
-    tags: [unreachable]
-    notes: resolves but no answer on 2026-09-27
+    tags: [unreachable, closed]
+    notes: Jakarta is no longer in the QingStor or pricing zone lists; ap3.qingstor.com resolves but did not answer (2026-09-27)
     verified:
       date: 2026-09-27
       icmp: false

@@ -154,15 +154,9 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
-func kindsOf(t model.Target) []model.ProbeKind {
-	if len(t.Kinds) > 0 {
-		return t.Kinds
-	}
-	return []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
-}
-
-// run advances the clock in 1s steps: ICMP every 5s, HTTPS/TCP every 15s,
-// an evaluation every 5s.
+// run advances the clock in 1s steps: ICMP every 5s, TCP/HTTPS every 15s,
+// an evaluation every 5s. Internet targets without kinds are TCP only, as
+// in the shipped profiles.
 func (h *harness) run(d time.Duration) {
 	h.t.Helper()
 	end := h.now.Add(d)
@@ -170,7 +164,7 @@ func (h *harness) run(d time.Duration) {
 		h.now = h.now.Add(time.Second)
 		sec := h.now.Unix()
 		for _, t := range h.p.Targets {
-			for _, k := range kindsOf(t) {
+			for _, k := range t.ProbeKinds() {
 				iv := int64(15)
 				if k == model.KindICMP {
 					iv = 5
@@ -240,6 +234,16 @@ func every(n int64, r model.Reason) func(time.Time) outcome {
 	return func(at time.Time) outcome {
 		if (at.Unix()/5)%n == 0 {
 			return outcome{lost: true, reason: r}
+		}
+		return outcome{rtt: 30 * time.Millisecond}
+	}
+}
+
+// lostEvery times out the probes whose slot is a multiple of d.
+func lostEvery(d time.Duration) func(time.Time) outcome {
+	return func(at time.Time) outcome {
+		if at.Unix()%int64(d/time.Second) == 0 {
+			return outcome{lost: true, reason: model.ReasonTimeout}
 		}
 		return outcome{rtt: 30 * time.Millisecond}
 	}
@@ -325,6 +329,27 @@ func TestRules(t *testing.T) {
 			fx: []behavior{targets(always(model.ReasonTimeout),
 				"AWS us-east-1", "AWS eu-west-1", "AWS ap-south-1", "GitHub", "Slack")},
 			kind: model.VerdictUpstream, summary: "Problems beyond your ISP: 5 of 10 monitored services are having trouble.",
+		},
+		{
+			// Services are TCP only here (4 samples a minute): a service
+			// outage shows as TCP loss alone.
+			name:    "service from TCP loss",
+			fx:      []behavior{targets(always(model.ReasonTimeout), "GitHub")},
+			kind:    model.VerdictService,
+			summary: "Only GitHub looks affected: it loses 100% of probes.",
+			targets: []string{"GitHub"},
+		},
+		{
+			name: "one lost TCP connect a minute is noise",
+			fx:   []behavior{targets(lostEvery(60*time.Second), "Slack", "Zoom", "GitHub")},
+			kind: model.VerdictOK,
+		},
+		{
+			name:    "two lost TCP connects a minute",
+			fx:      []behavior{targets(lostEvery(30*time.Second), "Slack")},
+			kind:    model.VerdictService,
+			summary: "Only Slack looks affected: it loses 50% of probes.",
+			targets: []string{"Slack"},
 		},
 		{
 			name: "dns",

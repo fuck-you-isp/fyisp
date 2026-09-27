@@ -5,6 +5,7 @@ category: [storage]
 sources:
   - https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-endpoints
   - https://control.cloud-object-storage.cloud.ibm.com/v2/endpoints
+  - https://cloud.ibm.com/docs/monitoring?topic=monitoring-endpoints
 notes: >-
   IBM Cloud publishes no ping host, so each location uses the public Cloud Object
   Storage S3 endpoint s3.<location>.cloud-object-storage.appdomain.cloud. An
@@ -21,13 +22,25 @@ notes: >-
   (control.cloud-object-storage.cloud.ibm.com/v2/endpoints) lists exactly
   these 19 regional and single-site endpoints. eu-fr2 (Paris, the restricted
   financial-services region) has no COS endpoint, and its VPC API host is
-  behind Cloudflare anycast, so it is left out. The old per-datacenter
-  speedtest.<dc>.softlayer.com hosts still resolve but did not answer
-  ICMP/HTTP/HTTPS.
+  behind Cloudflare anycast.
+  2026-09-27 audit (second pass): the VPC region list (<region>.iaas.cloud.ibm.com)
+  has 14 regions: the 13 COS regions plus eu-fr2. eu-fr2 is now covered by
+  the IBM Cloud Monitoring ingestion/API host eu-fr2.monitoring.cloud.ibm.com.
+  It CNAMEs to an IBM Kubernetes ingress in par04 and rotates across three
+  unicast IBM Paris addresses (150.112.x, 158.231.x and 163.102.x, one per
+  zone, 39-43 ms). Its /api/ping health path returns 200 with 4 bytes and
+  needs no auth. The other eu-fr2 service hosts are NXDOMAIN or sit behind
+  Akamai or Cloudflare. The old per-datacenter speedtest.<dc>.softlayer.com
+  hosts: 43 still resolve, but only speedtest.dal10 answers, from what looks
+  like a leftover host with a certificate that expired in March 2025, so none
+  are used. IBM Classic has no other public per-DC endpoint beyond the six COS
+  single-site ones below. COS GeoDNS: the regional hosts rotate among a few
+  IPs in the same /24 for each client, all in-region, and the single-site
+  hosts return one IP.
 targets:
   - name: IBM-us-south
     host: s3.us-south.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-south
     city: Dallas
     country: US
@@ -41,7 +54,7 @@ targets:
       bytes: 255
   - name: IBM-us-east
     host: s3.us-east.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east
     city: Washington DC
     country: US
@@ -55,7 +68,7 @@ targets:
       bytes: 255
   - name: IBM-eu-gb
     host: s3.eu-gb.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-gb
     city: London
     country: GB
@@ -69,7 +82,7 @@ targets:
       bytes: 255
   - name: IBM-eu-de
     host: s3.eu-de.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-de
     city: Frankfurt
     country: DE
@@ -83,7 +96,7 @@ targets:
       bytes: 255
   - name: IBM-au-syd
     host: s3.au-syd.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: au-syd
     city: Sydney
     country: AU
@@ -97,7 +110,7 @@ targets:
       bytes: 255
   - name: IBM-jp-tok
     host: s3.jp-tok.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-tok
     city: Tokyo
     country: JP
@@ -111,7 +124,7 @@ targets:
       bytes: 255
   - name: IBM-jp-osa
     host: s3.jp-osa.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-osa
     city: Osaka
     country: JP
@@ -125,7 +138,7 @@ targets:
       bytes: 255
   - name: IBM-ca-tor
     host: s3.ca-tor.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-tor
     city: Toronto
     country: CA
@@ -139,7 +152,7 @@ targets:
       bytes: 255
   - name: IBM-br-sao
     host: s3.br-sao.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: br-sao
     city: Sao Paulo
     country: BR
@@ -153,7 +166,7 @@ targets:
       bytes: 255
   - name: IBM-eu-es
     host: s3.eu-es.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-es
     city: Madrid
     country: ES
@@ -167,7 +180,7 @@ targets:
       bytes: 255
   - name: IBM-ca-mon
     host: s3.ca-mon.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-mon
     city: Montreal
     country: CA
@@ -181,7 +194,7 @@ targets:
       bytes: 255
   - name: IBM-in-che
     host: s3.in-che.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: in-che
     city: Chennai
     country: IN
@@ -195,7 +208,7 @@ targets:
       bytes: 255
   - name: IBM-in-mum
     host: s3.in-mum.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: in-mum
     city: Mumbai
     country: IN
@@ -209,7 +222,7 @@ targets:
       bytes: 255
   - name: IBM-ams03
     host: s3.ams03.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ams03
     city: Amsterdam
     country: NL
@@ -224,7 +237,7 @@ targets:
       bytes: 255
   - name: IBM-che01
     host: s3.che01.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: che01
     city: Chennai
     country: IN
@@ -239,7 +252,7 @@ targets:
       bytes: 255
   - name: IBM-mon01
     host: s3.mon01.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mon01
     city: Montreal
     country: CA
@@ -254,7 +267,7 @@ targets:
       bytes: 255
   - name: IBM-par01
     host: s3.par01.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: par01
     city: Paris
     country: FR
@@ -269,7 +282,7 @@ targets:
       bytes: 255
   - name: IBM-sjc04
     host: s3.sjc04.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sjc04
     city: San Jose
     country: US
@@ -284,7 +297,7 @@ targets:
       bytes: 255
   - name: IBM-sng01
     host: s3.sng01.cloud-object-storage.appdomain.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sng01
     city: Singapore
     country: SG
@@ -297,3 +310,18 @@ targets:
       tcp: true
       https: 403
       bytes: 255
+  - name: IBM-eu-fr2
+    host: eu-fr2.monitoring.cloud.ibm.com
+    kinds: [tcp]
+    path: /api/ping
+    region: eu-fr2
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4

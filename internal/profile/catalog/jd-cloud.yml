@@ -3,18 +3,21 @@ display: JD Cloud
 kind: cloud
 category: [vps, storage]
 sources:
+  - https://docs.jdcloud.com/cn/object-storage-service/oss-endpont-list
   - https://docs.jdcloud.com/cn/object-storage-service/api/regions-and-endpoints
-  - https://docs.jdcloud.com/cn/object-storage-service/endpoint-using-rulers
+  - https://docs.jdcloud.com/cn/virtual-machines/regions-and-availabilityzones
 notes: >-
   JD Cloud regions: cn-north-1 (Beijing), cn-east-1 (Suqian), cn-east-2 (Shanghai) and cn-south-1
-  (Guangzhou). Each is probed via its OSS S3 endpoint s3.<region>.jdcloud-oss.com; GET / is a 166-byte
-  403. Every address geolocates to its city (China Telecom IDC ranges).
+  (Guangzhou), plus eu-west-1 (Amsterdam, object storage only). Each is probed via its documented OSS S3
+  endpoint s3.<region>.jdcloud-oss.com; GET / is a 166-byte 403. Every address geolocates to its city
+  (the carrier IDC ASNs name Suqian and Guangdong; eu-west-1 is JD's AS137753 in Amsterdam), and the
+  answers do not change by client subnet except for a second address in the same /24.
   s3.cn-northwest-1.jdcloud-oss.com also resolves (to Beijing) but is not a documented region and is not
   included.
 targets:
   - name: JDCloud-cn-north-1
     host: s3.cn-north-1.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-north-1
     city: Beijing
     country: CN
@@ -28,7 +31,7 @@ targets:
       bytes: 166
   - name: JDCloud-cn-east-1
     host: s3.cn-east-1.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-1
     city: Suqian
     country: CN
@@ -42,7 +45,7 @@ targets:
       bytes: 166
   - name: JDCloud-cn-east-2
     host: s3.cn-east-2.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-2
     city: Shanghai
     country: CN
@@ -56,11 +59,25 @@ targets:
       bytes: 166
   - name: JDCloud-cn-south-1
     host: s3.cn-south-1.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-south-1
     city: Guangzhou
     country: CN
     geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 166
+  - name: JDCloud-eu-west-1
+    host: s3.eu-west-1.jdcloud-oss.com
+    kinds: [tcp]
+    region: eu-west-1
+    city: Amsterdam
+    country: NL
+    geo: eu
     anycast: false
     verified:
       date: 2026-09-27

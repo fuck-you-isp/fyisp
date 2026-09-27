@@ -246,11 +246,13 @@ func TestSlow(t *testing.T) {
 	// Every (target, kind) with a normal goes to the metrics.
 	got := map[string]float64{}
 	each(func(name string, k model.ProbeKind, r float64) { got[name+"/"+k.String()] = r })
-	if got["Zoom/https"] != 2.375 || got["Zoom/icmp"] != 2.375 || got["GitHub/tcp"] != round3(50.0/30) || got["Router/icmp"] != 2.5 {
+	if got["Zoom/tcp"] != 2.375 || got["GitHub/tcp"] != round3(50.0/30) || got["Router/icmp"] != 2.5 {
 		t.Errorf("EachVsNormal: %v", got)
 	}
-	if _, ok := got["Router/https"]; ok {
-		t.Error("kind the target does not probe")
+	for _, k := range []string{"Router/tcp", "Zoom/https", "Zoom/icmp"} {
+		if _, ok := got[k]; ok {
+			t.Errorf("%s: a kind the target does not probe", k)
+		}
 	}
 
 	// Other Engines: no signal.

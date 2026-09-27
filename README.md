@@ -4,8 +4,8 @@ Single-binary internet quality monitor: probes hyperscalers &amp; popular servic
 
 fyisp ("F\*\*\* You ISP") measures how well your connection reaches AWS, Azure, Google Cloud, Cloudflare, GitHub, video-call services and more, so you can show your ISP where the problem is. It replaces the old [docker-compose stack](https://github.com/fuck-you-isp/docker-compose) (network_exporter + Prometheus + Grafana + cloudflared) with one static binary:
 
-- **Probes** every target over HTTPS and TCP every 15s and ICMP every 5s, without admin rights.
-- **Stores every sample for 90 days** in a local SQLite file (about 250 MB), including *why* a probe failed: timeout, refused, reset, unreachable, DNS, TLS, no network.
+- **Probes** every target with a TCP connect every 15s, and pings your own path (router, your ISP's first hop, three anycast resolvers), without admin rights.
+- **Stores every sample for 90 days** in a local SQLite file (about 250 MB), including *why* a probe failed: timeout, refused, reset, unreachable, DNS, no network.
 - **Shows charts** at <http://127.0.0.1:3000>. Failures are gaps coloured by reason, never a fake 0 ms.
 - **Shares a public, read-only, redacted link** if you ask it to (`--share`).
 - **No telemetry.** fyisp only talks to the probe targets, your DNS resolver and, only while sharing, Cloudflare.
@@ -97,7 +97,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now fyisp
 
 ## Whose fault is it? (verdicts)
 
-Above the charts, fyisp shows one plain-English verdict, re-evaluated every 5 seconds over the last minute of probes, and keeps an outage log of every period that was not *ok*. A target is unhealthy when it loses at least 20% of its probes or its median latency is far above its own 30-minute baseline. The first matching kind wins:
+Above the charts, fyisp shows one plain-English verdict, re-evaluated every 5 seconds over the last minute of probes, and keeps an outage log of every period that was not *ok*. A target is unhealthy when it loses at least 20% of its probes (and at least 2 in the minute: a single lost connect out of four is noise) or its median latency is far above its own 30-minute baseline. The first matching kind wins:
 
 | Kind | Meaning |
 |---|---|
@@ -131,24 +131,33 @@ fyisp --profile default,dns          # the default targets plus every public res
 |---|---|
 | `default` | the 87 original targets (used without `--profile`) |
 | `all` | every target in the catalog |
-| `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / DigitalOcean, Linode, Vultr, Hetzner, OVH, ... / both; one panel per provider and region |
-| `cdn`, `dns` | CDN edges, public DNS resolvers (DNS-over-HTTPS) |
+| `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / VPS, bare-metal, regional and object-storage clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, ...) / both; one panel per provider and region |
+| `storage` | object storage clouds (Backblaze B2, Wasabi, IDrive e2, R2, ...) plus Hetzner, Linode and OVH object storage |
+| `cdn`, `dns` | CDN edges, public DNS resolvers (their DNS-over-HTTPS/TLS endpoints) |
 | `common`, `dev`, `streaming`, `gaming` | everyday services, developer services, streaming, game platforms |
 | `north-america`, `south-america`, `europe`, `middle-east`, `africa`, `asia`, `oceania` | every catalog target located there (anycast endpoints have no region and are left out) |
 | `aws`, `gcp`, `azure`, `hetzner`, ... | every provider in the catalog is a profile of its own |
 
 Target names are identities (a name keeps its history): when a profile is combined with `default` and both have a target of the same name (e.g. `AWS-us-east-1`), the catalog's definition is used. `default` on its own never changes.
 
-There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count. Per 100 targets: about 1.4% of one CPU core, 11 KB/s of download, 5 KB/s of upload and 0.4 GB of disk for 90 days.
+There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count. Per 100 targets: about 0.4% of one CPU core, 0.7 KB/s of download and 1.3 KB/s of upload (a TCP connect sends more small packets than it receives).
 
-Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-minute warm-up; the Network path group included):
+Since every service is probed with a TCP connect only, measured on 2026-09-27 (Linux amd64, Docker; 4 minutes after a 1-minute warm-up, from `/metrics` `process_*` counters; the Network path group included):
+
+| Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month |
+|---|---:|---:|---:|---:|---:|
+| `default` | 92 | 1.8% | 71 MB | 1.3 / 1.8 KB/s | 8 GB |
+| `all` | 1411 | 5.9% | 96 MB | 10.3 / 18.8 KB/s | 76 GB |
+
+In a side-by-side run of the same 1411-target catalog, the previous HTTPS + TCP + ICMP probing used 20.4% of a core, 240 MB and 130 / 93 KB/s.
+
+The table below was measured **before that change, with HTTPS, TCP and ICMP probes on every target**; it is kept for reference (disk figures included) and overstates today's CPU, memory and traffic several times. Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-minute warm-up; the Network path group included). The cloud rows were measured with the larger v0.4.0 catalog; since v0.4.1 the catalog is slightly larger (`clouds` 1330, `all` 1599 targets; GPU clouds, PaaS and sanctioned locations removed):
 
 | Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
 |---|---:|---:|---:|---:|---:|---:|
 | `dns` | 33 | 0.8% | 65 MB | 3.8 / 1.9 KB/s | 15 GB | 0.13 GB |
 | `common` | 72 | 1.1% | 72 MB | 8.0 / 2.6 KB/s | 28 GB | 0.24 GB |
 | `default` | 92 | 3.3% | 84 MB | 21 / 9 KB/s | 81 GB | 0.57 GB |
-| `gaming` | 150 | 1.9% | 73 MB | 12 / 7 KB/s | 52 GB | 0.43 GB |
 | `hyperscalers` | 299 | 4.9% | 115 MB | 34 / 17 KB/s | 135 GB | 1.4 GB |
 | `europe` | 381 | 6.0% | 111 MB | 41 / 21 KB/s | 165 GB | 1.4 GB |
 | `devclouds` | 743 | 11.6% | 155 MB | 80 / 41 KB/s | 320 GB | 3.1 GB |
@@ -156,8 +165,8 @@ Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-mi
 | `all` | 1306 | 18.4% | 231 MB | 142 / 70 KB/s | 564 GB | 5.4 GB |
 
 - `default` costs more CPU than its size suggests because it runs 7 continuous hop-by-hop traces.
-- TLS session resumption, added after this run, cut download by a further ~23% and CPU by ~10% on `all` (110 KB/s, 18.4% vs 20.3% in a side-by-side run).
-- Traffic per month matters on metered connections: every target is probed every 15 seconds (ping every 5 seconds), around the clock.
+- TLS session resumption, added after this run, cut download by a further ~23% and CPU by ~10% on `all` (110 KB/s, 18.4% vs 20.3% in a side-by-side run); it matters today only for `--config` targets that ask for HTTPS.
+- Traffic per month matters on metered connections: every target gets a TCP connect every 15 seconds, around the clock.
 - Disk is about 1.4 bytes per measurement (compressed hourly blocks), plus about 40% for summaries and indexes.
 
 A `--config` file can start from any profiles and change them:
@@ -171,13 +180,15 @@ add:
   - {name: nas, host: 192.168.1.10, group: home, kinds: [icmp]}
 ```
 
+Targets without `kinds` get a TCP connect to `port` (default 443), like every shipped target. Your own targets may also ask for `icmp` (ping, as for the NAS above) or `https` (a GET of `path`, timed to the first response byte); the dashboard then offers a switch between the kinds.
+
 Profiles are defined in [`internal/profile/profiles.yml`](internal/profile/profiles.yml) as selections over the catalog (by provider, provider kind, tag and region); the file documents the format.
 
 Missing a provider or region, or found a dead endpoint? Pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md#adding-or-fixing-endpoints).
 
 ### The Overview (large profiles)
 
-With more than 150 targets (e.g. `--profile clouds` or `all`) the dashboard opens on the **Overview** rather than one chart per panel; the **Overview | Charts** switch under the Network path panel changes view on any profile. The Overview shows one probe kind at a time (the first selected of HTTPS, TCP, ICMP) over the selected time range:
+With more than 150 targets (e.g. `--profile clouds` or `all`) the dashboard opens on the **Overview** rather than one chart per panel; the **Overview | Charts** switch under the Network path panel changes view on any profile. The Overview shows one probe kind at a time (TCP, unless a `--config` file adds HTTPS or ICMP targets and you switch) over the selected time range:
 
 - **Breadth line**: how many targets are worse than normal at the same time, across how many providers and regions. When a quarter or more of them, across several providers and regions, degrade together, the common factor is your side. It backs up the verdict and never overrides it; in the first day, before targets have a normal, it counts only packet loss.
 - **Heatmap**: one row per provider (grouped by kind), one column per region. A cell is coloured by how much slower than normal its targets are (median), or by latency until half the targets have a normal (about a day); a red dot marks loss, a red cell with × heavy loss (20% or more), hatching means not measured. Click a cell or a provider to filter the table.
@@ -187,13 +198,13 @@ The Overview's window is at most 30 days (it reads every target at once). Filter
 
 ## ICMP permissions
 
-fyisp never asks for admin rights. On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable → TCP/HTTPS only`, allow your group:
+fyisp never asks for admin rights. Only the Network path is pinged (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
 
 ```sh
 sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
 ```
 
-or carry on without ICMP: the HTTPS and TCP probes still work. macOS and Windows need nothing.
+or carry on without ICMP: the services and the anycast resolvers are still measured over TCP, but the gateway and the ISP edge are not, so the verdict can no longer tell `lan` from `isp`. macOS and Windows need nothing.
 
 ## Sharing a public link (`--share`)
 
@@ -208,7 +219,9 @@ Sharing is **off by default**. Start it with `fyisp --share` or the *Share* butt
 
 ## Prometheus metrics
 
-The local listener serves `/metrics` (never on the public link). ICMP results use the same `ping_*` metric names, help, types and labels as [network_exporter](https://github.com/syepes/network_exporter), so dashboards and alerts from the old stack keep working. Differences: the `target` label is the hostname (the old stack used the IP it resolved once at startup), and `target_ip` is empty. fyisp also exports `fyisp_https_rtt_seconds`, `fyisp_tcp_rtt_seconds`, `fyisp_probe_samples_total` and `fyisp_probe_lost_total{reason="..."}`.
+The local listener serves `/metrics` (never on the public link). ICMP results use the same `ping_*` metric names, help, types and labels as [network_exporter](https://github.com/syepes/network_exporter). Differences: the `target` label is the hostname (the old stack used the IP it resolved once at startup), and `target_ip` is empty.
+
+The services are measured with TCP only, so `ping_*` now covers the Network path (`Gateway`, `ISP edge` and the three anycast resolvers) plus any ICMP targets of your own `--config` file. The services' latency is `fyisp_tcp_rtt_seconds{name,target}` (the latest connect time) and their loss is `fyisp_probe_lost_total{kind="tcp"}` over `fyisp_probe_samples_total{kind="tcp"}`; point old-stack panels and alerts that used `ping_*` for services at those. fyisp never fills `ping_*` from TCP results: a connect time is not an echo reply. `fyisp_https_rtt_seconds` exists only for `--config` targets that ask for HTTPS.
 
 ## Where data lives, and uninstalling
 

@@ -19,7 +19,7 @@ targets:
   # Helsinki: ping 1 ms / TCP connect 2 ms.
   - name: Facebook
     host: www.facebook.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /.well-known/security.txt
     region: global
     anycast: true
@@ -33,7 +33,7 @@ targets:
   # From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: Instagram
     host: www.instagram.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -47,7 +47,7 @@ targets:
   # From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: X-Twitter
     host: x.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -61,7 +61,7 @@ targets:
   # From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: TikTok
     host: www.tiktok.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -75,7 +75,7 @@ targets:
   # From Helsinki: ping 7 ms / TCP connect 8 ms.
   - name: Reddit
     host: www.reddit.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -89,7 +89,7 @@ targets:
   # /.well-known/security.txt (267 B); favicon is 24 KB, robots.txt 120 KB. From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: LinkedIn
     host: www.linkedin.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /.well-known/security.txt
     region: global
     anycast: true

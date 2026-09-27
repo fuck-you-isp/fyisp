@@ -4,19 +4,24 @@ kind: cloud
 category: [bare-metal, vps]
 sources:
   - https://www.servers.com/data-center-locations/
-  - https://www.servers.com/docs/cloud-storage/cloud-storage-openstack-api/
+  - https://www.servers.com/network/network-performance
 notes: >-
-  Servers.com publishes no speed-test or looking-glass hosts. The public cloud regions expose an
-  OpenStack Keystone endpoint auth.servers.<region>.cloud.servers.com:5000 (documented in the Cloud
-  Storage OpenStack API guide); GET / on port 5000 is the unauthenticated 291 B version-discovery
-  document (HTTP 300). Region ids AMS3, AMS4, SJC1 (the "SF" location) and WAS1 were found by DNS;
-  the other nine data-center locations are dedicated-server only and have no public unicast endpoint,
-  so they are listed as unreachable with www.servers.com as a placeholder host (never probed).
+  Servers.com (by Nexcess) lists 12 metros (Dallas, Lansing, Miami, New York, San Francisco Bay Area,
+  Washington, Amsterdam, London, Luxembourg, Sao Paulo, Hong Kong, Singapore) and 32 data centres, and
+  publishes an official test host test.<dc>.servers.com for every data centre on its network-performance
+  page ("Test Files"). One target per data centre. GET /robots.txt is a 146 B 404; never fetch the
+  100mb.bin / 1000mb.bin files. All hosts are unicast (one A record, geo-IP matches the metro; AMS7 is
+  Woerden, DFW5/6 Richardson, NYC1 Secaucus, SJC1 Sunnyvale, WAS2/3 Leesburg, all inside the listed metro). SIN1 is
+  published as test.sg01.servers.com, whose HTTPS resets after the handshake; test.sin1.servers.com is
+  the same IP with a working certificate and is used instead. Until 2026-09-27 the file used the
+  OpenStack Keystone endpoints auth.servers.<region>.cloud.servers.com:5000 for AMS3/AMS4/SJC1/WAS1 and
+  placeholders elsewhere; existing target names were kept (the metro-named ones now point at the first
+  data centre of that metro).
 targets:
   - name: ServersCom-ams3
-    host: auth.servers.ams3.cloud.servers.com
-    kinds: [https, tcp, icmp]
-    port: 5000
+    host: test.ams3.servers.com
+    path: /robots.txt
+    kinds: [tcp]
     region: AMS3
     city: Amsterdam
     country: NL
@@ -26,12 +31,12 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 300
-      bytes: 291
+      https: 404
+      bytes: 146
   - name: ServersCom-ams4
-    host: auth.servers.ams4.cloud.servers.com
-    kinds: [https, tcp, icmp]
-    port: 5000
+    host: test.ams4.servers.com
+    path: /robots.txt
+    kinds: [tcp]
     region: AMS4
     city: Amsterdam
     country: NL
@@ -41,12 +46,12 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 300
-      bytes: 291
+      https: 404
+      bytes: 146
   - name: ServersCom-sjc1
-    host: auth.servers.sjc1.cloud.servers.com
-    kinds: [https, tcp, icmp]
-    port: 5000
+    host: test.sjc1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
     region: SJC1
     city: San Jose
     country: US
@@ -56,12 +61,12 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 300
-      bytes: 291
+      https: 404
+      bytes: 146
   - name: ServersCom-was1
-    host: auth.servers.was1.cloud.servers.com
-    kinds: [https, tcp, icmp]
-    port: 5000
+    host: test.was1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
     region: WAS1
     city: Ashburn
     country: US
@@ -71,95 +76,425 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 300
-      bytes: 291
+      https: 404
+      bytes: 146
   - name: ServersCom-dallas
-    host: www.servers.com
-    kinds: []
-    region: dallas
+    host: test.dfw1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: DFW1
     city: Dallas
     country: US
     geo: na
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-hong-kong
-    host: www.servers.com
-    kinds: []
-    region: hong-kong
+    host: test.hkg1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: HKG1
     city: Hong Kong
     country: HK
     geo: as
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-lansing
-    host: www.servers.com
-    kinds: []
-    region: lansing
+    host: test.lan1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: LAN1
     city: Lansing
     country: US
     geo: na
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-london
-    host: www.servers.com
-    kinds: []
-    region: london
+    host: test.lon1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: LON1
     city: London
     country: GB
     geo: eu
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-luxembourg
-    host: www.servers.com
-    kinds: []
-    region: luxembourg
+    host: test.lux1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: LUX1
     city: Luxembourg
     country: LU
     geo: eu
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-miami
-    host: www.servers.com
-    kinds: []
-    region: miami
+    host: test.mia1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: MIA1
     city: Miami
     country: US
     geo: na
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-new-york
-    host: www.servers.com
-    kinds: []
-    region: new-york
+    host: test.nyc1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: NYC1
     city: New York
     country: US
     geo: na
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-sao-paulo
-    host: www.servers.com
-    kinds: []
-    region: sao-paulo
+    host: test.sao1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: SAO1
     city: São Paulo
     country: BR
     geo: sa
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
   - name: ServersCom-singapore
-    host: www.servers.com
-    kinds: []
-    region: singapore
+    host: test.sin1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: SIN1
     city: Singapore
     country: SG
     geo: as
     anycast: false
-    tags: [unreachable]
-    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-ams1
+    host: test.ams1.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: AMS1
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-ams2
+    host: test.ams2.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: AMS2
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-ams5
+    host: test.ams5.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: AMS5
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-ams6
+    host: test.ams6.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: AMS6
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-ams7
+    host: test.ams7.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: AMS7
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-ams8
+    host: test.ams8.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: AMS8
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-dfw2
+    host: test.dfw2.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: DFW2
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-dfw3
+    host: test.dfw3.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: DFW3
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-dfw4
+    host: test.dfw4.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: DFW4
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-dfw5
+    host: test.dfw5.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: DFW5
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-dfw6
+    host: test.dfw6.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: DFW6
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-sjc2
+    host: test.sjc2.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: SJC2
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-sjc3
+    host: test.sjc3.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: SJC3
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-was2
+    host: test.was2.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: WAS2
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-was3
+    host: test.was3.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: WAS3
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-was4
+    host: test.was4.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: WAS4
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-lux2
+    host: test.lux2.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: LUX2
+    city: Luxembourg
+    country: LU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-lux3
+    host: test.lux3.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: LUX3
+    city: Luxembourg
+    country: LU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ServersCom-sin2
+    host: test.sin2.servers.com
+    path: /robots.txt
+    kinds: [tcp]
+    region: SIN2
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146

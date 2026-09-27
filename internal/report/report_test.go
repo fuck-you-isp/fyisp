@@ -75,6 +75,19 @@ func TestStructure(t *testing.T) {
 			t.Errorf("report lacks %q", want)
 		}
 	}
+	// The default profile: TCP connects to the services, pings on the path.
+	for _, want := range []string{
+		"fyisp measured 87 targets in 8 groups from this connection: TCP connects (time to open a connection) every 15",
+		"are pinged every 1",
+		"3 public resolvers (big anycast DNS resolvers) are pinged every 5",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("method lacks %q", want)
+		}
+	}
+	if strings.Contains(html, "HTTPS requests") {
+		t.Error("method mentions HTTPS requests, which the default profile does not send")
+	}
 	// Groups without incidents or loss are in the overview only.
 	if strings.Count(html, `<figure class="group">`) != 2 {
 		t.Errorf("%d charts, want 2 (network path, common services)", strings.Count(html, `<figure class="group">`))

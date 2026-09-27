@@ -4,41 +4,56 @@ kind: hyperscaler
 category: [storage]
 sources:
   - https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/govfedramp.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/govfeddod.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/govuksouth.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/ausgov.htm
   - https://raw.githubusercontent.com/oracle/oci-go-sdk/master/common/regions.json
 notes: >-
   OCI publishes no ping host, so each region uses the public Object Storage API
-  endpoint objectstorage.<region>.oraclecloud.com (oraclecloud20.com for the OC20
-  realm). An unauthenticated GET / returns 404 with a 41-byte JSON error, so the
-  response is tiny and no credentials are sent. Each region resolves to its own IP
-  (mostly 134.70.x.1 per region). All 45 public regions in the OCI regions table
-  (2026-09-27) are covered: 44 in the commercial OC1 realm plus eu-jovanovac-1
-  (Serbia, OC20 realm). Regionality was checked by RTT from Helsinki, FI, and it
-  matched geography: Stockholm 8 ms, rest of EU 21-62 ms, Israel/Morocco 79-90 ms,
-  Middle East 97-159 ms, North America 100-173 ms, India 158-159 ms, Latin America
-  157-228 ms, East Asia 211-299 ms, Australia 360-396 ms. eu-madrid-3 is slower than
-  eu-madrid-1 (89 vs 61 ms) but still clearly in Europe. Four more hosts resolve and
-  answer the same way (us-saltlake-2, us-dallas-1, ap-delhi-1, ap-kulai-1). They are
-  left out because they are not in the public regions list and are probably
-  dedicated or partner regions. One GET per 15 s is negligible next to normal SDK
-  traffic. Government and sovereign realms (separate tenancies, public endpoints)
-  are included and tagged restricted plus their realm: OC2 US Government
-  (us-langley-1, us-luke-1) and OC3 US Government (us-gov-ashburn-1,
-  us-gov-chicago-1, us-gov-phoenix-1) under oraclegovcloud.com, OC4 UK Government
-  (uk-gov-london-1, uk-gov-cardiff-1) under oraclegovcloud.uk, and OC19 EU
-  Sovereign Cloud (eu-frankfurt-2, eu-madrid-2) under oraclecloud.eu. Region IDs
-  and realm domains come from the OCI SDK regions.json; each answered the same
-  41-byte 404 on 2026-09-27. RTTs matched geography (UK 35-40 ms, Frankfurt 24 ms,
-  Madrid 52 ms, US gov 118-166 ms) except us-langley-1, which is a steady 169 ms,
-  about 55 ms more than us-gov-ashburn-1 and us-ashburn-1 (both Virginia), so it
-  may be routed via, or fronted from, the US west; treat its city as unconfirmed.
-  Left out: the dedicated/customer realms in regions.json (OC8 Japan, OC9 Oman,
-  OC10 Australia, OC14 EU dcc, OC15 Bangladesh, OC21 Qatar, OC23-OC52 US/EU/ME/KR/BR
-  dedicated regions), which are Oracle Alloy / Dedicated Region Cloud@Customer
-  realms for single customers rather than public regions.
+  endpoint objectstorage.<region>.<realm domain> (documented per region). An
+  unauthenticated GET / returns 404 with a 41-byte JSON error, so the response
+  is tiny and no credentials are sent. Each region resolves to its own unicast
+  IP (mostly 134.70.x.1 per region), identical from every resolver we tried.
+  All 45 public regions in the OCI regions table (2026-09-27) are covered: 44
+  in the commercial OC1 realm plus eu-jovanovac-1 (Serbia, OC20 realm).
+  Regionality was checked by RTT from Helsinki, FI, and it matched geography:
+  Stockholm 8 ms, rest of EU 21-62 ms, Israel/Morocco 79-90 ms, Middle East
+  97-159 ms, North America 100-173 ms, India 158-159 ms, Latin America 157-228
+  ms, East Asia 211-299 ms, Australia 360-396 ms. eu-madrid-3 is slower than
+  eu-madrid-1 (89 vs 61 ms) but still clearly in Europe. ap-batam-1 lost
+  2-3 of 20 pings on 2026-09-27 (loss at Singtel transit hops; TCP/HTTPS
+  never failed). Two more OC1 hosts
+  resolve and answer the same way (us-saltlake-2, ap-delhi-1); they are left
+  out because they are not in the public regions table (dedicated or partner
+  regions). One GET per 15 s is negligible next to normal SDK traffic.
+  Government and sovereign realms (separate tenancies, public endpoints) are
+  included and tagged restricted plus their realm, with the locations Oracle
+  publishes: OC2 US Government Cloud (us-langley-1 = US Gov East, Ashburn VA;
+  us-luke-1 = US Gov West, Phoenix AZ) and OC3 US Defense Cloud
+  (us-gov-ashburn-1, us-gov-chicago-1, us-gov-phoenix-1) under
+  oraclegovcloud.com, OC4 UK Sovereign Cloud (uk-gov-london-1,
+  uk-gov-cardiff-1) under oraclegovcloud.uk, OC19 EU Sovereign Cloud
+  (eu-frankfurt-2, eu-madrid-2) under oraclecloud.eu, and OC10 Australia
+  Government and Defence (ap-dcc-canberra-1) under oraclecloud10.com, which
+  the regions page lists alongside the other government clouds. Region IDs and
+  realm domains come from the OCI SDK regions.json; each answered the same
+  41-byte 404 on 2026-09-27. RTTs matched geography (UK 35-40 ms, Frankfurt 24
+  ms, Madrid 52 ms, US gov 118-162 ms, Canberra 319 ms) except us-langley-1: a
+  steady 169 ms, about 50 ms more than us-gov-ashburn-1 and us-ashburn-1.
+  Oracle documents it in Ashburn and geo-IP puts 139.87.32.1 in Leesburg VA,
+  but a traceroute shows both OC2 regions (AS6142) entering Oracle through the
+  same Lumen hop as us-luke-1 (161 ms), so from Europe traffic to us-langley-1
+  seems to be carried over Oracle's US-west interconnect; its RTT includes that
+  detour. Left out: the single-customer dedicated realms in regions.json (OC8
+  Japan, OC9 Oman, OC14 EU dcc, OC15 Bangladesh, OC21 Qatar, OC23-OC52
+  US/EU/ME/KR/BR), which are Oracle Alloy / Dedicated Region Cloud@Customer
+  realms rather than public or government regions. Their object storage hosts
+  also answer, but they are not offered to the public.
 targets:
   - name: OCI-ap-sydney-1
     host: objectstorage.ap-sydney-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-sydney-1
     city: Sydney
     country: AU
@@ -52,7 +67,7 @@ targets:
       bytes: 41
   - name: OCI-ap-melbourne-1
     host: objectstorage.ap-melbourne-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-melbourne-1
     city: Melbourne
     country: AU
@@ -66,7 +81,7 @@ targets:
       bytes: 41
   - name: OCI-sa-saopaulo-1
     host: objectstorage.sa-saopaulo-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-saopaulo-1
     city: Sao Paulo
     country: BR
@@ -80,7 +95,7 @@ targets:
       bytes: 41
   - name: OCI-sa-vinhedo-1
     host: objectstorage.sa-vinhedo-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-vinhedo-1
     city: Vinhedo
     country: BR
@@ -94,7 +109,7 @@ targets:
       bytes: 41
   - name: OCI-ca-montreal-1
     host: objectstorage.ca-montreal-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-montreal-1
     city: Montreal
     country: CA
@@ -108,7 +123,7 @@ targets:
       bytes: 41
   - name: OCI-ca-toronto-1
     host: objectstorage.ca-toronto-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-toronto-1
     city: Toronto
     country: CA
@@ -122,7 +137,7 @@ targets:
       bytes: 41
   - name: OCI-sa-santiago-1
     host: objectstorage.sa-santiago-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-santiago-1
     city: Santiago
     country: CL
@@ -136,7 +151,7 @@ targets:
       bytes: 41
   - name: OCI-sa-valparaiso-1
     host: objectstorage.sa-valparaiso-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-valparaiso-1
     city: Valparaiso
     country: CL
@@ -150,7 +165,7 @@ targets:
       bytes: 41
   - name: OCI-sa-bogota-1
     host: objectstorage.sa-bogota-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sa-bogota-1
     city: Bogota
     country: CO
@@ -164,7 +179,7 @@ targets:
       bytes: 41
   - name: OCI-eu-paris-1
     host: objectstorage.eu-paris-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-paris-1
     city: Paris
     country: FR
@@ -178,7 +193,7 @@ targets:
       bytes: 41
   - name: OCI-eu-marseille-1
     host: objectstorage.eu-marseille-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-marseille-1
     city: Marseille
     country: FR
@@ -192,7 +207,7 @@ targets:
       bytes: 41
   - name: OCI-eu-frankfurt-1
     host: objectstorage.eu-frankfurt-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-frankfurt-1
     city: Frankfurt
     country: DE
@@ -206,7 +221,7 @@ targets:
       bytes: 41
   - name: OCI-ap-hyderabad-1
     host: objectstorage.ap-hyderabad-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-hyderabad-1
     city: Hyderabad
     country: IN
@@ -220,7 +235,7 @@ targets:
       bytes: 41
   - name: OCI-ap-mumbai-1
     host: objectstorage.ap-mumbai-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-mumbai-1
     city: Mumbai
     country: IN
@@ -234,7 +249,8 @@ targets:
       bytes: 41
   - name: OCI-ap-batam-1
     host: objectstorage.ap-batam-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: ap-batam-1
     city: Batam
     country: ID
@@ -248,7 +264,7 @@ targets:
       bytes: 41
   - name: OCI-il-jerusalem-1
     host: objectstorage.il-jerusalem-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: il-jerusalem-1
     city: Jerusalem
     country: IL
@@ -262,7 +278,7 @@ targets:
       bytes: 41
   - name: OCI-eu-milan-1
     host: objectstorage.eu-milan-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-milan-1
     city: Milan
     country: IT
@@ -276,7 +292,7 @@ targets:
       bytes: 41
   - name: OCI-eu-turin-1
     host: objectstorage.eu-turin-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-turin-1
     city: Turin
     country: IT
@@ -290,7 +306,7 @@ targets:
       bytes: 41
   - name: OCI-ap-osaka-1
     host: objectstorage.ap-osaka-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-osaka-1
     city: Osaka
     country: JP
@@ -304,7 +320,7 @@ targets:
       bytes: 41
   - name: OCI-ap-tokyo-1
     host: objectstorage.ap-tokyo-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-tokyo-1
     city: Tokyo
     country: JP
@@ -318,7 +334,7 @@ targets:
       bytes: 41
   - name: OCI-ap-kulai-2
     host: objectstorage.ap-kulai-2.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-kulai-2
     city: Kulai
     country: MY
@@ -332,7 +348,7 @@ targets:
       bytes: 41
   - name: OCI-mx-queretaro-1
     host: objectstorage.mx-queretaro-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mx-queretaro-1
     city: Queretaro
     country: MX
@@ -346,7 +362,7 @@ targets:
       bytes: 41
   - name: OCI-mx-monterrey-1
     host: objectstorage.mx-monterrey-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mx-monterrey-1
     city: Monterrey
     country: MX
@@ -360,7 +376,7 @@ targets:
       bytes: 41
   - name: OCI-af-casablanca-1
     host: objectstorage.af-casablanca-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: af-casablanca-1
     city: Casablanca
     country: MA
@@ -374,7 +390,7 @@ targets:
       bytes: 41
   - name: OCI-eu-amsterdam-1
     host: objectstorage.eu-amsterdam-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-amsterdam-1
     city: Amsterdam
     country: NL
@@ -388,7 +404,7 @@ targets:
       bytes: 41
   - name: OCI-me-riyadh-1
     host: objectstorage.me-riyadh-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-riyadh-1
     city: Riyadh
     country: SA
@@ -402,7 +418,7 @@ targets:
       bytes: 41
   - name: OCI-me-jeddah-1
     host: objectstorage.me-jeddah-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-jeddah-1
     city: Jeddah
     country: SA
@@ -417,7 +433,7 @@ targets:
   # OC20 realm: host uses oraclecloud20.com
   - name: OCI-eu-jovanovac-1
     host: objectstorage.eu-jovanovac-1.oraclecloud20.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-jovanovac-1
     city: Jovanovac
     country: RS
@@ -432,7 +448,7 @@ targets:
       bytes: 41
   - name: OCI-ap-singapore-1
     host: objectstorage.ap-singapore-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-singapore-1
     city: Singapore
     country: SG
@@ -446,7 +462,7 @@ targets:
       bytes: 41
   - name: OCI-ap-singapore-2
     host: objectstorage.ap-singapore-2.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-singapore-2
     city: Singapore
     country: SG
@@ -460,7 +476,7 @@ targets:
       bytes: 41
   - name: OCI-af-johannesburg-1
     host: objectstorage.af-johannesburg-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: af-johannesburg-1
     city: Johannesburg
     country: ZA
@@ -474,7 +490,7 @@ targets:
       bytes: 41
   - name: OCI-ap-seoul-1
     host: objectstorage.ap-seoul-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-seoul-1
     city: Seoul
     country: KR
@@ -488,7 +504,7 @@ targets:
       bytes: 41
   - name: OCI-ap-chuncheon-1
     host: objectstorage.ap-chuncheon-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-chuncheon-1
     city: Chuncheon
     country: KR
@@ -502,7 +518,7 @@ targets:
       bytes: 41
   - name: OCI-eu-madrid-1
     host: objectstorage.eu-madrid-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-madrid-1
     city: Madrid
     country: ES
@@ -516,7 +532,7 @@ targets:
       bytes: 41
   - name: OCI-eu-madrid-3
     host: objectstorage.eu-madrid-3.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-madrid-3
     city: Madrid
     country: ES
@@ -530,7 +546,7 @@ targets:
       bytes: 41
   - name: OCI-eu-stockholm-1
     host: objectstorage.eu-stockholm-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-stockholm-1
     city: Stockholm
     country: SE
@@ -544,7 +560,7 @@ targets:
       bytes: 41
   - name: OCI-eu-zurich-1
     host: objectstorage.eu-zurich-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-zurich-1
     city: Zurich
     country: CH
@@ -558,7 +574,7 @@ targets:
       bytes: 41
   - name: OCI-me-abudhabi-1
     host: objectstorage.me-abudhabi-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-abudhabi-1
     city: Abu Dhabi
     country: AE
@@ -572,7 +588,7 @@ targets:
       bytes: 41
   - name: OCI-me-dubai-1
     host: objectstorage.me-dubai-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: me-dubai-1
     city: Dubai
     country: AE
@@ -586,7 +602,7 @@ targets:
       bytes: 41
   - name: OCI-uk-london-1
     host: objectstorage.uk-london-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uk-london-1
     city: London
     country: GB
@@ -600,7 +616,7 @@ targets:
       bytes: 41
   - name: OCI-uk-cardiff-1
     host: objectstorage.uk-cardiff-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uk-cardiff-1
     city: Newport
     country: GB
@@ -614,7 +630,7 @@ targets:
       bytes: 41
   - name: OCI-us-ashburn-1
     host: objectstorage.us-ashburn-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-ashburn-1
     city: Ashburn
     country: US
@@ -628,7 +644,7 @@ targets:
       bytes: 41
   - name: OCI-us-chicago-1
     host: objectstorage.us-chicago-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-chicago-1
     city: Chicago
     country: US
@@ -642,7 +658,7 @@ targets:
       bytes: 41
   - name: OCI-us-phoenix-1
     host: objectstorage.us-phoenix-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-phoenix-1
     city: Phoenix
     country: US
@@ -656,7 +672,7 @@ targets:
       bytes: 41
   - name: OCI-us-sanjose-1
     host: objectstorage.us-sanjose-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-sanjose-1
     city: San Jose
     country: US
@@ -668,11 +684,11 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-langley-1                # OC2 US Government realm
+  - name: OCI-us-langley-1                # OC2 US Government realm, US Gov East (Ashburn)
     host: objectstorage.us-langley-1.oraclegovcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-langley-1
-    city: Langley
+    city: Ashburn
     country: US
     geo: na
     anycast: false
@@ -683,11 +699,11 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-luke-1                # OC2 US Government realm (Luke AFB, AZ)
+  - name: OCI-us-luke-1                # OC2 US Government realm, US Gov West (Phoenix)
     host: objectstorage.us-luke-1.oraclegovcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-luke-1
-    city: Glendale
+    city: Phoenix
     country: US
     geo: na
     anycast: false
@@ -698,9 +714,9 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-gov-ashburn-1                # OC3 US Government realm
+  - name: OCI-us-gov-ashburn-1                # OC3 US Defense Cloud realm
     host: objectstorage.us-gov-ashburn-1.oraclegovcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-gov-ashburn-1
     city: Ashburn
     country: US
@@ -713,9 +729,9 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-gov-chicago-1                # OC3 US Government realm
+  - name: OCI-us-gov-chicago-1                # OC3 US Defense Cloud realm
     host: objectstorage.us-gov-chicago-1.oraclegovcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-gov-chicago-1
     city: Chicago
     country: US
@@ -728,9 +744,9 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-gov-phoenix-1                # OC3 US Government realm
+  - name: OCI-us-gov-phoenix-1                # OC3 US Defense Cloud realm
     host: objectstorage.us-gov-phoenix-1.oraclegovcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-gov-phoenix-1
     city: Phoenix
     country: US
@@ -745,7 +761,7 @@ targets:
       bytes: 41
   - name: OCI-uk-gov-london-1                # OC4 UK Government realm
     host: objectstorage.uk-gov-london-1.oraclegovcloud.uk
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uk-gov-london-1
     city: London
     country: GB
@@ -760,7 +776,7 @@ targets:
       bytes: 41
   - name: OCI-uk-gov-cardiff-1                # OC4 UK Government realm
     host: objectstorage.uk-gov-cardiff-1.oraclegovcloud.uk
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uk-gov-cardiff-1
     city: Newport
     country: GB
@@ -775,7 +791,7 @@ targets:
       bytes: 41
   - name: OCI-eu-frankfurt-2                # OC19 EU Sovereign Cloud realm
     host: objectstorage.eu-frankfurt-2.oraclecloud.eu
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-frankfurt-2
     city: Frankfurt
     country: DE
@@ -790,13 +806,28 @@ targets:
       bytes: 41
   - name: OCI-eu-madrid-2                # OC19 EU Sovereign Cloud realm
     host: objectstorage.eu-madrid-2.oraclecloud.eu
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-madrid-2
     city: Madrid
     country: ES
     geo: eu
     anycast: false
     tags: [restricted, oc19-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-dcc-canberra-1                # OC10 Australia Government and Defence realm
+    host: objectstorage.ap-dcc-canberra-1.oraclecloud10.com
+    kinds: [tcp]
+    region: ap-dcc-canberra-1
+    city: Canberra
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [restricted, oc10-realm]
     verified:
       date: 2026-09-27
       icmp: true

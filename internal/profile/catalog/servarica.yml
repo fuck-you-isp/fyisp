@@ -1,0 +1,27 @@
+provider: servarica
+display: ServaRica
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://www.servarica.com/network/
+notes: >-
+  ServaRica (Rica Web Services, AS26832) runs a single data centre in Montreal. Its network page links
+  a speed-test host (speedtest.servarica.net) and a looking-glass/ping host (ping.servarica.com). The
+  target is the ping host (rDNS ping.servarica.net, geo-IP Montreal, 111 ms from Helsinki); GET
+  /robots.txt answers a 281 B 404.
+targets:
+  - name: ServaRica-Montreal
+    host: ping.servarica.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: mtl
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 281

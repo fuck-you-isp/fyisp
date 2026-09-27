@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: google-dns
     host: 8.8.8.8
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]
@@ -25,7 +25,7 @@ targets:
       bytes: 65
   - name: google-dns-2
     host: 8.8.4.4
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, secondary]

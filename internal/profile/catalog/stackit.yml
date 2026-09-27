@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: STACKIT-eu01
     host: object.storage.eu01.onstackit.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu01
     city: Neckarsulm
     country: DE
@@ -27,7 +27,7 @@ targets:
       bytes: 213
   - name: STACKIT-eu02
     host: object.storage.eu02.onstackit.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu02
     city: Ostermiething
     country: AT

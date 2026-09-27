@@ -19,7 +19,7 @@ targets:
   # others, so not recorded. From Helsinki: TCP connect 52 ms.
   - name: M365-Outlook
     host: outlook.office365.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [email]
@@ -33,7 +33,7 @@ targets:
   # From Helsinki: ping 47 ms / TCP connect 45 ms.
   - name: M365-Portal
     host: www.microsoft365.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -47,7 +47,7 @@ targets:
   # From Helsinki: ping 3 ms / TCP connect 5 ms.
   - name: Google-Gmail
     host: mail.google.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -61,7 +61,7 @@ targets:
   # From Helsinki: ping 3 ms / TCP connect 5 ms.
   - name: Google-Docs
     host: docs.google.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -75,7 +75,7 @@ targets:
   # From Helsinki: ping 3 ms / TCP connect 5 ms.
   - name: Google-Drive
     host: drive.google.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -89,7 +89,7 @@ targets:
   # Dropbox-operated edge (AS19679). From Helsinki: ping 7 ms / TCP connect 8 ms.
   - name: Dropbox
     host: www.dropbox.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -104,7 +104,7 @@ targets:
   # connect 4 ms.
   - name: Box
     host: app.box.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -118,7 +118,7 @@ targets:
   # From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: Notion
     host: www.notion.so
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -132,7 +132,7 @@ targets:
   # Hyperforce edge; no ICMP. From Helsinki: TCP connect 11 ms.
   - name: Salesforce
     host: login.salesforce.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true

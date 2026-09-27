@@ -1,0 +1,25 @@
+provider: iwinv
+display: iwinv (Smileserv)
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://www.iwinv.kr/
+notes: >-
+  Korean cloud and VPS brand of Smileserv (AS38700). Its S3 object storage kr.object.iwinv.kr
+  resolves to two Smileserv addresses in Incheon; GET / is a 214-byte ListAllMyBuckets response.
+  ICMP is dropped. iwinv has a single Korean region.
+targets:
+  - name: iwinv-Korea
+    host: kr.object.iwinv.kr
+    kinds: [tcp]
+    region: kr
+    city: Incheon
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214

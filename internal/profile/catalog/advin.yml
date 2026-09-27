@@ -1,0 +1,119 @@
+provider: advin
+display: Advin Servers
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://lg-lax.advinservers.com/
+  - https://advinservers.com/
+notes: >-
+  Advin Servers (AS206216/AS22295) sells VPS and dedicated servers; its website renders the location
+  list client-side, so the list comes from its looking glass, which links one lg-<code>.advinservers.com
+  host per site: Los Angeles, Secaucus NJ, Kansas City, Miami, Nuremberg, Osaka and Johor (Malaysia).
+  Those hosts are the targets (unicast in Advin's own ranges; geo-IP and RTT from Helsinki fit each
+  site). GET /robots.txt answers a 196 B 404.
+targets:
+  - name: Advin-LosAngeles
+    host: lg-lax.advinservers.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: lax
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: Advin-Secaucus
+    host: lg-ewr.advinservers.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: ewr
+    city: Secaucus
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: Advin-KansasCity
+    host: lg-mci.advinservers.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: mci
+    city: Kansas City
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: Advin-Miami
+    host: lg-mia.advinservers.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: mia
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: Advin-Nuremberg
+    host: lg-nbg.advinservers.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: nbg
+    city: Nuremberg
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: Advin-Osaka
+    host: lg-kix.advinservers.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: kix
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196
+  - name: Advin-Johor
+    host: lg-jhb.advinservers.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: jhb
+    city: Johor
+    country: MY
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 196

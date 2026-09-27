@@ -17,8 +17,15 @@
 //     reports 0 with one packet per probe), and ping_rtt_seconds type="csd"
 //     is 0 (upstream reports garbage for a single packet).
 //
-// HTTPS and TCP results are exported as fyisp_https_rtt_seconds and
-// fyisp_tcp_rtt_seconds, with loss and sample counters for every kind except
+// Shipped profiles probe their targets with TCP only, so with them the
+// ping_* series cover the network path (gateway, ISP edge and the anycast
+// resolvers), the only ICMP targets; ping_* is never synthesized from TCP
+// results (a connect time is not an echo reply, and old ping_* alerts would
+// silently change meaning). A --config file's own ICMP targets are exported
+// the same way.
+//
+// TCP and HTTPS results are exported as fyisp_tcp_rtt_seconds and
+// fyisp_https_rtt_seconds, with loss and sample counters for every kind except
 // trace hops. With SetVsNormalSource, fyisp_rtt_vs_normal{name,kind} is the
 // last minute's median RTT over the series' long-term normal.
 //
@@ -37,6 +44,7 @@ package metrics
 import (
 	"net/http"
 	"net/netip"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -473,15 +481,7 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func hasKind(t model.Target, k model.ProbeKind) bool {
-	if len(t.Kinds) == 0 {
-		return true // default: all kinds
-	}
-	for _, x := range t.Kinds {
-		if x == k {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(t.ProbeKinds(), k)
 }
 
 // reasonLabel is a Prometheus-friendly spelling of r ("no network" -> "no_network").

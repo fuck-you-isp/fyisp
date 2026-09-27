@@ -21,7 +21,7 @@ notes: >-
 targets:
   - name: CDN-AzureFrontDoor
     host: js.monitor.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/scripts/b/ai.config.1.cfg.json"
     anycast: true
     tags: []

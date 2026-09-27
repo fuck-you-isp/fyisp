@@ -6,17 +6,42 @@ sources:
   - https://docs.storj.io/dcs/api/s3/s3-compatible-gateway
   - https://docs.storj.io/learn/concepts/satellite
 notes: >-
-  Storj's hosted S3 gateway gateway.storjshare.io is a single GeoDNS name (European clients get
-  185.244.226.3, American and Asian clients 136.0.77.3). The satellite-specific names
-  gateway.{us1,eu1,ap1}.storjshare.io are not regional (ap1 and us1 resolve to the US address), so
-  only the global name is listed, as anycast. Anonymous GET / returns a 401 XML body (198 B).
+  Storj's hosted S3 gateway gateway.storjshare.io is GeoDNS (European clients get 185.244.226.3,
+  American and Asian clients 136.0.77.3, checked with EDNS client subnets on 2026-09-27). The
+  satellite-specific names are pinned: gateway.eu1.storjshare.io always resolves to 185.244.226.3
+  (Datacamp, Frankfurt; PTR gateway.storjshare.io; ~21 ms from Helsinki) and gateway.us1.storjshare.io
+  always to 136.0.77.3 (Datacamp, flagged anycast by ipinfo; ~107 ms from Helsinki, so a US site).
+  gateway.ap1.storjshare.io resolves to the US address, so there is no Asian gateway. Storj stores
+  data on a global node network; the gateways are the only located part. Anonymous GET / returns a
+  401 XML body (198 B).
 targets:
   - name: Storj-gateway
-    host: gateway.storjshare.io
-    kinds: [https, tcp, icmp]
+    host: gateway.eu1.storjshare.io
+    kinds: [tcp]
+    region: eu1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    notes: >-
+      Was the GeoDNS name gateway.storjshare.io until 2026-09-27 (same address for European clients);
+      now pinned to the EU gateway so the location no longer depends on the client.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 198
+  - name: Storj-us1
+    host: gateway.us1.storjshare.io
+    kinds: [tcp]
+    region: us1
+    country: US
+    geo: na
     anycast: true
     notes: >-
-      GeoDNS: resolves to a European or US gateway depending on the client.
+      US gateway (also serves ap1); ipinfo marks 136.0.77.3 as anycast, so the site depends on the
+      client.
     verified:
       date: 2026-09-27
       icmp: true

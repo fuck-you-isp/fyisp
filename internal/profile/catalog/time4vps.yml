@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: Time4VPS-Vilnius
     host: lg.time4vps.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lt
     city: Vilnius

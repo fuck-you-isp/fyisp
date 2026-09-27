@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: yandex-dns
     host: 77.88.8.8
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]

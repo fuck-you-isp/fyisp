@@ -342,27 +342,38 @@ func ivText(set map[time.Duration]bool) string {
 
 func (r *run) method() []string {
 	p := r.prof
-	var services, path, traced int
-	httpsTCP, icmp, pathIcmp := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
+	var services, path, anycast, traced int
+	tcp, https, icmp := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
+	pathIcmp, anyIcmp, anyTCP := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
 	for _, t := range p.Targets {
 		iv := t.Interval
 		if iv <= 0 {
 			iv = 15 * time.Second
 		}
-		ks := t.Kinds
-		if len(ks) == 0 {
-			ks = []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
-		}
-		if t.Layer == model.LayerGateway || t.Layer == model.LayerEdge {
+		switch t.Layer {
+		case model.LayerGateway, model.LayerEdge:
 			path++
 			pathIcmp[iv/3] = true
 			continue
+		case model.LayerAnycast:
+			anycast++
+			for _, k := range t.ProbeKinds() {
+				switch k {
+				case model.KindICMP:
+					anyIcmp[iv/3] = true
+				case model.KindTCP:
+					anyTCP[iv] = true
+				}
+			}
+			continue
 		}
 		services++
-		for _, k := range ks {
+		for _, k := range t.ProbeKinds() {
 			switch k {
-			case model.KindHTTPS, model.KindTCP:
-				httpsTCP[iv] = true
+			case model.KindTCP:
+				tcp[iv] = true
+			case model.KindHTTPS:
+				https[iv] = true
 			case model.KindICMP:
 				icmp[iv/3] = true
 			}
@@ -374,8 +385,11 @@ func (r *run) method() []string {
 	var out []string
 	s := fmt.Sprintf("fyisp measured %s in %s from this connection", plural(services, "target", "targets"), plural(len(p.Groups), "group", "groups"))
 	var parts []string
-	if len(httpsTCP) > 0 {
-		parts = append(parts, "HTTPS requests (time to the first response byte) and TCP connects "+ivText(httpsTCP))
+	if len(tcp) > 0 {
+		parts = append(parts, "TCP connects (time to open a connection) "+ivText(tcp))
+	}
+	if len(https) > 0 {
+		parts = append(parts, "HTTPS requests (time to the first response byte) "+ivText(https))
 	}
 	if len(icmp) > 0 {
 		parts = append(parts, "ICMP echo (ping) "+ivText(icmp))
@@ -386,6 +400,18 @@ func (r *run) method() []string {
 	s += "."
 	if path > 0 {
 		s += " Your router (the gateway) and the first hop on your ISP's side (the ISP edge) are pinged " + ivText(pathIcmp) + ", so a problem can be placed in your home, at your ISP or beyond it."
+	}
+	if anycast > 0 {
+		var how []string
+		if len(anyIcmp) > 0 {
+			how = append(how, "pinged "+ivText(anyIcmp))
+		}
+		if len(anyTCP) > 0 {
+			how = append(how, "connected to over TCP "+ivText(anyTCP))
+		}
+		if len(how) > 0 {
+			s += fmt.Sprintf(" %s (big anycast DNS resolvers) %s %s.", plural(anycast, "public resolver", "public resolvers"), map[bool]string{true: "is", false: "are"}[anycast == 1], strings.Join(how, " and "))
+		}
 	}
 	out = append(out, s)
 	if traced > 0 {
