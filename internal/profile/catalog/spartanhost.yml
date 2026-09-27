@@ -27,19 +27,6 @@ targets:
       tcp: true
       https: 404
       bytes: 162
-  - name: SpartanHost-Dallas
-    host: lg.dal.spartanhost.net
-    kinds: [icmp]
-    region: dal
-    city: Dallas
-    country: US
-    geo: na
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
-      tcp: true
-      bytes: 0
   - name: SpartanHost-Ashburn
     host: lg.ash.spartanhost.net
     kinds: [https, tcp, icmp]

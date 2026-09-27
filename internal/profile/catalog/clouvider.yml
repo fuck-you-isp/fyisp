@@ -110,20 +110,6 @@ targets:
       tcp: true
       https: 200
       bytes: 0
-  - name: Clouvider-Chicago
-    host: chi.speedtest.clouvider.net
-    kinds: [icmp]
-    region: chi
-    city: Chicago
-    country: US
-    geo: na
-    anycast: false
-    notes: "ping only; TCP 443 refused"
-    verified:
-      date: 2026-09-27
-      icmp: true
-      tcp: false
-      bytes: 0
   - name: Clouvider-Dallas
     host: dal.speedtest.clouvider.net
     kinds: [https, tcp, icmp]

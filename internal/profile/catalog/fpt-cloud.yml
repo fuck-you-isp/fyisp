@@ -26,22 +26,6 @@ targets:
       tcp: true
       https: 200
       bytes: 214
-  - name: FPTCloud-SGN09
-    host: s3-sgn09.fptcloud.com
-    kinds: [https]
-    region: sgn09
-    city: Ho Chi Minh City
-    country: VN
-    geo: as
-    anycast: false
-    notes: >-
-      Drops ICMP.
-    verified:
-      date: 2026-09-27
-      icmp: false
-      tcp: true
-      https: 403
-      bytes: 218
   - name: FPTCloud-SGN10
     host: s3-sgn10.fptcloud.com
     kinds: [https, tcp, icmp]

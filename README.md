@@ -149,7 +149,6 @@ Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-mi
 | `dns` | 33 | 0.8% | 65 MB | 3.8 / 1.9 KB/s | 15 GB | 0.13 GB |
 | `common` | 72 | 1.1% | 72 MB | 8.0 / 2.6 KB/s | 28 GB | 0.24 GB |
 | `default` | 92 | 3.3% | 84 MB | 21 / 9 KB/s | 81 GB | 0.57 GB |
-| `gaming` | 150 | 1.9% | 73 MB | 12 / 7 KB/s | 52 GB | 0.43 GB |
 | `hyperscalers` | 299 | 4.9% | 115 MB | 34 / 17 KB/s | 135 GB | 1.4 GB |
 | `europe` | 381 | 6.0% | 111 MB | 41 / 21 KB/s | 165 GB | 1.4 GB |
 | `devclouds` | 743 | 11.6% | 155 MB | 80 / 41 KB/s | 320 GB | 3.1 GB |

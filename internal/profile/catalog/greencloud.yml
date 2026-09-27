@@ -49,17 +49,6 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-  - name: GreenCloud-Seattle
-    host: 208.115.113.1
-    kinds: [icmp]
-    region: sea
-    city: Seattle
-    country: US
-    geo: na
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: GreenCloud-Ashburn
     host: 104.225.11.54
     kinds: [tcp, icmp]
@@ -172,17 +161,6 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-  - name: GreenCloud-Toronto
-    host: 172.93.167.178
-    kinds: [icmp]
-    region: yyz
-    city: Toronto
-    country: CA
-    geo: na
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: GreenCloud-Amsterdam
     host: 185.214.10.103
     kinds: [tcp, icmp]
@@ -209,17 +187,6 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-  - name: GreenCloud-Frankfurt
-    host: 109.94.170.85
-    kinds: [icmp]
-    region: fra
-    city: Frankfurt
-    country: DE
-    geo: eu
-    anycast: false
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: GreenCloud-Coventry
     host: 94.229.65.150
     kinds: [tcp, icmp]

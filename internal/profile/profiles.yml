@@ -80,7 +80,7 @@ profiles:
     groups: provider-geo
 
   - name: gaming
-    description: Game platforms (Steam, Xbox, PlayStation, ...) and game servers
+    description: Game platforms and cloud gaming (Xbox, PlayStation, Battle.net, GeForce NOW, ...)
     select: {kinds: [game, gaming-platform]}
 
   # ---- regions of the world: every catalog target located there ------------

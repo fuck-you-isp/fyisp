@@ -20,19 +20,6 @@ notes: >-
   FMT2; ICMP only) instead of an edge router, whose control plane may deprioritise echo. There is no
   ths/ams/cam/fmt2 proxy name (NXDOMAIN).
 targets:
-  - name: MythicBeasts-London-THS
-    host: infra-ths-a.mythic-beasts.com
-    kinds: [icmp]
-    region: ths
-    city: London
-    country: GB
-    geo: eu
-    anycast: false
-    notes: "infrastructure host; ping only"
-    verified:
-      date: 2026-09-27
-      icmp: true
-      tcp: false
   - name: MythicBeasts-London-SOV
     host: mirror-sov-a.mythic-beasts.com
     path: /robots.txt
@@ -90,16 +77,3 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-  - name: MythicBeasts-Fremont
-    host: resolver-fmt2-a.mythic-beasts.com
-    kinds: [icmp]
-    region: fmt2
-    city: Fremont
-    country: US
-    geo: na
-    anycast: false
-    notes: "customer DNS resolver in HE Fremont 2 (geo-IP Fremont, AS60011, ~168 ms from Helsinki); ping only"
-    verified:
-      date: 2026-09-27
-      icmp: true
-      tcp: false

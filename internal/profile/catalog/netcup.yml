@@ -36,23 +36,6 @@ targets:
       tcp: true
       https: 404
       bytes: 236
-  - name: Netcup-Vienna
-    host: 152.53.0.1
-    kinds: [icmp]
-    region: vie
-    city: Vienna
-    country: AT
-    geo: eu
-    anycast: false
-    notes: >-
-      Weak (grade C): gateway of the netcup Vienna customer range 152.53.0.0/22 (geo-IP Vienna,
-      AS197540). It is reached via ae1-0.bbr01.anx103.vie.at.anexia-it.net, at ~30 ms from Helsinki.
-      It is a router with no DNS name and no TCP listener, so only ICMP is probed. Replace it if netcup
-      ever publishes a Vienna test host.
-    verified:
-      date: 2026-09-27
-      icmp: true
-      tcp: false
   - name: Netcup-Amsterdam
     host: www.netcup.com
     kinds: []

@@ -64,20 +64,6 @@ targets:
       tcp: true
       https: 300
       bytes: 274
-  - name: Cleura-Sto-Com
-    host: identity.sto-com.cleura.cloud
-    kinds: [icmp]
-    region: sto-com
-    city: Stockholm
-    country: SE
-    geo: eu
-    anycast: false
-    tags: [compliant-cloud region; API ports are allow-listed, ICMP only]
-    verified:
-      date: 2026-09-27
-      icmp: true
-      tcp: false
-      bytes: 0
   - name: Cleura-Sto1HS
     host: s3-sto1hs.citycloud.com
     kinds: []

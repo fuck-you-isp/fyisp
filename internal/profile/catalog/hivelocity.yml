@@ -365,18 +365,6 @@ targets:
       tcp: true
       https: 200
       bytes: 303
-  - name: Hivelocity-bom1
-    host: speedtest.bom1.hivelocity.net
-    kinds: [icmp]
-    region: BOM1
-    city: Mumbai
-    country: IN
-    geo: as
-    anycast: false
-    notes: IP geolocates to Mumbai (AS29802 Hivelocity) but rDNS names a HetrixTools monitoring node; only ICMP answered on 2026-09-27
-    verified:
-      date: 2026-09-27
-      icmp: true
   - name: Hivelocity-iad1
     host: speedtest.iad1.hivelocity.net
     kinds: []
