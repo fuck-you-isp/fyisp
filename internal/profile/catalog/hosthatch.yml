@@ -1,0 +1,222 @@
+provider: hosthatch
+display: HostHatch
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://lg.hosthatch.com/
+  - https://hosthatch.com/
+notes: >-
+  Official per-location looking-glass hosts lg.<loc>.hosthatch.com (AS63473), all 14 listed by the
+  lg.hosthatch.com location picker. GET /api/health returns ~230 B of JSON; never fetch the 1GB/5GB
+  test files. RTT from Helsinki matched each location. "New York" is Evocative EWR1 (New Jersey side).
+targets:
+  - name: HostHatch-Amsterdam
+    host: lg.ams.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 231
+  - name: HostHatch-Stockholm
+    host: lg.sto.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: sto
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 231
+  - name: HostHatch-Oslo
+    host: lg.osl.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: osl
+    city: Oslo
+    country: NO
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 233
+  - name: HostHatch-London
+    host: lg.lon.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: lon
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 232
+  - name: HostHatch-Vienna
+    host: lg.vie.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: vie
+    city: Vienna
+    country: AT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 232
+  - name: HostHatch-Zurich
+    host: lg.zrh.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: zrh
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 226
+  - name: HostHatch-NewYork
+    host: lg.nyc.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: nyc
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 231
+  - name: HostHatch-Chicago
+    host: lg.chi.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 228
+  - name: HostHatch-LosAngeles
+    host: lg.lax.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: lax
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 232
+  - name: HostHatch-HongKong
+    host: lg.hkg.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: hkg
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 232
+  - name: HostHatch-Singapore
+    host: lg.sgp.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: sgp
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 233
+  - name: HostHatch-Tokyo
+    host: lg.tok.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: tok
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 213
+  - name: HostHatch-Seoul
+    host: lg.sel.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: sel
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 233
+  - name: HostHatch-Sydney
+    host: lg.syd.hosthatch.com
+    kinds: [https, tcp, icmp]
+    path: /api/health
+    region: syd
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 232

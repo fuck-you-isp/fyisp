@@ -1,0 +1,54 @@
+provider: hostwinds
+display: Hostwinds
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://www.hostwinds.com/company/datacenters
+  - https://www.hostwinds.com/tutorials/how-to-test-speed-to-hostwinds-data-centers
+notes: >-
+  Official per-datacenter test hosts <dc>-repo.hostwinds.net (the IPs Hostwinds publishes as ping test
+  IPs, rDNS matches) for all three locations: Seattle, Dallas and Amsterdam. GET / is a 153 B nginx 403;
+  never fetch the /tests/*.zip files.
+targets:
+  - name: Hostwinds-Seattle
+    host: sea-repo.hostwinds.net
+    kinds: [https, tcp, icmp]
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153
+  - name: Hostwinds-Dallas
+    host: dal-repo.hostwinds.net
+    kinds: [https, tcp, icmp]
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153
+  - name: Hostwinds-Amsterdam
+    host: ams-repo.hostwinds.net
+    kinds: [https, tcp, icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153

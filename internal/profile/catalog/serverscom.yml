@@ -1,0 +1,165 @@
+provider: serverscom
+display: Servers.com
+kind: cloud
+category: [bare-metal, vps]
+sources:
+  - https://www.servers.com/data-center-locations/
+  - https://www.servers.com/docs/cloud-storage/cloud-storage-openstack-api/
+notes: >-
+  Servers.com publishes no speed-test or looking-glass hosts. The public cloud regions expose an
+  OpenStack Keystone endpoint auth.servers.<region>.cloud.servers.com:5000 (documented in the Cloud
+  Storage OpenStack API guide); GET / on port 5000 is the unauthenticated 291 B version-discovery
+  document (HTTP 300). Region ids AMS3, AMS4, SJC1 (the "SF" location) and WAS1 were found by DNS;
+  the other nine data-center locations are dedicated-server only and have no public unicast endpoint,
+  so they are listed as unreachable with www.servers.com as a placeholder host (never probed).
+targets:
+  - name: ServersCom-ams3
+    host: auth.servers.ams3.cloud.servers.com
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: AMS3
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 291
+  - name: ServersCom-ams4
+    host: auth.servers.ams4.cloud.servers.com
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: AMS4
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 291
+  - name: ServersCom-sjc1
+    host: auth.servers.sjc1.cloud.servers.com
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: SJC1
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 291
+  - name: ServersCom-was1
+    host: auth.servers.was1.cloud.servers.com
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: WAS1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 291
+  - name: ServersCom-dallas
+    host: www.servers.com
+    kinds: []
+    region: dallas
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-hong-kong
+    host: www.servers.com
+    kinds: []
+    region: hong-kong
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-lansing
+    host: www.servers.com
+    kinds: []
+    region: lansing
+    city: Lansing
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-london
+    host: www.servers.com
+    kinds: []
+    region: london
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-luxembourg
+    host: www.servers.com
+    kinds: []
+    region: luxembourg
+    city: Luxembourg
+    country: LU
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-miami
+    host: www.servers.com
+    kinds: []
+    region: miami
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-new-york
+    host: www.servers.com
+    kinds: []
+    region: new-york
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-sao-paulo
+    host: www.servers.com
+    kinds: []
+    region: sao-paulo
+    city: São Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
+  - name: ServersCom-singapore
+    host: www.servers.com
+    kinds: []
+    region: singapore
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public per-location endpoint (dedicated-only location); placeholder host, not probed
