@@ -3,6 +3,7 @@
 // release matrix builds ./cmd/fyisp only.
 //
 //	fyisp-webdev -listen 0.0.0.0:3000 -public 0.0.0.0:3001 -backfill 6h
+//	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 package main
 
 import (
@@ -23,6 +24,7 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/web"
 )
@@ -218,6 +220,7 @@ func main() {
 	noNotes := flag.Bool("no-notes", false, "run without an annotation store (notes hidden)")
 	noReports := flag.Bool("no-reports", false, "run without reports")
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
+	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -225,6 +228,26 @@ func main() {
 	defer stop()
 
 	p := devProfile()
+	if *named != "" {
+		reg, err := profile.Builtin()
+		if err == nil {
+			p, err = reg.Resolve(strings.Split(*named, ","), profile.ResolveOptions{})
+		}
+		if err != nil {
+			log.Error("profile", "err", err)
+			os.Exit(2)
+		}
+		// Slow a spread of targets down too, so the Overview has something to show.
+		for i, t := range p.Targets {
+			switch {
+			case t.Layer != "":
+			case i%23 == 0:
+				slowdown[t.Name] = 3.5
+			case i%7 == 0:
+				slowdown[t.Name] = 1.8
+			}
+		}
+	}
 	now := time.Now()
 	// sink adds the evening slowdown and drops ISP-edge samples with
 	// -edge-undiscovered.
