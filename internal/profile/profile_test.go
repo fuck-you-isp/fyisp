@@ -294,7 +294,7 @@ func TestLoadErrors(t *testing.T) {
 		"override: no target":          "extends: [default]\noverride: [{name: nope, port: 1}]\n",
 		"already exists":               "extends: [default]\nadd: [{name: Discord, host: x.com, group: dns}]\n",
 		"need `extends":                "remove: [Discord]\n",
-		"only [default]":               "extends: [other]\n",
+		"unknown profile \"other\"":    "extends: [other]\n",
 		"not allowed with":             "extends: [default]\ntargets: [{name: a, host: b, group: dns}]\n",
 		"unknown kind":                 "extends: [default]\noverride: [{name: Discord, kinds: [udp]}]\n",
 		"field bogus not found":        "extends: [default]\nbogus: 1\n",

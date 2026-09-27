@@ -1,0 +1,17 @@
+provider: hetzner
+display: Hetzner
+kind: cloud
+targets:
+  - name: Hetzner-Falkenstein
+    host: fsn1-speed.hetzner.com
+    kinds: [https, tcp, icmp]
+    city: Falkenstein
+    country: DE
+    geo: eu
+  - name: Hetzner-Ashburn
+    host: ash-speed.hetzner.com
+    kinds: [icmp]
+    port: 80
+    city: Ashburn
+    country: US
+    geo: na

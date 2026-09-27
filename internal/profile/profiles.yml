@@ -1,0 +1,103 @@
+# fyisp named profiles: selections over the target catalog (catalog/*.yml).
+# Use them with `fyisp --profile a,b,c` (union) or `extends: [a, b]` in a
+# --config file; list them with `fyisp profiles`.
+#
+# Not listed here:
+#   default    the embedded default.yml (87 targets), used when no --profile
+#              or --config is given
+#   <provider> every catalog file is also a profile named by its provider ID
+#              (aws, gcp, azure, hetzner, ...), unless defined below
+#
+# Schema (see package profile, named.go):
+#   - name: europe                      # lowercase [a-z0-9-]
+#     description: ...                  # one line, shown by `fyisp profiles`
+#     extends: [default]                # optional: include other profiles
+#     select:                           # a rule or a list of rules (any may match)
+#       providers: [aws, services-*]    # provider IDs, globs allowed
+#       kinds: [hyperscaler]            # provider kind: hyperscaler cloud cdn dns service game gaming-platform
+#       tags: [voice]                   # target tags or provider categories
+#       geos: [eu]                      # na sa eu me af as oc
+#       anycast: false                  # only (non-)anycast targets
+#       targets: [AWS-eu-west-1]        # explicit target names (added)
+#       exclude: [AWS-eu-south-*]       # target names removed from the profile
+#       exclude_providers: [services-dev] # providers this rule skips
+#     groups: provider                  # provider (default) | provider-geo | geo | custom
+#     custom_groups:                    # with groups: custom
+#       - {id: voice, title: "Voice & video", match: {tags: [voice]}}
+#
+# A rule matches a target when every field it sets matches. Providers, tags
+# or names that are not in the catalog select nothing. Catalog targets with
+# `kinds: []` (unreachable when last checked) are always skipped.
+#
+# Combining is a union (--profile clouds,dns). For an intersection with a
+# region of the world use --geo: `fyisp --profile clouds --geo eu`.
+
+profiles:
+  # ---- by kind of provider -------------------------------------------------
+  - name: hyperscalers
+    description: The big clouds (AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, ...), one panel per provider and region of the world
+    select: {kinds: [hyperscaler]}
+    groups: provider-geo
+
+  - name: devclouds
+    description: Developer and regional clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, Scaleway, ...), one panel per provider and region of the world
+    select: {kinds: [cloud]}
+    groups: provider-geo
+
+  - name: clouds
+    description: Hyperscalers and developer clouds together (over 300 targets; narrow it with --geo, e.g. --geo eu, or raise --max-targets)
+    extends: [hyperscalers, devclouds]
+
+  - name: cdn
+    description: Content delivery networks and edge platforms
+    select: {kinds: [cdn]}
+
+  - name: dns
+    description: Public DNS resolvers
+    select: {kinds: [dns]}
+
+  # ---- services -----------------------------------------------------------
+  - name: common
+    description: Everyday services (calls and chat, productivity, streaming, social), without the developer services
+    select: {kinds: [service], exclude_providers: [services-dev]}
+
+  - name: dev
+    description: Developer services (code hosting, registries, package mirrors, ...)
+    select: {providers: [services-dev]}
+
+  - name: streaming
+    description: Video and music streaming
+    select: {providers: [services-streaming]}
+
+  - name: gaming
+    description: Game platforms (Steam, Xbox, PlayStation, ...) and game servers
+    select: {kinds: [game, gaming-platform]}
+
+  # ---- regions of the world: every catalog target located there ------------
+  - name: north-america
+    description: Every catalog target in North America, one panel per provider
+    select: {geos: [na]}
+
+  - name: south-america
+    description: Every catalog target in South America, one panel per provider
+    select: {geos: [sa]}
+
+  - name: europe
+    description: Every catalog target in Europe, one panel per provider
+    select: {geos: [eu]}
+
+  - name: middle-east
+    description: Every catalog target in the Middle East, one panel per provider
+    select: {geos: [me]}
+
+  - name: africa
+    description: Every catalog target in Africa, one panel per provider
+    select: {geos: [af]}
+
+  - name: asia
+    description: Every catalog target in Asia, one panel per provider
+    select: {geos: [as]}
+
+  - name: oceania
+    description: Every catalog target in Oceania, one panel per provider
+    select: {geos: [oc]}
