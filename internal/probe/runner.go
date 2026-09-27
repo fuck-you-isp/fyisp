@@ -24,9 +24,15 @@ const (
 	// success on a bufferbloated link is not recorded as loss, and below the
 	// default ICMP interval (5s). A series never waits longer than its
 	// interval: probes of one series run one at a time (schedule).
-	defaultTimeout   = 3 * time.Second
-	httpsTimeout     = 5 * time.Second
-	resolveTimeout   = 5 * time.Second
+	defaultTimeout = 3 * time.Second
+	httpsTimeout   = 5 * time.Second
+	resolveTimeout = 5 * time.Second
+	// maxLookups bounds concurrent DNS lookups. Resolving every host of a
+	// large profile at once (1300 lookups for --profile all) overflows
+	// home routers and Docker's resolver: in a measured start 552 of them
+	// timed out, and every probe of those hosts was lost with ReasonDNS
+	// until the retry 10 s later.
+	maxLookups       = 16
 	maxBody          = 64 << 10
 	defaultUserAgent = "fyisp"
 )
@@ -55,13 +61,14 @@ func New(o Options) Runner {
 		o.UserAgent = defaultUserAgent
 	}
 	silenceHTTP2Noise()
-	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep}
+	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep, lookups: make(chan struct{}, maxLookups)}
 }
 
 type runner struct {
-	o     Options
-	caps  Caps
-	sleep func(context.Context, time.Duration) bool
+	o       Options
+	caps    Caps
+	sleep   func(context.Context, time.Duration) bool
+	lookups chan struct{} // semaphore: at most maxLookups lookups in flight
 }
 
 func (r *runner) Caps() Caps { return r.caps }
@@ -480,6 +487,16 @@ func (hs *hostState) addr() (netip.Addr, error) {
 func (r *runner) resolve(ctx context.Context, hs *hostState) {
 	if hs.literal || hs.special != "" {
 		return
+	}
+	// The timeout starts once a lookup slot is free: waiting for one is not
+	// a slow resolver.
+	if r.lookups != nil {
+		select {
+		case r.lookups <- struct{}{}:
+			defer func() { <-r.lookups }()
+		case <-ctx.Done():
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()

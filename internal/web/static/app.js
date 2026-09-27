@@ -1969,6 +1969,8 @@ function fmtRatio(/** @type {number} */ r) { return '×' + (r >= 10 ? r.toFixed(
 const OVERVIEW_MIN = 150;
 const FAIL_LOSS = 0.2; // the verdict engine's lossBad
 const VERY_SLOW = 3; // the verdict engine's spikeFactor
+// Loss needs evidence: at least 2 lost of at least 10 samples (as the server's row states).
+const LOSS_MIN_LOST = 2, LOSS_MIN_SEEN = 10;
 const GEOS = ['na', 'sa', 'eu', 'me', 'af', 'as', 'oc', 'global'];
 /** @type {Object<string,string>} */
 const GEO_TITLE = { na: 'North America', sa: 'South America', eu: 'Europe', me: 'Middle East', af: 'Africa', as: 'Asia', oc: 'Oceania', global: 'Global', '': '—' };
@@ -2268,6 +2270,13 @@ class Overview {
     this.breadth.className = 'ov-breadth' + (b.strong ? ' strong' : '');
     /** @type {(string|Node)[]} */
     const kids = [b.text];
+    // The banner judges the last minute with stricter thresholds; say so, so
+    // that "All good" above and "N targets lost packets" here do not read
+    // as a contradiction.
+    if (verdict && verdict.kind !== 'unknown') {
+      const what = d.summary.with_normal < d.summary.targets / 2 ? '1% loss or more' : '1% loss or more, or 1.5× their normal';
+      kids.push(h('span', { class: 'muted', text: ` This line covers the whole range and counts ${what}; the verdict above judges only the last minute.` }));
+    }
     const un = d.summary.targets - d.summary.measured;
     if (un) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
     if (d.capped) kids.push(h('span', { class: 'muted', text: ` The Overview covers at most the last 30 days of the range.` }));
@@ -2439,6 +2448,7 @@ class Overview {
     const worst = [.../** @type {OvRow[]} */ (rows)].sort(bySeverity)[0];
     return {
       p, names, rows: /** @type {OvRow[]} */ (rows), measured, loss: n + lost ? lost / (n + lost) : 0,
+      judged: lost >= LOSS_MIN_LOST && n + lost >= LOSS_MIN_SEEN,
       lossyAny: measured.some((r) => r.state === 'lossy' || r.state === 'failing'),
       ratio: median(ratios), now: median(nows), normal: median(normals), worst,
     };
@@ -2454,13 +2464,13 @@ class Overview {
       let cls = 'hm-c has', glyph = '';
       if (!c.rows.length) cls = 'hm-c';
       else if (!c.measured.length) cls += ' unm';
-      else if (c.loss >= FAIL_LOSS) { cls += ' fail'; glyph = '×'; }
+      else if (c.judged && c.loss >= FAIL_LOSS) { cls += ' fail'; glyph = '×'; }
       else if (m === 'r') {
         if (isNaN(c.ratio)) { cls += ' nonorm'; glyph = '·'; }
         else cls += ' r' + RATIO_BINS.findIndex(([x]) => c.ratio < /** @type {number} */ (x));
       } else if (isNaN(c.now)) cls += ' unm';
       else cls += ' l' + MS_BINS.findIndex(([x]) => c.now < /** @type {number} */ (x));
-      if (c.measured.length && c.loss < FAIL_LOSS && (c.lossyAny || c.loss >= REAL_LOSS)) cls += ' dot';
+      if (c.measured.length && !(c.judged && c.loss >= FAIL_LOSS) && (c.lossyAny || (c.judged && c.loss >= REAL_LOSS))) cls += ' dot';
       if (pid === id && (pg === undefined || pg === g)) cls += ' sel';
       if (el.className !== cls) el.className = cls;
       if (el.textContent !== glyph) el.textContent = glyph;
@@ -2860,6 +2870,31 @@ function whyButton(/** @type {string} */ title, /** @type {string} */ text) {
   return b;
 }
 
+// The banner shows at most this many target chips, then "+N more".
+const VERDICT_CHIPS = 8;
+let verdictChipsOpen = false;
+
+/** "+N more" on a big profile: the Overview, problems only, scrolled into view. */
+function showProblems() {
+  if (!ov) return;
+  const o = ov;
+  state.op = true;
+  state.oc = '';
+  const scroll = () => requestAnimationFrame(() => o.tableBox.scrollIntoView({ block: 'start' }));
+  if (currentView() !== 'o') {
+    state.view = 'o';
+    state.focus = null;
+    writeHash();
+    applyView();
+    o.load().then(scroll);
+  } else {
+    writeHash();
+    o.renderControls();
+    o.applyRows();
+    scroll();
+  }
+}
+
 function renderVerdict() {
   const el = $('#verdict');
   const v = verdict;
@@ -2878,9 +2913,17 @@ function renderVerdict() {
   const meta = [];
   if (isFinite(since) && since > 0) meta.push(h('span', { text: `since ${fmtWhen(since)} (${fmtDur(Date.now() - since)})` }));
   if (v.targets && v.targets.length) {
-    meta.push(h('span', { class: 'v-aff', text: 'Affected:' }));
-    for (const name of v.targets) {
+    meta.push(h('span', { class: 'v-aff', title: 'Targets the verdict counts over the last minute', text: 'Affected now:' }));
+    const all = v.targets.length <= VERDICT_CHIPS + 1 || verdictChipsOpen;
+    for (const name of all ? v.targets : v.targets.slice(0, VERDICT_CHIPS)) {
       meta.push(h('button', { class: 'tchip', type: 'button', title: `Show ${name} on its chart`, text: name, onclick: () => focusTarget(name) }));
+    }
+    if (!all) {
+      const more = v.targets.length - VERDICT_CHIPS;
+      // Big profiles: the Overview lists them all (problems only); else expand in place.
+      meta.push(ov && bigProfile
+        ? h('button', { class: 'tchip more', type: 'button', title: 'Show every target with a problem in the Overview', text: `+${more} more`, onclick: showProblems })
+        : h('button', { class: 'tchip more', type: 'button', title: 'Show all affected targets', text: `+${more} more`, onclick: () => { verdictChipsOpen = true; renderVerdict(); } }));
     }
   }
   if (meta.length) kids.push(h('div', { class: 'v-meta' }, ...meta));
@@ -2906,6 +2949,7 @@ async function loadVerdict() {
   }
   renderVerdict();
   renderLayers();
+  if (ov && ov.data && overviewShown()) ov.renderBreadth();
   // A new verdict usually means a new (or closed) incident.
   if (prev != null && verdict && prev !== verdict.kind) loadIncidents();
 }

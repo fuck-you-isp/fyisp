@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -555,3 +556,72 @@ func TestDNSOutageWhileRunning(t *testing.T) {
 }
 
 func tctx(t *testing.T) context.Context { return t.Context() }
+
+// TestLookupsBounded: a large profile resolves its hosts at most maxLookups
+// at a time, and a resolver that drops bursts no longer turns the first
+// probes into DNS losses.
+func TestLookupsBounded(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	var inflight, peak atomic.Int32
+	// Like a home router's resolver: more than maxLookups queries at once
+	// and the extra ones time out.
+	lookup := func(ctx context.Context, host string) ([]netip.Addr, error) {
+		n := inflight.Add(1)
+		defer inflight.Add(-1)
+		for {
+			old := peak.Load()
+			if n <= old || peak.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+		if n > maxLookups {
+			return nil, &net.DNSError{Err: "i/o timeout", Name: host, IsTimeout: true}
+		}
+		return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
+	}
+	var ts []model.Target
+	for i := range 200 {
+		ts = append(ts, model.Target{Name: fmt.Sprintf("t%d", i), Host: fmt.Sprintf("h%d.example.test", i), Port: port,
+			Kinds: []model.ProbeKind{model.KindTCP}, Interval: time.Second})
+	}
+	r := New(Options{Log: quietLog(), Lookup: lookup})
+	c, cancel := context.WithCancel(context.Background())
+	var mu sync.Mutex
+	var n, dns int
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = r.Run(c, profileOf(ts...), model.SinkFunc(func(s model.Sample) {
+			mu.Lock()
+			n++
+			if s.Lost && s.Reason == model.ReasonDNS {
+				dns++
+			}
+			mu.Unlock()
+		}))
+	}()
+	time.Sleep(2500 * time.Millisecond)
+	cancel()
+	<-done
+	if p := peak.Load(); p > maxLookups {
+		t.Errorf("peak concurrent lookups %d, want at most %d", p, maxLookups)
+	}
+	if n < 200 || dns > 0 {
+		t.Errorf("%d samples, %d lost to DNS; want every target probed without DNS loss", n, dns)
+	}
+}

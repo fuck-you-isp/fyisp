@@ -384,3 +384,40 @@ func TestProfileMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestOverviewRowState(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	row := func(n, lost int64, ratio *float64) overviewRow {
+		r := overviewRow{N: n, Lost: lost, Ratio: ratio}
+		if n+lost > 0 {
+			r.Loss = float64(lost) / float64(n+lost)
+		}
+		return r
+	}
+	for _, c := range []struct {
+		name string
+		r    overviewRow
+		want string
+	}{
+		{"nothing", row(0, 0, nil), stateUnmeasured},
+		{"4 samples", row(2, 2, nil), stateUnmeasured},
+		{"all lost, too few", row(0, 4, nil), stateUnmeasured},
+		{"1 lost of 6", row(5, 1, nil), stateOK},
+		{"1 lost of 100", row(99, 1, nil), stateOK},
+		{"2 lost of 9", row(7, 2, nil), stateUnmeasured},
+		{"all lost, 9", row(0, 9, nil), stateUnmeasured},
+		{"1 lost of 9, slow", row(8, 1, f(2)), stateSlow},
+		{"2 lost of 10", row(8, 2, nil), stateFailing},
+		{"all lost, 10", row(0, 10, nil), stateFailing},
+		{"2 lost of 11", row(9, 2, nil), stateLossy},
+		{"2 lost of 200", row(198, 2, f(4)), stateLossy},
+		{"2 lost of 201", row(199, 2, f(4)), stateVerySlow}, // under 1%
+		{"ratio 1.49", row(100, 0, f(1.49)), stateOK},
+		{"ratio 1.5", row(100, 0, f(1.5)), stateSlow},
+		{"ratio 3", row(100, 0, f(3)), stateVerySlow},
+	} {
+		if got := rowState(c.r); got != c.want {
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+	}
+}

@@ -237,6 +237,17 @@ func main() {
 			log.Error("profile", "err", err)
 			os.Exit(2)
 		}
+		// A "service" verdict naming many targets, as on a big profile.
+		var bad []string
+		for _, t := range p.Targets {
+			if t.Layer == "" && len(bad) < 44 {
+				bad = append(bad, t.Name)
+			}
+		}
+		if len(bad) > 3 {
+			script[0].targets = bad
+			script[0].summary = fmt.Sprintf("%d services look affected: %s and %d more.", len(bad), strings.Join(bad[:3], ", "), len(bad)-3)
+		}
 		// Slow a spread of targets down too, so the Overview has something to show.
 		for i, t := range p.Targets {
 			switch {

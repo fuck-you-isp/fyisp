@@ -658,6 +658,7 @@ textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent);
 .hm-legend .hm-c { cursor: default; }
 
 /* table */
+.ovt-box { scroll-margin-top: 100px; }
 .ov-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 6px; }
 .ov-q {
   flex: 1 1 220px; max-width: 360px; min-width: 0; padding: 4px 8px; border-radius: 6px;
@@ -721,6 +722,7 @@ th[aria-sort] .ov-sort { color: var(--ink); }
   .ovt tr.st-very_slow { --rc: var(--v-lan); }
   .ovt tr.st-slow { --rc: var(--v-service); }
   .ov-count { margin-left: 0; }
+  .ovt-box { scroll-margin-top: 8px; }
   .hm-wrap { max-height: 60vh; }
   .ov-q { max-width: none; }
 }

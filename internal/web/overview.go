@@ -21,6 +21,11 @@ const (
 	overviewLossy   = 0.01 // app.js REAL_LOSS: loss below 1% is noise
 	overviewSlow    = 1.5  // app.js SLOW_RATIO
 	overviewMinSeen = 5    // fewer samples (received plus lost): not measured
+	// Loss states need evidence: at least overviewLossMinLost lost samples
+	// out of at least overviewLossMinSeen. One lost sample out of a handful
+	// (a first probe during startup, a single timeout) is not "lossy".
+	overviewLossMinLost = 2
+	overviewLossMinSeen = 10
 )
 
 // OverviewMaxRange caps the /api/overview window (from is moved up to
@@ -284,15 +289,19 @@ func (s *server) overview(ctx context.Context, p overviewParams) (*overviewJSON,
 	return out, nil
 }
 
-// rowState classifies a row: too few samples, then loss, then the ratio to
-// the normal.
+// rowState classifies a row: too few samples, then loss (with enough
+// evidence; a row that is losing without it yet is not measured, never
+// ok), then the ratio to the normal.
 func rowState(r overviewRow) string {
+	judged := r.Lost >= overviewLossMinLost && r.N+r.Lost >= overviewLossMinSeen
 	switch {
 	case r.N+r.Lost < overviewMinSeen:
 		return stateUnmeasured
-	case r.Loss >= verdict.LossBad:
+	case r.Lost >= overviewLossMinLost && r.N+r.Lost < overviewLossMinSeen:
+		return stateUnmeasured // losing, but too early to say how much
+	case judged && r.Loss >= verdict.LossBad:
 		return stateFailing
-	case r.Loss >= overviewLossy:
+	case judged && r.Loss >= overviewLossy:
 		return stateLossy
 	case r.Ratio != nil && *r.Ratio >= verdict.SpikeFactor:
 		return stateVerySlow
