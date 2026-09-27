@@ -19,7 +19,9 @@ targets:
     host: dynamodb.us-east-1.amazonaws.com
     kinds: [https, tcp]            # ONLY kinds verified to work (https/tcp/icmp)
     port: 443                      # optional, default 443
-    path: /ping                    # optional https path (small response!), default /
+    path: /ping                    # optional https path (small response!), default /; may include a query string
+    host_overrides:                # optional: probe some kinds on another host (e.g. ping one, HTTPS another)
+      https: other.example.com
     region: us-east-1              # provider's own region/datacenter id
     city: Ashburn                  # best-known physical location (if published)
     country: US                    # ISO 3166-1 alpha-2
