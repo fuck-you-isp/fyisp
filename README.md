@@ -130,7 +130,45 @@ Loss on an inner link shows on every layer beyond it, so the verdict blames the 
 
 A new problem must hold for about 10 seconds before it is shown, and the verdict returns to *ok* only after a full minute without problems. Verdict summaries never contain addresses or host names, so they are safe on the public link. Every host name is looked up again every 60 seconds. After one failed lookup fyisp keeps probing the last good address; after two in a row (about 70 seconds into a resolver outage) the host's probes count as lost with reason *DNS*, as a real application would fail too, until a lookup succeeds again.
 
-The layers come from the built-in **Network path** group, shown first: the *Gateway* and the *ISP edge* (found automatically from the routing table and a short traceroute; pinged every second) and three public anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9; ICMP and TCP). A profile passed with `--config` keeps this group unless it sets `path: false` at the top level; without it fyisp can still tell `dns`, `service` and `upstream` apart, but not `lan` from `isp`.
+The layers come from the built-in **Network path** group, shown first: the *Gateway* and the *ISP edge* (found automatically from the routing table and a short traceroute; pinged every second) and three public anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9; ICMP and TCP). A profile passed with `--config` keeps this group unless it sets `path: false` at the top level (`--no-path` does the same for `--profile`); without it fyisp can still tell `dns`, `service` and `upstream` apart, but not `lan` from `isp`.
+
+## What to measure (profiles)
+
+By default fyisp measures 87 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
+
+```sh
+fyisp profiles                       # list the profiles, with target and panel counts
+fyisp profiles aws                   # the targets of a profile (region, city, country)
+fyisp --profile aws,europe           # combine profiles (a union)
+fyisp --profile clouds --geo eu      # only the targets of a profile in one region (na sa eu me af as oc)
+fyisp --profile default,dns          # the default targets plus every public resolver
+```
+
+| Profiles | What |
+|---|---|
+| `default` | the 87 original targets (used without `--profile`) |
+| `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / DigitalOcean, Linode, Vultr, Hetzner, OVH, ... / both; one panel per provider and region |
+| `cdn`, `dns` | CDN edges, public DNS resolvers (DNS-over-HTTPS) |
+| `common`, `dev`, `streaming`, `gaming` | everyday services, developer services, streaming, game platforms |
+| `north-america`, `south-america`, `europe`, `middle-east`, `africa`, `asia`, `oceania` | every catalog target located there (anycast endpoints have no region and are left out) |
+| `aws`, `gcp`, `azure`, `hetzner`, ... | every provider in the catalog is a profile of its own |
+
+Target names are identities (a name keeps its history): when a profile is combined with `default` and both have a target of the same name (e.g. `AWS-us-east-1`), the catalog's definition is used. `default` on its own never changes.
+
+A run is limited to **300 targets** (including the 5 Network path targets). More needs `--max-targets N` (up to 1000). The cost grows linearly: 300 targets use about 4% of one CPU core and ~28 KB/s of upload (HTTPS + TCP every 15 s, ping every 5 s, per target), and the data directory and dashboard grow with them (one panel per group; profiles like `clouds` have 80+ panels).
+
+A `--config` file can start from any profiles and change them:
+
+```yaml
+name: mine
+extends: [aws, europe]            # or [default]
+remove: [AWS-eu-south-2]
+groups: [{id: home, title: Home}]
+add:
+  - {name: nas, host: 192.168.1.10, group: home, kinds: [icmp]}
+```
+
+Profiles are defined in [`internal/profile/profiles.yml`](internal/profile/profiles.yml) as selections over the catalog (by provider, provider kind, tag and region); the file documents the format.
 
 ## ICMP permissions
 

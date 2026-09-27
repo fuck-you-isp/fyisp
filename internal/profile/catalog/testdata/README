@@ -1,0 +1,2 @@
+Sample catalog files for the profile package tests (not real, unverified
+data). The loader reads only ../*.yml, never this directory.

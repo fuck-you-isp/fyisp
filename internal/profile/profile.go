@@ -5,7 +5,7 @@
 //
 //	name: my-profile
 //	version: "1"
-//	extends: [default]          # optional; only "default" is known
+//	extends: [default]          # optional: named profiles (see profiles.yml), e.g. [aws, europe]
 //	groups:                     # new groups, or a changed title/order by id
 //	  - {id: home, title: Home, order: 8}
 //	add:                        # with extends: new targets
@@ -47,6 +47,7 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -58,7 +59,7 @@ import (
 
 // Limits bound what a profile may ask for.
 type Limits struct {
-	MaxTargets      int  // default 300
+	MaxTargets      int  // default DefaultMaxTargets (300)
 	MinIntervalSecs int  // default 5
 	AllowPrivateIPs bool // true only for local files
 }
@@ -133,6 +134,12 @@ func addPath(p *model.Profile) {
 	p.Targets = append(pathTargets(), p.Targets...)
 }
 
+// WithoutPath removes the network path group and its targets.
+func WithoutPath(p *model.Profile) {
+	p.Targets = slices.DeleteFunc(p.Targets, func(t model.Target) bool { return t.Group == PathGroup })
+	p.Groups = slices.DeleteFunc(p.Groups, func(g model.Group) bool { return g.ID == PathGroup })
+}
+
 // Default returns a fresh copy of the embedded default profile, with the
 // network path group.
 func Default() (*model.Profile, error) {
@@ -157,9 +164,14 @@ func defaultBase() (*model.Profile, error) {
 	return p, nil
 }
 
-// Load reads a local profile file, which may extend the default profile, and
+// Load reads a local profile file, which may extend named profiles, and
 // validates it with local-file limits (private IPs allowed).
 func Load(path string) (*model.Profile, error) {
+	return LoadLimits(path, Limits{})
+}
+
+// LoadLimits is Load with limits; private IPs are always allowed.
+func LoadLimits(path string, l Limits) (*model.Profile, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -168,7 +180,8 @@ func Load(path string) (*model.Profile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if err := Validate(p, Limits{AllowPrivateIPs: true}); err != nil {
+	l.AllowPrivateIPs = true
+	if err := Validate(p, l); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return p, nil
@@ -206,15 +219,24 @@ func parse(fp *fileProfile) (*model.Profile, error) {
 		}
 		return standalone(fp)
 	}
-	if len(fp.Extends) != 1 || fp.Extends[0] != "default" {
-		return nil, fmt.Errorf("extends: only [default] is supported, got %v", fp.Extends)
-	}
 	if len(fp.Targets) > 0 {
 		return nil, errors.New("targets: not allowed with extends; use add/remove/override")
 	}
-	base, err := defaultBase()
+	var base *model.Profile
+	var err error
+	if len(fp.Extends) == 1 && fp.Extends[0] == "default" {
+		base, err = defaultBase()
+	} else {
+		var r *Registry
+		if r, err = Builtin(); err == nil {
+			var b *sel
+			if b, err = r.base(fp.Extends, nil); err == nil {
+				base = b.Profile
+			}
+		}
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("extends: %w", err)
 	}
 	return extend(base, fp)
 }
@@ -423,7 +445,7 @@ func Validate(p *model.Profile, l Limits) error {
 		return errors.New("nil profile")
 	}
 	if l.MaxTargets <= 0 {
-		l.MaxTargets = 300
+		l.MaxTargets = DefaultMaxTargets
 	}
 	if l.MinIntervalSecs <= 0 {
 		l.MinIntervalSecs = 5
@@ -446,7 +468,7 @@ func Validate(p *model.Profile, l Limits) error {
 		bad("no targets")
 	}
 	if len(p.Targets) > l.MaxTargets {
-		bad("%d targets, at most %d allowed", len(p.Targets), l.MaxTargets)
+		bad("%d targets, at most %d allowed: pick narrower profiles (see `fyisp profiles`) or raise --max-targets (up to %d)", len(p.Targets), l.MaxTargets, MaxTargetsCap)
 	}
 	traced := 0
 	for _, t := range p.Targets {

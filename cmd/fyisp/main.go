@@ -81,6 +81,10 @@ type config struct {
 	ephemeral     bool
 	retention     time.Duration
 	configPath    string
+	profiles      profileNames
+	geos          geoList
+	maxTargets    int
+	noPath        bool
 	openBrowser   bool
 	adminToken    string
 	allowHosts    hostList
@@ -102,6 +106,8 @@ func main() {
 			os.Exit(cmdExport(os.Args[2:]))
 		case "report":
 			os.Exit(cmdReport(os.Args[2:]))
+		case "profiles":
+			runProfiles()
 		}
 	}
 	cfg, err := parseFlags(os.Args[1:])
@@ -139,7 +145,11 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.dataDir, "data-dir", "", "where to keep data (default: per-OS state directory; see `fyisp paths`)")
 	fs.BoolVar(&c.ephemeral, "ephemeral", false, "keep data in a temporary directory deleted on exit")
 	fs.StringVar(&retention, "retention", "90d", "how long to keep data (max 90d), e.g. 14d or 48h")
-	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]`")
+	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]` or other named profiles")
+	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: default)")
+	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
+	fs.IntVar(&c.maxTargets, "max-targets", profile.DefaultMaxTargets, fmt.Sprintf("most targets a profile may have (up to %d; %s)", profile.MaxTargetsCap, profileCost))
+	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls when --listen is not loopback")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
@@ -148,7 +158,7 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 	fs.BoolVar(&c.force, "force", false, "start even if the data directory has less than 200 MB free")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
+		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp profiles [NAME[,NAME...]]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -169,6 +179,12 @@ func parseFlags(args []string) (config, error) {
 	}
 	if c.ephemeral && c.dataDir != "" {
 		return c, fmt.Errorf("--ephemeral and --data-dir are mutually exclusive")
+	}
+	if c.configPath != "" && (len(c.profiles) > 0 || len(c.geos) > 0) {
+		return c, fmt.Errorf("--config and --profile/--geo are mutually exclusive: use `extends: [%s]` in the file", strings.Join(c.profiles, ", "))
+	}
+	if c.maxTargets < 1 || c.maxTargets > profile.MaxTargetsCap {
+		return c, fmt.Errorf("--max-targets must be between 1 and %d", profile.MaxTargetsCap)
 	}
 	return c, nil
 }
@@ -229,7 +245,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	slog.SetDefault(log)
 	started := time.Now()
 
-	prof, err := loadProfile(c.configPath)
+	prof, err := loadProfile(c)
 	if err != nil {
 		return err
 	}
@@ -450,17 +466,6 @@ func maintain(ctx context.Context, st storeT, retention time.Duration, log *slog
 			doPrune()
 		}
 	}
-}
-
-func loadProfile(path string) (*model.Profile, error) {
-	if path == "" {
-		return profile.Default()
-	}
-	p, err := profile.Load(path)
-	if err != nil {
-		return nil, fmt.Errorf("loading --config: %w", err)
-	}
-	return p, nil
 }
 
 // listenLocal binds the dashboard. With the default address, busy ports fall

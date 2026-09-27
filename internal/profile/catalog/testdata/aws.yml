@@ -1,0 +1,40 @@
+provider: aws
+display: Amazon Web Services
+kind: hyperscaler
+sources: [https://docs.aws.amazon.com/general/latest/gr/ddb.html]
+notes: Sample data for tests.
+targets:
+  - name: AWS-us-east-1
+    host: dynamodb.us-east-1.amazonaws.com
+    kinds: [https, tcp]
+    path: /ping
+    region: us-east-1
+    city: Ashburn
+    country: US
+    geo: na
+    verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 2}
+  - name: AWS-us-west-2
+    host: dynamodb.us-west-2.amazonaws.com
+    kinds: [https, tcp]
+    region: us-west-2
+    country: US
+    geo: na
+  - name: AWS-eu-central-1
+    host: dynamodb.eu-central-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    region: eu-central-1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    tags: [storage]
+  - name: AWS-global-accelerator
+    host: aws-global.example.com
+    kinds: [https]
+    anycast: true
+  - name: AWS-me-south-1
+    host: dynamodb.me-south-1.amazonaws.com
+    kinds: []
+    region: me-south-1
+    country: BH
+    geo: me
+    tags: [unreachable]

@@ -2459,6 +2459,13 @@ async function main() {
   reportsOn = MODE === 'local' && !!(prof.features && prof.features.reports);
   baseOn = !!(prof.features && prof.features.baselines);
   allTargets = prof.targets;
+  // Which target profile(s) this run measures, unless the default.
+  const pb = $('#profile-badge');
+  if (prof.name && prof.name !== 'default') {
+    pb.hidden = false;
+    pb.textContent = 'Profile: ' + prof.name;
+    pb.title = `${prof.targets.length} targets in ${prof.groups.length} panels`;
+  }
   readHash();
   if (status && status.caps && status.caps.icmp === 'unavailable') state.kinds.delete('icmp');
   if (!state.kinds.size) state.kinds.add('https');
