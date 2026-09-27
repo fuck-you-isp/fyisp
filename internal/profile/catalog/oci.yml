@@ -4,6 +4,7 @@ kind: hyperscaler
 category: [storage]
 sources:
   - https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm
+  - https://raw.githubusercontent.com/oracle/oci-go-sdk/master/common/regions.json
 notes: >-
   OCI publishes no ping host, so each region uses the public Object Storage API
   endpoint objectstorage.<region>.oraclecloud.com (oraclecloud20.com for the OC20
@@ -19,7 +20,21 @@ notes: >-
   answer the same way (us-saltlake-2, us-dallas-1, ap-delhi-1, ap-kulai-1). They are
   left out because they are not in the public regions list and are probably
   dedicated or partner regions. One GET per 15 s is negligible next to normal SDK
-  traffic.
+  traffic. Government and sovereign realms (separate tenancies, public endpoints)
+  are included and tagged restricted plus their realm: OC2 US Government
+  (us-langley-1, us-luke-1) and OC3 US Government (us-gov-ashburn-1,
+  us-gov-chicago-1, us-gov-phoenix-1) under oraclegovcloud.com, OC4 UK Government
+  (uk-gov-london-1, uk-gov-cardiff-1) under oraclegovcloud.uk, and OC19 EU
+  Sovereign Cloud (eu-frankfurt-2, eu-madrid-2) under oraclecloud.eu. Region IDs
+  and realm domains come from the OCI SDK regions.json; each answered the same
+  41-byte 404 on 2026-09-27. RTTs matched geography (UK 35-40 ms, Frankfurt 24 ms,
+  Madrid 52 ms, US gov 118-166 ms) except us-langley-1, which is a steady 169 ms,
+  about 55 ms more than us-gov-ashburn-1 and us-ashburn-1 (both Virginia), so it
+  may be routed via, or fronted from, the US west; treat its city as unconfirmed.
+  Left out: the dedicated/customer realms in regions.json (OC8 Japan, OC9 Oman,
+  OC10 Australia, OC14 EU dcc, OC15 Bangladesh, OC21 Qatar, OC23-OC52 US/EU/ME/KR/BR
+  dedicated regions), which are Oracle Alloy / Dedicated Region Cloud@Customer
+  realms for single customers rather than public regions.
 targets:
   - name: OCI-ap-sydney-1
     host: objectstorage.ap-sydney-1.oraclecloud.com
@@ -647,6 +662,141 @@ targets:
     country: US
     geo: na
     anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-langley-1                # OC2 US Government realm
+    host: objectstorage.us-langley-1.oraclegovcloud.com
+    kinds: [https, tcp, icmp]
+    region: us-langley-1
+    city: Langley
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted, oc2-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-luke-1                # OC2 US Government realm (Luke AFB, AZ)
+    host: objectstorage.us-luke-1.oraclegovcloud.com
+    kinds: [https, tcp, icmp]
+    region: us-luke-1
+    city: Glendale
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted, oc2-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-gov-ashburn-1                # OC3 US Government realm
+    host: objectstorage.us-gov-ashburn-1.oraclegovcloud.com
+    kinds: [https, tcp, icmp]
+    region: us-gov-ashburn-1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted, oc3-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-gov-chicago-1                # OC3 US Government realm
+    host: objectstorage.us-gov-chicago-1.oraclegovcloud.com
+    kinds: [https, tcp, icmp]
+    region: us-gov-chicago-1
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted, oc3-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-gov-phoenix-1                # OC3 US Government realm
+    host: objectstorage.us-gov-phoenix-1.oraclegovcloud.com
+    kinds: [https, tcp, icmp]
+    region: us-gov-phoenix-1
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted, oc3-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-uk-gov-london-1                # OC4 UK Government realm
+    host: objectstorage.uk-gov-london-1.oraclegovcloud.uk
+    kinds: [https, tcp, icmp]
+    region: uk-gov-london-1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [restricted, oc4-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-uk-gov-cardiff-1                # OC4 UK Government realm
+    host: objectstorage.uk-gov-cardiff-1.oraclegovcloud.uk
+    kinds: [https, tcp, icmp]
+    region: uk-gov-cardiff-1
+    city: Newport
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [restricted, oc4-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-frankfurt-2                # OC19 EU Sovereign Cloud realm
+    host: objectstorage.eu-frankfurt-2.oraclecloud.eu
+    kinds: [https, tcp, icmp]
+    region: eu-frankfurt-2
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [restricted, oc19-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-madrid-2                # OC19 EU Sovereign Cloud realm
+    host: objectstorage.eu-madrid-2.oraclecloud.eu
+    kinds: [https, tcp, icmp]
+    region: eu-madrid-2
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    tags: [restricted, oc19-realm]
     verified:
       date: 2026-09-27
       icmp: true

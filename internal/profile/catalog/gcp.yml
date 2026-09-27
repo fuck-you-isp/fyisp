@@ -28,6 +28,12 @@ notes: >-
   polling) and every region resolves to the same anycast GFE addresses, so ICMP/TCP
   only measure the nearest Google edge. GCP-global is Google's anycast front for the
   same Storage API (storage.googleapis.com) for an apples-to-apples edge baseline.
+  2026-09-27 audit: the regions-zones table still lists the same 43 regions, and
+  storage.asia-southeast3.rep.googleapis.com still does not resolve. Regional
+  API hosts also exist for europe-west15, us-east7 and us-central2, but none
+  of them is in the public region list (restricted or pre-launch), so they are
+  left out. Google sovereign offerings (S3NS, T-Systems) run under their own
+  partner domains and are not covered here.
 targets:
   # africa-south1: ping 194 ms / TCP connect 200 ms from Helsinki
   - name: GCP-africa-south1

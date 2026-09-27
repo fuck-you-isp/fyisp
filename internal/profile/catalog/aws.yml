@@ -13,7 +13,8 @@ sources:
   - https://www.datacenterdynamics.com/en/news/aws-launches-uae-cloud-region/
 notes: >-
   One target per AWS commercial region (all 34 in AWS's region table as of
-  2026-09, including every opt-in region). Endpoint is the public DynamoDB
+  2026-09-27, including every opt-in region; re-checked against botocore
+  endpoints.json and ip-ranges.json). Endpoint is the public DynamoDB
   regional endpoint, GET /ping, which returns a ~45-byte
   "healthy: dynamodb.<region>.amazonaws.com" (200, text/plain, no auth, CORS)
   and is the de-facto AWS latency-check endpoint (cloudping.co and similar
@@ -33,14 +34,22 @@ notes: >-
   endpoint (dynamodb, s3, ec2, sts: DNS resolves, no ICMP/TCP) on
   2026-09-27; AWS has not restored the region since drone strikes in
   March 2026. It is kept with kinds: [] so it can be re-enabled once
-  it answers again. Excluded (separate partitions needing separate
-  accounts; not part of this catalog): AWS GovCloud us-gov-west-1 /
-  us-gov-east-1 (dynamodb.us-gov-west-1.amazonaws.com/ping answered 200
-  from here), China cn-north-1 (Beijing) / cn-northwest-1 (Ningxia) under
-  amazonaws.com.cn (dynamodb.cn-north-1.amazonaws.com.cn/ping answered 200
-  from here), AWS European Sovereign Cloud eusc-de-east-1 (Brandenburg,
-  dynamodb.eusc-de-east-1.amazonaws.eu/ping answered 200), and the
-  classified ISO partitions (not publicly reachable). CloudFront and
+  it answers again. The separate partitions need separate accounts but have
+  public endpoints, so they are included and tagged restricted: AWS
+  GovCloud us-gov-west-1 (Oregon) / us-gov-east-1 (Ohio), China
+  cn-north-1 (Beijing) / cn-northwest-1 (Ningxia) under amazonaws.com.cn
+  (also tagged mainland-china), and the AWS European Sovereign Cloud
+  eusc-de-east-1 (Brandenburg) under amazonaws.eu. Each IP was confirmed in
+  ip-ranges.json for its own region (RTT from Helsinki: GovCloud east/west
+  129/175 ms, China 187/190 ms, EUSC 17 ms). Left out: the classified ISO
+  partitions (us-iso*, us-isob*, us-isof*, eu-isoe-west-1; not publicly
+  reachable), and Local Zones, Wavelength Zones and Outposts (no public
+  endpoint of their own; API traffic goes to the parent region).
+  Pre-launch: dynamodb.me-west-1 (Saudi Arabia, announced for 2026) and
+  dynamodb.sa-west-1 (Chile, announced for end-2026) already answer /ping
+  (150 / 223 ms) and have prefixes in ip-ranges.json, but neither is in
+  AWS's region table or botocore yet; add them as AWS-me-west-1 /
+  AWS-sa-west-1 once they launch. CloudFront and
   Global Accelerator are anycast and live in the CDN catalog, not here.
   Load: 1 small GET + 1 TCP connect + 3 pings per 15 s against a public
   health endpoint is negligible for AWS.
@@ -556,3 +565,83 @@ targets:
       tcp: true
       https: 200
       bytes: 42
+  - name: AWS-us-gov-east-1                # AWS GovCloud (US-East), aws-us-gov partition
+    host: dynamodb.us-gov-east-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-gov-east-1
+    city: Columbus
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46
+  - name: AWS-us-gov-west-1                # AWS GovCloud (US-West), aws-us-gov partition
+    host: dynamodb.us-gov-west-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-gov-west-1
+    city: Boardman
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46
+  - name: AWS-cn-north-1                # China (Beijing), aws-cn partition, operated by Sinnet
+    host: dynamodb.cn-north-1.amazonaws.com.cn
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: cn-north-1
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46
+  - name: AWS-cn-northwest-1                # China (Ningxia), aws-cn partition, operated by NWCD
+    host: dynamodb.cn-northwest-1.amazonaws.com.cn
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: cn-northwest-1
+    city: Zhongwei
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 50
+  - name: AWS-eusc-de-east-1                # AWS European Sovereign Cloud (Germany), aws-eusc partition
+    host: dynamodb.eusc-de-east-1.amazonaws.eu
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eusc-de-east-1
+    city: Brandenburg
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46
