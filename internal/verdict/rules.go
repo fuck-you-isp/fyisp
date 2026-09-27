@@ -120,6 +120,14 @@ const (
 	slowMinExtraMs = 10.0 // ... and at least this much above it (2 ms -> 5 ms is not news)
 )
 
+// LossBad and SpikeFactor are exported for the dashboard's Overview, which
+// marks a target failing at LossBad loss and very slow at SpikeFactor times
+// its normal.
+const (
+	LossBad     = lossBad
+	SpikeFactor = spikeFactor
+)
+
 func spikeThreshold(baseMs float64) float64 { return max(spikeFactor*baseMs, baseMs+spikeMarginMs) }
 
 // normalThreshold is the long-term spike threshold (b.MedianMs > 0).

@@ -100,6 +100,16 @@ type Target struct {
 	// HostOverrides uses a different host for some kinds (e.g. Google Meet:
 	// HTTPS/TCP to meet.google.com, ICMP to lens.l.google.com).
 	HostOverrides map[ProbeKind]string `yaml:"-" json:"-"`
+	// Catalog metadata for the dashboard's Overview, set only for targets
+	// from the catalog (profile files cannot set it): the provider's ID,
+	// display name and kind, and the endpoint's city, ISO country code and
+	// geo (na sa eu me af as oc, or "global" for anycast targets).
+	Provider      string `yaml:"-" json:"provider,omitempty"`
+	ProviderTitle string `yaml:"-" json:"provider_title,omitempty"`
+	ProviderKind  string `yaml:"-" json:"provider_kind,omitempty"`
+	City          string `yaml:"-" json:"city,omitempty"`
+	Country       string `yaml:"-" json:"country,omitempty"`
+	Geo           string `yaml:"-" json:"geo,omitempty"`
 }
 
 // HostFor returns the host to probe for a kind.
