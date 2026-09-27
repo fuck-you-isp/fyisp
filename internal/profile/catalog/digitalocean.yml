@@ -12,6 +12,10 @@ notes: >-
   GET / returns a tiny anonymous S3 XML body (~214 B). RTTs from a single vantage point were consistent
   with each endpoint being in-region (e.g. blr1 ~150 ms vs fra1 ~37 ms from Europe).
   Gaps: nyc1 and nyc2 have no Spaces hostname (NYC Spaces is served from nyc3); legacy ams2/sfo1 have no endpoint.
+  These four (of the 18 slugs on the regional-availability page and status.digitalocean.com) are kept
+  with kinds: [] on their would-be Spaces hostname, which is NXDOMAIN. Re-checked 2026-09-27:
+  speedtest-<dc>, speedtest.<dc>, mirrors.<dc> and lg.<dc> under digitalocean.com are all NXDOMAIN, and
+  mirrors.digitalocean.com is a Cloudflare anycast front.
 targets:
   - name: DO-nyc3
     host: nyc3.digitaloceanspaces.com
@@ -209,3 +213,55 @@ targets:
       tcp: true
       https: 200
       bytes: 214
+  - name: DO-nyc1
+    host: nyc1.digitaloceanspaces.com
+    kinds: []
+    region: nyc1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: DO-nyc2
+    host: nyc2.digitaloceanspaces.com
+    kinds: []
+    region: nyc2
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: DO-sfo1
+    host: sfo1.digitaloceanspaces.com
+    kinds: []
+    region: sfo1
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: DO-ams2
+    host: ams2.digitaloceanspaces.com
+    kinds: []
+    region: ams2
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

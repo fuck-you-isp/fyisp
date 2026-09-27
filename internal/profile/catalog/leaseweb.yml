@@ -7,6 +7,9 @@ notes: >-
   Official Leaseweb speed-test servers speedtest.<dc>.<cc>.leaseweb.net from the Leaseweb KB (19 DCs).
   They serve HTTP only (TCP 443 refused), so targets use TCP port 80 + ICMP; the https kind is not
   recorded. GET http://<host>/ returns a 302 (145 B). iperf3 on 5201-5210 is for manual tests only.
+  Re-checked 2026-09-27: all 19 answer. The KB also links speedtest.lax11.us.leaseweb.net, which is
+  NXDOMAIN (LAX-12 is covered). Guessed hosts for other Leaseweb DCs (AMS-10/11, FRA-10, SIN-10/11/12,
+  HKG-10, TYO-10, SYD-10, MTL-01, WDC-01, DAL-10..12) do not resolve, so only the KB list is covered.
 targets:
   - name: Leaseweb-AMS-01
     host: speedtest.ams1.nl.leaseweb.net

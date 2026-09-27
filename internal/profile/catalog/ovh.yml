@@ -11,8 +11,12 @@ notes: >-
   the datacenter list offered by proof.ovh.net (the legacy <dc>.proof.ovh.{net,ca,us} names resolve to
   the same machines). GET / is ~31 KB so path is /robots.txt (223 B). Paris par-a/b/c are the three
   AZs of the eu-west-par 3-AZ region.
-  Gaps: no Proof server for Warsaw (WAW), Limburg/Frankfurt (LIM/DE), Toronto (TOR), Milan or the
-  Local Zones; waw/lim/fra.proof.ovh.net do not resolve.
+  There is no Proof server for Warsaw (WAW), Limburg/Frankfurt (LIM/DE), Toronto (TOR) or Milan
+  (waw/lim/fra.proof.ovh.net and guessed *.speedtest.network.ovh.net names do not resolve). Those four
+  public-cloud regions are probed in ovh-storage.yml (OVHObj-waw, OVHObj-de, OVHObj-eu-south-mil,
+  OVHObj-ca-east-tor: s3.<region>.io.cloud.ovh.net, re-checked 2026-09-27, geo-IP in the named city),
+  so they are not duplicated here.
+  Gaps: the Public Cloud Local Zones (single-AZ metro sites) publish no per-site endpoint.
 targets:
   - name: OVH-eu-west-rbx
     host: lil1-rbx.speedtest.network.ovh.net

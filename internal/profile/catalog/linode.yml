@@ -4,11 +4,15 @@ kind: cloud
 sources:
   - https://www.akamai.com/cloud/speed-test
   - https://www.linode.com/speed-test/
+  - https://api.linode.com/v4/regions
 notes: >-
   Official Akamai Cloud (Linode) speed-test hosts, one per core compute region, as listed on the
   Akamai Cloud speed-test page (31 locations incl. the 'expansion' sites de-fra-2, gb-lon, in-bom-2,
   sg-sin-2, jp-tyo-3). GET / is a ~12.7 KB HTML page listing test files; never fetch the 100MB/1GB files.
   Region ids are Linode API region slugs (mapped from the page's city names).
+  The public API (api.linode.com/v4/regions) lists 33 core regions on 2026-09-27; the two not on the
+  speed-test page, us-iad-2 (Washington 2) and fr-par-2 (Paris 2), answer on <slug>.speedtest.linode.com
+  (rDNS speedtest-1.iad5.us / speedtest-1.par4.fr.prod.linode.com), so all 33 are covered.
   Gaps: distributed/edge compute sites have no published speed-test host.
 targets:
   - name: Linode-us-southeast
@@ -438,6 +442,34 @@ targets:
     city: Sydney
     country: AU
     geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-iad-2
+    host: us-iad-2.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-iad-2
+    city: "Washington, DC"
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-fr-par-2
+    host: fr-par-2.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: fr-par-2
+    city: Paris
+    country: FR
+    geo: eu
     anycast: false
     verified:
       date: 2026-09-27

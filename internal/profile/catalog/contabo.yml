@@ -4,20 +4,27 @@ kind: cloud
 category: [storage]
 sources:
   - https://contabo.com/blog/how-to-perform-a-network-speedtest/
+  - https://api.contabo.com/api-v1.yaml
+  - https://contabo.com/blog/lauterbourg-datacenter/
   - https://docs.contabo.com/docs/products/Object-Storage/Tools/s3cmd/
   - https://help.contabo.com/en/support/solutions/articles/103000283038-how-do-i-use-s3-object-storage-in-my-code-
 notes: >-
   Contabo runs no looking-glass or per-DC speed-test hosts (it recommends Ookla). The only public
   regional endpoints are its Object Storage S3 hosts <region>.contabostorage.com; anonymous GET /
-  returns 401 (26 B), which counts as reachable. eu2 is in Germany (exact DC unpublished), usc1 is
-  St. Louis, sin1 is Singapore.
-  Gaps: no endpoint for Contabo compute regions US-East (NY), US-West (Seattle), UK, Japan, Australia, India.
+  returns 401 (26 B), which counts as reachable. eu2 geolocates to Lauterbourg, FR (Contabo's "Hub
+  Europe" DC on the French-German border), usc1 is St. Louis, sin1 is Singapore.
+  Gaps: the Contabo API lists 9 compute regions (EU, US-central, US-east, US-west, SIN, UK, AUS, JPN,
+  IND); only EU, US-central and SIN have Object Storage. No public endpoint exists for US-east (New York),
+  US-west (Seattle), UK (Portsmouth), Australia (Sydney), Japan (Tokyo) or India (Mumbai): guessed
+  <region>.contabostorage.com names (use1, usw1, uk1, jp1, au1, in1, ...) and lg./speedtest.contabo.*
+  are NXDOMAIN on 2026-09-27. They are not listed as targets because no hostname exists for them.
 targets:
   - name: Contabo-eu2
     host: eu2.contabostorage.com
     kinds: [https, tcp, icmp]
     region: eu2
-    country: DE
+    city: Lauterbourg
+    country: FR
     geo: eu
     anycast: false
     verified:
