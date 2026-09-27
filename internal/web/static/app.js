@@ -3180,6 +3180,8 @@ async function main() {
   // Clicks outside the note popover close it.
   document.addEventListener('mousedown', (e) => { if (!notePop.hidden && !notePop.contains(/** @type {Node} */ (e.target))) closeNoteEditor(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !notePop.hidden) closeNoteEditor(); });
+  // Back from focus mode restores the Overview's scroll position itself.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   const onNav = () => {
     if (location.hash === lastHash) return;
     lastHash = location.hash;
