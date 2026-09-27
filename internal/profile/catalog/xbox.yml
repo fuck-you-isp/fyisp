@@ -1,0 +1,59 @@
+provider: xbox
+display: Xbox network
+kind: gaming-platform
+category: [login, cloud-gaming]
+sources:
+  - https://support.xbox.com/en-US/help/hardware-network/connect-network/network-ports-used-xbox-live
+  - https://github.com/n-thumann/xbox-cloud-server-selector
+notes: >-
+  Microsoft publishes no Xbox-network ping hosts; Xbox Live service hosts sit behind
+  Akamai / Azure Traffic Manager (akadns) geo-routing, so they measure the path to the
+  nearest front, not a fixed region (anycast: true). Unauthenticated GET / returns a
+  tiny 404. Xbox Cloud Gaming (xCloud) regional hosts (<region>.core.gssv-play-prod)
+  are all CNAMEs to two Traffic Manager profiles, and the per-region
+  networkTestHostname (<region>.gssv-fastlane-prod) no longer resolves, so only the
+  geo-routed xCloud web login front (xgpuweb, 204 empty) is included. PlayFab QoS
+  beacons (UDP 3075, used by many Xbox titles) are only listed via an authenticated API.
+targets:
+  - name: Xbox-auth
+    host: user.auth.xboxlive.com
+    kinds: [https, tcp, icmp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [login]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 315
+  - name: Xbox-peoplehub
+    host: peoplehub.xboxlive.com
+    kinds: [https, tcp, icmp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [social]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 315
+  - name: Xbox-cloud-gaming
+    host: xgpuweb.gssv-play-prod.xboxlive.com
+    kinds: [https, tcp, icmp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 204
+      bytes: 0

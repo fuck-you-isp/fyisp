@@ -1,0 +1,42 @@
+provider: ea
+display: EA (EA app)
+kind: gaming-platform
+category: [login]
+sources:
+  - https://www.ea.com/
+  - https://ip-ranges.amazonaws.com/ip-ranges.json
+notes: >-
+  EA publishes no latency hosts. Apex Legends / Battlefield servers run on Multiplay
+  / cloud capacity chosen at match time and are not public. accounts.ea.com (EA app
+  login, AWS us-east-1 behind EA's GSLB; no ICMP) and gateway.ea.com (Akamai front)
+  answer unauthenticated GET / with an empty 404.
+targets:
+  - name: EA-accounts
+    host: accounts.ea.com
+    kinds: [https, tcp]
+    region: "aws:us-east-1"
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [login]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 0
+  - name: EA-gateway
+    host: gateway.ea.com
+    kinds: [https, tcp, icmp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [api]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 0

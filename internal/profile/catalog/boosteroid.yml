@@ -1,0 +1,26 @@
+provider: boosteroid
+display: Boosteroid
+kind: gaming-platform
+category: [cloud-gaming]
+sources:
+  - https://help.boosteroid.com/en/content/how-to-check-my-connection
+notes: >-
+  Boosteroid's network test (cloud.boosteroid.com/network-test) resolves its datacenter
+  list only in a logged-in session, so no per-datacenter hosts are public. Only the
+  Cloudflare web front (anycast) is probed; favicon is ~4 KB.
+targets:
+  - name: Boosteroid-web
+    host: cloud.boosteroid.com
+    kinds: [https, tcp, icmp]
+    path: /favicon.ico
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 3955

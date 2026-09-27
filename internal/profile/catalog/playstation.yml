@@ -1,0 +1,39 @@
+provider: playstation
+display: PlayStation Network
+kind: gaming-platform
+category: [login]
+sources:
+  - https://status.playstation.com/
+notes: >-
+  PSN has no public ping/QoS hosts; console-facing hosts are Akamai edges (anycast).
+  ps5.np.playstation.net is the PS5 NP entry host (TLS needs a console client cert, so
+  only ICMP + TCP 443). m.np.playstation.com is the PSN web API front (403, ~0.4 KB).
+  PlayStation Plus cloud streaming endpoints are only handed out in an authenticated
+  session and are not probed.
+targets:
+  - name: PSN-np-ps5
+    host: ps5.np.playstation.net
+    kinds: [tcp, icmp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [login]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: PSN-web-api
+    host: m.np.playstation.com
+    kinds: [https, tcp, icmp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [api]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 376

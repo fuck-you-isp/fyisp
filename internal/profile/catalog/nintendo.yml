@@ -1,0 +1,71 @@
+provider: nintendo
+display: Nintendo (Switch Online)
+kind: gaming-platform
+category: [conntest]
+sources:
+  - https://github.com/kinnay/NintendoClients/wiki/Connection-Test
+  - https://nintendo-wiki.pretendo.network/docs/switch/connection-test.html
+  - https://en-americas-support.nintendo.com/app/answers/detail/a_id/22462
+notes: >-
+  Switch / Switch 2 run their "internet connection test" against ctest.cdn.nintendo.net
+  and ctest.p01.ctest.srv.nintendo.net over plain HTTP on port 80 (Akamai edges; they
+  return 403 unless the UA is NX NIFM, so only ICMP + TCP 80 are recorded - fyisp's
+  https kind needs TLS). conntest.nintendowifi.net is the legacy (Wii U/3DS/Switch <3.0)
+  test page on AWS us-west-2 (ELB, no ICMP; TCP 80 only). Nintendo game servers (NPLN)
+  are per-title and not public, so there is no regional gaming reference.
+targets:
+  - name: Nintendo-ctest
+    host: ctest.cdn.nintendo.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: global
+    country: JP
+    geo: as
+    anycast: true
+    tags: [conntest]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Nintendo-ctest-switch2
+    host: ctest.p01.ctest.srv.nintendo.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: global
+    country: JP
+    geo: as
+    anycast: true
+    tags: [conntest]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Nintendo-conntest-legacy
+    host: conntest.nintendowifi.net
+    kinds: [tcp]
+    port: 80
+    region: us-west-2
+    city: Boardman
+    country: US
+    geo: na
+    anycast: false
+    tags: [conntest]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  - name: Nintendo-accounts
+    host: accounts.nintendo.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    country: JP
+    geo: as
+    anycast: true
+    tags: [login]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 212
