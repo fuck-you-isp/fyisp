@@ -147,6 +147,7 @@ fyisp --profile default,dns          # the default targets plus every public res
 | Profiles | What |
 |---|---|
 | `default` | the 87 original targets (used without `--profile`) |
+| `all` | every target in the catalog |
 | `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / DigitalOcean, Linode, Vultr, Hetzner, OVH, ... / both; one panel per provider and region |
 | `cdn`, `dns` | CDN edges, public DNS resolvers (DNS-over-HTTPS) |
 | `common`, `dev`, `streaming`, `gaming` | everyday services, developer services, streaming, game platforms |
@@ -155,7 +156,7 @@ fyisp --profile default,dns          # the default targets plus every public res
 
 Target names are identities (a name keeps its history): when a profile is combined with `default` and both have a target of the same name (e.g. `AWS-us-east-1`), the catalog's definition is used. `default` on its own never changes.
 
-A run is limited to **300 targets** (including the 5 Network path targets). More needs `--max-targets N` (up to 1000). The cost grows linearly: 300 targets use about 4% of one CPU core and ~28 KB/s of upload (HTTPS + TCP every 15 s, ping every 5 s, per target), and the data directory and dashboard grow with them (one panel per group; profiles like `clouds` have 80+ panels).
+There is no limit on the number of targets. The cost grows with the target count; see the benchmark table below (BENCHMARKS_PLACEHOLDER).
 
 A `--config` file can start from any profiles and change them:
 
@@ -169,6 +170,8 @@ add:
 ```
 
 Profiles are defined in [`internal/profile/profiles.yml`](internal/profile/profiles.yml) as selections over the catalog (by provider, provider kind, tag and region); the file documents the format.
+
+Missing a provider or region, or found a dead endpoint? Pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md#adding-or-fixing-endpoints).
 
 ## ICMP permissions
 
