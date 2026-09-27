@@ -1,0 +1,183 @@
+provider: racknerd
+display: RackNerd
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://www.racknerd.com/datacenters
+  - https://lg-ny.racknerd.com/
+  - https://my.racknerd.com/index.php?rp=%2Fknowledgebase%2F1%2FDo-you-have-a-looking-glass.html
+notes: >-
+  Official RackNerd looking-glass hosts lg-<loc>.racknerd.com, one per datacenter; the LG page header
+  links 12 (LA DC-03, San Jose, Seattle, Dallas, Chicago, New York, Ashburn, Atlanta, Toronto,
+  Strasbourg, Amsterdam, Dublin). GET / is the small LG page; never fetch the test files.
+  Older hostnames
+  lg-lax02 / lg-lax05 / lg-nj no longer resolve and lg-lax.racknerd.com resolves but does not answer. racknerd.com itself sits behind a Cloudflare challenge.
+targets:
+  - name: RackNerd-Los-Angeles-DC03
+    host: lg-lax03.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: lax03
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9046
+  - name: RackNerd-San-Jose
+    host: lg-sj.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: sj
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9021
+  - name: RackNerd-Seattle
+    host: lg-sea.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9025
+  - name: RackNerd-Dallas
+    host: lg-dal.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9019
+  - name: RackNerd-Chicago
+    host: lg-chi.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9019
+  - name: RackNerd-New-York
+    host: lg-ny.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: ny
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9013
+  - name: RackNerd-Ashburn
+    host: lg-ash.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: ash
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9019
+  - name: RackNerd-Atlanta
+    host: lg-atl.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9142
+  - name: RackNerd-Toronto
+    host: lg-tor.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: tor
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9039
+  - name: RackNerd-Strasbourg
+    host: lg-fr.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: fr
+    city: Strasbourg
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9028
+  - name: RackNerd-Amsterdam
+    host: lg-ams.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9013
+  - name: RackNerd-Dublin
+    host: lg-dub.racknerd.com
+    kinds: [https, tcp, icmp]
+    region: dub
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 9036

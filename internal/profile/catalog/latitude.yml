@@ -1,0 +1,378 @@
+provider: latitude
+display: Latitude.sh
+kind: cloud
+category: [bare-metal]
+sources:
+  - https://www.latitude.sh/locations
+  - https://www.latitude.sh/docs/storage/object-storage
+notes: >-
+  Latitude.sh publishes no per-site speed-test or looking-glass host (lg.latitude.sh no longer resolves),
+  so the endpoints are the regional high-performance object-storage S3 APIs objects.<site>.storage.sh
+  (documented format; Latitude-owned 152.236.0.0/16). An unauthenticated GET / returns a tiny S3 error.
+  Only NYC, ASH, CHI, LAX2 and LON2 have such an endpoint today; the other 21 of the 26 listed sites are
+  kept with kinds: [] (the objects.<site>.storage.sh name does not resolve).
+targets:
+  - name: Latitude-ash
+    host: objects.ash.storage.sh
+    kinds: [https, tcp, icmp]
+    region: ASH
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 180
+  - name: Latitude-chi
+    host: objects.chi.storage.sh
+    kinds: [https, tcp, icmp]
+    region: CHI
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 180
+  - name: Latitude-dal
+    host: objects.dal.storage.sh
+    kinds: []
+    region: DAL
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.dal.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-lax
+    host: objects.lax.storage.sh
+    kinds: []
+    region: LAX
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.lax.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-lax2
+    host: objects.lax2.storage.sh
+    kinds: [https, tcp, icmp]
+    region: LAX2
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 180
+  - name: Latitude-mia2
+    host: objects.mia2.storage.sh
+    kinds: []
+    region: MIA2
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.mia2.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-nyc
+    host: objects.nyc.storage.sh
+    kinds: [https, tcp, icmp]
+    region: NYC
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 180
+  - name: Latitude-sjc2
+    host: objects.sjc2.storage.sh
+    kinds: []
+    region: SJC2
+    city: Silicon Valley
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.sjc2.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-tor
+    host: objects.tor.storage.sh
+    kinds: []
+    region: TOR
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.tor.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-mex2
+    host: objects.mex2.storage.sh
+    kinds: []
+    region: MEX2
+    city: Mexico City
+    country: MX
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.mex2.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-bgt
+    host: objects.bgt.storage.sh
+    kinds: []
+    region: BGT
+    city: Bogotá
+    country: CO
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.bgt.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-sao
+    host: objects.sao.storage.sh
+    kinds: []
+    region: SAO
+    city: São Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.sao.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-sao2
+    host: objects.sao2.storage.sh
+    kinds: []
+    region: SAO2
+    city: São Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.sao2.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-san3
+    host: objects.san3.storage.sh
+    kinds: []
+    region: SAN3
+    city: Santiago
+    country: CL
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.san3.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-bue
+    host: objects.bue.storage.sh
+    kinds: []
+    region: BUE
+    city: Buenos Aires
+    country: AR
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.bue.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-lon
+    host: objects.lon.storage.sh
+    kinds: []
+    region: LON
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.lon.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-lon2
+    host: objects.lon2.storage.sh
+    kinds: [https, tcp, icmp]
+    region: LON2
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 180
+  - name: Latitude-fra
+    host: objects.fra.storage.sh
+    kinds: []
+    region: FRA
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.fra.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-fra2
+    host: objects.fra2.storage.sh
+    kinds: []
+    region: FRA2
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.fra2.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-ams
+    host: objects.ams.storage.sh
+    kinds: []
+    region: AMS
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.ams.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-tyo3
+    host: objects.tyo3.storage.sh
+    kinds: []
+    region: TYO3
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.tyo3.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-tyo4
+    host: objects.tyo4.storage.sh
+    kinds: []
+    region: TYO4
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.tyo4.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-sgp
+    host: objects.sgp.storage.sh
+    kinds: []
+    region: SGP
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.sgp.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-syd
+    host: objects.syd.storage.sh
+    kinds: []
+    region: SYD
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.syd.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-syd2
+    host: objects.syd2.storage.sh
+    kinds: []
+    region: SYD2
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.syd2.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Latitude-mel
+    host: objects.mel.storage.sh
+    kinds: []
+    region: MEL
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: no per-site endpoint published (no speed-test host; objects.mel.storage.sh does not resolve)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

@@ -1,0 +1,24 @@
+provider: koyeb
+display: Koyeb
+kind: cloud
+category: [paas]
+sources:
+  - https://www.koyeb.com/docs/reference/regions
+notes: >-
+  Koyeb app domains (*.koyeb.app -> prod-glb.koyeb.app.cdn.cloudflare.net) all enter via Cloudflare
+  anycast before reaching the compute region, so there is no located per-region endpoint. One anycast
+  target: www.koyeb.com on the same Cloudflare edge IP (GET /robots.txt is 156 bytes; glb.koyeb.app
+  itself returns a 31 KB 404 page).
+targets:
+  - name: Koyeb-edge
+    host: www.koyeb.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    anycast: true
+    notes: "Cloudflare anycast (same edge as *.koyeb.app)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 156
