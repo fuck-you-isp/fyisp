@@ -2275,7 +2275,8 @@ class Overview {
     // as a contradiction.
     if (verdict && verdict.kind !== 'unknown') {
       const what = d.summary.with_normal < d.summary.targets / 2 ? '1% loss or more' : '1% loss or more, or 1.5× their normal';
-      kids.push(h('span', { class: 'muted', text: ` This line covers the whole range and counts ${what}; the verdict above judges only the last minute.` }));
+      const kind = KIND_LABEL[/** @type {'https'} */ (d.kind)];
+      kids.push(h('span', { class: 'muted', text: ` This line covers ${kind} over the whole range and counts ${what}; the verdict above judges every kind over the last minute.` }));
     }
     const un = d.summary.targets - d.summary.measured;
     if (un) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
@@ -2321,7 +2322,8 @@ class Overview {
     c.ratio.textContent = r && r.ratio != null ? fmtRatio(r.ratio) : '—';
     c.ratio.className = 'num' + (r && r.ratio != null && r.ratio >= VERY_SLOW ? ' bad' : r && r.ratio != null && r.ratio >= SLOW_RATIO ? ' warn' : '');
     c.loss.textContent = r && r.n + r.lost ? fmtPct(r.loss) : '—';
-    c.loss.className = 'num' + (r && r.loss >= FAIL_LOSS ? ' bad' : r && r.loss >= REAL_LOSS ? ' warn' : '');
+    // Colour follows the state: loss without enough evidence yet stays plain.
+    c.loss.className = 'num' + (st === 'failing' ? ' bad' : st === 'lossy' ? ' warn' : '');
     c.loss.title = r && r.lost ? `${r.lost} of ${r.n + r.lost} samples lost, mostly ${REASON_LABEL[/** @type {'dns'} */ (r.reason || 'other')] || r.reason}` : '';
     const chip = c.state.firstElementChild;
     if (!chip || chip.getAttribute('data-st') !== st) c.state.replaceChildren(h('span', { class: `ovst st-${st}`, 'data-st': st, text: OV_STATES[st]?.label || st }));
