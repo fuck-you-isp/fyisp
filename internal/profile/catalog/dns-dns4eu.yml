@@ -1,0 +1,25 @@
+provider: dns-dns4eu
+display: "DNS4EU"
+kind: dns
+category: []
+sources:
+  - https://joindns4.eu/for-public
+  - https://en.wikipedia.org/wiki/DNS4EU
+notes: >-
+  EU-funded public resolver (live since 2025-06-09), operated by Whalebone on
+  nodes in 14+ EU member states interconnected via anycast; 'nearest edge' is
+  only meaningful inside Europe, elsewhere expect a European PoP. Protective
+  variant (86.54.11.1) listed.
+targets:
+  - name: dns4eu-doh
+    host: protective.joindns4.eu
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, filtering]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

@@ -1,0 +1,37 @@
+provider: dns-google
+display: "Google Public DNS"
+kind: dns
+category: []
+sources:
+  - https://developers.google.com/speed/public-dns/docs/using
+  - https://developers.google.com/speed/public-dns/docs/doh
+notes: >-
+  Anycast resolver (8.8.8.8/8.8.4.4); nearest edge is the closest Google
+  Public DNS site by BGP. DoH wire-format GET on the IP (valid cert). google-
+  dns is kept from default.yml; the built-in path group also probes 8.8.8.8.
+  dns.google resolves to these same two IPs, so it is not a separate target.
+targets:
+  - name: google-dns
+    host: 8.8.8.8
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: google-dns-2
+    host: 8.8.4.4
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, secondary]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

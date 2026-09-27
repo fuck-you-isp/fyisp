@@ -1,0 +1,30 @@
+provider: cdn-bunny
+display: "bunny.net"
+kind: cdn
+category: []
+sources:
+  - https://bunny.net/network/smartedge/
+  - https://bunny.net/network/
+  - https://fonts.bunny.net/about
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. bunny.net's SmartEdge routing picks per region
+  between anycast, GeoDNS and latency-based DNS, so 'nearest edge' is the PoP
+  SmartEdge assigns to your resolver/region; the Server header names it
+  (BunnyCDN-<POP>-<node>). fonts.bunny.net (Bunny Fonts, a public, no-tracking
+  Google Fonts mirror run by bunny.net) serves a 23-byte robots.txt.
+targets:
+  - name: CDN-Bunny
+    host: fonts.bunny.net
+    kinds: [https, tcp, icmp]
+    path: "/robots.txt"
+    anycast: true
+    tags: [geodns]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 23

@@ -1,0 +1,35 @@
+provider: dns-adguard
+display: "AdGuard DNS"
+kind: dns
+category: []
+sources:
+  - https://adguard-dns.io/kb/general/dns-providers/
+notes: >-
+  Anycast ad-blocking resolver (94.140.14.14/94.140.15.15; the unfiltered
+  94.140.14.140 shares the network). dns.adguard-dns.com resolves to the same
+  IPs. DoH wire-format GET on the IPs works with a valid cert.
+targets:
+  - name: adguard-dns
+    host: 94.140.14.14
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, filtering]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: adguard-dns-2
+    host: 94.140.15.15
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, filtering, secondary]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

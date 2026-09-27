@@ -1,0 +1,23 @@
+provider: dns-he
+display: "Hurricane Electric Open Resolver"
+kind: dns
+category: []
+sources:
+  - https://ordns.he.net/
+notes: >-
+  Hurricane Electric's open resolver 74.82.42.42 (ordns.he.net), anycast
+  across HE's global backbone PoPs. The bare IP has no IP certificate; the
+  hostname carries DoH.
+targets:
+  - name: he-doh
+    host: ordns.he.net
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

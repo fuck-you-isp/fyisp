@@ -1,0 +1,35 @@
+provider: dns-cleanbrowsing
+display: "CleanBrowsing"
+kind: dns
+category: []
+sources:
+  - https://cleanbrowsing.org/filters/
+notes: >-
+  Anycast filtering resolver. DoH lives at
+  https://doh.cleanbrowsing.org/doh/<filter>/ (security-filter used here,
+  185.228.168.168); the classic security-filter IP 185.228.168.9 has no IP
+  certificate and is probed with TCP/ICMP only.
+targets:
+  - name: cleanbrowsing-doh
+    host: doh.cleanbrowsing.org
+    kinds: [https, tcp, icmp]
+    path: "/doh/security-filter/?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, filtering]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: cleanbrowsing-dns
+    host: 185.228.168.9
+    kinds: [tcp, icmp]
+    anycast: true
+    tags: [filtering]
+    notes: >-
+      TCP 443 + ICMP only (no IP certificate).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

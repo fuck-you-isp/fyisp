@@ -1,0 +1,23 @@
+provider: dns-yandex
+display: "Yandex DNS"
+kind: dns
+category: []
+sources:
+  - https://dns.yandex.com/
+notes: >-
+  Anycast resolver 77.88.8.8 with nodes mainly in Russia/CIS; a reference for
+  that region (from Helsinki ~60 ms). DoH on the IP works with a valid
+  certificate.
+targets:
+  - name: yandex-dns
+    host: 77.88.8.8
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

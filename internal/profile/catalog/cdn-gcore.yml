@@ -1,0 +1,29 @@
+provider: cdn-gcore
+display: "Gcore CDN"
+kind: cdn
+category: []
+sources:
+  - https://gcore.com/cdn
+  - https://www.jsdelivr.com/network
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. Gcore (one of jsDelivr's CDNs) steers users with
+  anycast and GeoDNS to its edge PoPs; gcore.com itself is served from Gcore
+  address space (92.223.x.x, AS199524) with an edge cache timestamp header.
+  robots.txt is ~2 KB. Added beyond the requested list as an EU-headquartered
+  CDN with strong coverage in Europe, CIS and Asia.
+targets:
+  - name: CDN-Gcore
+    host: gcore.com
+    kinds: [https, tcp, icmp]
+    path: "/robots.txt"
+    anycast: true
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2189
