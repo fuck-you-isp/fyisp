@@ -1,0 +1,27 @@
+provider: locaweb
+display: Locaweb
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://www.locaweb.com.br/locaweb-cloud/
+  - https://sources.locaweb.com.br/site/downloads/proposta-comercial-object-storage.pdf
+notes: >-
+  Locaweb (Brazil) Object Storage endpoint s3.locaweb.com.br (Sao Paulo, AS27715). TLS on 443 failed
+  (unexpected EOF) on 2026-09-27, so it is probed on port 80 (GET / returns a 181-byte S3 403) with TCP
+  and ICMP only.
+targets:
+  - name: Locaweb-SaoPaulo
+    host: s3.locaweb.com.br
+    kinds: [tcp, icmp]
+    port: 80
+    region: sp
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 0
+      bytes: 0

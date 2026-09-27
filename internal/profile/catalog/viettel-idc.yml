@@ -1,0 +1,27 @@
+provider: viettel-idc
+display: Viettel IDC
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://viettelidc.com.vn/cloud-storage
+  - https://viettelidc.com.vn/
+notes: >-
+  Viettel IDC (Vietnam) runs data centres in Hanoi, Ho Chi Minh City and elsewhere. The only public
+  regional endpoint found is its S3 object storage s3-north.viettelidc.com.vn (Hanoi, AS38731; GET / is
+  a 218-byte 403). The generic name s3.viettelidc.com.vn did not answer, and no south/HCM endpoint
+  resolves.
+targets:
+  - name: ViettelIDC-North
+    host: s3-north.viettelidc.com.vn
+    kinds: [https, tcp, icmp]
+    region: north
+    city: Hanoi
+    country: VN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 218

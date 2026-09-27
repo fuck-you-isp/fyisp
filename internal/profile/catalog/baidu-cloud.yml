@@ -1,0 +1,183 @@
+provider: baidu-cloud
+display: Baidu AI Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://cloud.baidu.com/doc/BOS/s/xjwvyq9l4
+  - https://intl.cloud.baidu.com/zh/doc/BOS/s/xjwvyq9l4-intl
+  - https://cloud.baidu.com/doc/Reference/index.html
+notes: >-
+  Baidu AI Cloud regions: bj (Beijing), gz (Guangzhou), su (Suzhou), bd (Baoding), yq (Yangquan), cd
+  (Chengdu), nj (Nanjing), fwh (Wuhan finance), fsh (Shanghai finance), hkg (Hong Kong) and sin
+  (Singapore). Baidu's shifen.com GSLB sends non-Chinese resolvers to shared entry points:
+  bj/gz/su.bcebos.com all resolve to one Hong Kong front (103.235.47.0/24), and several API gateways
+  share addresses. So for each region the endpoint whose address geolocates to that region was picked:
+  BOS (<r>.bcebos.com, 101-byte 403), BLS log ingest (bls-log.<r>.baidubce.com, 128-byte 401) or the BCC
+  API gateway (bcc.<r>.baidubce.com, 130-byte 400). bj's BLS host geolocates to Shijiazhuang (Hebei,
+  next to Baidu's northern data centres), not Beijing city. Chinese geo-IP is coarse, and GSLB answers
+  may differ for resolvers inside China. No in-region endpoint was found for fwh, fsh or sin (they
+  resolve to Nanjing/Xi'an, Beijing or Hong Kong, or do not answer), so those are kept with kinds [].
+targets:
+  - name: Baidu-bj
+    host: bls-log.bj.baidubce.com
+    kinds: [https, tcp, icmp]
+    region: bj
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    notes: geo-IP Shijiazhuang (Hebei)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 128
+  - name: Baidu-gz
+    host: bls-log.gz.baidubce.com
+    kinds: [https, tcp, icmp]
+    region: gz
+    city: Guangzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 128
+  - name: Baidu-su
+    host: bcc.su.baidubce.com
+    kinds: [https, tcp, icmp]
+    region: su
+    city: Suzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 130
+  - name: Baidu-nj
+    host: bls-log.nj.baidubce.com
+    kinds: [https, tcp, icmp]
+    region: nj
+    city: Nanjing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 128
+  - name: Baidu-cd
+    host: bls-log.cd.baidubce.com
+    kinds: [https, tcp, icmp]
+    region: cd
+    city: Chengdu
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 128
+  - name: Baidu-bd
+    host: bd.bcebos.com
+    kinds: [https, tcp, icmp]
+    region: bd
+    city: Baoding
+    country: CN
+    geo: as
+    anycast: false
+    notes: geo-IP Shijiazhuang (Hebei)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 101
+  - name: Baidu-yq
+    host: yq.bcebos.com
+    kinds: [https, tcp, icmp]
+    region: yq
+    city: Yangquan
+    country: CN
+    geo: as
+    anycast: false
+    notes: geo-IP Taiyuan (Shanxi)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 101
+  - name: Baidu-hkg
+    host: hkg.bcebos.com
+    kinds: [https, tcp, icmp]
+    region: hkg
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 101
+  - name: Baidu-fwh
+    host: fwh.bcebos.com
+    kinds: []
+    region: fwh
+    city: Wuhan
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "resolves to Hebei/Xi'an addresses, not Wuhan; no in-region endpoint visible from outside China"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 101
+  - name: Baidu-fsh
+    host: fsh.bcebos.com
+    kinds: []
+    region: fsh
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: resolves to a Nanjing address that did not answer on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: Baidu-sin
+    host: sin.bcebos.com
+    kinds: []
+    region: sin
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: resolves to a Hong Kong address that did not answer; API gateway resolves to Beijing
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

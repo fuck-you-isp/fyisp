@@ -1,0 +1,42 @@
+provider: catalyst-cloud
+display: Catalyst Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.catalystcloud.nz/sdks-and-toolkits/apis.html
+  - https://docs.catalystcloud.nz/getting-started/additional-information.html
+notes: >-
+  Catalyst Cloud (New Zealand) regions: nz-por-1 (Porirua, Wellington region) and nz-hlz-1 (Hamilton).
+  Each is probed via its object-storage endpoint on port 443 (GET / returns a 70-byte 404). The
+  OpenStack APIs listen on other ports (e.g. identity on 5000). The older nz-wlg-2 name only resolves as
+  an alias of the Porirua object store and is not listed separately. Geo-IP puts both at the
+  registrant's address (Cambridge NZ); rDNS and RTT match their regions.
+targets:
+  - name: Catalyst-nz-por-1
+    host: object-storage.nz-por-1.catalystcloud.io
+    kinds: [https, tcp, icmp]
+    region: nz-por-1
+    city: Porirua
+    country: NZ
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Catalyst-nz-hlz-1
+    host: object-storage.nz-hlz-1.catalystcloud.io
+    kinds: [https, tcp, icmp]
+    region: nz-hlz-1
+    city: Hamilton
+    country: NZ
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70

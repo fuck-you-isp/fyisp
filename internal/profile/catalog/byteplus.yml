@@ -1,0 +1,58 @@
+provider: byteplus
+display: BytePlus
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.byteplus.com/en/docs/tos/docs-region-and-endpoint
+  - https://docs.byteplus.com/en/docs/ecs/Regions-and-Availability-Zones
+notes: >-
+  BytePlus (the international Volcano Engine) regions: ap-southeast-1 (Johor, Malaysia), ap-southeast-3
+  (Jakarta) and cn-hongkong (Hong Kong). Each is probed via its TOS object-storage endpoint
+  tos-<region>.bytepluses.com; GET / returns a ~215-byte 403. All addresses are AS150436 (BytePlus).
+  ap-southeast-1 geolocates to Singapore, which is expected for Johor across the causeway.
+  tos-ap-southeast-2.bytepluses.com also exists (geolocated to Singapore) but its region name is not
+  documented, so it is not included.
+targets:
+  - name: BytePlus-ap-southeast-1
+    host: tos-ap-southeast-1.bytepluses.com
+    kinds: [https, tcp, icmp]
+    region: ap-southeast-1
+    city: Johor
+    country: MY
+    geo: as
+    anycast: false
+    notes: geo-IP Singapore (adjacent)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 213
+  - name: BytePlus-ap-southeast-3
+    host: tos-ap-southeast-3.bytepluses.com
+    kinds: [https, tcp, icmp]
+    region: ap-southeast-3
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 217
+  - name: BytePlus-cn-hongkong
+    host: tos-cn-hongkong.bytepluses.com
+    kinds: [https, tcp, icmp]
+    region: cn-hongkong
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 216

@@ -1,0 +1,26 @@
+provider: biznet-gio
+display: Biznet Gio
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://www.biznetgio.com/product/neo-object-storage
+  - https://kb.biznetgio.com/
+notes: >-
+  Biznet Gio (Indonesia) NEO Object Storage in its West Java region (wjv-1, Cimanggis/Bogor data centre)
+  is probed via nos.wjv-1.neo.id; GET / is a 218-byte 403, and rDNS *.wjv-1.biznetg.io confirms the
+  site. No other region has a public endpoint (nos.jkt-*.neo.id etc. do not resolve).
+targets:
+  - name: BiznetGio-wjv-1
+    host: nos.wjv-1.neo.id
+    kinds: [https, tcp, icmp]
+    region: wjv-1
+    city: Bogor
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 218
