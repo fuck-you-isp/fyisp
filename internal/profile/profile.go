@@ -59,7 +59,7 @@ import (
 
 // Limits bound what a profile may ask for.
 type Limits struct {
-	MaxTargets      int  // default DefaultMaxTargets (300)
+	MaxTargets      int  // 0: no limit
 	MinIntervalSecs int  // default 5
 	AllowPrivateIPs bool // true only for local files
 }
@@ -444,9 +444,6 @@ func Validate(p *model.Profile, l Limits) error {
 	if p == nil {
 		return errors.New("nil profile")
 	}
-	if l.MaxTargets <= 0 {
-		l.MaxTargets = DefaultMaxTargets
-	}
 	if l.MinIntervalSecs <= 0 {
 		l.MinIntervalSecs = 5
 	}
@@ -467,8 +464,8 @@ func Validate(p *model.Profile, l Limits) error {
 	if len(p.Targets) == 0 {
 		bad("no targets")
 	}
-	if len(p.Targets) > l.MaxTargets {
-		bad("%d targets, at most %d allowed: pick narrower profiles (see `fyisp profiles`) or raise --max-targets (up to %d)", len(p.Targets), l.MaxTargets, MaxTargetsCap)
+	if l.MaxTargets > 0 && len(p.Targets) > l.MaxTargets {
+		bad("%d targets, at most %d allowed", len(p.Targets), l.MaxTargets)
 	}
 	traced := 0
 	for _, t := range p.Targets {

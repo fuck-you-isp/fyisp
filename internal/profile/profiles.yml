@@ -45,7 +45,7 @@ profiles:
     groups: provider-geo
 
   - name: clouds
-    description: Hyperscalers and developer clouds together (over 300 targets; narrow it with --geo, e.g. --geo eu, or raise --max-targets)
+    description: Hyperscalers and developer clouds together
     extends: [hyperscalers, devclouds]
 
   - name: cdn
@@ -68,6 +68,11 @@ profiles:
   - name: streaming
     description: Video and music streaming
     select: {providers: [services-streaming]}
+
+  - name: all
+    description: Every target in the catalog (clouds, CDN, DNS, services, gaming), one panel per provider and region of the world
+    select: {kinds: [hyperscaler, cloud, cdn, dns, service, game, gaming-platform]}
+    groups: provider-geo
 
   - name: gaming
     description: Game platforms (Steam, Xbox, PlayStation, ...) and game servers

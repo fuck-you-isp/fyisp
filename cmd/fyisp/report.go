@@ -12,7 +12,6 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/export"
 	"github.com/fuck-you-isp/fyisp/internal/model"
-	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/report"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
@@ -69,7 +68,7 @@ func cmdReport(args []string) int {
 		return fail(2, fmt.Errorf("--config and --profile/--geo are mutually exclusive"))
 	}
 	// No target limit: the report covers whatever the run was allowed.
-	prof, err := loadProfile(config{configPath: *configPath, profiles: profiles, geos: geos, noPath: *noPath, maxTargets: profile.MaxTargetsCap})
+	prof, err := loadProfile(config{configPath: *configPath, profiles: profiles, geos: geos, noPath: *noPath})
 	if err != nil {
 		return fail(2, err)
 	}

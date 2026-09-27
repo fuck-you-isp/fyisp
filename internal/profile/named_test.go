@@ -264,7 +264,7 @@ func TestLimits(t *testing.T) {
 	r := sampleRegistry(t)
 	p := resolve(t, r, false, "default", "clouds") // 92 + 4 new
 	err := Validate(p, Limits{MaxTargets: 50})
-	if err == nil || !strings.Contains(err.Error(), "at most 50 allowed") || !strings.Contains(err.Error(), "--max-targets") {
+	if err == nil || !strings.Contains(err.Error(), "at most 50 allowed") {
 		t.Errorf("limit: %v", err)
 	}
 	if err := Validate(p, Limits{MaxTargets: 96}); err != nil {
@@ -434,8 +434,7 @@ add:
 }
 
 // TestBuiltinProfiles is the sanity check over the real catalog: every
-// profile resolves and validates within MaxTargetsCap. Empty selections
-// and profiles over the default limit are only reported (-v).
+// profile resolves and validates. Empty selections are only reported (-v).
 func TestBuiltinProfiles(t *testing.T) {
 	r, err := Builtin()
 	if err != nil {
@@ -448,14 +447,11 @@ func TestBuiltinProfiles(t *testing.T) {
 			continue
 		}
 		n := len(p.Targets) - len(pathTargets())
-		switch {
-		case n == 0:
+		if n == 0 {
 			t.Logf("warning: profile %s selects no targets (catalog not there yet?)", d.Name)
-		case len(p.Targets) > DefaultMaxTargets:
-			t.Logf("note: profile %s has %d targets: needs --max-targets", d.Name, len(p.Targets))
 		}
 		if n > 0 {
-			if err := Validate(p, Limits{MaxTargets: MaxTargetsCap}); err != nil {
+			if err := Validate(p, Limits{}); err != nil {
 				t.Errorf("%s: %v", d.Name, err)
 			}
 		}

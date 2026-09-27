@@ -12,18 +12,17 @@ import (
 )
 
 func TestProfileFlags(t *testing.T) {
-	c, err := parseFlags([]string{"--profile", "AWS, europe", "--profile=gcp", "--geo", "europe,na", "--max-targets", "500", "--no-path"})
+	c, err := parseFlags([]string{"--profile", "AWS, europe", "--profile=gcp", "--geo", "europe,na", "--no-path"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(c.profiles, []string{"aws", "europe", "gcp"}) || !slices.Equal(c.geos, []string{"eu", "na"}) || c.maxTargets != 500 || !c.noPath {
+	if !slices.Equal(c.profiles, []string{"aws", "europe", "gcp"}) || !slices.Equal(c.geos, []string{"eu", "na"}) || !c.noPath {
 		t.Errorf("%+v", c)
 	}
-	if c, _ := parseFlags(nil); c.maxTargets != profile.DefaultMaxTargets || len(c.profiles) != 0 {
+	if c, _ := parseFlags(nil); len(c.profiles) != 0 {
 		t.Errorf("defaults %+v", c)
 	}
 	for want, args := range map[string][]string{
-		"between 1 and 1000":   {"--max-targets", "1001"},
 		"mutually exclusive":   {"--config", "x.yml", "--profile", "aws"},
 		"unknown geo \"mars\"": {"--geo", "mars"},
 	} {
@@ -65,16 +64,13 @@ func TestLoadProfileFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all.Targets) <= profile.DefaultMaxTargets {
-		t.Skipf("clouds has %d targets: catalog too small for the limit test", len(all.Targets))
-	}
 	c, _ = parseFlags([]string{"--profile", "clouds"})
-	if _, err := loadProfile(c); err == nil || !strings.Contains(err.Error(), "--max-targets") || !strings.Contains(err.Error(), "--geo eu") {
-		t.Errorf("over the limit: %v", err)
-	}
-	c, _ = parseFlags([]string{"--profile", "clouds", "--max-targets", "1000"})
 	if p, err := loadProfile(c); err != nil || len(p.Targets) != len(all.Targets) {
-		t.Errorf("--max-targets 1000: %v", err)
+		t.Errorf("clouds (no target limit): %v", err)
+	}
+	c, _ = parseFlags([]string{"--profile", "all"})
+	if p, err := loadProfile(c); err != nil || len(p.Targets) <= len(all.Targets) {
+		t.Errorf("all: %v", err)
 	}
 	c, _ = parseFlags([]string{"--profile", "clouds", "--geo", "eu"})
 	p, err := loadProfile(c)
@@ -97,7 +93,7 @@ func TestCmdProfiles(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	s := out.String()
-	for _, want := range []string{"PROFILE", "default", "87", "hyperscalers", "europe", "gaming", "PROVIDER", "--max-targets"} {
+	for _, want := range []string{"PROFILE", "default", "87", "hyperscalers", "europe", "gaming", "all", "PROVIDER"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("list lacks %q:\n%s", want, s)
 		}

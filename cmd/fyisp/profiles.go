@@ -45,18 +45,10 @@ func (g *geoList) Set(v string) error {
 	return nil
 }
 
-// profileCost is shown with target-limit errors: measured on the default
-// schedule (HTTPS + TCP every 15s, ICMP every 5s per target).
-const profileCost = "300 targets use about 4% of one CPU core and ~28 KB/s upload; cost grows linearly with the target count"
-
 // loadProfile builds the profile of a run: --config, --profile, or the
 // default.
 func loadProfile(c config) (*model.Profile, error) {
-	max := c.maxTargets
-	if max == 0 {
-		max = profile.DefaultMaxTargets
-	}
-	l := profile.Limits{MaxTargets: max}
+	l := profile.Limits{}
 	switch {
 	case c.configPath != "":
 		p, err := profile.LoadLimits(c.configPath, l)
@@ -88,11 +80,6 @@ func loadProfile(c config) (*model.Profile, error) {
 		}
 		if n == 0 {
 			return nil, fmt.Errorf("--profile %s selects no targets (see `fyisp profiles`)", p.Name)
-		}
-		if len(p.Targets) > max {
-			return nil, fmt.Errorf("--profile %s has %d targets, more than the limit of %d: pick narrower profiles or a region "+
-				"(e.g. --geo eu; see `fyisp profiles`), or raise --max-targets (up to %d; %s)",
-				p.Name, len(p.Targets), max, profile.MaxTargetsCap, profileCost)
 		}
 		if err := profile.Validate(p, l); err != nil {
 			return nil, fmt.Errorf("--profile %s: %w", p.Name, err)
@@ -149,11 +136,7 @@ func listProfiles(r *profile.Registry, geos geoList, stdout, stderr io.Writer) i
 			fmt.Fprintf(w, "%s\t-\t-\t%s (error: %v)\n", d.Name, d.Description, err)
 			return
 		}
-		mark := ""
-		if len(p.Targets)+5 > profile.DefaultMaxTargets {
-			mark = "*"
-		}
-		fmt.Fprintf(w, "%s\t%d%s\t%d\t%s\n", d.Name, len(p.Targets), mark, len(p.Groups), d.Description)
+		fmt.Fprintf(w, "%s\t%d\t%d\t%s\n", d.Name, len(p.Targets), len(p.Groups), d.Description)
 	}
 	where := ""
 	if len(geos) > 0 {
@@ -182,9 +165,8 @@ func listProfiles(r *profile.Registry, geos geoList, stdout, stderr io.Writer) i
 Run with:  fyisp --profile NAME[,NAME...]   (a union; --geo eu keeps only one region)
 Details:   fyisp profiles NAME[,NAME...]
 Every run also measures the 5-target "Network path" group (off with --no-path).
-* over the default limit of %d targets (with the network path): add --geo or
-  --max-targets N (up to %d). %s.
-`, profile.DefaultMaxTargets, profile.MaxTargetsCap, profileCost)
+Cost grows with the target count; see "What to measure" in the README.
+`)
 	return 0
 }
 
@@ -195,9 +177,6 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 		return 1
 	}
 	fmt.Fprintf(stdout, "Profile %s: %d targets in %d panels (plus the 5-target Network path group)\n", p.Name, len(p.Targets), len(p.Groups))
-	if len(p.Targets)+5 > profile.DefaultMaxTargets {
-		fmt.Fprintf(stdout, "Over the default limit of %d: run it with --max-targets %d (up to %d).\n", profile.DefaultMaxTargets, len(p.Targets)+5, profile.MaxTargetsCap)
-	}
 	for _, g := range p.Groups {
 		fmt.Fprintf(stdout, "\n%s  [%s]\n", g.Title, g.ID)
 		w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)

@@ -34,7 +34,6 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
-	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/report"
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
@@ -83,7 +82,6 @@ type config struct {
 	configPath    string
 	profiles      profileNames
 	geos          geoList
-	maxTargets    int
 	noPath        bool
 	openBrowser   bool
 	adminToken    string
@@ -148,7 +146,6 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]` or other named profiles")
 	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: default)")
 	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
-	fs.IntVar(&c.maxTargets, "max-targets", profile.DefaultMaxTargets, fmt.Sprintf("most targets a profile may have (up to %d; %s)", profile.MaxTargetsCap, profileCost))
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls when --listen is not loopback")
@@ -182,9 +179,6 @@ func parseFlags(args []string) (config, error) {
 	}
 	if c.configPath != "" && (len(c.profiles) > 0 || len(c.geos) > 0) {
 		return c, fmt.Errorf("--config and --profile/--geo are mutually exclusive: use `extends: [%s]` in the file", strings.Join(c.profiles, ", "))
-	}
-	if c.maxTargets < 1 || c.maxTargets > profile.MaxTargetsCap {
-		return c, fmt.Errorf("--max-targets must be between 1 and %d", profile.MaxTargetsCap)
 	}
 	return c, nil
 }

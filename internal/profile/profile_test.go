@@ -328,19 +328,22 @@ func TestValidate(t *testing.T) {
 	if err := Validate(base(), Limits{}); err != nil {
 		t.Fatal(err)
 	}
+	// No target limit by default.
+	big := base()
+	for i := range 2000 {
+		tg := big.Targets[0]
+		tg.Name = fmt.Sprintf("t%d", i)
+		big.Targets = append(big.Targets, tg)
+	}
+	if err := Validate(big, Limits{}); err != nil {
+		t.Errorf("2001 targets: %v", err)
+	}
 	cases := []struct {
 		want string
 		mod  func(p *model.Profile)
 		l    Limits
 	}{
 		{"duplicate target name", func(p *model.Profile) { p.Targets = append(p.Targets, p.Targets[0]) }, Limits{}},
-		{"at most 300", func(p *model.Profile) {
-			for i := range 300 {
-				tg := p.Targets[0]
-				tg.Name = fmt.Sprintf("t%d", i)
-				p.Targets = append(p.Targets, tg)
-			}
-		}, Limits{}},
 		{"at most 1 allowed", func(p *model.Profile) {
 			p.Targets = append(p.Targets, model.Target{Name: "b", Host: "b.example", Group: "g"})
 		}, Limits{MaxTargets: 1}},

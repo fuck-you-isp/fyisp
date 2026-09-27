@@ -59,13 +59,6 @@ var profilesYAML []byte
 // several geos gets one group per geo.
 const providerSplitAt = 20
 
-// DefaultMaxTargets is the default target limit of a run; MaxTargetsCap is
-// the most --max-targets may allow.
-const (
-	DefaultMaxTargets = 300
-	MaxTargetsCap     = 1000
-)
-
 // Grouping strategies.
 const (
 	GroupByProvider    = "provider"
