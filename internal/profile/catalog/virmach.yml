@@ -1,0 +1,225 @@
+provider: virmach
+display: VirMach
+kind: cloud
+category: [vps]
+sources:
+  - https://virmach.com/looking-glass/
+  - https://billing.virmach.com/index.php?rp=%2Fknowledgebase%2F11%2FTest-IP-and-Looking-Glass-Locations.html
+notes: >-
+  Official VirMach looking-glass hosts <loc>.lg.virmach.com. The knowledge-base article lists 16;
+  the current looking-glass page features Tokyo, Los Angeles and New York (Secaucus). GET / is the
+  small LG page; never fetch the test files. Most LG hosts have an invalid TLS certificate (TCP 443 +
+  ICMP only); on 2026-09-27 eight of the 16 did not answer or no longer resolve, and two resolve to
+  implausible locations (see per-target notes).
+targets:
+  - name: VirMach-Amsterdam
+    host: ams.lg.virmach.com
+    kinds: [tcp, icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: VirMach-Atlanta
+    host: atl.lg.virmach.com
+    kinds: [tcp, icmp]
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: VirMach-Chicago
+    host: chi.lg.virmach.com
+    kinds: [tcp, icmp]
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: VirMach-Chicago-2
+    host: chi2.lg.virmach.com
+    kinds: [tcp, icmp]
+    region: chi2
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: VirMach-Dallas
+    host: dal.lg.virmach.com
+    kinds: []
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "resolves to 47.87.196.28 (Alibaba, geo-IP Singapore; ~184 ms from Helsinki) - location implausible, only ICMP answered"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-Denver
+    host: den.lg.virmach.com
+    kinds: [icmp]
+    region: den
+    city: Denver
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: VirMach-Frankfurt
+    host: ffm.lg.virmach.com
+    kinds: [tcp, icmp]
+    region: ffm
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: VirMach-Los-Angeles
+    host: lax.lg.virmach.com
+    kinds: []
+    region: lax
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "QuadraNet, 6171 W Century Blvd"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-Los-Angeles-2
+    host: lax2.lg.virmach.com
+    kinds: []
+    region: lax2
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: hostname no longer resolves (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-Miami
+    host: mia.lg.virmach.com
+    kinds: []
+    region: mia
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no endpoint answered on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-New-York
+    host: nyc.lg.virmach.com
+    kinds: []
+    region: nyc
+    city: Secaucus
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: INAP/Evocative Secaucus NJ
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-Phoenix
+    host: phx.lg.virmach.com
+    kinds: []
+    region: phx
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no endpoint answered on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-Seattle
+    host: sea.lg.virmach.com
+    kinds: []
+    region: sea
+    city: Tukwila
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "Sabey, Tukwila WA; resolves to an Alibaba (AS45102) IP and nothing answered"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-San-Jose
+    host: sjc.lg.virmach.com
+    kinds: []
+    region: sjc
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "hostname now resolves to 91.186.208.96 (FirstServer, Helsinki; ~1 ms from a Helsinki vantage) - not in San Jose, and HTTPS fails"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-Tampa
+    host: tpa.lg.virmach.com
+    kinds: []
+    region: tpa
+    city: Tampa
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: hostname no longer resolves (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: VirMach-Tokyo
+    host: tyo.lg.virmach.com
+    kinds: []
+    region: tyo
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "BB Tower, Koto City"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

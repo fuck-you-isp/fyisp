@@ -1,0 +1,70 @@
+provider: a2hosting
+display: hosting.com (A2 Hosting)
+kind: cloud
+category: [shared, vps]
+sources:
+  - https://kb.hosting.com/docs/determining-which-data-center-hosts-your-account
+notes: >-
+  A2 Hosting (now hosting.com) publishes no speed-test or looking-glass hosts. These are the shared
+  hosting servers the hosting.com knowledge base names as examples for each datacenter (mi3-ss21,
+  az1-ss100, nl1-ss9; sg1-ss1 follows the same naming for Singapore): 4 of 4 A2 locations. GET /
+  returns a ~160-byte default page. They are customer-hosting servers, not dedicated test hosts:
+  keep to the default fyisp interval.
+targets:
+  - name: A2Hosting-Michigan
+    host: mi3-ss21.a2hosting.com
+    kinds: [https, tcp, icmp]
+    region: mi
+    city: Ann Arbor
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 163
+  - name: A2Hosting-Arizona
+    host: az1-ss100.a2hosting.com
+    kinds: [https, tcp, icmp]
+    region: az
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 163
+  - name: A2Hosting-Amsterdam
+    host: nl1-ss9.a2hosting.com
+    kinds: [https, tcp, icmp]
+    region: nl
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 163
+  - name: A2Hosting-Singapore
+    host: sg1-ss1.a2hosting.com
+    kinds: [https, tcp, icmp]
+    region: sg
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    notes: hostname guessed from the KB naming pattern; RTT from Helsinki (~181 ms) fits Singapore; ICMP lossy (one pass lost all 3 pings, another 1 of 3)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 163

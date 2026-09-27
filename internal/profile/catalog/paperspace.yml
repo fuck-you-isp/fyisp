@@ -1,0 +1,23 @@
+provider: paperspace
+display: Paperspace (DigitalOcean)
+kind: cloud
+category: [gpu]
+sources:
+  - https://docs.digitalocean.com/products/paperspace/machines/details/regions/
+notes: >-
+  Paperspace (now DigitalOcean Paperspace) has three regions (NY2 New York, CA1 Santa Clara, AMS1
+  Amsterdam) but no public per-region host; only the Cloudflare anycast API front api.paperspace.com
+  (GET / is a 139-byte 404).
+targets:
+  - name: Paperspace-api
+    host: api.paperspace.com
+    kinds: [https, tcp, icmp]
+    path: /
+    anycast: true
+    notes: Cloudflare anycast
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 139

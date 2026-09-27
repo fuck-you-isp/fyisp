@@ -1,0 +1,38 @@
+provider: heroku
+display: Heroku
+kind: cloud
+category: [paas]
+sources:
+  - https://devcenter.heroku.com/articles/regions https://help.heroku.com/VKRNVVF5/what-is-the-correct-dns-cname-target-for-my-custom-domains
+notes: >-
+  Common Runtime regions us (AWS us-east-1, Virginia) and eu (AWS eu-west-1, Dublin). *.herokuapp.com
+  names CNAME to the regional router hosts vaNN.ingress.herokuapp.com / ieNN.ingress.herokuapp.com;
+  we probe va01 and ie01 directly (rDNS compute-1 / eu-west-1, no ICMP). Their TLS certificate is
+  *.herokuapp.com, which does not cover the ingress name, so TCP 443 only. Private Spaces regions
+  (dublin, frankfurt, london, montreal, mumbai, oregon, singapore, sydney, tokyo, virginia) have no
+  public shared endpoint.
+targets:
+  - name: Heroku-us
+    host: va01.ingress.herokuapp.com
+    kinds: [tcp]
+    region: us
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  - name: Heroku-eu
+    host: ie01.ingress.herokuapp.com
+    kinds: [tcp]
+    region: eu
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true

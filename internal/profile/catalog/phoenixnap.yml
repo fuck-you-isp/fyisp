@@ -1,0 +1,128 @@
+provider: phoenixnap
+display: phoenixNAP
+kind: cloud
+category: [bare-metal]
+sources:
+  - https://phoenixnap.com/network/speed-test
+  - https://phoenixnap.com/data-center
+  - https://phoenixnap.com/bare-metal-cloud
+notes: >-
+  Official phoenixNAP speed-test hosts from the network speed-test page (speedtest/speed<site>.phoenixnap.com),
+  one per site: Phoenix, Ashburn, Atlanta, Chicago, Amsterdam, Singapore and Belgrade. The hosts serve a certificate for another name, so
+  HTTPS cannot verify: TCP 443 + ICMP only. Never
+  fetch the <site>-1gb.test files. Bare Metal Cloud also lists Seattle (SEA) and Austin (AUS), which have no
+  speed-test host: *.phoenixnap.com is a Cloudflare wildcard, so guessed names resolve to anycast Cloudflare
+  and are useless; those two are kept with kinds: [].
+targets:
+  - name: phoenixNAP-phx
+    host: speedtest.phoenixnap.com
+    kinds: [tcp, icmp]
+    region: PHX
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: phoenixNAP-ash
+    host: speedash.phoenixnap.com
+    kinds: [tcp, icmp]
+    region: ASH
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: phoenixNAP-atl
+    host: speedatl.phoenixnap.com
+    kinds: [tcp, icmp]
+    region: ATL
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: phoenixNAP-chi
+    host: speedchi.phoenixnap.com
+    kinds: [tcp, icmp]
+    region: CHI
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: phoenixNAP-nld
+    host: speednld.phoenixnap.com
+    kinds: [tcp, icmp]
+    region: NLD
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: phoenixNAP-sgp
+    host: speedsin.phoenixnap.com
+    kinds: [tcp, icmp]
+    region: SGP
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: phoenixNAP-srb
+    host: speedsrb.phoenixnap.com
+    kinds: [tcp, icmp]
+    region: SRB
+    city: Belgrade
+    country: RS
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: phoenixNAP-sea
+    host: speedsea.phoenixnap.com
+    kinds: []
+    region: SEA
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "no speed-test host published; the name only hits the *.phoenixnap.com Cloudflare wildcard"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: phoenixNAP-aus
+    host: speedaus.phoenixnap.com
+    kinds: []
+    region: AUS
+    city: Austin
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "no speed-test host published; the name only hits the *.phoenixnap.com Cloudflare wildcard"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

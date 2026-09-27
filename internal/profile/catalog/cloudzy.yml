@@ -1,0 +1,207 @@
+provider: cloudzy
+display: Cloudzy
+kind: cloud
+category: [vps]
+sources:
+  - https://cloudzy.com/looking-glass/
+notes: >-
+  Official Cloudzy per-region looking-glass hosts lg-<city>.cloudzy.com as linked from the
+  looking-glass page (region ids from the same page). GET / is the LG page; never fetch the
+  test files. Tokyo (ap-tyo-1) has no LG link.
+targets:
+  - name: Cloudzy-us-utah-1
+    host: lg-utah.cloudzy.com
+    kinds: [tcp, icmp]
+    region: us-utah-1
+    city: Salt Lake City
+    country: US
+    geo: na
+    anycast: false
+    notes: TLS certificate invalid; TCP 443 and ICMP only
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Cloudzy-us-dal-1
+    host: lg-dallas.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: us-dal-1
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4681
+  - name: Cloudzy-us-lax-1
+    host: lg-los-angeles.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: us-lax-1
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4710
+  - name: Cloudzy-us-nyc-1
+    host: lg-newyorkcity.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: us-nyc-1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4680
+  - name: Cloudzy-us-mia-1
+    host: lg-miami.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: us-mia-1
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4685
+  - name: Cloudzy-us-lvg-1
+    host: lg-lasvegas.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: us-lvg-1
+    city: Las Vegas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4680
+  - name: Cloudzy-eu-lon-1
+    host: lg-london.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: eu-lon-1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4691
+  - name: Cloudzy-eu-ams-1
+    host: lg-amsterdam.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: eu-ams-1
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4705
+  - name: Cloudzy-eu-fra-1
+    host: lg-frankfurt.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: eu-fra-1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4692
+  - name: Cloudzy-eu-brn-1
+    host: lg-switzerland.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: eu-brn-1
+    city: Bern
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4709
+  - name: Cloudzy-me-dxb-1
+    host: lg-dubai.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: me-dxb-1
+    city: Dubai
+    country: AE
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4686
+  - name: Cloudzy-ap-sgp-1
+    host: lg-singapore.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: ap-sgp-1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    notes: geo-IP Singapore (AS14956) but ~264 ms from Helsinki vs ~180 ms for other Singapore hosts; likely routed via the US
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4705
+  - name: Cloudzy-ap-syd-1
+    host: lg-sydney.cloudzy.com
+    kinds: [https, tcp, icmp]
+    region: ap-syd-1
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4691
+  - name: Cloudzy-ap-tyo-1
+    host: lg-tokyo.cloudzy.com
+    kinds: []
+    region: ap-tyo-1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no looking-glass host published for Tokyo
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

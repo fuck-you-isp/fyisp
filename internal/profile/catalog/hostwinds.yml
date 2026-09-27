@@ -1,0 +1,57 @@
+provider: hostwinds
+display: Hostwinds
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://www.hostwinds.com/company/datacenters
+  - https://www.hostwinds.com/tutorials/how-to-test-speed-to-hostwinds-data-centers
+notes: >-
+  Official Hostwinds speed-test repository hosts <dc>-repo.hostwinds.net (the same IPs the Hostwinds
+  tutorial publishes as per-datacenter ping IPs), one per location: Seattle, Dallas, Amsterdam (3 of 3).
+  GET /robots.txt returns a tiny 404; never fetch the /tests/*.zip files.
+targets:
+  - name: Hostwinds-Seattle
+    host: sea-repo.hostwinds.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
+  - name: Hostwinds-Dallas
+    host: dal-repo.hostwinds.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
+  - name: Hostwinds-Amsterdam
+    host: ams-repo.hostwinds.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
