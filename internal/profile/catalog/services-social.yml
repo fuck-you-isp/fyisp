@@ -13,14 +13,14 @@ notes: >-
   Main web entrypoints of the big social networks. All are anycast/CDN fronts (Meta edge,
   Cloudflare, Akamai, Fastly) - they measure the path to the nearest edge, which is what
   the apps use. robots.txt is used where it is small; Facebook (50 KB) and LinkedIn (120
-  KB) use /favicon.ico instead (20-25 KB). Verified from Hetzner Helsinki on 2026-09-27.
+  KB) use /.well-known/security.txt instead (under 0.5 KB). Verified from Hetzner Helsinki on 2026-09-27.
 targets:
-  # favicon (20 KB) - robots.txt is 50 KB and / is larger. From Helsinki: ping 1 ms / TCP
-  # connect 2 ms.
+  # /.well-known/security.txt (404 B) - robots.txt is 50 KB and / is larger. From
+  # Helsinki: ping 1 ms / TCP connect 2 ms.
   - name: Facebook
     host: www.facebook.com
     kinds: [https, tcp, icmp]
-    path: /favicon.ico
+    path: /.well-known/security.txt
     region: global
     anycast: true
     tags: [social]
@@ -29,7 +29,7 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 20366
+      bytes: 404
   # From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: Instagram
     host: www.instagram.com
@@ -86,11 +86,11 @@ targets:
       tcp: true
       https: 200
       bytes: 538
-  # favicon (24 KB) - robots.txt is 120 KB. From Helsinki: ping 1 ms / TCP connect 3 ms.
+  # /.well-known/security.txt (267 B); favicon is 24 KB, robots.txt 120 KB. From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: LinkedIn
     host: www.linkedin.com
     kinds: [https, tcp, icmp]
-    path: /favicon.ico
+    path: /.well-known/security.txt
     region: global
     anycast: true
     tags: [social]
@@ -99,4 +99,4 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 24838
+      bytes: 267

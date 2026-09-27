@@ -48,20 +48,27 @@ var version = "dev"
 // freed heap to the OS only slowly, so RSS follows the peaks. GOGC=50 keeps
 // the peaks ~10-15 MB lower for about one more 3 ms collection a minute
 // (<0.1% of a core). The soft memory limit is a safety net: steady state
-// is far below it, and it only makes the GC work harder when a burst of
-// large dashboard queries would otherwise let the heap double.
+// is well below it, and it only makes the GC work harder when a burst of
+// large dashboard queries would otherwise let the heap double. It grows
+// with the target count (each target keeps an HTTPS connection, ~60 KB
+// live): a fixed 96 MB limit made an 800-target run collect every second
+// and spend 60% of its CPU in the GC.
 const (
-	defaultGCPercent   = 50
-	defaultMemoryLimit = 96 << 20
+	defaultGCPercent     = 50
+	baseMemoryLimit      = 96 << 20
+	memoryLimitPerTarget = 128 << 10
 )
 
+// memoryLimit is the soft memory limit for a run with n targets.
+func memoryLimit(n int) int64 { return baseMemoryLimit + int64(n)*memoryLimitPerTarget }
+
 // tuneGC applies the GC defaults above where the environment sets none.
-func tuneGC() {
+func tuneGC(targets int) {
 	if os.Getenv("GOGC") == "" {
 		debug.SetGCPercent(defaultGCPercent)
 	}
 	if os.Getenv("GOMEMLIMIT") == "" {
-		debug.SetMemoryLimit(defaultMemoryLimit)
+		debug.SetMemoryLimit(memoryLimit(targets))
 	}
 }
 
@@ -233,7 +240,7 @@ func newLogger(c config, w io.Writer) *slog.Logger {
 }
 
 func run(ctx context.Context, stop context.CancelFunc, c config) error {
-	tuneGC()
+	tuneGC(0)
 	log := newLogger(c, os.Stderr)
 	// Before probe.New: probe filters the standard logger's http2 noise.
 	slog.SetDefault(log)
@@ -243,6 +250,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	if err != nil {
 		return err
 	}
+	tuneGC(len(prof.Targets))
 
 	dir, cleanup, err := resolveDataDir(c)
 	if err != nil {

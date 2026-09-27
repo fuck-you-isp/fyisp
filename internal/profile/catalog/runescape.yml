@@ -24,7 +24,7 @@ notes: >-
 targets:
   - name: OSRS-US-East
     host: oldschool1.runescape.com
-    kinds: [icmp, tcp, https]
+    kinds: [icmp, tcp]
     region: us-east
     city: Ashburn
     country: US
@@ -35,7 +35,7 @@ targets:
     verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16650}
   - name: OSRS-US-West
     host: oldschool20.runescape.com
-    kinds: [icmp, tcp, https]
+    kinds: [icmp, tcp]
     region: us-west
     city: Las Vegas
     country: US
@@ -46,7 +46,7 @@ targets:
     verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16649}
   - name: OSRS-UK
     host: oldschool2.runescape.com
-    kinds: [icmp, tcp, https]
+    kinds: [icmp, tcp]
     region: uk
     country: GB
     geo: eu
@@ -56,7 +56,7 @@ targets:
     verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16649}
   - name: OSRS-DE
     host: oldschool114.runescape.com
-    kinds: [icmp, tcp, https]
+    kinds: [icmp, tcp]
     region: de
     city: Frankfurt
     country: DE
@@ -67,7 +67,7 @@ targets:
     verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16652}
   - name: OSRS-AU
     host: oldschool230.runescape.com
-    kinds: [icmp, tcp, https]
+    kinds: [icmp, tcp]
     region: au
     city: Sydney
     country: AU
@@ -78,7 +78,7 @@ targets:
     verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16652}
   - name: OSRS-BR
     host: oldschool392.runescape.com
-    kinds: [tcp, https]
+    kinds: [tcp]
     region: br
     city: Sao Paulo
     country: BR
@@ -89,7 +89,7 @@ targets:
     verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 16650}
   - name: OSRS-SG
     host: oldschool360.runescape.com
-    kinds: [tcp, https]
+    kinds: [tcp]
     region: sg
     city: Singapore
     country: SG
@@ -100,7 +100,7 @@ targets:
     verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 16650}
   - name: OSRS-JP
     host: oldschool398.runescape.com
-    kinds: [tcp, https]
+    kinds: [tcp]
     region: jp
     city: Tokyo
     country: JP
@@ -111,7 +111,7 @@ targets:
     verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 16650}
   - name: OSRS-ZA
     host: oldschool367.runescape.com
-    kinds: [tcp, https]
+    kinds: [tcp]
     region: za
     city: Cape Town
     country: ZA
