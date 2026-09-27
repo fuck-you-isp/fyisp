@@ -1,0 +1,69 @@
+provider: scaleway
+display: Scaleway
+kind: cloud
+category: [storage]
+sources:
+  - https://www.scaleway.com/en/docs/object-storage/concepts/
+  - https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/guides/regions_and_zones
+notes: >-
+  Scaleway publishes no per-region ping/speed-test hosts, so each region is probed via its public
+  Object Storage endpoint s3.<region>.scw.cloud (GET / returns a ~1 KB anonymous banner). Region-level
+  only; availability zones (fr-par-1/2/3, nl-ams-1/2/3, pl-waw-1/2/3, it-mil-1) share the endpoint.
+  ping.online.net (Dedibox, Paris) answers ICMP and TCP 80 but not 443 and is not documented, so it is omitted.
+targets:
+  - name: Scaleway-fr-par
+    host: s3.fr-par.scw.cloud
+    kinds: [https, tcp, icmp]
+    region: fr-par
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1164
+  - name: Scaleway-nl-ams
+    host: s3.nl-ams.scw.cloud
+    kinds: [https, tcp, icmp]
+    region: nl-ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1116
+  - name: Scaleway-pl-waw
+    host: s3.pl-waw.scw.cloud
+    kinds: [https, tcp, icmp]
+    region: pl-waw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1115
+  - name: Scaleway-it-mil
+    host: s3.it-mil.scw.cloud
+    kinds: [https, tcp, icmp]
+    region: it-mil
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1005
