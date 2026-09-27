@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -84,7 +85,7 @@ func TestLoadProfileFlags(t *testing.T) {
 		t.Errorf("clouds@eu: %s %d", p.Name, len(p.Targets))
 	}
 	for _, tg := range p.Targets {
-		if ct, ok := r.Catalog.Target(tg.Name); tg.Group != profile.PathGroup && (!ok || ct.Geo != "eu") {
+		if ct, ok := r.Catalog.Target(tg.Name); tg.Group != profile.PathGroup && (!ok || ct.GeoKey() != "eu") {
 			t.Errorf("clouds@eu has %s", tg.Name)
 		}
 	}
@@ -123,7 +124,7 @@ func TestCmdProfiles(t *testing.T) {
 		if !strings.Contains(s, "AWS-us-east-1") || !strings.Contains(s, "Amazon Web Services") {
 			t.Errorf("aws:\n%s", s)
 		}
-		if ct, ok := r.Catalog.Target("AWS-me-south-1"); ok && !ct.Probeable() && !strings.Contains(s, "AWS-me-south-1  "+ct.Host+"  unreachable, skipped") {
+		if ct, ok := r.Catalog.Target("AWS-me-south-1"); ok && !ct.Probeable() && !regexp.MustCompile(`AWS-me-south-1 +`+regexp.QuoteMeta(ct.Host)+` +unreachable, skipped`).MatchString(s) {
 			t.Errorf("aws does not list the skipped me-south-1:\n%s", s)
 		}
 	}

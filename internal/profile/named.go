@@ -291,7 +291,7 @@ type ResolveOptions struct {
 	// Geos, if set, keeps only targets whose catalog entry is located in
 	// one of these geos: an intersection with the selection (e.g. clouds
 	// in Europe). Targets that are not in the catalog, and anycast
-	// targets without a geo, are dropped.
+	// targets (even with a geo), are dropped.
 	Geos []string
 }
 
@@ -316,7 +316,7 @@ func (r *Registry) Resolve(names []string, o ResolveOptions) (*model.Profile, er
 		p.Name += "@" + strings.Join(o.Geos, ",")
 		p.Targets = slices.DeleteFunc(p.Targets, func(t model.Target) bool {
 			ct, ok := r.Catalog.Target(t.Name)
-			return !ok || !slices.Contains(o.Geos, ct.Geo)
+			return !ok || !slices.Contains(o.Geos, ct.GeoKey())
 		})
 		dropEmptyGroups(p)
 	}
@@ -550,7 +550,9 @@ func (rule Rule) matches(p *Provider, t CatalogTarget) bool {
 	}) {
 		return false
 	}
-	if len(rule.Geos) > 0 && !slices.Contains(rule.Geos, t.Geo) {
+	// Anycast targets have no fixed location: they never match a geo, even
+	// when the catalog records one.
+	if len(rule.Geos) > 0 && !slices.Contains(rule.Geos, t.GeoKey()) {
 		return false
 	}
 	if rule.Anycast != nil && *rule.Anycast != t.Anycast {

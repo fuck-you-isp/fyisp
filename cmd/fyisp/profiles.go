@@ -226,12 +226,14 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 	}
 	if sk := r.SkippedIn(names); len(sk) > 0 {
 		fmt.Fprintf(stdout, "\nSkipped (unreachable when last checked, kinds: []):\n")
+		w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 		for _, t := range sk {
-			if len(geos) > 0 && !slices.Contains(geos, t.Geo) {
+			if len(geos) > 0 && !slices.Contains(geos, t.GeoKey()) {
 				continue
 			}
-			fmt.Fprintf(stdout, "  %s  %s  unreachable, skipped\n", t.Name, t.Host)
+			fmt.Fprintf(w, "  %s\t%s\tunreachable, skipped\n", t.Name, t.Host)
 		}
+		_ = w.Flush()
 	}
 	return 0
 }

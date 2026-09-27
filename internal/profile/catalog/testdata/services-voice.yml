@@ -8,6 +8,7 @@ targets:
     host: discord.com
     kinds: [https, tcp, icmp]
     anycast: true
+    geo: eu            # anycast wins: never in a regional profile
     tags: [chat]
   - name: Zoom-eu
     host: zoom-eu.example.com
