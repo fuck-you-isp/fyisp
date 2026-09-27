@@ -15,6 +15,7 @@ notes: >-
 targets:
   - name: RackNerd-Los-Angeles-DC03
     host: lg-lax03.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: lax03
     city: Los Angeles
@@ -25,10 +26,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9046
+      https: 404
+      bytes: 284
   - name: RackNerd-San-Jose
     host: lg-sj.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: sj
     city: San Jose
@@ -39,10 +41,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9021
+      https: 404
+      bytes: 281
   - name: RackNerd-Seattle
     host: lg-sea.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: sea
     city: Seattle
@@ -53,10 +56,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9025
+      https: 404
+      bytes: 282
   - name: RackNerd-Dallas
     host: lg-dal.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: dal
     city: Dallas
@@ -67,10 +71,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9019
+      https: 404
+      bytes: 282
   - name: RackNerd-Chicago
     host: lg-chi.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: chi
     city: Chicago
@@ -81,10 +86,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9019
+      https: 404
+      bytes: 282
   - name: RackNerd-New-York
     host: lg-ny.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: ny
     city: New York
@@ -95,10 +101,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9013
+      https: 404
+      bytes: 281
   - name: RackNerd-Ashburn
     host: lg-ash.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: ash
     city: Ashburn
@@ -109,10 +116,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9019
+      https: 404
+      bytes: 282
   - name: RackNerd-Atlanta
     host: lg-atl.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: atl
     city: Atlanta
@@ -123,10 +131,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9142
+      https: 404
+      bytes: 282
   - name: RackNerd-Toronto
     host: lg-tor.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: tor
     city: Toronto
@@ -137,10 +146,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9039
+      https: 404
+      bytes: 282
   - name: RackNerd-Strasbourg
     host: lg-fr.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: fr
     city: Strasbourg
@@ -151,10 +161,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9028
+      https: 404
+      bytes: 281
   - name: RackNerd-Amsterdam
     host: lg-ams.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: ams
     city: Amsterdam
@@ -165,10 +176,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9013
+      https: 404
+      bytes: 282
   - name: RackNerd-Dublin
     host: lg-dub.racknerd.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: dub
     city: Dublin
@@ -179,5 +191,5 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9036
+      https: 404
+      bytes: 282

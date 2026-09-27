@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: TransIP-AMS0
     host: mirror.transip.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp, icmp]
     path: /favicon.ico
     region: ams0
     city: Amsterdam

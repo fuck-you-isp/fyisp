@@ -13,6 +13,7 @@ notes: >-
 targets:
   - name: Cherry-Siauliai
     host: speedtest.lt.cherryservers.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: LT-Siauliai
     city: Siauliai
@@ -23,10 +24,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2692
+      https: 404
+      bytes: 293
   - name: Cherry-Amsterdam
     host: speedtest.nl.cherryservers.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: NL-Amsterdam
     city: Amsterdam
@@ -37,10 +39,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2692
+      https: 404
+      bytes: 305
   - name: Cherry-Frankfurt
     host: speedtest.de.cherryservers.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: DE-Frankfurt
     city: Frankfurt
@@ -51,10 +54,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2692
+      https: 404
+      bytes: 293
   - name: Cherry-Stockholm
     host: speedtest.se.cherryservers.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: SE-Stockholm
     city: Stockholm
@@ -65,10 +69,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2692
+      https: 404
+      bytes: 293
   - name: Cherry-Chicago
     host: speedtest.us.cherryservers.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: US-Chicago
     city: Chicago
@@ -79,10 +84,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2692
+      https: 404
+      bytes: 305
   - name: Cherry-Singapore
     host: speedtest.sg.cherryservers.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: SG-Singapore
     city: Singapore
@@ -93,10 +99,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2692
+      https: 404
+      bytes: 293
   - name: Cherry-Tokyo
     host: speedtest.jp.cherryservers.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: JP-Tokyo
     city: Tokyo
@@ -107,5 +114,5 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2692
+      https: 404
+      bytes: 293

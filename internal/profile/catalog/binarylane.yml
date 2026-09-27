@@ -13,6 +13,7 @@ notes: >-
 targets:
   - name: BinaryLane-syd
     host: syd-lg.binarylane.cloud
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: syd
     city: Sydney
@@ -23,10 +24,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9036
+      https: 404
+      bytes: 146
   - name: BinaryLane-mel
     host: mel-lg.binarylane.cloud
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: mel
     city: Melbourne
@@ -37,10 +39,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9036
+      https: 404
+      bytes: 146
   - name: BinaryLane-bne
     host: bne-lg.binarylane.cloud
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: bne
     city: Brisbane
@@ -51,10 +54,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9038
+      https: 404
+      bytes: 146
   - name: BinaryLane-per
     host: per-lg.binarylane.cloud
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: per
     city: Perth
@@ -65,10 +69,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9037
+      https: 404
+      bytes: 146
   - name: BinaryLane-adl
     host: adl-lg.binarylane.cloud
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: adl
     city: Adelaide
@@ -79,10 +84,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9034
+      https: 404
+      bytes: 146
   - name: BinaryLane-sin
     host: sin-lg.binarylane.cloud
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: sin
     city: Singapore
@@ -93,5 +99,5 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 9036
+      https: 404
+      bytes: 146

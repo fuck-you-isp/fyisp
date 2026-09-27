@@ -24,6 +24,7 @@ targets:
       tcp: true
   - name: Cloudzy-us-dal-1
     host: lg-dallas.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-dal-1
     city: Dallas
@@ -35,9 +36,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 4681
+      bytes: 26
   - name: Cloudzy-us-lax-1
     host: lg-los-angeles.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-lax-1
     city: Los Angeles
@@ -48,10 +50,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4710
+      https: 404
+      bytes: 329
   - name: Cloudzy-us-nyc-1
     host: lg-newyorkcity.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-nyc-1
     city: New York
@@ -62,10 +65,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4680
+      https: 404
+      bytes: 329
   - name: Cloudzy-us-mia-1
     host: lg-miami.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-mia-1
     city: Miami
@@ -76,10 +80,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4685
+      https: 404
+      bytes: 323
   - name: Cloudzy-us-lvg-1
     host: lg-lasvegas.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-lvg-1
     city: Las Vegas
@@ -90,10 +95,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4680
+      https: 404
+      bytes: 326
   - name: Cloudzy-eu-lon-1
     host: lg-london.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-lon-1
     city: London
@@ -104,10 +110,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4691
+      https: 404
+      bytes: 324
   - name: Cloudzy-eu-ams-1
     host: lg-amsterdam.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-ams-1
     city: Amsterdam
@@ -118,10 +125,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4705
+      https: 404
+      bytes: 327
   - name: Cloudzy-eu-fra-1
     host: lg-frankfurt.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-fra-1
     city: Frankfurt
@@ -132,10 +140,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4692
+      https: 404
+      bytes: 327
   - name: Cloudzy-eu-brn-1
     host: lg-switzerland.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-brn-1
     city: Bern
@@ -146,10 +155,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4709
+      https: 404
+      bytes: 329
   - name: Cloudzy-me-dxb-1
     host: lg-dubai.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: me-dxb-1
     city: Dubai
@@ -160,10 +170,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4686
+      https: 404
+      bytes: 323
   - name: Cloudzy-ap-sgp-1
     host: lg-singapore.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: ap-sgp-1
     city: Singapore
@@ -175,10 +186,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4705
+      https: 404
+      bytes: 287
   - name: Cloudzy-ap-syd-1
     host: lg-sydney.cloudzy.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: ap-syd-1
     city: Sydney
@@ -189,8 +201,8 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 4691
+      https: 404
+      bytes: 324
   - name: Cloudzy-ap-tyo-1
     host: lg-tokyo.cloudzy.com
     kinds: []

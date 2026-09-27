@@ -15,6 +15,7 @@ notes: >-
 targets:
   - name: Kamatera-eu
     host: eu-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp]
     region: eu
     city: Amsterdam
@@ -28,9 +29,10 @@ targets:
       icmp: false
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-eu-bu
     host: eu-bu-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-bu
     city: Bucharest
@@ -42,9 +44,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-eu-fr
     host: eu-fr-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-fr
     city: Frankfurt
@@ -56,9 +59,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-eu-lo
     host: eu-lo-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-lo
     city: London
@@ -70,9 +74,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-eu-md
     host: eu-md-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-md
     city: Madrid
@@ -84,9 +89,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-eu-ml
     host: eu-ml-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-ml
     city: Milan
@@ -98,9 +104,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-eu-st
     host: eu-st-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: eu-st
     city: Stockholm
@@ -112,9 +119,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-at
     host: us-at-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-at
     city: Atlanta
@@ -126,9 +134,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-ch
     host: us-ch-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-ch
     city: Chicago
@@ -140,9 +149,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-tx
     host: us-tx-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-tx
     city: Dallas
@@ -154,9 +164,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-la
     host: us-la-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-la
     city: Los Angeles
@@ -168,9 +179,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-ny2
     host: us-ny2-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-ny2
     city: New York
@@ -182,9 +194,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-sc
     host: us-sc-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-sc
     city: Santa Clara
@@ -196,9 +209,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-se
     host: us-se-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: us-se
     city: Seattle
@@ -210,9 +224,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-ca-tr
     host: ca-tr-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: ca-tr
     city: Toronto
@@ -224,9 +239,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-as
     host: as-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: as
     city: Hong Kong
@@ -238,9 +254,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-as-sg
     host: as-sg-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: as-sg
     city: Singapore
@@ -252,9 +269,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-as-ty
     host: as-ty-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: as-ty
     city: Tokyo
@@ -266,9 +284,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-au-sy
     host: au-sy-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: au-sy
     city: Sydney
@@ -280,9 +299,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-il-ta
     host: il-ta-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: il-ta
     city: Tel Aviv
@@ -294,9 +314,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-il
     host: il-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: il
     city: Rosh HaAyin
@@ -310,9 +331,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-il-rh
     host: il-rh-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: il-rh
     city: Rosh HaAyin
@@ -326,9 +348,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-il-pt
     host: il-pt-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: il-pt
     city: Petah Tikva
@@ -342,9 +365,10 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-il-ha
     host: il-ha-speedtest.kamatera.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: il-ha
     city: Haifa
@@ -358,7 +382,7 @@ targets:
       icmp: true
       tcp: true
       https: 200
-      bytes: 2654
+      bytes: 26
   - name: Kamatera-us-mi
     host: us-mi-speedtest.kamatera.com
     kinds: []

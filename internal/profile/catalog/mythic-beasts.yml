@@ -31,6 +31,7 @@ targets:
       tcp: false
   - name: MythicBeasts-London-SOV
     host: mirror-sov-a.mythic-beasts.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: sov
     city: London
@@ -41,8 +42,8 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2348
+      https: 404
+      bytes: 333
   - name: MythicBeasts-London-CLL
     host: infra-cll-a.mythic-beasts.com
     kinds: [icmp]
@@ -58,6 +59,7 @@ targets:
       tcp: false
   - name: MythicBeasts-Cambridge
     host: mirror-cam-a.mythic-beasts.com
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: cam
     city: Cambridge
@@ -68,8 +70,8 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 2348
+      https: 404
+      bytes: 333
   - name: MythicBeasts-Amsterdam
     host: infra-ams-c.mythic-beasts.com
     kinds: [icmp]

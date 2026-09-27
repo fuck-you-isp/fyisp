@@ -15,6 +15,7 @@ notes: >-
 targets:
   - name: Netcup-Nuremberg
     host: speedtest.netcup.de
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: nue
     city: Nuremberg
@@ -25,8 +26,8 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 8020
+      https: 404
+      bytes: 236
   - name: Netcup-Vienna
     host: www.netcup.com
     kinds: []

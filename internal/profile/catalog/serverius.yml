@@ -15,6 +15,7 @@ notes: >-
 targets:
   - name: Serverius-Dronten
     host: speedtest1.serverius.net
+    path: /robots.txt
     kinds: [https, tcp, icmp]
     region: SDC1
     city: Dronten
@@ -25,10 +26,11 @@ targets:
       date: 2026-09-27
       icmp: true
       tcp: true
-      https: 200
-      bytes: 3365
+      https: 404
+      bytes: 146
   - name: Serverius-Meppel
     host: speedtest2.serverius.net
+    path: /robots.txt
     kinds: [https, tcp]
     region: SDC2
     city: Meppel
@@ -39,10 +41,11 @@ targets:
       date: 2026-09-27
       icmp: false
       tcp: true
-      https: 200
-      bytes: 3363
+      https: 404
+      bytes: 146
   - name: Serverius-Apeldoorn
     host: speedtest3.serverius.net
+    path: /robots.txt
     kinds: [https, tcp]
     region: SDC3
     city: Apeldoorn
@@ -53,8 +56,8 @@ targets:
       date: 2026-09-27
       icmp: false
       tcp: true
-      https: 200
-      bytes: 3368
+      https: 404
+      bytes: 146
   - name: Serverius-Amsterdam
     host: lg.serverius.net
     kinds: []
