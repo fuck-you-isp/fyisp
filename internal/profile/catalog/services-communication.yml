@@ -1,0 +1,386 @@
+provider: services-communication
+display: Communication Services
+kind: service
+category: [communication, voice, video, chat]
+sources:
+  - https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0060548
+  - https://assets.zoom.us/docs/ipranges/ZoomMeetings.txt
+  - https://knowledge.workspace.google.com/admin/meet/prepare-your-network-for-meet-meetings-and-live-streams
+  - https://learn.microsoft.com/en-us/microsoft-365/enterprise/urls-and-ip-address-ranges
+  - https://learn.microsoft.com/en-us/microsoftteams/microsoft-teams-online-call-flows
+  - https://docs.thousandeyes.com/product-documentation/best-practices/monitoring-microsoft-teams
+  - https://help.webex.com/article/WBX000028782/Network-Requirements-for-Webex-Teams-Services
+  - https://slack.com/help/articles/360001603387-Manage-Slack-connection-issues
+  - https://discord.com/developers/docs/events/gateway
+  - https://core.telegram.org/api/datacenter
+  - https://docs.pyrogram.org/faq/what-are-the-ip-addresses-of-telegram-data-centers
+  - https://support.apple.com/en-us/101555
+  - https://ip-ranges.amazonaws.com/ip-ranges.json
+notes: >-
+  Voice/video/chat services. Where the vendor publishes an addressable media or relay host
+  it is used: Google Meet's TURN SNI hosts meet.turns.goog / workspace.turns.goog (Meet
+  network guide) and Teams Transport Relays worldaz/euaz/usaz.tr.teams.microsoft.com (the
+  STUN/TURN relays Teams clients and Microsoft's own network assessment use; UDP 3478 is
+  the real media path, fyisp only sees their TCP 443 fallback). Zoom and Webex publish
+  media zones only as IP ranges (no host answers probes), so Zoom uses its anycast web
+  front and Webex the U2C discovery health ping. Telegram's five MTProto DCs are fixed,
+  regional IPs (ICMP + TCP 443). Almost everything else is an anycast/CDN or geo-DNS
+  front: that measures the path to the vendor edge nearest you, which is what users
+  experience, not a fixed location. Signal, WhatsApp-Chat, Google/Teams media hosts and
+  Telegram DCs do not speak HTTP(S) with a public CA on 443, so only TCP/ICMP are
+  recorded. Google-Meet keeps default.yml's host (lens.l.google.com, ICMP only);
+  default.yml pairs it with host_overrides https/tcp -> meet.google.com, which this schema
+  cannot express - Google-Meet-Web covers that. FaceTime relays are not addressable;
+  iCloud-Gateway (Apple-operated) is the closest stand-in. Verified from a Hetzner
+  Helsinki vantage point on 2026-09-27 with 3 pings, 1 TCP connect and 1 GET per target.
+targets:
+  # Zoom's own anycast web front (AS30103, ~1 ms from Helsinki); media zones publish only IP
+  # ranges. From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: Zoom
+    host: zoom.us
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [voice, video]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2005
+  # Meet media/TURN front (74.125.250.0/24 Workspace media range); ICMP only - no TCP 443
+  # listener. default.yml pairs it with host_overrides https/tcp -> meet.google.com. From
+  # Helsinki: ping 1 ms.
+  - name: Google-Meet
+    host: lens.l.google.com
+    kinds: [https, tcp, icmp]
+    # lens.l.google.com only answers ping; HTTPS/TCP go to meet.google.com
+    # (same as default.yml).
+    host_overrides:
+      https: meet.google.com
+      tcp: meet.google.com
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [voice, video, media]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  # From Helsinki: ping 1 ms / TCP connect 5 ms.
+  - name: Google-Meet-Web
+    host: meet.google.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [video, signaling]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 184
+  # Consumer Meet TURN-over-TLS SNI (142.250.82.0/24); TCP 443 accepts, no HTTP. From
+  # Helsinki: ping 1 ms / TCP connect 5 ms.
+  - name: Google-Meet-Media
+    host: meet.turns.goog
+    kinds: [tcp, icmp]
+    region: global
+    anycast: true
+    tags: [voice, video, media, turn]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # Workspace Meet TURN-over-TLS SNI (74.125.250.0/24); TCP 443 accepts, no HTTP. From
+  # Helsinki: ping 1 ms / TCP connect 5 ms.
+  - name: Google-Meet-Media-Workspace
+    host: workspace.turns.goog
+    kinds: [tcp, icmp]
+    region: global
+    anycast: true
+    tags: [voice, video, media, turn]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # Teams web/signaling via Azure Front Door (~31 ms from Helsinki). From Helsinki: ping 31
+  # ms / TCP connect 33 ms.
+  - name: Microsoft-Teams
+    host: teams.microsoft.com
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [voice, video, signaling]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  # Teams Transport Relay (STUN/TURN), geo-DNS to nearest relay in 52.112.0.0/14; TCP 443
+  # fallback only (no ICMP, not HTTP). From Helsinki: TCP connect 54 ms.
+  - name: Teams-Relay-Global
+    host: worldaz.tr.teams.microsoft.com
+    kinds: [tcp]
+    region: global
+    anycast: true
+    tags: [voice, video, media, turn]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # European Transport Relay pool (geo-DNS within Europe); TCP 443 only. From Helsinki: TCP
+  # connect 31 ms.
+  - name: Teams-Relay-EU
+    host: euaz.tr.teams.microsoft.com
+    kinds: [tcp]
+    region: eu
+    geo: eu
+    anycast: true
+    tags: [voice, video, media, turn]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # US Transport Relay pool (TCP connect ~110-230 ms from Helsinki); TCP 443 only. From
+  # Helsinki: TCP connect 172 ms.
+  - name: Teams-Relay-US
+    host: usaz.tr.teams.microsoft.com
+    kinds: [tcp]
+    region: us
+    geo: na
+    anycast: true
+    tags: [voice, video, media, turn]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  # U2C (user-to-cluster discovery) health ping, first call a Webex client makes; geo-DNS to
+  # Webex DCs (AS13445). From Helsinki: TCP connect 31 ms.
+  - name: Webex
+    host: u2c.wbx2.com
+    kinds: [https, tcp]
+    path: /u2c/api/v1/ping
+    region: global
+    anycast: true
+    tags: [voice, video, signaling]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 2741
+  # Slack's own connection-test page (128 B); geo-DNS to AWS regions (eu-central-1 from
+  # Helsinki); no ICMP. From Helsinki: TCP connect 30 ms.
+  - name: Slack
+    host: wss-primary.slack.com
+    kinds: [https, tcp]
+    region: global
+    anycast: true
+    tags: [chat]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 128
+  # Documented backup websocket edge; geo-DNS to AWS (eu-west-1 from Helsinki); no ICMP.
+  # From Helsinki: TCP connect 44 ms.
+  - name: Slack-Backup
+    host: wss-backup.slack.com
+    kinds: [https, tcp]
+    region: global
+    anycast: true
+    tags: [chat]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 128
+  # Cloudflare anycast; 301 with empty body. Voice servers (*.discord.media) are assigned
+  # per call and not stable. From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: Discord
+    host: discord.gg
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    tags: [voice, chat]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 301
+      bytes: 0
+  # Unauthenticated GET /api/v9/gateway -> {"url": "wss://gateway.discord.gg"} (35 B). From
+  # Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: Discord-API
+    host: discord.com
+    kinds: [https, tcp, icmp]
+    path: /api/v9/gateway
+    region: global
+    anycast: true
+    tags: [chat]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 35
+  # From Helsinki: ping 1 ms / TCP connect 2 ms.
+  - name: WhatsApp-Web
+    host: web.whatsapp.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [chat]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 121
+  # Chat/Noise endpoint on Meta edge (157.240.0.0/16); TCP 443 speaks a non-HTTP protocol.
+  # From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: WhatsApp-Chat
+    host: g.whatsapp.net
+    kinds: [tcp, icmp]
+    region: global
+    anycast: true
+    tags: [chat, voice]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # AWS Global Accelerator anycast; TLS uses Signal's private CA so HTTPS probe fails -
+  # TCP/ICMP only. From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: Signal
+    host: chat.signal.org
+    kinds: [tcp, icmp]
+    region: global
+    anycast: true
+    tags: [chat, voice]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # web.telegram.org resolved to 149.154.167.99 (Amsterdam DC block); no ICMP. From
+  # Helsinki: TCP connect 31 ms.
+  - name: Telegram-Web
+    host: web.telegram.org
+    kinds: [https, tcp]
+    path: /robots.txt
+    region: dc2
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [chat]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 302
+      bytes: 1587
+  # MTProto DC1 (non-HTTP on 443). From Helsinki: ping 130 ms / TCP connect 130 ms.
+  - name: Telegram-DC1-Miami
+    host: 149.154.175.53
+    kinds: [tcp, icmp]
+    region: dc1
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    tags: [chat, voice]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # MTProto DC2. From Helsinki: ping 30 ms / TCP connect 29 ms.
+  - name: Telegram-DC2-Amsterdam
+    host: 149.154.167.51
+    kinds: [tcp, icmp]
+    region: dc2
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [chat, voice]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # MTProto DC3. From Helsinki: ping 129 ms / TCP connect 129 ms.
+  - name: Telegram-DC3-Miami
+    host: 149.154.175.100
+    kinds: [tcp, icmp]
+    region: dc3
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    tags: [chat, voice]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # MTProto DC4. From Helsinki: ping 26 ms / TCP connect 30 ms.
+  - name: Telegram-DC4-Amsterdam
+    host: 149.154.167.91
+    kinds: [tcp, icmp]
+    region: dc4
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [chat, voice]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # MTProto DC5. From Helsinki: ping 184 ms / TCP connect 186 ms.
+  - name: Telegram-DC5-Singapore
+    host: 91.108.56.130
+    kinds: [tcp, icmp]
+    region: dc5
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [chat, voice]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  # Akamai CDN front. From Helsinki: ping 7 ms / TCP connect 9 ms.
+  - name: iCloud-Web
+    host: www.icloud.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [cloud]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1270
+  # Apple-operated (17.0.0.0/8) API gateway used by iCloud/FaceTime clients; no ICMP; GET /
+  # -> 400 with empty body. From Helsinki: TCP connect 9 ms.
+  - name: iCloud-Gateway
+    host: gateway.icloud.com
+    kinds: [https, tcp]
+    region: global
+    anycast: true
+    tags: [cloud, facetime]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 0

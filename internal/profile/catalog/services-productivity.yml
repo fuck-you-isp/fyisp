@@ -1,0 +1,145 @@
+provider: services-productivity
+display: Productivity & Work Services
+kind: service
+category: [productivity, saas]
+sources:
+  - https://learn.microsoft.com/en-us/microsoft-365/enterprise/urls-and-ip-address-ranges
+  - https://learn.microsoft.com/en-us/microsoft-365/enterprise/microsoft-365-network-connectivity-principles
+  - https://knowledge.workspace.google.com/admin/meet/prepare-your-network-for-meet-meetings-and-live-streams
+notes: >-
+  Main user-facing entrypoints of common work SaaS. Microsoft 365 uses
+  outlook.office365.com (Exchange Online, endpoint set 1, category Optimize) and the M365
+  portal; SharePoint/OneDrive (also Optimize) is tenant-specific (<tenant>.sharepoint.com)
+  and is left out. Google Workspace apps share Google's front ends, so Gmail/Docs/Drive
+  mostly measure the same GFE path. Every endpoint is an anycast, CDN or geo-DNS front (no
+  fixed location). robots.txt keeps responses to a few hundred bytes to ~2 KB; 301/302
+  answers have empty bodies. Verified from Hetzner Helsinki on 2026-09-27.
+targets:
+  # Exchange Online 'Optimize' endpoint (ID 1); ICMP answered by some front-end IPs and not
+  # others, so not recorded. From Helsinki: TCP connect 52 ms.
+  - name: M365-Outlook
+    host: outlook.office365.com
+    kinds: [https, tcp]
+    region: global
+    anycast: true
+    tags: [email]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 301
+      bytes: 0
+  # Microsoft 365 portal (www.microsoft365.com) via Microsoft edge; 302 with empty body.
+  # From Helsinki: ping 47 ms / TCP connect 45 ms.
+  - name: M365-Portal
+    host: www.microsoft365.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [office]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  # From Helsinki: ping 3 ms / TCP connect 5 ms.
+  - name: Google-Gmail
+    host: mail.google.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [email]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 130
+  # From Helsinki: ping 3 ms / TCP connect 5 ms.
+  - name: Google-Docs
+    host: docs.google.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [office]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 597
+  # From Helsinki: ping 3 ms / TCP connect 5 ms.
+  - name: Google-Drive
+    host: drive.google.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [storage]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 600
+  # Dropbox-operated edge (AS19679). From Helsinki: ping 7 ms / TCP connect 8 ms.
+  - name: Dropbox
+    host: www.dropbox.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [storage]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 801
+  # Box-operated edge (74.112.184.0/21, ~1 ms from Helsinki). From Helsinki: ping 1 ms / TCP
+  # connect 4 ms.
+  - name: Box
+    host: app.box.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [storage]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 2187
+  # From Helsinki: ping 1 ms / TCP connect 3 ms.
+  - name: Notion
+    host: www.notion.so
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [office]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1136
+  # Hyperforce edge; no ICMP. From Helsinki: TCP connect 11 ms.
+  - name: Salesforce
+    host: login.salesforce.com
+    kinds: [https, tcp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [crm]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 108
