@@ -21,16 +21,12 @@ func (w webReports) Build(ctx context.Context, o web.ReportOptions) ([]byte, err
 
 var _ web.ReportSource = webReports{}
 
-// probeKeys lists the HTTPS/TCP/ICMP series of the profile (not trace
+// probeKeys lists the TCP/HTTPS/ICMP series of the profile (not trace
 // hops), for baselines.
 func probeKeys(p *model.Profile) []model.SeriesKey {
 	var out []model.SeriesKey
 	for _, t := range p.Targets {
-		kinds := t.Kinds
-		if len(kinds) == 0 {
-			kinds = []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
-		}
-		for _, k := range kinds {
+		for _, k := range t.ProbeKinds() {
 			out = append(out, model.SeriesKey{Target: t.Name, Kind: k})
 		}
 	}

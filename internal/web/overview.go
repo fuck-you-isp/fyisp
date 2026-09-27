@@ -98,7 +98,8 @@ type overviewParams struct {
 }
 
 // parseOverview parses /api/overview?from=&to=&kind= with /api/panel's time
-// rules. kind is one of https, tcp, icmp (default https). On the public link
+// rules. kind is one of tcp, https, icmp (default tcp: every shipped profile
+// probes its targets with TCP only). On the public link
 // absolute bounds are rounded outward to the minute so that viewers share
 // cache entries.
 func parseOverview(q url.Values, now time.Time, public bool) (overviewParams, error) {
@@ -107,14 +108,14 @@ func parseOverview(q url.Values, now time.Time, public bool) (overviewParams, er
 		return p, err
 	}
 	switch ks := q.Get("kind"); ks {
-	case "", "https":
-		p.kind = model.KindHTTPS
-	case "tcp":
+	case "", "tcp":
 		p.kind = model.KindTCP
+	case "https":
+		p.kind = model.KindHTTPS
 	case "icmp":
 		p.kind = model.KindICMP
 	default:
-		return p, badReq("bad kind %q: want https, tcp or icmp", ks)
+		return p, badReq("bad kind %q: want tcp, https or icmp", ks)
 	}
 	fs, ts := q.Get("from"), q.Get("to")
 	if fs == "" {
@@ -337,7 +338,7 @@ func dominantReason(counts []int64) string {
 }
 
 func hasKind(t model.Target, k model.ProbeKind) bool {
-	for _, x := range kindsOf(t) {
+	for _, x := range t.ProbeKinds() {
 		if x == k {
 			return true
 		}

@@ -3,10 +3,10 @@
 # The built-in "Network path" group (gateway, ISP edge, anycast resolvers) is
 # added in code, before these groups (see package profile).
 #
-# Every target is probed over HTTPS (GET path, default "/"), TCP (connect to
-# port 443) and ICMP (echo). HTTPS/TCP run every `interval` (default 15s) and
-# ICMP every interval/3. An interval must be whole seconds, divisible by 3 and
-# divide an hour evenly (6s, 9s, 12s, 15s, 30s, 60s, ...).
+# Every target is probed with a TCP connect to port 443 (a target without
+# `kinds` gets [tcp]) every `interval` (default 15s). An interval must be whole
+# seconds, divisible by 3 and divide an hour evenly (6s, 9s, 12s, 15s, 30s,
+# 60s, ...). The network path group keeps ICMP.
 #
 # One target per group has `trace: true`: an always-on traceroute every 5s
 # (per-hop loss and latency, route changes).
@@ -38,7 +38,8 @@ groups:
 
 targets:
   # Common Services (<100ms is good for audio/video calls)
-  # lens.l.google.com does not answer on TCP 443: HTTPS/TCP go to meet.google.com.
+  # lens.l.google.com does not answer on TCP 443: TCP (and HTTPS, for files
+  # that add it) goes to meet.google.com.
   - {name: Google-Meet, host: lens.l.google.com, group: common, host_overrides: {https: meet.google.com, tcp: meet.google.com}}
   - {name: Microsoft-Teams, host: teams.microsoft.com, group: common}
   - {name: Discord, host: discord.gg, group: common, trace: true}
@@ -63,7 +64,7 @@ targets:
   - {name: DevTunnel-AustraliaCentral, host: auc1.rel.tunnels.api.visualstudio.com, group: devtunnels}
   # Various Dev Related Services
   - {name: dev-GHCR, host: pkg-containers.githubusercontent.com, group: dev}
-  # github.com "/" is 576 KB; robots.txt is tiny.
+  # For files that add https: github.com "/" is 576 KB; robots.txt is tiny.
   - {name: dev-GitHub, host: github.com, group: dev, path: /robots.txt, trace: true}
   # Amazon Web Services
   - {name: AWS-us-east-1, host: s3.us-east-1.amazonaws.com, group: aws, trace: true}

@@ -165,16 +165,13 @@ func (g *group) loss() float64 {
 }
 
 // primaryKind is the kind charted for a target: ICMP on the network path,
-// else HTTPS, TCP or ICMP, whichever it has first.
+// else TCP, HTTPS or ICMP, whichever it has first.
 func primaryKind(t model.Target) model.ProbeKind {
-	ks := t.Kinds
-	if len(ks) == 0 {
-		ks = []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
-	}
+	ks := t.ProbeKinds()
 	if t.Group == profile.PathGroup && slices.Contains(ks, model.KindICMP) {
 		return model.KindICMP
 	}
-	for _, k := range []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP} {
+	for _, k := range []model.ProbeKind{model.KindTCP, model.KindHTTPS, model.KindICMP} {
 		if slices.Contains(ks, k) {
 			return k
 		}

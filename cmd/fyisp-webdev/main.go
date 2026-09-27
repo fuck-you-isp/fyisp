@@ -103,13 +103,6 @@ func windows(d time.Duration, now time.Time) (hole, isp, lan window) {
 	return
 }
 
-func kindsOf(t model.Target) []model.ProbeKind {
-	if len(t.Kinds) > 0 {
-		return t.Kinds
-	}
-	return []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
-}
-
 // backfill writes synthetic history: a not-measured hole (fyisp "stopped"),
 // an ISP outage (gateway fine, everything past it lossy, mixed reasons) and
 // a short LAN blip (everything lossy), so the UI has something to show.
@@ -127,7 +120,7 @@ func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time) {
 		case model.LayerAnycast:
 			base = 12 + float64(i%3)*2
 		}
-		for _, k := range kindsOf(t) {
+		for _, k := range t.ProbeKinds() {
 			iv := t.Interval
 			if k == model.KindICMP {
 				iv /= 3

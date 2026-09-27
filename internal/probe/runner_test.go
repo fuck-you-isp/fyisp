@@ -100,7 +100,8 @@ func TestLocalhostAllKinds(t *testing.T) {
 			_, port, tc := tlsServer(t, h2)
 			icmp := icmpAvailable(t)
 			r := New(Options{TLSConfig: tc, Log: quietLog()})
-			tg := model.Target{Name: "local", Host: "127.0.0.1", Port: port, Interval: 600 * time.Millisecond}
+			tg := model.Target{Name: "local", Host: "127.0.0.1", Port: port, Interval: 600 * time.Millisecond,
+				Kinds: []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}}
 			k := func(kind model.ProbeKind) model.SeriesKey { return model.SeriesKey{Target: "local", Kind: kind} }
 			ss := collect(t, r, profileOf(tg), 20*time.Second, func(ss []model.Sample) bool {
 				m := byKey(ss)
@@ -146,6 +147,33 @@ func TestLocalhostAllKinds(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDefaultKindTCP: a target without kinds is probed with a TCP connect
+// only (no HTTPS request, no ping), on its port.
+func TestDefaultKindTCP(t *testing.T) {
+	var reqs atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reqs.Add(1) }))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	r := New(Options{TLSConfig: srv.Client().Transport.(*http.Transport).TLSClientConfig, Log: quietLog()})
+	tg := model.Target{Name: "local", Host: "127.0.0.1", Port: port, Interval: 600 * time.Millisecond}
+	key := model.SeriesKey{Target: "local", Kind: model.KindTCP}
+	ss := collect(t, r, profileOf(tg), 10*time.Second, func(ss []model.Sample) bool { return len(byKey(ss)[key]) >= 4 })
+	for _, s := range ss {
+		if s.Key != key {
+			t.Errorf("sample of %v, want TCP only", s.Key)
+		} else if s.Lost {
+			t.Errorf("TCP to the local listener lost: %s", s.Err)
+		}
+	}
+	if len(byKey(ss)[key]) < 4 {
+		t.Errorf("%d TCP samples", len(byKey(ss)[key]))
+	}
+	if n := reqs.Load(); n != 0 {
+		t.Errorf("%d HTTP requests, want none", n)
 	}
 }
 

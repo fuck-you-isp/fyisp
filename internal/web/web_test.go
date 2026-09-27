@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,10 +19,13 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
 const testSecret = "0123456789abcdef0123456789abcdef"
+
+var allKinds = []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
 
 func testProfile() *model.Profile {
 	return &model.Profile{
@@ -30,11 +34,13 @@ func testProfile() *model.Profile {
 			{ID: "common", Title: "Common Services", Order: 1},
 			{ID: "lan", Title: "LAN", Order: 2},
 		},
+		// Targets of a --config file that asks for every kind (shipped
+		// profiles use TCP only; see TestProfileTCPOnly).
 		Targets: []model.Target{
-			{Name: "Alpha", Host: "alpha.example.com", Group: "common", Path: "/secret-path"},
+			{Name: "Alpha", Host: "alpha.example.com", Group: "common", Path: "/secret-path", Kinds: allKinds},
 			{Name: "Beta", Host: "beta.example.com", Group: "common", Kinds: []model.ProbeKind{model.KindHTTPS}},
-			{Name: "Router", Host: "192.168.1.1", Group: "lan", Port: 8443},
-			{Name: "NAS", Host: "10.1.2.3", Group: "lan", HostOverrides: map[model.ProbeKind]string{model.KindICMP: "172.16.0.9"}},
+			{Name: "Router", Host: "192.168.1.1", Group: "lan", Port: 8443, Kinds: allKinds},
+			{Name: "NAS", Host: "10.1.2.3", Group: "lan", HostOverrides: map[model.ProbeKind]string{model.KindICMP: "172.16.0.9"}, Kinds: allKinds},
 		},
 	}
 }
@@ -98,7 +104,7 @@ func fixture(t *testing.T, now time.Time) (*countingStore, Deps, *fakeShare) {
 	f := store.NewFake()
 	p := testProfile()
 	for _, tg := range p.Targets {
-		for _, k := range kindsOf(tg) {
+		for _, k := range tg.ProbeKinds() {
 			iv := intervalOf(tg, k)
 			for ts := now.Add(-40 * time.Minute).Truncate(iv); ts.Before(now); ts = ts.Add(iv) {
 				age := now.Sub(ts)
@@ -661,6 +667,39 @@ func TestProfileNoHosts(t *testing.T) {
 	var p profileJSON
 	if err := json.Unmarshal([]byte(b), &p); err != nil || len(p.Groups) != 2 || len(p.Targets) != 4 || len(p.Targets[1].Kinds) != 1 {
 		t.Errorf("%v %+v", err, p)
+	}
+}
+
+// TestProfileTCPOnly: with the default profile, /api/profile lists TCP as
+// the only kind of every service target, and the network path keeps ICMP.
+func TestProfileTCPOnly(t *testing.T) {
+	def, err := profile.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, d, _ := fixture(t, time.Now())
+	d.Profile = func() *model.Profile { return def }
+	b := do(Local(d, LocalOptions{Addr: "127.0.0.1:3000"}), "GET", "/api/profile", map[string]string{"Host": "127.0.0.1:3000"}).Body.String()
+	var p profileJSON
+	if err := json.Unmarshal([]byte(b), &p); err != nil {
+		t.Fatal(err)
+	}
+	var path, services int
+	for _, tg := range p.Targets {
+		switch {
+		case tg.Layer == "":
+			services++
+			if !slices.Equal(tg.Kinds, []string{"tcp"}) || tg.Interval != 15000 {
+				t.Errorf("%s: kinds %v interval %d, want [tcp] every 15s", tg.Name, tg.Kinds, tg.Interval)
+			}
+		case !slices.Contains(tg.Kinds, "icmp"):
+			t.Errorf("path target %s without ICMP: %v", tg.Name, tg.Kinds)
+		default:
+			path++
+		}
+	}
+	if services != 87 || path != 5 {
+		t.Errorf("%d services, %d path targets", services, path)
 	}
 }
 

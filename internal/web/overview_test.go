@@ -15,49 +15,50 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
-// mapBaselines is a BaselineSource over a map of HTTPS medians (p95 is
-// 1.5× the median).
+// mapBaselines is a BaselineSource over a map of TCP medians (p95 is 1.5×
+// the median).
 type mapBaselines map[string]float64
 
 func (m mapBaselines) Get(k model.SeriesKey, at time.Time) (model.Baseline, bool) {
 	med, ok := m[k.Target]
-	if !ok || k.Kind != model.KindHTTPS {
+	if !ok || k.Kind != model.KindTCP {
 		return model.Baseline{}, false
 	}
 	return model.Baseline{Key: k, MedianMs: med, P95Ms: med * 1.5, Samples: 1000, HourOfDay: k.Target == "OK"}, true
 }
 
 // overviewFixture has one target per row state over the last 30 minutes of
-// 15s HTTPS samples, plus targets the overview must leave out: a path
-// target and a TCP-only target.
+// 15s TCP samples (the kind shipped profiles use), plus targets the TCP
+// overview must leave out: a path target and an HTTPS-only target (a
+// --config file may still ask for HTTPS).
 func overviewFixture(t *testing.T, now time.Time) (*countingStore, Deps) {
 	t.Helper()
 	acme := func(name, geo string) model.Target {
 		return model.Target{Name: name, Host: strings.ToLower(name) + ".example.com", Group: "clouds", Port: 8443,
 			Provider: "acme", ProviderTitle: "Acme Cloud", ProviderKind: "cloud", City: "Frankfurt", Country: "DE", Geo: geo}
 	}
-	https := []model.ProbeKind{model.KindHTTPS}
+	tcp := []model.ProbeKind{model.KindTCP}
 	p := &model.Profile{Name: "ov", Groups: []model.Group{{ID: "path", Title: "Network path"}, {ID: "clouds", Title: "Clouds"}, {ID: "home", Title: "Home"}}}
 	for _, tg := range []model.Target{
 		{Name: "Gateway", Host: "192.168.1.1", Group: "path", Layer: model.LayerGateway, Kinds: []model.ProbeKind{model.KindICMP}},
 		acme("Fail", "eu"), acme("Lossy", "eu"), acme("VerySlow", "na"), acme("Slow", "as"), acme("OK", "eu"),
-		{Name: "Few", Host: "10.1.2.3", Group: "home", Kinds: https},
-		{Name: "New", Host: "10.1.2.4", Group: "home", Kinds: https},
+		{Name: "Few", Host: "10.1.2.3", Group: "home", Kinds: tcp},
+		{Name: "New", Host: "10.1.2.4", Group: "home", Kinds: tcp},
 		{Name: "NoBase", Host: "10.1.2.5", Group: "home"},
-		{Name: "TCPOnly", Host: "10.1.2.6", Group: "home", Kinds: []model.ProbeKind{model.KindTCP}},
+		{Name: "HTTPSOnly", Host: "10.1.2.6", Group: "home", Kinds: []model.ProbeKind{model.KindHTTPS}},
 	} {
 		p.Targets = append(p.Targets, tg)
 	}
 	f := store.NewFake()
-	rtt := map[string]time.Duration{"Fail": 10, "Lossy": 10, "VerySlow": 40, "Slow": 20, "OK": 11, "NoBase": 50, "TCPOnly": 5, "Gateway": 1}
+	rtt := map[string]time.Duration{"Fail": 10, "Lossy": 10, "VerySlow": 40, "Slow": 20, "OK": 11, "NoBase": 50, "HTTPSOnly": 5, "Gateway": 1}
 	i := 0
 	for ts := now.Add(-30 * time.Minute).Truncate(15 * time.Second); ts.Before(now); ts = ts.Add(15 * time.Second) {
 		i++
 		for name, ms := range rtt {
-			kind := model.KindHTTPS
+			kind := model.KindTCP
 			switch name {
-			case "TCPOnly":
-				kind = model.KindTCP
+			case "HTTPSOnly":
+				kind = model.KindHTTPS
 			case "Gateway":
 				kind = model.KindICMP
 			}
@@ -75,7 +76,7 @@ func overviewFixture(t *testing.T, now time.Time) (*countingStore, Deps) {
 		}
 	}
 	for j := range 3 { // too few samples to judge
-		f.Observe(model.Sample{Key: model.SeriesKey{Target: "Few", Kind: model.KindHTTPS}, Slot: now.Add(-time.Duration(j+1) * 15 * time.Second), RTT: 9 * time.Millisecond})
+		f.Observe(model.Sample{Key: model.SeriesKey{Target: "Few", Kind: model.KindTCP}, Slot: now.Add(-time.Duration(j+1) * 15 * time.Second), RTT: 9 * time.Millisecond})
 	}
 	cs := &countingStore{Reader: f}
 	d := Deps{
@@ -104,14 +105,14 @@ func TestOverviewStates(t *testing.T) {
 	now := time.Now()
 	cs, d := overviewFixture(t, now)
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
-	o, body := getOverview(t, h, "/api/overview?from=now-30m&to=now&kind=https", map[string]string{"Host": "127.0.0.1:3000"})
+	o, body := getOverview(t, h, "/api/overview?from=now-30m&to=now", map[string]string{"Host": "127.0.0.1:3000"})
 	if n := cs.calls.Load(); n != 1 {
 		t.Errorf("%d store calls, want 1", n)
 	}
 	if q := cs.last; len(q.Keys) != 8 || q.MaxPoints != 1 {
 		t.Errorf("store query %+v", q)
 	}
-	if o.Kind != "https" || o.To-o.From != (30*time.Minute).Milliseconds() || o.Capped {
+	if o.Kind != "tcp" || o.To-o.From != (30*time.Minute).Milliseconds() || o.Capped {
 		t.Errorf("header %+v", o)
 	}
 	want := map[string]string{"Fail": "failing", "Lossy": "lossy", "VerySlow": "very_slow", "Slow": "slow", "OK": "ok",
@@ -124,7 +125,7 @@ func TestOverviewStates(t *testing.T) {
 		}
 	}
 	if len(o.Rows) != len(want) {
-		t.Errorf("rows %s", body) // Gateway (path) and TCPOnly (no HTTPS) are left out
+		t.Errorf("rows %s", body) // Gateway (path) and HTTPSOnly (no TCP) are left out
 	}
 	if r := rows["Fail"]; r.Reason != "refused" || math.Abs(r.Loss-0.5) > 0.02 || r.Lost == 0 || r.N == 0 {
 		t.Errorf("Fail %+v", r)
@@ -172,15 +173,15 @@ func TestOverviewStates(t *testing.T) {
 	if o.Summary != wantSum {
 		t.Errorf("summary %+v, want %+v", o.Summary, wantSum)
 	}
-	// TCP: Few and New are HTTPS only; the others default to every kind.
-	o, _ = getOverview(t, h, "/api/overview?kind=tcp", map[string]string{"Host": "127.0.0.1:3000"})
-	if len(o.Rows) != 7 || o.Kind != "tcp" {
-		t.Errorf("tcp rows %+v", o.Rows)
+	// HTTPS: only the target that asks for it; ICMP: none (the path is
+	// left out).
+	o, _ = getOverview(t, h, "/api/overview?kind=https", map[string]string{"Host": "127.0.0.1:3000"})
+	if len(o.Rows) != 1 || o.Kind != "https" || o.Rows[0].Target != "HTTPSOnly" || o.Rows[0].State != "ok" || o.Rows[0].NormalMs != nil {
+		t.Errorf("https rows %+v", o.Rows)
 	}
-	for _, r := range o.Rows {
-		if r.Target == "TCPOnly" && (r.State != "ok" || r.NormalMs != nil) {
-			t.Errorf("tcp %+v", r)
-		}
+	o, _ = getOverview(t, h, "/api/overview?kind=icmp", map[string]string{"Host": "127.0.0.1:3000"})
+	if len(o.Rows) != 0 || o.Kind != "icmp" {
+		t.Errorf("icmp rows %+v", o.Rows)
 	}
 }
 
@@ -253,7 +254,7 @@ func TestOverviewPublicCache(t *testing.T) {
 	h := Public(d, testSecret)
 	base := "/s/" + testSecret + "/api/overview"
 	for i := range 3 {
-		getOverview(t, h, base+"?from=now-30m&kind=https", pubHdr(i))
+		getOverview(t, h, base+"?from=now-30m&kind=tcp", pubHdr(i))
 	}
 	if n := cs.calls.Load(); n != 1 {
 		t.Errorf("3 identical requests made %d store calls, want 1", n)
@@ -271,7 +272,7 @@ func TestOverviewPublicCache(t *testing.T) {
 	if n := cs.calls.Load(); n != 2 {
 		t.Errorf("absolute ranges in one minute made %d store calls, want 2 in total", n)
 	}
-	getOverview(t, h, base+"?from=now-30m&kind=tcp", pubHdr(20))
+	getOverview(t, h, base+"?from=now-30m&kind=https", pubHdr(20))
 	if n := cs.calls.Load(); n != 3 {
 		t.Errorf("another kind: %d store calls, want 3", n)
 	}
@@ -280,7 +281,7 @@ func TestOverviewPublicCache(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 10 {
 		wg.Go(func() {
-			if w := do(h, "GET", base+"?from=now-2h&kind=icmp", pubHdr(30+i)); w.Code != 200 {
+			if w := do(h, "GET", base+"?from=now-2h", pubHdr(30+i)); w.Code != 200 {
 				t.Errorf("concurrent request = %d", w.Code)
 			}
 		})

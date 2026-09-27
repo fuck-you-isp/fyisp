@@ -16,10 +16,13 @@
 //	targets: [...]              # without extends: the full target list
 //	path: false                 # optional: leave out the built-in "Network path" group
 //
-// Target fields: name, host, group, port (default 443), path (default "/"),
-// kinds (https|tcp|icmp, default all), interval (duration, default 15s; ICMP
-// runs at interval/3), host_overrides (kind -> host), trace (true: an
-// always-on traceroute to the target, every 5s; at most MaxTraced targets).
+// Target fields: name, host, group, port (default 443), path (HTTPS only,
+// default "/"), kinds (tcp|https|icmp, default [tcp]: a TCP connect to port),
+// interval (duration, default 15s; ICMP runs at interval/3), host_overrides
+// (kind -> host), trace (true: an always-on traceroute to the target, every
+// 5s; at most MaxTraced targets). Shipped profiles (the default and the
+// catalog) use TCP only; https and icmp remain for local files that ask for
+// them (e.g. pinging a NAS).
 //
 // An interval must be a whole number of seconds, divisible by 3 (so the ICMP
 // interval is whole seconds too) and divide an hour evenly, so that slots
@@ -67,14 +70,11 @@ type Limits struct {
 // MaxTraced is the most targets a profile may trace always-on.
 const MaxTraced = 20
 
-// DefaultInterval is the HTTPS/TCP interval of a target that sets none.
+// DefaultInterval is the TCP/HTTPS interval of a target that sets none.
 const DefaultInterval = 15 * time.Second
 
 //go:embed default.yml
 var defaultYAML []byte
-
-// AllKinds is the kind list of a target that sets none.
-var AllKinds = []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
 
 type fileTarget struct {
 	Name          string            `yaml:"name"`
@@ -346,7 +346,7 @@ func extend(p *model.Profile, fp *fileProfile) (*model.Profile, error) {
 
 func (ft fileTarget) toTarget() (model.Target, error) {
 	t := model.Target{Name: ft.Name, Interval: DefaultInterval}
-	t.Kinds = append([]model.ProbeKind(nil), AllKinds...)
+	t.Kinds = append([]model.ProbeKind(nil), model.DefaultKinds...)
 	err := ft.apply(&t)
 	return t, err
 }

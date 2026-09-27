@@ -18,6 +18,11 @@ const (
 	KindTrace ProbeKind = 4
 )
 
+// DefaultKinds is the kind list of a target that sets none: a TCP connect.
+// HTTPS and ICMP stay available to targets that list them (the network path
+// is measured with ICMP; local profile files may ask for either).
+var DefaultKinds = []ProbeKind{KindTCP}
+
 func (k ProbeKind) String() string {
 	switch k {
 	case KindHTTPS:
@@ -91,8 +96,8 @@ type Target struct {
 	Group    string        `yaml:"group" json:"group"`
 	Port     int           `yaml:"port,omitempty" json:"-"` // TCP/HTTPS port, default 443
 	Path     string        `yaml:"path,omitempty" json:"-"` // HTTPS path, default "/"
-	Kinds    []ProbeKind   `yaml:"-" json:"kinds"`          // default: all three
-	Interval time.Duration `yaml:"-" json:"interval"`       // HTTPS/TCP interval, default 15s; ICMP runs at Interval/3
+	Kinds    []ProbeKind   `yaml:"-" json:"kinds"`          // default: DefaultKinds (TCP)
+	Interval time.Duration `yaml:"-" json:"interval"`       // TCP/HTTPS interval, default 15s; ICMP runs at Interval/3
 	// Trace runs an always-on traceroute to this target (KindTrace series).
 	Trace bool `yaml:"-" json:"trace,omitempty"`
 	// Layer is LayerGateway, LayerEdge or LayerAnycast for path targets.
@@ -110,6 +115,15 @@ type Target struct {
 	City          string `yaml:"-" json:"city,omitempty"`
 	Country       string `yaml:"-" json:"country,omitempty"`
 	Geo           string `yaml:"-" json:"geo,omitempty"`
+}
+
+// ProbeKinds returns the kinds t is probed with: Kinds, or DefaultKinds
+// when it sets none.
+func (t Target) ProbeKinds() []ProbeKind {
+	if len(t.Kinds) > 0 {
+		return t.Kinds
+	}
+	return DefaultKinds
 }
 
 // HostFor returns the host to probe for a kind.
