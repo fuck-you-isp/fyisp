@@ -1,0 +1,49 @@
+provider: dns-opendns
+display: "Cisco OpenDNS"
+kind: dns
+category: []
+sources:
+  - https://support.opendns.com/hc/en-us/articles/360038086532-Using-DNS-over-HTTPS-DoH-with-OpenDNS
+  - https://www.opendns.com/setupguide/
+notes: >-
+  Anycast resolver on Cisco Umbrella's network. open-dns (208.67.222.222) is
+  kept from default.yml. doh.opendns.com resolves into a different Umbrella
+  prefix (146.112.x) than the classic resolver IPs, so it is listed
+  separately. FamilyShield (208.67.222.123) shares the network.
+targets:
+  - name: open-dns
+    host: 208.67.222.222
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: open-dns-2
+    host: 208.67.220.220
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, secondary]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: opendns-doh
+    host: doh.opendns.com
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

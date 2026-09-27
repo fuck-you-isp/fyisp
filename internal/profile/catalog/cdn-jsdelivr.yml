@@ -1,0 +1,30 @@
+provider: cdn-jsdelivr
+display: "jsDelivr"
+kind: cdn
+category: []
+sources:
+  - https://www.jsdelivr.com/network
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. jsDelivr is a multi-CDN: two DNS providers load-
+  balance cdn.jsdelivr.net across Cloudflare, Fastly, Bunny, Gcore and own
+  servers using RUM and synthetic data, so the measured edge can belong to a
+  different CDN from one resolution to the next (on 2026-09-27 from Helsinki:
+  Cloudflare HEL in front of a Fastly FRA shield). It measures 'what a user of
+  jsDelivr gets', not one CDN. /npm/is-number@7.0.0/index.js is a pinned,
+  immutable 411-byte file (robots.txt answers 400).
+targets:
+  - name: CDN-jsDelivr
+    host: cdn.jsdelivr.net
+    kinds: [https, tcp, icmp]
+    path: "/npm/is-number@7.0.0/index.js"
+    anycast: true
+    tags: [multi-cdn]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 411

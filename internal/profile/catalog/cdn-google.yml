@@ -1,0 +1,34 @@
+provider: cdn-google
+display: "Google Cloud CDN / Media CDN edge"
+kind: cdn
+category: []
+sources:
+  - https://cloud.google.com/cdn/docs/overview
+  - https://cloud.google.com/media-cdn/docs/overview
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. Cloud CDN and Media CDN terminate on Google's edge
+  (Google Front Ends at Google's edge PoPs; Media CDN additionally uses the
+  deeper edge caches), the same edge that serves gstatic.com. Cloud CDN
+  customers get a single global anycast load-balancer IP; there is no Google-
+  owned public Cloud CDN test distribution, so this target uses
+  www.gstatic.com /generate_204 (empty 204, Google's connectivity-check
+  endpoint), which is DNS-steered to the nearest Google edge. Treat it as
+  'latency to Google's edge', which is what a Cloud CDN / Media CDN user sees.
+targets:
+  - name: CDN-Google
+    host: www.gstatic.com
+    kinds: [https, tcp, icmp]
+    path: "/generate_204"
+    anycast: true
+    tags: [geodns]
+    notes: >-
+      Empty 204 from the nearest Google Front End.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 204
+      bytes: 0

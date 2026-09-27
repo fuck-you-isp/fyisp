@@ -1,0 +1,35 @@
+provider: cdn-azure-frontdoor
+display: "Azure Front Door"
+kind: cdn
+category: []
+sources:
+  - https://learn.microsoft.com/en-us/azure/frontdoor/front-door-traffic-acceleration
+  - https://learn.microsoft.com/en-us/azure/frontdoor/front-door-faq
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. Azure Front Door (which also replaced Azure CDN
+  from Edgio) uses anycast for both DNS and HTTP: *.azurefd.net names resolve
+  to anycast addresses (150.171.x.x / 13.107.x.x, *.t-msedge.net) and BGP
+  delivers the TCP handshake to the nearest AFD edge (outer ring), with split
+  TCP to the origin. js.monitor.azure.com is Microsoft's Application Insights
+  JS SDK distribution on AFD (CNAME ...z01.azurefd.net); the tiny
+  ai.config.1.cfg.json (~1.8 KB) is an edge cache hit (X-Cache: TCP_HIT). The
+  X-Azure-Ref header embeds the answering PoP code. Note www.microsoft.com /
+  learn.microsoft.com / bing.com are on Akamai, not AFD.
+targets:
+  - name: CDN-AzureFrontDoor
+    host: js.monitor.azure.com
+    kinds: [https, tcp, icmp]
+    path: "/scripts/b/ai.config.1.cfg.json"
+    anycast: true
+    tags: []
+    notes: >-
+      Application Insights SDK config file served from the AFD edge cache.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 1828

@@ -1,0 +1,24 @@
+provider: dns-mullvad
+display: "Mullvad DNS"
+kind: dns
+category: []
+sources:
+  - https://mullvad.net/en/help/dns-over-https-and-dns-over-tls
+notes: >-
+  Mullvad's public DNS is encrypted-only (DoH/DoT) on anycast addresses
+  announced from several Mullvad sites; queries go to the BGP-closest one.
+  dns.mullvad.net (194.242.2.2) is unfiltered; base/extended/family variants
+  (194.242.2.3-9) share the same network and are not listed.
+targets:
+  - name: mullvad-doh
+    host: dns.mullvad.net
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

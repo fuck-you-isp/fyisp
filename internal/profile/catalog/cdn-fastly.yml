@@ -1,0 +1,47 @@
+provider: cdn-fastly
+display: "Fastly"
+kind: cdn
+category: []
+sources:
+  - https://insights.fastlylabs.com/
+  - https://github.com/fastly/insights.js
+  - https://api.fastly.com/public-ip-list
+  - https://www.fastly.com/blog/building-and-scaling-fastly-network-part-1-fighting-fib
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. Fastly serves from anycast prefixes
+  (151.101.0.0/16 etc., see the public IP list) combined with DNS steering, so
+  'nearest edge' is the Fastly PoP your resolver and BGP pick; the X-Served-By
+  header names it (cache-<pop>-<IATA>). fastly-insights.com is the host of
+  Fastly Insights, Fastly's own network-measurement (RUM) service; GET /
+  returns an empty 204 straight from the edge, i.e. it exists to be probed.
+  www.fastly.com /robots.txt (~400 bytes, cached) is kept as a second,
+  independent Fastly service in case Insights is retired.
+targets:
+  - name: CDN-Fastly
+    host: fastly-insights.com
+    kinds: [https, tcp, icmp]
+    anycast: true
+    tags: [measurement]
+    notes: >-
+      Fastly Insights measurement host; 204 No Content from the edge.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 204
+      bytes: 0
+  - name: CDN-Fastly-www
+    host: www.fastly.com
+    kinds: [https, tcp, icmp]
+    path: "/robots.txt"
+    anycast: true
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 398

@@ -1,0 +1,35 @@
+provider: dns-alidns
+display: "Alibaba Cloud Public DNS (AliDNS)"
+kind: dns
+category: []
+sources:
+  - https://www.alidns.com/
+notes: >-
+  Anycast public resolver 223.5.5.5 / 223.6.6.6 (dns.alidns.com), mainly
+  mainland China with overseas nodes; useful as an Asia-oriented reference.
+  DoH GET answers 76 bytes.
+targets:
+  - name: alidns
+    host: 223.5.5.5
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 76
+  - name: alidns-2
+    host: 223.6.6.6
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, secondary]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 76

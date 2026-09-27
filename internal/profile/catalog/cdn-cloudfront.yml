@@ -1,0 +1,31 @@
+provider: cdn-cloudfront
+display: "Amazon CloudFront"
+kind: cdn
+category: []
+sources:
+  - https://aws.amazon.com/blogs/networking-and-content-delivery/charting-the-life-of-an-amazon-cloudfront-request/
+  - https://http.dev/x-amz-cf-pop
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. CloudFront routes by DNS: the distribution
+  hostname resolves to unicast IPs of the lowest-latency edge location for
+  your resolver, and the X-Amz-Cf-Pop response header names it (e.g.
+  HEL51-P5). d1.awsstatic.com is AWS's own static-asset distribution; GET /
+  returns an empty 200 cached at the edge. Regional AWS endpoints are in the
+  aws catalog.
+targets:
+  - name: CDN-CloudFront
+    host: d1.awsstatic.com
+    kinds: [https, tcp, icmp]
+    anycast: true
+    tags: [geodns]
+    notes: >-
+      Empty 200 served from the CloudFront edge cache (X-Cache: Hit).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0

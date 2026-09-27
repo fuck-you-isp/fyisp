@@ -1,0 +1,37 @@
+provider: dns-quad9
+display: "Quad9"
+kind: dns
+category: []
+sources:
+  - https://quad9.net/service/service-addresses-and-features/
+notes: >-
+  Anycast, filtering resolver (9.9.9.9/149.112.112.112) run on Quad9's own
+  PoPs and partner exchanges. quad9-dns is kept from default.yml; the built-in
+  path group also probes 9.9.9.9. dns.quad9.net resolves to the same IPs;
+  9.9.9.10 (unfiltered) and 9.9.9.11 (ECS) share the network and are not
+  listed.
+targets:
+  - name: quad9-dns
+    host: 9.9.9.9
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, filtering]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: quad9-dns-2
+    host: 149.112.112.112
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, filtering, secondary]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

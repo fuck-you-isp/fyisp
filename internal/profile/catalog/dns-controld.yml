@@ -1,0 +1,46 @@
+provider: dns-controld
+display: "Control D"
+kind: dns
+category: []
+sources:
+  - https://controld.com/free-dns
+notes: >-
+  Anycast resolver. Free unfiltered resolver 76.76.2.0 / 76.76.10.0; DoH on
+  https://freedns.controld.com/p0 (p0 = unfiltered, other pN = filter
+  presets). The bare IPs have no IP certificate, so they are TCP/ICMP only;
+  the DoH hostname (76.76.2.11) carries HTTPS.
+targets:
+  - name: controld-doh
+    host: freedns.controld.com
+    kinds: [https, tcp, icmp]
+    path: "/p0?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: controld-dns
+    host: 76.76.2.0
+    kinds: [tcp, icmp]
+    anycast: true
+    tags: []
+    notes: >-
+      TCP 443 + ICMP only (no IP certificate).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: controld-dns-2
+    host: 76.76.10.0
+    kinds: [tcp, icmp]
+    anycast: true
+    tags: [secondary]
+    notes: >-
+      TCP 443 + ICMP only (no IP certificate).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
