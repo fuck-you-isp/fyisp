@@ -1,0 +1,239 @@
+provider: upcloud
+display: UpCloud
+kind: cloud
+category: [vps]
+sources:
+  - https://upcloud.com/data-centres
+  - https://developers.upcloud.com/1.3/5-zones/
+  - https://ring.nlnog.net/
+notes: >-
+  UpCloud runs an NLNOG RING measurement node in every zone, published as <zone>.ping.upcloud.com
+  (reverse DNS <ip>.<zone>.upcloud.host confirms the zone; RTTs from Helsinki fit every city). These
+  nodes exist for latency measurement. They answer ICMP and TCP 80 (nginx 301 to ring.nlnog.net,
+  162 B) but have no TLS listener, so only tcp (port 80) and icmp are probed. All 15 public zones.
+targets:
+  - name: UpCloud-fi-hel1
+    host: fi-hel1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: fi-hel1
+    city: Helsinki
+    country: FI
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-fi-hel2
+    host: fi-hel2.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: fi-hel2
+    city: Helsinki
+    country: FI
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-de-fra1
+    host: de-fra1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: de-fra1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-nl-ams1
+    host: nl-ams1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: nl-ams1
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-uk-lon1
+    host: uk-lon1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: uk-lon1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-pl-waw1
+    host: pl-waw1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: pl-waw1
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-es-mad1
+    host: es-mad1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: es-mad1
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-se-sto1
+    host: se-sto1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: se-sto1
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-dk-cph1
+    host: dk-cph1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: dk-cph1
+    city: Copenhagen
+    country: DK
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-no-svg1
+    host: no-svg1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: no-svg1
+    city: Stavanger
+    country: NO
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-us-nyc1
+    host: us-nyc1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: us-nyc1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-us-chi1
+    host: us-chi1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: us-chi1
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-us-sjo1
+    host: us-sjo1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: us-sjo1
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-sg-sin1
+    host: sg-sin1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: sg-sin1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162
+  - name: UpCloud-au-syd1
+    host: au-syd1.ping.upcloud.com
+    kinds: [tcp, icmp]
+    port: 80
+    region: au-syd1
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      http: 301
+      bytes: 162

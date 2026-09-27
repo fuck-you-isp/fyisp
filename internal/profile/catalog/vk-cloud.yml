@@ -1,0 +1,41 @@
+provider: vk-cloud
+display: VK Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://cloud.vk.ru/docs/en/storage/s3/concepts/s3-api
+  - https://cloud.vk.ru/docs/en/tools-for-using-services/terraform/how-to-guides/aws
+notes: >-
+  VK Cloud (formerly Mail.ru Cloud Solutions) regions: Moscow (ru-msk) and Kazakhstan (kz-ast, Astana).
+  Each is probed via its VK Object Storage (Hotbox) S3 endpoint hb.<region>.vkcloud-storage.ru; GET /
+  returns a zero-byte 307 redirect. Geo-IP: Moscow (AS47764 VK) and Astana (AS201817 VK Tech
+  Kazakhstan). The legacy names hb.vkcs.cloud / hb.bizmrg.com point at the same Moscow address.
+targets:
+  - name: VKCloud-ru-msk
+    host: hb.ru-msk.vkcloud-storage.ru
+    kinds: [https, tcp, icmp]
+    region: ru-msk
+    city: Moscow
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 0
+  - name: VKCloud-kz-ast
+    host: hb.kz-ast.vkcloud-storage.ru
+    kinds: [https, tcp, icmp]
+    region: kz-ast
+    city: Astana
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 0

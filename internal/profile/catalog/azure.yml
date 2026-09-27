@@ -1,0 +1,1149 @@
+provider: azure
+display: Microsoft Azure
+kind: hyperscaler
+category: []
+sources:
+  - https://learn.microsoft.com/en-us/azure/reliability/regions-list
+  - https://learn.microsoft.com/en-us/troubleshoot/azure/azure-monitor/app-insights/telemetry/java-standalone-troubleshoot
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/fundamentals/azure-monitor-network-access
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-network-configuration
+  - https://learn.microsoft.com/en-us/azure/azure-government/documentation-government-welcome
+  - https://learn.microsoft.com/en-us/azure/china/overview-regions
+  - https://azurelook.com/azure-update/retirement-microsoft-azure-operated-by-21vianet-action-required-to-migrate-to-azure-china-north-3-region-by-july-1-2026-due-to-china-north-1-and-china-east-1-region-retirement/
+notes: >-
+  Azure publishes no per-region ping host, so each region uses a Microsoft-owned
+  regional ingestion endpoint that has an unauthenticated health path. Primary:
+  Application Insights regional ingestion, <region>.in.applicationinsights.azure.com,
+  GET /api/ping -> 200 "alive" (5 bytes). Microsoft's App Insights troubleshooting
+  docs use /api/ping on the ingestion host as the connectivity check, and the
+  Azure Monitor network-access docs list the regional ingestion hosts. It resolves
+  through gig-ai-prod-<region>.trafficmanager.net to a single in-region IP.
+  West India has no App Insights ingestion host (NXDOMAIN), so it uses the Azure
+  Monitor Agent regional control endpoint, westindia.handler.control.monitor.azure.com,
+  GET /ping -> 200 "Healthy" (7 bytes). That host is listed in the AMA firewall
+  docs as <region>.handler.control.monitor.azure.com and CNAMEs to
+  *.westindia.cloudapp.azure.com. All 57 public regions in the Microsoft Learn
+  regions list (2026-09-23) are covered, including the restricted-access ones
+  (tagged restricted-access). Regionality was checked by DNS (region-named
+  Traffic Manager or cloudapp CNAME) and by RTT from Helsinki, FI, which matched
+  geography: EU 29-50 ms, Middle East 93-120 ms, North America 114-170 ms,
+  India 144-160 ms, Brazil/Chile 212-220 ms, East Asia 180-260 ms,
+  Australia/NZ 280-306 ms. Endpoints we tried and rejected: <region>.api.cognitive.microsoft.com
+  (39/57 regions, no health path), <region>.monitoring.azure.com (47/57, 404 only),
+  and the third-party azurespeed.com storage accounts, which are not Microsoft-owned.
+  Microsoft Dev Tunnels relays (<id>.rel.tunnels.api.visualstudio.com) are also
+  Azure-hosted and regional. They stay in default.yml as DevTunnel-* and are not
+  duplicated here. The /api/ping and /ping responses are uncached health checks;
+  one GET every 15 s per region is negligible next to normal SDK and agent traffic.
+  City is Microsoft's published physical location, narrowed to the best-known
+  city where Microsoft gives only a state or country (US regions,
+  Israel, Norway). The US cities are not officially published.
+  Sovereign clouds (separate accounts, public endpoints) are included and
+  tagged restricted. Azure Government: usgovvirginia, usgovtexas and
+  usgovarizona use <region>.in.applicationinsights.azure.us /api/ping (5 B,
+  117-167 ms). The US DoD East / DoD Central handler hosts answer 404 on
+  /ping and CNAME into the usgovvirginia / usgovtexas clusters, and they
+  have no App Insights host, so they are left out. Azure China (21Vianet):
+  chinanorth3, chinaeast2 and chinaeast3 use <region>.in.applicationinsights.azure.cn
+  /api/ping; chinanorth2 has no App Insights host and uses
+  chinanorth2.handler.control.monitor.azure.cn /ping (CNAME in
+  *.chinanorth2.cloudapp.chinacloudapi.cn); RTT 211-257 ms, also tagged
+  mainland-china. China North 1 and China East 1 still answer but were
+  retired on 2026-07-01, so they are left out. Azure Government and China
+  cities are the commonly reported sites, not official.
+targets:
+  # Nearest healthy AMA control region, chosen by Traffic Manager DNS (not
+  # anycast). From Helsinki it resolved to germanywestcentral.
+  - name: Azure-global
+    host: global.handler.control.monitor.azure.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    anycast: true
+    tags: [global, azure-monitor-agent]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 7
+  - name: Azure-australiacentral
+    host: australiacentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: australiacentral
+    city: Canberra
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 301 ms
+  - name: Azure-australiacentral2
+    host: australiacentral2.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: australiacentral2
+    city: Canberra
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 303 ms
+  - name: Azure-australiaeast
+    host: australiaeast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: australiaeast
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 300 ms
+  - name: Azure-australiasoutheast
+    host: australiasoutheast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: australiasoutheast
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 306 ms
+  - name: Azure-austriaeast
+    host: austriaeast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: austriaeast
+    city: Vienna
+    country: AT
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 40 ms
+  - name: Azure-belgiumcentral
+    host: belgiumcentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: belgiumcentral
+    city: Brussels
+    country: BE
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 32 ms
+  - name: Azure-brazilsouth
+    host: brazilsouth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: brazilsouth
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 214 ms
+  - name: Azure-brazilsoutheast
+    host: brazilsoutheast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: brazilsoutheast
+    city: Rio de Janeiro
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 213 ms
+  - name: Azure-canadacentral
+    host: canadacentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: canadacentral
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 128 ms
+  - name: Azure-canadaeast
+    host: canadaeast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: canadaeast
+    city: Quebec City
+    country: CA
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 126 ms
+  - name: Azure-centralindia
+    host: centralindia.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: centralindia
+    city: Pune
+    country: IN
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 144 ms
+  - name: Azure-centralus
+    host: centralus.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: centralus
+    city: Des Moines
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 139 ms
+  - name: Azure-chilecentral
+    host: chilecentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: chilecentral
+    city: Santiago
+    country: CL
+    geo: sa
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 220 ms
+  - name: Azure-denmarkeast
+    host: denmarkeast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: denmarkeast
+    city: Copenhagen
+    country: DK
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 34 ms
+  - name: Azure-eastasia
+    host: eastasia.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: eastasia
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 208 ms
+  - name: Azure-eastus
+    host: eastus.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: eastus
+    city: Boydton
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 115 ms
+  - name: Azure-eastus2
+    host: eastus2.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: eastus2
+    city: Boydton
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 115 ms
+  - name: Azure-francecentral
+    host: francecentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: francecentral
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 31 ms
+  - name: Azure-francesouth
+    host: francesouth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: francesouth
+    city: Marseille
+    country: FR
+    geo: eu
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 41 ms
+  - name: Azure-germanynorth
+    host: germanynorth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: germanynorth
+    city: Berlin
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 36 ms
+  - name: Azure-germanywestcentral
+    host: germanywestcentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: germanywestcentral
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 30 ms
+  - name: Azure-indiasouthcentral
+    host: indiasouthcentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: indiasouthcentral
+    city: Hyderabad
+    country: IN
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 159 ms
+  - name: Azure-indonesiacentral
+    host: indonesiacentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: indonesiacentral
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 201 ms
+  - name: Azure-israelcentral
+    host: israelcentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: israelcentral
+    city: Tel Aviv
+    country: IL
+    geo: me
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 93 ms
+  - name: Azure-italynorth
+    host: italynorth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: italynorth
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 38 ms
+  - name: Azure-japaneast
+    host: japaneast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: japaneast
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 261 ms
+  - name: Azure-japanwest
+    host: japanwest.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: japanwest
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 256 ms
+  - name: Azure-koreacentral
+    host: koreacentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: koreacentral
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 258 ms
+  - name: Azure-koreasouth
+    host: koreasouth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: koreasouth
+    city: Busan
+    country: KR
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 237 ms
+  - name: Azure-malaysiawest
+    host: malaysiawest.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: malaysiawest
+    city: Kuala Lumpur
+    country: MY
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 185 ms
+  - name: Azure-mexicocentral
+    host: mexicocentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: mexicocentral
+    city: Queretaro
+    country: MX
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 163 ms
+  - name: Azure-newzealandnorth
+    host: newzealandnorth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: newzealandnorth
+    city: Auckland
+    country: NZ
+    geo: oc
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 282 ms
+  - name: Azure-northcentralus
+    host: northcentralus.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: northcentralus
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 126 ms
+  - name: Azure-northeurope
+    host: northeurope.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: northeurope
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 43 ms
+  - name: Azure-norwayeast
+    host: norwayeast.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: norwayeast
+    city: Oslo
+    country: NO
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 43 ms
+  - name: Azure-norwaywest
+    host: norwaywest.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: norwaywest
+    city: Stavanger
+    country: NO
+    geo: eu
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 47 ms
+  - name: Azure-polandcentral
+    host: polandcentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: polandcentral
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 44 ms
+  - name: Azure-qatarcentral
+    host: qatarcentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: qatarcentral
+    city: Doha
+    country: QA
+    geo: me
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 115 ms
+  - name: Azure-southafricanorth
+    host: southafricanorth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: southafricanorth
+    city: Johannesburg
+    country: ZA
+    geo: af
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 188 ms
+  - name: Azure-southafricawest
+    host: southafricawest.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: southafricawest
+    city: Cape Town
+    country: ZA
+    geo: af
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 172 ms
+  - name: Azure-southcentralus
+    host: southcentralus.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: southcentralus
+    city: San Antonio
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 140 ms
+  - name: Azure-southindia
+    host: southindia.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: southindia
+    city: Chennai
+    country: IN
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 160 ms
+  - name: Azure-southeastasia
+    host: southeastasia.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: southeastasia
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 178 ms
+  - name: Azure-spaincentral
+    host: spaincentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: spaincentral
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 50 ms
+  - name: Azure-swedencentral
+    host: swedencentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: swedencentral
+    city: Gavle
+    country: SE
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 47 ms
+  - name: Azure-switzerlandnorth
+    host: switzerlandnorth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: switzerlandnorth
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 34 ms
+  - name: Azure-switzerlandwest
+    host: switzerlandwest.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: switzerlandwest
+    city: Geneva
+    country: CH
+    geo: eu
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 40 ms
+  - name: Azure-uaecentral
+    host: uaecentral.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: uaecentral
+    city: Abu Dhabi
+    country: AE
+    geo: me
+    anycast: false
+    tags: [restricted-access]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 120 ms
+  - name: Azure-uaenorth
+    host: uaenorth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: uaenorth
+    city: Dubai
+    country: AE
+    geo: me
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 117 ms
+  - name: Azure-uksouth
+    host: uksouth.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: uksouth
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 34 ms
+  - name: Azure-ukwest
+    host: ukwest.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: ukwest
+    city: Cardiff
+    country: GB
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 37 ms
+  - name: Azure-westcentralus
+    host: westcentralus.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: westcentralus
+    city: Cheyenne
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 144 ms
+  - name: Azure-westeurope
+    host: westeurope.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: westeurope
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 29 ms
+  - name: Azure-westindia
+    host: westindia.handler.control.monitor.azure.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: westindia
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    tags: [azure-monitor-agent]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 7
+      # icmp avg RTT from Helsinki, FI: 144 ms
+  - name: Azure-westus
+    host: westus.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: westus
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 170 ms
+  - name: Azure-westus2
+    host: westus2.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: westus2
+    city: Quincy
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 168 ms
+  - name: Azure-westus3
+    host: westus3.in.applicationinsights.azure.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: westus3
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    tags: []
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+      # icmp avg RTT from Helsinki, FI: 160 ms
+  - name: Azure-usgovvirginia                # Azure Government, US Gov Virginia
+    host: usgovvirginia.in.applicationinsights.azure.us
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: usgovvirginia
+    city: Boydton
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-usgovtexas                # Azure Government, US Gov Texas
+    host: usgovtexas.in.applicationinsights.azure.us
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: usgovtexas
+    city: San Antonio
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-usgovarizona                # Azure Government, US Gov Arizona
+    host: usgovarizona.in.applicationinsights.azure.us
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: usgovarizona
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-chinanorth2                # Azure China (21Vianet), China North 2
+    host: chinanorth2.handler.control.monitor.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: chinanorth2
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 7
+  - name: Azure-chinanorth3                # Azure China (21Vianet), China North 3
+    host: chinanorth3.in.applicationinsights.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: chinanorth3
+    city: Hebei
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-chinaeast2                # Azure China (21Vianet), China East 2
+    host: chinaeast2.in.applicationinsights.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: chinaeast2
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-chinaeast3                # Azure China (21Vianet), China East 3
+    host: chinaeast3.in.applicationinsights.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: chinaeast3
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5

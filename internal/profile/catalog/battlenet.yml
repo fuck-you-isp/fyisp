@@ -1,0 +1,74 @@
+provider: battlenet
+display: Battle.net (Blizzard)
+kind: gaming-platform
+category: [lobby]
+sources:
+  - https://kb.imfreedom.org/protocols/battle.net/
+  - https://us.forums.blizzard.com/en/blizzard/t/port-1119-blocked-by-provider-for-security-reasons/54604
+  - https://www.gstatic.com/ipranges/cloud.json
+notes: >-
+  <region>.actual.battle.net is the regional Battle.net connection (Aurora) front the
+  desktop app and Blizzard games connect to on TCP 1119. They resolve to Google Cloud
+  (regions from gstatic cloud.json: us-west4 Las Vegas, europe-west4 Netherlands,
+  asia-northeast3 Seoul) and answer ICMP. Only a TCP connect is made - no Battle.net
+  protocol is spoken. tw.actual.battle.net no longer resolves. Blizzard game servers
+  (Overwatch, WoW, CoD via Battle.net) publish no ping hosts. us.battle.net is the
+  AWS Global Accelerator (anycast) web front; eu./kr.battle.net are the same anycast.
+targets:
+  - name: Battlenet-us
+    host: us.actual.battle.net
+    kinds: [tcp, icmp]
+    port: 1119
+    region: "gcp:us-west4"
+    city: Las Vegas
+    country: US
+    geo: na
+    anycast: false
+    tags: [lobby]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Battlenet-eu
+    host: eu.actual.battle.net
+    kinds: [tcp, icmp]
+    port: 1119
+    region: "gcp:europe-west4"
+    city: Eemshaven
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [lobby]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Battlenet-kr
+    host: kr.actual.battle.net
+    kinds: [tcp, icmp]
+    port: 1119
+    region: "gcp:asia-northeast3"
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    tags: [lobby]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Battlenet-web
+    host: us.battle.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [store]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 118

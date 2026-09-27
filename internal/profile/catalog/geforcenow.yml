@@ -1,0 +1,387 @@
+provider: geforcenow
+display: NVIDIA GeForce NOW
+kind: gaming-platform
+category: [cloud-gaming]
+sources:
+  - https://prod.cloudmatchbeta.nvidiagrid.net/v2/serverInfo
+  - https://nvidia.custhelp.com/app/answers/detail/a_id/5224
+  - https://op-ffa.net/regions/
+notes: >-
+  The GFN client's public, unauthenticated serverInfo document lists every NVIDIA-run
+  zone and its regional CloudMatch endpoint (<zone>.cloudmatchbeta.nvidiagrid.net);
+  those endpoints live in the zone's datacenter (TCP connect times scale with
+  distance), so they are real per-region cloud-gaming references. They drop ICMP;
+  GET / returns an 83 B 404. Cities follow NVIDIA/op-ffa region names where known.
+  GFN Alliance partner zones (KR, JP SoftBank, etc.) are not in NVIDIA's list and are
+  omitted. GFN-global is the geo-routed entry point.
+targets:
+  - name: GFN-us-california-north
+    host: us-california-north.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-california-north
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-california-south
+    host: us-california-south.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-california-south
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-oregon
+    host: us-oregon.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-oregon
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-arizona
+    host: us-arizona.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-arizona
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-texas
+    host: us-texas.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-texas
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-illinois
+    host: us-illinois.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-illinois
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-florida
+    host: us-florida.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-florida
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-georgia
+    host: us-georgia.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-georgia
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-virginia
+    host: us-virginia.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-virginia
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-us-new-jersey
+    host: us-new-jersey.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: us-new-jersey
+    country: US
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-ca-ontario
+    host: ca-ontario.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: ca-ontario
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-ca-quebec
+    host: ca-quebec.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: ca-quebec
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-united-kingdom-1
+    host: eu-united-kingdom-1.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-united-kingdom-1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-united-kingdom-2
+    host: eu-united-kingdom-2.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-united-kingdom-2
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-sweden
+    host: eu-sweden.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-sweden
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-netherlands-north
+    host: eu-netherlands-north.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-netherlands-north
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-netherlands-south
+    host: eu-netherlands-south.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-netherlands-south
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-germany
+    host: eu-germany.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-germany
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-france-1
+    host: eu-france-1.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-france-1
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-france-2
+    host: eu-france-2.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-france-2
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-poland
+    host: eu-poland.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-poland
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-eu-bulgaria
+    host: eu-bulgaria.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: eu-bulgaria
+    city: Sofia
+    country: BG
+    geo: eu
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-ap-india
+    host: ap-india.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: ap-india
+    country: IN
+    geo: as
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-ap-japan
+    host: ap-japan.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: ap-japan
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83
+  - name: GFN-global
+    host: prod.cloudmatchbeta.nvidiagrid.net
+    kinds: [https, tcp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [cloud-gaming]
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 83

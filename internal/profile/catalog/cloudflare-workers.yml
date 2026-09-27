@@ -1,0 +1,23 @@
+provider: cloudflare-workers
+display: Cloudflare Workers
+kind: cloud
+category: [paas]
+sources:
+  - https://developers.cloudflare.com/workers/
+notes: >-
+  Workers run on every Cloudflare PoP via anycast; no regional endpoint. One anycast target:
+  workers.dev (GET / is a 167-byte 301). Distinct from cdn-cloudflare (www.cloudflare.com,
+  speed.cloudflare.com).
+targets:
+  - name: CF-Workers-workers.dev
+    host: workers.dev
+    kinds: [https, tcp, icmp]
+    path: /
+    anycast: true
+    notes: Cloudflare anycast
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 301
+      bytes: 167

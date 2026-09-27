@@ -138,3 +138,96 @@ func TestPerf(t *testing.T) {
 		t.Errorf("over the 100 ms budget")
 	}
 }
+
+// TestPerfOverview (FYISP_PERF=1) times the dashboard Overview's query: one
+// Panel over 1300 series (`--profile all`, one kind) with MaxPoints 1, for
+// windows of 30 minutes, 24 hours, 7 and 30 days. 48h of raw data go through
+// Observe/Flush, 28 more days are hourly summaries.
+func TestPerfOverview(t *testing.T) {
+	if os.Getenv("FYISP_PERF") != "1" {
+		t.Skip("set FYISP_PERF=1")
+	}
+	const nSeries = 1300
+	const iv = 15 * time.Second
+	keys := make([]model.SeriesKey, nSeries)
+	gens := make([]*synth.Series, nSeries)
+	for i := range keys {
+		keys[i] = model.SeriesKey{Target: fmt.Sprintf("target-%04d", i), Kind: model.KindHTTPS}
+		gens[i] = synth.New(7, i)
+	}
+	end := t0.Add(30 * 24 * time.Hour)
+	rawFrom := end.Add(-48 * time.Hour)
+	now := rawFrom
+	s := openT(t, t.TempDir(), Options{Interval: func(model.SeriesKey) time.Duration { return iv }, Now: func() time.Time { return now }})
+	defer s.Close()
+	fillStart := time.Now()
+	var nsamples int64
+	for m := rawFrom; m.Before(end); m = m.Add(10 * time.Minute) {
+		for tt := m; tt.Before(m.Add(10 * time.Minute)); tt = tt.Add(iv) {
+			for i, k := range keys {
+				s.Observe(sampleOf(k, tt, gens[i].Next()))
+				nsamples++
+			}
+		}
+		now = m.Add(10 * time.Minute)
+		if err := s.Flush(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rnd := rand.New(rand.NewPCG(3, 4))
+	tx, _ := s.db.w.Begin()
+	ins, _ := tx.Prepare(`INSERT INTO summary_1h VALUES(?,?,?)`)
+	for day := t0.Unix() / 86400; day < rawFrom.Unix()/86400; day++ {
+		for i, k := range keys {
+			var hs []hourSummary
+			for h := day * 24; h < day*24+24; h++ {
+				n := int64(time.Hour / iv)
+				u := summary{lost: int64(rnd.IntN(3))}
+				u.by[1] = u.lost
+				u.n = n - u.lost
+				base := int64(500 + (i%150)*100 + rnd.IntN(100))
+				u.min, u.max, u.p95, u.sum = base, base+900+int64(rnd.IntN(5000)), base+300, (base+50)*u.n
+				hs = append(hs, hourSummary{h, u})
+			}
+			if _, err := ins.Exec(day, s.ids[k], appendDay(nil, day, hs)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	ins.Close()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint(ctx, s.db.w)
+	// A partly observed current hour in memory, as in a running fyisp.
+	for tt := end; tt.Before(end.Add(20 * time.Minute)); tt = tt.Add(iv) {
+		for i, k := range keys {
+			s.Observe(sampleOf(k, tt, gens[i].Next()))
+		}
+	}
+	now = end.Add(20 * time.Minute)
+	st, _ := s.Stats(ctx)
+	t.Logf("%d series: %d raw samples in %v; db %d MB", nSeries, nsamples, time.Since(fillStart).Round(time.Second), st.FileBytes>>20)
+	for _, w := range []struct {
+		name string
+		d    time.Duration
+		tier string
+	}{{"30m", 30 * time.Minute, TierRaw}, {"24h", 24 * time.Hour, TierRaw}, {"48h", 48 * time.Hour, TierRaw},
+		{"7d", 7 * 24 * time.Hour, TierHourly}, {"30d", 30 * 24 * time.Hour, TierHourly}} {
+		var ds []time.Duration
+		for range 7 {
+			start := time.Now()
+			p, err := s.Panel(ctx, PanelQuery{Keys: keys, From: now.Add(-w.d), To: now, MaxPoints: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ds = append(ds, time.Since(start))
+			if p.Tier != w.tier || len(p.Series) != nSeries {
+				t.Fatalf("%s: tier %s, %d series", w.name, p.Tier, len(p.Series))
+			}
+		}
+		slices.Sort(ds)
+		t.Logf("Overview Panel %d series x %-4s p50 %8.1f ms  max %8.1f ms", nSeries, w.name,
+			float64(ds[len(ds)/2].Microseconds())/1000, float64(ds[len(ds)-1].Microseconds())/1000)
+	}
+}

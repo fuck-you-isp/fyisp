@@ -1,0 +1,267 @@
+provider: digitalocean
+display: DigitalOcean
+kind: cloud
+category: [storage]
+sources:
+  - https://docs.digitalocean.com/platform/regional-availability/
+  - https://docs.digitalocean.com/products/spaces/details/availability/
+  - https://www.digitalocean.com/community/questions/how-to-test-digitalocean-speed-and-ping-now
+notes: >-
+  DigitalOcean retired its speedtest-<dc>.digitalocean.com hosts (all NXDOMAIN on 2026-09-27),
+  so each region is probed via its public Spaces (S3) regional endpoint <slug>.digitaloceanspaces.com.
+  GET / returns a tiny anonymous S3 XML body (~214 B). RTTs from a single vantage point were consistent
+  with each endpoint being in-region (e.g. blr1 ~150 ms vs fra1 ~37 ms from Europe).
+  Gaps: nyc1 and nyc2 have no Spaces hostname (NYC Spaces is served from nyc3); legacy ams2/sfo1 have no endpoint.
+  These four (of the 18 slugs on the regional-availability page and status.digitalocean.com) are kept
+  with kinds: [] on their would-be Spaces hostname, which is NXDOMAIN. Re-checked 2026-09-27:
+  speedtest-<dc>, speedtest.<dc>, mirrors.<dc> and lg.<dc> under digitalocean.com are all NXDOMAIN, and
+  mirrors.digitalocean.com is a Cloudflare anycast front.
+targets:
+  - name: DO-nyc3
+    host: nyc3.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: nyc3
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-sfo2
+    host: sfo2.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: sfo2
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-sfo3
+    host: sfo3.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: sfo3
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-tor1
+    host: tor1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: tor1
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-atl1
+    host: atl1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: atl1
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-ric1
+    host: ric1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: ric1
+    city: Richmond
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-mkc1
+    host: mkc1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: mkc1
+    city: Kansas City
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-mem1
+    host: mem1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: mem1
+    city: Memphis
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-ams3
+    host: ams3.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: ams3
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-lon1
+    host: lon1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: lon1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-fra1
+    host: fra1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: fra1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-sgp1
+    host: sgp1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: sgp1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-blr1
+    host: blr1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: blr1
+    city: Bangalore
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-syd1
+    host: syd1.digitaloceanspaces.com
+    kinds: [https, tcp, icmp]
+    region: syd1
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: DO-nyc1
+    host: nyc1.digitaloceanspaces.com
+    kinds: []
+    region: nyc1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: DO-nyc2
+    host: nyc2.digitaloceanspaces.com
+    kinds: []
+    region: nyc2
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: DO-sfo1
+    host: sfo1.digitaloceanspaces.com
+    kinds: []
+    region: sfo1
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: DO-ams2
+    host: ams2.digitaloceanspaces.com
+    kinds: []
+    region: ams2
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

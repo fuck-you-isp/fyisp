@@ -705,6 +705,15 @@ type targetSummary struct {
 	Interval int64    `json:"interval_ms"`
 	Layer    string   `json:"layer,omitempty"` // model.Layer* for path targets
 	Trace    bool     `json:"trace,omitempty"` // has an always-on trace
+	// Provider and location (catalog targets; see model.Target). Targets
+	// without them (default profile, --config files) report their group as
+	// the provider and no geo. Names only: never a host.
+	Provider      string `json:"provider,omitempty"`
+	ProviderTitle string `json:"provider_title,omitempty"`
+	ProviderKind  string `json:"provider_kind,omitempty"`
+	City          string `json:"city,omitempty"`
+	Country       string `json:"country,omitempty"`
+	Geo           string `json:"geo,omitempty"`
 }
 
 func buildProfile(p *model.Profile) profileJSON {
@@ -720,8 +729,10 @@ func buildProfile(p *model.Profile) profileJSON {
 			gs[j], gs[j-1] = gs[j-1], gs[j]
 		}
 	}
+	titles := map[string]string{}
 	for _, g := range gs {
 		out.Groups = append(out.Groups, groupJSON{ID: g.ID, Title: g.Title})
+		titles[g.ID] = g.Title
 	}
 	for _, t := range p.Targets {
 		ts := targetSummary{Name: t.Name, Group: t.Group, Interval: intervalOf(t, model.KindHTTPS).Milliseconds()}
@@ -729,12 +740,33 @@ func buildProfile(p *model.Profile) profileJSON {
 		case model.LayerGateway, model.LayerEdge, model.LayerAnycast:
 			ts.Layer = t.Layer
 		}
+		if !isPath(t) {
+			ts.Provider, ts.ProviderTitle = providerOf(t, titles)
+			ts.ProviderKind, ts.City, ts.Country, ts.Geo = t.ProviderKind, t.City, t.Country, t.Geo
+		}
 		for _, k := range kindsOf(t) {
 			ts.Kinds = append(ts.Kinds, k.String())
 		}
 		out.Targets = append(out.Targets, ts)
 	}
 	return out
+}
+
+// isPath reports a network path target (gateway, ISP edge, anycast
+// resolvers): only those have a layer.
+func isPath(t model.Target) bool { return t.Layer != "" }
+
+// providerOf returns the target's provider ID and title: its catalog
+// provider, else its group (titles maps group IDs to titles).
+func providerOf(t model.Target, titles map[string]string) (id, title string) {
+	if t.Provider != "" {
+		return t.Provider, t.ProviderTitle
+	}
+	title = titles[t.Group]
+	if title == "" {
+		title = t.Group
+	}
+	return t.Group, title
 }
 
 // ---- response helpers ----

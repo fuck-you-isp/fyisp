@@ -1,0 +1,756 @@
+provider: datapacket
+display: DataPacket
+kind: cloud
+category: [bare-metal]
+sources:
+  - https://www.datapacket.com/speed-test-files/north-america
+  - https://www.datapacket.com/speed-test-files/europe
+  - https://www.datapacket.com/speed-test-files/latin-america
+  - https://www.datapacket.com/speed-test-files/asia-pacific
+  - https://www.datapacket.com/speed-test-files/middle-east-and-africa
+  - https://www.datapacket.com/looking-glass/frankfurt
+notes: >-
+  Official per-data-center test IPs ("DC IP Address") from DataPacket's speed-test-files pages, one
+  per location (67 listed). They are bare IPs (rDNS <n>.<site>.cdn77.com, DataPacket/CDN77 AS60068),
+  and on 2026-09-27 none accepted TCP 443 or 80 (test files are served from other hosts), so every target
+  is ICMP only. RTTs from Helsinki were plausible for every site (Helsinki 0.9 ms, Frankfurt 21 ms,
+  New York 106 ms, Singapore 181 ms, Sydney 364 ms). Never fetch the 100MB/1GB/10GB test files.
+  Calgary, Barcelona, Helsinki and Perth are listed with test files "coming soon" but already have a DC IP.
+targets:
+  - name: DataPacket-Ashburn
+    host: 37.19.206.20
+    kinds: [icmp]
+    region: ashburn
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Atlanta
+    host: 185.152.66.67
+    kinds: [icmp]
+    region: atlanta
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Boston
+    host: 109.61.86.65
+    kinds: [icmp]
+    region: boston
+    city: Boston
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Calgary
+    host: 152.233.27.1
+    kinds: [icmp]
+    region: calgary
+    city: Calgary
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Chicago
+    host: 185.93.1.65
+    kinds: [icmp]
+    region: chicago
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Dallas
+    host: 89.187.164.1
+    kinds: [icmp]
+    region: dallas
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Denver
+    host: 84.17.63.68
+    kinds: [icmp]
+    region: denver
+    city: Denver
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Houston
+    host: 37.19.216.1
+    kinds: [icmp]
+    region: houston
+    city: Houston
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Los-Angeles
+    host: 185.152.67.2
+    kinds: [icmp]
+    region: los-angeles
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-McAllen
+    host: 79.127.222.33
+    kinds: [icmp]
+    region: mcallen
+    city: McAllen
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Miami
+    host: 195.181.162.195
+    kinds: [icmp]
+    region: miami
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Montreal
+    host: 79.127.177.1
+    kinds: [icmp]
+    region: montreal
+    city: Montréal
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-New-York
+    host: 185.59.223.8
+    kinds: [icmp]
+    region: new-york
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-San-Jose
+    host: 156.146.53.53
+    kinds: [icmp]
+    region: san-jose
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Seattle
+    host: 84.17.41.11
+    kinds: [icmp]
+    region: seattle
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Toronto
+    host: 138.199.57.129
+    kinds: [icmp]
+    region: toronto
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Vancouver
+    host: 79.127.233.65
+    kinds: [icmp]
+    region: vancouver
+    city: Vancouver
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Amsterdam
+    host: 185.102.218.1
+    kinds: [icmp]
+    region: amsterdam
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Athens
+    host: 169.150.252.2
+    kinds: [icmp]
+    region: athens
+    city: Athens
+    country: GR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Barcelona
+    host: 152.233.56.1
+    kinds: [icmp]
+    region: barcelona
+    city: Barcelona
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Berlin
+    host: 89.222.123.1
+    kinds: [icmp]
+    region: berlin
+    city: Berlin
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Bordeaux
+    host: 152.233.38.1
+    kinds: [icmp]
+    region: bordeaux
+    city: Bordeaux
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Bratislava
+    host: 156.146.40.65
+    kinds: [icmp]
+    region: bratislava
+    city: Bratislava
+    country: SK
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Brussels
+    host: 207.211.214.65
+    kinds: [icmp]
+    region: brussels
+    city: Brussels
+    country: BE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Bucharest
+    host: 185.102.217.170
+    kinds: [icmp]
+    region: bucharest
+    city: Bucharest
+    country: RO
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Budapest
+    host: 79.127.133.1
+    kinds: [icmp]
+    region: budapest
+    city: Budapest
+    country: HU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Copenhagen
+    host: 121.127.45.65
+    kinds: [icmp]
+    region: copenhagen
+    city: Copenhagen
+    country: DK
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Dublin
+    host: 87.249.137.8
+    kinds: [icmp]
+    region: dublin
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Frankfurt
+    host: 185.102.219.93
+    kinds: [icmp]
+    region: frankfurt
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Helsinki
+    host: 152.233.54.1
+    kinds: [icmp]
+    region: helsinki
+    city: Helsinki
+    country: FI
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Kyiv
+    host: 37.19.218.65
+    kinds: [icmp]
+    region: kyiv
+    city: Kyiv
+    country: UA
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Lisbon
+    host: 109.61.94.65
+    kinds: [icmp]
+    region: lisbon
+    city: Lisbon
+    country: PT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-London
+    host: 185.59.221.51
+    kinds: [icmp]
+    region: london
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Madrid
+    host: 185.93.3.50
+    kinds: [icmp]
+    region: madrid
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Manchester
+    host: 152.233.2.1
+    kinds: [icmp]
+    region: manchester
+    city: Manchester
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Marseille
+    host: 138.199.14.66
+    kinds: [icmp]
+    region: marseille
+    city: Marseille
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Milan
+    host: 84.17.59.129
+    kinds: [icmp]
+    region: milan
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Oslo
+    host: 95.173.205.1
+    kinds: [icmp]
+    region: oslo
+    city: Oslo
+    country: NO
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Palermo
+    host: 79.127.246.1
+    kinds: [icmp]
+    region: palermo
+    city: Palermo
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Paris
+    host: 185.93.2.193
+    kinds: [icmp]
+    region: paris
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Prague
+    host: 185.152.65.113
+    kinds: [icmp]
+    region: prague
+    city: Prague
+    country: CZ
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Sofia
+    host: 37.19.203.1
+    kinds: [icmp]
+    region: sofia
+    city: Sofia
+    country: BG
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Stockholm
+    host: 185.76.9.135
+    kinds: [icmp]
+    region: stockholm
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Vienna
+    host: 185.180.12.40
+    kinds: [icmp]
+    region: vienna
+    city: Vienna
+    country: AT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Warsaw
+    host: 185.246.208.67
+    kinds: [icmp]
+    region: warsaw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Zagreb
+    host: 169.150.242.129
+    kinds: [icmp]
+    region: zagreb
+    city: Zagreb
+    country: HR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Zurich
+    host: 89.187.165.1
+    kinds: [icmp]
+    region: zurich
+    city: Zürich
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Bogota
+    host: 169.150.228.129
+    kinds: [icmp]
+    region: bogota
+    city: Bogotá
+    country: CO
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Buenos-Aires
+    host: 169.150.214.140
+    kinds: [icmp]
+    region: buenos-aires
+    city: Buenos Aires
+    country: AR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Lima
+    host: 79.127.252.129
+    kinds: [icmp]
+    region: lima
+    city: Lima
+    country: PE
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Queretaro
+    host: 121.127.43.65
+    kinds: [icmp]
+    region: queretaro
+    city: Querétaro
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Santiago
+    host: 79.127.209.1
+    kinds: [icmp]
+    region: santiago
+    city: Santiago
+    country: CL
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Sao-Paulo
+    host: 138.199.4.1
+    kinds: [icmp]
+    region: sao-paulo
+    city: São Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Auckland
+    host: 79.127.173.1
+    kinds: [icmp]
+    region: auckland
+    city: Auckland
+    country: NZ
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Hong-Kong
+    host: 84.17.57.129
+    kinds: [icmp]
+    region: hong-kong
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Kuala-Lumpur
+    host: 89.222.110.1
+    kinds: [icmp]
+    region: kuala-lumpur
+    city: Kuala Lumpur
+    country: MY
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Melbourne
+    host: 79.127.130.1
+    kinds: [icmp]
+    region: melbourne
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Perth
+    host: 152.233.58.193
+    kinds: [icmp]
+    region: perth
+    city: Perth
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Seoul
+    host: 89.222.116.1
+    kinds: [icmp]
+    region: seoul
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Singapore
+    host: 89.187.162.1
+    kinds: [icmp]
+    region: singapore
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Sydney
+    host: 143.244.63.144
+    kinds: [icmp]
+    region: sydney
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Tokyo
+    host: 89.187.160.1
+    kinds: [icmp]
+    region: tokyo
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Fujairah
+    host: 89.222.117.129
+    kinds: [icmp]
+    region: fujairah
+    city: Fujairah
+    country: AE
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Istanbul
+    host: 156.146.52.1
+    kinds: [icmp]
+    region: istanbul
+    city: Istanbul
+    country: TR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Johannesburg
+    host: 169.150.238.161
+    kinds: [icmp]
+    region: johannesburg
+    city: Johannesburg
+    country: ZA
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Lagos
+    host: 185.111.108.65
+    kinds: [icmp]
+    region: lagos
+    city: Lagos
+    country: NG
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: DataPacket-Tel-Aviv
+    host: 169.150.202.193
+    kinds: [icmp]
+    region: tel-aviv
+    city: Tel Aviv
+    country: IL
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true

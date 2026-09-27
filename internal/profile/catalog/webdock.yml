@@ -1,0 +1,30 @@
+provider: webdock
+display: Webdock
+kind: cloud
+category: [vps]
+sources:
+  - https://api.webdock.io/v1/locations
+  - https://docs.webdock.io/webdock-control-panel/ip-adresses/using-looking-glass-test-latency-and-network-speed
+notes: >-
+  Webdock has a single location, its own DK-DC1 data centre in Denmark (public /v1/locations lists only
+  "dk"). No speed-test host is published (the looking glass is third-party on looking.house), so the
+  target is the public unauthenticated health path api.webdock.io/v1/ping (19 B JSON), served from
+  Webdock's own AS44803 in Denmark (geo-IP Baaring, South Denmark), not via a CDN (webdock.io itself is
+  behind Cloudflare and is not used).
+targets:
+  - name: Webdock-Denmark
+    host: api.webdock.io
+    kinds: [https, tcp, icmp]
+    path: /v1/ping
+    region: dk
+    city: Baaring
+    country: DK
+    geo: eu
+    anycast: false
+    notes: "DK-DC1"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 19

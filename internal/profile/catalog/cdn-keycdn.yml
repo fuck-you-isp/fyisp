@@ -1,0 +1,29 @@
+provider: cdn-keycdn
+display: "KeyCDN"
+kind: cdn
+category: []
+sources:
+  - https://www.keycdn.com/support/cdn-server-locations
+  - https://www.keycdn.com/support/anycast
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. KeyCDN combines IP anycast, GeoIP DNS with EDNS
+  client subnet and latency probing; edges are often unicast servers in
+  hosting data centers (from Helsinki it resolved to a Hetzner HEL address)
+  and the X-Edge-Location header names the PoP (e.g. fihe). www.keycdn.com is
+  served by KeyCDN itself (Server: keycdn); robots.txt is 32 bytes.
+targets:
+  - name: CDN-KeyCDN
+    host: www.keycdn.com
+    kinds: [https, tcp, icmp]
+    path: "/robots.txt"
+    anycast: true
+    tags: [geodns]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 32

@@ -1,0 +1,27 @@
+provider: vastai
+display: Vast.ai
+kind: cloud
+category: [gpu]
+sources:
+  - https://vast.ai/
+notes: >-
+  Vast.ai is a GPU marketplace: instances run on third-party hosts worldwide, so there are no
+  provider regions. One target: the console/API console.vast.ai, an AWS us-east-1 load balancer (rDNS
+  compute-1, no ICMP; GET /robots.txt is a small 302).
+targets:
+  - name: Vastai-console
+    host: console.vast.ai
+    kinds: [https, tcp]
+    path: /robots.txt
+    region: us-east-1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    notes: "control plane only (AWS us-east-1), not where GPUs run"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 302
+      bytes: 200

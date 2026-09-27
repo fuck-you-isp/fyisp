@@ -1,0 +1,187 @@
+provider: jagex
+display: Jagex (Old School RuneScape, RuneScape)
+kind: game
+category: [mmo]
+sources:
+  - https://oldschool.runescape.com/slu                        # official world list with per-world country
+  - https://oldschool.runescape.wiki/w/Ping_(Server)           # community wiki: "ping oldschool1.runescape.com" (world N+300)
+  - https://oldschool.runescape.wiki/w/World                   # community wiki: US East / US West split, BR/SG/JP/ZA worlds
+  - https://runescape.wiki/w/Server                            # community wiki: US East consolidated in Washington (2023-02-13)
+  - https://secure.runescape.com/m=news/more-worlds-more-power-the-road-to-greater-capacity?oldschool=1   # official: cloud-hosted worlds
+notes: >-
+  Each game world has a public DNS name (OSRS world W = oldschool<W-300>.runescape.com,
+  RS3 world N = world<N>.runescape.com) and the long-standing, community-
+  and wiki-documented way to check latency is to ping that name. One world
+  per hosting site is listed; worlds on the same site share a /24.
+  Jagex-owned sites (AS44521) answer ICMP, TCP/443 and HTTPS; newer OSRS
+  worlds in Brazil, Singapore, Japan and South Africa run on AWS EC2 in
+  sa-east-1 / ap-southeast-1 / ap-northeast-1 / af-south-1 and drop ICMP
+  (tcp+https only). The OSRS world web server returns the ~16.6 KB legacy
+  game page for every path (acceptable, < 64 KB); RS3 worlds return a
+  179-byte 404. Countries come from the official world list; cities are
+  Washington-area (wiki) / geo-IP where marked. World numbers can be
+  retired; re-check against the world list when re-verifying.
+targets:
+  - name: OSRS-US-East
+    host: oldschool1.runescape.com
+    kinds: [icmp, tcp]
+    region: us-east
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 301; Jagex AS44521
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16650}
+  - name: OSRS-US-West
+    host: oldschool20.runescape.com
+    kinds: [icmp, tcp]
+    region: us-west
+    city: Las Vegas
+    country: US
+    geo: na
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 320; Jagex AS44521; city from geo-IP
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16649}
+  - name: OSRS-UK
+    host: oldschool2.runescape.com
+    kinds: [icmp, tcp]
+    region: uk
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 302; Jagex AS44521 (geo-IP Cambridge)
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16649}
+  - name: OSRS-DE
+    host: oldschool114.runescape.com
+    kinds: [icmp, tcp]
+    region: de
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 414; Jagex AS44521
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16652}
+  - name: OSRS-AU
+    host: oldschool230.runescape.com
+    kinds: [icmp, tcp]
+    region: au
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 530; Jagex AS44521
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 200, bytes: 16652}
+  - name: OSRS-BR
+    host: oldschool392.runescape.com
+    kinds: [tcp]
+    region: br
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 692; AWS sa-east-1 EC2
+    verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 16650}
+  - name: OSRS-SG
+    host: oldschool360.runescape.com
+    kinds: [tcp]
+    region: sg
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 660; AWS ap-southeast-1 EC2
+    verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 16650}
+  - name: OSRS-JP
+    host: oldschool398.runescape.com
+    kinds: [tcp]
+    region: jp
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 698; AWS ap-northeast-1 EC2
+    verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 16650}
+  - name: OSRS-ZA
+    host: oldschool367.runescape.com
+    kinds: [tcp]
+    region: za
+    city: Cape Town
+    country: ZA
+    geo: af
+    anycast: false
+    tags: [game-server]
+    notes: OSRS world 667; AWS af-south-1 EC2
+    verified: {date: 2026-09-27, icmp: false, tcp: true, https: 200, bytes: 16650}
+  - name: RS3-US-East
+    host: world1.runescape.com
+    kinds: [icmp, tcp, https]
+    region: us-east
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [game-server]
+    notes: RS3 world1; Jagex AS44521
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 404, bytes: 179}
+  - name: RS3-US-East-2
+    host: world34.runescape.com
+    kinds: [icmp, tcp, https]
+    region: us-east
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [game-server]
+    notes: RS3 world34; Jagex AS44521, second US-East block (8.26.16.0/24)
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 404, bytes: 179}
+  - name: RS3-US-West
+    host: world3.runescape.com
+    kinds: [icmp, tcp, https]
+    region: us-west
+    city: Las Vegas
+    country: US
+    geo: na
+    anycast: false
+    tags: [game-server]
+    notes: RS3 world3; Jagex AS44521; city from geo-IP
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 404, bytes: 179}
+  - name: RS3-UK
+    host: world11.runescape.com
+    kinds: [icmp, tcp, https]
+    region: uk
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [game-server]
+    notes: RS3 world11; Jagex AS44521 (geo-IP Cambridge)
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 404, bytes: 179}
+  - name: RS3-DE
+    host: world5.runescape.com
+    kinds: [icmp, tcp, https]
+    region: de
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [game-server]
+    notes: RS3 world5; Jagex AS44521
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 404, bytes: 179}
+  - name: RS3-AU
+    host: world12.runescape.com
+    kinds: [icmp, tcp, https]
+    region: au
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [game-server]
+    notes: RS3 world12; Jagex AS44521
+    verified: {date: 2026-09-27, icmp: true, tcp: true, https: 404, bytes: 179}

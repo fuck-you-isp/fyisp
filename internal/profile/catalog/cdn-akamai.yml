@@ -1,0 +1,48 @@
+provider: cdn-akamai
+display: "Akamai"
+kind: cdn
+category: []
+sources:
+  - https://whatismyip.akamai.com/
+  - https://dl.acm.org/doi/pdf/10.1145/3546037.3546051
+  - https://www.datacenterdynamics.com/en/news/akamai-acquires-customer-contracts-from-bankrupt-cdn-firm-edgio/
+  - https://www.tvbeurope.com/media-delivery/edgio-content-delivery-network-officially-shuts-down
+notes: >-
+  All targets are anycast: true in fyisp's sense (no fixed location): the
+  measured edge is whichever PoP the network maps you to, so the number is
+  'latency to your nearest edge of this CDN' and changes if routing/mapping
+  moves you to another PoP. Akamai is NOT IP anycast for content: its mapping
+  system hands out unicast edge IPs via DNS based on the resolver's address
+  (or EDNS client subnet), so 'nearest edge' is the Akamai cluster mapped to
+  your resolver, often inside your ISP's network. Changing resolvers can
+  change the result. whatismyip.akamai.com is an Akamai-run edge service that
+  returns the caller's IP (~12 bytes); a248.e.akamai.net is the long-standing
+  generic Akamai edge hostname (GET / is a small 400 from AkamaiGHost, which
+  still measures the edge). Edgio (ex-Edgecast/Limelight) shut down on
+  2025-01-15 after bankruptcy; Akamai took over its customer contracts, so no
+  Edgio target exists.
+targets:
+  - name: CDN-Akamai
+    host: whatismyip.akamai.com
+    kinds: [https, tcp, icmp]
+    anycast: true
+    tags: [geodns]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12
+  - name: CDN-Akamai-a248
+    host: a248.e.akamai.net
+    kinds: [https, tcp, icmp]
+    anycast: true
+    tags: [geodns]
+    notes: >-
+      GET / answers 400 (310 bytes) from AkamaiGHost; any status counts.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 310

@@ -34,7 +34,6 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
-	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/report"
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
@@ -49,20 +48,27 @@ var version = "dev"
 // freed heap to the OS only slowly, so RSS follows the peaks. GOGC=50 keeps
 // the peaks ~10-15 MB lower for about one more 3 ms collection a minute
 // (<0.1% of a core). The soft memory limit is a safety net: steady state
-// is far below it, and it only makes the GC work harder when a burst of
-// large dashboard queries would otherwise let the heap double.
+// is well below it, and it only makes the GC work harder when a burst of
+// large dashboard queries would otherwise let the heap double. It grows
+// with the target count (each target keeps an HTTPS connection, ~60 KB
+// live): a fixed 96 MB limit made an 800-target run collect every second
+// and spend 60% of its CPU in the GC.
 const (
-	defaultGCPercent   = 50
-	defaultMemoryLimit = 96 << 20
+	defaultGCPercent     = 50
+	baseMemoryLimit      = 96 << 20
+	memoryLimitPerTarget = 128 << 10
 )
 
+// memoryLimit is the soft memory limit for a run with n targets.
+func memoryLimit(n int) int64 { return baseMemoryLimit + int64(n)*memoryLimitPerTarget }
+
 // tuneGC applies the GC defaults above where the environment sets none.
-func tuneGC() {
+func tuneGC(targets int) {
 	if os.Getenv("GOGC") == "" {
 		debug.SetGCPercent(defaultGCPercent)
 	}
 	if os.Getenv("GOMEMLIMIT") == "" {
-		debug.SetMemoryLimit(defaultMemoryLimit)
+		debug.SetMemoryLimit(memoryLimit(targets))
 	}
 }
 
@@ -81,6 +87,9 @@ type config struct {
 	ephemeral     bool
 	retention     time.Duration
 	configPath    string
+	profiles      profileNames
+	geos          geoList
+	noPath        bool
 	openBrowser   bool
 	adminToken    string
 	allowHosts    hostList
@@ -102,6 +111,8 @@ func main() {
 			os.Exit(cmdExport(os.Args[2:]))
 		case "report":
 			os.Exit(cmdReport(os.Args[2:]))
+		case "profiles":
+			runProfiles()
 		}
 	}
 	cfg, err := parseFlags(os.Args[1:])
@@ -139,7 +150,10 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.dataDir, "data-dir", "", "where to keep data (default: per-OS state directory; see `fyisp paths`)")
 	fs.BoolVar(&c.ephemeral, "ephemeral", false, "keep data in a temporary directory deleted on exit")
 	fs.StringVar(&retention, "retention", "90d", "how long to keep data (max 90d), e.g. 14d or 48h")
-	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]`")
+	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]` or other named profiles")
+	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: default)")
+	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
+	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls when --listen is not loopback")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
@@ -148,7 +162,7 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 	fs.BoolVar(&c.force, "force", false, "start even if the data directory has less than 200 MB free")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
+		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp profiles [NAME[,NAME...]]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -169,6 +183,9 @@ func parseFlags(args []string) (config, error) {
 	}
 	if c.ephemeral && c.dataDir != "" {
 		return c, fmt.Errorf("--ephemeral and --data-dir are mutually exclusive")
+	}
+	if c.configPath != "" && (len(c.profiles) > 0 || len(c.geos) > 0) {
+		return c, fmt.Errorf("--config and --profile/--geo are mutually exclusive: use `extends: [%s]` in the file", strings.Join(c.profiles, ", "))
 	}
 	return c, nil
 }
@@ -223,16 +240,17 @@ func newLogger(c config, w io.Writer) *slog.Logger {
 }
 
 func run(ctx context.Context, stop context.CancelFunc, c config) error {
-	tuneGC()
+	tuneGC(0)
 	log := newLogger(c, os.Stderr)
 	// Before probe.New: probe filters the standard logger's http2 noise.
 	slog.SetDefault(log)
 	started := time.Now()
 
-	prof, err := loadProfile(c.configPath)
+	prof, err := loadProfile(c)
 	if err != nil {
 		return err
 	}
+	tuneGC(len(prof.Targets))
 
 	dir, cleanup, err := resolveDataDir(c)
 	if err != nil {
@@ -450,17 +468,6 @@ func maintain(ctx context.Context, st storeT, retention time.Duration, log *slog
 			doPrune()
 		}
 	}
-}
-
-func loadProfile(path string) (*model.Profile, error) {
-	if path == "" {
-		return profile.Default()
-	}
-	p, err := profile.Load(path)
-	if err != nil {
-		return nil, fmt.Errorf("loading --config: %w", err)
-	}
-	return p, nil
 }
 
 // listenLocal binds the dashboard. With the default address, busy ports fall

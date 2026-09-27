@@ -702,6 +702,7 @@ func TestStage3PublicLeaks(t *testing.T) {
 	base := "/s/" + testSecret + "/"
 	for i, p := range []string{"api/annotations", "api/annotations?from=now-90d", "api/annotations?from=now-6h&to=now-1h",
 		"api/baselines?group=lan", "api/baselines?group=common&at=now-1h", "api/verdict", "api/profile",
+		"api/overview", "api/overview?kind=tcp&from=now-6h",
 		"r/f" + strings.Repeat("a", 25), "r/r" + strings.Repeat("a", 25)} {
 		w := do(h, "GET", base+p, pubHdr(100+i))
 		body := w.Body.String()

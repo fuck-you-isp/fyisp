@@ -1,0 +1,23 @@
+provider: vercel
+display: Vercel
+kind: cloud
+category: [paas]
+sources:
+  - https://vercel.com/docs/regions https://vercel.com/docs/domains/working-with-domains/add-a-domain
+notes: >-
+  Vercel functions run in ~20 compute regions but all traffic enters the anycast edge (e.g. 76.76.21.0/24,
+  66.33.60.0/24, 216.198.79.0/24); there is no public per-region host. One anycast target: cname.vercel-dns.com, the
+  documented CNAME target (GET / is a 107-byte 404).
+targets:
+  - name: Vercel-edge
+    host: cname.vercel-dns.com
+    kinds: [https, tcp, icmp]
+    path: /
+    anycast: true
+    notes: Vercel anycast edge
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 107

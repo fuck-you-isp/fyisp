@@ -180,6 +180,11 @@ func TestPublicRoutes(t *testing.T) {
 		{"GET", base + "api/profile", 200},
 		{"GET", base + "api/panel?group=common", 200},
 		{"GET", base + "api/panel.csv?group=common", 200},
+		{"GET", base + "api/overview", 200},
+		{"GET", base + "api/overview?kind=tcp&from=now-1h", 200},
+		{"POST", base + "api/overview", 405},
+		{"GET", base + "api/overview?kind=all", 400},
+		{"GET", base + "api/overview?group=common", 400},
 		{"POST", base, 405},
 		{"POST", base + "api/panel?group=common", 405},
 		{"PUT", base + "api/status", 405},
@@ -220,7 +225,7 @@ func TestPublicRedaction(t *testing.T) {
 	base := "/s/" + testSecret + "/"
 	paths := []string{"", "api/status", "api/profile", "api/panel?group=common", "api/panel?group=lan&from=now-90d",
 		"api/verdict", "api/incidents", "api/incidents?from=now-90d", "api/incidents?from=x",
-		"api/panel.csv?group=lan", "static/app.js", "static/style.css", "nope", "api/panel?group=bad", "api/panel?from=x"}
+		"api/panel.csv?group=lan", "api/overview", "api/overview?kind=icmp&from=now-90d", "api/overview?kind=x", "static/app.js", "static/style.css", "nope", "api/panel?group=bad", "api/panel?from=x"}
 	check := func(p string) {
 		w := do(h, "GET", base+p, map[string]string{"Cf-Connecting-Ip": "198.51.100.7"})
 		body := w.Body.String()
@@ -238,6 +243,7 @@ func TestPublicRedaction(t *testing.T) {
 	cs.err = errors.New("sqlite: open /home/venkat/.local/state/fyisp/fyisp.db: 192.168.1.20")
 	check("api/panel?group=lan&points=77")
 	check("api/panel.csv?group=lan&points=77")
+	check("api/overview?kind=tcp&from=now-77m")
 
 	var st map[string]any
 	w := do(h, "GET", base+"api/status", map[string]string{"Cf-Connecting-Ip": "198.51.100.8"})

@@ -1,0 +1,124 @@
+provider: synology-c2
+display: Synology C2 Object Storage
+kind: cloud
+category: [storage]
+sources:
+  - https://kb.synology.com/en-us/C2/tutorial/C2_Object_Storage_API
+  - https://c2.synology.com/en-global/object-storage/overview
+notes: >-
+  Every Synology C2 Object Storage region endpoint <region>.s3.synologyc2.net (eu-001..004,
+  us-001..003, tw-001). Anonymous GET / returns a 404 body (70 B). The regions are storage clusters in
+  three data centers: EU (Frankfurt), US (Seattle) and Taiwan; RTTs matched (all EU ~21 ms from
+  Helsinki, all US ~157 ms, like other Seattle hosts). tw-001 (HiNet addresses) does not answer ICMP.
+targets:
+  - name: SynologyC2-eu-001
+    host: eu-001.s3.synologyc2.net
+    kinds: [https, tcp, icmp]
+    region: eu-001
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-eu-002
+    host: eu-002.s3.synologyc2.net
+    kinds: [https, tcp, icmp]
+    region: eu-002
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-eu-003
+    host: eu-003.s3.synologyc2.net
+    kinds: [https, tcp, icmp]
+    region: eu-003
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-eu-004
+    host: eu-004.s3.synologyc2.net
+    kinds: [https, tcp, icmp]
+    region: eu-004
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-us-001
+    host: us-001.s3.synologyc2.net
+    kinds: [https, tcp, icmp]
+    region: us-001
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-us-002
+    host: us-002.s3.synologyc2.net
+    kinds: [https, tcp, icmp]
+    region: us-002
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-us-003
+    host: us-003.s3.synologyc2.net
+    kinds: [https, tcp, icmp]
+    region: us-003
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: SynologyC2-tw-001
+    host: tw-001.s3.synologyc2.net
+    kinds: [https, tcp]
+    region: tw-001
+    country: TW
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 70

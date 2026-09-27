@@ -1,0 +1,53 @@
+provider: dns-nextdns
+display: "NextDNS"
+kind: dns
+category: []
+sources:
+  - https://help.nextdns.io/t/h7hmvak/what-is-anycast-and-ultralow
+notes: >-
+  NextDNS runs two networks: Anycast (45.90.28.0 and 45.90.30.0, hostnames
+  anycast[.dns1|.dns2].dns.nextdns.io) and Ultralow, which is DNS-steered
+  unicast to the closest of many more locations (dns.nextdns.io picks it;
+  resolved to 185.87.111.48 from Helsinki). Both are listed so the two routing
+  models can be compared. The bare IPs present no IP certificate, so the
+  second anycast IP is probed with TCP/ICMP only. Without a profile ID the DoH
+  endpoint still answers queries (unfiltered).
+targets:
+  - name: nextdns-anycast
+    host: anycast.dns.nextdns.io
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: nextdns-anycast-2
+    host: 45.90.30.0
+    kinds: [tcp, icmp]
+    anycast: true
+    tags: [secondary]
+    notes: >-
+      No certificate for the bare IP: TCP 443 + ICMP only.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: nextdns-ultralow
+    host: dns.nextdns.io
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, geodns]
+    notes: >-
+      Ultralow: DNS-steered unicast server, not IP anycast; location follows
+      your resolver.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

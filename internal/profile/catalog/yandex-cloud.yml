@@ -1,0 +1,44 @@
+provider: yandex-cloud
+display: Yandex Cloud
+kind: cloud
+category: [vps]
+sources:
+  - https://yandex.cloud/en/docs/overview/concepts/region
+  - https://yandex.cloud/en/docs/storage/s3/
+notes: >-
+  Yandex Cloud has two regions: ru-central1 (Russia; availability zones ru-central1-a/-b/-d/-e/-m in
+  data centres around Moscow, Vladimir and Ryazan oblasts) and kz1 (Kazakhstan, zone kz1-a). Zones have
+  no separate public endpoints, so each region is probed via its Object Storage S3 endpoint (GET /
+  returns a ~206-byte anonymous ListAllMyBuckets XML). storage.yandexcloud.net geolocates to Moscow
+  (AS13238); storage.yandexcloud.kz to Karaganda (AS208795). Moscow RTT from Helsinki was ~60 ms on
+  2026-09-27, higher than the geography suggests (routing), but the address is Yandex-owned and not
+  anycast.
+targets:
+  - name: Yandex-ru-central1
+    host: storage.yandexcloud.net
+    kinds: [https, tcp, icmp]
+    region: ru-central1
+    city: Moscow
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 206
+  - name: Yandex-kz1
+    host: storage.yandexcloud.kz
+    kinds: [https, tcp, icmp]
+    region: kz1
+    city: Karaganda
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 206

@@ -1,0 +1,28 @@
+provider: render
+display: Render
+kind: cloud
+category: [paas]
+sources:
+  - https://render.com/docs/regions
+  - https://render.com/docs/ssh
+notes: >-
+  Render regions: oregon (GCP us-west1), ohio (AWS us-east-2), virginia (AWS us-east-1), frankfurt
+  (AWS eu-central-1), singapore (AWS ap-southeast-1). Web traffic (*.onrender.com) enters a Cloudflare
+  anycast edge, so the only located public endpoints are the per-region SSH gateways
+  ssh.<region>.render.com (TCP 22 answers in every region on 2026-09-27; rDNS confirms each cloud
+  region). They are deliberately NOT listed: a TCP connect to an SSH gateway every 15 s would look like
+  scanning in Render's logs and could get the user's IP rate-limited. Only the anycast render.com
+  target is included.
+targets:
+  - name: Render-edge
+    host: render.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    anycast: true
+    notes: Cloudflare anycast front (216.24.57.0/24)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 939

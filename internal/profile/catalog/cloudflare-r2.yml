@@ -1,0 +1,23 @@
+provider: cloudflare-r2
+display: Cloudflare R2
+kind: cloud
+category: [storage]
+sources:
+  - https://developers.cloudflare.com/r2/api/s3/api/
+  - https://developers.cloudflare.com/r2/reference/data-location/
+notes: >-
+  R2 has no regional endpoints: every account is served at <account>.r2.cloudflarestorage.com on
+  Cloudflare's anycast network (data location hints do not change the front end). The only
+  account-less host is r2.cloudflarestorage.com; on 2026-09-27 it served a certificate that expired on
+  2026-09-09, and unknown account subdomains fail the TLS handshake, so only tcp and icmp are listed.
+targets:
+  - name: Cloudflare-R2
+    host: r2.cloudflarestorage.com
+    kinds: [tcp, icmp]
+    anycast: true
+    notes: >-
+      Anycast; HTTPS failed (expired certificate on the account-less host).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

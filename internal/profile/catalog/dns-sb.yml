@@ -1,0 +1,35 @@
+provider: dns-sb
+display: "DNS.SB"
+kind: dns
+category: []
+sources:
+  - https://dns.sb/
+  - https://dns.sb/doh/
+notes: >-
+  Non-logging anycast resolver (185.222.222.222 / 45.11.45.11; doh.dns.sb
+  resolves to the first). DoH GET answers 106 bytes (EDNS padding).
+targets:
+  - name: dnssb-dns
+    host: 185.222.222.222
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 106
+  - name: dnssb-dns-2
+    host: 45.11.45.11
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, secondary]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 106

@@ -1,0 +1,43 @@
+provider: kakao-cloud
+display: Kakao Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.kakaocloud.com/en/tutorial/storage/object-storage-s3-api
+  - https://docs.kakaocloud.com/en/tutorial/storage/aws-s3-migration
+notes: >-
+  KakaoCloud regions: kr-central-2 (the main region, Seoul area), kr-central-1 (legacy) and
+  kr-gov-central-1 (public sector). Each region is probed via its Object Storage endpoint
+  objectstorage.<region>.kakaocloud.com; GET / is a 226-byte 404. ICMP is filtered. kr-central-1's
+  endpoint (geolocated to Sejong) did not accept TCP on 2026-09-27. No public gov endpoint resolves.
+targets:
+  - name: Kakao-kr-central-2
+    host: objectstorage.kr-central-2.kakaocloud.com
+    kinds: [https, tcp]
+    region: kr-central-2
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 226
+  - name: Kakao-kr-central-1
+    host: objectstorage.kr-central-1.kakaocloud.com
+    kinds: []
+    region: kr-central-1
+    city: Sejong
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: resolves but no TCP answer on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

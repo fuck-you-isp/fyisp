@@ -24,9 +24,15 @@ const (
 	// success on a bufferbloated link is not recorded as loss, and below the
 	// default ICMP interval (5s). A series never waits longer than its
 	// interval: probes of one series run one at a time (schedule).
-	defaultTimeout   = 3 * time.Second
-	httpsTimeout     = 5 * time.Second
-	resolveTimeout   = 5 * time.Second
+	defaultTimeout = 3 * time.Second
+	httpsTimeout   = 5 * time.Second
+	resolveTimeout = 5 * time.Second
+	// maxLookups bounds concurrent DNS lookups. Resolving every host of a
+	// large profile at once (1300 lookups for --profile all) overflows
+	// home routers and Docker's resolver: in a measured start 552 of them
+	// timed out, and every probe of those hosts was lost with ReasonDNS
+	// until the retry 10 s later.
+	maxLookups       = 16
 	maxBody          = 64 << 10
 	defaultUserAgent = "fyisp"
 )
@@ -55,13 +61,14 @@ func New(o Options) Runner {
 		o.UserAgent = defaultUserAgent
 	}
 	silenceHTTP2Noise()
-	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep}
+	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep, lookups: make(chan struct{}, maxLookups)}
 }
 
 type runner struct {
-	o     Options
-	caps  Caps
-	sleep func(context.Context, time.Duration) bool
+	o       Options
+	caps    Caps
+	sleep   func(context.Context, time.Duration) bool
+	lookups chan struct{} // semaphore: at most maxLookups lookups in flight
 }
 
 func (r *runner) Caps() Caps { return r.caps }
@@ -98,8 +105,12 @@ type series struct {
 	// client is replaced after a failed HTTPS probe (see resetClient); it is
 	// also read by the DNS-change callback, hence atomic.
 	client atomic.Pointer[http.Client]
-	iv     time.Duration
-	phase  time.Duration
+	// sessions keeps the TLS session ticket across reconnects and client
+	// resets: a resumed handshake skips the certificate chain (~3-5 KB down
+	// and a signature check), and servers close idle connections often.
+	sessions tls.ClientSessionCache
+	iv       time.Duration
+	phase    time.Duration
 }
 
 // Run probes every target of p until ctx is done, then returns nil. Samples
@@ -240,6 +251,9 @@ func (r *runner) probe(ctx context.Context, s *series, png pinger) (smp model.Sa
 			return smp, true
 		}
 	} else if ip, err = s.host.addr(); err != nil {
+		if s.host.pending() {
+			return smp, false // never resolved yet: not measured, not loss
+		}
 		smp.Lost, smp.Reason, smp.Err = true, model.ReasonDNS, err.Error()
 		return smp, true
 	}
@@ -316,10 +330,14 @@ func (r *runner) resetClient(s *series) {
 }
 
 func (r *runner) newClient(s *series) *http.Client {
-	var tc *tls.Config
+	tc := &tls.Config{}
 	if r.o.TLSConfig != nil {
 		tc = r.o.TLSConfig.Clone()
 	}
+	if s.sessions == nil {
+		s.sessions = tls.NewLRUClientSessionCache(1)
+	}
+	tc.ClientSessionCache = s.sessions
 	d := &net.Dialer{Timeout: r.timeout(model.KindHTTPS)}
 	tr := &http.Transport{
 		Proxy: nil, // measure the direct path, never a proxy
@@ -469,9 +487,29 @@ func (hs *hostState) addr() (netip.Addr, error) {
 	return netip.Addr{}, c.err
 }
 
+// pending reports a host that has never resolved and has not yet failed
+// DNSFailLimit lookups in a row. Its slots are not measured: a single
+// failed first lookup (a resolver busy at startup) is not loss, the same
+// grace a resolved host gets. After DNSFailLimit failures its probes are
+// lost with ReasonDNS.
+func (hs *hostState) pending() bool {
+	c := hs.cur.Load()
+	return c == nil || (!c.ip.IsValid() && c.fails < DNSFailLimit)
+}
+
 func (r *runner) resolve(ctx context.Context, hs *hostState) {
 	if hs.literal || hs.special != "" {
 		return
+	}
+	// The timeout starts once a lookup slot is free: waiting for one is not
+	// a slow resolver.
+	if r.lookups != nil {
+		select {
+		case r.lookups <- struct{}{}:
+			defer func() { <-r.lookups }()
+		case <-ctx.Done():
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()

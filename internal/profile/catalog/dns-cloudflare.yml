@@ -1,0 +1,57 @@
+provider: dns-cloudflare
+display: "Cloudflare DNS (1.1.1.1)"
+kind: dns
+category: []
+sources:
+  - https://developers.cloudflare.com/1.1.1.1/ip-addresses/
+  - https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/make-api-requests/dns-wireformat/
+notes: >-
+  Anycast resolver: 'nearest edge' is the BGP-closest Cloudflare PoP. All
+  resolver targets in the dns-* catalogs are probed with an RFC 8484 DoH GET
+  for www.example.com/A (?dns=AAABAAAB...AAAQAB, 65-byte application/dns-
+  message answer), so HTTPS latency includes a (cached) resolver lookup, not
+  just a web server. The name cloudflare-dns (1.1.1.1) is kept from
+  default.yml; the built-in Network path group also probes 1.1.1.1 as
+  'Cloudflare DNS 1.1.1.1' (ICMP/TCP only). 1.1.1.2/1.1.1.3 (malware/family
+  filters) share the same anycast network and add nothing for latency, so they
+  are not listed.
+targets:
+  - name: cloudflare-dns
+    host: 1.1.1.1
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: cloudflare-dns-2
+    host: 1.0.0.1
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh, secondary]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65
+  - name: cloudflare-doh
+    host: cloudflare-dns.com
+    kinds: [https, tcp, icmp]
+    path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
+    anycast: true
+    tags: [doh]
+    notes: >-
+      Hostname DoH endpoint; resolves to Cloudflare CDN anycast IPs (104.16.x),
+      a different prefix than 1.1.1.1.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 65

@@ -52,23 +52,6 @@ The binaries are not code-signed yet. Windows SmartScreen and macOS Gatekeeper o
 
 Code signing is planned: free Windows signing through the [SignPath Foundation](https://signpath.org/) once the repository is public (it requires a public open-source project), and Apple notarization if there is demand.
 
-### While the repository is private
-
-Release downloads need GitHub authentication, so the one-line launchers above don't work anonymously yet. With the [GitHub CLI](https://cli.github.com/) logged in to an account with access:
-
-```sh
-gh release download -R fuck-you-isp/fyisp -p 'fyisp-linux-amd64' -p SHA256SUMS
-sha256sum -c SHA256SUMS --ignore-missing && chmod +x fyisp-linux-amd64 && ./fyisp-linux-amd64
-```
-
-```powershell
-gh release download -R fuck-you-isp/fyisp -p 'fyisp-windows-amd64.exe' -p SHA256SUMS
-(Get-FileHash .\fyisp-windows-amd64.exe -Algorithm SHA256).Hash   # compare with SHA256SUMS
-.\fyisp-windows-amd64.exe
-```
-
-(`gh` downloads don't carry the "downloaded from the internet" mark either, so there is no SmartScreen or Gatekeeper warning.) The Docker image needs `docker login ghcr.io` with a token that has `read:packages`.
-
 ### Docker
 
 ```sh
@@ -130,7 +113,77 @@ Loss on an inner link shows on every layer beyond it, so the verdict blames the 
 
 A new problem must hold for about 10 seconds before it is shown, and the verdict returns to *ok* only after a full minute without problems. Verdict summaries never contain addresses or host names, so they are safe on the public link. Every host name is looked up again every 60 seconds. After one failed lookup fyisp keeps probing the last good address; after two in a row (about 70 seconds into a resolver outage) the host's probes count as lost with reason *DNS*, as a real application would fail too, until a lookup succeeds again.
 
-The layers come from the built-in **Network path** group, shown first: the *Gateway* and the *ISP edge* (found automatically from the routing table and a short traceroute; pinged every second) and three public anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9; ICMP and TCP). A profile passed with `--config` keeps this group unless it sets `path: false` at the top level; without it fyisp can still tell `dns`, `service` and `upstream` apart, but not `lan` from `isp`.
+The layers come from the built-in **Network path** group, shown first: the *Gateway* and the *ISP edge* (found automatically from the routing table and a short traceroute; pinged every second) and three public anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9; ICMP and TCP). A profile passed with `--config` keeps this group unless it sets `path: false` at the top level (`--no-path` does the same for `--profile`); without it fyisp can still tell `dns`, `service` and `upstream` apart, but not `lan` from `isp`.
+
+## What to measure (profiles)
+
+By default fyisp measures 87 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
+
+```sh
+fyisp profiles                       # list the profiles, with target and panel counts
+fyisp profiles aws                   # the targets of a profile (region, city, country)
+fyisp --profile aws,europe           # combine profiles (a union)
+fyisp --profile clouds --geo eu      # only the targets of a profile in one region (na sa eu me af as oc)
+fyisp --profile default,dns          # the default targets plus every public resolver
+```
+
+| Profiles | What |
+|---|---|
+| `default` | the 87 original targets (used without `--profile`) |
+| `all` | every target in the catalog |
+| `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / DigitalOcean, Linode, Vultr, Hetzner, OVH, ... / both; one panel per provider and region |
+| `cdn`, `dns` | CDN edges, public DNS resolvers (DNS-over-HTTPS) |
+| `common`, `dev`, `streaming`, `gaming` | everyday services, developer services, streaming, game platforms |
+| `north-america`, `south-america`, `europe`, `middle-east`, `africa`, `asia`, `oceania` | every catalog target located there (anycast endpoints have no region and are left out) |
+| `aws`, `gcp`, `azure`, `hetzner`, ... | every provider in the catalog is a profile of its own |
+
+Target names are identities (a name keeps its history): when a profile is combined with `default` and both have a target of the same name (e.g. `AWS-us-east-1`), the catalog's definition is used. `default` on its own never changes.
+
+There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count. Per 100 targets: about 1.4% of one CPU core, 11 KB/s of download, 5 KB/s of upload and 0.4 GB of disk for 90 days.
+
+Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-minute warm-up; the Network path group included):
+
+| Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
+|---|---:|---:|---:|---:|---:|---:|
+| `dns` | 33 | 0.8% | 65 MB | 3.8 / 1.9 KB/s | 15 GB | 0.13 GB |
+| `common` | 72 | 1.1% | 72 MB | 8.0 / 2.6 KB/s | 28 GB | 0.24 GB |
+| `default` | 92 | 3.3% | 84 MB | 21 / 9 KB/s | 81 GB | 0.57 GB |
+| `gaming` | 150 | 1.9% | 73 MB | 12 / 7 KB/s | 52 GB | 0.43 GB |
+| `hyperscalers` | 299 | 4.9% | 115 MB | 34 / 17 KB/s | 135 GB | 1.4 GB |
+| `europe` | 381 | 6.0% | 111 MB | 41 / 21 KB/s | 165 GB | 1.4 GB |
+| `devclouds` | 743 | 11.6% | 155 MB | 80 / 41 KB/s | 320 GB | 3.1 GB |
+| `clouds` | 1037 | 15.8% | 205 MB | 114 / 58 KB/s | 456 GB | 4.5 GB |
+| `all` | 1306 | 18.4% | 231 MB | 142 / 70 KB/s | 564 GB | 5.4 GB |
+
+- `default` costs more CPU than its size suggests because it runs 7 continuous hop-by-hop traces.
+- TLS session resumption, added after this run, cut download by a further ~23% and CPU by ~10% on `all` (110 KB/s, 18.4% vs 20.3% in a side-by-side run).
+- Traffic per month matters on metered connections: every target is probed every 15 seconds (ping every 5 seconds), around the clock.
+- Disk is about 1.4 bytes per measurement (compressed hourly blocks), plus about 40% for summaries and indexes.
+
+A `--config` file can start from any profiles and change them:
+
+```yaml
+name: mine
+extends: [aws, europe]            # or [default]
+remove: [AWS-eu-south-2]
+groups: [{id: home, title: Home}]
+add:
+  - {name: nas, host: 192.168.1.10, group: home, kinds: [icmp]}
+```
+
+Profiles are defined in [`internal/profile/profiles.yml`](internal/profile/profiles.yml) as selections over the catalog (by provider, provider kind, tag and region); the file documents the format.
+
+Missing a provider or region, or found a dead endpoint? Pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md#adding-or-fixing-endpoints).
+
+### The Overview (large profiles)
+
+With more than 150 targets (e.g. `--profile clouds` or `all`) the dashboard opens on the **Overview** rather than one chart per panel; the **Overview | Charts** switch under the Network path panel changes view on any profile. The Overview shows one probe kind at a time (the first selected of HTTPS, TCP, ICMP) over the selected time range:
+
+- **Breadth line**: how many targets are worse than normal at the same time, across how many providers and regions. When a quarter or more of them, across several providers and regions, degrade together, the common factor is your side. It backs up the verdict and never overrides it; in the first day, before targets have a normal, it counts only packet loss.
+- **Heatmap**: one row per provider (grouped by kind), one column per region. A cell is coloured by how much slower than normal its targets are (median), or by latency until half the targets have a normal (about a day); a red dot marks loss, a red cell with × heavy loss (20% or more), hatching means not measured. Click a cell or a provider to filter the table.
+- **Table**: every target with its mean round-trip time over the range, its normal, the ratio, loss and a status (failing: 20% loss or more; lossy: 1% or more; very slow: 3× normal or more; slow: 1.5× or more). Sort by any column, filter by text, region or problems only. Click a row to see that target alone on its chart; Back returns to the Overview.
+
+The Overview's window is at most 30 days (it reads every target at once). Filters, sort, view and focus are kept in the URL, so a link opens the same view; the public link shows the same Overview.
 
 ## ICMP permissions
 

@@ -1,0 +1,103 @@
+provider: binarylane
+display: BinaryLane
+kind: cloud
+category: [vps]
+sources:
+  - https://support.binarylane.com.au/support/solutions/articles/1000015169-where-are-binarylane-servers-located-
+  - https://syd-lg.binarylane.cloud/
+  - https://sin-lg.binarylane.cloud/
+notes: >-
+  Official BinaryLane looking-glass hosts <loc>-lg.binarylane.cloud, one per location: five NEXTDC sites
+  in Australia (S1 Sydney, M2 Melbourne, B2 Brisbane, P1 Perth, A1 Adelaide) and Equinix SG3 in
+  Singapore. GET / is a ~9 KB HTML looking-glass page; never fetch the 10/100/500 MB test files.
+targets:
+  - name: BinaryLane-syd
+    host: syd-lg.binarylane.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: syd
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: BinaryLane-mel
+    host: mel-lg.binarylane.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: mel
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: BinaryLane-bne
+    host: bne-lg.binarylane.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: bne
+    city: Brisbane
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: BinaryLane-per
+    host: per-lg.binarylane.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: per
+    city: Perth
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: BinaryLane-adl
+    host: adl-lg.binarylane.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: adl
+    city: Adelaide
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: BinaryLane-sin
+    host: sin-lg.binarylane.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: sin
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146

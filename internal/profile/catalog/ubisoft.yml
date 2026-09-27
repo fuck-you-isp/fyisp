@@ -1,0 +1,25 @@
+provider: ubisoft
+display: Ubisoft Connect
+kind: gaming-platform
+category: [api]
+sources:
+  - https://www.ubisoft.com/en-us/help/connectivity-and-performance/article/what-internet-ports-are-used-for-online-play/000072746
+notes: >-
+  public-ubiservices.ubi.com is the Ubisoft Services API that Ubisoft Connect and games
+  talk to first; it sits on AWS Global Accelerator (anycast). Unauthenticated GET /
+  returns a ~0.2 KB 404. Per-game server ranges are not published as ping hosts.
+targets:
+  - name: Ubisoft-ubiservices
+    host: public-ubiservices.ubi.com
+    kinds: [https, tcp, icmp]
+    region: global
+    country: FR
+    geo: eu
+    anycast: true
+    tags: [api]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 212

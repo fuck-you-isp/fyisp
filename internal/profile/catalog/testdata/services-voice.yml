@@ -1,0 +1,19 @@
+provider: services-voice
+display: Voice & video
+kind: service
+category: [voice]
+notes: Sample data for tests.
+targets:
+  - name: Discord
+    host: discord.com
+    kinds: [https, tcp, icmp]
+    anycast: true
+    geo: eu            # anycast wins: never in a regional profile
+    tags: [chat]
+  - name: Zoom-eu
+    host: zoom-eu.example.com
+    kinds: [https]
+    country: NL
+    geo: eu
+    host_overrides: {icmp: zoom-icmp.example.com}
+    notes: sample

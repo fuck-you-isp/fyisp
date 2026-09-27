@@ -1,0 +1,45 @@
+provider: transip
+display: TransIP
+kind: cloud
+category: [vps]
+sources:
+  - https://www.transip.eu/vps/network/
+  - https://www.transip.eu/knowledgebase/990-what-is-an-availability-zone
+notes: >-
+  TransIP (team.blue) sells VPS in two availability zones, AMS0 (Amsterdam) and RTM0 (Delft). No
+  speed-test or looking-glass host is published. AMS0 uses TransIP's public Linux mirror
+  mirror.transip.net (AS20857); traceroute ends behind svc1-tb-ams05.transip.net, so it is in
+  Amsterdam (geo-IP databases say Lelystad, which is the registrant address). Only /favicon.ico
+  (~4 KB) is fetched, never mirror content. No public host could be tied to RTM0 (Delft); it is kept
+  with kinds: [] and a placeholder host.
+targets:
+  - name: TransIP-AMS0
+    host: mirror.transip.net
+    kinds: [tcp, icmp]
+    path: /favicon.ico
+    region: ams0
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4286
+  - name: TransIP-RTM0
+    host: api.transip.nl
+    kinds: []
+    region: rtm0
+    city: Delft
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "no public host located in RTM0 found; placeholder host (api.transip.nl routes via ams05, i.e. Amsterdam)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0

@@ -1,0 +1,299 @@
+provider: ibm
+display: IBM Cloud
+kind: hyperscaler
+category: [storage]
+sources:
+  - https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-endpoints
+  - https://control.cloud-object-storage.cloud.ibm.com/v2/endpoints
+notes: >-
+  IBM Cloud publishes no ping host, so each location uses the public Cloud Object
+  Storage S3 endpoint s3.<location>.cloud-object-storage.appdomain.cloud. An
+  unauthenticated GET / returns 403 AccessDenied (255-byte XML), so no credentials
+  are sent. The file covers all 13 regional (multi-zone) endpoints and all 6
+  single-data-center endpoints in the COS endpoint list (2026-09-27). Single-site
+  ones are tagged single-site. in-che/che01 (Chennai) and ca-mon/mon01 (Montreal)
+  are in the same cities but have different IPs and are kept as separate targets.
+  Cross-region (us/eu/ap geo) endpoints are left out on purpose because they are not
+  tied to one location. Regionality was checked by RTT from Helsinki, FI: EU 31-57
+  ms, North America 111-172 ms, India 158-191 ms, Singapore 204 ms, Brazil 215 ms,
+  Japan 267-276 ms, Sydney 330 ms. One GET per 15 s is negligible.
+  2026-09-27 audit: the public COS endpoint JSON
+  (control.cloud-object-storage.cloud.ibm.com/v2/endpoints) lists exactly
+  these 19 regional and single-site endpoints. eu-fr2 (Paris, the restricted
+  financial-services region) has no COS endpoint, and its VPC API host is
+  behind Cloudflare anycast, so it is left out. The old per-datacenter
+  speedtest.<dc>.softlayer.com hosts still resolve but did not answer
+  ICMP/HTTP/HTTPS.
+targets:
+  - name: IBM-us-south
+    host: s3.us-south.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: us-south
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-us-east
+    host: s3.us-east.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: us-east
+    city: Washington DC
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-eu-gb
+    host: s3.eu-gb.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: eu-gb
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-eu-de
+    host: s3.eu-de.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: eu-de
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-au-syd
+    host: s3.au-syd.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: au-syd
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-jp-tok
+    host: s3.jp-tok.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: jp-tok
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-jp-osa
+    host: s3.jp-osa.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: jp-osa
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-ca-tor
+    host: s3.ca-tor.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: ca-tor
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-br-sao
+    host: s3.br-sao.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: br-sao
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-eu-es
+    host: s3.eu-es.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: eu-es
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-ca-mon
+    host: s3.ca-mon.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: ca-mon
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-in-che
+    host: s3.in-che.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: in-che
+    city: Chennai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-in-mum
+    host: s3.in-mum.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: in-mum
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-ams03
+    host: s3.ams03.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: ams03
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [single-site]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-che01
+    host: s3.che01.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: che01
+    city: Chennai
+    country: IN
+    geo: as
+    anycast: false
+    tags: [single-site]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-mon01
+    host: s3.mon01.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: mon01
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    tags: [single-site]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-par01
+    host: s3.par01.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: par01
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    tags: [single-site]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-sjc04
+    host: s3.sjc04.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: sjc04
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    tags: [single-site]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255
+  - name: IBM-sng01
+    host: s3.sng01.cloud-object-storage.appdomain.cloud
+    kinds: [https, tcp, icmp]
+    region: sng01
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [single-site]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 255

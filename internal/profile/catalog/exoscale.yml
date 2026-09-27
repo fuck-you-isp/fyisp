@@ -1,0 +1,124 @@
+provider: exoscale
+display: Exoscale
+kind: cloud
+category: [storage]
+sources:
+  - https://community.exoscale.com/platform/dc-zones/
+  - https://community.exoscale.com/product/storage/object-storage/quick-start/
+notes: >-
+  Exoscale publishes no speed-test hosts; each zone is probed via its public Simple Object Storage
+  endpoint sos-<zone>.exo.io (documented format). Anonymous GET / returns 403 with a ~110 B XML
+  body, which counts as reachable. Covers all 8 general-purpose zones; Madrid is announced but not live.
+targets:
+  - name: Exoscale-ch-gva-2
+    host: sos-ch-gva-2.exo.io
+    kinds: [https, tcp, icmp]
+    region: ch-gva-2
+    city: Geneva
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
+  - name: Exoscale-ch-dk-2
+    host: sos-ch-dk-2.exo.io
+    kinds: [https, tcp, icmp]
+    region: ch-dk-2
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
+  - name: Exoscale-de-fra-1
+    host: sos-de-fra-1.exo.io
+    kinds: [https, tcp, icmp]
+    region: de-fra-1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
+  - name: Exoscale-de-muc-1
+    host: sos-de-muc-1.exo.io
+    kinds: [https, tcp, icmp]
+    region: de-muc-1
+    city: Munich
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
+  - name: Exoscale-at-vie-1
+    host: sos-at-vie-1.exo.io
+    kinds: [https, tcp, icmp]
+    region: at-vie-1
+    city: Vienna
+    country: AT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
+  - name: Exoscale-at-vie-2
+    host: sos-at-vie-2.exo.io
+    kinds: [https, tcp, icmp]
+    region: at-vie-2
+    city: Vienna
+    country: AT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
+  - name: Exoscale-bg-sof-1
+    host: sos-bg-sof-1.exo.io
+    kinds: [https, tcp, icmp]
+    region: bg-sof-1
+    city: Sofia
+    country: BG
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
+  - name: Exoscale-hr-zag-1
+    host: sos-hr-zag-1.exo.io
+    kinds: [https, tcp, icmp]
+    region: hr-zag-1
+    city: Zagreb
+    country: HR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110

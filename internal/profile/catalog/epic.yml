@@ -1,0 +1,24 @@
+provider: epic
+display: Epic Games Store
+kind: gaming-platform
+category: [store]
+sources:
+  - https://www.epicgames.com/
+notes: >-
+  Epic Games Store / launcher front (Cloudflare-fronted, 404 with 0 B body).
+  Fortnite matchmaking ping hosts live in epic-games.yml.
+targets:
+  - name: Epic-launcher-api
+    host: launcher-public-service-prod06.ol.epicgames.com
+    kinds: [https, tcp, icmp]
+    region: global
+    country: US
+    geo: na
+    anycast: true
+    tags: [store]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 0

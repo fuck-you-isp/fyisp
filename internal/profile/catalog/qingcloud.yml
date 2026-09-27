@@ -1,0 +1,84 @@
+provider: qingcloud
+display: QingCloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docsv4.qingcloud.com/user_guide/storage/object_storage/
+notes: >-
+  QingCloud QingStor object-storage zones, each probed via <zone>.qingstor.com (GET / is a 231-byte
+  403): pek3a and pek3b (Beijing 3), sh1a (Shanghai 1) and gd2 (Guangdong 2). Every address geolocates
+  to its city. ap3 (Jakarta) resolves but did not answer. gd3.qingstor.com answers from a
+  Beijing-registered Yunify range with a different API and is not included.
+targets:
+  - name: QingCloud-pek3a
+    host: pek3a.qingstor.com
+    kinds: [https, tcp, icmp]
+    region: pek3a
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 231
+  - name: QingCloud-pek3b
+    host: pek3b.qingstor.com
+    kinds: [https, tcp, icmp]
+    region: pek3b
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 231
+  - name: QingCloud-sh1a
+    host: sh1a.qingstor.com
+    kinds: [https, tcp, icmp]
+    region: sh1a
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 231
+  - name: QingCloud-gd2
+    host: gd2.qingstor.com
+    kinds: [https, tcp, icmp]
+    region: gd2
+    city: Guangzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 231
+  - name: QingCloud-ap3
+    host: ap3.qingstor.com
+    kinds: []
+    region: ap3
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: resolves but no answer on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

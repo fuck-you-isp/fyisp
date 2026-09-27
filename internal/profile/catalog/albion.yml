@@ -1,0 +1,19 @@
+provider: albion-online
+display: Albion Online (Sandbox Interactive)
+kind: game
+category: [mmo]
+sources:
+  - https://www.albionstatus.com/server-location                                    # community: West = Washington DC, East = Singapore, Europe = Amsterdam
+  - https://forum.albiononline.com/index.php/Thread/198781-server-ip-address/     # official forum: tracert to the regional login servers
+notes: >-
+  Albion's three shards each have a regional login server that support
+  staff and the community use for tracert/ping. None answered ICMP or
+  TCP/443 on 2026-09-27 (ICMP filtered, game traffic is UDP), so all three
+  are kept with kinds: [] (known but unprobeable) and are skipped by
+  profiles. Map them to cloud catalog targets in the same metros instead:
+  Americas = Washington DC area (AWS us-east-1 / Azure eastus), Asia =
+  Singapore, Europe = Amsterdam.
+targets:
+  - {name: Albion-Americas, host: loginserver.live.albion.zone,       kinds: [], region: west,   city: Washington,  country: US, geo: na, anycast: false, tags: [lobby], verified: {date: 2026-09-27, icmp: false, tcp: false}}
+  - {name: Albion-Asia,     host: live02-loginserver.sg.albion.zone,  kinds: [], region: east,   city: Singapore,   country: SG, geo: as, anycast: false, tags: [lobby], verified: {date: 2026-09-27, icmp: false, tcp: false}}
+  - {name: Albion-Europe,   host: live03-loginserver.ams.albion.zone, kinds: [], region: europe, city: Amsterdam,   country: NL, geo: eu, anycast: false, tags: [lobby], verified: {date: 2026-09-27, icmp: false, tcp: false}}

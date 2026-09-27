@@ -20,11 +20,16 @@ import (
 // self-contained HTML file, no scripts) from the saved data. Like export it
 // opens the store read-only, so it works while fyisp runs.
 //
-//	fyisp report [--from T] [--to T] [--title S] [--redact] [--config FILE] [-o report.html]
+//	fyisp report [--from T] [--to T] [--title S] [--redact] [--config FILE | --profile A,B [--geo eu]] [-o report.html]
 func cmdReport(args []string) int {
 	fs := flag.NewFlagSet("fyisp report", flag.ContinueOnError)
 	dataDir := fs.String("data-dir", "", "data directory (default: per-OS state directory)")
 	configPath := fs.String("config", "", "profile file the data was recorded with (default: the built-in profile)")
+	var profiles profileNames
+	var geos geoList
+	fs.Var(&profiles, "profile", "profiles the data was recorded with (as given to fyisp --profile)")
+	fs.Var(&geos, "geo", "regions the data was recorded with (as given to fyisp --geo)")
+	noPath := fs.Bool("no-path", false, "the data was recorded with --no-path")
 	from := fs.String("from", "7d", "start time: RFC 3339, YYYY-MM-DD, or an age like 24h or 7d")
 	to := fs.String("to", "now", "end time, same forms as --from")
 	title := fs.String("title", "", "report title")
@@ -59,7 +64,11 @@ func cmdReport(args []string) int {
 	if !t.After(f) {
 		return fail(2, fmt.Errorf("--to must be after --from"))
 	}
-	prof, err := loadProfile(*configPath)
+	if *configPath != "" && (len(profiles) > 0 || len(geos) > 0) {
+		return fail(2, fmt.Errorf("--config and --profile/--geo are mutually exclusive"))
+	}
+	// No target limit: the report covers whatever the run was allowed.
+	prof, err := loadProfile(config{configPath: *configPath, profiles: profiles, geos: geos, noPath: *noPath})
 	if err != nil {
 		return fail(2, err)
 	}

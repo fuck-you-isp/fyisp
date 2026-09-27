@@ -1,0 +1,647 @@
+provider: aws
+display: Amazon Web Services
+kind: hyperscaler
+category: []
+sources:
+  - https://docs.aws.amazon.com/global-infrastructure/latest/regions/aws-regions.html   # region list (34 commercial regions, opt-in status)
+  - https://docs.aws.amazon.com/general/latest/gr/ddb.html                               # DynamoDB regional endpoints
+  - https://raw.githubusercontent.com/boto/botocore/develop/botocore/data/endpoints.json # partitions/regions incl. GovCloud, China, EU Sovereign Cloud
+  - https://ip-ranges.amazonaws.com/ip-ranges.json                                       # used to confirm each endpoint IP is announced for its own region
+  - https://github.com/mda590/cloudping.co                                               # prior art: AWS latency measured against dynamodb.<region>/ping
+  - https://www.aljazeera.com/news/2026/3/24/amazon-says-aws-bahrain-region-disrupted-following-drone-activity
+  - https://www.theregister.com/off-prem/2026/07/21/iran-says-its-struck-offline-aws-facility-in-bahrain-again/5275762
+  - https://www.datacenterdynamics.com/en/news/aws-launches-uae-cloud-region/
+notes: >-
+  One target per AWS commercial region (all 34 in AWS's region table as of
+  2026-09-27, including every opt-in region; re-checked against botocore
+  endpoints.json and ip-ranges.json). Endpoint is the public DynamoDB
+  regional endpoint, GET /ping, which returns a ~45-byte
+  "healthy: dynamodb.<region>.amazonaws.com" (200, text/plain, no auth, CORS)
+  and is the de-facto AWS latency-check endpoint (cloudping.co and similar
+  browser ping tools use it). It answers ICMP, TCP/443 and HTTPS in every
+  reachable region, and each resolved IP was confirmed via ip-ranges.json to
+  be announced for that same region (DYNAMODB/EC2 service), i.e. truly
+  regional, not CloudFront/global. Alternatives checked: s3.<region> answers
+  ICMP/TCP too but GET / is a 307 redirect to aws.amazon.com (not a health
+  endpoint); ec2.<region> drops ICMP and returns a 301. The previous
+  default.yml used s3.<region> hosts; target names are kept unchanged, only
+  the host changes to dynamodb.<region>. Cities: AWS publishes only
+  region names; city is the best-known metro (N. Virginia = Ashburn,
+  Ohio = Columbus area, N. California = San Jose/Bay Area, Oregon = Boardman,
+  Central Canada = Montreal, Spain = Aragón/Zaragoza, UAE = Abu Dhabi,
+  Malaysia = Kuala Lumpur area, New Zealand = Auckland, Thailand = Bangkok,
+  Mexico = Querétaro). me-south-1 (Bahrain) was unreachable on every
+  endpoint (dynamodb, s3, ec2, sts: DNS resolves, no ICMP/TCP) on
+  2026-09-27; AWS has not restored the region since drone strikes in
+  March 2026. It is kept with kinds: [] so it can be re-enabled once
+  it answers again. The separate partitions need separate accounts but have
+  public endpoints, so they are included and tagged restricted: AWS
+  GovCloud us-gov-west-1 (Oregon) / us-gov-east-1 (Ohio), China
+  cn-north-1 (Beijing) / cn-northwest-1 (Ningxia) under amazonaws.com.cn
+  (also tagged mainland-china), and the AWS European Sovereign Cloud
+  eusc-de-east-1 (Brandenburg) under amazonaws.eu. Each IP was confirmed in
+  ip-ranges.json for its own region (RTT from Helsinki: GovCloud east/west
+  129/175 ms, China 187/190 ms, EUSC 17 ms). Left out: the classified ISO
+  partitions (us-iso*, us-isob*, us-isof*, eu-isoe-west-1; not publicly
+  reachable), and Local Zones, Wavelength Zones and Outposts (no public
+  endpoint of their own; API traffic goes to the parent region).
+  Pre-launch: dynamodb.me-west-1 (Saudi Arabia, announced for 2026) and
+  dynamodb.sa-west-1 (Chile, announced for end-2026) already answer /ping
+  (150 / 223 ms) and have prefixes in ip-ranges.json, but neither is in
+  AWS's region table or botocore yet; add them as AWS-me-west-1 /
+  AWS-sa-west-1 once they launch. CloudFront and
+  Global Accelerator are anycast and live in the CDN catalog, not here.
+  Load: 1 small GET + 1 TCP connect + 3 pings per 15 s against a public
+  health endpoint is negligible for AWS.
+targets:
+  - name: AWS-us-east-1                # US East (N. Virginia)
+    host: dynamodb.us-east-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-east-1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-us-east-2                # US East (Ohio)
+    host: dynamodb.us-east-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-east-2
+    city: Columbus
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-us-west-1                # US West (N. California)
+    host: dynamodb.us-west-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-west-1
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-us-west-2                # US West (Oregon)
+    host: dynamodb.us-west-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-west-2
+    city: Boardman
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-af-south-1                # Africa (Cape Town)
+    host: dynamodb.af-south-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: af-south-1
+    city: Cape Town
+    country: ZA
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 43
+  - name: AWS-ap-east-1                # Asia Pacific (Hong Kong)
+    host: dynamodb.ap-east-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-east-1
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-ap-east-2                # Asia Pacific (Taipei)
+    host: dynamodb.ap-east-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-east-2
+    city: Taipei
+    country: TW
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-ap-south-1                # Asia Pacific (Mumbai)
+    host: dynamodb.ap-south-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-south-1
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 43
+  - name: AWS-ap-south-2                # Asia Pacific (Hyderabad)
+    host: dynamodb.ap-south-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-south-2
+    city: Hyderabad
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 43
+  - name: AWS-ap-southeast-1                # Asia Pacific (Singapore)
+    host: dynamodb.ap-southeast-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-southeast-1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-southeast-2                # Asia Pacific (Sydney)
+    host: dynamodb.ap-southeast-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-southeast-2
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-southeast-3                # Asia Pacific (Jakarta)
+    host: dynamodb.ap-southeast-3.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-southeast-3
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-southeast-4                # Asia Pacific (Melbourne)
+    host: dynamodb.ap-southeast-4.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-southeast-4
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-southeast-5                # Asia Pacific (Malaysia)
+    host: dynamodb.ap-southeast-5.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-southeast-5
+    city: Kuala Lumpur
+    country: MY
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-southeast-6                # Asia Pacific (New Zealand)
+    host: dynamodb.ap-southeast-6.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-southeast-6
+    city: Auckland
+    country: NZ
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-southeast-7                # Asia Pacific (Thailand)
+    host: dynamodb.ap-southeast-7.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-southeast-7
+    city: Bangkok
+    country: TH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-northeast-1                # Asia Pacific (Tokyo)
+    host: dynamodb.ap-northeast-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-northeast-1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-northeast-2                # Asia Pacific (Seoul)
+    host: dynamodb.ap-northeast-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-northeast-2
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ap-northeast-3                # Asia Pacific (Osaka)
+    host: dynamodb.ap-northeast-3.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ap-northeast-3
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 47
+  - name: AWS-ca-central-1                # Canada (Central)
+    host: dynamodb.ca-central-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ca-central-1
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 45
+  - name: AWS-ca-west-1                # Canada West (Calgary)
+    host: dynamodb.ca-west-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: ca-west-1
+    city: Calgary
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-eu-central-1                # Europe (Frankfurt)
+    host: dynamodb.eu-central-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-central-1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 45
+  - name: AWS-eu-central-2                # Europe (Zurich)
+    host: dynamodb.eu-central-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-central-2
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 45
+  - name: AWS-eu-west-1                # Europe (Ireland)
+    host: dynamodb.eu-west-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-west-1
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-eu-west-2                # Europe (London)
+    host: dynamodb.eu-west-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-west-2
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-eu-west-3                # Europe (Paris)
+    host: dynamodb.eu-west-3.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-west-3
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-eu-north-1                # Europe (Stockholm)
+    host: dynamodb.eu-north-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-north-1
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 43
+  - name: AWS-eu-south-1                # Europe (Milan)
+    host: dynamodb.eu-south-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-south-1
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 43
+  - name: AWS-eu-south-2                # Europe (Spain)
+    host: dynamodb.eu-south-2.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eu-south-2
+    city: Zaragoza
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 43
+  - name: AWS-il-central-1                # Israel (Tel Aviv)
+    host: dynamodb.il-central-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: il-central-1
+    city: Tel Aviv
+    country: IL
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 45
+  - name: AWS-mx-central-1                # Mexico (Central)
+    host: dynamodb.mx-central-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: mx-central-1
+    city: Querétaro
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 45
+  - name: AWS-me-south-1                # Middle East (Bahrain)
+    host: dynamodb.me-south-1.amazonaws.com
+    kinds: []
+    path: /ping
+    region: me-south-1
+    city: Manama
+    country: BH
+    geo: me
+    anycast: false
+    tags: [unreachable]            # region down since 2026-03 drone strikes; nothing answered on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: AWS-me-central-1                # Middle East (UAE)
+    host: dynamodb.me-central-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: me-central-1
+    city: Abu Dhabi
+    country: AE
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 45
+  - name: AWS-sa-east-1                # South America (São Paulo)
+    host: dynamodb.sa-east-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: sa-east-1
+    city: São Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 42
+  - name: AWS-us-gov-east-1                # AWS GovCloud (US-East), aws-us-gov partition
+    host: dynamodb.us-gov-east-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-gov-east-1
+    city: Columbus
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46
+  - name: AWS-us-gov-west-1                # AWS GovCloud (US-West), aws-us-gov partition
+    host: dynamodb.us-gov-west-1.amazonaws.com
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: us-gov-west-1
+    city: Boardman
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46
+  - name: AWS-cn-north-1                # China (Beijing), aws-cn partition, operated by Sinnet
+    host: dynamodb.cn-north-1.amazonaws.com.cn
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: cn-north-1
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46
+  - name: AWS-cn-northwest-1                # China (Ningxia), aws-cn partition, operated by NWCD
+    host: dynamodb.cn-northwest-1.amazonaws.com.cn
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: cn-northwest-1
+    city: Zhongwei
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 50
+  - name: AWS-eusc-de-east-1                # AWS European Sovereign Cloud (Germany), aws-eusc partition
+    host: dynamodb.eusc-de-east-1.amazonaws.eu
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: eusc-de-east-1
+    city: Brandenburg
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 46

@@ -3,7 +3,7 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string}} TargetInfo */
 /** @typedef {{target:string,kind:string,ratio:number,now_ms:number,normal_ms:number}} SlowItem */
 /** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[]}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
@@ -50,12 +50,36 @@ const LAYERS = [
 /** @type {Object<string,string>} */
 const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
 
-/** @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean}} */
-const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false, notes: false, reports: false, inv: null, band: true };
+/**
+ * Page state; everything but band lives in the URL hash. view: 'o' (Overview)
+ * or 'c' (charts), null for the profile's default; focus: a target shown alone
+ * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
+ * problems-only, heatmap cell and heatmap mode.
+ * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string}}
+ */
+const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false, notes: false, reports: false, inv: null, band: true,
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '' };
 /** @type {any} */
 let status = null;
 /** @type {Panel[]} */
 let panels = [];
+// Profiles with more panels than this load only the panels near the viewport
+// (big catalog profiles have 50+ panels; the public link is rate limited).
+const LAZY_PANELS = 12;
+// At most this many panel requests in flight at once.
+const PANEL_CONCURRENCY = 4;
+let panelSlots = PANEL_CONCURRENCY;
+/** @type {(() => void)[]} */
+const panelWaiters = [];
+async function panelSlot() {
+  if (panelSlots > 0) { panelSlots--; return; }
+  await new Promise((r) => panelWaiters.push(() => r(undefined)));
+}
+function panelRelease() {
+  const next = panelWaiters.shift();
+  if (next) next(); else panelSlots++;
+}
 let lastRefresh = 0;
 let refreshing = false;
 /** @type {Verdict|null} */
@@ -213,8 +237,21 @@ function readHash() {
     const ks = k.split(',').filter((x) => KINDS.includes(x));
     state.kinds = new Set(ks.length ? ks : ['https']);
   }
+  const v = p.get('v');
+  state.view = v === 'o' || v === 'c' ? v : null;
+  state.focus = p.get('f') || null;
+  state.os = p.get('os') || '';
+  state.oq = p.get('oq') || '';
+  const og = p.get('og');
+  state.og = og && GEOS.includes(og) ? og : '';
+  state.op = p.get('op') === '1';
+  state.oc = p.get('oc') || '';
+  const om = p.get('om');
+  state.om = om === 'r' || om === 'ms' ? om : '';
 }
-function writeHash() {
+/** The last hash the page applied (hashchange and popstate both fire on Back). */
+let lastHash = '';
+function hashString() {
   const p = new URLSearchParams();
   p.set('r', state.range);
   if (state.from != null && state.to != null) { p.set('from', String(state.from)); p.set('to', String(state.to)); }
@@ -223,8 +260,20 @@ function writeHash() {
   if (state.notes) p.set('n', '1');
   if (state.reports) p.set('rp', '1');
   if (state.inv) p.set('t', state.inv);
-  const s = '#' + p.toString();
-  if (location.hash !== s) history.replaceState(null, '', s);
+  if (state.view) p.set('v', state.view);
+  if (state.focus) p.set('f', state.focus);
+  if (state.os) p.set('os', state.os);
+  if (state.oq) p.set('oq', state.oq);
+  if (state.og) p.set('og', state.og);
+  if (state.op) p.set('op', '1');
+  if (state.oc) p.set('oc', state.oc);
+  if (state.om) p.set('om', state.om);
+  return '#' + p.toString();
+}
+function writeHash() {
+  const s = hashString();
+  if (location.hash !== s) history.replaceState(history.state, '', s);
+  lastHash = location.hash;
 }
 function isRelative() { return state.from == null; }
 function rangeSecs() { return (RANGES.find(([k]) => k === state.range) || RANGES[1])[1]; }
@@ -307,6 +356,9 @@ class Panel {
     this.hover = false;
     this.colors = new Map(targets.map((t, i) => [t.name, i]));
     this.isPath = group.id === PATH_GROUP;
+    // visible: near the viewport (always true unless lazy). stale: needs a load once visible.
+    this.visible = true;
+    this.stale = true;
 
     this.meta = h('span', { class: 'meta' });
     this.csv = h('a', { href: '#', download: '', title: 'Download this panel as CSV', text: 'CSV' });
@@ -354,14 +406,22 @@ class Panel {
   async load() {
     this.ctl?.abort();
     const ctl = this.ctl = new AbortController();
+    this.stale = false;
     const { from, to } = queryRange();
     const points = Math.min(2000, Math.max(50, Math.round(this.width())));
     const q = new URLSearchParams({ group: this.group.id, from, to, points: String(points) });
     this.csv.setAttribute('href', 'api/panel.csv?' + q);
     this.chartEl.classList.add('loading');
     try {
+      await panelSlot();
       /** @type {PanelData} */
-      const d = await fetchJSON('api/panel?' + q, { signal: ctl.signal });
+      let d;
+      try {
+        if (ctl.signal.aborted) return;
+        d = await fetchJSON('api/panel?' + q, { signal: ctl.signal });
+      } finally {
+        panelRelease();
+      }
       if (ctl.signal.aborted) return;
       this.data = d;
       this.render();
@@ -912,6 +972,10 @@ function servicesStats() {
     if (p.isPath || !p.data) continue;
     const r = recentStats(p.data, (s) => state.kinds.has(s.kind));
     ever += r.ever; n += r.n; lost += r.lost;
+  }
+  // The Overview hides the service panels: use its window totals instead.
+  if (!ever && ov && ov.data && overviewShown()) {
+    for (const r of ov.data.rows) { ever += r.n + r.lost; n += r.n; lost += r.lost; }
   }
   return { ever, n, lost, loss: n + lost ? lost / (n + lost) : NaN, rtt: null };
 }
@@ -1895,6 +1959,678 @@ async function loadBaselines() {
 
 function fmtRatio(/** @type {number} */ r) { return '×' + (r >= 10 ? r.toFixed(0) : r.toFixed(1)); }
 
+// ---------- overview (large profiles) ----------
+
+/** @typedef {{target:string,state:string,now_ms?:number,n:number,lost:number,loss:number,reason?:string,normal_ms?:number,normal_p95_ms?:number,ratio?:number,hour_of_day?:boolean}} OvRow */
+/** @typedef {{targets:number,measured:number,with_normal:number,slow:number,lossy:number,failing:number,providers:number,providers_affected:number,geos:number,geos_affected:number}} OvSummary */
+/** @typedef {{from:number,to:number,kind:string,capped?:boolean,summary:OvSummary,rows:OvRow[]}} OvData */
+
+// Profiles with more non-path targets than this open on the Overview.
+const OVERVIEW_MIN = 150;
+const FAIL_LOSS = 0.2; // the verdict engine's lossBad
+const VERY_SLOW = 3; // the verdict engine's spikeFactor
+// Loss needs evidence: at least 2 lost of at least 10 samples (as the server's row states).
+const LOSS_MIN_LOST = 2, LOSS_MIN_SEEN = 10;
+const GEOS = ['na', 'sa', 'eu', 'me', 'af', 'as', 'oc', 'global'];
+/** @type {Object<string,string>} */
+const GEO_TITLE = { na: 'North America', sa: 'South America', eu: 'Europe', me: 'Middle East', af: 'Africa', as: 'Asia', oc: 'Oceania', global: 'Global', '': '—' };
+/** @type {Object<string,string>} */
+const GEO_SHORT = { na: 'NA', sa: 'SA', eu: 'EU', me: 'ME', af: 'AF', as: 'AS', oc: 'OC', global: 'GL', '': '—' };
+const PROVIDER_KINDS = [['hyperscaler', 'Hyperscalers'], ['cloud', 'Clouds'], ['cdn', 'CDNs'], ['dns', 'DNS'], ['service', 'Services'], ['game', 'Games'], ['gaming-platform', 'Gaming platforms'], ['', 'Other']];
+/** @type {Object<string,{label:string,rank:number}>} */
+const OV_STATES = {
+  failing: { label: 'Failing', rank: 0 }, lossy: { label: 'Lossy', rank: 1 }, very_slow: { label: 'Very slow', rank: 2 },
+  slow: { label: 'Slow', rank: 3 }, ok: { label: 'OK', rank: 4 }, unmeasured: { label: 'Not measured', rank: 5 },
+};
+const PROBLEMS = new Set(['failing', 'lossy', 'very_slow', 'slow']);
+const RATIO_BINS = [[1.25, '<1.25×'], [1.5, '1.25–1.5×'], [VERY_SLOW, '1.5–3×'], [Infinity, '≥3×']];
+const MS_BINS = [[30, '<30'], [60, '30–60'], [100, '60–100'], [200, '100–200'], [Infinity, '≥200 ms']];
+// Table columns: id, header, class, sortable.
+const OV_COLS = [['target', 'Target', 't'], ['provider', 'Provider', 'pv sm-off'], ['loc', 'Location', 'loc sm-off'], ['region', 'Region', 'rg sm-off'],
+  ['now', 'Now', 'num'], ['normal', 'Normal', 'num sm-off'], ['ratio', '×Normal', 'num'], ['loss', 'Loss', 'num'], ['state', 'Status', 'st sm-off']];
+// Heatmap geometry (px): a provider label, then one cell per region.
+const HM_LABEL = 150, HM_CELL = 16, HM_GAP = 2, HM_BLOCK_GAP = 24;
+
+let bigProfile = false;
+/** @type {Overview|null} */
+let ov = null;
+
+/** The view on screen: the Overview ('o') or the chart wall ('c'). Focus is always charts. */
+function currentView() {
+  if (state.focus && focusPanel()) return 'c';
+  return state.view || (bigProfile ? 'o' : 'c');
+}
+function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
+/** The kind the Overview shows: the first selected of HTTPS, TCP, ICMP. */
+function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || 'https'; }
+function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.targets.some((t) => t.name === state.focus)) || null : null; }
+/** Panels that are on screen and may load: the path panel always, the others per view and focus. */
+function panelShown(/** @type {Panel} */ p) {
+  if (p.isPath) return true;
+  if (currentView() === 'o') return false;
+  const fp = focusPanel();
+  return !fp || fp === p;
+}
+function loadStale() { for (const p of panels) if (p.visible && p.stale && panelShown(p)) p.load(); }
+function fmtInt(/** @type {number} */ n) { return n.toLocaleString('en-US'); }
+function median(/** @type {number[]} */ v) {
+  if (!v.length) return NaN;
+  const s = [...v].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+/** Worst first: state, then loss, then ratio. */
+function bySeverity(/** @type {OvRow} */ a, /** @type {OvRow} */ b) {
+  return (OV_STATES[a.state]?.rank ?? 9) - (OV_STATES[b.state]?.rank ?? 9) || b.loss - a.loss || (b.ratio ?? 0) - (a.ratio ?? 0) || a.target.localeCompare(b.target);
+}
+function geoOf(/** @type {TargetInfo} */ t) { return t.geo || ''; }
+function locationOf(/** @type {TargetInfo} */ t) { return [t.city, t.country].filter(Boolean).join(', '); }
+function windowWords(/** @type {OvData} */ d) {
+  return isRelative() ? `last ${fmtDur(Number(rangeSecs()) * 1000)}` : `${fmtWhen(d.from)} – ${fmtWhen(d.to)}`;
+}
+
+/**
+ * The breadth line: how many targets are worse than normal at once. It
+ * corroborates the verdict and never overrides it.
+ * @param {OvSummary} s @param {string} when
+ */
+function breadthText(s, when) {
+  const bad = s.slow + s.lossy + s.failing;
+  const lossy = s.lossy + s.failing;
+  const pl = (/** @type {number} */ n, /** @type {string} */ w) => `${fmtInt(n)} ${w}${n === 1 ? '' : 's'}`;
+  if (!s.measured) return { strong: false, text: `No target has been measured yet (${when}).` };
+  if (s.with_normal < s.targets / 2) {
+    // Too early for "normal": loss only.
+    if (!lossy) return { strong: false, text: `None of the ${fmtInt(s.measured)} measured targets are losing packets, ${when}.` };
+    return { strong: false, text: `${fmtInt(lossy)} of ${fmtInt(s.measured)} targets are losing packets, ${when}.` };
+  }
+  if (!bad) return { strong: false, text: `All ${fmtInt(s.measured)} measured targets are within their normal, ${when}.` };
+  if (bad >= s.measured / 4 && s.providers_affected >= 3 && s.geos_affected >= 2) {
+    return {
+      strong: true,
+      text: `${fmtInt(bad)} of ${fmtInt(s.measured)} targets (${Math.round((bad / s.measured) * 100)}%) across ${fmtInt(s.providers_affected)} of ${pl(s.providers, 'provider')} in ${pl(s.geos_affected, 'region')} got slower or lost packets at the same time. ` +
+        'When this many unrelated networks degrade at once, the common factor is your side: your connection or your ISP\'s routes.',
+    };
+  }
+  const where = [pl(s.providers_affected, 'provider')];
+  if (s.geos) where.push(pl(s.geos_affected, 'region'));
+  return { strong: false, text: `${fmtInt(bad)} of ${fmtInt(s.measured)} targets are worse than normal (${where.join(', ')}), ${when}.` };
+}
+
+/** @typedef {{t:TargetInfo,row:OvRow|null,tr:HTMLElement,cells:Object<string,HTMLElement>}} OvEntry */
+/** @typedef {{id:string,title:string,kind:string,geos:Map<string,string[]>}} OvProvider */
+
+class Overview {
+  constructor() {
+    /** @type {OvData|null} */
+    this.data = null;
+    /** @type {AbortController|null} */
+    this.ctl = null;
+    this.kind = '';
+    /** @type {Map<string, OvEntry>} */
+    this.entries = new Map();
+    /** @type {string[]} */
+    this.order = [];
+    /** @type {Map<string, HTMLElement>} heatmap cells by provider + '\0' + geo */
+    this.cells = new Map();
+    this.hmCols = 0;
+    /** @type {OvProvider[]} */
+    this.provs = [];
+    /** @type {HTMLElement|null} */
+    this.noneRow = null;
+    /** @type {number|null} */
+    this.saveScroll = null;
+    this.err = '';
+
+    this.meta = h('span', { class: 'meta' });
+    this.breadth = h('p', { class: 'ov-breadth', 'aria-live': 'polite' });
+    this.modeSeg = h('div', { class: 'seg sm', role: 'group', 'aria-label': 'Heatmap colour' });
+    this.hmLegend = h('div', { class: 'hm-legend' });
+    this.hm = h('div', { class: 'hm' });
+    this.hmWrap = h('div', { class: 'hm-wrap' }, this.hm);
+    this.filterIn = /** @type {HTMLInputElement} */ (h('input', { type: 'search', class: 'ov-q', placeholder: 'Filter: target, provider, city, country', 'aria-label': 'Filter targets' }));
+    this.filterIn.addEventListener('input', () => { state.oq = this.filterIn.value.trim(); writeHash(); this.applyRows(); });
+    this.chips = h('div', { class: 'seg sm ov-geos', role: 'group', 'aria-label': 'Region' });
+    this.probBtn = h('button', { class: 'btn sm', type: 'button', text: 'Problems only', onclick: () => { state.op = !state.op; writeHash(); this.renderControls(); this.applyRows(); } });
+    this.cellChip = h('span', { class: 'ov-cell' });
+    this.count = h('span', { class: 'ov-count muted small', 'aria-live': 'polite' });
+    this.thead = h('tr');
+    this.tbody = h('tbody');
+    this.table = h('table', { class: 'ovt' }, h('thead', {}, this.thead), this.tbody);
+    this.tableBox = h('div', { class: 'ovt-box' },
+      h('div', { class: 'ov-controls' }, this.filterIn, this.chips, this.probBtn, this.cellChip, this.count),
+      h('div', { class: 'ovt-wrap' }, this.table));
+    this.el = h('section', { class: 'panel overview', id: 'overview', 'aria-label': 'Overview of every target' },
+      h('div', { class: 'panel-head' }, h('h2', { text: 'Overview' }), this.meta),
+      this.breadth,
+      h('div', { class: 'hm-head' }, h('span', { class: 'hm-title', text: 'Providers by region' }), this.modeSeg, this.hmLegend),
+      this.hmWrap,
+      this.tableBox);
+    this.hm.addEventListener('mousemove', (e) => this.hover(e));
+    this.hm.addEventListener('mouseleave', hideTip);
+    this.hm.addEventListener('click', (e) => this.click(e));
+    new ResizeObserver(() => { if (this.hmCols && this.blocks() !== this.hmCols) this.layout(); }).observe(this.hmWrap);
+  }
+
+  /** Non-path targets that have this kind, by name. */
+  targetsOf(/** @type {string} */ kind) { return allTargets.filter((t) => !t.layer && t.kinds.includes(kind)); }
+
+  async load() {
+    this.ctl?.abort();
+    const ctl = this.ctl = new AbortController();
+    const kind = ovKind();
+    const { from, to } = queryRange();
+    this.el.classList.add('loading');
+    try {
+      /** @type {OvData} */
+      const d = await fetchJSON('api/overview?' + new URLSearchParams({ from, to, kind }), { signal: ctl.signal });
+      if (ctl.signal.aborted) return;
+      this.data = d;
+      this.err = '';
+      if (d.kind !== this.kind) this.build(d.kind);
+      this.render();
+    } catch (e) {
+      if (/** @type {any} */ (e).name === 'AbortError') return;
+      this.err = `Could not load the overview: ${/** @type {Error} */ (e).message}`;
+      this.renderBreadth();
+    } finally {
+      if (this.ctl === ctl) this.el.classList.remove('loading');
+    }
+  }
+
+  /** (Re)builds the table rows and the heatmap for a kind; refreshes then update them in place. */
+  build(/** @type {string} */ kind) {
+    this.kind = kind;
+    this.entries = new Map();
+    for (const t of this.targetsOf(kind)) {
+      const cells = {
+        now: h('td', { class: 'num' }), normal: h('td', { class: 'num sm-off' }), ratio: h('td', { class: 'num' }),
+        loss: h('td', { class: 'num' }), state: h('td', { class: 'st sm-off' }),
+      };
+      const geo = geoOf(t);
+      const tr = h('tr', { onclick: () => openFocus(t.name) },
+        h('td', { class: 't' },
+          h('button', { class: 'ov-name', type: 'button', title: `Show ${t.name} on its chart`, text: t.name }),
+          h('span', { class: 'sub', text: `${t.provider_title || ''} · ${GEO_SHORT[geo]}` })),
+        h('td', { class: 'pv sm-off', text: t.provider_title || '' }),
+        h('td', { class: 'loc sm-off', text: locationOf(t) || '—' }),
+        h('td', { class: 'rg sm-off', text: GEO_TITLE[geo] }),
+        cells.now, cells.normal, cells.ratio, cells.loss, cells.state,
+        h('td', { class: 'act sm-off' }, traceOn && t.trace ? traceButton(t.name, 'Investigate') : null));
+      this.entries.set(t.name, { t, row: null, tr, cells });
+    }
+    this.order = [];
+    this.tbody.replaceChildren();
+    this.layout();
+  }
+
+  /** Heatmap blocks side by side that fit the width. */
+  blocks() {
+    const w = this.hmWrap.clientWidth;
+    const bw = HM_LABEL + this.geoCols().length * (HM_CELL + HM_GAP);
+    return Math.max(1, Math.floor((w + HM_BLOCK_GAP) / (bw + HM_BLOCK_GAP)));
+  }
+
+  geoCols() {
+    const cols = [...GEOS];
+    if ([...this.entries.values()].some((e) => !geoOf(e.t))) cols.push('');
+    return cols;
+  }
+
+  /** Providers grouped by kind (catalog order of kinds), alphabetical within: stable across refreshes. */
+  providers() {
+    /** @type {Map<string, OvProvider>} */
+    const m = new Map();
+    for (const e of this.entries.values()) {
+      const id = e.t.provider || e.t.group;
+      let p = m.get(id);
+      if (!p) m.set(id, p = { id, title: e.t.provider_title || id, kind: e.t.provider_kind || '', geos: new Map() });
+      const g = geoOf(e.t);
+      if (!p.geos.has(g)) p.geos.set(g, []);
+      /** @type {string[]} */ (p.geos.get(g)).push(e.t.name);
+    }
+    const kindIdx = (/** @type {string} */ k) => { const i = PROVIDER_KINDS.findIndex(([x]) => x === k); return i < 0 ? PROVIDER_KINDS.length : i; };
+    return [...m.values()].sort((a, b) => kindIdx(a.kind) - kindIdx(b.kind) || a.title.localeCompare(b.title));
+  }
+
+  /** Lays the heatmap out in blocks of provider rows, each with the region header. */
+  layout() {
+    this.provs = this.providers();
+    const cols = this.geoCols();
+    // Rows: a kind heading before each kind's first provider.
+    /** @type {({kind:string}|{p:OvProvider})[]} */
+    const rows = [];
+    let lastKind = null;
+    const kinds = new Set(this.provs.map((p) => p.kind));
+    for (const p of this.provs) {
+      if (p.kind !== lastKind && kinds.size > 1) rows.push({ kind: p.kind });
+      lastKind = p.kind;
+      rows.push({ p });
+    }
+    const nb = this.hmCols = Math.min(this.blocks(), Math.max(1, Math.ceil(rows.length / 8)));
+    const per = Math.ceil(rows.length / nb);
+    this.cells = new Map();
+    const blocks = [];
+    for (let b = 0; b < nb; b++) {
+      const part = rows.slice(b * per, (b + 1) * per);
+      if (!part.length) break;
+      const el = h('div', { class: 'hm-block', role: 'presentation' });
+      el.style.gridTemplateColumns = `minmax(0, ${HM_LABEL}px) repeat(${cols.length}, ${HM_CELL}px)`;
+      el.append(h('span', { class: 'hm-corner' }), ...cols.map((g) => h('span', { class: 'hm-g', title: GEO_TITLE[g] + (g === 'global' ? ' (anycast)' : ''), text: GEO_SHORT[g] })));
+      for (const r of part) {
+        if ('kind' in r) {
+          el.append(h('span', { class: 'hm-kind', text: (PROVIDER_KINDS.find(([k]) => k === r.kind) || ['', 'Other'])[1] }));
+          continue;
+        }
+        const p = r.p;
+        el.append(h('button', { class: 'hm-l', type: 'button', 'data-p': p.id, title: `Show only ${p.title} in the table`, text: p.title }));
+        for (const g of cols) {
+          const c = h('span', { class: 'hm-c', 'data-p': p.id, 'data-g': g });
+          if (p.geos.has(g)) this.cells.set(p.id + '\0' + g, c);
+          el.append(c);
+        }
+      }
+      blocks.push(el);
+    }
+    this.hm.replaceChildren(...blocks);
+    this.hm.style.gridTemplateColumns = `repeat(${blocks.length}, max-content)`;
+    if (this.data) this.renderHeatmap();
+  }
+
+  /** Heatmap colour mode: "vs normal" once half the targets have a normal, else latency; the hash overrides. */
+  mode() {
+    const s = this.data?.summary;
+    const normalOK = !!s && s.with_normal > 0;
+    if (state.om === 'r' && normalOK) return 'r';
+    if (state.om === 'ms') return 'ms';
+    return s && s.with_normal >= s.targets / 2 && normalOK ? 'r' : 'ms';
+  }
+
+  render() {
+    const d = /** @type {OvData} */ (this.data);
+    for (const e of this.entries.values()) e.row = null;
+    for (const r of d.rows) { const e = this.entries.get(r.target); if (e) e.row = r; }
+    const span = d.to - d.from;
+    this.meta.textContent = `${KIND_LABEL[/** @type {'https'} */ (d.kind)]} · ${fmtInt(d.rows.length)} targets · mean over the ${windowWords(d)}`;
+    this.renderBreadth();
+    this.renderHead(span);
+    for (const e of this.entries.values()) this.renderRow(e);
+    this.renderControls();
+    this.applyRows();
+    this.renderHeatmap();
+  }
+
+  renderBreadth() {
+    const d = this.data;
+    if (this.err || !d) {
+      this.breadth.className = 'ov-breadth err';
+      this.breadth.textContent = this.err || 'Loading…';
+      return;
+    }
+    const b = breadthText(d.summary, windowWords(d));
+    this.breadth.className = 'ov-breadth' + (b.strong ? ' strong' : '');
+    /** @type {(string|Node)[]} */
+    const kids = [b.text];
+    // The banner judges the last minute with stricter thresholds; say so, so
+    // that "All good" above and "N targets lost packets" here do not read
+    // as a contradiction.
+    if (verdict && verdict.kind !== 'unknown') {
+      const what = d.summary.with_normal < d.summary.targets / 2 ? '1% loss or more' : '1% loss or more, or 1.5× their normal';
+      const kind = KIND_LABEL[/** @type {'https'} */ (d.kind)];
+      kids.push(h('span', { class: 'muted', text: ` This line covers ${kind} over the whole range and counts ${what}; the verdict above judges every kind over the last minute.` }));
+    }
+    const un = d.summary.targets - d.summary.measured;
+    if (un) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
+    if (d.capped) kids.push(h('span', { class: 'muted', text: ` The Overview covers at most the last 30 days of the range.` }));
+    this.breadth.replaceChildren(...kids);
+  }
+
+  renderHead(/** @type {number} */ span) {
+    const [sc, desc] = this.sortKey();
+    this.thead.replaceChildren(...OV_COLS.map(([id, label, cls]) => {
+      let text = label;
+      if (id === 'now') text = `${isRelative() ? 'Now' : 'Mean'} (${fmtDur(span)})`;
+      const on = sc === id;
+      return h('th', { class: cls, scope: 'col', 'aria-sort': on ? (desc ? 'descending' : 'ascending') : null },
+        h('button', { type: 'button', class: 'ov-sort', title: `Sort by ${label}`, onclick: () => this.sortBy(id) }, text, on ? h('span', { class: 'arr', 'aria-hidden': 'true', text: desc ? ' ▾' : ' ▴' }) : null));
+    }), h('th', { class: 'act sm-off', scope: 'col' }));
+  }
+
+  /** [column, descending]; '' is the default severity order. @returns {[string, boolean]} */
+  sortKey() {
+    const s = state.os || '';
+    return s.startsWith('-') ? [s.slice(1), true] : [s, false];
+  }
+
+  sortBy(/** @type {string} */ id) {
+    const [sc, desc] = this.sortKey();
+    // Numbers sort largest first on the first click, text A to Z.
+    const numeric = ['now', 'normal', 'ratio', 'loss'].includes(id);
+    state.os = sc === id ? (desc ? id : '-' + id) : (numeric ? '-' + id : id);
+    writeHash();
+    if (this.data) { this.renderHead(this.data.to - this.data.from); this.applyRows(); }
+  }
+
+  renderRow(/** @type {OvEntry} */ e) {
+    const r = e.row, c = e.cells;
+    const st = r ? r.state : 'unmeasured';
+    e.tr.className = `st-${st}`;
+    c.now.textContent = r && r.now_ms != null ? fmtMs(r.now_ms) : '—';
+    c.normal.textContent = r && r.normal_ms != null ? fmtMs(r.normal_ms) : '—';
+    c.normal.title = r && r.normal_ms != null
+      ? `Normal: median ${fmtMs(r.normal_ms)} ms, p95 ${fmtMs(r.normal_p95_ms)} ms over the past week${r.hour_of_day ? ', same hour of day' : ''}`
+      : 'No normal yet (needs about a day of data)';
+    c.ratio.textContent = r && r.ratio != null ? fmtRatio(r.ratio) : '—';
+    c.ratio.className = 'num' + (r && r.ratio != null && r.ratio >= VERY_SLOW ? ' bad' : r && r.ratio != null && r.ratio >= SLOW_RATIO ? ' warn' : '');
+    c.loss.textContent = r && r.n + r.lost ? fmtPct(r.loss) : '—';
+    // Colour follows the state: loss without enough evidence yet stays plain.
+    c.loss.className = 'num' + (st === 'failing' ? ' bad' : st === 'lossy' ? ' warn' : '');
+    c.loss.title = r && r.lost ? `${r.lost} of ${r.n + r.lost} samples lost, mostly ${REASON_LABEL[/** @type {'dns'} */ (r.reason || 'other')] || r.reason}` : '';
+    const chip = c.state.firstElementChild;
+    if (!chip || chip.getAttribute('data-st') !== st) c.state.replaceChildren(h('span', { class: `ovst st-${st}`, 'data-st': st, text: OV_STATES[st]?.label || st }));
+  }
+
+  renderControls() {
+    const present = new Set([...this.entries.values()].map((e) => geoOf(e.t)));
+    const geos = [...GEOS, ''].filter((g) => present.has(g));
+    this.chips.hidden = geos.length < 2;
+    this.chips.replaceChildren(h('button', { type: 'button', text: 'All', 'aria-pressed': String(!state.og), onclick: () => this.setGeo('') }),
+      ...geos.filter((g) => g).map((g) => h('button', { type: 'button', text: GEO_SHORT[g], title: GEO_TITLE[g], 'aria-pressed': String(state.og === g), onclick: () => this.setGeo(g) })));
+    this.probBtn.setAttribute('aria-pressed', String(state.op));
+    if (this.filterIn.value.trim() !== state.oq) this.filterIn.value = state.oq;
+    const [pid, g] = this.cellFilter();
+    if (pid) {
+      const p = (this.provs || []).find((x) => x.id === pid);
+      this.cellChip.replaceChildren(h('button', {
+        class: 'btn sm on', type: 'button', title: 'Clear this filter',
+        text: `${p ? p.title : pid}${g != null ? ' · ' + GEO_TITLE[g] : ''} ×`, onclick: () => this.setCell(''),
+      }));
+    } else this.cellChip.replaceChildren();
+    const m = this.mode();
+    const noNormal = !this.data || this.data.summary.with_normal === 0;
+    this.modeSeg.replaceChildren(
+      h('button', { type: 'button', text: 'vs normal', 'aria-pressed': String(m === 'r'), disabled: noNormal, title: noNormal ? 'No normal yet: it needs about a day of data' : 'Colour by how much slower than normal', onclick: () => this.setMode('r') }),
+      h('button', { type: 'button', text: 'latency', 'aria-pressed': String(m === 'ms'), title: 'Colour by round-trip time', onclick: () => this.setMode('ms') }));
+    this.renderLegend(m);
+  }
+
+  renderLegend(/** @type {string} */ m) {
+    const sw = (/** @type {string} */ cls, /** @type {string} */ label, /** @type {string} */ glyph = '') => h('span', { class: 'hm-li' }, h('span', { class: `hm-c ${cls}`, text: glyph }), label);
+    const kids = m === 'r'
+      ? RATIO_BINS.map(([, l], i) => sw(`r${i}`, /** @type {string} */ (l)))
+      : MS_BINS.map(([, l], i) => sw(`l${i}`, /** @type {string} */ (l)));
+    kids.push(sw(m === 'r' ? 'r0 dot' : 'l0 dot', 'loss ≥1%'), sw('fail', 'loss ≥20%', '×'), sw('unm', 'not measured'));
+    if (m === 'r') kids.push(sw('nonorm', 'no normal yet', '·'));
+    this.hmLegend.replaceChildren(...kids);
+  }
+
+  setGeo(/** @type {string} */ g) { state.og = g; writeHash(); this.renderControls(); this.applyRows(); }
+  setMode(/** @type {string} */ m) { state.om = m; writeHash(); this.renderControls(); this.renderHeatmap(); }
+  setCell(/** @type {string} */ v) { state.oc = v; writeHash(); this.renderControls(); this.applyRows(); this.renderHeatmap(); }
+
+  /** The heatmap filter: [provider, region] (region undefined: the whole provider). */
+  cellFilter() {
+    if (!state.oc) return ['', undefined];
+    const i = state.oc.lastIndexOf(':');
+    if (i < 0) return [state.oc, undefined];
+    const g = state.oc.slice(i + 1);
+    return [state.oc.slice(0, i), g === '*' ? undefined : g];
+  }
+
+  /** Filters and sorts the table rows, moving rows only when the order changed. */
+  applyRows() {
+    const q = state.oq.toLowerCase();
+    const [pid, pg] = this.cellFilter();
+    const [sc, desc] = this.sortKey();
+    /** @type {OvEntry[]} */
+    const shown = [];
+    let total = 0;
+    for (const e of this.entries.values()) {
+      total++;
+      const t = e.t, st = e.row ? e.row.state : 'unmeasured';
+      let ok = true;
+      if (q) ok = [t.name, t.provider_title, t.city, t.country].some((x) => x && x.toLowerCase().includes(q));
+      if (ok && state.og) ok = geoOf(t) === state.og;
+      if (ok && state.op) ok = PROBLEMS.has(st);
+      if (ok && pid) ok = (t.provider || t.group) === pid && (pg === undefined || geoOf(t) === pg);
+      e.tr.hidden = !ok;
+      if (ok) shown.push(e);
+    }
+    this.count.textContent = `Showing ${fmtInt(shown.length)} of ${fmtInt(total)}`;
+    const all = [...this.entries.values()];
+    all.sort(this.comparator(sc, desc));
+    const names = all.map((e) => e.t.name);
+    if (names.length !== this.order.length || names.some((n, i) => n !== this.order[i])) {
+      const ae = document.activeElement;
+      this.tbody.append(...all.map((e) => e.tr));
+      this.order = names;
+      if (ae instanceof HTMLElement && this.tbody.contains(ae)) ae.focus({ preventScroll: true });
+    }
+    if (!shown.length && total) {
+      if (!this.noneRow) this.noneRow = h('tr', { class: 'none' }, h('td', { colspan: String(OV_COLS.length + 1), class: 'muted', text: 'No target matches the filters.' }));
+      this.tbody.append(this.noneRow);
+    } else this.noneRow?.remove();
+  }
+
+  /** @param {string} col @param {boolean} desc @returns {(a: OvEntry, b: OvEntry) => number} */
+  comparator(col, desc) {
+    const row = (/** @type {OvEntry} */ e) => e.row || { target: e.t.name, state: 'unmeasured', n: 0, lost: 0, loss: 0 };
+    if (!col) return (a, b) => bySeverity(row(a), row(b));
+    /** @type {(e: OvEntry) => string|number|null|undefined} */
+    const key = {
+      target: (/** @type {OvEntry} */ e) => e.t.name.toLowerCase(),
+      provider: (/** @type {OvEntry} */ e) => (e.t.provider_title || '').toLowerCase(),
+      loc: (/** @type {OvEntry} */ e) => locationOf(e.t).toLowerCase() || null,
+      region: (/** @type {OvEntry} */ e) => { const i = GEOS.indexOf(geoOf(e.t)); return i < 0 ? null : i; },
+      now: (/** @type {OvEntry} */ e) => e.row?.now_ms,
+      normal: (/** @type {OvEntry} */ e) => e.row?.normal_ms,
+      ratio: (/** @type {OvEntry} */ e) => e.row?.ratio,
+      loss: (/** @type {OvEntry} */ e) => (e.row && e.row.n + e.row.lost ? e.row.loss : null),
+      state: (/** @type {OvEntry} */ e) => OV_STATES[row(e).state]?.rank,
+    }[col] || ((/** @type {OvEntry} */ e) => e.t.name);
+    return (a, b) => {
+      const x = key(a), y = key(b);
+      // Missing values last in either direction.
+      if (x == null || y == null) return x == null && y == null ? bySeverity(row(a), row(b)) : x == null ? 1 : -1;
+      const c = x < y ? -1 : x > y ? 1 : 0;
+      return (desc ? -c : c) || bySeverity(row(a), row(b));
+    };
+  }
+
+  /** Aggregates one heatmap cell. */
+  cellStats(/** @type {string} */ pid, /** @type {string} */ g) {
+    const p = (this.provs || []).find((x) => x.id === pid);
+    const names = p?.geos.get(g) || [];
+    const rows = names.map((n) => this.entries.get(n)?.row).filter((r) => r != null);
+    const measured = /** @type {OvRow[]} */ (rows).filter((r) => r.state !== 'unmeasured');
+    let n = 0, lost = 0;
+    for (const r of measured) { n += r.n; lost += r.lost; }
+    const ratios = measured.flatMap((r) => (r.ratio != null ? [r.ratio] : []));
+    const nows = measured.flatMap((r) => (r.now_ms != null ? [r.now_ms] : []));
+    const normals = measured.flatMap((r) => (r.normal_ms != null ? [r.normal_ms] : []));
+    const worst = [.../** @type {OvRow[]} */ (rows)].sort(bySeverity)[0];
+    return {
+      p, names, rows: /** @type {OvRow[]} */ (rows), measured, loss: n + lost ? lost / (n + lost) : 0,
+      judged: lost >= LOSS_MIN_LOST && n + lost >= LOSS_MIN_SEEN,
+      lossyAny: measured.some((r) => r.state === 'lossy' || r.state === 'failing'),
+      ratio: median(ratios), now: median(nows), normal: median(normals), worst,
+    };
+  }
+
+  renderHeatmap() {
+    if (!this.data) return;
+    const m = this.mode();
+    const [pid, pg] = this.cellFilter();
+    for (const [k, el] of this.cells) {
+      const [id, g] = k.split('\0');
+      const c = this.cellStats(id, g);
+      let cls = 'hm-c has', glyph = '';
+      if (!c.rows.length) cls = 'hm-c';
+      else if (!c.measured.length) cls += ' unm';
+      else if (c.judged && c.loss >= FAIL_LOSS) { cls += ' fail'; glyph = '×'; }
+      else if (m === 'r') {
+        if (isNaN(c.ratio)) { cls += ' nonorm'; glyph = '·'; }
+        else cls += ' r' + RATIO_BINS.findIndex(([x]) => c.ratio < /** @type {number} */ (x));
+      } else if (isNaN(c.now)) cls += ' unm';
+      else cls += ' l' + MS_BINS.findIndex(([x]) => c.now < /** @type {number} */ (x));
+      if (c.measured.length && !(c.judged && c.loss >= FAIL_LOSS) && (c.lossyAny || (c.judged && c.loss >= REAL_LOSS))) cls += ' dot';
+      if (pid === id && (pg === undefined || pg === g)) cls += ' sel';
+      if (el.className !== cls) el.className = cls;
+      if (el.textContent !== glyph) el.textContent = glyph;
+    }
+    for (const l of this.hm.querySelectorAll('.hm-l')) l.classList.toggle('sel', pid === l.getAttribute('data-p') && pg === undefined);
+  }
+
+  /** @param {MouseEvent} e */
+  hover(e) {
+    const c = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.hm-c.has'));
+    if (!c) { hideTip(); return; }
+    showTip(this.tipNodes(/** @type {string} */ (c.getAttribute('data-p')), /** @type {string} */ (c.getAttribute('data-g'))), e.clientX, e.clientY);
+  }
+
+  tipNodes(/** @type {string} */ pid, /** @type {string} */ g) {
+    const c = this.cellStats(pid, g);
+    const nodes = [h('div', { class: 't', text: `${c.p ? c.p.title : pid} · ${GEO_TITLE[g]}` })];
+    nodes.push(h('div', { text: `${c.names.length} target${c.names.length === 1 ? '' : 's'}${c.measured.length < c.rows.length ? `, ${c.measured.length} measured` : ''}` }));
+    if (!c.measured.length) nodes.push(h('div', { class: 'muted', text: 'Not measured in this range' }));
+    else {
+      let now = `now ${fmtMs(c.now)} ms`;
+      if (!isNaN(c.normal)) now += ` vs normal ${fmtMs(c.normal)} ms`;
+      if (!isNaN(c.ratio)) now += ` (${fmtRatio(c.ratio)})`;
+      nodes.push(h('div', { text: now + (c.names.length > 1 ? ' (medians)' : '') }));
+      if (this.mode() === 'r' && isNaN(c.ratio)) nodes.push(h('div', { class: 'muted', text: 'no normal yet (needs about a day of data)' }));
+      nodes.push(h('div', { text: `loss ${fmtPct(c.loss)}` }));
+    }
+    if (c.worst && c.names.length > 1) {
+      const w = c.worst;
+      const bits = [OV_STATES[w.state]?.label || w.state];
+      if (w.now_ms != null) bits.push(`${fmtMs(w.now_ms)} ms`);
+      if (w.ratio != null) bits.push(fmtRatio(w.ratio));
+      if (w.lost) bits.push(`${fmtPct(w.loss)} loss`);
+      nodes.push(h('div', { class: 'sep' }), h('div', { class: 'row' }, h('span', { class: 'k', text: 'worst' }), `${w.target}: ${bits.join(', ')}`));
+    }
+    return nodes;
+  }
+
+  /** A cell filters the table to its provider and region; a label to the provider. Again: clear. */
+  click(/** @type {MouseEvent} */ e) {
+    const el = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.hm-l, .hm-c.has'));
+    if (!el) return;
+    const pid = /** @type {string} */ (el.getAttribute('data-p'));
+    const v = el.classList.contains('hm-l') ? pid : `${pid}:${el.getAttribute('data-g')}`;
+    this.setCell(state.oc === v ? '' : v);
+    if (el.classList.contains('hm-c') && matchMedia('(hover: none)').matches) {
+      e.stopPropagation(); // keep the tooltip open on touch screens
+      showTip(this.tipNodes(pid, /** @type {string} */ (el.getAttribute('data-g'))), e.clientX, e.clientY);
+    }
+    if (state.oc) {
+      const r = this.tableBox.getBoundingClientRect();
+      if (r.top > window.innerHeight) this.tableBox.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  }
+}
+
+// ---------- view switch & focus ----------
+
+const viewSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'View' });
+const viewBar = h('div', { class: 'viewbar' }, viewSeg, h('span', { class: 'muted small vb-hint' }));
+const focusBar = h('div', { class: 'focusbar', role: 'status', hidden: true });
+/** The target focus mode has isolated on its chart, and its chart's first load. */
+let focused = '';
+let focusReady = Promise.resolve();
+
+function setView(/** @type {string} */ v) {
+  state.view = v;
+  state.focus = null;
+  writeHash();
+  applyView();
+  if (v === 'o') ov?.load(); else loadStale();
+}
+
+function renderViewBar() {
+  const v = currentView();
+  viewSeg.replaceChildren(
+    h('button', { type: 'button', text: 'Overview', 'aria-pressed': String(v === 'o'), title: 'Every target in one table and heatmap', onclick: () => setView('o') }),
+    h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }));
+  const hint = /** @type {HTMLElement} */ (viewBar.lastElementChild);
+  const n = panels.filter((p) => !p.isPath).length;
+  hint.textContent = v === 'o' ? `${fmtInt(allTargets.filter((t) => !t.layer).length)} targets; click a row to see its chart` : `${n} chart panel${n === 1 ? '' : 's'}`;
+}
+
+/** Applies the view and focus to the page: which panels show, the focus bar, isolation. */
+function applyView() {
+  const v = currentView();
+  document.body.classList.toggle('ov-on', v === 'o');
+  if (ov) ov.el.hidden = v !== 'o';
+  const fp = focusPanel();
+  for (const p of panels) {
+    p.el.classList.toggle('off-view', !panelShown(p));
+    p.el.classList.toggle('focused', p === fp);
+  }
+  if (focused && focused !== (fp ? state.focus : '')) {
+    // Leaving focus: show every target of that panel again.
+    const old = panels.find((p) => p.targets.some((t) => t.name === focused));
+    if (old) { old.hidden = new Set(); old.applyHidden(); if (old.data) { old.renderLegend(); old.drawStrip(); } }
+    focused = '';
+  }
+  if (fp && state.focus && focused !== state.focus) {
+    const name = focused = state.focus;
+    if (fp.data) fp.isolate(name);
+    focusReady = fp.load().then(() => { if (focused === name && fp.data) fp.isolate(name); });
+  }
+  renderFocusBar(fp);
+  renderViewBar();
+  if (v === 'o' && ov && ov.saveScroll != null) {
+    const y = ov.saveScroll;
+    ov.saveScroll = null;
+    requestAnimationFrame(() => window.scrollTo({ top: y }));
+  }
+}
+
+function renderFocusBar(/** @type {Panel|null} */ fp) {
+  focusBar.hidden = !fp;
+  if (!fp || !state.focus) return;
+  const t = targetInfo(state.focus);
+  const where = [t?.provider_title || fp.group.title, t && t.geo ? GEO_TITLE[t.geo] : ''].filter(Boolean).join(' · ');
+  focusBar.replaceChildren(
+    h('span', { class: 'fb-what' }, h('b', { text: state.focus }), ` in ${where}`),
+    h('span', { class: 'fb-acts' },
+      h('button', { class: 'btn sm', type: 'button', text: 'Show all charts', onclick: () => closeFocus(false) }),
+      h('button', { class: 'btn sm primary', type: 'button', text: '← Back to overview', onclick: () => closeFocus(true) })));
+}
+
+/** Row click: the target's chart only, isolated; Back returns to the Overview. */
+function openFocus(/** @type {string} */ name) {
+  if (!panels.some((p) => !p.isPath && p.targets.some((t) => t.name === name))) return;
+  if (currentView() === 'o' && ov) ov.saveScroll = window.scrollY;
+  state.focus = name;
+  state.view = 'c';
+  history.pushState({ fyispFocus: true }, '', hashString());
+  lastHash = location.hash;
+  applyView();
+  requestAnimationFrame(scrollToFocus);
+}
+
+/** Scrolls the focus bar to the top; again once the chart has loaded, unless the user scrolled meanwhile. */
+function scrollToFocus() {
+  const bar = $('.top');
+  const top = Math.max(0, focusBar.getBoundingClientRect().top + window.scrollY - (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) - 8);
+  window.scrollTo({ top });
+  focusReady.then(() => {
+    if (Math.abs(window.scrollY - top) > 2 || !focusPanel()) return;
+    const again = Math.max(0, focusBar.getBoundingClientRect().top + window.scrollY - (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) - 8);
+    if (Math.abs(again - top) > 2) window.scrollTo({ top: again });
+  });
+}
+
+function closeFocus(/** @type {boolean} */ toOverview) {
+  if (toOverview && history.state && history.state.fyispFocus) { history.back(); return; }
+  state.focus = null;
+  state.view = toOverview ? 'o' : 'c';
+  writeHash();
+  applyView();
+  if (toOverview) ov?.load(); else loadStale();
+}
+
 // ---------- reports ----------
 
 /** @typedef {{id:string,title:string,from:string,to:string,created:string,public:boolean,bytes:number,redacted:boolean}} ReportMeta */
@@ -2094,7 +2830,11 @@ async function refreshAll() {
   updateRefreshLabel();
   try {
     if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), inv.load()]);
-    else await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), ...panels.map((p) => p.load())]).then(loadBaselines);
+    else {
+      // Hidden panels (the Overview is showing, or focus) load when shown.
+      await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
+        ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
+    }
   } finally {
     refreshing = false;
     updateRefreshLabel();
@@ -2110,6 +2850,7 @@ function renderLayers() { for (const p of panels) if (p.isPath) p.renderLayers()
 function focusTarget(/** @type {string} */ name) {
   const p = panels.find((x) => x.targets.some((t) => t.name === name));
   if (!p) return;
+  if (!panelShown(p)) { openFocus(name); return; }
   p.isolate(name);
   const bar = $('.top');
   const top = p.el.getBoundingClientRect().top + window.scrollY - (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) - 8;
@@ -2131,6 +2872,31 @@ function whyButton(/** @type {string} */ title, /** @type {string} */ text) {
   return b;
 }
 
+// The banner shows at most this many target chips, then "+N more".
+const VERDICT_CHIPS = 8;
+let verdictChipsOpen = false;
+
+/** "+N more" on a big profile: the Overview, problems only, scrolled into view. */
+function showProblems() {
+  if (!ov) return;
+  const o = ov;
+  state.op = true;
+  state.oc = '';
+  const scroll = () => requestAnimationFrame(() => o.tableBox.scrollIntoView({ block: 'start' }));
+  if (currentView() !== 'o') {
+    state.view = 'o';
+    state.focus = null;
+    writeHash();
+    applyView();
+    o.load().then(scroll);
+  } else {
+    writeHash();
+    o.renderControls();
+    o.applyRows();
+    scroll();
+  }
+}
+
 function renderVerdict() {
   const el = $('#verdict');
   const v = verdict;
@@ -2149,9 +2915,17 @@ function renderVerdict() {
   const meta = [];
   if (isFinite(since) && since > 0) meta.push(h('span', { text: `since ${fmtWhen(since)} (${fmtDur(Date.now() - since)})` }));
   if (v.targets && v.targets.length) {
-    meta.push(h('span', { class: 'v-aff', text: 'Affected:' }));
-    for (const name of v.targets) {
+    meta.push(h('span', { class: 'v-aff', title: 'Targets the verdict counts over the last minute', text: 'Affected now:' }));
+    const all = v.targets.length <= VERDICT_CHIPS + 1 || verdictChipsOpen;
+    for (const name of all ? v.targets : v.targets.slice(0, VERDICT_CHIPS)) {
       meta.push(h('button', { class: 'tchip', type: 'button', title: `Show ${name} on its chart`, text: name, onclick: () => focusTarget(name) }));
+    }
+    if (!all) {
+      const more = v.targets.length - VERDICT_CHIPS;
+      // Big profiles: the Overview lists them all (problems only); else expand in place.
+      meta.push(ov && bigProfile
+        ? h('button', { class: 'tchip more', type: 'button', title: 'Show every target with a problem in the Overview', text: `+${more} more`, onclick: showProblems })
+        : h('button', { class: 'tchip more', type: 'button', title: 'Show all affected targets', text: `+${more} more`, onclick: () => { verdictChipsOpen = true; renderVerdict(); } }));
     }
   }
   if (meta.length) kids.push(h('div', { class: 'v-meta' }, ...meta));
@@ -2177,6 +2951,7 @@ async function loadVerdict() {
   }
   renderVerdict();
   renderLayers();
+  if (ov && ov.data && overviewShown()) ov.renderBreadth();
   // A new verdict usually means a new (or closed) incident.
   if (prev != null && verdict && prev !== verdict.kind) loadIncidents();
 }
@@ -2283,6 +3058,7 @@ function renderControls() {
       writeHash(); renderControls();
       for (const p of panels) p.render();
       renderLayers();
+      if (overviewShown() && ov && ovKind() !== ov.kind) ov.load();
     },
   })));
   renderTools();
@@ -2450,7 +3226,16 @@ async function main() {
   // Clicks outside the note popover close it.
   document.addEventListener('mousedown', (e) => { if (!notePop.hidden && !notePop.contains(/** @type {Node} */ (e.target))) closeNoteEditor(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !notePop.hidden) closeNoteEditor(); });
-  window.addEventListener('hashchange', () => { readHash(); log.open = state.log; notesBox.open = state.notes; repBox.open = state.reports; renderControls(); showView(); refreshAll(); });
+  // Back from focus mode restores the Overview's scroll position itself.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  const onNav = () => {
+    if (location.hash === lastHash) return;
+    lastHash = location.hash;
+    readHash(); log.open = state.log; notesBox.open = state.notes; repBox.open = state.reports;
+    renderControls(); applyView(); showView(); refreshAll();
+  };
+  window.addEventListener('hashchange', onNav);
+  window.addEventListener('popstate', onNav);
   renderShare();
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
@@ -2459,6 +3244,13 @@ async function main() {
   reportsOn = MODE === 'local' && !!(prof.features && prof.features.reports);
   baseOn = !!(prof.features && prof.features.baselines);
   allTargets = prof.targets;
+  // Which target profile(s) this run measures, unless the default.
+  const pb = $('#profile-badge');
+  if (prof.name && prof.name !== 'default') {
+    pb.hidden = false;
+    pb.textContent = 'Profile: ' + prof.name;
+    pb.title = `${prof.targets.length} targets in ${prof.groups.length} panels`;
+  }
   readHash();
   if (status && status.caps && status.caps.icmp === 'unavailable') state.kinds.delete('icmp');
   if (!state.kinds.size) state.kinds.add('https');
@@ -2475,12 +3267,28 @@ async function main() {
   // The network path comes first, full width.
   const groups = [...prof.groups].sort((/** @type {Group} */ a, /** @type {Group} */ b) => Number(b.id === PATH_GROUP) - Number(a.id === PATH_GROUP));
   panels = groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
-  $('#panels').replaceChildren(...panels.map((p) => p.el));
+  bigProfile = targets.filter((t) => !t.layer).length > OVERVIEW_MIN;
+  ov = new Overview();
+  // The path panel on top, then the view switch, then the Overview or the charts.
+  const path = panels.filter((p) => p.isPath).map((p) => p.el);
+  $('#panels').replaceChildren(...path, viewBar, focusBar, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
+  if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const p = panels.find((x) => x.el === e.target);
+        if (!p) continue;
+        p.visible = e.isIntersecting;
+        if (p.visible && p.stale && panelShown(p) && !(state.inv && inv)) p.load();
+      }
+    }, { rootMargin: '800px 0px' });
+    for (const p of panels) { p.visible = false; io.observe(p.el); }
+  }
   uPlot.sync(SYNC_KEY);
   if (traceOn) {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
+  applyView();
   showView();
   writeHash();
   await refreshAll();

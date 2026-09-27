@@ -1,0 +1,260 @@
+provider: leaseweb
+display: Leaseweb
+kind: cloud
+sources:
+  - https://kb.leaseweb.com/kb/network/network-link-speeds/
+notes: >-
+  Official Leaseweb speed-test servers speedtest.<dc>.<cc>.leaseweb.net from the Leaseweb KB (19 DCs).
+  They serve HTTP only (TCP 443 refused), so targets use TCP port 80 + ICMP; the https kind is not
+  recorded. GET http://<host>/ returns a 302 (145 B). iperf3 on 5201-5210 is for manual tests only.
+  Re-checked 2026-09-27: all 19 answer. The KB also links speedtest.lax11.us.leaseweb.net, which is
+  NXDOMAIN (LAX-12 is covered). Guessed hosts for other Leaseweb DCs (AMS-10/11, FRA-10, SIN-10/11/12,
+  HKG-10, TYO-10, SYD-10, MTL-01, WDC-01, DAL-10..12) do not resolve, so only the KB list is covered.
+targets:
+  - name: Leaseweb-AMS-01
+    host: speedtest.ams1.nl.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: AMS-01
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-AMS-02
+    host: speedtest.ams2.nl.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: AMS-02
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-FRA-01
+    host: speedtest.fra1.de.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: FRA-01
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-LON-01
+    host: speedtest.lon1.uk.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: LON-01
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-LON-12
+    host: speedtest.lon12.uk.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: LON-12
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-WDC-02
+    host: speedtest.wdc2.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: WDC-02
+    city: Manassas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-NYC-01
+    host: speedtest.nyc1.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: NYC-01
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-CHI-11
+    host: speedtest.chi11.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: CHI-11
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-DAL-13
+    host: speedtest.dal13.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: DAL-13
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-MIA-11
+    host: speedtest.mia11.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: MIA-11
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-PHX-01
+    host: speedtest.phx1.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: PHX-01
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-LAX-12
+    host: speedtest.lax12.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: LAX-12
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-SFO-12
+    host: speedtest.sfo12.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: SFO-12
+    city: San Francisco
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-SEA-11
+    host: speedtest.sea11.us.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: SEA-11
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-MTL-02
+    host: speedtest.mtl2.ca.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: MTL-02
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-SIN-01
+    host: speedtest.sin1.sg.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: SIN-01
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-HKG-12
+    host: speedtest.hkg12.hk.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: HKG-12
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-TYO-11
+    host: speedtest.tyo11.jp.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: TYO-11
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Leaseweb-SYD-12
+    host: speedtest.syd12.au.leaseweb.net
+    kinds: [tcp, icmp]
+    port: 80
+    region: SYD-12
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

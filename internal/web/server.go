@@ -120,6 +120,7 @@ const (
 	routeRouteChanges
 	routeNotes
 	routeBaselines
+	routeOverview
 )
 
 func lookup(rel string) route {
@@ -148,6 +149,8 @@ func lookup(rel string) route {
 		return routeNotes
 	case "api/baselines":
 		return routeBaselines
+	case "api/overview":
+		return routeOverview
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -200,6 +203,8 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.listNotes(w, r)
 	case routeBaselines:
 		s.serveBaselines(w, r)
+	case routeOverview:
+		s.serveOverview(w, r)
 	case routeTrace, routeTracePanel, routeRouteChanges:
 		switch {
 		case s.d.Trace == nil:
