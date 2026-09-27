@@ -17,9 +17,13 @@ const MODE = meta('fyisp-mode') === 'public' ? 'public' : 'local';
 const TOKEN = meta('fyisp-token');
 
 const RANGES = [['5m', 300], ['30m', 1800], ['1h', 3600], ['6h', 21600], ['24h', 86400], ['48h', 172800], ['7d', 604800], ['30d', 2592000], ['90d', 7776000]];
-const KINDS = ['https', 'tcp', 'icmp'];
+// Probe kinds, main kind first: shipped profiles measure every service with
+// a TCP connect; HTTPS and ICMP appear only where a profile asks for them
+// (the network path pings, --config files may request either).
+const KINDS = ['tcp', 'https', 'icmp'];
 const KIND_LABEL = { https: 'HTTPS', tcp: 'TCP', icmp: 'ICMP' };
-const KIND_DASH = { https: [], tcp: [6, 3], icmp: [1.5, 3] };
+const KIND_TITLE = { tcp: 'TCP: time to open a connection', https: 'HTTPS: request sent → first response byte', icmp: 'ICMP echo (ping)' };
+const KIND_DASH = { tcp: [], https: [6, 3], icmp: [1.5, 3] };
 const REASONS = ['timeout', 'refused', 'reset', 'unreachable', 'dns', 'tls', 'http', 'no_network', 'other'];
 const REASON_LABEL = { timeout: 'timeout', refused: 'refused', reset: 'reset', unreachable: 'unreachable', dns: 'DNS', tls: 'TLS', http: 'HTTP error', no_network: 'no network', other: 'other' };
 const REFRESH_MS = 15000;
@@ -58,10 +62,22 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
  *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string}}
  */
-const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), log: false, notes: false, reports: false, inv: null, band: true,
+const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
   view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '' };
 /** @type {any} */
 let status = null;
+/** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
+let kindsOffered = ['tcp'];
+function offeredKinds(/** @type {TargetInfo[]} */ targets) {
+  const icmpOff = status && status.caps && status.caps.icmp === 'unavailable';
+  const ks = KINDS.filter((k) => !(k === 'icmp' && icmpOff) && targets.some((t) => !t.layer && t.kinds.includes(k)));
+  return ks.length ? ks : ['tcp'];
+}
+/** Keeps the selected kinds to the offered ones, with the main one when none is left. */
+function fixKinds() {
+  for (const k of [...state.kinds]) if (!kindsOffered.includes(k)) state.kinds.delete(k);
+  if (!state.kinds.size) state.kinds.add(kindsOffered[0]);
+}
 /** @type {Panel[]} */
 let panels = [];
 // Profiles with more panels than this load only the panels near the viewport
@@ -235,8 +251,9 @@ function readHash() {
   const k = p.get('k');
   if (k != null) {
     const ks = k.split(',').filter((x) => KINDS.includes(x));
-    state.kinds = new Set(ks.length ? ks : ['https']);
+    state.kinds = new Set(ks.length ? ks : [kindsOffered[0]]);
   }
+  fixKinds();
   const v = p.get('v');
   state.view = v === 'o' || v === 'c' ? v : null;
   state.focus = p.get('f') || null;
@@ -387,9 +404,9 @@ class Panel {
   height() { return this.isPath ? 200 : this.targets.length > 12 ? 300 : 240; }
 
   /**
-   * Probe kinds this panel shows. Path targets are ICMP/TCP only: they follow
-   * the header's TCP/ICMP selection and fall back to ICMP (or TCP when ICMP
-   * is unavailable) when only HTTPS is selected.
+   * Probe kinds this panel shows. The network path shows its ICMP (or TCP
+   * when ICMP is unavailable), and follows the header only when ICMP is
+   * selected there, which needs a profile with ICMP services.
    * @returns {Set<string>}
    */
   kinds() {
@@ -397,9 +414,16 @@ class Panel {
     const avail = new Set(this.targets.flatMap((t) => t.kinds));
     const icmpOff = status && status.caps && status.caps.icmp === 'unavailable';
     const sel = [...state.kinds].filter((k) => avail.has(k) && !(k === 'icmp' && icmpOff));
-    if (sel.some((k) => k !== 'https')) return new Set(sel);
+    if (sel.includes('icmp')) return new Set(sel);
     for (const k of ['icmp', 'tcp', 'https']) if (avail.has(k) && !(k === 'icmp' && icmpOff)) return new Set([k]);
     return new Set(avail);
+  }
+
+  /** The main kind on this chart (drawn solid, with a min–max band and the normal band): the first shown of TCP, HTTPS, ICMP; none on the path chart. */
+  mainKind() {
+    if (this.isPath) return null;
+    const kinds = this.kinds();
+    return KINDS.find((k) => kinds.has(k)) || null;
   }
   width() { return Math.max(200, this.chartEl.clientWidth); }
 
@@ -434,9 +458,9 @@ class Panel {
     }
   }
 
-  /** The target's "×N normal" ratio for the selected kinds (HTTPS first). */
+  /** The target's "×N normal" ratio for the selected kinds (main kind first). */
   ratioFor(/** @type {string} */ name, /** @type {string[]} */ kinds) {
-    for (const k of ['https', 'tcp', 'icmp']) {
+    for (const k of KINDS) {
       if (!kinds.includes(k)) continue;
       const b = baselines.get(name + '\0' + k);
       if (b && typeof b.ratio_now === 'number' && isFinite(b.ratio_now)) return { r: b.ratio_now, b };
@@ -444,12 +468,13 @@ class Panel {
     return null;
   }
 
-  /** The baseline band (median..p95) of visible HTTPS targets: at most BAND_MAX, else only the slow ones. */
+  /** The baseline band (median..p95) of the main kind's visible targets: at most BAND_MAX, else only the slow ones. */
   drawBand(/** @type {any} */ u) {
-    if (!baseOn || !state.band || !baselines.size || !this.kinds().has('https')) return;
+    const mk = this.mainKind();
+    if (!baseOn || !state.band || !baselines.size || !mk) return;
     let list = this.targets
-      .filter((t) => !this.hidden.has(t.name) && t.kinds.includes('https'))
-      .map((t) => ({ t, b: baselines.get(t.name + '\0https') }))
+      .filter((t) => !this.hidden.has(t.name) && t.kinds.includes(mk))
+      .map((t) => ({ t, b: baselines.get(t.name + '\0' + mk) }))
       .filter((x) => x.b);
     if (list.length > BAND_MAX) list = list.filter((x) => (x.b?.ratio_now || 0) >= SLOW_RATIO);
     if (!list.length) return;
@@ -477,13 +502,14 @@ class Panel {
     ctx.restore();
   }
 
-  /** Series layout: per target, per selected kind a mean line; HTTPS adds a min–max band. */
+  /** Series layout: per target, per selected kind a mean line; the main kind adds a min–max band. */
   layout() {
     const d = /** @type {PanelData} */ (this.data);
     /** @type {Map<string, SeriesData>} */
     const byKey = new Map(d.series.map((s) => [s.target + '\0' + s.kind, s]));
     const smap = [];
     const kinds = this.kinds();
+    const mk = this.mainKind();
     let si = 1;
     for (const t of this.targets) {
       const color = seriesColor(/** @type {number} */ (this.colors.get(t.name)));
@@ -491,7 +517,7 @@ class Panel {
         if (!kinds.has(k) || !t.kinds.includes(k)) continue;
         const sd = byKey.get(t.name + '\0' + k) || null;
         smap.push({ si: si++, target: t.name, kind: k, role: 'mean', sd, color });
-        if (k === 'https') {
+        if (k === mk) {
           smap.push({ si: si++, target: t.name, kind: k, role: 'max', sd, color });
           smap.push({ si: si++, target: t.name, kind: k, role: 'min', sd, color });
         }
@@ -535,11 +561,12 @@ class Panel {
     const bands = [];
     // One kind on screen needs no dash to tell kinds apart (the path panel's ICMP).
     const solo = new Set(smap.map((m) => m.kind)).size === 1;
+    const mk = this.mainKind();
     for (const m of smap) {
       if (m.role === 'mean') {
         series.push({
           label: `${m.target} ${KIND_LABEL[/** @type {'https'} */ (m.kind)]}`,
-          stroke: m.color, width: m.kind === 'https' ? 1.5 : 1.25, dash: solo ? [] : KIND_DASH[/** @type {'https'} */ (m.kind)],
+          stroke: m.color, width: m.kind === mk ? 1.5 : 1.25, dash: solo ? [] : KIND_DASH[/** @type {'https'} */ (m.kind)],
           spanGaps: false, points: { show: false },
         });
       } else {
@@ -799,7 +826,8 @@ class Panel {
         nodes.push(h('div', { class: 'row' }, h('span', { class: 'k', text: KIND_LABEL[/** @type {'https'} */ (s.kind)] }), txt));
       }
       nodes.push(h('div', { class: 'row' }, h('span', { class: 'k', text: 'loss' }), n + lost ? `${fmtPct(lost / (n + lost))} in bucket` : '—'));
-      const nb = kinds.has('https') ? baselines.get(target + '\0https') : null;
+      const mk = this.mainKind();
+      const nb = mk ? baselines.get(target + '\0' + mk) : null;
       if (nb) nodes.push(h('div', { class: 'row' }, h('span', { class: 'k', text: 'normal' }), `${fmtMs(nb.median_ms)}–${fmtMs(nb.p95_ms)} ms (median–p95)`));
     }
     // Other targets that lost samples in this bucket.
@@ -2001,8 +2029,8 @@ function currentView() {
   return state.view || (bigProfile ? 'o' : 'c');
 }
 function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
-/** The kind the Overview shows: the first selected of HTTPS, TCP, ICMP. */
-function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || 'https'; }
+/** The kind the Overview shows: the first selected of TCP, HTTPS, ICMP. */
+function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || kindsOffered[0]; }
 function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.targets.some((t) => t.name === state.focus)) || null : null; }
 /** Panels that are on screen and may load: the path panel always, the others per view and focus. */
 function panelShown(/** @type {Panel} */ p) {
@@ -3048,11 +3076,12 @@ function renderControls() {
   if (!isRelative()) {
     ranges.append(h('button', { type: 'button', 'aria-pressed': 'true', title: 'Reset zoom (or double-click a chart)', text: 'Zoomed ×', onclick: resetZoom }));
   }
-  const icmpOff = status && status.caps && status.caps.icmp === 'unavailable';
-  $('#kinds').replaceChildren(...KINDS.map((k) => h('button', {
+  // Only the kinds the profile's services have; one kind needs no switch.
+  const kindsEl = $('#kinds');
+  kindsEl.hidden = kindsOffered.length < 2;
+  kindsEl.replaceChildren(...kindsOffered.map((k) => h('button', {
     type: 'button', text: KIND_LABEL[/** @type {'https'} */ (k)], 'aria-pressed': String(state.kinds.has(k)),
-    disabled: k === 'icmp' && icmpOff,
-    title: k === 'https' ? 'HTTPS: request sent → first response byte' : k === 'tcp' ? 'TCP connect time to port 443' : 'ICMP echo (ping)',
+    title: KIND_TITLE[/** @type {'https'} */ (k)],
     onclick: () => {
       if (state.kinds.has(k)) { if (state.kinds.size > 1) state.kinds.delete(k); } else state.kinds.add(k);
       writeHash(); renderControls();
@@ -3072,7 +3101,7 @@ function renderTools() {
   if (baseOn) {
     kids.push(h('button', {
       class: 'btn ghost', type: 'button', text: 'Normal band', 'aria-pressed': String(state.band),
-      title: 'Shade each target\'s normal latency (median to p95 over the past week) on the HTTPS charts',
+      title: 'Shade each target\'s normal latency (median to p95 over the past week) on the charts',
       onclick: () => { state.band = !state.band; storageSet('fyisp-band', state.band ? '1' : '0'); renderTools(); redrawCharts(); },
     }));
   }
@@ -3251,9 +3280,8 @@ async function main() {
     pb.textContent = 'Profile: ' + prof.name;
     pb.title = `${prof.targets.length} targets in ${prof.groups.length} panels`;
   }
+  kindsOffered = offeredKinds(prof.targets);
   readHash();
-  if (status && status.caps && status.caps.icmp === 'unavailable') state.kinds.delete('icmp');
-  if (!state.kinds.size) state.kinds.add('https');
   notesBox.open = state.notes;
   repBox.open = state.reports;
   renderNotes();
