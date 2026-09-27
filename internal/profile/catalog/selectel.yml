@@ -1,0 +1,149 @@
+provider: selectel
+display: Selectel
+kind: cloud
+category: [vps, bare-metal, storage]
+sources:
+  - https://docs.selectel.ru/en/infrastructure/locations/
+  - https://docs.selectel.ru/en/control-panel-actions/availability-matrix/
+  - https://docs.selectel.ru/en/s3/manage/configure-storage-update/
+  - https://selectel.ru/speedtest
+notes: >-
+  Selectel locations: Saint Petersburg (pools ru-1, ru-3, ru-9), Moscow (ru-2, ru-6, ru-7, gis-1),
+  Novosibirsk (ru-8), Tashkent (uz-1, uz-2), Almaty (kz-1) and Nairobi (ke-1). Official speed-test host
+  speedtest.selectel.ru (Saint Petersburg; GET / is a 162-byte redirect, never fetch the test files).
+  Other pools are probed via their S3 endpoints s3.<pool>.storage.selcloud.ru (Russia) and
+  s3.<pool>.srvstorage.<cc> (Kazakhstan/Uzbekistan, the Servercore international brand), which answer
+  GET / with a 192-byte 403. Novosibirsk (ru-8) has no S3 pool; its regional OpenStack API
+  ru-8.cloud.api.selcloud.ru geolocates to Novosibirsk and returns 13 bytes. The other
+  <pool>.cloud.api.selcloud.ru hosts all resolve to one Moscow /24 and are not used. ru-1 and ru-3 S3
+  front ends share one Saint Petersburg /24. Pools ru-2, ru-6, ru-9 and uz-1 have no own public
+  endpoint; their cities are covered. Nairobi (ke-1) has no public endpoint found.
+targets:
+  - name: Selectel-SPb-speedtest
+    host: speedtest.selectel.ru
+    kinds: [https, tcp, icmp]
+    region: ru-1
+    city: Saint Petersburg
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 301
+      bytes: 162
+  - name: Selectel-ru-1
+    host: s3.ru-1.storage.selcloud.ru
+    kinds: [https, tcp, icmp]
+    region: ru-1
+    city: Saint Petersburg
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 192
+  - name: Selectel-ru-3
+    host: s3.ru-3.storage.selcloud.ru
+    kinds: [https, tcp, icmp]
+    region: ru-3
+    city: Saint Petersburg
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 192
+  - name: Selectel-ru-7
+    host: s3.ru-7.storage.selcloud.ru
+    kinds: [https, tcp, icmp]
+    region: ru-7
+    city: Moscow
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 192
+  - name: Selectel-gis-1
+    host: s3.gis-1.storage.selcloud.ru
+    kinds: [https, tcp, icmp]
+    region: gis-1
+    city: Moscow
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 192
+  - name: Selectel-ru-8
+    host: ru-8.cloud.api.selcloud.ru
+    kinds: [https, tcp, icmp]
+    region: ru-8
+    city: Novosibirsk
+    country: RU
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 13
+  - name: Selectel-uz-2
+    host: s3.uz-2.srvstorage.uz
+    kinds: [https, tcp, icmp]
+    region: uz-2
+    city: Tashkent
+    country: UZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 192
+  - name: Selectel-kz-1
+    host: s3.kz-1.srvstorage.kz
+    kinds: [https, tcp, icmp]
+    region: kz-1
+    city: Almaty
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 192
+  - name: Selectel-ke-1
+    host: s3.ke-1.storage.selcloud.ru
+    kinds: []
+    region: ke-1
+    city: Nairobi
+    country: KE
+    geo: af
+    anycast: false
+    tags: [unreachable]
+    notes: no public endpoint found for the Nairobi pool (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

@@ -1,0 +1,88 @@
+provider: conoha
+display: ConoHa (GMO)
+kind: cloud
+category: [vps]
+sources:
+  - https://doc.conoha.jp/products/vps-v3/
+  - https://www.conoha.jp/conoha/vps/features/location/
+notes: >-
+  ConoHa VPS (GMO Internet) regions: VPS 2.0 tyo1, tyo2 and tyo3 (Tokyo) and sin1 (Singapore; sjc1 San
+  Jose was closed), and VPS 3.0 c3j1 (Japan). Each region is probed via its public OpenStack Identity
+  endpoint identity.<region>.conoha.io, whose GET / returns a small (~0.3 KB) version list. c3j1
+  geolocates to Osaka (AS58791), while the tyo* regions geolocate to Tokyo (AS7506). ConoHa describes
+  its Japan location only as Tokyo, so c3j1's city is unconfirmed. identity.sin1 still resolves but did
+  not answer on 2026-09-27.
+targets:
+  - name: ConoHa-tyo1
+    host: identity.tyo1.conoha.io
+    kinds: [https, tcp, icmp]
+    region: tyo1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 327
+  - name: ConoHa-tyo2
+    host: identity.tyo2.conoha.io
+    kinds: [https, tcp, icmp]
+    region: tyo2
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 327
+  - name: ConoHa-tyo3
+    host: identity.tyo3.conoha.io
+    kinds: [https, tcp, icmp]
+    region: tyo3
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 327
+  - name: ConoHa-c3j1
+    host: identity.c3j1.conoha.io
+    kinds: [https, tcp, icmp]
+    region: c3j1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    notes: geo-IP says Osaka (AS58791); ConoHa only publishes Japan/Tokyo
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 257
+  - name: ConoHa-sin1
+    host: identity.sin1.conoha.io
+    kinds: []
+    region: sin1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: resolves but no ICMP/TCP answer on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

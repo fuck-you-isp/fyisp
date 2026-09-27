@@ -1,0 +1,40 @@
+provider: magalu-cloud
+display: Magalu Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.magalu.cloud/docs/storage/object-storage/additional-explanations/regions/
+  - https://docs.magalu.cloud/docs/devops-tools/terraform/how-to/provider-region/
+notes: >-
+  Magalu Cloud (Brazil) has two regions, br-se1 (Sao Paulo; zones br-se1-a/b/c) and br-ne1 (Fortaleza).
+  Each is probed via its Object Storage S3 endpoint <region>.magaluobjects.com; GET / returns a 69-byte
+  404. Both addresses are AS272432 and geolocate to their city. ICMP is filtered.
+targets:
+  - name: Magalu-br-se1
+    host: br-se1.magaluobjects.com
+    kinds: [https, tcp]
+    region: br-se1
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 69
+  - name: Magalu-br-ne1
+    host: br-ne1.magaluobjects.com
+    kinds: [https, tcp]
+    region: br-ne1
+    city: Fortaleza
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 69

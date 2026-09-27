@@ -1,0 +1,70 @@
+provider: jd-cloud
+display: JD Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.jdcloud.com/cn/object-storage-service/api/regions-and-endpoints
+  - https://docs.jdcloud.com/cn/object-storage-service/endpoint-using-rulers
+notes: >-
+  JD Cloud regions: cn-north-1 (Beijing), cn-east-1 (Suqian), cn-east-2 (Shanghai) and cn-south-1
+  (Guangzhou). Each is probed via its OSS S3 endpoint s3.<region>.jdcloud-oss.com; GET / is a 166-byte
+  403. Every address geolocates to its city (China Telecom IDC ranges).
+  s3.cn-northwest-1.jdcloud-oss.com also resolves (to Beijing) but is not a documented region and is not
+  included.
+targets:
+  - name: JDCloud-cn-north-1
+    host: s3.cn-north-1.jdcloud-oss.com
+    kinds: [https, tcp, icmp]
+    region: cn-north-1
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 166
+  - name: JDCloud-cn-east-1
+    host: s3.cn-east-1.jdcloud-oss.com
+    kinds: [https, tcp, icmp]
+    region: cn-east-1
+    city: Suqian
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 166
+  - name: JDCloud-cn-east-2
+    host: s3.cn-east-2.jdcloud-oss.com
+    kinds: [https, tcp, icmp]
+    region: cn-east-2
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 166
+  - name: JDCloud-cn-south-1
+    host: s3.cn-south-1.jdcloud-oss.com
+    kinds: [https, tcp, icmp]
+    region: cn-south-1
+    city: Guangzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 166

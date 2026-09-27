@@ -1,0 +1,488 @@
+provider: ucloud
+display: UCloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.ucloud.cn/api/summary/regionlist
+  - https://docs.ucloud.cn/ufile/s3/s3_introduction
+notes: >-
+  UCloud lists 33 regions, and each is probed via its US3/UFile S3 endpoint s3-<region>.ufileos.com (GET
+  / returns a 204-byte 400). Overseas endpoints are on AS135377, and geo-IP matched the city for every
+  one checked. s3-cn-bj serves cn-bj2 (Beijing 2). cn-bj1, cn-wlcb2, cn-sh (finance cloud), cn-jx,
+  cn-gd2 and ph-mnl have no S3 endpoint and are kept with kinds [] (their city may be covered by a
+  sibling region). The us-ws region (Washington) geolocates to Ashburn, VA.
+targets:
+  - name: UCloud-cn-bj2
+    host: s3-cn-bj.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: cn-bj2
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-cn-bj1
+    host: s3-cn-bj1.ufileos.com
+    kinds: []
+    region: cn-bj1
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public UFile/US3 S3 endpoint for this region (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: UCloud-cn-wlcb
+    host: s3-cn-wlcb.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: cn-wlcb
+    city: Ulanqab
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-cn-wlcb2
+    host: s3-cn-wlcb2.ufileos.com
+    kinds: []
+    region: cn-wlcb2
+    city: Ulanqab
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public UFile/US3 S3 endpoint for this region (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: UCloud-cn-sh2
+    host: s3-cn-sh2.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: cn-sh2
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-cn-sh
+    host: s3-cn-sh.ufileos.com
+    kinds: []
+    region: cn-sh
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public UFile/US3 S3 endpoint for this region (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: UCloud-cn-jx
+    host: s3-cn-jx.ufileos.com
+    kinds: []
+    region: cn-jx
+    city: Jiaxing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public UFile/US3 S3 endpoint for this region (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: UCloud-cn-gd
+    host: s3-cn-gd.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: cn-gd
+    city: Guangzhou
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-cn-gd2
+    host: s3-cn-gd2.ufileos.com
+    kinds: []
+    region: cn-gd2
+    city: Guangzhou
+    country: CN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public UFile/US3 S3 endpoint for this region (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: UCloud-cn-guiyang1
+    host: s3-cn-guiyang1.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: cn-guiyang1
+    city: Guiyang
+    country: CN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-hk
+    host: s3-hk.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: hk
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-tw-tp
+    host: s3-tw-tp.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: tw-tp
+    city: Taipei
+    country: TW
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-sg
+    host: s3-sg.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: sg
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-jpn-tky
+    host: s3-jpn-tky.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: jpn-tky
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-kr-seoul
+    host: s3-kr-seoul.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: kr-seoul
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-th-bkk
+    host: s3-th-bkk.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: th-bkk
+    city: Bangkok
+    country: TH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-idn-jakarta
+    host: s3-idn-jakarta.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: idn-jakarta
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-vn-sng
+    host: s3-vn-sng.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: vn-sng
+    city: Ho Chi Minh City
+    country: VN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-ph-mnl
+    host: s3-ph-mnl.ufileos.com
+    kinds: []
+    region: ph-mnl
+    city: Manila
+    country: PH
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public UFile/US3 S3 endpoint for this region (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: UCloud-ind-mumbai
+    host: s3-ind-mumbai.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: ind-mumbai
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-pk-khi
+    host: s3-pk-khi.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: pk-khi
+    city: Karachi
+    country: PK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-us-den
+    host: s3-us-den.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: us-den
+    city: Denver
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-us-ca
+    host: s3-us-ca.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: us-ca
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-us-ws
+    host: s3-us-ws.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: us-ws
+    city: Washington
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-bra-saopaulo
+    host: s3-bra-saopaulo.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: bra-saopaulo
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-rus-mosc
+    host: s3-rus-mosc.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: rus-mosc
+    city: Moscow
+    country: RU
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-ge-fra
+    host: s3-ge-fra.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: ge-fra
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-uk-london
+    host: s3-uk-london.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: uk-london
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-uae-dubai
+    host: s3-uae-dubai.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: uae-dubai
+    city: Dubai
+    country: AE
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-afr-nigeria
+    host: s3-afr-nigeria.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: afr-nigeria
+    city: Lagos
+    country: NG
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-uz-tas
+    host: s3-uz-tas.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: uz-tas
+    city: Tashkent
+    country: UZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-kz-ala
+    host: s3-kz-ala.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: kz-ala
+    city: Almaty
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
+  - name: UCloud-mx-mex
+    host: s3-mx-mex.ufileos.com
+    kinds: [https, tcp, icmp]
+    region: mx-mex
+    city: Mexico City
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 204
