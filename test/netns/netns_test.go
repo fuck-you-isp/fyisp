@@ -97,16 +97,18 @@ var anycastAddrs = []netip.Addr{
 
 // The built-in network path group is left out here: it is covered by
 // TestNetworkPath (path_test.go).
+// Targets list their kinds explicitly: without kinds a target gets only
+// TCP (model.DefaultKinds), and these scenarios exercise all three probes.
 const profileYAML = `name: netns-lab
 version: "1"
 path: false
 groups:
   - {id: lab, title: Lab}
 targets:
-  - {name: alpha,   host: 203.0.113.10,   group: lab, interval: 6s}
-  - {name: bravo,   host: 203.0.113.11,   group: lab, interval: 6s}
-  - {name: charlie, host: 203.0.113.12,   group: lab, interval: 6s}
-  - {name: delta,   host: svc.fyisp.test, group: lab, interval: 6s}
+  - {name: alpha,   host: 203.0.113.10,   group: lab, interval: 6s, kinds: [https, tcp, icmp]}
+  - {name: bravo,   host: 203.0.113.11,   group: lab, interval: 6s, kinds: [https, tcp, icmp]}
+  - {name: charlie, host: 203.0.113.12,   group: lab, interval: 6s, kinds: [https, tcp, icmp]}
+  - {name: delta,   host: svc.fyisp.test, group: lab, interval: 6s, kinds: [https, tcp, icmp]}
   - {name: echo,    host: x.invalid,      group: lab, interval: 6s, kinds: [tcp, icmp]}
   - {name: foxtrot, host: 203.0.113.13,   group: lab, interval: 6s, kinds: [https]}
   - {name: golf,    host: 203.0.113.15,   group: lab, interval: 6s, kinds: [tcp, https]}
