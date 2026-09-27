@@ -1,0 +1,655 @@
+provider: oci
+display: Oracle Cloud Infrastructure
+kind: hyperscaler
+category: [storage]
+sources:
+  - https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm
+notes: >-
+  OCI publishes no ping host, so each region uses the public Object Storage API
+  endpoint objectstorage.<region>.oraclecloud.com (oraclecloud20.com for the OC20
+  realm). An unauthenticated GET / returns 404 with a 41-byte JSON error, so the
+  response is tiny and no credentials are sent. Each region resolves to its own IP
+  (mostly 134.70.x.1 per region). All 45 public regions in the OCI regions table
+  (2026-09-27) are covered: 44 in the commercial OC1 realm plus eu-jovanovac-1
+  (Serbia, OC20 realm). Regionality was checked by RTT from Helsinki, FI, and it
+  matched geography: Stockholm 8 ms, rest of EU 21-62 ms, Israel/Morocco 79-90 ms,
+  Middle East 97-159 ms, North America 100-173 ms, India 158-159 ms, Latin America
+  157-228 ms, East Asia 211-299 ms, Australia 360-396 ms. eu-madrid-3 is slower than
+  eu-madrid-1 (89 vs 61 ms) but still clearly in Europe. Four more hosts resolve and
+  answer the same way (us-saltlake-2, us-dallas-1, ap-delhi-1, ap-kulai-1). They are
+  left out because they are not in the public regions list and are probably
+  dedicated or partner regions. One GET per 15 s is negligible next to normal SDK
+  traffic.
+targets:
+  - name: OCI-ap-sydney-1
+    host: objectstorage.ap-sydney-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-sydney-1
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-melbourne-1
+    host: objectstorage.ap-melbourne-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-melbourne-1
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-sa-saopaulo-1
+    host: objectstorage.sa-saopaulo-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-saopaulo-1
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-sa-vinhedo-1
+    host: objectstorage.sa-vinhedo-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-vinhedo-1
+    city: Vinhedo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ca-montreal-1
+    host: objectstorage.ca-montreal-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ca-montreal-1
+    city: Montreal
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ca-toronto-1
+    host: objectstorage.ca-toronto-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ca-toronto-1
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-sa-santiago-1
+    host: objectstorage.sa-santiago-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-santiago-1
+    city: Santiago
+    country: CL
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-sa-valparaiso-1
+    host: objectstorage.sa-valparaiso-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-valparaiso-1
+    city: Valparaiso
+    country: CL
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-sa-bogota-1
+    host: objectstorage.sa-bogota-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-bogota-1
+    city: Bogota
+    country: CO
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-paris-1
+    host: objectstorage.eu-paris-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-paris-1
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-marseille-1
+    host: objectstorage.eu-marseille-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-marseille-1
+    city: Marseille
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-frankfurt-1
+    host: objectstorage.eu-frankfurt-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-frankfurt-1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-hyderabad-1
+    host: objectstorage.ap-hyderabad-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-hyderabad-1
+    city: Hyderabad
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-mumbai-1
+    host: objectstorage.ap-mumbai-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-mumbai-1
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-batam-1
+    host: objectstorage.ap-batam-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-batam-1
+    city: Batam
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-il-jerusalem-1
+    host: objectstorage.il-jerusalem-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: il-jerusalem-1
+    city: Jerusalem
+    country: IL
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-milan-1
+    host: objectstorage.eu-milan-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-milan-1
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-turin-1
+    host: objectstorage.eu-turin-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-turin-1
+    city: Turin
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-osaka-1
+    host: objectstorage.ap-osaka-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-osaka-1
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-tokyo-1
+    host: objectstorage.ap-tokyo-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-tokyo-1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-kulai-2
+    host: objectstorage.ap-kulai-2.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-kulai-2
+    city: Kulai
+    country: MY
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-mx-queretaro-1
+    host: objectstorage.mx-queretaro-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: mx-queretaro-1
+    city: Queretaro
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-mx-monterrey-1
+    host: objectstorage.mx-monterrey-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: mx-monterrey-1
+    city: Monterrey
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-af-casablanca-1
+    host: objectstorage.af-casablanca-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: af-casablanca-1
+    city: Casablanca
+    country: MA
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-amsterdam-1
+    host: objectstorage.eu-amsterdam-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-amsterdam-1
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-me-riyadh-1
+    host: objectstorage.me-riyadh-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: me-riyadh-1
+    city: Riyadh
+    country: SA
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-me-jeddah-1
+    host: objectstorage.me-jeddah-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: me-jeddah-1
+    city: Jeddah
+    country: SA
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  # OC20 realm: host uses oraclecloud20.com
+  - name: OCI-eu-jovanovac-1
+    host: objectstorage.eu-jovanovac-1.oraclecloud20.com
+    kinds: [https, tcp, icmp]
+    region: eu-jovanovac-1
+    city: Jovanovac
+    country: RS
+    geo: eu
+    anycast: false
+    tags: [oc20-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-singapore-1
+    host: objectstorage.ap-singapore-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-singapore-1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-singapore-2
+    host: objectstorage.ap-singapore-2.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-singapore-2
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-af-johannesburg-1
+    host: objectstorage.af-johannesburg-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: af-johannesburg-1
+    city: Johannesburg
+    country: ZA
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-seoul-1
+    host: objectstorage.ap-seoul-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-seoul-1
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-chuncheon-1
+    host: objectstorage.ap-chuncheon-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-chuncheon-1
+    city: Chuncheon
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-madrid-1
+    host: objectstorage.eu-madrid-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-madrid-1
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-madrid-3
+    host: objectstorage.eu-madrid-3.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-madrid-3
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-stockholm-1
+    host: objectstorage.eu-stockholm-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-stockholm-1
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-eu-zurich-1
+    host: objectstorage.eu-zurich-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-zurich-1
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-me-abudhabi-1
+    host: objectstorage.me-abudhabi-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: me-abudhabi-1
+    city: Abu Dhabi
+    country: AE
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-me-dubai-1
+    host: objectstorage.me-dubai-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: me-dubai-1
+    city: Dubai
+    country: AE
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-uk-london-1
+    host: objectstorage.uk-london-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: uk-london-1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-uk-cardiff-1
+    host: objectstorage.uk-cardiff-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: uk-cardiff-1
+    city: Newport
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-ashburn-1
+    host: objectstorage.us-ashburn-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: us-ashburn-1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-chicago-1
+    host: objectstorage.us-chicago-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: us-chicago-1
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-phoenix-1
+    host: objectstorage.us-phoenix-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: us-phoenix-1
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-us-sanjose-1
+    host: objectstorage.us-sanjose-1.oraclecloud.com
+    kinds: [https, tcp, icmp]
+    region: us-sanjose-1
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
