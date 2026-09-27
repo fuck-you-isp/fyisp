@@ -98,8 +98,12 @@ type series struct {
 	// client is replaced after a failed HTTPS probe (see resetClient); it is
 	// also read by the DNS-change callback, hence atomic.
 	client atomic.Pointer[http.Client]
-	iv     time.Duration
-	phase  time.Duration
+	// sessions keeps the TLS session ticket across reconnects and client
+	// resets: a resumed handshake skips the certificate chain (~3-5 KB down
+	// and a signature check), and servers close idle connections often.
+	sessions tls.ClientSessionCache
+	iv       time.Duration
+	phase    time.Duration
 }
 
 // Run probes every target of p until ctx is done, then returns nil. Samples
@@ -316,10 +320,14 @@ func (r *runner) resetClient(s *series) {
 }
 
 func (r *runner) newClient(s *series) *http.Client {
-	var tc *tls.Config
+	tc := &tls.Config{}
 	if r.o.TLSConfig != nil {
 		tc = r.o.TLSConfig.Clone()
 	}
+	if s.sessions == nil {
+		s.sessions = tls.NewLRUClientSessionCache(1)
+	}
+	tc.ClientSessionCache = s.sessions
 	d := &net.Dialer{Timeout: r.timeout(model.KindHTTPS)}
 	tr := &http.Transport{
 		Proxy: nil, // measure the direct path, never a proxy

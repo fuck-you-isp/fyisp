@@ -156,7 +156,26 @@ fyisp --profile default,dns          # the default targets plus every public res
 
 Target names are identities (a name keeps its history): when a profile is combined with `default` and both have a target of the same name (e.g. `AWS-us-east-1`), the catalog's definition is used. `default` on its own never changes.
 
-There is no limit on the number of targets. The cost grows with the target count; see the benchmark table below (BENCHMARKS_PLACEHOLDER).
+There is no limit on the number of targets; you can run every profile at once (`--profile all`). The cost grows roughly linearly with the target count. Per 100 targets: about 1.4% of one CPU core, 11 KB/s of download, 5 KB/s of upload and 0.4 GB of disk for 90 days.
+
+Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-minute warm-up; the Network path group included):
+
+| Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
+|---|---:|---:|---:|---:|---:|---:|
+| `dns` | 33 | 0.8% | 65 MB | 3.8 / 1.9 KB/s | 15 GB | 0.13 GB |
+| `common` | 72 | 1.1% | 72 MB | 8.0 / 2.6 KB/s | 28 GB | 0.24 GB |
+| `default` | 92 | 3.3% | 84 MB | 21 / 9 KB/s | 81 GB | 0.57 GB |
+| `gaming` | 150 | 1.9% | 73 MB | 12 / 7 KB/s | 52 GB | 0.43 GB |
+| `hyperscalers` | 299 | 4.9% | 115 MB | 34 / 17 KB/s | 135 GB | 1.4 GB |
+| `europe` | 381 | 6.0% | 111 MB | 41 / 21 KB/s | 165 GB | 1.4 GB |
+| `devclouds` | 743 | 11.6% | 155 MB | 80 / 41 KB/s | 320 GB | 3.1 GB |
+| `clouds` | 1037 | 15.8% | 205 MB | 114 / 58 KB/s | 456 GB | 4.5 GB |
+| `all` | 1306 | 18.4% | 231 MB | 142 / 70 KB/s | 564 GB | 5.4 GB |
+
+- `default` costs more CPU than its size suggests because it runs 7 continuous hop-by-hop traces.
+- TLS session resumption, added after this run, cut download by a further ~23% and CPU by ~10% on `all` (110 KB/s, 18.4% vs 20.3% in a side-by-side run).
+- Traffic per month matters on metered connections: every target is probed every 15 seconds (ping every 5 seconds), around the clock.
+- Disk is about 1.4 bytes per measurement (compressed hourly blocks), plus about 40% for summaries and indexes.
 
 A `--config` file can start from any profiles and change them:
 
