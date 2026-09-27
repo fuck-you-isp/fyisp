@@ -52,23 +52,6 @@ The binaries are not code-signed yet. Windows SmartScreen and macOS Gatekeeper o
 
 Code signing is planned: free Windows signing through the [SignPath Foundation](https://signpath.org/) once the repository is public (it requires a public open-source project), and Apple notarization if there is demand.
 
-### While the repository is private
-
-Release downloads need GitHub authentication, so the one-line launchers above don't work anonymously yet. With the [GitHub CLI](https://cli.github.com/) logged in to an account with access:
-
-```sh
-gh release download -R fuck-you-isp/fyisp -p 'fyisp-linux-amd64' -p SHA256SUMS
-sha256sum -c SHA256SUMS --ignore-missing && chmod +x fyisp-linux-amd64 && ./fyisp-linux-amd64
-```
-
-```powershell
-gh release download -R fuck-you-isp/fyisp -p 'fyisp-windows-amd64.exe' -p SHA256SUMS
-(Get-FileHash .\fyisp-windows-amd64.exe -Algorithm SHA256).Hash   # compare with SHA256SUMS
-.\fyisp-windows-amd64.exe
-```
-
-(`gh` downloads don't carry the "downloaded from the internet" mark either, so there is no SmartScreen or Gatekeeper warning.) The Docker image needs `docker login ghcr.io` with a token that has `read:packages`.
-
 ### Docker
 
 ```sh
