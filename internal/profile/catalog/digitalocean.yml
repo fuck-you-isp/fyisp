@@ -11,11 +11,15 @@ notes: >-
   so each region is probed via its public Spaces (S3) regional endpoint <slug>.digitaloceanspaces.com.
   GET / returns a tiny anonymous S3 XML body (~214 B). RTTs from a single vantage point were consistent
   with each endpoint being in-region (e.g. blr1 ~150 ms vs fra1 ~37 ms from Europe).
-  Gaps: nyc1 and nyc2 have no Spaces hostname (NYC Spaces is served from nyc3); legacy ams2/sfo1 have no endpoint.
-  These four (of the 18 slugs on the regional-availability page and status.digitalocean.com) are kept
-  with kinds: [] on their would-be Spaces hostname, which is NXDOMAIN. Re-checked 2026-09-27:
-  speedtest-<dc>, speedtest.<dc>, mirrors.<dc> and lg.<dc> under digitalocean.com are all NXDOMAIN, and
-  mirrors.digitalocean.com is a Cloudflare anycast front.
+  Gaps: nyc1 and nyc2 have no Spaces hostname (NYC Spaces is served from nyc3); ams2 and sfo1 are
+  legacy datacenters (the regional-availability page lists 16 datacenters plus these two, with resource
+  creation restricted) and have no endpoint. These four are kept with kinds: [] on their would-be Spaces
+  hostname, which is NXDOMAIN. Re-checked 2026-09-27 against 1.1.1.1 and 8.8.8.8: speedtest-<dc>,
+  <dc>.speedtest, speedtest.<dc>, lg-<dc>, <dc>.lg, mirrors-<dc> and <dc>.mirrors under digitalocean.com,
+  speedtest-<dc>.do.co and <dc>.do.co are all NXDOMAIN; mirrors.digitalocean.com is a Cloudflare anycast
+  front; the Functions API host for nyc1 (faas-nyc1-*.doserverless.co) is also behind Cloudflare, so it
+  is not in-region. The only other per-datacenter handles are customer Droplets, managed databases and
+  load balancers, which are not acceptable targets.
 targets:
   - name: DO-nyc3
     host: nyc3.digitaloceanspaces.com
@@ -247,7 +251,7 @@ targets:
     country: US
     geo: na
     anycast: false
-    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    tags: [unreachable, legacy]    # legacy DC, creation restricted; no Spaces endpoint, NXDOMAIN on 2026-09-27
     verified:
       date: 2026-09-27
       icmp: false
@@ -260,7 +264,7 @@ targets:
     country: NL
     geo: eu
     anycast: false
-    tags: [unreachable]            # no Spaces endpoint for this datacenter; NXDOMAIN on 2026-09-27
+    tags: [unreachable, legacy]    # legacy DC, creation restricted; no Spaces endpoint, NXDOMAIN on 2026-09-27
     verified:
       date: 2026-09-27
       icmp: false

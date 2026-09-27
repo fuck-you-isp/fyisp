@@ -5,6 +5,7 @@ category: [storage]
 sources:
   - https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-endpoints
   - https://control.cloud-object-storage.cloud.ibm.com/v2/endpoints
+  - https://cloud.ibm.com/docs/monitoring?topic=monitoring-endpoints
 notes: >-
   IBM Cloud publishes no ping host, so each location uses the public Cloud Object
   Storage S3 endpoint s3.<location>.cloud-object-storage.appdomain.cloud. An
@@ -21,9 +22,21 @@ notes: >-
   (control.cloud-object-storage.cloud.ibm.com/v2/endpoints) lists exactly
   these 19 regional and single-site endpoints. eu-fr2 (Paris, the restricted
   financial-services region) has no COS endpoint, and its VPC API host is
-  behind Cloudflare anycast, so it is left out. The old per-datacenter
-  speedtest.<dc>.softlayer.com hosts still resolve but did not answer
-  ICMP/HTTP/HTTPS.
+  behind Cloudflare anycast.
+  2026-09-27 audit (second pass): the VPC region list (<region>.iaas.cloud.ibm.com)
+  has 14 regions: the 13 COS regions plus eu-fr2. eu-fr2 is now covered by
+  the IBM Cloud Monitoring ingestion/API host eu-fr2.monitoring.cloud.ibm.com.
+  It CNAMEs to an IBM Kubernetes ingress in par04 and rotates across three
+  unicast IBM Paris addresses (150.112.x, 158.231.x and 163.102.x, one per
+  zone, 39-43 ms). Its /api/ping health path returns 200 with 4 bytes and
+  needs no auth. The other eu-fr2 service hosts are NXDOMAIN or sit behind
+  Akamai or Cloudflare. The old per-datacenter speedtest.<dc>.softlayer.com
+  hosts: 43 still resolve, but only speedtest.dal10 answers, from what looks
+  like a leftover host with a certificate that expired in March 2025, so none
+  are used. IBM Classic has no other public per-DC endpoint beyond the six COS
+  single-site ones below. COS GeoDNS: the regional hosts rotate among a few
+  IPs in the same /24 for each client, all in-region, and the single-site
+  hosts return one IP.
 targets:
   - name: IBM-us-south
     host: s3.us-south.cloud-object-storage.appdomain.cloud
@@ -297,3 +310,18 @@ targets:
       tcp: true
       https: 403
       bytes: 255
+  - name: IBM-eu-fr2
+    host: eu-fr2.monitoring.cloud.ibm.com
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: eu-fr2
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4

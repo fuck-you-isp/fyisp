@@ -4,37 +4,52 @@ kind: hyperscaler
 category: [storage]
 sources:
   - https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/govfedramp.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/govfeddod.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/govuksouth.htm
+  - https://docs.oracle.com/en-us/iaas/Content/gov-cloud/ausgov.htm
   - https://raw.githubusercontent.com/oracle/oci-go-sdk/master/common/regions.json
 notes: >-
   OCI publishes no ping host, so each region uses the public Object Storage API
-  endpoint objectstorage.<region>.oraclecloud.com (oraclecloud20.com for the OC20
-  realm). An unauthenticated GET / returns 404 with a 41-byte JSON error, so the
-  response is tiny and no credentials are sent. Each region resolves to its own IP
-  (mostly 134.70.x.1 per region). All 45 public regions in the OCI regions table
-  (2026-09-27) are covered: 44 in the commercial OC1 realm plus eu-jovanovac-1
-  (Serbia, OC20 realm). Regionality was checked by RTT from Helsinki, FI, and it
-  matched geography: Stockholm 8 ms, rest of EU 21-62 ms, Israel/Morocco 79-90 ms,
-  Middle East 97-159 ms, North America 100-173 ms, India 158-159 ms, Latin America
-  157-228 ms, East Asia 211-299 ms, Australia 360-396 ms. eu-madrid-3 is slower than
-  eu-madrid-1 (89 vs 61 ms) but still clearly in Europe. Four more hosts resolve and
-  answer the same way (us-saltlake-2, us-dallas-1, ap-delhi-1, ap-kulai-1). They are
-  left out because they are not in the public regions list and are probably
-  dedicated or partner regions. One GET per 15 s is negligible next to normal SDK
-  traffic. Government and sovereign realms (separate tenancies, public endpoints)
-  are included and tagged restricted plus their realm: OC2 US Government
-  (us-langley-1, us-luke-1) and OC3 US Government (us-gov-ashburn-1,
-  us-gov-chicago-1, us-gov-phoenix-1) under oraclegovcloud.com, OC4 UK Government
-  (uk-gov-london-1, uk-gov-cardiff-1) under oraclegovcloud.uk, and OC19 EU
-  Sovereign Cloud (eu-frankfurt-2, eu-madrid-2) under oraclecloud.eu. Region IDs
-  and realm domains come from the OCI SDK regions.json; each answered the same
-  41-byte 404 on 2026-09-27. RTTs matched geography (UK 35-40 ms, Frankfurt 24 ms,
-  Madrid 52 ms, US gov 118-166 ms) except us-langley-1, which is a steady 169 ms,
-  about 55 ms more than us-gov-ashburn-1 and us-ashburn-1 (both Virginia), so it
-  may be routed via, or fronted from, the US west; treat its city as unconfirmed.
-  Left out: the dedicated/customer realms in regions.json (OC8 Japan, OC9 Oman,
-  OC10 Australia, OC14 EU dcc, OC15 Bangladesh, OC21 Qatar, OC23-OC52 US/EU/ME/KR/BR
-  dedicated regions), which are Oracle Alloy / Dedicated Region Cloud@Customer
-  realms for single customers rather than public regions.
+  endpoint objectstorage.<region>.<realm domain> (documented per region). An
+  unauthenticated GET / returns 404 with a 41-byte JSON error, so the response
+  is tiny and no credentials are sent. Each region resolves to its own unicast
+  IP (mostly 134.70.x.1 per region), identical from every resolver we tried.
+  All 45 public regions in the OCI regions table (2026-09-27) are covered: 44
+  in the commercial OC1 realm plus eu-jovanovac-1 (Serbia, OC20 realm).
+  Regionality was checked by RTT from Helsinki, FI, and it matched geography:
+  Stockholm 8 ms, rest of EU 21-62 ms, Israel/Morocco 79-90 ms, Middle East
+  97-159 ms, North America 100-173 ms, India 158-159 ms, Latin America 157-228
+  ms, East Asia 211-299 ms, Australia 360-396 ms. eu-madrid-3 is slower than
+  eu-madrid-1 (89 vs 61 ms) but still clearly in Europe. ap-batam-1 lost
+  2-3 of 20 pings on 2026-09-27 (loss at Singtel transit hops; TCP/HTTPS
+  never failed). Two more OC1 hosts
+  resolve and answer the same way (us-saltlake-2, ap-delhi-1); they are left
+  out because they are not in the public regions table (dedicated or partner
+  regions). One GET per 15 s is negligible next to normal SDK traffic.
+  Government and sovereign realms (separate tenancies, public endpoints) are
+  included and tagged restricted plus their realm, with the locations Oracle
+  publishes: OC2 US Government Cloud (us-langley-1 = US Gov East, Ashburn VA;
+  us-luke-1 = US Gov West, Phoenix AZ) and OC3 US Defense Cloud
+  (us-gov-ashburn-1, us-gov-chicago-1, us-gov-phoenix-1) under
+  oraclegovcloud.com, OC4 UK Sovereign Cloud (uk-gov-london-1,
+  uk-gov-cardiff-1) under oraclegovcloud.uk, OC19 EU Sovereign Cloud
+  (eu-frankfurt-2, eu-madrid-2) under oraclecloud.eu, and OC10 Australia
+  Government and Defence (ap-dcc-canberra-1) under oraclecloud10.com, which
+  the regions page lists alongside the other government clouds. Region IDs and
+  realm domains come from the OCI SDK regions.json; each answered the same
+  41-byte 404 on 2026-09-27. RTTs matched geography (UK 35-40 ms, Frankfurt 24
+  ms, Madrid 52 ms, US gov 118-162 ms, Canberra 319 ms) except us-langley-1: a
+  steady 169 ms, about 50 ms more than us-gov-ashburn-1 and us-ashburn-1.
+  Oracle documents it in Ashburn and geo-IP puts 139.87.32.1 in Leesburg VA,
+  but a traceroute shows both OC2 regions (AS6142) entering Oracle through the
+  same Lumen hop as us-luke-1 (161 ms), so from Europe traffic to us-langley-1
+  seems to be carried over Oracle's US-west interconnect; its RTT includes that
+  detour. Left out: the single-customer dedicated realms in regions.json (OC8
+  Japan, OC9 Oman, OC14 EU dcc, OC15 Bangladesh, OC21 Qatar, OC23-OC52
+  US/EU/ME/KR/BR), which are Oracle Alloy / Dedicated Region Cloud@Customer
+  realms rather than public or government regions. Their object storage hosts
+  also answer, but they are not offered to the public.
 targets:
   - name: OCI-ap-sydney-1
     host: objectstorage.ap-sydney-1.oraclecloud.com
@@ -668,11 +683,11 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-langley-1                # OC2 US Government realm
+  - name: OCI-us-langley-1                # OC2 US Government realm, US Gov East (Ashburn)
     host: objectstorage.us-langley-1.oraclegovcloud.com
     kinds: [https, tcp, icmp]
     region: us-langley-1
-    city: Langley
+    city: Ashburn
     country: US
     geo: na
     anycast: false
@@ -683,11 +698,11 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-luke-1                # OC2 US Government realm (Luke AFB, AZ)
+  - name: OCI-us-luke-1                # OC2 US Government realm, US Gov West (Phoenix)
     host: objectstorage.us-luke-1.oraclegovcloud.com
     kinds: [https, tcp, icmp]
     region: us-luke-1
-    city: Glendale
+    city: Phoenix
     country: US
     geo: na
     anycast: false
@@ -698,7 +713,7 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-gov-ashburn-1                # OC3 US Government realm
+  - name: OCI-us-gov-ashburn-1                # OC3 US Defense Cloud realm
     host: objectstorage.us-gov-ashburn-1.oraclegovcloud.com
     kinds: [https, tcp, icmp]
     region: us-gov-ashburn-1
@@ -713,7 +728,7 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-gov-chicago-1                # OC3 US Government realm
+  - name: OCI-us-gov-chicago-1                # OC3 US Defense Cloud realm
     host: objectstorage.us-gov-chicago-1.oraclegovcloud.com
     kinds: [https, tcp, icmp]
     region: us-gov-chicago-1
@@ -728,7 +743,7 @@ targets:
       tcp: true
       https: 404
       bytes: 41
-  - name: OCI-us-gov-phoenix-1                # OC3 US Government realm
+  - name: OCI-us-gov-phoenix-1                # OC3 US Defense Cloud realm
     host: objectstorage.us-gov-phoenix-1.oraclegovcloud.com
     kinds: [https, tcp, icmp]
     region: us-gov-phoenix-1
@@ -797,6 +812,21 @@ targets:
     geo: eu
     anycast: false
     tags: [restricted, oc19-realm]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 41
+  - name: OCI-ap-dcc-canberra-1                # OC10 Australia Government and Defence realm
+    host: objectstorage.ap-dcc-canberra-1.oraclecloud10.com
+    kinds: [https, tcp, icmp]
+    region: ap-dcc-canberra-1
+    city: Canberra
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [restricted, oc10-realm]
     verified:
       date: 2026-09-27
       icmp: true

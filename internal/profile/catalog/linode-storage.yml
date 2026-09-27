@@ -6,14 +6,20 @@ sources:
   - https://techdocs.akamai.com/cloud-computing/docs/object-storage-product-limits
   - https://techdocs.akamai.com/cloud-computing/docs/access-buckets-and-files-through-urls
   - https://api.linode.com/v4/regions
+  - https://techdocs.akamai.com/cloud-computing/docs/endpoint-types
 notes: >-
-  Linode Object Storage cluster endpoints <cluster>.linodeobjects.com, one per location (the -1
-  cluster; extra -2/-3 clusters in the same location are omitted). The region field is the cluster id;
-  the compute region mapping differs for de-fra-1 -> de-fra-2, sg-sin-1 -> sg-sin-2, jp-tyo-1 ->
-  jp-tyo-3, in-bom-1 -> in-bom-2. Hostnames are Akamai GTM CNAMEs (akadns.net) but resolve to
-  in-region addresses: PTRs name the site (osproxy-*.fra1.de, .sto2.se, ...) and RTTs matched the
-  linode speed-test hosts. Anonymous GET / returns 200 (214 B, legacy clusters) or 403 (110 B, newer
-  E3 clusters). Complements the linode provider (speed-test hosts).
+  Linode Object Storage cluster endpoints <cluster>.linodeobjects.com, one per location (the oldest
+  cluster at each site; later E3 clusters at the same site, i.e. us-ord-10, us-lax-4, us-sea-9 and
+  us-iad-10, are left out so no site is counted twice). The region field is the cluster id; the compute
+  region mapping differs for de-fra-1 -> de-fra-2, sg-sin-1 -> sg-sin-2, jp-tyo-1 -> jp-tyo-3,
+  in-bom-1 -> in-bom-2, us-iad-18 -> us-iad-2 and fr-par-13 -> fr-par-2 (iad5 and par4 are separate sites
+  from us-iad-1 at iad3 and fr-par-1 at par3). Location list: the endpoint-types table, 26 locations,
+  all covered. Hostnames are Akamai GTM CNAMEs (akadns.net) but resolve to in-region addresses: PTRs
+  name the site (osproxy-*.fra1.de, .sto2.se, ...) and RTTs matched the linode speed-test hosts.
+  Re-checked 2026-09-27 with EDNS client-subnet queries from six continents: every answer stayed in the
+  cluster's city (fr-par-13 hands out two Paris pools, 172.239.x and 104.105.x). Anonymous GET /
+  returns 200 (214 B, legacy clusters) or 403 (110 B, newer E3 clusters). Complements the linode
+  provider (speed-test hosts at the same sites, different machines and IPs).
 targets:
   - name: LinodeObj-us-east-1
     host: us-east-1.linodeobjects.com
@@ -57,6 +63,20 @@ targets:
       tcp: true
       https: 200
       bytes: 214
+  - name: LinodeObj-us-iad-18
+    host: us-iad-18.linodeobjects.com
+    kinds: [https, tcp, icmp]
+    region: us-iad-18
+    city: Washington
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
   - name: LinodeObj-us-ord-1
     host: us-ord-1.linodeobjects.com
     kinds: [https, tcp, icmp]
@@ -169,6 +189,20 @@ targets:
       tcp: true
       https: 200
       bytes: 214
+  - name: LinodeObj-fr-par-13
+    host: fr-par-13.linodeobjects.com
+    kinds: [https, tcp, icmp]
+    region: fr-par-13
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 110
   - name: LinodeObj-se-sto-1
     host: se-sto-1.linodeobjects.com
     kinds: [https, tcp, icmp]

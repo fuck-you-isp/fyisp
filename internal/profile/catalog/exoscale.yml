@@ -8,7 +8,9 @@ sources:
 notes: >-
   Exoscale publishes no speed-test hosts; each zone is probed via its public Simple Object Storage
   endpoint sos-<zone>.exo.io (documented format). Anonymous GET / returns 403 with a ~110 B XML
-  body, which counts as reachable. Covers all 8 general-purpose zones; Madrid is announced but not live.
+  body, which counts as reachable. Covers all 8 zones returned by the public zone list
+  https://api-ch-gva-2.exoscale.com/v2/zone (re-checked 2026-09-27); Madrid is announced but not live
+  (sos-es-mad-1 does not resolve).
 targets:
   - name: Exoscale-ch-gva-2
     host: sos-ch-gva-2.exo.io
@@ -58,6 +60,10 @@ targets:
     region: de-muc-1
     city: Munich
     country: DE
+    notes: >-
+      ICMP replies run ~24 ms slower than TCP (59 vs 35 ms from Helsinki on 2026-09-27). The extra delay
+      appears only on the final hop after net-edge030.muc1.exoscale.net, so it is on the host side.
+      Use the tcp/https RTT as the true latency; ICMP is still useful for loss.
     geo: eu
     anycast: false
     verified:

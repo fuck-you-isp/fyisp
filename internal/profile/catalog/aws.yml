@@ -11,6 +11,7 @@ sources:
   - https://www.aljazeera.com/news/2026/3/24/amazon-says-aws-bahrain-region-disrupted-following-drone-activity
   - https://www.theregister.com/off-prem/2026/07/21/iran-says-its-struck-offline-aws-facility-in-bahrain-again/5275762
   - https://www.datacenterdynamics.com/en/news/aws-launches-uae-cloud-region/
+  - https://www.aboutamazon.com/news/aws/aws-cloud-region-saudi-arabia
 notes: >-
   One target per AWS commercial region (all 34 in AWS's region table as of
   2026-09-27, including every opt-in region; re-checked against botocore
@@ -45,11 +46,15 @@ notes: >-
   partitions (us-iso*, us-isob*, us-isof*, eu-isoe-west-1; not publicly
   reachable), and Local Zones, Wavelength Zones and Outposts (no public
   endpoint of their own; API traffic goes to the parent region).
-  Pre-launch: dynamodb.me-west-1 (Saudi Arabia, announced for 2026) and
-  dynamodb.sa-west-1 (Chile, announced for end-2026) already answer /ping
-  (150 / 223 ms) and have prefixes in ip-ranges.json, but neither is in
-  AWS's region table or botocore yet; add them as AWS-me-west-1 /
-  AWS-sa-west-1 once they launch. CloudFront and
+  Pre-launch: dynamodb.me-west-1 (Saudi Arabia, AWS says December 2026) and
+  dynamodb.sa-west-1 (Chile, announced for end-2026) already resolve and
+  have AMAZON prefixes in ip-ranges.json, but neither is in AWS's region
+  table (still 34 regions) or botocore endpoints.json/partitions.json as
+  of 2026-09-27; add them as AWS-me-west-1 / AWS-sa-west-1 once they
+  launch. 2026-09-27 audit: every target re-probed (5 pings, 3 TCP
+  connects, 3 GETs over ~60 s): 0 loss, valid TLS, 42-50 B bodies, RTT
+  spread within a few ms; every resolved IP is in ip-ranges.json for its
+  own region only. CloudFront and
   Global Accelerator are anycast and live in the CDN catalog, not here.
   Load: 1 small GET + 1 TCP connect + 3 pings per 15 s against a public
   health endpoint is negligible for AWS.

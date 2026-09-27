@@ -328,7 +328,7 @@ func TestProfileMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := reg.Resolve([]string{"vultr", "dns", "default"}, profile.ResolveOptions{})
+	p, err := reg.Resolve([]string{"linode", "dns", "default"}, profile.ResolveOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,9 +363,9 @@ func TestProfileMetadata(t *testing.T) {
 		for _, ts := range pj.Targets {
 			byName[ts.Name] = ts
 		}
-		if v := byName["Vultr-ewr"]; v.Provider != "vultr" || v.ProviderTitle != "Vultr" || v.ProviderKind != "cloud" ||
-			v.City != "New Jersey" || v.Country != "US" || v.Geo != "na" {
-			t.Errorf("%s Vultr-ewr %+v", tc.name, v)
+		if v := byName["Linode-us-east"]; v.Provider != "linode" || v.ProviderTitle != "Akamai Cloud (Linode)" || v.ProviderKind != "cloud" ||
+			v.City != "Newark" || v.Country != "US" || v.Geo != "na" {
+			t.Errorf("%s Linode-us-east %+v", tc.name, v)
 		}
 		// A default-profile target: its group is its provider, no geo.
 		if v := byName["DevTunnel-UkSouth"]; v.Provider != "devtunnels" || v.ProviderTitle != "DevTunnels" || v.Geo != "" || v.ProviderKind != "" {

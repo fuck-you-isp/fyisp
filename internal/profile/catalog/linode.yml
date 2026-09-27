@@ -13,7 +13,12 @@ notes: >-
   The public API (api.linode.com/v4/regions) lists 33 core regions on 2026-09-27; the two not on the
   speed-test page, us-iad-2 (Washington 2) and fr-par-2 (Paris 2), answer on <slug>.speedtest.linode.com
   (rDNS speedtest-1.iad5.us / speedtest-1.par4.fr.prod.linode.com), so all 33 are covered.
-  Gaps: distributed/edge compute sites have no published speed-test host.
+  No site is counted twice: the paired regions in one city (eu-central/de-fra-2, eu-west/gb-lon,
+  ap-west/in-bom-2, ap-south/sg-sin-2, ap-northeast/jp-tyo-3, us-iad/us-iad-2, fr-par/fr-par-2) are
+  distinct facilities with distinct IPs (rDNS e.g. iad3 vs iad5, par3 vs par4, lon vs lon4). The
+  linode-storage provider probes object-storage gateways at many of the same sites; those are other
+  machines and a different service, kept as a separate provider on purpose. The 33 API regions are all
+  core sites on 2026-09-27; distributed/edge compute sites have no published speed-test host.
 targets:
   - name: Linode-us-southeast
     host: speedtest.atlanta.linode.com

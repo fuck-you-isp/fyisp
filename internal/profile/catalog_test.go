@@ -63,7 +63,7 @@ func TestTargetMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := r.Resolve([]string{"vultr"}, ResolveOptions{})
+	p, err := r.Resolve([]string{"linode"}, ResolveOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,23 +77,23 @@ func TestTargetMetadata(t *testing.T) {
 		}
 		n++
 		ct, _ := r.Catalog.Target(tg.Name)
-		if tg.Provider != "vultr" || tg.ProviderTitle != "Vultr" || tg.ProviderKind != "cloud" ||
+		if tg.Provider != "linode" || tg.ProviderTitle != "Akamai Cloud (Linode)" || tg.ProviderKind != "cloud" ||
 			tg.City != ct.City || tg.Country != ct.Country || tg.Geo != ct.GeoKey() || tg.Geo == "" {
 			t.Errorf("metadata %+v", tg)
 		}
 	}
 	if n == 0 {
-		t.Fatal("no vultr targets")
+		t.Fatal("no linode targets")
 	}
-	cfg := []byte("name: mine\nextends: [vultr]\noverride:\n  - {name: Vultr-ewr, interval: 30s}\nadd:\n  - {name: home, host: 192.168.1.1, group: vultr}\n")
+	cfg := []byte("name: mine\nextends: [linode]\noverride:\n  - {name: Linode-us-east, interval: 30s}\nadd:\n  - {name: home, host: 192.168.1.1, group: linode}\n")
 	fp, err := Parse(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, tg := range fp.Targets {
 		switch tg.Name {
-		case "Vultr-ewr":
-			if tg.Provider != "vultr" || tg.City != "New Jersey" || tg.Geo != "na" || tg.Interval != 30*time.Second {
+		case "Linode-us-east":
+			if tg.Provider != "linode" || tg.City != "Newark" || tg.Geo != "na" || tg.Interval != 30*time.Second {
 				t.Errorf("override lost metadata: %+v", tg)
 			}
 		case "home":

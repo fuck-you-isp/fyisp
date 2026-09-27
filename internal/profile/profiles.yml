@@ -35,12 +35,12 @@
 profiles:
   # ---- by kind of provider -------------------------------------------------
   - name: hyperscalers
-    description: The big clouds (AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, ...), one panel per provider and region of the world
+    description: The big clouds (AWS, Google Cloud, Azure, Oracle, IBM), one panel per provider and region of the world
     select: {kinds: [hyperscaler]}
     groups: provider-geo
 
   - name: devclouds
-    description: Developer and regional clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, Scaleway, ...), one panel per provider and region of the world
+    description: Developer clouds (DigitalOcean, Linode, Hetzner, Exoscale), one panel per provider and region of the world
     select: {kinds: [cloud]}
     groups: provider-geo
 

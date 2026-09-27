@@ -131,7 +131,7 @@ fyisp --profile default,dns          # the default targets plus every public res
 |---|---|
 | `default` | the 87 original targets (used without `--profile`) |
 | `all` | every target in the catalog |
-| `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / DigitalOcean, Linode, Vultr, Hetzner, OVH, ... / both; one panel per provider and region |
+| `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM / DigitalOcean, Linode, Hetzner, Exoscale / both; one panel per provider and region |
 | `cdn`, `dns` | CDN edges, public DNS resolvers (DNS-over-HTTPS) |
 | `common`, `dev`, `streaming`, `gaming` | everyday services, developer services, streaming, game platforms |
 | `north-america`, `south-america`, `europe`, `middle-east`, `africa`, `asia`, `oceania` | every catalog target located there (anycast endpoints have no region and are left out) |

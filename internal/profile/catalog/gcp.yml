@@ -10,6 +10,7 @@ sources:
   - https://docs.cloud.google.com/docs/security/compliance/endpoints
   - https://cloud.google.com/blog/products/infrastructure/google-cloud-launches-new-region-in-bangkok-thailand
   - https://gcping.com/api/endpoints
+  - https://www.gstatic.com/ipranges/cloud.json
 notes: >-
   One target per Google Cloud region (43 regions as of 2026-09; list cross-checked
   against the regions-zones docs table and gcping.com/api/endpoints). Each region uses
@@ -30,9 +31,20 @@ notes: >-
   same Storage API (storage.googleapis.com) for an apples-to-apples edge baseline.
   2026-09-27 audit: the regions-zones table still lists the same 43 regions, and
   storage.asia-southeast3.rep.googleapis.com still does not resolve. Regional
-  API hosts also exist for europe-west15, us-east7 and us-central2, but none
-  of them is in the public region list (restricted or pre-launch), so they are
-  left out. Google sovereign offerings (S3NS, T-Systems) run under their own
+  API hosts also exist for europe-west15, us-east7, us-central2 and us-west8
+  (all four are scopes in gstatic.com/ipranges/cloud.json), but none of them
+  is in the public region list (restricted or pre-launch), so they are
+  left out. Regionality re-checked: each storage.<region>.rep host
+  returns one static IP for every EDNS client subnet (no GeoDNS), and
+  Globalping probes confirm the address answers only in its region
+  (asia-northeast1: 3 ms from Tokyo, 227 ms from Frankfurt; us-west1: 7 ms
+  from Seattle; europe-north1: 40 ms from Frankfurt, 267 ms from Tokyo),
+  so these are not globally fronted. The suggested alternatives are worse:
+  <region>-docker.pkg.dev and <region>-run.googleapis.com resolve to the
+  shared global GFE pools (172.253/172.217), not per-region addresses.
+  For asia-southeast3, pubsub, compute and secretmanager .rep hosts all
+  give the same 1.5 KB 404 (logging.rep gives a 19 B 503 but is a
+  failure response, so it was not used). Google sovereign offerings (S3NS, T-Systems) run under their own
   partner domains and are not covered here.
 targets:
   # africa-south1: ping 194 ms / TCP connect 200 ms from Helsinki
