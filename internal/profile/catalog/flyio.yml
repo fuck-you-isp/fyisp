@@ -1,0 +1,24 @@
+provider: flyio
+display: Fly.io
+kind: cloud
+sources:
+  - https://docs.fly.io/reference/regions/
+  - https://debug.fly.dev/
+notes: >-
+  Fly.io fronts every app with one global anycast network and publishes no per-region test hosts
+  (*.fly.dev is a wildcard for app names, e.g. iad.fly.dev is not a region endpoint). debug.fly.dev is
+  Fly's own debug app: it echoes request headers incl. Fly-Region (the edge that answered) in ~550 B.
+  It measures latency to the nearest Fly edge only, so country/geo are omitted (anycast: true).
+  Gaps: no per-region endpoints for the 17 regions (ams arn cdg dfw ewr fra gru iad jnb lax lhr nrt ord sin sjc syd yyz).
+targets:
+  - name: Fly-anycast
+    host: debug.fly.dev
+    kinds: [https, tcp, icmp]
+    region: global
+    anycast: true
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 548

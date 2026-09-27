@@ -1,0 +1,95 @@
+provider: hetzner
+display: Hetzner
+kind: cloud
+sources:
+  - https://fsn1-speed.hetzner.com/
+  - https://docs.hetzner.com/general/others/data-centers-and-connection/
+notes: >-
+  Official Hetzner test-file hosts <dc>-speed.hetzner.com for every Hetzner location (dedicated parks
+  FSN1/NBG1/HEL1 and cloud locations ASH/HIL/SIN). GET / is a ~320 B index page; never fetch the
+  100MB/1GB/10GB files. Target names are kept identical to the default profile.
+targets:
+  - name: Hetzner-Falkenstein
+    host: fsn1-speed.hetzner.com
+    kinds: [https, tcp, icmp]
+    region: fsn1
+    city: Falkenstein
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 324
+  - name: Hetzner-Nuremberg
+    host: nbg1-speed.hetzner.com
+    kinds: [https, tcp, icmp]
+    region: nbg1
+    city: Nuremberg
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 324
+  - name: Hetzner-Helsinki
+    host: hel1-speed.hetzner.com
+    kinds: [https, tcp, icmp]
+    region: hel1
+    city: Helsinki
+    country: FI
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 324
+  - name: Hetzner-Ashburn
+    host: ash-speed.hetzner.com
+    kinds: [https, tcp, icmp]
+    region: ash
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 323
+  - name: Hetzner-Hillsboro
+    host: hil-speed.hetzner.com
+    kinds: [https, tcp, icmp]
+    region: hil
+    city: Hillsboro
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 323
+  - name: Hetzner-Singapore
+    host: sin-speed.hetzner.com
+    kinds: [https, tcp, icmp]
+    region: sin
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 323

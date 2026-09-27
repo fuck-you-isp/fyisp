@@ -1,0 +1,447 @@
+provider: linode
+display: Akamai Cloud (Linode)
+kind: cloud
+sources:
+  - https://www.akamai.com/cloud/speed-test
+  - https://www.linode.com/speed-test/
+notes: >-
+  Official Akamai Cloud (Linode) speed-test hosts, one per core compute region, as listed on the
+  Akamai Cloud speed-test page (31 locations incl. the 'expansion' sites de-fra-2, gb-lon, in-bom-2,
+  sg-sin-2, jp-tyo-3). GET / is a ~12.7 KB HTML page listing test files; never fetch the 100MB/1GB files.
+  Region ids are Linode API region slugs (mapped from the page's city names).
+  Gaps: distributed/edge compute sites have no published speed-test host.
+targets:
+  - name: Linode-us-southeast
+    host: speedtest.atlanta.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-southeast
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-ord
+    host: speedtest.chicago.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-ord
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-central
+    host: speedtest.dallas.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-central
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-west
+    host: speedtest.fremont.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-west
+    city: Fremont
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-lax
+    host: speedtest.los-angeles.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-lax
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-mia
+    host: speedtest.miami.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-mia
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-east
+    host: speedtest.newark.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-east
+    city: Newark
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-sea
+    host: speedtest.seattle.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-us-iad
+    host: speedtest.washington.linode.com
+    kinds: [https, tcp, icmp]
+    region: us-iad
+    city: "Washington, DC"
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-ca-central
+    host: speedtest.toronto1.linode.com
+    kinds: [https, tcp, icmp]
+    region: ca-central
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-br-gru
+    host: speedtest.sao-paulo.linode.com
+    kinds: [https, tcp, icmp]
+    region: br-gru
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-nl-ams
+    host: speedtest.amsterdam.linode.com
+    kinds: [https, tcp, icmp]
+    region: nl-ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-eu-central
+    host: speedtest.frankfurt.linode.com
+    kinds: [https, tcp, icmp]
+    region: eu-central
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-de-fra-2
+    host: de-fra-2.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: de-fra-2
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-eu-west
+    host: speedtest.london.linode.com
+    kinds: [https, tcp, icmp]
+    region: eu-west
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-gb-lon
+    host: gb-lon.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: gb-lon
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-es-mad
+    host: speedtest.madrid.linode.com
+    kinds: [https, tcp, icmp]
+    region: es-mad
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-it-mil
+    host: speedtest.milan.linode.com
+    kinds: [https, tcp, icmp]
+    region: it-mil
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-fr-par
+    host: speedtest.paris.linode.com
+    kinds: [https, tcp, icmp]
+    region: fr-par
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-se-sto
+    host: speedtest.stockholm.linode.com
+    kinds: [https, tcp, icmp]
+    region: se-sto
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-in-maa
+    host: speedtest.chennai.linode.com
+    kinds: [https, tcp, icmp]
+    region: in-maa
+    city: Chennai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-id-cgk
+    host: speedtest.jakarta.linode.com
+    kinds: [https, tcp, icmp]
+    region: id-cgk
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-ap-west
+    host: speedtest.mumbai1.linode.com
+    kinds: [https, tcp, icmp]
+    region: ap-west
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-in-bom-2
+    host: in-bom-2.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: in-bom-2
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-jp-osa
+    host: speedtest.osaka.linode.com
+    kinds: [https, tcp, icmp]
+    region: jp-osa
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-ap-south
+    host: speedtest.singapore.linode.com
+    kinds: [https, tcp, icmp]
+    region: ap-south
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-sg-sin-2
+    host: sg-sin-2.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: sg-sin-2
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-ap-northeast
+    host: speedtest.tokyo2.linode.com
+    kinds: [https, tcp, icmp]
+    region: ap-northeast
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-jp-tyo-3
+    host: jp-tyo-3.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: jp-tyo-3
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-au-mel
+    host: au-mel.speedtest.linode.com
+    kinds: [https, tcp, icmp]
+    region: au-mel
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
+  - name: Linode-ap-southeast
+    host: speedtest.sydney.linode.com
+    kinds: [https, tcp, icmp]
+    region: ap-southeast
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 12687
