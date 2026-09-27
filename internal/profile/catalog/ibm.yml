@@ -4,6 +4,7 @@ kind: hyperscaler
 category: [storage]
 sources:
   - https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-endpoints
+  - https://control.cloud-object-storage.cloud.ibm.com/v2/endpoints
 notes: >-
   IBM Cloud publishes no ping host, so each location uses the public Cloud Object
   Storage S3 endpoint s3.<location>.cloud-object-storage.appdomain.cloud. An
@@ -16,6 +17,13 @@ notes: >-
   tied to one location. Regionality was checked by RTT from Helsinki, FI: EU 31-57
   ms, North America 111-172 ms, India 158-191 ms, Singapore 204 ms, Brazil 215 ms,
   Japan 267-276 ms, Sydney 330 ms. One GET per 15 s is negligible.
+  2026-09-27 audit: the public COS endpoint JSON
+  (control.cloud-object-storage.cloud.ibm.com/v2/endpoints) lists exactly
+  these 19 regional and single-site endpoints. eu-fr2 (Paris, the restricted
+  financial-services region) has no COS endpoint, and its VPC API host is
+  behind Cloudflare anycast, so it is left out. The old per-datacenter
+  speedtest.<dc>.softlayer.com hosts still resolve but did not answer
+  ICMP/HTTP/HTTPS.
 targets:
   - name: IBM-us-south
     host: s3.us-south.cloud-object-storage.appdomain.cloud

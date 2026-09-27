@@ -7,6 +7,9 @@ sources:
   - https://support.huaweicloud.com/intl/en-us/ugobs-obs/obs_41_0003.html
   - https://github.com/huaweicloud/huaweicloud-sdk-python-v3/blob/master/huaweicloud-sdk-ecs/huaweicloudsdkecs/v2/region/ecs_region.py
   - https://www.cnblogs.com/rusking/p/18923856
+  - https://www.huaweicloud.com/guide/category-4c56231fa4a21cbbaaa5551a819c229e5935af5d4be28785728e2598458902de
+  - https://raw.githubusercontent.com/huaweicloud/huaweicloud-sdk-python-v3/master/huaweicloud-sdk-obs/huaweicloudsdkobs/v1/region/obs_region.py
+  - https://github.com/NewFuture/DDNS/blob/master/docs/providers/huaweidns.md
 notes: >-
   Huawei publishes no ping host, so each region uses the public OBS endpoint
   obs.<region>.myhuaweicloud.com. An unauthenticated GET / returns 403 AccessDenied
@@ -18,7 +21,7 @@ notes: >-
   eu-west-101 and ru-moscow-1 (OBS host NXDOMAIN); eu-west-0 (Paris), which resolves
   but refused TCP 443 and ICMP; and my-kualalumpur-1, whose host is an API-gateway
   front (404 'apig'), not OBS. Also left out are China-only IDs whose city we could
-  not confirm from a source: cn-north-2, cn-north-9, cn-north-11, cn-north-12,
+  not confirm from a source: cn-north-2, cn-north-11, cn-north-12,
   cn-east-4, cn-south-2, cn-south-4 (friendly-user environment) and cn-southwest-3.
   All of them answer OBS from Helsinki at 164-231 ms and can be added once mapped.
   Mainland regions (tagged mainland-china) answered at 178-265 ms. Regionality was
@@ -26,6 +29,16 @@ notes: >-
   Mexico 180-188 ms, Southeast Asia 193-214 ms, Johannesburg 207 ms, Sao
   Paulo/Santiago 215-219 ms, Hong Kong 267 ms (routed via the long path, as with
   other providers). One GET per 15 s is negligible.
+  Added in the 2026-09-27 audit: cn-north-9 (CN North-Ulanqab1; the ID-to-name mapping is in
+  two third-party copies of Huawei region tables, 193 ms) and
+  sa-peru-1 / sa-argentina-1 (LA-Lima1 / LA-Buenos Aires1; both are on Huawei's
+  Chinese region guide but not on the international data-protection page).
+  Their OBS hosts CNAME to obs.lz01.<region> and answer at 204 / 251 ms. Also
+  answering but left out: ru-northwest-2 (Russia, 24 ms, not on any current
+  region page), cn-northwest-1 (Xi'an per third-party tables, 256 ms, not on
+  Huawei's pages), and cn-south-4 (friendly-user environment in Guangzhou).
+  Huawei's Chinese guide also names Karamay, Wuhu, Horinger, Dublin and Nigeria;
+  there is no confirmed region ID with a working OBS host for them.
 targets:
   - name: Huawei-af-north-1
     host: obs.af-north-1.myhuaweicloud.com
@@ -307,6 +320,49 @@ targets:
     city: Riyadh
     country: SA
     geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 298
+  - name: Huawei-cn-north-9                # CN North-Ulanqab1 (华北-乌兰察布一)
+    host: obs.cn-north-9.myhuaweicloud.com
+    kinds: [https, tcp, icmp]
+    region: cn-north-9
+    city: Ulanqab
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 298
+  - name: Huawei-sa-peru-1                # LA-Lima1
+    host: obs.sa-peru-1.myhuaweicloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-peru-1
+    city: Lima
+    country: PE
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 298
+  - name: Huawei-sa-argentina-1                # LA-Buenos Aires1
+    host: obs.sa-argentina-1.myhuaweicloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-argentina-1
+    city: Buenos Aires
+    country: AR
+    geo: sa
     anycast: false
     verified:
       date: 2026-09-27

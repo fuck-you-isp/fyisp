@@ -7,6 +7,9 @@ sources:
   - https://learn.microsoft.com/en-us/troubleshoot/azure/azure-monitor/app-insights/telemetry/java-standalone-troubleshoot
   - https://learn.microsoft.com/en-us/azure/azure-monitor/fundamentals/azure-monitor-network-access
   - https://learn.microsoft.com/en-us/azure/azure-monitor/agents/azure-monitor-agent-network-configuration
+  - https://learn.microsoft.com/en-us/azure/azure-government/documentation-government-welcome
+  - https://learn.microsoft.com/en-us/azure/china/overview-regions
+  - https://azurelook.com/azure-update/retirement-microsoft-azure-operated-by-21vianet-action-required-to-migrate-to-azure-china-north-3-region-by-july-1-2026-due-to-china-north-1-and-china-east-1-region-retirement/
 notes: >-
   Azure publishes no per-region ping host, so each region uses a Microsoft-owned
   regional ingestion endpoint that has an unauthenticated health path. Primary:
@@ -35,6 +38,19 @@ notes: >-
   City is Microsoft's published physical location, narrowed to the best-known
   city where Microsoft gives only a state or country (US regions,
   Israel, Norway). The US cities are not officially published.
+  Sovereign clouds (separate accounts, public endpoints) are included and
+  tagged restricted. Azure Government: usgovvirginia, usgovtexas and
+  usgovarizona use <region>.in.applicationinsights.azure.us /api/ping (5 B,
+  117-167 ms). The US DoD East / DoD Central handler hosts answer 404 on
+  /ping and CNAME into the usgovvirginia / usgovtexas clusters, and they
+  have no App Insights host, so they are left out. Azure China (21Vianet):
+  chinanorth3, chinaeast2 and chinaeast3 use <region>.in.applicationinsights.azure.cn
+  /api/ping; chinanorth2 has no App Insights host and uses
+  chinanorth2.handler.control.monitor.azure.cn /ping (CNAME in
+  *.chinanorth2.cloudapp.chinacloudapi.cn); RTT 211-257 ms, also tagged
+  mainland-china. China North 1 and China East 1 still answer but were
+  retired on 2026-07-01, so they are left out. Azure Government and China
+  cities are the commonly reported sites, not official.
 targets:
   # Nearest healthy AMA control region, chosen by Traffic Manager DNS (not
   # anycast). From Helsinki it resolved to germanywestcentral.
@@ -1019,3 +1035,115 @@ targets:
       https: 200
       bytes: 5
       # icmp avg RTT from Helsinki, FI: 160 ms
+  - name: Azure-usgovvirginia                # Azure Government, US Gov Virginia
+    host: usgovvirginia.in.applicationinsights.azure.us
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: usgovvirginia
+    city: Boydton
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-usgovtexas                # Azure Government, US Gov Texas
+    host: usgovtexas.in.applicationinsights.azure.us
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: usgovtexas
+    city: San Antonio
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-usgovarizona                # Azure Government, US Gov Arizona
+    host: usgovarizona.in.applicationinsights.azure.us
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: usgovarizona
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    tags: [restricted]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-chinanorth2                # Azure China (21Vianet), China North 2
+    host: chinanorth2.handler.control.monitor.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /ping
+    region: chinanorth2
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 7
+  - name: Azure-chinanorth3                # Azure China (21Vianet), China North 3
+    host: chinanorth3.in.applicationinsights.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: chinanorth3
+    city: Hebei
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-chinaeast2                # Azure China (21Vianet), China East 2
+    host: chinaeast2.in.applicationinsights.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: chinaeast2
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5
+  - name: Azure-chinaeast3                # Azure China (21Vianet), China East 3
+    host: chinaeast3.in.applicationinsights.azure.cn
+    kinds: [https, tcp, icmp]
+    path: /api/ping
+    region: chinaeast3
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    tags: [restricted, mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 5

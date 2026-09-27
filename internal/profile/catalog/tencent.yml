@@ -4,6 +4,7 @@ kind: hyperscaler
 category: [storage]
 sources:
   - https://www.tencentcloud.com/document/product/436/6224
+  - https://www.tencentcloud.com/dynamic/news-details/100667
 notes: >-
   Tencent publishes no ping host, so each region uses the public COS service
   endpoint cos.<region>.myqcloud.com. An unauthenticated GET / returns 403 (about
@@ -21,6 +22,12 @@ notes: >-
   24 ms, Virginia 102 ms, Riyadh 110 ms, Silicon Valley 174 ms, Southeast Asia
   183-208 ms, Sao Paulo 215 ms, Tokyo/Seoul 283-293 ms. One GET per 15 s is
   negligible.
+  Also covered: ap-osaka (Osaka), launched in April 2025 and not yet in the COS
+  region table; cos.ap-osaka answers the same 403 at 285 ms, next to Tokyo's
+  273 ms. Two other hosts answer but are not public regions and are left out:
+  ap-taipei (175.97.x, 224 ms) and ap-qingyuan (Guangdong, 106.55.x, 197 ms).
+  ap-guangzhou's DNS alternates between two IPs; one TCP connect timed out on
+  2026-09-27 and a retry worked, so expect some loss on that path.
 targets:
   - name: Tencent-ap-beijing
     host: cos.ap-beijing.myqcloud.com
@@ -266,3 +273,17 @@ targets:
       tcp: true
       https: 403
       bytes: 481
+  - name: Tencent-ap-osaka                # launched 2025-04; not yet in the COS region table
+    host: cos.ap-osaka.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-osaka
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 477

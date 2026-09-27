@@ -4,6 +4,7 @@ kind: hyperscaler
 category: [storage]
 sources:
   - https://www.alibabacloud.com/help/en/oss/user-guide/regions-and-endpoints
+  - https://www.alibabacloud.com/help/en/ecs/user-guide/regions-and-zones
 notes: >-
   Alibaba publishes no ping host, so each region uses the public OSS endpoint
   oss-<region>.aliyuncs.com. An unauthenticated GET / returns 403 AccessDenied
@@ -23,6 +24,10 @@ notes: >-
   oss-eu-west-3 resolves and answers at 28 ms but is not in the docs yet, likely the
   Netherlands region announced for October 2026. Add it once it is listed. One GET
   per 15 s is negligible.
+  2026-09-27 audit: the OSS table and the ECS regions-and-zones page still list
+  the same regions, so nothing was added. oss-eu-west-3 (403, 28 ms) is still
+  not documented. oss-cn-zhengzhou-jva (a Zhengzhou joint-venture region,
+  216 ms) answers too but is not on either page, so it is left out.
 targets:
   - name: Alibaba-cn-hangzhou
     host: oss-cn-hangzhou.aliyuncs.com
