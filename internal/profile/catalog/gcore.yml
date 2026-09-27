@@ -1,0 +1,469 @@
+provider: gcore
+display: Gcore Cloud
+kind: cloud
+category: [vps, bare-metal, gpu]
+sources:
+  - https://gcore.com/pricing/cloud
+  - https://lgs-speedtest.tools.gcore.com/
+  - https://docs.gcore.com/storage/manage-object-storage/s3-service-urls-and-default-region-names
+  - https://gcore.com/blog/cloud-detailed-overview-of-core-and-edge-locations
+notes: >-
+  Gcore Cloud compute regions (region selector on the cloud pricing page, 2026-09-27: Almaty, Amsterdam,
+  Baku, Chester, Chicago, Darmstadt, Dubai, Frankfurt-2, Helsinki, Hong Kong, Incheon, Istanbul,
+  Johannesburg, Lefdal, London, London-2, Luxembourg(-2/-3), Manassas, Mumbai, Paris-2, Santa Clara,
+  Sao Paulo(-2), Sines-2/-3, Singapore, Sydney, Tashkent, Tokyo, Warsaw), one target per metro. Gcore
+  has no per-cloud-region ping host; the best located endpoints are the official Gcore speed-test
+  servers <code>-speedtest.tools.gcore.com (listed in the speed-test page's server list, on Gcore
+  AS199524 in the same metro, geo-IP checked) and the regional S3 endpoints <loc>.storage.gcore.dev
+  (GET / answers a ~200 B XML error). Speed-test hosts: probe only /robots.txt (25 B); never the
+  speedtest-backend/garbage.php download. Gcore network PoPs that are not cloud regions (New York,
+  Los Angeles, Querétaro, Tel Aviv, Cairo, Lagos, ...) are left out; the anycast CDN is in cdn-gcore.
+  Regions without a speed-test or S3 host use Gcore's regional cloud front ends found in Certificate
+  Transparency logs: api.<region>.ai.gcore.dev (Everywhere Inference) where such a name exists, else a
+  fixed label under the per-region wildcards *.caas.k1.<region>.cloud.gcore.dev /
+  *.mkaas.k1.<region>.cloud.gcore.dev (ingress answers a tiny 404; valid wildcard certificate; geo-IP
+  checked; none answer ICMP). Those wildcard labels are guesses (weak) but the regions are located.
+  Darmstadt has CaaS/registry names (217.195.194.0/24) but TCP 443 is filtered; Helsinki, Lefdal and
+  Tashkent have no regional name at all (api.<region>.ai.gcore.dev falls back to the anycast
+  92.223.84.84). Those four are kept with kinds: [] and a placeholder host.
+targets:
+  - name: Gcore-Amsterdam
+    host: am3-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: amsterdam
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Frankfurt
+    host: fr5-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: frankfurt-2
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Darmstadt
+    host: api.gcore.com
+    kinds: []
+    region: darmstadt
+    city: Darmstadt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "darmstadt-1 CaaS/registry names resolve (217.195.194.x, geo-IP Warsaw) but TCP 443 filtered on 2026-09-27; placeholder host"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: Gcore-London
+    host: thn2-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: london
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    notes: "speed-test host in London (Telehouse North)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-London-2
+    host: london-2.storage.gcore.dev
+    kinds: [https, tcp, icmp]
+    region: london-2
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    notes: "S3 Fast London-2 endpoint (region s-ndlo-2)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 224
+  - name: Gcore-Chester
+    host: api.chester-2.ai.gcore.dev
+    kinds: [https, tcp]
+    region: chester
+    city: Chester
+    country: GB
+    geo: eu
+    anycast: false
+    notes: "regional inference/CaaS API front of chester-2 (name from CT logs; geo-IP Chester, Northern Data AS59437); no ICMP"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 0
+  - name: Gcore-Luxembourg
+    host: luxembourg-2.storage.gcore.dev
+    kinds: [https, tcp, icmp]
+    region: luxembourg-2
+    city: Luxembourg
+    country: LU
+    geo: eu
+    anycast: false
+    notes: "S3 Standard Luxembourg-2 endpoint (region s-ed1); covers the Luxembourg, -2, -3 cloud regions"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187
+  - name: Gcore-Paris
+    host: pa5-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: paris-2
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    notes: "geo-IP Aubervilliers (Paris metro)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Warsaw
+    host: latency.caas.k1.warsaw-1.cloud.gcore.dev
+    kinds: [https, tcp]
+    region: warsaw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    notes: "label under the regional CaaS wildcard *.caas.k1.warsaw-1.cloud.gcore.dev (ingress answers 404; geo-IP Warsaw); wa2 speed-test host is NXDOMAIN; no ICMP"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 0
+  - name: Gcore-Helsinki
+    host: api.gcore.com
+    kinds: []
+    region: helsinki
+    city: Helsinki
+    country: FI
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "no regional speed-test, S3, CaaS or inference name found (CT logs, 2026-09-27); placeholder host"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: Gcore-Lefdal
+    host: api.gcore.com
+    kinds: []
+    region: lefdal
+    city: Lefdal
+    country: NO
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "no regional speed-test, S3, CaaS or inference name found (CT logs, 2026-09-27); placeholder host"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: Gcore-Sines-2
+    host: sines-2.storage.gcore.dev
+    kinds: [https, tcp, icmp]
+    region: sines-2
+    city: Sines
+    country: PT
+    geo: eu
+    anycast: false
+    notes: "S3 Fast Sines-2 endpoint (region s-ndp1-2)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 224
+  - name: Gcore-Sines-3
+    host: sines-3.storage.gcore.dev
+    kinds: [https, tcp, icmp]
+    region: sines-3
+    city: Sines
+    country: PT
+    geo: eu
+    anycast: false
+    notes: "S3 Fast Sines-3 endpoint (region s-ndp1-3)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 224
+  - name: Gcore-Istanbul
+    host: tii-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: istanbul
+    city: Istanbul
+    country: TR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Baku
+    host: speedtest-dta.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: baku
+    city: Baku
+    country: AZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 27
+  - name: Gcore-Almaty
+    host: kal-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: almaty
+    city: Almaty
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Tashkent
+    host: api.gcore.com
+    kinds: []
+    region: tashkent
+    city: Tashkent
+    country: UZ
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "no regional speed-test, S3, CaaS or inference name found (CT logs, 2026-09-27); placeholder host"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: Gcore-Dubai
+    host: latency.caas.k1.dubai-1.cloud.gcore.dev
+    kinds: [https, tcp]
+    region: dubai
+    city: Dubai
+    country: AE
+    geo: me
+    anycast: false
+    notes: "label under the regional CaaS wildcard *.caas.k1.dubai-1.cloud.gcore.dev (ingress answers 404; geo-IP Dubai, ~157 ms via CMI); the eti speed-test host is dead; no ICMP"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 0
+  - name: Gcore-Mumbai
+    host: ww-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: mumbai
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    notes: "geo-IP Airoli (Navi Mumbai)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Singapore
+    host: sg1-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: singapore
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Hong-Kong
+    host: hk2-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: hong-kong
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Incheon
+    host: kx-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: incheon
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    notes: "speed-test host is labelled Seoul (geo-IP Seoul); cloud region is Incheon in the same metro"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Tokyo
+    host: cc1-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: tokyo
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Sydney
+    host: sy4-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: sydney
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Johannesburg
+    host: jp1-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: johannesburg
+    city: Johannesburg
+    country: ZA
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Sao-Paulo
+    host: sp3-speedtest.tools.gcore.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: sao-paulo
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    notes: "geo-IP Santana de Parnaiba (Sao Paulo metro)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 25
+  - name: Gcore-Chicago
+    host: chicago-1.storage.gcore.dev
+    kinds: [https, tcp]
+    region: chicago
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    notes: "S3 Standard Chicago endpoint (region s-drc2); no ICMP reply"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 187
+  - name: Gcore-Manassas
+    host: api.manassas-1.ai.gcore.dev
+    kinds: [https, tcp]
+    region: manassas
+    city: Manassas
+    country: US
+    geo: na
+    anycast: false
+    notes: "regional inference/CaaS API front of manassas-1 (name from CT logs; geo-IP Manassas, AS199524); no ICMP"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 0
+  - name: Gcore-Santa-Clara
+    host: latency.mkaas.k1.santa-clara-1.cloud.gcore.dev
+    kinds: [https, tcp]
+    region: santa-clara
+    city: Santa Clara
+    country: US
+    geo: na
+    anycast: false
+    notes: "label under the regional managed-Kubernetes wildcard *.mkaas.k1.santa-clara-1.cloud.gcore.dev (ingress answers a 21 B 404; geo-IP Santa Clara); no ICMP"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 21

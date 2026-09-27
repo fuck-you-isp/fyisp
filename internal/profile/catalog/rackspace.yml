@@ -1,0 +1,141 @@
+provider: rackspace
+display: Rackspace Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.rackspace.com/docs/about-regions
+  - https://docs.rackspace.com/docs/rest-api-guide-for-openstack-flex
+notes: >-
+  Rackspace Cloud Files (Swift) storage endpoints, one per region, answer GET / with a 70-byte 404.
+  They are used instead of <region>.speedtest.rackspace.com: the dfw/ord speed-test hosts no longer
+  answer and the others have an invalid TLS certificate. Legacy public-cloud regions DFW, ORD, IAD,
+  LON, HKG, SYD (6 of 6) use storage101.<dc>.clouddrive.com. OpenStack Flex regions DFW3, SJC3, IAD3
+  (3 of 3) use swift.api.<region>.rackspacecloud.com. The Flex DFW3/IAD3 hosts did not answer ping.
+  The regional compute API hostnames sit behind Cloudflare (anycast) and are not used.
+targets:
+  - name: Rackspace-DFW
+    host: storage101.dfw1.clouddrive.com
+    kinds: [https, tcp, icmp]
+    region: DFW
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-ORD
+    host: storage101.ord1.clouddrive.com
+    kinds: [https, tcp, icmp]
+    region: ORD
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-IAD
+    host: storage101.iad3.clouddrive.com
+    kinds: [https, tcp, icmp]
+    region: IAD
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-LON
+    host: storage101.lon3.clouddrive.com
+    kinds: [https, tcp, icmp]
+    region: LON
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-HKG
+    host: storage101.hkg1.clouddrive.com
+    kinds: [https, tcp, icmp]
+    region: HKG
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-SYD
+    host: storage101.syd2.clouddrive.com
+    kinds: [https, tcp, icmp]
+    region: SYD
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-Flex-DFW3
+    host: swift.api.dfw3.rackspacecloud.com
+    kinds: [https, tcp]
+    region: DFW3
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-Flex-SJC3
+    host: swift.api.sjc3.rackspacecloud.com
+    kinds: [https, tcp, icmp]
+    region: SJC3
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: Rackspace-Flex-IAD3
+    host: swift.api.iad3.rackspacecloud.com
+    kinds: [https, tcp]
+    region: IAD3
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 70

@@ -1,0 +1,27 @@
+provider: cloudflare-r2
+display: Cloudflare R2
+kind: cloud
+category: [storage]
+sources:
+  - https://developers.cloudflare.com/r2/api/s3/api/
+  - https://developers.cloudflare.com/r2/reference/data-location/
+notes: >-
+  R2 has no regional endpoints: every account is served at <account>.r2.cloudflarestorage.com on
+  Cloudflare's anycast network (data location hints do not change the front end). The only
+  account-less host is r2.cloudflarestorage.com; it serves a certificate that expired on 2026-09-09
+  (re-checked 2026-09-27: still CN=r2.cloudflarestorage.com, notAfter Sep 9 2026, curl fails with
+  "certificate has expired"). Unknown account subdomains, eu./fedramp. jurisdiction names and the
+  cloudflarestorage.com apex fail TLS or time out, and the r2.dev public-bucket front (www.r2.dev)
+  answers 500 InternalError, so only tcp and icmp are listed. Plain http:// on the host is a 301 to
+  developers.cloudflare.com/r2. Re-enable https once the certificate is renewed.
+targets:
+  - name: Cloudflare-R2
+    host: r2.cloudflarestorage.com
+    kinds: [tcp, icmp]
+    anycast: true
+    notes: >-
+      Anycast; HTTPS fails (certificate expired 2026-09-09, still expired on 2026-09-27).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

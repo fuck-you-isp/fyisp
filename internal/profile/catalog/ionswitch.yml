@@ -1,0 +1,27 @@
+provider: ionswitch
+display: IonSwitch
+kind: cloud
+category: [vps, bare-metal, colocation]
+sources:
+  - https://ionswitch.com/
+notes: >-
+  IonSwitch (AS964) hosts its dedicated servers, cloud VPS and colocation in one data centre, CDA01
+  in Coeur d'Alene, Idaho (its other markers - Seattle, Spokane, Portland, Minneapolis - are network
+  POPs). The target is its looking glass lg.ionswitch.com (AS964, geo-IP Coeur d'Alene, 168 ms from
+  Helsinki); GET /robots.txt answers 29 B. speedtest.ionswitch.com is the neighbouring address.
+targets:
+  - name: IonSwitch-CoeurDAlene
+    host: lg.ionswitch.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: cda01
+    city: Coeur d'Alene
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 29

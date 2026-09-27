@@ -1,0 +1,25 @@
+provider: qazcloud
+display: QazCloud
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://qazcloud.kz/
+notes: >-
+  Kazakhtelecom's cloud subsidiary (AS211644 QazCloud LLP), headquartered and hosted in Astana.
+  Its S3 object storage s3.qazcloud.kz resolves to a QazCloud address in Astana; GET / is a
+  174-byte 403. No other region hostname was found.
+targets:
+  - name: QazCloud-Astana
+    host: s3.qazcloud.kz
+    kinds: [https, tcp, icmp]
+    region: ast
+    city: Astana
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 174

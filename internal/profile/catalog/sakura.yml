@@ -1,0 +1,65 @@
+provider: sakura
+display: Sakura Internet
+kind: cloud
+category: [vps, bare-metal, storage]
+sources:
+  - https://manual.sakura.ad.jp/cloud/support/region-zone.html
+  - https://cloud.sakura.ad.jp/news/2025/09/25/campaign-is1c/
+  - https://manual.sakura.ad.jp/cloud/objectstorage/about.html
+  - https://manual.sakura.ad.jp/cloud/objectstorage/example-aws-cli.html
+  - https://vps.sakura.ad.jp/specification/
+notes: >-
+  Sakura Cloud regions: Ishikari (zones is1a, is1b, is1c) and Tokyo (tk1a, tk1b), plus the tk1v sandbox;
+  Sakura VPS also runs in Osaka (VPS only, not a Sakura Cloud zone). The per-zone cloud APIs all sit
+  behind one host (secure.sakura.ad.jp/cloud/zone/<zone>/), so each region is probed via its Object
+  Storage S3 endpoint (s3.isk01 = Ishikari site 1, s3.tky01 = Tokyo site 1; GET / is a 174-byte 403).
+  Geo-IP places both in Tokyo, but 153.120.0.0/16 is Sakura's Ishikari block and isk01 is ~40 ms farther
+  from Europe than tky01. Osaka has no public Sakura service endpoint; it is probed via Sakura's
+  authoritative DNS server ns2.dns.ne.jp (AS9371, Osaka), TCP connect to port 53 and ICMP only.
+  secure.sakura.ad.jp, used before, is the member control panel behind a GSLB and is not a suitable
+  target.
+targets:
+  - name: Sakura-is1
+    host: s3.isk01.sakurastorage.jp
+    kinds: [https, tcp, icmp]
+    region: is1
+    city: Ishikari
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 174
+  - name: Sakura-tk1
+    host: s3.tky01.sakurastorage.jp
+    kinds: [https, tcp, icmp]
+    region: tk1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 174
+  - name: Sakura-Osaka
+    host: ns2.dns.ne.jp
+    kinds: [tcp, icmp]
+    port: 53
+    region: osaka
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    notes: "Sakura's authoritative DNS server (AS9371; rDNS and geo-IP Osaka); TCP 53 connect and ICMP only"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 0
+      bytes: 0

@@ -1,0 +1,57 @@
+provider: spartanhost
+display: Spartan Host
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://spartanhost.net/
+  - https://lg.sea.spartanhost.net/
+notes: >-
+  Spartan Host (AS50131) sells VPS and dedicated servers in Seattle, Dallas and Ashburn; its looking
+  glass lists exactly those three sites, each with its own host lg.<site>.spartanhost.net, which are
+  the targets (geo-IP and RTT from Helsinki fit each city). GET /robots.txt answers a ~160 B 404.
+  In Dallas the TCP handshake on 443 completes in ~30 ms from Helsinki (an upstream DDoS-filter SYN
+  proxy, not the server, which pings at 139 ms) and TLS then stalls, so Dallas is ICMP only.
+targets:
+  - name: SpartanHost-Seattle
+    host: lg.sea.spartanhost.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 162
+  - name: SpartanHost-Dallas
+    host: lg.dal.spartanhost.net
+    kinds: [icmp]
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      bytes: 0
+  - name: SpartanHost-Ashburn
+    host: lg.ash.spartanhost.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: ash
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153

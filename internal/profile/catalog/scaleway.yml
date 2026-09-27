@@ -1,0 +1,79 @@
+provider: scaleway
+display: Scaleway
+kind: cloud
+category: [storage]
+sources:
+  - https://www.scaleway.com/en/docs/object-storage/concepts/
+  - https://registry.terraform.io/providers/scaleway/scaleway/latest/docs/guides/regions_and_zones
+notes: >-
+  Scaleway publishes no per-region ping/speed-test hosts, so each region is probed via its public
+  Object Storage endpoint s3.<region>.scw.cloud (GET / is a ~1.1 KB ASCII-art banner, so path is /robots.txt, a 269 B NoSuchBucket 404). Region-level
+  only; availability zones (fr-par-1/2/3, nl-ams-1/2/3, pl-waw-1/2/3, it-mil-1) share the endpoint.
+  ping.online.net (Dedibox, Paris) answers ICMP and TCP 80 but not 443 and is not documented, so it is omitted.
+  Per-AZ check (2026-09-27): Scaleway publishes no AZ-specific public endpoint. The zonal APIs are
+  served by the central api.scaleway.com, and certificate-transparency logs show only region-level
+  names (s3/k8s/lb/cockpit.<region>). No AZ can be measured on its own. s3.fr-par round-robins over
+  addresses in 51.159.x and 151.115.130.x, which differ by up to ~8 ms from Helsinki (39 vs 47 ms),
+  probably different Paris AZs, so fr-par RTT can be bimodal. s3.fr-srr.scw.cloud resolves and
+  answers, but fr-srr is not on the public region list, so it is not added.
+targets:
+  - name: Scaleway-fr-par
+    host: s3.fr-par.scw.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: fr-par
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 269
+  - name: Scaleway-nl-ams
+    host: s3.nl-ams.scw.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: nl-ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 269
+  - name: Scaleway-pl-waw
+    host: s3.pl-waw.scw.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: pl-waw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 269
+  - name: Scaleway-it-mil
+    host: s3.it-mil.scw.cloud
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: it-mil
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 269

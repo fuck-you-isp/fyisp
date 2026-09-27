@@ -1,0 +1,41 @@
+provider: cloudscale
+display: cloudscale.ch
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://www.cloudscale.ch/en/data-centers
+  - https://www.cloudscale.ch/en/api/v1
+notes: >-
+  cloudscale.ch has two regions: rma1 (Ruemlang ZH, NTT Zurich 1) and lpg1 (Lupfig AG, Green Datacenter Zurich-West). No
+  speed-test host is published. The targets are the per-region object-storage endpoints
+  objects.<rma|lpg>.cloudscale.ch (GET / is a 187 B anonymous S3 bucket list; they answer ping); rDNS
+  matches the names and the addresses are in cloudscale's own ranges. RTT from Helsinki ~35-60 ms (varies with routing).
+targets:
+  - name: cloudscale-rma1
+    host: objects.rma.cloudscale.ch
+    kinds: [https, tcp, icmp]
+    region: rma1
+    city: Ruemlang
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187
+  - name: cloudscale-lpg1
+    host: objects.lpg.cloudscale.ch
+    kinds: [https, tcp, icmp]
+    region: lpg1
+    city: Lupfig
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187

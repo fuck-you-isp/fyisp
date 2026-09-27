@@ -1,0 +1,264 @@
+provider: rackcorp
+display: RackCorp
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://www.rackcorp.com/storage/s3storage
+  - https://github.com/rclone/rclone/blob/master/backend/s3/provider/RackCorp.yaml
+notes: >-
+  Australian cloud and colocation provider (AS56038) with object storage in 18 locations, each
+  with an S3 endpoint <region>.s3.rackcorp.com; an anonymous GET / is a 213-byte 400. Manila,
+  Bangkok, Jakarta, Ulaanbaatar, Bishkek and Hong Kong resolve to in-country RackCorp addresses
+  (geo-IP and RTT agree). Melbourne, Brisbane, Perth, Auckland, Tokyo, Singapore, Frankfurt and
+  both US endpoints resolve to the Sydney pool, so they are kept with kinds: []. The anycast
+  s3.rackcorp.com, au.s3.rackcorp.com and us.s3.rackcorp.com (NXDOMAIN) are not listed.
+targets:
+  - name: RackCorp-au-nsw
+    host: au-nsw.s3.rackcorp.com
+    kinds: [https, tcp, icmp]
+    region: au-nsw
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    notes: >-
+      Round-robin over four Sydney addresses (rDNS au-nsw-eqx4, Equinix SY4).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: RackCorp-au-vic
+    host: au-vic.s3.rackcorp.com
+    kinds: []
+    region: au-vic
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-au-qld
+    host: au-qld.s3.rackcorp.com
+    kinds: []
+    region: au-qld
+    city: Brisbane
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-au-wa
+    host: au-wa.s3.rackcorp.com
+    kinds: []
+    region: au-wa
+    city: Perth
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-nz
+    host: nz.s3.rackcorp.com
+    kinds: []
+    region: nz
+    city: Auckland
+    country: NZ
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-ph
+    host: ph.s3.rackcorp.com
+    kinds: [https, tcp, icmp]
+    region: ph
+    city: Manila
+    country: PH
+    geo: as
+    anycast: false
+    notes: >-
+      rDNS ph-crm1-vsgp1.rackcorp.com; geo-IP Quezon City.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: RackCorp-th
+    host: th.s3.rackcorp.com
+    kinds: [https, tcp, icmp]
+    region: th
+    city: Bangkok
+    country: TH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: RackCorp-hk
+    host: hk.s3.rackcorp.com
+    kinds: [tcp]
+    region: hk
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    notes: >-
+      rDNS hk-eqx2.s3.rackcorp.com, geo-IP Tung Chung. TCP and TLS succeed but no HTTP
+      response came back within 15 s, and ICMP answered only 3 of 6, so only tcp is enabled.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+  - name: RackCorp-mn
+    host: mn.s3.rackcorp.com
+    kinds: [https, tcp, icmp]
+    region: mn
+    city: Ulaanbaatar
+    country: MN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: RackCorp-kg
+    host: kg.s3.rackcorp.com
+    kinds: [https, tcp, icmp]
+    region: kg
+    city: Bishkek
+    country: KG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: RackCorp-id
+    host: id.s3.rackcorp.com
+    kinds: [https, tcp]
+    region: id
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    notes: >-
+      ICMP answered only 3 of 6 on 2026-09-27, so icmp is off.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: RackCorp-jp
+    host: jp.s3.rackcorp.com
+    kinds: []
+    region: jp
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-sg
+    host: sg.s3.rackcorp.com
+    kinds: []
+    region: sg
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-de
+    host: de.s3.rackcorp.com
+    kinds: []
+    region: de
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-us-east-1
+    host: us-east-1.s3.rackcorp.com
+    kinds: []
+    region: us-east-1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: RackCorp-us-west-1
+    host: us-west-1.s3.rackcorp.com
+    kinds: []
+    region: us-west-1
+    city: Fremont
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Resolves to a RackCorp address in Sydney (116.206.80.17 or 103.76.41.78, the au-nsw
+      pool) on 2026-09-27, so it does not measure this location.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

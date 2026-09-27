@@ -1,0 +1,113 @@
+provider: plusserver
+display: plusserver (pluscloud open)
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.plusserver.com/en/compute/pluscloudopen/introduction/environments/
+  - https://docs.plusserver.com/en/general/plusserver-region-az/
+  - https://docs.plusserver.com/en/storage-backup/s3-storage/introduction/s3-regions/
+notes: >-
+  plusserver's sovereign cloud "pluscloud open" (Sovereign Cloud Stack / Gaia-X) has four public
+  environments: prod1 (DE-WEST-1, Cologne), prod2 (DE-NORTH-1, Hamburg), prod3 (DE-NORTH-2, Hamburg) and
+  prod4 (DE-WEST-2, Duesseldorf); scs1/scs2 are SCS development environments and are not included.
+  plusserver S3 has de-west-1 (Cologne) and de-north-2 (Hamburg); de-west-2 (Duesseldorf) is planned.
+  No speed-test host is published. The pluscloud open targets are the documented per-environment
+  Keystone endpoints prod<N>.api.pco.get-cloud.io:5000 (GET / is a 282 B version list; answer ping);
+  the S3 targets are s3.<region>.psmanaged.com (GET / is a 213 B 400). TCP traceroutes end behind
+  plusserver routers cr2.cgn3 (prod1), cr2.ham5/ham6 (prod2, prod3) and cr2.dus6 (prod4), matching the
+  documented locations; RTT from Helsinki ~24 ms (Cologne/Duesseldorf) and ~30 ms (Hamburg).
+targets:
+  - name: plusserver-pco-prod1
+    host: prod1.api.pco.get-cloud.io
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: prod1
+    city: Cologne
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "pluscloud open DE-WEST-1; Keystone on port 5000"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 282
+  - name: plusserver-pco-prod2
+    host: prod2.api.pco.get-cloud.io
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: prod2
+    city: Hamburg
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "pluscloud open DE-NORTH-1; Keystone on port 5000"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 282
+  - name: plusserver-pco-prod3
+    host: prod3.api.pco.get-cloud.io
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: prod3
+    city: Hamburg
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "pluscloud open DE-NORTH-2; Keystone on port 5000"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 282
+  - name: plusserver-pco-prod4
+    host: prod4.api.pco.get-cloud.io
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: prod4
+    city: Duesseldorf
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "pluscloud open DE-WEST-2; Keystone on port 5000"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 282
+  - name: plusserver-s3-de-west-1
+    host: s3.de-west-1.psmanaged.com
+    kinds: [https, tcp, icmp]
+    region: de-west-1
+    city: Cologne
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "plusserver S3"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 213
+  - name: plusserver-s3-de-north-2
+    host: s3.de-north-2.psmanaged.com
+    kinds: [https, tcp, icmp]
+    region: de-north-2
+    city: Hamburg
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "plusserver S3"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 400
+      bytes: 213

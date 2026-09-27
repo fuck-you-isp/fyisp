@@ -1,0 +1,80 @@
+provider: sharktech
+display: Sharktech
+kind: cloud
+category: [bare-metal, vps]
+sources:
+  - https://sharktech.net/looking-glass/
+  - https://sharktech.net/data-centers/amsterdam/
+notes: >-
+  Sharktech (AS46844) runs five data centres: Los Angeles, Las Vegas, Denver, Chicago and Amsterdam.
+  The targets are its per-location speed-test hosts speedtest.<city>.sharktech.net (rDNS matches the
+  name for ams/chi/den/la; geo-IP and RTT from Helsinki fit each city; Las Vegas geolocates to Los
+  Angeles, as Sharktech's LV ranges usually do, but answers ~5 ms faster than LA from here). They
+  answer ping only; no web or TCP port is open. The looking-glass hosts <city>.sharktech.net were
+  not used: their TLS certificates do not validate, LA refuses TCP and several have customer rDNS.
+targets:
+  - name: Sharktech-LosAngeles
+    host: speedtest.la.sharktech.net
+    kinds: [icmp]
+    region: la
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+      bytes: 0
+  - name: Sharktech-LasVegas
+    host: speedtest.las.sharktech.net
+    kinds: [icmp]
+    region: las
+    city: Las Vegas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+      bytes: 0
+  - name: Sharktech-Denver
+    host: speedtest.den.sharktech.net
+    kinds: [icmp]
+    region: den
+    city: Denver
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+      bytes: 0
+  - name: Sharktech-Chicago
+    host: speedtest.chi.sharktech.net
+    kinds: [icmp]
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+      bytes: 0
+  - name: Sharktech-Amsterdam
+    host: speedtest.ams.sharktech.net
+    kinds: [icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+      bytes: 0

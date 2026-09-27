@@ -1,0 +1,206 @@
+provider: contabo
+display: Contabo
+kind: cloud
+category: [storage]
+sources:
+  - https://api.contabo.com/api-v1.yaml
+  - https://geofeed.contabo.de/geofeed.csv
+  - https://crt.sh/?q=%25.speedtest.contabo.net
+  - https://contabo.com/blog/lauterbourg-datacenter/
+  - https://docs.contabo.com/docs/products/Object-Storage/Tools/s3cmd/
+notes: >-
+  The Contabo API lists 9 compute regions: EU, US-central, US-east, US-west, SIN, UK, AUS, JPN and
+  IND. Contabo's geofeed places them in Lauterbourg FR and Karlsruhe DE (EU), St. Louis, Orangeburg NY,
+  Carlstadt NJ, Seattle, Singapore, Portsmouth, Sydney, Tokyo and Mumbai. Contabo publishes no
+  looking glass, but certificate-transparency logs show two official per-DC host families.
+  ecomping-<dc>.contabo.net answers GET /ping with an 85 B JSON latency reply, one host per region.
+  It looks like a purpose-built latency check (the name suggests the web shop) but is not documented. <dc>.speedtest.contabo.net are nginx
+  speed-test hosts; GET / returns an empty 200 (ltg returns the 615 B nginx page). Never fetch test
+  files. Where Object Storage exists (EU, US-central, SIN) the S3 host <region>.contabostorage.com is
+  kept. Its anonymous GET / returns 401 (26 B). The other regions use ecomping, and the extra EU and
+  US-east DCs (Karlsruhe, Carlstadt) use speedtest hosts.
+  Skipped: ecomping-nue (EU) geolocates to Lauterbourg but answers ICMP ~25 ms slower than TCP;
+  lon.speedtest is the same machine as pme with a certificate mismatch; nyc.speedtest is dead; dus
+  and muc have no hosts (no Düsseldorf or Munich ranges in the geofeed).
+targets:
+  - name: Contabo-eu2
+    host: eu2.contabostorage.com
+    kinds: [https, tcp, icmp]
+    host_overrides:
+      icmp: ltg.speedtest.contabo.net
+    region: eu2
+    city: Lauterbourg
+    country: FR
+    geo: eu
+    anycast: false
+    notes: >-
+      ICMP to eu2 (185.219.143.84/85) takes ~62 ms against ~38 ms TCP connect, so ICMP goes to the
+      Lauterbourg speed-test host in the same /24 (34.5 ms).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 26
+  - name: Contabo-usc1
+    host: usc1.contabostorage.com
+    kinds: [https, tcp, icmp]
+    region: usc1
+    city: St. Louis
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 26
+  - name: Contabo-sin1
+    host: sin1.contabostorage.com
+    kinds: [https, tcp, icmp]
+    region: sin1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 26
+  - name: Contabo-eu-kae
+    host: kae.speedtest.contabo.net
+    kinds: [https, tcp, icmp]
+    region: EU
+    city: Karlsruhe
+    country: DE
+    geo: eu
+    anycast: false
+    notes: >-
+      Second EU-region DC (geofeed Karlsruhe, ~31 ms from Helsinki). Official speed-test host; GET / is an empty 200.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Contabo-us-east
+    host: ecomping-ony.contabo.net
+    path: /ping
+    kinds: [https, tcp, icmp]
+    region: US-east
+    city: Orangeburg
+    country: US
+    geo: na
+    anycast: false
+    notes: >-
+      Contabo latency host (undocumented); GET /ping is an 85 B JSON reply. Orangeburg, NY (Contabo "New York").
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 85
+  - name: Contabo-us-east-ewr
+    host: ewr.speedtest.contabo.net
+    kinds: [https, tcp, icmp]
+    region: US-east
+    city: Carlstadt
+    country: US
+    geo: na
+    anycast: false
+    notes: >-
+      Second US-east DC (geofeed Carlstadt, NJ). Official speed-test host; GET / is an empty 200.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Contabo-us-west
+    host: ecomping-sea.contabo.net
+    path: /ping
+    kinds: [https, tcp, icmp]
+    region: US-west
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    notes: >-
+      Contabo latency host (undocumented); GET /ping is an 85 B JSON reply.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 85
+  - name: Contabo-uk
+    host: ecomping-pme.contabo.net
+    path: /ping
+    kinds: [https, tcp, icmp]
+    region: UK
+    city: Portsmouth
+    country: GB
+    geo: eu
+    anycast: false
+    notes: >-
+      Contabo latency host (undocumented); GET /ping is an 85 B JSON reply.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 84
+  - name: Contabo-aus
+    host: ecomping-syd.contabo.net
+    path: /ping
+    kinds: [https, tcp, icmp]
+    region: AUS
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    notes: >-
+      Contabo latency host (undocumented); GET /ping is an 85 B JSON reply.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 85
+  - name: Contabo-jpn
+    host: ecomping-tyo.contabo.net
+    path: /ping
+    kinds: [https, tcp, icmp]
+    region: JPN
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    notes: >-
+      Contabo latency host (undocumented); GET /ping is an 85 B JSON reply.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 85
+  - name: Contabo-ind
+    host: ecomping-bom.contabo.net
+    path: /ping
+    kinds: [https, tcp, icmp]
+    region: IND
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    notes: >-
+      Contabo latency host (undocumented); GET /ping is an 85 B JSON reply.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 85

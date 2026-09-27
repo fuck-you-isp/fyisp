@@ -1,0 +1,61 @@
+provider: kt-cloud
+display: KT Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://cloud.kt.com/docs/open-api-guide/g/storage/storage-2/
+  - https://github.com/froguin/cloudping.me/pull/41
+notes: >-
+  KT Cloud (Korea Telecom) has data centres in Seoul (Mokdong), Cheonan and Gimhae, but its public S3
+  object storage has a single region endpoint, obj-e-1.ktcloud.com (Seoul, AS4766; GET / is a 218-byte
+  403). ICMP is filtered. The Cheonan and Gimhae zones have no public per-zone endpoint (the shared API
+  host api.ucloudbiz.olleh.com is not per-zone) and are kept with kinds []. The legacy Swift proxies
+  ssproxy/ssproxy2.ucloudbiz.olleh.com (geo-IP Goyang) are being retired and are not used. KT's own zone
+  pages render client-side only, so the zone list could not be re-read on 2026-09-27.
+targets:
+  - name: KTCloud-Seoul
+    host: obj-e-1.ktcloud.com
+    kinds: [https, tcp]
+    region: obj-e-1
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 403
+      bytes: 218
+  - name: KTCloud-Cheonan
+    host: api.ucloudbiz.olleh.com
+    kinds: []
+    region: cheonan
+    city: Cheonan
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: KT Cloud zone with no public per-zone endpoint; host is the shared API placeholder
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: KTCloud-Gimhae
+    host: api.ucloudbiz.olleh.com
+    kinds: []
+    region: gimhae
+    city: Gimhae
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: KT Cloud zone with no public per-zone endpoint; host is the shared API placeholder
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

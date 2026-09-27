@@ -1,0 +1,63 @@
+provider: e2e-networks
+display: E2E Networks
+kind: cloud
+category: [vps, gpu]
+sources:
+  - https://docs.e2enetworks.com/docs/myaccount/storage/object_storage/work_cli/
+  - https://www.e2enetworks.com/e2e-object-storage/
+notes: >-
+  E2E Networks (India) runs compute in Delhi NCR, Mumbai and Chennai. Delhi and Chennai are probed via
+  their E2E Object Storage (S3/MinIO) endpoints (objectstore.e2enetworks.net = Delhi,
+  in-south1-objectstore.e2enetworks.net = Chennai); GET / returns a 254-byte 403. Both addresses are
+  AS132420 and geolocate to their city. *.objectstore.e2enetworks.net is a wildcard that points at
+  Delhi, so region-looking names under it are not regional. objectstore.e2enetworks.net round-robins ten
+  Delhi addresses and in-south1 three Chennai ones (all geolocate to their city). Mumbai has no working
+  public endpoint: mum-objectstore.e2enetworks.net resolves to 101.53.132.0/24 (rDNS
+  e2e-29-*.ssdcloudindia.net, geo-IP Delhi) but answered neither ICMP nor TCP 443 on 2026-09-27, so
+  Mumbai is an unreachable placeholder. lg.e2enetworks.com (Delhi) answers ICMP but not TCP 80/443, so it
+  is not used.
+targets:
+  - name: E2E-Delhi
+    host: objectstore.e2enetworks.net
+    kinds: [https, tcp, icmp]
+    region: delhi
+    city: Delhi NCR
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 254
+  - name: E2E-Chennai
+    host: in-south1-objectstore.e2enetworks.net
+    kinds: [https, tcp, icmp]
+    region: in-south1
+    city: Chennai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 254
+  - name: E2E-Mumbai
+    host: mum-objectstore.e2enetworks.net
+    kinds: []
+    region: mumbai
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: mum-objectstore resolves to a Delhi-geolocated /24 and did not answer ICMP or TCP 443 (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

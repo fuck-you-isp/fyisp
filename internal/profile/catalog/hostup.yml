@@ -1,0 +1,27 @@
+provider: hostup
+display: HostUp
+kind: cloud
+category: [vps]
+sources:
+  - https://hostup.se/en/vps/
+  - https://hostup.se/en/about-us/
+  - https://lg.hostup.se/
+notes: >-
+  HostUp (Sweden) operates one location, its own hall in Älvsjö, Stockholm (AS214640). lg.hostup.se sits
+  behind Cloudflare, so the unicast speed-test host speedtest.hostup.se (206.168.213.100, AS214640, geo-IP
+  Stockholm, ~7 ms from Helsinki) is probed instead. GET / is a 153 B nginx 403.
+targets:
+  - name: HostUp-Stockholm
+    host: speedtest.hostup.se
+    kinds: [https, tcp, icmp]
+    region: sto
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 153

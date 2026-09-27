@@ -1,0 +1,78 @@
+provider: dreamhost
+display: DreamHost (DreamCompute)
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://help.dreamhost.com/hc/en-us/articles/360003842672-Data-center-FAQs
+  - https://help.dreamhost.com/hc/en-us/articles/115001728332-DreamCompute-FAQs
+  - https://help.dreamhost.com/hc/en-us/articles/217560167
+notes: >-
+  DreamHost lists four datacenters (US East Ashburn, US West Hillsboro, EU Amsterdam, AP Southeast
+  Singapore) and publishes no speed-test hosts. US East uses the DreamCompute Keystone API on
+  iad2.dream.io:5000 (version document, HTTP 300, ~600 B). US West uses the public DreamHost API
+  api.dreamhost.com (Hillsboro per rDNS/geo-IP, RTT fits Oregon; GET /robots.txt is a 9-byte 404).
+  It replaced the legacy objects-us-west-1.dream.io, which was HTTP-only and pointed at a MySQL server.
+  DreamObjects now runs on Backblaze B2 (s3.us-east-005.dream.io), so it is not a DreamHost site.
+  No public endpoint was found for Amsterdam or Singapore. lg.dreamhost.com resolves but its rDNS is a
+  third-party domain and it did not answer, so it is not used.
+targets:
+  - name: DreamHost-us-east
+    host: iad2.dream.io
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: iad2
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    notes: DreamCompute Keystone API (US-East-2), port 5000
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 602
+  - name: DreamHost-us-west
+    host: api.dreamhost.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: pdx1
+    city: Hillsboro
+    country: US
+    geo: na
+    anycast: false
+    notes: public DreamHost API (Hillsboro)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 9
+  - name: DreamHost-eu
+    host: ams1.dreamhost.com
+    kinds: []
+    region: ams1
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no public endpoint found
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: DreamHost-ap-southeast
+    host: sin1.dreamhost.com
+    kinds: []
+    region: sin1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no public endpoint found
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

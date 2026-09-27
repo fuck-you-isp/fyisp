@@ -1,0 +1,66 @@
+provider: nine
+display: Nine (nine.ch)
+kind: cloud
+category: [vps, paas]
+sources:
+  - https://docs.nine.ch/docs/general/datacenter-locations
+notes: >-
+  Nine's locations (all in the Zurich area): nine-cz42 (ColoZueri 4.2, Altstetten), nine-es34 (NTT
+  Zurich 1, Ruemlang), nine-cz41 (ColoZueri 4.1, closed to new self-service resources) and nine-cz01
+  (colocation only, not listed). No speed-test host is published. The targets are the per-location
+  object-storage endpoints <loc>.objects.nineapis.ch (GET / answers a 133 B 403; Nine's AS29691, geo-IP
+  Zurich; they do not answer ping). es34 also gets ICMP via host_overrides on Nine's package mirror
+  mirror.nine.ch (nine-repo02, traceroute ends behind m-r2.es34.nine.ch; no web port open). cz42 gets
+  ICMP via Nine's authoritative name server ns3.nine.ch (traceroute ends behind m-r1.cz42.nine.ch).
+  cz41 has no object storage; it uses the authoritative name server ns2.nine.ch (traceroute ends
+  behind m-r2.cz41.nine.ch; TCP 53 + ICMP only; one of three TCP connects took a SYN retry on
+  2026-09-27). cz01 is colocation-only and not listed.
+targets:
+  - name: Nine-cz42
+    host: cz42.objects.nineapis.ch
+    kinds: [https, tcp, icmp]
+    host_overrides:
+      icmp: ns3.nine.ch
+    region: nine-cz42
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    notes: "ICMP probed on ns3.nine.ch (same DC)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 133
+  - name: Nine-es34
+    host: es34.objects.nineapis.ch
+    kinds: [https, tcp, icmp]
+    host_overrides:
+      icmp: mirror.nine.ch
+    region: nine-es34
+    city: Ruemlang
+    country: CH
+    geo: eu
+    anycast: false
+    notes: "ICMP probed on mirror.nine.ch (same DC)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 133
+  - name: Nine-cz41
+    host: ns2.nine.ch
+    kinds: [tcp, icmp]
+    port: 53
+    region: nine-cz41
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    notes: "authoritative name server behind m-r2.cz41.nine.ch; TCP 53 connect only (no object storage in cz41)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

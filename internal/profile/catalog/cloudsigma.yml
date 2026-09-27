@@ -1,0 +1,233 @@
+provider: cloudsigma
+display: CloudSigma
+kind: cloud
+category: [iaas]
+sources:
+  - https://zrh.cloudsigma.com/api/2.0/locations/
+  - https://docs.cloudsigma.com/en/latest/general.html
+notes: >-
+  CloudSigma (Swiss IaaS) publishes its 14 locations in the public API /api/2.0/locations/, some run
+  with partners under their own domains (Cairo: cloudadore.com, Dublin: servecentric.com, Monterrey:
+  stratospherecloud.com, Riyadh: cld.v2.sa, Washington DC: alpha3cloud.com). The regular
+  <loc>.cloudsigma.com API names sit behind Cloudflare, so the targets are the per-location "direct"
+  API hosts that the same list gives as upload_url (direct.<loc>...), which resolve to unicast addresses
+  in each location. GET /api/2.0/balance/ answers an empty 401 (/api/2.0/ itself returns a 9 KB
+  resource list). Geo-IP agrees with every location (the ZRH id is displayed as Geneva; geo-IP
+  Lausanne) and RTTs from Helsinki fit (Frankfurt 21 ms, Geneva 54 ms, Ashburn 106 ms, Riyadh 105 ms,
+  Monterrey 165 ms, Tokyo 277 ms, Perth 348 ms).
+targets:
+  - name: CloudSigma-GVA
+    host: direct.gva.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: ZRH
+    city: Geneva
+    country: CH
+    geo: eu
+    anycast: false
+    notes: "location id ZRH, displayed as Geneva"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-FRA
+    host: direct.fra.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: FRA
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-DUS
+    host: direct.dus.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: DUS
+    city: Duesseldorf
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-DUB
+    host: direct.ec.servecentric.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: DUB
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    notes: "operated with Servecentric"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-WDC
+    host: direct.wdc.alpha3cloud.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: WDC
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    notes: "Washington DC location, operated with Alpha3 Cloud"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-MTY
+    host: direct.mty.stratospherecloud.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: MTY
+    city: Monterrey
+    country: MX
+    geo: na
+    anycast: false
+    notes: "operated with Stratosphere Cloud"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-CAI
+    host: direct.cai.cloudadore.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: CAI
+    city: Cairo
+    country: EG
+    geo: af
+    anycast: false
+    notes: "operated with Cloudadore"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-RUH
+    host: direct.ruh.cld.v2.sa
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: RUH
+    city: Riyadh
+    country: SA
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-TYO
+    host: direct.tyo.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: TYO
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-JHB
+    host: direct.jhb.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: JHB
+    city: Johor Bahru
+    country: MY
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-MNL
+    host: direct.mnl.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: MNL
+    city: Manila
+    country: PH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-MNL2
+    host: direct.mnl2.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: MNL2
+    city: Manila
+    country: PH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-CRK
+    host: direct.crk.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: CRK
+    city: Clark
+    country: PH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0
+  - name: CloudSigma-PER
+    host: direct.per.cloudsigma.com
+    kinds: [https, tcp, icmp]
+    path: /api/2.0/balance/
+    region: PER
+    city: Perth
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 0

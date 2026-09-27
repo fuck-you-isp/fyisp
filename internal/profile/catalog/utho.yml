@@ -1,0 +1,42 @@
+provider: utho
+display: Utho Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://utho.com/
+  - https://github.com/uthoplatforms/utho-docs
+notes: >-
+  Indian cloud (formerly MicroHost). Object storage is served per data centre from <dc>.utho.io.
+  innoida.utho.io (Noida, used in Utho's own docs) returns a 254-byte 403. inmumbai.utho.io
+  answers but its TLS certificate expired on 2025-06-01, so only tcp and icmp are enabled. No
+  hostname answered for Utho's other locations (Bangalore, Delhi and the overseas regions), so
+  they are not listed.
+targets:
+  - name: Utho-Noida
+    host: innoida.utho.io
+    kinds: [https, tcp, icmp]
+    region: innoida
+    city: Noida
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 254
+  - name: Utho-Mumbai
+    host: inmumbai.utho.io
+    kinds: [tcp, icmp]
+    region: inmumbai
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    notes: >-
+      TLS certificate expired 2025-06-01 (Let's Encrypt), so https is off.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

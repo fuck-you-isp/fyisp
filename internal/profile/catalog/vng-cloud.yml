@@ -1,0 +1,56 @@
+provider: vng-cloud
+display: VNG Cloud
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.vngcloud.vn/vng-cloud-document/vstorage/object-storage
+  - https://github.com/vngcloud/terraform-provider-vngcloud
+notes: >-
+  VNG Cloud (Vietnam) vStorage object storage has one S3 endpoint per zone,
+  <zone>.vstorage.vngcloud.vn: HCM03 and HCM04 in Ho Chi Minh City and HAN01 in Hanoi. Each
+  resolves to its own VNG address, answers ICMP, and returns a response under 200 bytes.
+targets:
+  - name: VNGCloud-HCM03
+    host: hcm03.vstorage.vngcloud.vn
+    kinds: [https, tcp, icmp]
+    region: hcm03
+    city: Ho Chi Minh City
+    country: VN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70
+  - name: VNGCloud-HCM04
+    host: hcm04.vstorage.vngcloud.vn
+    kinds: [https, tcp, icmp]
+    region: hcm04
+    city: Ho Chi Minh City
+    country: VN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 150
+  - name: VNGCloud-HAN01
+    host: han01.vstorage.vngcloud.vn
+    kinds: [https, tcp, icmp]
+    region: han01
+    city: Hanoi
+    country: VN
+    geo: as
+    anycast: false
+    notes: >-
+      han02.vstorage.vngcloud.vn resolves to the same address, so it is not listed separately.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187

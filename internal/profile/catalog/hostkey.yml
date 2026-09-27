@@ -1,0 +1,173 @@
+provider: hostkey
+display: HOSTKEY
+kind: cloud
+category: [vps, dedicated, gpu]
+sources:
+  - https://hostkey.com/about-us/data-centers/
+  - https://speedtest.hostkey.com/
+notes: >-
+  HOSTKEY (AS57043/AS395839) lists 13 data centres in 12 cities (two in Frankfurt). Its speed-test page
+  publishes one iperf/HTTP test host per location, spd-<cc>srv.hostkey.com (New York is spd-uswb, Istanbul
+  spd-tr); Warsaw (spd-plsrv) and Zurich (spd-chsrv) follow the same pattern but are not on the page.
+  Every host geolocates to its city in HOSTKEY's AS and RTTs from Helsinki fit. The HTTPS certificates
+  don't validate (incomplete chain) and the hosts serve large speed-test pages, so only TCP 443 is used;
+  ping is filtered everywhere except Reykjavik. Both Frankfurt DCs (NTT, firstcolo) share one test host,
+  so Frankfurt is one target. The Dubai and Tel Aviv services mentioned on the home page are not on the
+  data-centre list and have no test host.
+targets:
+  - name: HOSTKEY-Amsterdam
+    host: spd-nlsrv.hostkey.com
+    kinds: [tcp]
+    region: nl
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Frankfurt
+    host: spd-desrv.hostkey.com
+    kinds: [tcp]
+    region: de
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Helsinki
+    host: spd-fisrv.hostkey.com
+    kinds: [tcp]
+    region: fi
+    city: Helsinki
+    country: FI
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Reykjavik
+    host: spd-icsrv.hostkey.com
+    kinds: [tcp, icmp]
+    region: is
+    city: Keflavik
+    country: IS
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-London
+    host: spd-uksrv.hostkey.com
+    kinds: [tcp]
+    region: uk
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Paris
+    host: spd-frsrv.hostkey.com
+    kinds: [tcp]
+    region: fr
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Madrid
+    host: spd-essrv.hostkey.com
+    kinds: [tcp]
+    region: es
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Milan
+    host: spd-itsrv.hostkey.com
+    kinds: [tcp]
+    region: it
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Warsaw
+    host: spd-plsrv.hostkey.com
+    kinds: [tcp]
+    region: pl
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Zurich
+    host: spd-chsrv.hostkey.com
+    kinds: [tcp]
+    region: ch
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-Istanbul
+    host: spd-tr.hostkey.com
+    kinds: [tcp]
+    region: tr
+    city: Istanbul
+    country: TR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0
+  - name: HOSTKEY-NewYork
+    host: spd-uswb.hostkey.com
+    kinds: [tcp]
+    region: us
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      bytes: 0

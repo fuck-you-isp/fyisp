@@ -1,0 +1,26 @@
+provider: zata
+display: Zata
+kind: cloud
+category: [storage]
+sources:
+  - https://zata.ai/
+  - https://github.com/rclone/rclone/blob/master/backend/s3/provider/Zata.yaml
+notes: >-
+  Indian S3-compatible object storage. Its one endpoint idr01.zata.ai is in Indore, Madhya Pradesh
+  (rDNS rackbank.com, the RackBank data centre there); GET / is a 214-byte ListAllMyBuckets
+  response.
+targets:
+  - name: Zata-Indore
+    host: idr01.zata.ai
+    kinds: [https, tcp, icmp]
+    region: idr01
+    city: Indore
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214

@@ -1,0 +1,355 @@
+provider: tencent
+display: Tencent Cloud
+kind: hyperscaler
+category: [storage]
+sources:
+  - https://www.tencentcloud.com/document/product/436/6224
+  - https://www.tencentcloud.com/dynamic/news-details/100667
+  - https://www.tencentcloud.com/document/product/213/6091
+  - https://www.tencentcloud.com/document/product/614/18940
+notes: >-
+  Tencent publishes no ping host, so each region uses the public COS service
+  endpoint cos.<region>.myqcloud.com. An unauthenticated GET / returns 403 (about
+  480 bytes of XML), so no credentials are sent. The file covers all 17 public-cloud
+  regions in the COS regions list (2026-09-27): 6 mainland China (tagged
+  mainland-china) and 11 international. Left out: ap-beijing-1 (a legacy single-zone
+  Beijing endpoint that duplicates ap-beijing) and the finance cloud regions
+  ap-shenzhen-fsi, ap-shanghai-fsi and ap-beijing-fsi, which need a special account.
+  ap-mumbai, na-toronto and eu-moscow have been retired and resolve to 0.0.0.1, so
+  they are left out too. Mainland regions answered from Helsinki at 179-259 ms.
+  ap-chengdu and ap-chongqing both resolved into 183.66.100.0/24 (China Telecom
+  Chongqing), so the Chengdu endpoint may be served from Chongqing. ap-hongkong is
+  347 ms from Helsinki, above Singapore (183 ms), because of how Tencent routes it;
+  its IP (43.132.x) is Tencent's HK range. Other RTTs matched geography: Frankfurt
+  24 ms, Virginia 102 ms, Riyadh 110 ms, Silicon Valley 174 ms, Southeast Asia
+  183-208 ms, Sao Paulo 215 ms, Tokyo/Seoul 283-293 ms. One GET per 15 s is
+  negligible.
+  Also covered: ap-osaka (Osaka), launched in April 2025 and not yet in the COS
+  region table; cos.ap-osaka answers the same 403 at 285 ms, next to Tokyo's
+  273 ms. Two other hosts answer but are not public regions and are left out:
+  ap-taipei (175.97.x, 224 ms) and ap-qingyuan (Guangdong, 106.55.x, 197 ms).
+  ap-guangzhou's DNS alternates between two IPs; one TCP connect timed out on
+  2026-09-27 and a retry worked, so expect some loss on that path.
+  2026-09-27 audit (second pass), GeoDNS: every host was resolved through
+  8.8.8.8 with EDNS client subnets from Helsinki, China Telecom, China
+  Unicom, China Mobile, US, HK, SG and BR. Mainland COS hosts hand Chinese
+  carriers a per-carrier access IP that is often in another province
+  (cos.ap-guangzhou -> Fujian/Hunan/Jiangsu, cos.ap-beijing -> Hebei/Shandong),
+  and foreign clients get cos.ap-shanghai in China Telecom Anhui (Hefei, by
+  traceroute) and cos.ap-chengdu in Chongqing. cos.ap-hongkong and
+  cos.ap-singapore send Chinese clients to a Tokyo address (43.128.240.x).
+  Those six targets were switched, keeping their names, to the documented
+  Cloud Log Service (CLS) public API domain <region>.cls.tencentcs.com, whose
+  GET / is an unauthenticated "200 OK" (6 bytes). CLS also answers per
+  carrier, but every answer seen was in the right province or city (Beijing
+  confirmed by traceroute via China Telecom's Beijing IDC, Chengdu via China
+  Unicom Sichuan, Hong Kong via PCCW HK). The Shanghai, Guangzhou and Chengdu
+  CLS IPs are China Unicom and showed 30-60 ms RTT jitter from Helsinki; that
+  is the path, not the host. COS stays for ap-nanjing and ap-chongqing (all
+  answers in-province) and for the international regions (one answer set for
+  every client). Added from the CVM regions page: na-queretaro (Mexico, COS,
+  162 ms) and ap-johorbahru (Johor Bahru; CLS host, not yet on the CLS region
+  page, in Tencent's Malaysian range, 183 ms via Singapore). ap-zhongwei
+  (Zhongwei, Ningxia) is on the CVM page, but its COS host is fronted from
+  China Telecom Hebei (Shijiazhuang, by traceroute) and it has no CLS host,
+  so it is kept with kinds: []. Not added: ap-shanghai-adc / ap-zhongwei-adc
+  (self-driving clouds, restricted) and ap-taipei / ap-qingyuan (they answer
+  but are not on any region page).
+targets:
+  - name: Tencent-ap-beijing
+    host: ap-beijing.cls.tencentcs.com
+    kinds: [https, tcp, icmp]
+    region: ap-beijing
+    city: Beijing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6
+  - name: Tencent-ap-nanjing
+    host: cos.ap-nanjing.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-nanjing
+    city: Nanjing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 477
+  - name: Tencent-ap-shanghai
+    host: ap-shanghai.cls.tencentcs.com
+    kinds: [https, tcp, icmp]
+    region: ap-shanghai
+    city: Shanghai
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6
+  - name: Tencent-ap-guangzhou
+    host: ap-guangzhou.cls.tencentcs.com
+    kinds: [https, tcp, icmp]
+    region: ap-guangzhou
+    city: Guangzhou
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6
+  - name: Tencent-ap-chengdu
+    host: ap-chengdu.cls.tencentcs.com
+    kinds: [https, tcp, icmp]
+    region: ap-chengdu
+    city: Chengdu
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6
+  - name: Tencent-ap-chongqing
+    host: cos.ap-chongqing.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-chongqing
+    city: Chongqing
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 478
+  - name: Tencent-ap-hongkong
+    host: ap-hongkong.cls.tencentcs.com
+    kinds: [https, tcp, icmp]
+    region: ap-hongkong
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6
+  - name: Tencent-ap-singapore
+    host: ap-singapore.cls.tencentcs.com
+    kinds: [https, tcp, icmp]
+    region: ap-singapore
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6
+  - name: Tencent-ap-jakarta
+    host: cos.ap-jakarta.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-jakarta
+    city: Jakarta
+    country: ID
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 481
+  - name: Tencent-ap-seoul
+    host: cos.ap-seoul.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-seoul
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 482
+  - name: Tencent-ap-bangkok
+    host: cos.ap-bangkok.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-bangkok
+    city: Bangkok
+    country: TH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 478
+  - name: Tencent-ap-tokyo
+    host: cos.ap-tokyo.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-tokyo
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 477
+  - name: Tencent-me-saudi-arabia
+    host: cos.me-saudi-arabia.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: me-saudi-arabia
+    city: Riyadh
+    country: SA
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 481
+  - name: Tencent-na-siliconvalley
+    host: cos.na-siliconvalley.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: na-siliconvalley
+    city: Silicon Valley
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 481
+  - name: Tencent-na-ashburn
+    host: cos.na-ashburn.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: na-ashburn
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 481
+  - name: Tencent-sa-saopaulo
+    host: cos.sa-saopaulo.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: sa-saopaulo
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 481
+  - name: Tencent-eu-frankfurt
+    host: cos.eu-frankfurt.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: eu-frankfurt
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 481
+  - name: Tencent-ap-osaka                # launched 2025-04; not yet in the COS region table
+    host: cos.ap-osaka.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: ap-osaka
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 477
+  - name: Tencent-na-queretaro
+    host: cos.na-queretaro.myqcloud.com
+    kinds: [https, tcp, icmp]
+    region: na-queretaro
+    city: Queretaro
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 478
+  - name: Tencent-ap-johorbahru
+    host: ap-johorbahru.cls.tencentcs.com
+    kinds: [https, tcp, icmp]
+    region: ap-johorbahru
+    city: Johor Bahru
+    country: MY
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 6
+  - name: Tencent-ap-zhongwei
+    host: cos.ap-zhongwei.myqcloud.com
+    kinds: []
+    region: ap-zhongwei
+    city: Zhongwei
+    country: CN
+    geo: as
+    anycast: false
+    tags: [mainland-china, unreachable]
+    notes: COS host answers but is fronted from China Telecom Hebei, not Ningxia; no CLS host (2026-09-27)
+    verified: {date: 2026-09-27, icmp: false, tcp: false}

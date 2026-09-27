@@ -1,0 +1,25 @@
+provider: cloud-mn
+display: Cloud.mn
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://cloud.mn/
+notes: >-
+  Mongolian national cloud run by Intelligent Tools LLC (whois ITOOLSLLC-MN, Ulaanbaatar). Its S3
+  object storage s3.cloud.mn returns a 214-byte ListAllMyBuckets response under a valid *.cloud.mn
+  certificate. ICMP is dropped.
+targets:
+  - name: CloudMN-Ulaanbaatar
+    host: s3.cloud.mn
+    kinds: [https, tcp]
+    region: ub
+    city: Ulaanbaatar
+    country: MN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 214

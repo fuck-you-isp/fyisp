@@ -1,0 +1,26 @@
+provider: uzcloud
+display: UzCloud (Uztelecom)
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://uzcloud.uz/
+notes: >-
+  Uztelecom's public cloud in Tashkent. Its S3 object storage s3.uzcloud.uz is on Uztelecom
+  AS202660 in Tashkent. The server sends an incomplete certificate chain (verify error 20), so
+  https is off and only tcp and icmp are enabled. speedtest.uz and speedtest.uztelecom.uz are
+  Uztelecom's ISP speed tests and are not used.
+targets:
+  - name: UzCloud-Tashkent
+    host: s3.uzcloud.uz
+    kinds: [tcp, icmp]
+    region: tas
+    city: Tashkent
+    country: UZ
+    geo: as
+    anycast: false
+    notes: >-
+      Incomplete TLS chain on 2026-09-27; re-enable https once the intermediate is served.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

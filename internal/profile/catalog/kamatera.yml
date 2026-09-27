@@ -1,0 +1,404 @@
+provider: kamatera
+display: Kamatera
+kind: cloud
+category: [vps]
+sources:
+  - https://www.kamatera.com/data-centers/
+notes: >-
+  Official per-data-centre latency hosts <dc>-speedtest.kamatera.com, taken from the data-latency-url
+  attributes of the Kamatera data-centers page (20 locations; Miami is listed without one). GET / is a
+  2.7 KB speed-test page; never fetch its test files. Geo-IP of every IP matches the city. The four
+  extra Israeli sites (il, il-rh, il-pt, il-ha) are not on the public page but have the same kind of
+  host on Kamatera's Israeli network (AS44709/AS25052); geo-IP matches. Stockholm answers at ~26 ms
+  from Helsinki (routed via Frankfurt), geo-IP says Stockholm. Miami (us-mi) has no latency URL on the
+  page and us-mi-speedtest resolves to a dead IP; the same-pattern host us-mi2-speedtest.kamatera.com
+  (AS36007 Kamatera, geo-IP Miami, ~144 ms from Helsinki) answers and is used instead. Some hosts drop
+  an occasional echo (1-2 of 5 on 2026-09-27; us-tx, us-sc), TCP/HTTPS never failed.
+targets:
+  - name: Kamatera-eu
+    host: eu-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: eu
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-eu-bu
+    host: eu-bu-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: eu-bu
+    city: Bucharest
+    country: RO
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-eu-fr
+    host: eu-fr-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: eu-fr
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-eu-lo
+    host: eu-lo-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: eu-lo
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-eu-md
+    host: eu-md-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: eu-md
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-eu-ml
+    host: eu-ml-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: eu-ml
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-eu-st
+    host: eu-st-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: eu-st
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-at
+    host: us-at-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-at
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-ch
+    host: us-ch-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-ch
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-tx
+    host: us-tx-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-tx
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-la
+    host: us-la-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-la
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-ny2
+    host: us-ny2-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-ny2
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-sc
+    host: us-sc-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-sc
+    city: Santa Clara
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-se
+    host: us-se-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-se
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-ca-tr
+    host: ca-tr-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: ca-tr
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-as
+    host: as-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: as
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-as-sg
+    host: as-sg-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: as-sg
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-as-ty
+    host: as-ty-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: as-ty
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-au-sy
+    host: au-sy-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: au-sy
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-il-ta
+    host: il-ta-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: il-ta
+    city: Tel Aviv
+    country: IL
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-il
+    host: il-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: il
+    city: Rosh HaAyin
+    country: IL
+    geo: me
+    anycast: false
+    notes: >-
+      Not on the public data-centers page; Kamatera Israeli network.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-il-rh
+    host: il-rh-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: il-rh
+    city: Rosh HaAyin
+    country: IL
+    geo: me
+    anycast: false
+    notes: >-
+      Not on the public data-centers page; Kamatera Israeli network.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-il-pt
+    host: il-pt-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: il-pt
+    city: Petah Tikva
+    country: IL
+    geo: me
+    anycast: false
+    notes: >-
+      Not on the public data-centers page; Kamatera Israeli network.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-il-ha
+    host: il-ha-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: il-ha
+    city: Haifa
+    country: IL
+    geo: me
+    anycast: false
+    notes: >-
+      Not on the public data-centers page; Kamatera Israeli network.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26
+  - name: Kamatera-us-mi
+    host: us-mi2-speedtest.kamatera.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: us-mi
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    notes: >-
+      The data-centers page lists Miami (id us-mi) without a latency URL, and us-mi-speedtest.kamatera.com
+      (195.88.57.249) answers nothing. us-mi2-speedtest.kamatera.com follows the official naming, is on
+      Kamatera AS36007 with geo-IP Miami and answers at ~144 ms from Helsinki.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 26

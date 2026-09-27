@@ -1,0 +1,168 @@
+provider: clouvider
+display: Clouvider
+kind: cloud
+category: [vps, dedicated]
+sources:
+  - https://www.clouvider.com/our-datacenters/
+  - https://as62240.net/
+notes: >-
+  Clouvider (AS62240) sells servers in 11 cities. as62240.net publishes one "diagnostic/test IP" per
+  location; each location also has a speed-test name <loc>.speedtest.clouvider.net (valid certificate,
+  GET / answers 200 with an empty body), which are used here. Most names resolve to the published test IP
+  or to the same /24; all geolocate to their city and RTTs from Helsinki fit. Chicago (not in the published
+  list) answers ping only (TCP 443 refused). The old lg.clouvider.net looking glass is dead.
+targets:
+  - name: Clouvider-London
+    host: lon.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: lon
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-Manchester
+    host: man.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: man
+    city: Manchester
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-Amsterdam
+    host: ams.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-Frankfurt
+    host: fra.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: fra
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-NewYork
+    host: nyc.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: nyc
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-Ashburn
+    host: ash.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: ash
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-Atlanta
+    host: atl.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-Chicago
+    host: chi.speedtest.clouvider.net
+    kinds: [icmp]
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    notes: "ping only; TCP 443 refused"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+      bytes: 0
+  - name: Clouvider-Dallas
+    host: dal.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-Phoenix
+    host: phx.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: phx
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0
+  - name: Clouvider-LosAngeles
+    host: la.speedtest.clouvider.net
+    kinds: [https, tcp, icmp]
+    region: la
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 0

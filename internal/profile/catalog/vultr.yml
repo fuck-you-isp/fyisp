@@ -1,0 +1,510 @@
+provider: vultr
+display: Vultr
+kind: cloud
+sources:
+  - https://www.vultr.com/resources/faq/#downloadspeedtests
+  - https://fra-de-ping.vultr.com/
+  - https://api.vultr.com/v2/regions
+notes: >-
+  Official Vultr looking-glass / speed-test hosts <loc>-ping.vultr.com, one per region (the looking-glass
+  page links all 33). Region ids come from the public Vultr API /v2/regions. GET / is a ~12 KB HTML
+  looking-glass page; never fetch the /vultr.com.100MB.bin or 1000MB test files. Re-audited 2026-09-27:
+  the API and the looking-glass page both list the same 33 locations; every host is unicast (one A
+  record, same answer for client subnets on six continents, rDNS *.vultrusercontent.com), and 5/5 pings,
+  3/3 TCP connects and 3/3 GETs of /robots.txt (404, 146 B) succeeded with RTTs plausible for each city.
+targets:
+  - name: Vultr-ewr
+    host: nj-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: ewr
+    city: New Jersey
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-ord
+    host: il-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: ord
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-atl
+    host: ga-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-mia
+    host: fl-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: mia
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-dfw
+    host: tx-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: dfw
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-lax
+    host: lax-ca-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: lax
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-sjc
+    host: sjo-ca-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: sjc
+    city: Silicon Valley
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-sea
+    host: wa-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-hnl
+    host: hon-hi-us-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: hnl
+    city: Honolulu
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-yto
+    host: tor-ca-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: yto
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-mex
+    host: mex-mx-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: mex
+    city: Mexico City
+    country: MX
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-sao
+    host: sao-br-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: sao
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-scl
+    host: scl-cl-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: scl
+    city: Santiago
+    country: CL
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-ams
+    host: ams-nl-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-fra
+    host: fra-de-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: fra
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-cdg
+    host: par-fr-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: cdg
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-lhr
+    host: lon-gb-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: lhr
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-man
+    host: man-uk-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: man
+    city: Manchester
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-mad
+    host: mad-es-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: mad
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-mxp
+    host: mxp-it-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: mxp
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-sto
+    host: sto-se-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: sto
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-waw
+    host: waw-pl-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: waw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-tlv
+    host: tlv-il-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: tlv
+    city: Tel Aviv
+    country: IL
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-jnb
+    host: jnb-za-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: jnb
+    city: Johannesburg
+    country: ZA
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-blr
+    host: blr-in-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: blr
+    city: Bangalore
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-bom
+    host: bom-in-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: bom
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-del
+    host: del-in-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: del
+    city: Delhi NCR
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-nrt
+    host: hnd-jp-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: nrt
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-itm
+    host: osk-jp-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: itm
+    city: Osaka
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-icn
+    host: sel-kor-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: icn
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-sgp
+    host: sgp-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: sgp
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-syd
+    host: syd-au-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: syd
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: Vultr-mel
+    host: mel-au-ping.vultr.com
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: mel
+    city: Melbourne
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146

@@ -1,0 +1,301 @@
+provider: hostzealot
+display: HostZealot
+kind: cloud
+category: [vps, dedicated]
+sources:
+  - https://lg.hostzealot.com/
+  - https://www.hostzealot.com/
+notes: >-
+  HostZealot (HZ Hosting, AS59711/AS202015/AS201525; Veesp is a sister brand on the same network) lists
+  20 locations on its looking glass, each with a published speed-test host
+  <loc>-speedtest.lg.hostzealot.com. GET / answers a 615 B speed-test page with a valid certificate; all
+  answer ping and TCP 443. Locations were checked with geo-IP and RTT from Helsinki. Three Gulf locations
+  (Manama, Dubai, Riyadh) geolocate in-country but answer at the same RTT and via the same last hop as
+  Marseille (about 47 ms from Helsinki, physically impossible for the Gulf), so they are kept with
+  kinds: []. Brussels shares Amsterdam's /24, geolocates to Amsterdam and answers at Amsterdam's RTT, so
+  it is kept with kinds: [] too.
+targets:
+  - name: HostZealot-Amsterdam
+    host: ams-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: amsnl
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Ashburn
+    host: ash-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: ashus
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Brussels
+    host: bru-speedtest.lg.hostzealot.com
+    kinds: []
+    region: brube
+    city: Brussels
+    country: BE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host shares Amsterdam's /24, geolocates to Amsterdam and answers at Amsterdam's RTT; not in Brussels"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: HostZealot-Chicago
+    host: chi-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: chius
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Dallas
+    host: dfw-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: dfwus
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Dubai
+    host: dxb-speedtest.lg.hostzealot.com
+    kinds: []
+    region: dxbae
+    city: Dubai
+    country: AE
+    geo: me
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host answers at Marseille's RTT (47 ms from Helsinki) via the same last hop; location not verifiable"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: HostZealot-Frankfurt
+    host: fra-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: frade
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-HongKong
+    host: hkg-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: hkgcn
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 617
+  - name: HostZealot-Limassol
+    host: lms-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: lmscy
+    city: Limassol
+    country: CY
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-London
+    host: lon-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: lonuk
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Manama
+    host: bah-speedtest.lg.hostzealot.com
+    kinds: []
+    region: bahbh
+    city: Manama
+    country: BH
+    geo: me
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host answers at Marseille's RTT (47 ms from Helsinki) via the same last hop; location not verifiable"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: HostZealot-Marseille
+    host: mrs-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: mrsfr
+    city: Marseille
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-RishonLeZion
+    host: rlz-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: rlzil
+    city: Rishon LeZion
+    country: IL
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Riyadh
+    host: ruh-speedtest.lg.hostzealot.com
+    kinds: []
+    region: ruhsa
+    city: Riyadh
+    country: SA
+    geo: me
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host answers at Marseille's RTT (47 ms from Helsinki) via the same last hop; location not verifiable"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: HostZealot-Seattle
+    host: sea-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: seaus
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Stockholm
+    host: stk-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: stkse
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Tbilisi
+    host: tgz-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: tgzge
+    city: Tbilisi
+    country: GE
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Tallinn
+    host: tll-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: tllee
+    city: Tallinn
+    country: EE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Toronto
+    host: tor-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: torca
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615
+  - name: HostZealot-Warsaw
+    host: waw-speedtest.lg.hostzealot.com
+    kinds: [https, tcp, icmp]
+    region: wawpl
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 615

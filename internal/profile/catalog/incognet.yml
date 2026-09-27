@@ -1,0 +1,105 @@
+provider: incognet
+display: IncogNET
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://incognet.io/ournetwork
+notes: >-
+  IncogNET (AS40663) lists ten POPs; six are hosting locations with a looking glass
+  (<site>.lg.as40663.net, linked from the network page): Amsterdam, Kansas City, Liberty Lake WA,
+  Sofia, Stockholm and Valley Forge PA. The other four (Miami, Las Vegas, Bern and a US north-east POP)
+  are VPN-only and are not listed. The looking-glass hosts are the targets (unicast in AS40663,
+  geo-IP and RTT from Helsinki fit each site; Valley Forge geolocates to neighbouring Chesterbrook).
+  GET /robots.txt answers a ~300 B 404. The Stockholm looking glass (st-se-eu) is linked but its name
+  does not resolve, so Stockholm is kept with kinds: [].
+targets:
+  - name: IncogNET-Amsterdam
+    host: am-nl-eu.lg.as40663.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: am-nl
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 326
+  - name: IncogNET-KansasCity
+    host: kc-mo-na.lg.as40663.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: kc-mo
+    city: Kansas City
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 326
+  - name: IncogNET-LibertyLake
+    host: lb-wa-na.lg.as40663.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: lb-wa
+    city: Liberty Lake
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 286
+  - name: IncogNET-Sofia
+    host: sf-bg-eu.lg.as40663.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: sf-bg
+    city: Sofia
+    country: BG
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 326
+  - name: IncogNET-Stockholm
+    host: st-se-eu.lg.as40663.net
+    kinds: []
+    region: st-se
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "looking-glass name linked from the network page does not resolve (NXDOMAIN)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: IncogNET-ValleyForge
+    host: vf-pa-na.lg.as40663.net
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: vf-pa
+    city: Valley Forge
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 326

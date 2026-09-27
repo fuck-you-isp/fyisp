@@ -1,0 +1,45 @@
+provider: iij
+display: IIJ
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://www.iij.ad.jp/news/pressrelease/2019/0731.html
+  - https://www.iij.ad.jp/biz/storage/
+  - https://www.iij.ad.jp/biz/p2/
+notes: >-
+  IIJ (Internet Initiative Japan) runs IIJ GIO Infrastructure P2 in East (Tokyo area) and West Japan
+  regions; the old IIJ Object Storage service is discontinued. No public regional API, object-storage,
+  looking-glass or speed-test host exists (every iijgio.jp/iijgio.com pattern tried has no DNS record,
+  2026-09-27). As a Tokyo proxy, fyisp probes IIJ's public mirror ftp.iij.ad.jp (AS2497, Tokyo; GET / is
+  a 669-byte index). West Japan has no public endpoint and is kept with kinds [].
+targets:
+  - name: IIJ-Tokyo
+    host: ftp.iij.ad.jp
+    kinds: [https, tcp, icmp]
+    region: jp-east
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    notes: "IIJ public mirror (AS2497), a Tokyo backbone proxy, not a GIO API endpoint"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 669
+  - name: IIJ-West
+    host: ftp.iij.ad.jp
+    kinds: []
+    region: jp-west
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: "IIJ GIO P2 West Japan region (city not published); no public endpoint, host is a placeholder"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

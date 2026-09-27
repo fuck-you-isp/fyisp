@@ -1,0 +1,43 @@
+provider: interserver
+display: InterServer
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - http://speedtest.is.cc/
+  - https://www.peeringdb.com/asn/19318
+notes: >-
+  Official InterServer speed-test hosts, one per datacenter: Secaucus NJ and Los Angeles (2 of 2;
+  PeeringDB also lists a Richardson TX network presence, not a hosting site). Secaucus uses
+  speedtest.is.cc, the speed-test page's own name and the rDNS of nyc.speedtest.is.cc's IP: its
+  certificate is valid only for that name, and GET /robots.txt is a 278-byte 404. The LA host is
+  HTTP-only (port 80), so tcp + icmp only. Never fetch the *.img test files.
+targets:
+  - name: InterServer-Secaucus
+    host: speedtest.is.cc
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: nj
+    city: Secaucus
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 278
+  - name: InterServer-LosAngeles
+    host: lax.speedtest.is.cc
+    kinds: [tcp, icmp]
+    port: 80
+    region: la
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    notes: HTTP-only (port 80); tcp/icmp only
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

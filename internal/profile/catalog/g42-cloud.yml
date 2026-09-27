@@ -1,0 +1,26 @@
+provider: g42-cloud
+display: G42 Cloud (Core42)
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://www.g42cloud.com/
+  - https://docs.g42cloud.com/
+notes: >-
+  UAE sovereign cloud of G42/Core42, built on the Huawei Cloud stack. Region ae-ad-1 (Abu Dhabi)
+  has the OBS object storage endpoint obs.ae-ad-1.g42cloud.com, on G42's own AS208800 (geo-IP
+  Dubai, UAE); GET / is a 298-byte 403. No other region hostname resolved.
+targets:
+  - name: G42Cloud-ae-ad-1
+    host: obs.ae-ad-1.g42cloud.com
+    kinds: [https, tcp, icmp]
+    region: ae-ad-1
+    city: Abu Dhabi
+    country: AE
+    geo: me
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 298

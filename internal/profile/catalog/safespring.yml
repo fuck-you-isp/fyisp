@@ -1,0 +1,71 @@
+provider: safespring
+display: Safespring
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.safespring.com/
+notes: >-
+  Safespring (Nordic sovereign cloud on the SUNET/Sikt research networks) runs four sites: osl2 (Oslo),
+  sto1 and sto2 (two separate Stockholm sites) and dco1 (Kalix, northern Sweden). No speed-test host is
+  published. The targets are the per-site S3 endpoints s3.<site>.safedc.net named in the docs (GET / is
+  a ~200 B anonymous empty bucket list; they answer ping). Geo-IP: Stockholm for sto1/sto2, Oslo for
+  osl2; dco1 geolocates to Karlstad (SUNET's generic registration) but its RTT from Helsinki (~19 ms vs
+  ~7 ms to Stockholm) fits Kalix. A third Stockholm name (s3.sto3.safedc.net) resolves but sto3 is not
+  a listed site, so it is not used.
+targets:
+  - name: Safespring-sto1
+    host: s3.sto1.safedc.net
+    kinds: [https, tcp, icmp]
+    region: sto1
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: Safespring-sto2
+    host: s3.sto2.safedc.net
+    kinds: [https, tcp, icmp]
+    region: sto2
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: Safespring-osl2
+    host: s3.osl2.safedc.net
+    kinds: [https, tcp, icmp]
+    region: osl2
+    city: Oslo
+    country: NO
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: Safespring-dco1
+    host: s3.dco1.safedc.net
+    kinds: [https, tcp, icmp]
+    region: dco1
+    city: Kalix
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187

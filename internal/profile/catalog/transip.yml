@@ -1,0 +1,49 @@
+provider: transip
+display: TransIP
+kind: cloud
+category: [vps]
+sources:
+  - https://www.transip.eu/vps/network/
+  - https://www.transip.eu/knowledgebase/990-what-is-an-availability-zone
+notes: >-
+  TransIP (team.blue) sells VPS in two availability zones, AMS0 (Amsterdam) and RTM0 (Alblasserdam,
+  per the availability-zone KB article; earlier versions of this file said Delft). No
+  speed-test or looking-glass host is published. AMS0 uses TransIP's public Linux mirror
+  mirror.transip.net (AS20857); traceroute ends behind svc1-tb-ams05.transip.net, so it is in
+  Amsterdam (geo-IP databases say Lelystad, which is the registrant address). Only /favicon.ico
+  (~4 KB) would be fetched, never mirror content, but every path of the mirror is >4 KB (/favicon.ico
+  4286 B, everything else a 10.9 KB page), so https is not enabled. RTM0 uses TransIP's authoritative
+  name server ns1.transip.nl: the path ends behind ae20-r2-tb-abl01.transip.net (Alblasserdam) and it
+  answers ~3.5 ms slower than AMS0; TCP 53 and ICMP only. Name servers may be anycast, which could not
+  be excluded from one vantage point, so treat RTM0 as weak. ntp1.rtm.nl.transip.net is also in RTM0
+  but answers neither ICMP nor TCP.
+targets:
+  - name: TransIP-AMS0
+    host: mirror.transip.net
+    kinds: [tcp, icmp]
+    path: /favicon.ico
+    region: ams0
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 4286
+  - name: TransIP-RTM0
+    host: ns1.transip.nl
+    kinds: [tcp, icmp]
+    port: 53
+    region: rtm0
+    city: Alblasserdam
+    country: NL
+    geo: eu
+    anycast: false
+    notes: "authoritative name server, path via ae20-r2-tb-abl01.transip.net; TCP 53 connect only"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

@@ -1,0 +1,77 @@
+provider: kakao-cloud
+display: Kakao Cloud
+kind: cloud
+category: [vps, storage]
+sources:
+  - https://docs.kakaocloud.com/en/start/region-az
+  - https://docs.kakaocloud.com/en/tutorial/storage/object-storage-s3-api
+  - https://docs.kakaocloud.com/en/tutorial/storage/aws-s3-migration
+notes: >-
+  KakaoCloud regions (region-az doc, 2026-09-27): kr-central-2 (the main region, Seoul metro) and the
+  public-sector kr-gov-central-1 and kr-gov-central-2. kr-central-1 was discontinued on 2025-03-31.
+  kr-central-2 is probed via its Object Storage endpoint objectstorage.kr-central-2.kakaocloud.com; GET
+  / is a 226-byte 404. ICMP is filtered. The gov regions have no public endpoint (their object-storage
+  names do not resolve).
+targets:
+  - name: Kakao-kr-central-2
+    host: objectstorage.kr-central-2.kakaocloud.com
+    kinds: [https, tcp]
+    region: kr-central-2
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 404
+      bytes: 226
+  - name: Kakao-kr-central-1
+    host: objectstorage.kr-central-1.kakaocloud.com
+    kinds: []
+    region: kr-central-1
+    city: Sejong
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable, closed]
+    notes: region discontinued on 2025-03-31; DNS still resolves but no TCP answer on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: Kakao-kr-gov-central-1
+    host: objectstorage.kr-gov-central-1.kakaocloud.com
+    kinds: []
+    region: kr-gov-central-1
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: public-sector region; its object-storage name does not resolve publicly (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0
+  - name: Kakao-kr-gov-central-2
+    host: objectstorage.kr-gov-central-2.kakaocloud.com
+    kinds: []
+    region: kr-gov-central-2
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: public-sector region; its object-storage name does not resolve publicly (2026-09-27)
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      https: 0
+      bytes: 0

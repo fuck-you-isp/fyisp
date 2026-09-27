@@ -1,0 +1,88 @@
+provider: netcup
+display: netcup
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://www.netcup.com/en/about-netcup/server-locations
+  - https://lg.netcup.net/
+  - https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS197540
+notes: >-
+  netcup has five locations (NUE, VIE, AMS, MNZ, SIN) but publishes only one self-hosted
+  OpenSpeedTest page, speedtest.netcup.de, in Nuremberg (geo-IP Nuremberg, AS197540, ~27 ms from
+  Helsinki). GET / is an 8 KB page; never run the test itself. The looking glass lg.netcup.net forbids
+  automated use and runs from the routers, so it is not a target. VIE/AMS/MNZ/SIN run on the network of
+  netcup's parent Anexia. Searched on 2026-09-27 for a netcup-run host at those four sites: DNS guesses,
+  certificate-transparency logs for netcup.net/.de/.com/.eu (only central web, mail and shared-hosting
+  names), RIPE Atlas anchors in AS197540 (the Vienna one is disabled), and an ICMP sweep of every
+  AS197540 prefix. Nothing public exists. Vienna is probed via the netcup customer-subnet gateway
+  152.53.0.1 (ICMP only; the traceroute reaches it through Anexia's anx103.vie.at backbone router).
+  That is a weak target: a router, a raw IP, and it may change. Amsterdam-geolocated netcup prefixes
+  are reached straight after Anexia's Frankfurt router with no Amsterdam hop, so their location could
+  not be confirmed. No Manassas or Singapore prefix is originated by AS197540. Those three stay
+  unreachable, with a placeholder host that is never probed.
+targets:
+  - name: Netcup-Nuremberg
+    host: speedtest.netcup.de
+    path: /robots.txt
+    kinds: [https, tcp, icmp]
+    region: nue
+    city: Nuremberg
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 236
+  - name: Netcup-Vienna
+    host: 152.53.0.1
+    kinds: [icmp]
+    region: vie
+    city: Vienna
+    country: AT
+    geo: eu
+    anycast: false
+    notes: >-
+      Weak (grade C): gateway of the netcup Vienna customer range 152.53.0.0/22 (geo-IP Vienna,
+      AS197540). It is reached via ae1-0.bbr01.anx103.vie.at.anexia-it.net, at ~30 ms from Helsinki.
+      It is a router with no DNS name and no TCP listener, so only ICMP is probed. Replace it if netcup
+      ever publishes a Vienna test host.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Netcup-Amsterdam
+    host: www.netcup.com
+    kinds: []
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      No public per-location endpoint; placeholder host, never probed.
+  - name: Netcup-Manassas
+    host: www.netcup.com
+    kinds: []
+    region: mnz
+    city: Manassas
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      No public per-location endpoint; placeholder host, never probed.
+  - name: Netcup-Singapore
+    host: www.netcup.com
+    kinds: []
+    region: sin
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      No public per-location endpoint; placeholder host, never probed.

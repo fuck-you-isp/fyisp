@@ -1,0 +1,29 @@
+provider: worldstream
+display: Worldstream
+kind: cloud
+category: [bare-metal, vps]
+sources:
+  - https://www.worldstream.com/en/about-worldstream/our-datacenters/
+  - https://www.speedtest.net/
+notes: >-
+  Worldstream hosts all servers in its own (Greenhouse) data centres in Naaldwijk (Westland, NL); Haarlem,
+  Amsterdam and Frankfurt are network PoPs only. The endpoint is Worldstream's official Ookla speed-test
+  server speedtest.worldstream.nl (AS49981, rDNS matches, geo-IP Honselersdijk next to Naaldwijk). Port
+  80/443 are closed; the Ookla daemon listens on 8080. HTTPS is not used: the daemon presents a
+  certificate for server-6554.prod.hosts.ooklaserver.net (not this name) whose Let's Encrypt chain ends
+  at the new "ISRG Root YR", which common trust stores do not have yet, so every GET failed certificate
+  verification (2026-09-27, also via the ooklaserver.net name). TCP 8080 and ICMP are stable.
+targets:
+  - name: Worldstream-Naaldwijk
+    host: speedtest.worldstream.nl
+    kinds: [tcp, icmp]
+    port: 8080
+    region: naaldwijk
+    city: Naaldwijk
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true

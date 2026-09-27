@@ -1,0 +1,61 @@
+provider: ps-cloud
+display: PS Cloud Services
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://www.ps.kz/
+  - https://docs.ps.kz/
+notes: >-
+  Kazakh cloud (PS Internet Company AS48716, PS Cloud Services AS61106) with data centres in
+  Almaty, Astana and Tashkent, per ps.kz. S3 object storage: storage-object.pscloud.io (Almaty,
+  used by ps.kz itself; GET / is a 214-byte ListAllMyBuckets) and s3.uz-tas-1.pscloud.io
+  (Tashkent, AS61106; GET / is a 146-byte 404). No Astana storage hostname resolved (s3.kz-ast-1,
+  storage-object-ast and similar are NXDOMAIN), so Astana is kept with kinds: []. speedtest.ps.kz
+  is the ISP's speed test and is not used.
+targets:
+  - name: PSCloud-Almaty
+    host: storage-object.pscloud.io
+    kinds: [https, tcp, icmp]
+    region: kz-ala-1
+    city: Almaty
+    country: KZ
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: PSCloud-Astana
+    host: s3.kz-ast-1.pscloud.io
+    kinds: []
+    region: kz-ast-1
+    city: Astana
+    country: KZ
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      No public storage, speed-test or looking-glass host found for Astana; NXDOMAIN on
+      2026-09-27.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: PSCloud-Tashkent
+    host: s3.uz-tas-1.pscloud.io
+    kinds: [https, tcp, icmp]
+    region: uz-tas-1
+    city: Tashkent
+    country: UZ
+    geo: as
+    anycast: false
+    notes: >-
+      Geo-IP Tashkent (AS61106 PS Cloud Services).
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146

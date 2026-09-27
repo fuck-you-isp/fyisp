@@ -1,0 +1,144 @@
+provider: liquidweb
+display: Liquid Web
+kind: cloud
+category: [vps, bare-metal]
+sources:
+  - https://www.liquidweb.com/data-centers/
+  - https://www.liquidweb.com/help-docs/performance/server-optimization/testing-your-networks-speed-and-reliability/
+  - https://lg.liquidweb.com/speed_test/
+notes: >-
+  Official Liquid Web network-test hosts from the help doc and the looking glass's speed-test page:
+  lg.liquidweb.com (Lansing), phoenix-test.liquidweb.com (Phoenix; GET /robots.txt is a 153-byte 404)
+  and amsterdam-test.liquidweb.name (Amsterdam, HTTP-only; 443 times out). lg.liquidweb.com's
+  certificate expired on 2025-02-15, so tcp + icmp only. Never fetch the *.bin test files. The other
+  Liquid Web datacenters on the locations page (Southfield, San Jose, Ashburn, London, West Sussex,
+  Sydney) have no published test host (the looking glass lists only Lansing, Phoenix and Amsterdam;
+  <city>-test names do not resolve) and are kept as kinds: []. The 11 servers.com locations resold on
+  the same page are a different operator and are not included.
+targets:
+  - name: LiquidWeb-Lansing
+    host: lg.liquidweb.com
+    kinds: [tcp, icmp]
+    region: lan
+    city: Lansing
+    country: US
+    geo: na
+    anycast: false
+    notes: TLS certificate expired 2025-02-15; tcp/icmp only
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: LiquidWeb-Phoenix
+    host: phoenix-test.liquidweb.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: phx
+    city: Phoenix
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 153
+  - name: LiquidWeb-Amsterdam
+    host: amsterdam-test.liquidweb.name
+    kinds: [tcp, icmp]
+    port: 80
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    notes: HTTP-only (port 80)
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: LiquidWeb-Southfield
+    host: lg.liquidweb.com
+    kinds: []
+    region: sfd
+    city: Southfield
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no published test host
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: LiquidWeb-SanJose
+    host: lg.liquidweb.com
+    kinds: []
+    region: sjc
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no published test host
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: LiquidWeb-Ashburn
+    host: lg.liquidweb.com
+    kinds: []
+    region: iad
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no published test host
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: LiquidWeb-London
+    host: lg.liquidweb.com
+    kinds: []
+    region: lon
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no published test host
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: LiquidWeb-WestSussex
+    host: lg.liquidweb.com
+    kinds: []
+    region: gb-sw
+    city: West Sussex
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no published test host
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: LiquidWeb-Sydney
+    host: lg.liquidweb.com
+    kinds: []
+    region: syd
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: no published test host
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

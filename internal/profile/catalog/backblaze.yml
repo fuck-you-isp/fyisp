@@ -1,0 +1,113 @@
+provider: backblaze
+display: Backblaze B2
+kind: cloud
+category: [storage]
+sources:
+  - https://www.backblaze.com/docs/cloud-storage-data-regions
+  - https://www.backblaze.com/docs/cloud-storage-s3-compatible-api
+notes: >-
+  Backblaze publishes no ping/speed-test hosts, so each B2 storage cluster is probed via its S3
+  endpoint s3.<cluster>.backblazeb2.com; anonymous GET / returns a 403 XML body (180 B). Every cluster
+  that resolves today is listed (us-west-000/001/002/004, us-east-005, eu-central-003, ca-east-006;
+  other numbers are NXDOMAIN). Official regions: US West (Sacramento, Stockton, Phoenix data centers),
+  US East (Reston), EU Central (Amsterdam), CA East (Toronto). Backblaze does not publish which US
+  West data center hosts which cluster, so city is left empty for us-west-*; RTTs from northern Europe
+  (158-178 ms) fit the US West coast/southwest. us-west-000 is a legacy cluster (no PTR record) but
+  still answers. Re-checked 2026-09-27: no new clusters (000-010 across us-west, us-east, eu-central,
+  eu-west, ca-east, ca-central, ap-southeast), no redirects, all steady; geo-IP of Backblaze's own
+  ranges is not trusted for the us-west cities.
+targets:
+  - name: Backblaze-us-west-000
+    host: s3.us-west-000.backblazeb2.com
+    kinds: [https, tcp, icmp]
+    region: us-west-000
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 180
+  - name: Backblaze-us-west-001
+    host: s3.us-west-001.backblazeb2.com
+    kinds: [https, tcp, icmp]
+    region: us-west-001
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 180
+  - name: Backblaze-us-west-002
+    host: s3.us-west-002.backblazeb2.com
+    kinds: [https, tcp, icmp]
+    region: us-west-002
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 180
+  - name: Backblaze-us-west-004
+    host: s3.us-west-004.backblazeb2.com
+    kinds: [https, tcp, icmp]
+    region: us-west-004
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 180
+  - name: Backblaze-us-east-005
+    host: s3.us-east-005.backblazeb2.com
+    kinds: [https, tcp, icmp]
+    region: us-east-005
+    city: Reston
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 180
+  - name: Backblaze-eu-central-003
+    host: s3.eu-central-003.backblazeb2.com
+    kinds: [https, tcp, icmp]
+    region: eu-central-003
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 180
+  - name: Backblaze-ca-east-006
+    host: s3.ca-east-006.backblazeb2.com
+    kinds: [https, tcp, icmp]
+    region: ca-east-006
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 180

@@ -1,0 +1,58 @@
+provider: flow-swiss
+display: Flow Swiss
+kind: cloud
+category: [vps, storage, bare-metal]
+sources:
+  - https://api.flow.swiss/v4/entities/locations
+  - https://doc.flow.swiss/
+notes: >-
+  Flow Swiss's public locations API lists three locations: ALP1 and ALP2 ("Central Switzerland"; the
+  docs place ALP1 in Luzern) and ZRH1 ("Northern Switzerland", Zurich). No speed-test host is
+  published. The targets are the per-location object-storage endpoints os.<loc>.flow.swiss (GET / is a
+  97 B S3 AccessDenied XML; they answer ping), each on a separate Flow Swiss AS. Geo-IP: Luzern
+  (ALP1), Zurich (ZRH1, ALP2; ALP2's exact site is not published). RTT from Helsinki: ZRH1 ~43 ms,
+  ALP1/ALP2 ~54-56 ms.
+targets:
+  - name: FlowSwiss-ALP1
+    host: os.alp1.flow.swiss
+    kinds: [https, tcp, icmp]
+    region: ALP1
+    city: Luzern
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 97
+  - name: FlowSwiss-ALP2
+    host: os.alp2.flow.swiss
+    kinds: [https, tcp, icmp]
+    region: ALP2
+    city: Luzern
+    country: CH
+    geo: eu
+    anycast: false
+    notes: "Central Switzerland; exact site not published (rDNS loadbalancer-001.alp2.flow.swiss)"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 97
+  - name: FlowSwiss-ZRH1
+    host: os.zrh1.flow.swiss
+    kinds: [https, tcp, icmp]
+    region: ZRH1
+    city: Zurich
+    country: CH
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 97

@@ -1,0 +1,26 @@
+provider: evroc
+display: evroc
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.evroc.com/products/compute/concepts/regions-and-zones.html
+notes: >-
+  evroc (Swedish sovereign hyperscale cloud) has one region, se-sto (Stockholm), with three zones
+  se-sto-a/b/c. No speed-test host is published. The target is the regional object-storage endpoint
+  s3.se-sto.evroc.com (GET / is a 230 B 403; answers ping) in evroc's own AS51826, geo-IP Stockholm,
+  RTT from Helsinki ~7.4 ms.
+targets:
+  - name: evroc-se-sto
+    host: s3.se-sto.evroc.com
+    kinds: [https, tcp, icmp]
+    region: se-sto
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 230

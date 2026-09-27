@@ -1,0 +1,28 @@
+provider: elastx
+display: Elastx
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.elastx.cloud/docs/openstack-iaas/
+notes: >-
+  Elastx (Swedish OpenStack cloud) has a single region, se-sto (Stockholm), spread over three
+  availability zones (sto1-sto3) in the Stockholm area. No speed-test host is published. The target is
+  the documented Swift/S3 object-storage endpoint swift.elastx.cloud (GET / is a 70 B 404; answers
+  ping), which rotates over three addresses in Elastx's AS48579 (geo-IP Stockholm, RTT from Helsinki
+  ~7.5 ms). The Keystone host ops.elastx.cloud was not used: one of its addresses answers ping at
+  ~34 ms, the others at ~7.5 ms.
+targets:
+  - name: Elastx-se-sto
+    host: swift.elastx.cloud
+    kinds: [https, tcp, icmp]
+    region: se-sto
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 70

@@ -1,0 +1,110 @@
+provider: cleura
+display: Cleura (City Network)
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://docs.cleura.cloud/versions.json
+  - https://docs.cleura.cloud/kna1/reference/api/openstack/
+notes: >-
+  Cleura (formerly City Network / City Cloud) lists six OpenStack regions in its docs: public Sto2
+  (Stockholm), Kna1 (Karlskrona) and Fra1 (Frankfurt), the compliant-cloud region Sto-Com (Stockholm)
+  and the high-security regions Sto1HS and Sto2HS (Stockholm). No speed-test host is published. The
+  public regions use the documented regional Keystone endpoint <region>.citycloud.com:5000 (GET / is a
+  274 B version list; the host answers ping); geo-IP Stockholm / Karlskrona / Frankfurt on Cleura's
+  AS42695, RTT from Helsinki ~7 / 17 / 35 ms. Sto-Com's APIs (identity.sto-com.cleura.cloud etc.) are
+  firewalled to customer allow-lists, but the identity address answers ping, so it is ICMP-only. The HS
+  regions' endpoints are not reachable from the Internet and are kept with kinds: []. The old regions
+  Lon1, Tky1 and Dx1 still resolve but are no longer listed and are not included.
+targets:
+  - name: Cleura-Sto2
+    host: sto2.citycloud.com
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: sto2
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    notes: "Keystone endpoint on port 5000"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 274
+  - name: Cleura-Kna1
+    host: kna1.citycloud.com
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: kna1
+    city: Karlskrona
+    country: SE
+    geo: eu
+    anycast: false
+    notes: "Keystone endpoint on port 5000"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 274
+  - name: Cleura-Fra1
+    host: fra1.citycloud.com
+    kinds: [https, tcp, icmp]
+    port: 5000
+    region: fra1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    notes: "Keystone endpoint on port 5000"
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 300
+      bytes: 274
+  - name: Cleura-Sto-Com
+    host: identity.sto-com.cleura.cloud
+    kinds: [icmp]
+    region: sto-com
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    tags: [compliant-cloud region; API ports are allow-listed, ICMP only]
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+      bytes: 0
+  - name: Cleura-Sto1HS
+    host: s3-sto1hs.citycloud.com
+    kinds: []
+    region: sto1hs
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "high-security region; endpoints firewalled (no ping, no TCP)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: Cleura-Sto2HS
+    host: s3-sto2hs.citycloud.com
+    kinds: []
+    region: sto2hs
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "high-security region; endpoints firewalled (no ping, no TCP)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0

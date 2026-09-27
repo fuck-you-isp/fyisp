@@ -1,0 +1,336 @@
+provider: fdcservers
+display: FDC Servers
+kind: cloud
+category: [bare-metal]
+sources:
+  - https://fdcservers.net/locations
+  - https://fdcservers.net/lg
+notes: >-
+  FDC Servers (AS30058) lists 25 dedicated-server locations; its looking-glass page publishes one
+  lg-<code>.fdcservers.net host per location, and those are the targets. Each is a unicast address
+  in FDC's own ranges (Moscow sits on a Vimpelcom range, as FDC's Moscow PoP does); geo-IP and RTT
+  from Helsinki match every city (e.g. lg-spb is Sao Paulo at 229 ms, not St Petersburg). GET /
+  answers a 0-byte 302 to fdcservers.net/lg (redirect is not followed). All answer ping.
+targets:
+  - name: FDC-Amsterdam
+    host: lg-ams.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: ams
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Ashburn
+    host: lg-iad.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: iad
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Atlanta
+    host: lg-atl.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Chicago
+    host: lg-chie.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Dallas
+    host: lg-dfw.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: dfw
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Denver
+    host: lg-dene.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: den
+    city: Denver
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Dublin
+    host: lg-dub.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: dub
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Frankfurt
+    host: lg-fr8.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: fra
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-HongKong
+    host: lg-hkg.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: hkg
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Lisbon
+    host: lg-lis.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: lis
+    city: Lisbon
+    country: PT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-London
+    host: lg-lon.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: lon
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-LosAngeles
+    host: lg-lax.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: lax
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Madrid
+    host: lg-mad.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: mad
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Miami
+    host: lg-mia.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: mia
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Paris
+    host: lg-pa10.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: par
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Prague
+    host: lg-prg.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: prg
+    city: Prague
+    country: CZ
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-SaoPaulo
+    host: lg-spb.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: sao
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Seattle
+    host: lg-sea.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Singapore
+    host: lg-sin.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: sin
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Tokyo
+    host: lg-hnd.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: tyo
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Toronto
+    host: lg-tor.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: tor
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Vienna
+    host: lg-vie.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: vie
+    city: Vienna
+    country: AT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0
+  - name: FDC-Warsaw
+    host: lg-war.fdcservers.net
+    kinds: [https, tcp, icmp]
+    region: waw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 302
+      bytes: 0

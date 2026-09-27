@@ -1,0 +1,166 @@
+provider: colocrossing
+display: ColoCrossing
+kind: cloud
+category: [bare-metal, colocation]
+sources:
+  - https://www.colocrossing.com/datacenters/
+  - https://www.colocrossing.com/datacenter/buffalo-ny/
+notes: >-
+  ColoCrossing (now part of HostPapa, AS36352) lists ten data centres: Atlanta, Buffalo, Chicago,
+  Dallas, Dublin, Los Angeles, New York, San Jose, Seattle and Toronto. Each data-centre page names a
+  looking-glass host lg.<city>.colocrossing.com; those are the targets (unicast, rDNS
+  *-host.colocrossing.com, geo-IP and RTT from Helsinki match each city). GET /robots.txt answers a
+  146 B 404 (/ is a 5 KB page with speed-test file links). The New York looking glass
+  (lg.nyc.colocrossing.com) did not answer ping, TCP or HTTP on 2026-09-27 and its IP geolocates to
+  Buffalo, so New York is kept with kinds: [].
+targets:
+  - name: ColoCrossing-Atlanta
+    host: lg.atl.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: atl
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-Buffalo
+    host: lg.buf.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: buf
+    city: Buffalo
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-Chicago
+    host: lg.chi.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: chi
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-Dallas
+    host: lg.dal.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: dal
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-Dublin
+    host: lg.dub.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: dub
+    city: Dublin
+    country: IE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-LosAngeles
+    host: lg.la.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: la
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-NewYork
+    host: lg.nyc.colocrossing.com
+    kinds: []
+    region: nyc
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "looking glass dead on 2026-09-27 (no ping/TCP/HTTP; IP geolocates to Buffalo)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+      bytes: 0
+  - name: ColoCrossing-SanJose
+    host: lg.sj.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: sj
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-Seattle
+    host: lg.sea.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: sea
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146
+  - name: ColoCrossing-Toronto
+    host: lg.tor.colocrossing.com
+    kinds: [https, tcp, icmp]
+    path: /robots.txt
+    region: tor
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 404
+      bytes: 146

@@ -1,0 +1,117 @@
+provider: impossible-cloud
+display: Impossible Cloud
+kind: cloud
+category: [storage]
+sources:
+  - https://docs.impossiblecloud.com/impossible-cloud-help/impossible-cloud-storage-guide/storage-console-urls-and-api-endpoints
+notes: >-
+  Impossible Cloud regional S3 endpoints <region>.storage.impossibleapi.net (CNAME to
+  s3-ingress.<region>.impossiblecloud.network). Anonymous GET / returns a 400 InvalidArgument XML body
+  (~197 B). The ingress hosts do not answer ICMP. The deprecated eu-east-1 (Poznan) region is kept with
+  kinds: []: its endpoint now sits in the same /24 as eu-north-1 with an identical TCP RTT, so it is
+  no longer genuinely in Poznan. Re-checked 2026-09-27: the six other regions are the complete official
+  list (guessed names such as eu-central-1/3, us-west-1, us-east-2 are NXDOMAIN); no redirects.
+targets:
+  - name: ImpossibleCloud-eu-central-2
+    host: eu-central-2.storage.impossibleapi.net
+    kinds: [https, tcp]
+    region: eu-central-2
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 198
+  - name: ImpossibleCloud-eu-west-1
+    host: eu-west-1.storage.impossibleapi.net
+    kinds: [https, tcp]
+    region: eu-west-1
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 197
+  - name: ImpossibleCloud-eu-west-2
+    host: eu-west-2.storage.impossibleapi.net
+    kinds: [https, tcp]
+    region: eu-west-2
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 197
+  - name: ImpossibleCloud-eu-west-3
+    host: eu-west-3.storage.impossibleapi.net
+    kinds: [https, tcp]
+    region: eu-west-3
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 197
+  - name: ImpossibleCloud-eu-north-1
+    host: eu-north-1.storage.impossibleapi.net
+    kinds: [https, tcp]
+    region: eu-north-1
+    city: Copenhagen
+    country: DK
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 197
+  - name: ImpossibleCloud-us-east-1
+    host: us-east-1.storage.impossibleapi.net
+    kinds: [https, tcp]
+    region: us-east-1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 196
+  - name: ImpossibleCloud-eu-east-1
+    host: eu-east-1.storage.impossibleapi.net
+    kinds: []
+    region: eu-east-1
+    city: Poznan
+    country: PL
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: >-
+      Deprecated Poznan region (still on the official endpoint list). The endpoint answers, but on
+      2026-09-27 it resolved to 185.182.80.153, the same /24 as eu-north-1 (185.182.80.135) with the same
+      TCP connect time (~16-24 ms from Helsinki), so it is no longer measurably in Poznan.
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 400
+      bytes: 196

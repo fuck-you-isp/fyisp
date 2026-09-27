@@ -35,18 +35,23 @@
 profiles:
   # ---- by kind of provider -------------------------------------------------
   - name: hyperscalers
-    description: The big clouds (AWS, Google Cloud, Azure, Oracle, IBM), one panel per provider and region of the world
+    description: The big clouds (AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei), one panel per provider and region of the world
     select: {kinds: [hyperscaler]}
     groups: provider-geo
 
   - name: devclouds
-    description: Developer clouds (DigitalOcean, Linode, Hetzner, Exoscale), one panel per provider and region of the world
+    description: VPS, bare-metal, regional and object-storage clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, ...), one panel per provider and region of the world
     select: {kinds: [cloud]}
     groups: provider-geo
 
   - name: clouds
     description: Hyperscalers and developer clouds together
     extends: [hyperscalers, devclouds]
+
+  - name: storage
+    description: Object storage clouds (Backblaze B2, Wasabi, IDrive e2, R2, ...) plus Hetzner, Linode and OVH object storage
+    select: {providers: [backblaze, wasabi, idrive-e2, impossible-cloud, synology-c2, cloudflare-r2, storj, filebase, hetzner-storage, linode-storage, ovh-storage]}
+    groups: provider-geo
 
   - name: cdn
     description: Content delivery networks and edge platforms

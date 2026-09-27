@@ -1,0 +1,684 @@
+provider: hivelocity
+display: Hivelocity
+kind: cloud
+category: [bare-metal, vps]
+sources:
+  - https://www.hivelocity.net/data-centers/
+  - https://www.hivelocity.net/about/network/
+  - https://www.hivelocity.net/kb/how-to-use-hivelocitys-speedtest-servers-with-speedtest-cli/
+notes: >-
+  Official Hivelocity speed-test hosts speedtest.<site>.hivelocity.net, one per site offered in the
+  download-test selector on the network page (codes from that selector; atl, dal, lax, nyc, tpa are
+  ATL2, DAL1, LAX2, NYC1, TPA1 on the data-center page). GET / is a ~350 byte file index; never fetch
+  the 10MiB/100MiB/10GiB files. Sites on the data-center page without a published speed-test host
+  (IAD1, JFK1, OGB1, PHL1, SJC1, the EDGE-* sites, POZ1, RIX1, VNO1 and all of Asia-Pacific except
+  BOM1) are kept with kinds: [] (the speedtest.<site> name does not resolve). ORD2, NYC1, YYZ2, SAO1,
+  FRA2 and LON1 have published hosts that did not answer anything on 2026-09-27 and are also kinds: [].
+  Some hosts serve a certificate for another name (TCP 443 + ICMP only); some drop ICMP.
+targets:
+  - name: Hivelocity-alb1
+    host: speedtest.alb1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: ALB1
+    city: Albany
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-iad3
+    host: speedtest.iad3.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: IAD3
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-atl2
+    host: speedtest.atl.hivelocity.net
+    kinds: [https, tcp]
+    region: ATL2
+    city: Atlanta
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-ord1
+    host: speedtest.ord1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: ORD1
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-ord2
+    host: speedtest.ord2.hivelocity.net
+    kinds: []
+    region: ORD2
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host resolves but no ICMP, TCP 443 or TCP 80 answer on 2026-09-27 (two passes)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-ord3
+    host: speedtest.ord3.hivelocity.net
+    kinds: [tcp, icmp]
+    region: ORD3
+    city: Chicago
+    country: US
+    geo: na
+    anycast: false
+    notes: TLS certificate invalid for this name on 2026-09-27; TCP 443 + ICMP only
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Hivelocity-cos1
+    host: speedtest.cos1.hivelocity.net
+    kinds: [tcp, icmp]
+    region: COS1
+    city: Colorado Springs
+    country: US
+    geo: na
+    anycast: false
+    notes: TLS certificate invalid for this name on 2026-09-27; TCP 443 + ICMP only
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Hivelocity-dal1
+    host: speedtest.dal.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: DAL1
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-lax2
+    host: speedtest.lax.hivelocity.net
+    kinds: [https, tcp]
+    region: LAX2
+    city: Los Angeles
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-mia1
+    host: speedtest.mia1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: MIA1
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-mia2
+    host: speedtest.mia2.hivelocity.net
+    kinds: [tcp, icmp]
+    region: MIA2
+    city: Miami
+    country: US
+    geo: na
+    anycast: false
+    notes: TLS certificate invalid for this name on 2026-09-27; TCP 443 + ICMP only
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Hivelocity-nyc1
+    host: speedtest.nyc.hivelocity.net
+    kinds: []
+    region: NYC1
+    city: New York
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host resolves but no ICMP, TCP 443 or TCP 80 answer on 2026-09-27 (two passes)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-sea1
+    host: speedtest.sea1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: SEA1
+    city: Seattle
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-tpa1
+    host: speedtest.tpa.hivelocity.net
+    kinds: [https, tcp]
+    region: TPA1
+    city: Tampa
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-tpa2
+    host: speedtest.tpa2.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: TPA2
+    city: Tampa
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-yyz2
+    host: speedtest.yyz2.hivelocity.net
+    kinds: []
+    region: YYZ2
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host resolves but no ICMP, TCP 443 or TCP 80 answer on 2026-09-27 (two passes)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-sao1
+    host: speedtest.sao1.hivelocity.net
+    kinds: []
+    region: SAO1
+    city: São Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host resolves but no ICMP, TCP 443 or TCP 80 answer on 2026-09-27 (two passes)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-ams1
+    host: speedtest.ams1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: AMS1
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-ams2
+    host: speedtest.ams2.hivelocity.net
+    kinds: [tcp, icmp]
+    region: AMS2
+    city: Amsterdam
+    country: NL
+    geo: eu
+    anycast: false
+    notes: TLS certificate invalid for this name on 2026-09-27; TCP 443 + ICMP only
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+  - name: Hivelocity-fra1
+    host: speedtest.fra1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: FRA1
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 265
+  - name: Hivelocity-fra2
+    host: speedtest.fra2.hivelocity.net
+    kinds: []
+    region: FRA2
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host resolves but no ICMP, TCP 443 or TCP 80 answer on 2026-09-27 (two passes)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-lon1
+    host: speedtest.lon1.hivelocity.net
+    kinds: []
+    region: LON1
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: "speed-test host resolves but no ICMP, TCP 443 or TCP 80 answer on 2026-09-27 (two passes)"
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-mxp1
+    host: speedtest.mxp1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: MXP1
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 303
+  - name: Hivelocity-jhb1
+    host: speedtest.jhb1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: JHB1
+    city: Johannesburg
+    country: ZA
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 303
+  - name: Hivelocity-los1
+    host: speedtest.los1.hivelocity.net
+    kinds: [https, tcp, icmp]
+    region: LOS1
+    city: Lagos
+    country: NG
+    geo: af
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 303
+  - name: Hivelocity-bom1
+    host: speedtest.bom1.hivelocity.net
+    kinds: [icmp]
+    region: BOM1
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    notes: IP geolocates to Mumbai (AS29802 Hivelocity) but rDNS names a HetrixTools monitoring node; only ICMP answered on 2026-09-27
+    verified:
+      date: 2026-09-27
+      icmp: true
+  - name: Hivelocity-iad1
+    host: speedtest.iad1.hivelocity.net
+    kinds: []
+    region: IAD1
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-jfk1
+    host: speedtest.jfk1.hivelocity.net
+    kinds: []
+    region: JFK1
+    city: Newark
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-ogb1
+    host: speedtest.ogb1.hivelocity.net
+    kinds: []
+    region: OGB1
+    city: Orangeburg
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-phl1
+    host: speedtest.phl1.hivelocity.net
+    kinds: []
+    region: PHL1
+    city: Philadelphia
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-sjc1
+    host: speedtest.sjc1.hivelocity.net
+    kinds: []
+    region: SJC1
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-edge-yyz1
+    host: speedtest.yyz1.hivelocity.net
+    kinds: []
+    region: EDGE-YYZ1
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-edge-yxx1
+    host: speedtest.yxx1.hivelocity.net
+    kinds: []
+    region: EDGE-YXX1
+    city: Vancouver
+    country: CA
+    geo: na
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-edge-toj1
+    host: speedtest.toj1.hivelocity.net
+    kinds: []
+    region: EDGE-TOJ1
+    city: Madrid
+    country: ES
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-edge-lin1
+    host: speedtest.lin1.hivelocity.net
+    kinds: []
+    region: EDGE-LIN1
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-edge-cdg1
+    host: speedtest.cdg1.hivelocity.net
+    kinds: []
+    region: EDGE-CDG1
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-edge-arn1
+    host: speedtest.arn1.hivelocity.net
+    kinds: []
+    region: EDGE-ARN1
+    city: Stockholm
+    country: SE
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-poz1
+    host: speedtest.poz1.hivelocity.net
+    kinds: []
+    region: POZ1
+    city: Poznan
+    country: PL
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-rix1
+    host: speedtest.rix1.hivelocity.net
+    kinds: []
+    region: RIX1
+    city: Riga
+    country: LV
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-vno1
+    host: speedtest.vno1.hivelocity.net
+    kinds: []
+    region: VNO1
+    city: Vilnius
+    country: LT
+    geo: eu
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-hkg1
+    host: speedtest.hkg1.hivelocity.net
+    kinds: []
+    region: HKG1
+    city: Hong Kong
+    country: HK
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-del1
+    host: speedtest.del1.hivelocity.net
+    kinds: []
+    region: DEL1
+    city: Noida
+    country: IN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-pnq1
+    host: speedtest.pnq1.hivelocity.net
+    kinds: []
+    region: PNQ1
+    city: Pune
+    country: IN
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-edge-icn1
+    host: speedtest.icn1.hivelocity.net
+    kinds: []
+    region: EDGE-ICN1
+    city: Seoul
+    country: KR
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-sin1
+    host: speedtest.sin1.hivelocity.net
+    kinds: []
+    region: SIN1
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-syd1
+    host: speedtest.syd1.hivelocity.net
+    kinds: []
+    region: SYD1
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-nrt1
+    host: speedtest.nrt1.hivelocity.net
+    kinds: []
+    region: NRT1
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Hivelocity-nrt2
+    host: speedtest.nrt2.hivelocity.net
+    kinds: []
+    region: NRT2
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [unreachable]
+    notes: no speed-test host published; name does not resolve
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false

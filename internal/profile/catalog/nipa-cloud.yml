@@ -1,0 +1,25 @@
+provider: nipa-cloud
+display: NIPA Cloud
+kind: cloud
+category: [iaas, storage]
+sources:
+  - https://www.nipa.cloud/
+notes: >-
+  Thai public cloud. Its only public regional endpoint is the S3 object storage s3-bkk.nipa.cloud
+  (linked from the home page; s3.nipa.cloud is the same address). It resolves to a Thai address
+  and GET / is a 187-byte ListAllMyBuckets response. NIPA's single region is Bangkok.
+targets:
+  - name: NIPACloud-BKK
+    host: s3-bkk.nipa.cloud
+    kinds: [https, tcp, icmp]
+    region: bkk
+    city: Bangkok
+    country: TH
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 187
