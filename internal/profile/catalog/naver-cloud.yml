@@ -46,7 +46,9 @@ targets:
       bytes: 255
   - name: Naver-fin-kr
     host: kr.object.fin-ncloudstorage.com
-    kinds: [https, tcp, icmp]
+    kinds: []
+    notes: "not measured: about half of TCP/HTTPS connects from abroad time out (seen in fyisp and with curl on 2026-09-27); too flaky to measure"
+    tags: [unreachable, flaky]
     region: fin-kr
     city: Seoul
     country: KR

@@ -249,7 +249,8 @@ targets:
       bytes: 41
   - name: OCI-ap-batam-1
     host: objectstorage.ap-batam-1.oraclecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: ap-batam-1
     city: Batam
     country: ID

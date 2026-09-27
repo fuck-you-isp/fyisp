@@ -101,7 +101,8 @@ targets:
       bytes: 214
   - name: CMeCloud-zhuzhou-1
     host: eos-zhuzhou-1.cmecloud.cn
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: zhuzhou-1
     city: Changsha
     country: CN

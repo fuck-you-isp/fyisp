@@ -102,7 +102,8 @@ targets:
       bytes: 298
   - name: Huawei-ap-southeast-2
     host: obs.ap-southeast-2.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: ap-southeast-2
     city: Bangkok
     country: TH
@@ -291,7 +292,8 @@ targets:
       bytes: 298
   - name: Huawei-la-south-2
     host: obs.la-south-2.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: la-south-2
     city: Santiago
     country: CL
@@ -305,7 +307,8 @@ targets:
       bytes: 298
   - name: Huawei-sa-brazil-1
     host: obs.sa-brazil-1.myhuaweicloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: sa-brazil-1
     city: Sao Paulo
     country: BR

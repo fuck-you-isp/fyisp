@@ -235,7 +235,8 @@ targets:
       bytes: 367
   - name: Alibaba-cn-fuzhou
     host: oss-cn-fuzhou.aliyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: cn-fuzhou
     city: Fuzhou
     country: CN

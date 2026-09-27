@@ -30,7 +30,7 @@ targets:
       bytes: 213
   - name: NIFCLOUD-jp-east-2
     host: jp-east-2.rdb.api.nifcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp, icmp]
     region: jp-east-2
     country: JP
     geo: as
@@ -38,6 +38,7 @@ targets:
     notes: >-
       No object storage in this region; the regional RDB API endpoint is used instead. Geo-IP
       Tokyo.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
     verified:
       date: 2026-09-27
       icmp: true
@@ -46,13 +47,14 @@ targets:
       bytes: 269
   - name: NIFCLOUD-jp-east-3
     host: jp-east-3.rdb.api.nifcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp, icmp]
     region: jp-east-3
     country: JP
     geo: as
     anycast: false
     notes: >-
       Regional RDB API endpoint. Geo-IP Tokyo.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
     verified:
       date: 2026-09-27
       icmp: true
@@ -61,13 +63,14 @@ targets:
       bytes: 269
   - name: NIFCLOUD-jp-east-4
     host: jp-east-4.rdb.api.nifcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp, icmp]
     region: jp-east-4
     country: JP
     geo: as
     anycast: false
     notes: >-
       Regional RDB API endpoint. Geo-IP Tokyo.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
     verified:
       date: 2026-09-27
       icmp: true
@@ -76,7 +79,7 @@ targets:
       bytes: 269
   - name: NIFCLOUD-jp-west-1
     host: jp-west-1.rdb.api.nifcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp, icmp]
     region: jp-west-1
     country: JP
     geo: as
@@ -84,6 +87,7 @@ targets:
     notes: >-
       Regional RDB API endpoint. Geo-IP says Tokyo but RTT is ~7 ms above the east-region
       hosts, which fits western Japan; Fujitsu does not publish the city.
+      https dropped: the certificate chains to SECOM Security Communication RootCA2, which is no longer in Mozilla's root store (fyisp's fallback roots), so TLS fails
     verified:
       date: 2026-09-27
       icmp: true

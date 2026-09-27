@@ -15,7 +15,9 @@ notes: >-
 targets:
   - name: Kakao-kr-central-2
     host: objectstorage.kr-central-2.kakaocloud.com
-    kinds: [https, tcp]
+    kinds: []
+    notes: "not measured: about half of TCP/HTTPS connects from abroad time out (seen in fyisp and with curl on 2026-09-27); too flaky to measure"
+    tags: [unreachable, flaky]
     region: kr-central-2
     city: Seoul
     country: KR

@@ -60,7 +60,8 @@ targets:
       bytes: 265
   - name: Hivelocity-ord1
     host: speedtest.ord1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: ORD1
     city: Chicago
     country: US
@@ -114,7 +115,8 @@ targets:
       tcp: true
   - name: Hivelocity-dal1
     host: speedtest.dal.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: DAL1
     city: Dallas
     country: US
@@ -253,7 +255,8 @@ targets:
       tcp: false
   - name: Hivelocity-ams1
     host: speedtest.ams1.hivelocity.net
-    kinds: [https, tcp, icmp]
+    kinds: [https, tcp]
+    notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: AMS1
     city: Amsterdam
     country: NL
