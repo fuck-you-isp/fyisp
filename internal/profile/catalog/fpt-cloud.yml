@@ -28,7 +28,7 @@ targets:
       bytes: 214
   - name: FPTCloud-SGN09
     host: s3-sgn09.fptcloud.com
-    kinds: [https, tcp]
+    kinds: [https]
     region: sgn09
     city: Ho Chi Minh City
     country: VN
