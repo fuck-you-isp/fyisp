@@ -141,7 +141,7 @@ Target names are identities (a name keeps its history): when a profile is combin
 
 There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count. Per 100 targets: about 1.4% of one CPU core, 11 KB/s of download, 5 KB/s of upload and 0.4 GB of disk for 90 days.
 
-Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-minute warm-up; the Network path group included):
+Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-minute warm-up; the Network path group included). The cloud rows were measured with the larger v0.4.0 catalog; since v0.4.1 `hyperscalers` has 228 targets, `clouds` 318 and `all` 587, so expect their costs to scale down in proportion:
 
 | Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
 |---|---:|---:|---:|---:|---:|---:|
