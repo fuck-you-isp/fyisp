@@ -1,0 +1,283 @@
+provider: epic-games
+display: Epic Games (Fortnite)
+kind: game
+category: [br]
+sources:
+  - https://www.epicgames.com/help/en-US/c-Category_Fortnite/c-Fortnite_TechnicalSupport/understanding-latency-or-ping-in-fortnite-a000084889   # official: "ping ping-nae.ds.on.epicgames.com -n 50" + per-region hosts (page 403s to bots; content via search index)
+  - https://www.epicgames.com/help/c-202300000001636/c-202300000001719/fortnite-latency-and-ping-troubleshooting-a202300000010042                 # official Fortnite latency/ping troubleshooting (same host list)
+  - https://gameserverping.net/ping-test/fortnite/   # community: lists the extra per-metro hosts (or/ncal/ia/tx/mx/oh/va/gb/fr/de)
+  - https://www.i3d.net/customer-stories/psyonix/    # Rocket League hosting (see notes)
+  - https://www.rocketleague.com/news/server-performance-a-letter-from-our-ceo
+notes: >-
+  Fortnite matchmaking regions. Epic publishes ping-<region>.ds.on.epicgames.com
+  hosts in its Fortnite latency support article specifically so players can
+  ICMP-ping each matchmaking region; they are Epic QoS/ping beacons running on
+  cloud instances (no TCP/443 listener, ICMP only). The 8 matchmaking regions
+  (nae/nac/naw/eu/oce/br/asia/me) are official; the per-metro hosts
+  (va/oh/tx/ia/or/ncal/mx/gb/fr/de) are community-listed but resolve under the
+  same Epic zone and answer ICMP. Hosting per resolved IP (rDNS/ip-ranges, 2026-09-27):
+  NA-East = AWS us-east-1, NA-Central = AWS us-east-1 Dallas Local Zone (same
+  subnet as ping-tx), NA-West = AWS us-west-1, EU = AWS eu-west-2 (London),
+  OCE = AWS ap-southeast-2, BR = AWS sa-east-1, ASIA = AWS ap-northeast-1,
+  ME = AWS me-south-1 (Bahrain), Iowa = GCP us-central1, MX = AWS mx-central-1,
+  FR = AWS eu-west-3, DE = AWS eu-central-1. The beacon IPs can change; the
+  hostnames are stable. Fortnite-ME did not answer ICMP or TCP/443 in our
+  check (kept with kinds: [] for completeness). Rocket League (Psyonix, an Epic
+  studio) has no published ping hosts: it runs on i3D.net bare metal with burst
+  capacity in Google Cloud and AWS (i3D.net customer story); its regions
+  (USE, USW, EU, OCE, SAM, ASC, ASM, JPN, ME, SAF, IND) map best to the
+  corresponding i3D/AWS/GCP metros, so a Rocket League profile should use
+  the cloud catalogs rather than invented endpoints.
+targets:
+  - name: Fortnite-NA-East
+    host: ping-nae.ds.on.epicgames.com
+    kinds: [icmp]
+    region: NA-East
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-east-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-NA-Central
+    host: ping-nac.ds.on.epicgames.com
+    kinds: [icmp]
+    region: NA-Central
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-east-1 Dallas Local Zone
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-NA-West
+    host: ping-naw.ds.on.epicgames.com
+    kinds: [icmp]
+    region: NA-West
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-west-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-EU
+    host: ping-eu.ds.on.epicgames.com
+    kinds: [icmp]
+    region: EU
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS eu-west-2
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-OCE
+    host: ping-oce.ds.on.epicgames.com
+    kinds: [icmp]
+    region: OCE
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS ap-southeast-2
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-BR
+    host: ping-br.ds.on.epicgames.com
+    kinds: [icmp]
+    region: BR
+    city: Sao Paulo
+    country: BR
+    geo: sa
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS sa-east-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-Asia
+    host: ping-asia.ds.on.epicgames.com
+    kinds: [icmp]
+    region: ASIA
+    city: Tokyo
+    country: JP
+    geo: as
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS ap-northeast-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-ME
+    host: ping-me.ds.on.epicgames.com
+    kinds: []
+    region: ME
+    city: Manama
+    country: BH
+    geo: me
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS me-south-1
+    verified:
+      date: 2026-09-27
+      icmp: false
+      tcp: false
+  - name: Fortnite-US-Virginia
+    host: ping-va.ds.on.epicgames.com
+    kinds: [icmp]
+    region: va
+    city: Ashburn
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-east-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-US-Ohio
+    host: ping-oh.ds.on.epicgames.com
+    kinds: [icmp]
+    region: oh
+    city: Columbus
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-east-2
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-US-Texas
+    host: ping-tx.ds.on.epicgames.com
+    kinds: [icmp]
+    region: tx
+    city: Dallas
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-east-1 Dallas Local Zone
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-US-Iowa
+    host: ping-ia.ds.on.epicgames.com
+    kinds: [icmp]
+    region: ia
+    city: Council Bluffs
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: GCP us-central1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-US-Oregon
+    host: ping-or.ds.on.epicgames.com
+    kinds: [icmp]
+    region: or
+    city: Boardman
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-west-2
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-US-NCal
+    host: ping-ncal.ds.on.epicgames.com
+    kinds: [icmp]
+    region: ncal
+    city: San Jose
+    country: US
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS us-west-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-MX
+    host: ping-mx.ds.on.epicgames.com
+    kinds: [icmp]
+    region: mx
+    city: Queretaro
+    country: MX
+    geo: na
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS mx-central-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-GB
+    host: ping-gb.ds.on.epicgames.com
+    kinds: [icmp]
+    region: gb
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS eu-west-2
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-FR
+    host: ping-fr.ds.on.epicgames.com
+    kinds: [icmp]
+    region: fr
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS eu-west-3
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
+  - name: Fortnite-DE
+    host: ping-de.ds.on.epicgames.com
+    kinds: [icmp]
+    region: de
+    city: Frankfurt
+    country: DE
+    geo: eu
+    anycast: false
+    tags: [matchmaking]
+    notes: AWS eu-central-1
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: false
