@@ -443,7 +443,7 @@ func (r *Registry) build(def *Definition, stack []string) (*sel, error) {
 			keys[id] = k
 			own.Groups = append(own.Groups, model.Group{ID: id, Title: title})
 		}
-		own.Targets = append(own.Targets, ct.toTarget(id))
+		own.Targets = append(own.Targets, ct.toTarget(id, prov))
 	}
 	slices.SortStableFunc(own.Groups, func(a, b model.Group) int {
 		ka, kb := keys[a.ID], keys[b.ID]

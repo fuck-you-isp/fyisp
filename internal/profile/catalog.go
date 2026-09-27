@@ -256,10 +256,15 @@ func (p *Provider) validate() error {
 	return errors.Join(errs...)
 }
 
-// toTarget converts a catalog target to a probe target in group g.
-func (t CatalogTarget) toTarget(group string) model.Target {
+// toTarget converts a catalog target of provider p to a probe target in
+// group g, with the provider and location metadata.
+func (t CatalogTarget) toTarget(group string, p *Provider) model.Target {
 	ks, _ := parseKinds(t.Kinds) // validated by LoadCatalog
-	mt := model.Target{Name: t.Name, Host: t.Host, Group: group, Port: t.Port, Path: t.Path, Kinds: ks, Interval: DefaultInterval}
+	mt := model.Target{Name: t.Name, Host: t.Host, Group: group, Port: t.Port, Path: t.Path, Kinds: ks, Interval: DefaultInterval,
+		City: t.City, Country: t.Country, Geo: t.GeoKey()}
+	if p != nil {
+		mt.Provider, mt.ProviderTitle, mt.ProviderKind = p.ID, p.Display, p.Kind
+	}
 	if len(t.HostOverrides) > 0 {
 		mt.HostOverrides = map[model.ProbeKind]string{}
 		for k, h := range t.HostOverrides {

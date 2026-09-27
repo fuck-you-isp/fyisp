@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
@@ -39,12 +40,74 @@ func TestCatalogSample(t *testing.T) {
 		t.Errorf("AWS-us-east-1 %+v", a)
 	}
 	z, _ := c.Target("Zoom-eu")
-	if zt := z.toTarget("g"); zt.HostFor(model.KindICMP) != "zoom-icmp.example.com" || zt.HostFor(model.KindHTTPS) != "zoom-eu.example.com" {
+	if zt := z.toTarget("g", nil); zt.HostFor(model.KindICMP) != "zoom-icmp.example.com" || zt.HostFor(model.KindHTTPS) != "zoom-eu.example.com" {
 		t.Errorf("host_overrides: %+v", zt)
 	}
-	mt := a.toTarget("g")
+	mt := a.toTarget("g", c.Provider("aws"))
 	if mt.Group != "g" || len(mt.Kinds) != 2 || mt.Interval != DefaultInterval || mt.Path != "/ping" {
 		t.Errorf("toTarget %+v", mt)
+	}
+	if mt.Provider != "aws" || mt.ProviderTitle != c.Provider("aws").Display || mt.ProviderKind != "hyperscaler" || mt.Geo != "na" {
+		t.Errorf("toTarget metadata %+v", mt)
+	}
+	if dt := d.toTarget("g", c.Provider("services-voice")); dt.Geo != "global" || dt.ProviderKind != "service" {
+		t.Errorf("anycast metadata %+v", dt)
+	}
+}
+
+// TestTargetMetadata checks that catalog metadata reaches resolved
+// profiles, survives a --config file's extends and override, and cannot be
+// set by a profile file.
+func TestTargetMetadata(t *testing.T) {
+	r, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := r.Resolve([]string{"vultr"}, ResolveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	for _, tg := range p.Targets {
+		if tg.Group == PathGroup {
+			if tg.Provider != "" || tg.Geo != "" {
+				t.Errorf("path target with metadata: %+v", tg)
+			}
+			continue
+		}
+		n++
+		ct, _ := r.Catalog.Target(tg.Name)
+		if tg.Provider != "vultr" || tg.ProviderTitle != "Vultr" || tg.ProviderKind != "cloud" ||
+			tg.City != ct.City || tg.Country != ct.Country || tg.Geo != ct.GeoKey() || tg.Geo == "" {
+			t.Errorf("metadata %+v", tg)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no vultr targets")
+	}
+	cfg := []byte("name: mine\nextends: [vultr]\noverride:\n  - {name: Vultr-ewr, interval: 30s}\nadd:\n  - {name: home, host: 192.168.1.1, group: vultr}\n")
+	fp, err := Parse(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tg := range fp.Targets {
+		switch tg.Name {
+		case "Vultr-ewr":
+			if tg.Provider != "vultr" || tg.City != "New Jersey" || tg.Geo != "na" || tg.Interval != 30*time.Second {
+				t.Errorf("override lost metadata: %+v", tg)
+			}
+		case "home":
+			if tg.Provider != "" || tg.Geo != "" {
+				t.Errorf("file target with metadata: %+v", tg)
+			}
+		}
+	}
+	// Profile files cannot set metadata: the fields are unknown keys.
+	for _, f := range []string{"provider", "provider_title", "provider_kind", "city", "country", "geo"} {
+		y := "name: x\nversion: \"1\"\ngroups: [{id: g, title: G}]\ntargets:\n  - {name: a, host: a.example.com, group: g, " + f + ": x}\n"
+		if _, err := Parse([]byte(y)); err == nil {
+			t.Errorf("profile file accepted %q", f)
+		}
 	}
 }
 
