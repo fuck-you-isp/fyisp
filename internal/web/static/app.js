@@ -56,6 +56,22 @@ const state = { range: '30m', from: null, to: null, kinds: new Set(['https']), l
 let status = null;
 /** @type {Panel[]} */
 let panels = [];
+// Profiles with more panels than this load only the panels near the viewport
+// (big catalog profiles have 50+ panels; the public link is rate limited).
+const LAZY_PANELS = 12;
+// At most this many panel requests in flight at once.
+const PANEL_CONCURRENCY = 4;
+let panelSlots = PANEL_CONCURRENCY;
+/** @type {(() => void)[]} */
+const panelWaiters = [];
+async function panelSlot() {
+  if (panelSlots > 0) { panelSlots--; return; }
+  await new Promise((r) => panelWaiters.push(() => r(undefined)));
+}
+function panelRelease() {
+  const next = panelWaiters.shift();
+  if (next) next(); else panelSlots++;
+}
 let lastRefresh = 0;
 let refreshing = false;
 /** @type {Verdict|null} */
@@ -307,6 +323,9 @@ class Panel {
     this.hover = false;
     this.colors = new Map(targets.map((t, i) => [t.name, i]));
     this.isPath = group.id === PATH_GROUP;
+    // visible: near the viewport (always true unless lazy). stale: needs a load once visible.
+    this.visible = true;
+    this.stale = true;
 
     this.meta = h('span', { class: 'meta' });
     this.csv = h('a', { href: '#', download: '', title: 'Download this panel as CSV', text: 'CSV' });
@@ -354,14 +373,22 @@ class Panel {
   async load() {
     this.ctl?.abort();
     const ctl = this.ctl = new AbortController();
+    this.stale = false;
     const { from, to } = queryRange();
     const points = Math.min(2000, Math.max(50, Math.round(this.width())));
     const q = new URLSearchParams({ group: this.group.id, from, to, points: String(points) });
     this.csv.setAttribute('href', 'api/panel.csv?' + q);
     this.chartEl.classList.add('loading');
     try {
+      await panelSlot();
       /** @type {PanelData} */
-      const d = await fetchJSON('api/panel?' + q, { signal: ctl.signal });
+      let d;
+      try {
+        if (ctl.signal.aborted) return;
+        d = await fetchJSON('api/panel?' + q, { signal: ctl.signal });
+      } finally {
+        panelRelease();
+      }
       if (ctl.signal.aborted) return;
       this.data = d;
       this.render();
@@ -2094,7 +2121,7 @@ async function refreshAll() {
   updateRefreshLabel();
   try {
     if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), inv.load()]);
-    else await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), ...panels.map((p) => p.load())]).then(loadBaselines);
+    else await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), ...panels.map((p) => (p.visible ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
   } finally {
     refreshing = false;
     updateRefreshLabel();
@@ -2483,6 +2510,17 @@ async function main() {
   const groups = [...prof.groups].sort((/** @type {Group} */ a, /** @type {Group} */ b) => Number(b.id === PATH_GROUP) - Number(a.id === PATH_GROUP));
   panels = groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
   $('#panels').replaceChildren(...panels.map((p) => p.el));
+  if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const p = panels.find((x) => x.el === e.target);
+        if (!p) continue;
+        p.visible = e.isIntersecting;
+        if (p.visible && p.stale && !(state.inv && inv)) p.load();
+      }
+    }, { rootMargin: '800px 0px' });
+    for (const p of panels) { p.visible = false; io.observe(p.el); }
+  }
   uPlot.sync(SYNC_KEY);
   if (traceOn) {
     inv = new Investigate();
