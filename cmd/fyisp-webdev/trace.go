@@ -49,17 +49,17 @@ type fhop struct {
 var ispHops = []fhop{
 	{"192.168.1.1", "_gateway", 0, ""},
 	{"10.94.160.1", "", 0, ""},
-	{"96.120.88.105", "po-305-1210-rur01.fremont.ca.sfba.comcast.net", 7922, "COMCAST-7922"},
-	{"68.86.143.93", "po-2-rur02.fremont.ca.sfba.comcast.net", 7922, "COMCAST-7922"},
-	{"162.151.78.249", "be-231-rar01.santaclara.ca.sfba.comcast.net", 7922, "COMCAST-7922"},
-	{"96.108.99.249", "be-3651-cr02.sunnyvale.ca.ibone.comcast.net", 7922, "COMCAST-7922"},
-	{"96.110.41.126", "be-3312-pe12.529bryant.ca.ibone.comcast.net", 7922, "COMCAST-7922"},
+	{"198.51.100.1", "edge1.city.isp.example", 64500, "EXAMPLE-ISP"},
+	{"198.51.100.5", "agg1.city.isp.example", 64500, "EXAMPLE-ISP"},
+	{"198.51.100.9", "agg2.region.isp.example", 64500, "EXAMPLE-ISP"},
+	{"198.51.100.13", "core1.region.isp.example", 64500, "EXAMPLE-ISP"},
+	{"198.51.100.17", "pe1.border.isp.example", 64500, "EXAMPLE-ISP"},
 }
 
-var ixHop = fhop{"206.223.116.21", "equinix-sjc.peering.net", 0, "Equinix IX San Jose"}
+var ixHop = fhop{"192.0.2.33", "ix.exchange.example", 0, "Example IX"}
 var transitHops = []fhop{
-	{"4.68.62.225", "ae-1-3510.edge1.SanJose3.Level3.net", 3356, "LEVEL3"},
-	{"4.69.219.66", "ae-2-3602.ear2.SanJose1.Level3.net", 3356, "LEVEL3"},
+	{"203.0.113.65", "edge1.transit.example", 64501, "EXAMPLE-TRANSIT"},
+	{"203.0.113.66", "edge2.transit.example", 64501, "EXAMPLE-TRANSIT"},
 }
 
 // cloud describes the last hops (9-12 via the IX; 10-12 via transit).
@@ -75,10 +75,10 @@ var clouds = map[string]cloud{
 	"Cloudflare-anycast":  {13335, "CLOUDFLARENET", []string{"172.71.144.3", "162.158.60.1", "172.68.188.2", "1.1.1.1"}, "one.one.one.one", 14},
 	"Google-anycast":      {15169, "GOOGLE", []string{"108.170.242.225", "142.251.65.143", "108.170.243.1", "8.8.8.8"}, "dns.google", 15},
 	"Quad9-anycast":       {19281, "QUAD9-AS-1", []string{"74.63.18.10", "74.63.18.66", "74.63.18.90", "9.9.9.9"}, "dns9.quad9.net", 17},
-	"Google-Meet":         {15169, "GOOGLE", []string{"108.170.242.241", "142.251.224.177", "142.250.234.62", "142.250.191.46"}, "sfo03s25-in-f14.1e100.net", 16},
-	"AWS-us-east-1":       {16509, "AMAZON-02", []string{"52.93.60.12", "150.222.242.113", "52.93.28.215", "52.94.224.10"}, "", 71},
-	"Hetzner-Falkenstein": {24940, "HETZNER-AS", []string{"213.239.245.17", "213.239.229.130", "85.10.237.197", "78.46.170.2"}, "static.2.170.46.78.clients.your-server.de", 158},
-	"dev-GitHub":          {36459, "GITHUB", []string{"140.82.112.10", "140.82.112.34", "140.82.113.1", "140.82.113.3"}, "lb-140-82-113-3-iad.github.com", 68},
+	"Google-Meet":         {64510, "EXAMPLE-CLOUD-A", []string{"192.0.2.101", "192.0.2.102", "192.0.2.103", "192.0.2.104"}, "meet.cloud-a.example", 16},
+	"AWS-us-east-1":       {64511, "EXAMPLE-CLOUD-B", []string{"192.0.2.111", "192.0.2.112", "192.0.2.113", "192.0.2.114"}, "", 71},
+	"Hetzner-Falkenstein": {64502, "EXAMPLE-HOSTING", []string{"192.0.2.121", "192.0.2.122", "192.0.2.123", "192.0.2.124"}, "server.hosting.example", 158},
+	"dev-GitHub":          {64503, "EXAMPLE-CODEHOST", []string{"192.0.2.131", "192.0.2.132", "192.0.2.133", "192.0.2.134"}, "lb.code-host.example", 68},
 }
 
 func cloudFor(target string) cloud {
@@ -89,8 +89,8 @@ func cloudFor(target string) cloud {
 	h.Write([]byte(target))
 	x := h.Sum32()
 	b := [2]byte{byte(x), byte(x >> 8)}
-	return cloud{16509, "AMAZON-02", []string{"52.93.60.12", "150.222.242.113",
-		netip.AddrFrom4([4]byte{52, 93, b[0], 1}).String(), netip.AddrFrom4([4]byte{3, 5, b[0], b[1] | 1}).String()}, "", 20 + float64(x%150)}
+	return cloud{64511, "EXAMPLE-CLOUD-B", []string{"192.0.2.141", "192.0.2.142",
+		netip.AddrFrom4([4]byte{203, 0, 113, b[0]}).String(), netip.AddrFrom4([4]byte{198, 51, 100, b[1] | 1}).String()}, "", 20 + float64(x%150)}
 }
 
 func newFakeTrace(st *store.Fake, start time.Time, backfill time.Duration) *fakeTrace {

@@ -169,7 +169,7 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px;border-bott
 	}
 	b.WriteString(`</ul>`)
 	if !o.Redact {
-		b.WriteString(`<h2>Network details</h2><p>Gateway 192.168.1.1 · ISP edge 96.120.88.105 (po-305-1210-rur01.fremont.ca.sfba.comcast.net)</p>`)
+		b.WriteString(`<h2>Network details</h2><p>Gateway 192.168.1.1 · ISP edge 198.51.100.1 (edge1.city.isp.example)</p>`)
 	}
 	b.WriteString(`</body></html>`)
 	return []byte(b.String()), nil
