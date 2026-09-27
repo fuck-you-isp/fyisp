@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: IDCloudHost-Jakarta
     host: is3.cloudhost.id
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jkt
     city: Jakarta
     country: ID

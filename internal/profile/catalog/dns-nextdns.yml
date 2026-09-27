@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: nextdns-anycast
     host: anycast.dns.nextdns.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]
@@ -27,7 +27,7 @@ targets:
       bytes: 65
   - name: nextdns-anycast-2
     host: 45.90.30.0
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: [secondary]
     notes: >-
@@ -38,7 +38,7 @@ targets:
       tcp: true
   - name: nextdns-ultralow
     host: dns.nextdns.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, geodns]

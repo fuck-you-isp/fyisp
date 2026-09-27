@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: VirMach-Amsterdam
     host: ams.lg.virmach.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ams
     city: Amsterdam
     country: NL
@@ -26,7 +26,7 @@ targets:
       tcp: true
   - name: VirMach-Atlanta
     host: atl.lg.virmach.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: atl
     city: Atlanta
     country: US
@@ -38,7 +38,7 @@ targets:
       tcp: true
   - name: VirMach-Chicago
     host: chi.lg.virmach.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: chi
     city: Chicago
     country: US
@@ -50,7 +50,7 @@ targets:
       tcp: true
   - name: VirMach-Chicago-2
     host: chi2.lg.virmach.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: chi2
     city: Chicago
     country: US
@@ -76,7 +76,7 @@ targets:
       tcp: false
   - name: VirMach-Frankfurt
     host: ffm.lg.virmach.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ffm
     city: Frankfurt
     country: DE

@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: Hostwinds-Seattle
     host: sea-repo.hostwinds.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sea
     city: Seattle
@@ -27,7 +27,7 @@ targets:
       bytes: 153
   - name: Hostwinds-Dallas
     host: dal-repo.hostwinds.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: dal
     city: Dallas
@@ -42,7 +42,7 @@ targets:
       bytes: 153
   - name: Hostwinds-Amsterdam
     host: ams-repo.hostwinds.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ams
     city: Amsterdam

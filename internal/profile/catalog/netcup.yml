@@ -24,7 +24,7 @@ targets:
   - name: Netcup-Nuremberg
     host: speedtest.netcup.de
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nue
     city: Nuremberg
     country: DE

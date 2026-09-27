@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: HetznerObj-fsn1
     host: fsn1.your-objectstorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fsn1
     city: Falkenstein
     country: DE
@@ -25,7 +25,7 @@ targets:
       bytes: 214
   - name: HetznerObj-nbg1
     host: nbg1.your-objectstorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nbg1
     city: Nuremberg
     country: DE
@@ -39,7 +39,7 @@ targets:
       bytes: 214
   - name: HetznerObj-hel1
     host: hel1.your-objectstorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hel1
     city: Helsinki
     country: FI

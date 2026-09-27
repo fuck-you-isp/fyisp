@@ -56,7 +56,7 @@ targets:
       bytes: 0
   - name: HOSTKEY-Reykjavik
     host: spd-icsrv.hostkey.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: is
     city: Keflavik
     country: IS

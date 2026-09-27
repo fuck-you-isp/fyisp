@@ -19,7 +19,7 @@ notes: >-
 targets:
   - name: E2E-Delhi
     host: objectstore.e2enetworks.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: delhi
     city: Delhi NCR
     country: IN
@@ -33,7 +33,7 @@ targets:
       bytes: 254
   - name: E2E-Chennai
     host: in-south1-objectstore.e2enetworks.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: in-south1
     city: Chennai
     country: IN

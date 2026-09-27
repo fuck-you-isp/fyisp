@@ -24,7 +24,7 @@ notes: >-
 targets:
   - name: CDN-Akamai
     host: whatismyip.akamai.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: [geodns]
     verified:
@@ -35,7 +35,7 @@ targets:
       bytes: 12
   - name: CDN-Akamai-a248
     host: a248.e.akamai.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: [geodns]
     notes: >-

@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: adguard-dns
     host: 94.140.14.14
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, filtering]
@@ -23,7 +23,7 @@ targets:
       bytes: 65
   - name: adguard-dns-2
     host: 94.140.15.15
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, filtering, secondary]

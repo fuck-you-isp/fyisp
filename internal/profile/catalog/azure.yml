@@ -75,7 +75,7 @@ targets:
   # anycast). From Helsinki it resolved to germanywestcentral.
   - name: Azure-global
     host: global.handler.control.monitor.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /ping
     anycast: true
     tags: [global, azure-monitor-agent]
@@ -87,7 +87,7 @@ targets:
       bytes: 7
   - name: Azure-australiacentral
     host: australiacentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: australiacentral
     city: Canberra
@@ -104,7 +104,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 301 ms
   - name: Azure-australiacentral2
     host: australiacentral2.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: australiacentral2
     city: Canberra
@@ -121,7 +121,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 303 ms
   - name: Azure-australiaeast
     host: australiaeast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: australiaeast
     city: Sydney
@@ -138,7 +138,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 300 ms
   - name: Azure-australiasoutheast
     host: australiasoutheast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: australiasoutheast
     city: Melbourne
@@ -155,7 +155,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 306 ms
   - name: Azure-austriaeast
     host: austriaeast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: austriaeast
     city: Vienna
@@ -172,7 +172,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 40 ms
   - name: Azure-belgiumcentral
     host: belgiumcentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: belgiumcentral
     city: Brussels
@@ -189,7 +189,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 32 ms
   - name: Azure-brazilsouth
     host: brazilsouth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: brazilsouth
     city: Sao Paulo
@@ -206,7 +206,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 214 ms
   - name: Azure-brazilsoutheast
     host: brazilsoutheast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: brazilsoutheast
     city: Rio de Janeiro
@@ -223,7 +223,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 213 ms
   - name: Azure-canadacentral
     host: canadacentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: canadacentral
     city: Toronto
@@ -240,7 +240,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 128 ms
   - name: Azure-canadaeast
     host: canadaeast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: canadaeast
     city: Quebec City
@@ -257,7 +257,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 126 ms
   - name: Azure-centralindia
     host: centralindia.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: centralindia
     city: Pune
@@ -274,7 +274,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 144 ms
   - name: Azure-centralus
     host: centralus.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: centralus
     city: Des Moines
@@ -291,7 +291,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 139 ms
   - name: Azure-chilecentral
     host: chilecentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: chilecentral
     city: Santiago
@@ -308,7 +308,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 220 ms
   - name: Azure-denmarkeast
     host: denmarkeast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: denmarkeast
     city: Copenhagen
@@ -325,7 +325,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 34 ms
   - name: Azure-eastasia
     host: eastasia.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: eastasia
     city: Hong Kong
@@ -342,7 +342,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 208 ms
   - name: Azure-eastus
     host: eastus.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: eastus
     city: Boydton
@@ -359,7 +359,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 115 ms
   - name: Azure-eastus2
     host: eastus2.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: eastus2
     city: Boydton
@@ -376,7 +376,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 115 ms
   - name: Azure-francecentral
     host: francecentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: francecentral
     city: Paris
@@ -393,7 +393,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 31 ms
   - name: Azure-francesouth
     host: francesouth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: francesouth
     city: Marseille
@@ -410,7 +410,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 41 ms
   - name: Azure-germanynorth
     host: germanynorth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: germanynorth
     city: Berlin
@@ -427,7 +427,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 36 ms
   - name: Azure-germanywestcentral
     host: germanywestcentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: germanywestcentral
     city: Frankfurt
@@ -444,7 +444,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 30 ms
   - name: Azure-indiasouthcentral
     host: indiasouthcentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: indiasouthcentral
     city: Hyderabad
@@ -461,7 +461,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 159 ms
   - name: Azure-indonesiacentral
     host: indonesiacentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: indonesiacentral
     city: Jakarta
@@ -478,7 +478,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 201 ms
   - name: Azure-israelcentral
     host: israelcentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: israelcentral
     city: Tel Aviv
@@ -495,7 +495,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 93 ms
   - name: Azure-italynorth
     host: italynorth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: italynorth
     city: Milan
@@ -512,7 +512,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 38 ms
   - name: Azure-japaneast
     host: japaneast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: japaneast
     city: Tokyo
@@ -529,7 +529,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 261 ms
   - name: Azure-japanwest
     host: japanwest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: japanwest
     city: Osaka
@@ -546,7 +546,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 256 ms
   - name: Azure-koreacentral
     host: koreacentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: koreacentral
     city: Seoul
@@ -563,7 +563,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 258 ms
   - name: Azure-koreasouth
     host: koreasouth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: koreasouth
     city: Busan
@@ -580,7 +580,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 237 ms
   - name: Azure-malaysiawest
     host: malaysiawest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: malaysiawest
     city: Kuala Lumpur
@@ -597,7 +597,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 185 ms
   - name: Azure-mexicocentral
     host: mexicocentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: mexicocentral
     city: Queretaro
@@ -614,7 +614,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 163 ms
   - name: Azure-newzealandnorth
     host: newzealandnorth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: newzealandnorth
     city: Auckland
@@ -631,7 +631,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 282 ms
   - name: Azure-northcentralus
     host: northcentralus.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: northcentralus
     city: Chicago
@@ -648,7 +648,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 126 ms
   - name: Azure-northeurope
     host: northeurope.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: northeurope
     city: Dublin
@@ -665,7 +665,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 43 ms
   - name: Azure-norwayeast
     host: norwayeast.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: norwayeast
     city: Oslo
@@ -682,7 +682,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 43 ms
   - name: Azure-norwaywest
     host: norwaywest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: norwaywest
     city: Stavanger
@@ -699,7 +699,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 47 ms
   - name: Azure-polandcentral
     host: polandcentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: polandcentral
     city: Warsaw
@@ -716,7 +716,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 44 ms
   - name: Azure-qatarcentral
     host: qatarcentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: qatarcentral
     city: Doha
@@ -733,7 +733,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 115 ms
   - name: Azure-southafricanorth
     host: southafricanorth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: southafricanorth
     city: Johannesburg
@@ -750,7 +750,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 188 ms
   - name: Azure-southafricawest
     host: southafricawest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: southafricawest
     city: Cape Town
@@ -767,7 +767,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 172 ms
   - name: Azure-southcentralus
     host: southcentralus.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: southcentralus
     city: San Antonio
@@ -784,7 +784,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 140 ms
   - name: Azure-southindia
     host: southindia.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: southindia
     city: Chennai
@@ -801,7 +801,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 160 ms
   - name: Azure-southeastasia
     host: southeastasia.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: southeastasia
     city: Singapore
@@ -818,7 +818,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 178 ms
   - name: Azure-spaincentral
     host: spaincentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: spaincentral
     city: Madrid
@@ -835,7 +835,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 50 ms
   - name: Azure-swedencentral
     host: swedencentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: swedencentral
     city: Gavle
@@ -852,7 +852,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 47 ms
   - name: Azure-switzerlandnorth
     host: switzerlandnorth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: switzerlandnorth
     city: Zurich
@@ -869,7 +869,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 34 ms
   - name: Azure-switzerlandwest
     host: switzerlandwest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: switzerlandwest
     city: Geneva
@@ -886,7 +886,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 40 ms
   - name: Azure-uaecentral
     host: uaecentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: uaecentral
     city: Abu Dhabi
@@ -903,7 +903,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 120 ms
   - name: Azure-uaenorth
     host: uaenorth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: uaenorth
     city: Dubai
@@ -920,7 +920,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 117 ms
   - name: Azure-uksouth
     host: uksouth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: uksouth
     city: London
@@ -937,7 +937,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 34 ms
   - name: Azure-ukwest
     host: ukwest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: ukwest
     city: Cardiff
@@ -954,7 +954,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 37 ms
   - name: Azure-westcentralus
     host: westcentralus.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: westcentralus
     city: Cheyenne
@@ -971,7 +971,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 144 ms
   - name: Azure-westeurope
     host: westeurope.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: westeurope
     city: Amsterdam
@@ -992,7 +992,7 @@ targets:
   # Logs ingestion front for the region instead (404, empty body).
   - name: Azure-westindia
     host: westindia.prod.hot.ingest.monitor.core.windows.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: westindia
     city: Mumbai
     country: IN
@@ -1008,7 +1008,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 140 ms
   - name: Azure-westus
     host: westus.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: westus
     city: San Francisco
@@ -1025,7 +1025,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 170 ms
   - name: Azure-westus2
     host: westus2.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: westus2
     city: Quincy
@@ -1042,7 +1042,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 168 ms
   - name: Azure-westus3
     host: westus3.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: westus3
     city: Phoenix
@@ -1062,7 +1062,7 @@ targets:
   # in-region App Insights host. City is the commonly reported site.
   - name: Azure-swedensouth
     host: swedensouth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: swedensouth
     city: Staffanstorp
@@ -1079,7 +1079,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 36 ms
   - name: Azure-israelnorthwest
     host: israelnorthwest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: israelnorthwest
     city: Haifa
@@ -1096,7 +1096,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 93 ms
   - name: Azure-jioindiawest
     host: jioindiawest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: jioindiawest
     city: Jamnagar
@@ -1113,7 +1113,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 163 ms
   - name: Azure-jioindiacentral
     host: jioindiacentral.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: jioindiacentral
     city: Nagpur
@@ -1130,7 +1130,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 154 ms
   - name: Azure-taiwannorth
     host: taiwannorth.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: taiwannorth
     city: Taipei
@@ -1147,7 +1147,7 @@ targets:
       # icmp avg RTT from Helsinki, FI: 225 ms
   - name: Azure-taiwannorthwest
     host: taiwannorthwest.in.applicationinsights.azure.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: taiwannorthwest
     city: Taoyuan
@@ -1181,7 +1181,7 @@ targets:
       bytes: 0
   - name: Azure-usgovvirginia                # Azure Government, US Gov Virginia
     host: usgovvirginia.in.applicationinsights.azure.us
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: usgovvirginia
     city: Boydton
@@ -1197,7 +1197,7 @@ targets:
       bytes: 5
   - name: Azure-usgovtexas                # Azure Government, US Gov Texas
     host: usgovtexas.in.applicationinsights.azure.us
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: usgovtexas
     city: San Antonio
@@ -1213,7 +1213,7 @@ targets:
       bytes: 5
   - name: Azure-usgovarizona                # Azure Government, US Gov Arizona
     host: usgovarizona.in.applicationinsights.azure.us
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: usgovarizona
     city: Phoenix
@@ -1262,7 +1262,7 @@ targets:
       bytes: 0
   - name: Azure-chinanorth2                # Azure China (21Vianet), China North 2
     host: chinanorth2.handler.control.monitor.azure.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /ping
     region: chinanorth2
     city: Beijing
@@ -1278,7 +1278,7 @@ targets:
       bytes: 7
   - name: Azure-chinanorth3                # Azure China (21Vianet), China North 3
     host: chinanorth3.in.applicationinsights.azure.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: chinanorth3
     city: Hebei
@@ -1294,7 +1294,7 @@ targets:
       bytes: 5
   - name: Azure-chinaeast2                # Azure China (21Vianet), China East 2
     host: chinaeast2.in.applicationinsights.azure.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: chinaeast2
     city: Shanghai
@@ -1310,7 +1310,7 @@ targets:
       bytes: 5
   - name: Azure-chinaeast3                # Azure China (21Vianet), China East 3
     host: chinaeast3.in.applicationinsights.azure.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/ping
     region: chinaeast3
     city: Shanghai

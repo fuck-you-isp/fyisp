@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: 3HCloud-Miami
     host: speedtest.3hcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mia
     city: Miami
@@ -30,7 +30,7 @@ targets:
       bytes: 19
   - name: 3HCloud-Miami2
     host: mia2-speedtest.3hcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mia2
     city: Hollywood
@@ -45,7 +45,7 @@ targets:
       bytes: 19
   - name: 3HCloud-Dallas
     host: dfw-speedtest.3hcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: dfw
     city: Dallas
@@ -60,7 +60,7 @@ targets:
       bytes: 19
   - name: 3HCloud-SanFrancisco
     host: sfo-speedtest.3hcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sfo
     city: San Francisco
@@ -75,7 +75,7 @@ targets:
       bytes: 19
   - name: 3HCloud-Warsaw
     host: waw-speedtest.3hcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: waw
     city: Warsaw
@@ -90,7 +90,7 @@ targets:
       bytes: 19
   - name: 3HCloud-Almaty
     host: speedtest.3hcloud.kz
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ala
     city: Almaty

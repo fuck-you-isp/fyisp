@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: DedicatedCom-Atlanta
     host: lg.atl.dedicated.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: atl
     city: Atlanta
@@ -29,7 +29,7 @@ targets:
       bytes: 138
   - name: DedicatedCom-Chicago
     host: lg.chi.dedicated.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: chi
     city: Chicago
@@ -44,7 +44,7 @@ targets:
       bytes: 138
   - name: DedicatedCom-Dallas
     host: lg.dal.dedicated.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: dal
     city: Dallas
@@ -59,7 +59,7 @@ targets:
       bytes: 138
   - name: DedicatedCom-LosAngeles
     host: lg.la.dedicated.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: la
     city: Los Angeles
@@ -74,7 +74,7 @@ targets:
       bytes: 138
   - name: DedicatedCom-Montreal
     host: lg.mtl.dedicated.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mtl
     city: Montreal
@@ -89,7 +89,7 @@ targets:
       bytes: 138
   - name: DedicatedCom-NewYork
     host: lg.nyc.dedicated.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: nyc
     city: New York
@@ -104,7 +104,7 @@ targets:
       bytes: 138
   - name: DedicatedCom-Seattle
     host: lg.sea.dedicated.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sea
     city: Seattle

@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Storj-gateway
     host: gateway.eu1.storjshare.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu1
     city: Frankfurt
     country: DE
@@ -34,7 +34,7 @@ targets:
       bytes: 198
   - name: Storj-us1
     host: gateway.us1.storjshare.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us1
     country: US
     geo: na

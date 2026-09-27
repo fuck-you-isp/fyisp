@@ -21,7 +21,7 @@ notes: >-
 targets:
   - name: Sakura-is1
     host: s3.isk01.sakurastorage.jp
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: is1
     city: Ishikari
     country: JP
@@ -35,7 +35,7 @@ targets:
       bytes: 174
   - name: Sakura-tk1
     host: s3.tky01.sakurastorage.jp
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tk1
     city: Tokyo
     country: JP
@@ -49,7 +49,7 @@ targets:
       bytes: 174
   - name: Sakura-Osaka
     host: ns2.dns.ne.jp
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 53
     region: osaka
     city: Osaka

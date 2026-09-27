@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: TierNet-Ashburn
     host: lg.va.tier.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: va
     city: Ashburn
@@ -28,7 +28,7 @@ targets:
       bytes: 196
   - name: TierNet-Bend
     host: lg.or.tier.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: or
     city: Bend
@@ -43,7 +43,7 @@ targets:
       bytes: 196
   - name: TierNet-Binghamton
     host: lg.ny.tier.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ny
     city: Binghamton
@@ -58,7 +58,7 @@ targets:
       bytes: 196
   - name: TierNet-Charlotte
     host: lg.nc.tier.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: nc
     city: Charlotte
@@ -73,7 +73,7 @@ targets:
       bytes: 196
   - name: TierNet-Dallas
     host: lg.tx.tier.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: tx
     city: Dallas
@@ -88,7 +88,7 @@ targets:
       bytes: 196
   - name: TierNet-Manhattan
     host: lg.ny2.tier.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ny2
     city: New York

@@ -25,7 +25,7 @@ notes: >-
 targets:
   - name: Contabo-eu2
     host: eu2.contabostorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     host_overrides:
       icmp: ltg.speedtest.contabo.net
     region: eu2
@@ -44,7 +44,7 @@ targets:
       bytes: 26
   - name: Contabo-usc1
     host: usc1.contabostorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: usc1
     city: St. Louis
     country: US
@@ -58,7 +58,7 @@ targets:
       bytes: 26
   - name: Contabo-sin1
     host: sin1.contabostorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sin1
     city: Singapore
     country: SG
@@ -72,7 +72,7 @@ targets:
       bytes: 26
   - name: Contabo-eu-kae
     host: kae.speedtest.contabo.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: EU
     city: Karlsruhe
     country: DE
@@ -89,7 +89,7 @@ targets:
   - name: Contabo-us-east
     host: ecomping-ony.contabo.net
     path: /ping
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: US-east
     city: Orangeburg
     country: US
@@ -105,7 +105,7 @@ targets:
       bytes: 85
   - name: Contabo-us-east-ewr
     host: ewr.speedtest.contabo.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: US-east
     city: Carlstadt
     country: US
@@ -122,7 +122,7 @@ targets:
   - name: Contabo-us-west
     host: ecomping-sea.contabo.net
     path: /ping
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: US-west
     city: Seattle
     country: US
@@ -139,7 +139,7 @@ targets:
   - name: Contabo-uk
     host: ecomping-pme.contabo.net
     path: /ping
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: UK
     city: Portsmouth
     country: GB
@@ -156,7 +156,7 @@ targets:
   - name: Contabo-aus
     host: ecomping-syd.contabo.net
     path: /ping
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AUS
     city: Sydney
     country: AU
@@ -173,7 +173,7 @@ targets:
   - name: Contabo-jpn
     host: ecomping-tyo.contabo.net
     path: /ping
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: JPN
     city: Tokyo
     country: JP
@@ -190,7 +190,7 @@ targets:
   - name: Contabo-ind
     host: ecomping-bom.contabo.net
     path: /ping
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: IND
     city: Mumbai
     country: IN

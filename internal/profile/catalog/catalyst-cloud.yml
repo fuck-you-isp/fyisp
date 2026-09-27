@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: Catalyst-nz-por-1
     host: object-storage.nz-por-1.catalystcloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nz-por-1
     city: Porirua
     country: NZ
@@ -30,7 +30,7 @@ targets:
       bytes: 70
   - name: Catalyst-nz-hlz-1
     host: object-storage.nz-hlz-1.catalystcloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nz-hlz-1
     city: Hamilton
     country: NZ

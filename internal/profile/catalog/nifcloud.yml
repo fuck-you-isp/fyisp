@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: NIFCLOUD-jp-east-1
     host: jp-east-1.storage.api.nifcloud.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: jp-east-1
     city: Tokyo
     country: JP
@@ -30,7 +30,7 @@ targets:
       bytes: 213
   - name: NIFCLOUD-jp-east-2
     host: jp-east-2.rdb.api.nifcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: jp-east-2
     country: JP
     geo: as
@@ -47,7 +47,7 @@ targets:
       bytes: 269
   - name: NIFCLOUD-jp-east-3
     host: jp-east-3.rdb.api.nifcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: jp-east-3
     country: JP
     geo: as
@@ -63,7 +63,7 @@ targets:
       bytes: 269
   - name: NIFCLOUD-jp-east-4
     host: jp-east-4.rdb.api.nifcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: jp-east-4
     country: JP
     geo: as
@@ -79,7 +79,7 @@ targets:
       bytes: 269
   - name: NIFCLOUD-jp-west-1
     host: jp-west-1.rdb.api.nifcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: jp-west-1
     country: JP
     geo: as
@@ -96,7 +96,7 @@ targets:
       bytes: 269
   - name: NIFCLOUD-jp-west-2
     host: jp-west-2.storage.api.nifcloud.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: jp-west-2
     city: Osaka
     country: JP

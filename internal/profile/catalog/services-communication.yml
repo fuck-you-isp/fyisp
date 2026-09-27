@@ -38,7 +38,7 @@ targets:
   # ranges. From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: Zoom
     host: zoom.us
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -54,7 +54,7 @@ targets:
   # Helsinki: ping 1 ms.
   - name: Google-Meet
     host: lens.l.google.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     # lens.l.google.com only answers ping; HTTPS/TCP go to meet.google.com
     # (same as default.yml).
     host_overrides:
@@ -71,7 +71,7 @@ targets:
   # From Helsinki: ping 1 ms / TCP connect 5 ms.
   - name: Google-Meet-Web
     host: meet.google.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -86,7 +86,7 @@ targets:
   # Helsinki: ping 1 ms / TCP connect 5 ms.
   - name: Google-Meet-Media
     host: meet.turns.goog
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [voice, video, media, turn]
@@ -98,7 +98,7 @@ targets:
   # Helsinki: ping 1 ms / TCP connect 5 ms.
   - name: Google-Meet-Media-Workspace
     host: workspace.turns.goog
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [voice, video, media, turn]
@@ -110,7 +110,7 @@ targets:
   # ms / TCP connect 33 ms.
   - name: Microsoft-Teams
     host: teams.microsoft.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [voice, video, signaling]
@@ -162,7 +162,7 @@ targets:
   # Webex DCs (AS13445). From Helsinki: TCP connect 31 ms.
   - name: Webex
     host: u2c.wbx2.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     path: /u2c/api/v1/ping
     region: global
     anycast: true
@@ -177,7 +177,7 @@ targets:
   # Helsinki); no ICMP. From Helsinki: TCP connect 30 ms.
   - name: Slack
     host: wss-primary.slack.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [chat]
@@ -191,7 +191,7 @@ targets:
   # From Helsinki: TCP connect 44 ms.
   - name: Slack-Backup
     host: wss-backup.slack.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [chat]
@@ -205,7 +205,7 @@ targets:
   # per call and not stable. From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: Discord
     host: discord.gg
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [voice, chat]
@@ -219,7 +219,7 @@ targets:
   # Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: Discord-API
     host: discord.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/v9/gateway
     region: global
     anycast: true
@@ -233,7 +233,7 @@ targets:
   # From Helsinki: ping 1 ms / TCP connect 2 ms.
   - name: WhatsApp-Web
     host: web.whatsapp.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -248,7 +248,7 @@ targets:
   # From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: WhatsApp-Chat
     host: g.whatsapp.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [chat, voice]
@@ -260,7 +260,7 @@ targets:
   # TCP/ICMP only. From Helsinki: ping 1 ms / TCP connect 3 ms.
   - name: Signal
     host: chat.signal.org
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [chat, voice]
@@ -272,7 +272,7 @@ targets:
   # Helsinki: TCP connect 31 ms.
   - name: Telegram-Web
     host: web.telegram.org
-    kinds: [https, tcp]
+    kinds: [tcp]
     path: /robots.txt
     region: dc2
     city: Amsterdam
@@ -289,7 +289,7 @@ targets:
   # MTProto DC1 (non-HTTP on 443). From Helsinki: ping 130 ms / TCP connect 130 ms.
   - name: Telegram-DC1-Miami
     host: 149.154.175.53
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: dc1
     city: Miami
     country: US
@@ -303,7 +303,7 @@ targets:
   # MTProto DC2. From Helsinki: ping 30 ms / TCP connect 29 ms.
   - name: Telegram-DC2-Amsterdam
     host: 149.154.167.51
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: dc2
     city: Amsterdam
     country: NL
@@ -317,7 +317,7 @@ targets:
   # MTProto DC3. From Helsinki: ping 129 ms / TCP connect 129 ms.
   - name: Telegram-DC3-Miami
     host: 149.154.175.100
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: dc3
     city: Miami
     country: US
@@ -331,7 +331,7 @@ targets:
   # MTProto DC4. From Helsinki: ping 26 ms / TCP connect 30 ms.
   - name: Telegram-DC4-Amsterdam
     host: 149.154.167.91
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: dc4
     city: Amsterdam
     country: NL
@@ -345,7 +345,7 @@ targets:
   # MTProto DC5. From Helsinki: ping 184 ms / TCP connect 186 ms.
   - name: Telegram-DC5-Singapore
     host: 91.108.56.130
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: dc5
     city: Singapore
     country: SG
@@ -359,7 +359,7 @@ targets:
   # Akamai CDN front. From Helsinki: ping 7 ms / TCP connect 9 ms.
   - name: iCloud-Web
     host: www.icloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: global
     anycast: true
@@ -374,7 +374,7 @@ targets:
   # -> 400 with empty body. From Helsinki: TCP connect 9 ms.
   - name: iCloud-Gateway
     host: gateway.icloud.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: global
     anycast: true
     tags: [cloud, facetime]

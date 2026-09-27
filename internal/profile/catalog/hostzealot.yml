@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: HostZealot-Amsterdam
     host: ams-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: amsnl
     city: Amsterdam
     country: NL
@@ -31,7 +31,7 @@ targets:
       bytes: 615
   - name: HostZealot-Ashburn
     host: ash-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ashus
     city: Ashburn
     country: US
@@ -60,7 +60,7 @@ targets:
       bytes: 0
   - name: HostZealot-Chicago
     host: chi-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: chius
     city: Chicago
     country: US
@@ -74,7 +74,7 @@ targets:
       bytes: 615
   - name: HostZealot-Dallas
     host: dfw-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dfwus
     city: Dallas
     country: US
@@ -103,7 +103,7 @@ targets:
       bytes: 0
   - name: HostZealot-Frankfurt
     host: fra-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: frade
     city: Frankfurt
     country: DE
@@ -117,7 +117,7 @@ targets:
       bytes: 615
   - name: HostZealot-HongKong
     host: hkg-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hkgcn
     city: Hong Kong
     country: HK
@@ -131,7 +131,7 @@ targets:
       bytes: 617
   - name: HostZealot-Limassol
     host: lms-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lmscy
     city: Limassol
     country: CY
@@ -145,7 +145,7 @@ targets:
       bytes: 615
   - name: HostZealot-London
     host: lon-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lonuk
     city: London
     country: GB
@@ -174,7 +174,7 @@ targets:
       bytes: 0
   - name: HostZealot-Marseille
     host: mrs-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mrsfr
     city: Marseille
     country: FR
@@ -188,7 +188,7 @@ targets:
       bytes: 615
   - name: HostZealot-RishonLeZion
     host: rlz-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: rlzil
     city: Rishon LeZion
     country: IL
@@ -217,7 +217,7 @@ targets:
       bytes: 0
   - name: HostZealot-Seattle
     host: sea-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: seaus
     city: Seattle
     country: US
@@ -231,7 +231,7 @@ targets:
       bytes: 615
   - name: HostZealot-Stockholm
     host: stk-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: stkse
     city: Stockholm
     country: SE
@@ -245,7 +245,7 @@ targets:
       bytes: 615
   - name: HostZealot-Tbilisi
     host: tgz-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tgzge
     city: Tbilisi
     country: GE
@@ -259,7 +259,7 @@ targets:
       bytes: 615
   - name: HostZealot-Tallinn
     host: tll-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tllee
     city: Tallinn
     country: EE
@@ -273,7 +273,7 @@ targets:
       bytes: 615
   - name: HostZealot-Toronto
     host: tor-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: torca
     city: Toronto
     country: CA
@@ -287,7 +287,7 @@ targets:
       bytes: 615
   - name: HostZealot-Warsaw
     host: waw-speedtest.lg.hostzealot.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: wawpl
     city: Warsaw
     country: PL

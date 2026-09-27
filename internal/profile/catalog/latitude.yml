@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Latitude-ash
     host: objects.ash.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ASH
     city: Ashburn
     country: US
@@ -31,7 +31,7 @@ targets:
       bytes: 180
   - name: Latitude-chi
     host: objects.chi.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: CHI
     city: Chicago
     country: US
@@ -73,7 +73,7 @@ targets:
       tcp: false
   - name: Latitude-lax2
     host: objects.lax2.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LAX2
     city: Los Angeles
     country: US
@@ -101,7 +101,7 @@ targets:
       tcp: false
   - name: Latitude-nyc
     host: objects.nyc.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: NYC
     city: New York
     country: US
@@ -241,7 +241,7 @@ targets:
       tcp: false
   - name: Latitude-lon2
     host: objects.lon2.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LON2
     city: London
     country: GB
@@ -325,7 +325,7 @@ targets:
       tcp: false
   - name: Latitude-tyo
     host: objects.tyo.storage.sh
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: TYO
     city: Tokyo
     country: JP

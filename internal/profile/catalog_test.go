@@ -44,7 +44,7 @@ func TestCatalogSample(t *testing.T) {
 		t.Errorf("host_overrides: %+v", zt)
 	}
 	mt := a.toTarget("g", c.Provider("aws"))
-	if mt.Group != "g" || len(mt.Kinds) != 2 || mt.Interval != DefaultInterval || mt.Path != "/ping" {
+	if mt.Group != "g" || len(mt.Kinds) != 1 || mt.Kinds[0] != model.KindTCP || mt.Interval != DefaultInterval || mt.Path != "/ping" {
 		t.Errorf("toTarget %+v", mt)
 	}
 	if mt.Provider != "aws" || mt.ProviderTitle != c.Provider("aws").Display || mt.ProviderKind != "hyperscaler" || mt.Geo != "na" {
@@ -134,7 +134,7 @@ func TestEmbeddedCatalog(t *testing.T) {
 }
 
 func TestCatalogErrors(t *testing.T) {
-	good := "provider: p\ndisplay: P\nkind: cloud\ntargets:\n  - {name: a, host: a.example, kinds: [https], geo: eu}\n"
+	good := "provider: p\ndisplay: P\nkind: cloud\ntargets:\n  - {name: a, host: a.example, kinds: [tcp], geo: eu}\n"
 	cases := map[string]fstest.MapFS{
 		"already used in a.yml": {
 			"a.yml": {Data: []byte(good)},
@@ -144,11 +144,13 @@ func TestCatalogErrors(t *testing.T) {
 			"a.yml": {Data: []byte(good)},
 			"b.yml": {Data: []byte(strings.Replace(good, "name: a,", "name: b,", 1))},
 		},
-		"duplicate name":               {"a.yml": {Data: []byte(good + "  - {name: a, host: c.example, kinds: [https], geo: eu}\n")}},
+		"duplicate name":               {"a.yml": {Data: []byte(good + "  - {name: a, host: c.example, kinds: [tcp], geo: eu}\n")}},
 		"geo \"europe\"":               {"a.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: europe", 1))}},
 		"geo is required":              {"a.yml": {Data: []byte(strings.Replace(good, ", geo: eu", "", 1))}},
-		"unknown kind \"udp\"":         {"a.yml": {Data: []byte(strings.Replace(good, "[https]", "[https, udp]", 1))}},
-		"listed twice":                 {"a.yml": {Data: []byte(strings.Replace(good, "[https]", "[https, https]", 1))}},
+		"unknown kind \"udp\"":         {"a.yml": {Data: []byte(strings.Replace(good, "[tcp]", "[tcp, udp]", 1))}},
+		"kind https: catalog targets":  {"a.yml": {Data: []byte(strings.Replace(good, "[tcp]", "[https, tcp]", 1))}},
+		"kind icmp: catalog targets":   {"a.yml": {Data: []byte(strings.Replace(good, "[tcp]", "[tcp, icmp]", 1))}},
+		"listed twice":                 {"a.yml": {Data: []byte(strings.Replace(good, "[tcp]", "[tcp, tcp]", 1))}},
 		"host is required":             {"a.yml": {Data: []byte(strings.Replace(good, "host: a.example, ", "", 1))}},
 		"private address":              {"a.yml": {Data: []byte(strings.Replace(good, "a.example", "10.0.0.1", 1))}},
 		"not allowed in the catal":     {"a.yml": {Data: []byte(strings.Replace(good, "a.example", "'@gateway'", 1))}},
@@ -176,7 +178,7 @@ func TestCatalogErrors(t *testing.T) {
 	// are not *.yml are fine.
 	ok := fstest.MapFS{
 		"a.yml": {Data: []byte("provider: p\ndisplay: P\nkind: cloud\nsources: [https://x]\nnotes: n\ncategory: [x]\ntargets:\n" +
-			"  - {name: a, host: a.example, kinds: [https], anycast: true, notes: hi, verified: {date: 2026-09-27, whatever: [1]}}\n")},
+			"  - {name: a, host: a.example, kinds: [tcp], anycast: true, notes: hi, verified: {date: 2026-09-27, whatever: [1]}}\n")},
 		"SCHEMA.md":      {Data: []byte("# not yaml")},
 		"testdata/x.yml": {Data: []byte("garbage: [")},
 	}
@@ -189,7 +191,7 @@ func TestCatalogErrors(t *testing.T) {
 		t.Error(err)
 	}
 	// kinds: [] (unreachable for now) is accepted.
-	c, err := LoadCatalog(fstest.MapFS{"a.yml": {Data: []byte(strings.Replace(good, "[https]", "[]", 1))}})
+	c, err := LoadCatalog(fstest.MapFS{"a.yml": {Data: []byte(strings.Replace(good, "[tcp]", "[]", 1))}})
 	if err != nil || c.Targets[0].Probeable() {
 		t.Errorf("empty kinds: %v", err)
 	}

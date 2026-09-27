@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: Qiniu-cn-east-1
     host: s3-cn-east-1.qiniucs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-1
     country: CN
     geo: as
@@ -29,7 +29,7 @@ targets:
       bytes: 159
   - name: Qiniu-cn-east-2
     host: s3-cn-east-2.qiniucs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-2
     country: CN
     geo: as
@@ -44,7 +44,7 @@ targets:
       bytes: 159
   - name: Qiniu-cn-north-1
     host: s3-cn-north-1.qiniucs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-north-1
     city: Shijiazhuang
     country: CN
@@ -75,7 +75,7 @@ targets:
       tcp: false
   - name: Qiniu-us-north-1
     host: s3-us-north-1.qiniucs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-north-1
     city: Dallas
     country: US
@@ -92,7 +92,7 @@ targets:
       bytes: 159
   - name: Qiniu-ap-southeast-1
     host: s3-ap-southeast-1.qiniucs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-1
     city: Singapore
     country: SG

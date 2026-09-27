@@ -14,7 +14,7 @@ targets:
   - name: Cherry-Siauliai
     host: speedtest.lt.cherryservers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LT-Siauliai
     city: Siauliai
     country: LT
@@ -29,7 +29,7 @@ targets:
   - name: Cherry-Amsterdam
     host: speedtest.nl.cherryservers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: NL-Amsterdam
     city: Amsterdam
     country: NL
@@ -44,7 +44,7 @@ targets:
   - name: Cherry-Frankfurt
     host: speedtest.de.cherryservers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DE-Frankfurt
     city: Frankfurt
     country: DE
@@ -59,7 +59,7 @@ targets:
   - name: Cherry-Stockholm
     host: speedtest.se.cherryservers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SE-Stockholm
     city: Stockholm
     country: SE
@@ -74,7 +74,7 @@ targets:
   - name: Cherry-Chicago
     host: speedtest.us.cherryservers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: US-Chicago
     city: Chicago
     country: US
@@ -89,7 +89,7 @@ targets:
   - name: Cherry-Singapore
     host: speedtest.sg.cherryservers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SG-Singapore
     city: Singapore
     country: SG
@@ -104,7 +104,7 @@ targets:
   - name: Cherry-Tokyo
     host: speedtest.jp.cherryservers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: JP-Tokyo
     city: Tokyo
     country: JP

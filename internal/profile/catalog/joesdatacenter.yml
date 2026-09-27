@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: JoesDC-KansasCity
     host: lg.joesdatacenter.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: kc
     city: Kansas City
     country: US

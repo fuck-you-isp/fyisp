@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: Locaweb-SaoPaulo
     host: s3.locaweb.com.br
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: sp
     city: Sao Paulo

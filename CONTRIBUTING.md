@@ -26,9 +26,7 @@ Good pull requests:
    3. a health path.
 
    Don't use login or account pages. Don't use anything whose terms forbid automated checks.
-2. **Keep traffic small.** Every running fyisp sends one HTTPS GET, one TCP connect and a few pings per target every 15 s.
-   - `path` must return a tiny response: a 403 or 404 with a few bytes is perfect, and any HTTP status counts as reachable.
-   - Never point `path` at a speed-test download file.
+2. **It must accept TCP connections.** fyisp measures catalog targets with a TCP connect only: every running fyisp opens one connection per target every 15 s (handshake, then an immediate close, no data sent). The endpoint needs a TCP listener on `port` (default 443). Replies to ping or HTTP requests are not used.
 3. **No authentication.** Don't use API keys, account IDs or requests that create or change anything.
 4. **Check the location.** A regional target must really be in that city. Checks include:
    - it resolves to a unicast address;
@@ -37,16 +35,15 @@ Good pull requests:
 
    Global or anycast fronts are allowed, but mark them `anycast: true`.
 5. **Record only what you verified.**
-   - List only the `kinds` (`https`, `tcp`, `icmp`) that answered in your own checks.
-   - Fill in `verified` with the date, the HTTP status and the response size.
-   - An HTTP-only host gets `port: 80` and `kinds: [tcp, icmp]`.
+   - `kinds: [tcp]` once a TCP connect to `port` worked in your own checks; `kinds: []` if it did not.
+   - Fill in `verified` with the date and `tcp: true`.
+   - A host that listens only on another port (e.g. HTTP only) gets that `port`, e.g. `port: 80`.
 6. **Never rename existing targets.** A target's name identifies its stored history. New names must be unique across all files, use `[A-Za-z0-9._-]` with at most 40 characters, and follow the `<Provider>-<location>` pattern.
 
-When checking an endpoint, keep it light: a few pings, one TCP connect and one small GET per endpoint. For example:
+When checking an endpoint, keep it light: a few TCP connects per endpoint. For example:
 
 ```sh
-ping -c 3 host.example
-curl -so /dev/null -w '%{http_code} %{size_download} B %{time_connect}s\n' https://host.example/path
+nc -vz -w 3 host.example 443
 ```
 
 ### Before opening the pull request
@@ -55,7 +52,7 @@ curl -so /dev/null -w '%{http_code} %{size_download} B %{time_connect}s\n' https
 docker build --target test .
 ```
 
-`TestEmbeddedCatalog` rejects malformed files: unknown fields, duplicate names, bad `geo`, `kinds` or `country` values, and private addresses. `TestBuiltinProfiles` checks that every profile still resolves.
+`TestEmbeddedCatalog` rejects malformed files: unknown fields, duplicate names, bad `geo`, `kinds` (anything but `[tcp]` or `[]`) or `country` values, and private addresses. `TestBuiltinProfiles` checks that every profile still resolves.
 
 To see what a profile selects:
 

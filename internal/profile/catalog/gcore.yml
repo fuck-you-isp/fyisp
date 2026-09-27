@@ -29,7 +29,7 @@ notes: >-
 targets:
   - name: Gcore-Amsterdam
     host: am3-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: amsterdam
     city: Amsterdam
@@ -44,7 +44,7 @@ targets:
       bytes: 25
   - name: Gcore-Frankfurt
     host: fr5-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: frankfurt-2
     city: Frankfurt
@@ -74,7 +74,7 @@ targets:
       bytes: 0
   - name: Gcore-London
     host: thn2-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: london
     city: London
@@ -90,7 +90,7 @@ targets:
       bytes: 25
   - name: Gcore-London-2
     host: london-2.storage.gcore.dev
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: london-2
     city: London
     country: GB
@@ -105,7 +105,7 @@ targets:
       bytes: 224
   - name: Gcore-Chester
     host: api.chester-2.ai.gcore.dev
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: chester
     city: Chester
     country: GB
@@ -120,7 +120,7 @@ targets:
       bytes: 0
   - name: Gcore-Luxembourg
     host: luxembourg-2.storage.gcore.dev
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: luxembourg-2
     city: Luxembourg
     country: LU
@@ -135,7 +135,7 @@ targets:
       bytes: 187
   - name: Gcore-Paris
     host: pa5-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: paris-2
     city: Paris
@@ -151,7 +151,7 @@ targets:
       bytes: 25
   - name: Gcore-Warsaw
     host: latency.caas.k1.warsaw-1.cloud.gcore.dev
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: warsaw
     city: Warsaw
     country: PL
@@ -196,7 +196,7 @@ targets:
       bytes: 0
   - name: Gcore-Sines-2
     host: sines-2.storage.gcore.dev
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sines-2
     city: Sines
     country: PT
@@ -211,7 +211,7 @@ targets:
       bytes: 224
   - name: Gcore-Sines-3
     host: sines-3.storage.gcore.dev
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sines-3
     city: Sines
     country: PT
@@ -226,7 +226,7 @@ targets:
       bytes: 224
   - name: Gcore-Istanbul
     host: tii-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: istanbul
     city: Istanbul
@@ -241,7 +241,7 @@ targets:
       bytes: 25
   - name: Gcore-Baku
     host: speedtest-dta.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: baku
     city: Baku
@@ -256,7 +256,7 @@ targets:
       bytes: 27
   - name: Gcore-Almaty
     host: kal-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: almaty
     city: Almaty
@@ -286,7 +286,7 @@ targets:
       bytes: 0
   - name: Gcore-Dubai
     host: latency.caas.k1.dubai-1.cloud.gcore.dev
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dubai
     city: Dubai
     country: AE
@@ -301,7 +301,7 @@ targets:
       bytes: 0
   - name: Gcore-Mumbai
     host: ww-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mumbai
     city: Mumbai
@@ -317,7 +317,7 @@ targets:
       bytes: 25
   - name: Gcore-Singapore
     host: sg1-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: singapore
     city: Singapore
@@ -332,7 +332,7 @@ targets:
       bytes: 25
   - name: Gcore-Hong-Kong
     host: hk2-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: hong-kong
     city: Hong Kong
@@ -347,7 +347,7 @@ targets:
       bytes: 25
   - name: Gcore-Incheon
     host: kx-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: incheon
     city: Seoul
@@ -363,7 +363,7 @@ targets:
       bytes: 25
   - name: Gcore-Tokyo
     host: cc1-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: tokyo
     city: Tokyo
@@ -378,7 +378,7 @@ targets:
       bytes: 25
   - name: Gcore-Sydney
     host: sy4-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sydney
     city: Sydney
@@ -393,7 +393,7 @@ targets:
       bytes: 25
   - name: Gcore-Johannesburg
     host: jp1-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: johannesburg
     city: Johannesburg
@@ -408,7 +408,7 @@ targets:
       bytes: 25
   - name: Gcore-Sao-Paulo
     host: sp3-speedtest.tools.gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sao-paulo
     city: Sao Paulo
@@ -424,7 +424,7 @@ targets:
       bytes: 25
   - name: Gcore-Chicago
     host: chicago-1.storage.gcore.dev
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: chicago
     city: Chicago
     country: US
@@ -439,7 +439,7 @@ targets:
       bytes: 187
   - name: Gcore-Manassas
     host: api.manassas-1.ai.gcore.dev
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: manassas
     city: Manassas
     country: US
@@ -454,7 +454,7 @@ targets:
       bytes: 0
   - name: Gcore-Santa-Clara
     host: latency.mkaas.k1.santa-clara-1.cloud.gcore.dev
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: santa-clara
     city: Santa Clara
     country: US

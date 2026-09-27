@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: quad9-dns
     host: 9.9.9.9
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, filtering]
@@ -25,7 +25,7 @@ targets:
       bytes: 65
   - name: quad9-dns-2
     host: 149.112.112.112
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, filtering, secondary]

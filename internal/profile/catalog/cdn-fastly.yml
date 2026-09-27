@@ -22,7 +22,7 @@ notes: >-
 targets:
   - name: CDN-Fastly
     host: fastly-insights.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: [measurement]
     notes: >-
@@ -35,7 +35,7 @@ targets:
       bytes: 0
   - name: CDN-Fastly-www
     host: www.fastly.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/robots.txt"
     anycast: true
     tags: []

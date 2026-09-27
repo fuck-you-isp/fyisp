@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: CDN-jsDelivr
     host: cdn.jsdelivr.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/npm/is-number@7.0.0/index.js"
     anycast: true
     tags: [multi-cdn]

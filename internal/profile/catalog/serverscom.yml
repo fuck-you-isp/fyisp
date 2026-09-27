@@ -21,7 +21,7 @@ targets:
   - name: ServersCom-ams3
     host: test.ams3.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS3
     city: Amsterdam
     country: NL
@@ -36,7 +36,7 @@ targets:
   - name: ServersCom-ams4
     host: test.ams4.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS4
     city: Amsterdam
     country: NL
@@ -51,7 +51,7 @@ targets:
   - name: ServersCom-sjc1
     host: test.sjc1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SJC1
     city: San Jose
     country: US
@@ -66,7 +66,7 @@ targets:
   - name: ServersCom-was1
     host: test.was1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: WAS1
     city: Ashburn
     country: US
@@ -81,7 +81,7 @@ targets:
   - name: ServersCom-dallas
     host: test.dfw1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DFW1
     city: Dallas
     country: US
@@ -96,7 +96,7 @@ targets:
   - name: ServersCom-hong-kong
     host: test.hkg1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: HKG1
     city: Hong Kong
     country: HK
@@ -111,7 +111,7 @@ targets:
   - name: ServersCom-lansing
     host: test.lan1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LAN1
     city: Lansing
     country: US
@@ -126,7 +126,7 @@ targets:
   - name: ServersCom-london
     host: test.lon1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LON1
     city: London
     country: GB
@@ -141,7 +141,7 @@ targets:
   - name: ServersCom-luxembourg
     host: test.lux1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LUX1
     city: Luxembourg
     country: LU
@@ -156,7 +156,7 @@ targets:
   - name: ServersCom-miami
     host: test.mia1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: MIA1
     city: Miami
     country: US
@@ -171,7 +171,7 @@ targets:
   - name: ServersCom-new-york
     host: test.nyc1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: NYC1
     city: New York
     country: US
@@ -186,7 +186,7 @@ targets:
   - name: ServersCom-sao-paulo
     host: test.sao1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SAO1
     city: São Paulo
     country: BR
@@ -201,7 +201,7 @@ targets:
   - name: ServersCom-singapore
     host: test.sin1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SIN1
     city: Singapore
     country: SG
@@ -216,7 +216,7 @@ targets:
   - name: ServersCom-ams1
     host: test.ams1.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS1
     city: Amsterdam
     country: NL
@@ -231,7 +231,7 @@ targets:
   - name: ServersCom-ams2
     host: test.ams2.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS2
     city: Amsterdam
     country: NL
@@ -246,7 +246,7 @@ targets:
   - name: ServersCom-ams5
     host: test.ams5.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS5
     city: Amsterdam
     country: NL
@@ -261,7 +261,7 @@ targets:
   - name: ServersCom-ams6
     host: test.ams6.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS6
     city: Amsterdam
     country: NL
@@ -276,7 +276,7 @@ targets:
   - name: ServersCom-ams7
     host: test.ams7.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS7
     city: Amsterdam
     country: NL
@@ -291,7 +291,7 @@ targets:
   - name: ServersCom-ams8
     host: test.ams8.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: AMS8
     city: Amsterdam
     country: NL
@@ -306,7 +306,7 @@ targets:
   - name: ServersCom-dfw2
     host: test.dfw2.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DFW2
     city: Dallas
     country: US
@@ -321,7 +321,7 @@ targets:
   - name: ServersCom-dfw3
     host: test.dfw3.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DFW3
     city: Dallas
     country: US
@@ -336,7 +336,7 @@ targets:
   - name: ServersCom-dfw4
     host: test.dfw4.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DFW4
     city: Dallas
     country: US
@@ -351,7 +351,7 @@ targets:
   - name: ServersCom-dfw5
     host: test.dfw5.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DFW5
     city: Dallas
     country: US
@@ -366,7 +366,7 @@ targets:
   - name: ServersCom-dfw6
     host: test.dfw6.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: DFW6
     city: Dallas
     country: US
@@ -381,7 +381,7 @@ targets:
   - name: ServersCom-sjc2
     host: test.sjc2.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SJC2
     city: San Jose
     country: US
@@ -396,7 +396,7 @@ targets:
   - name: ServersCom-sjc3
     host: test.sjc3.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SJC3
     city: San Jose
     country: US
@@ -411,7 +411,7 @@ targets:
   - name: ServersCom-was2
     host: test.was2.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: WAS2
     city: Ashburn
     country: US
@@ -426,7 +426,7 @@ targets:
   - name: ServersCom-was3
     host: test.was3.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: WAS3
     city: Ashburn
     country: US
@@ -441,7 +441,7 @@ targets:
   - name: ServersCom-was4
     host: test.was4.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: WAS4
     city: Ashburn
     country: US
@@ -456,7 +456,7 @@ targets:
   - name: ServersCom-lux2
     host: test.lux2.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LUX2
     city: Luxembourg
     country: LU
@@ -471,7 +471,7 @@ targets:
   - name: ServersCom-lux3
     host: test.lux3.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: LUX3
     city: Luxembourg
     country: LU
@@ -486,7 +486,7 @@ targets:
   - name: ServersCom-sin2
     host: test.sin2.servers.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SIN2
     city: Singapore
     country: SG

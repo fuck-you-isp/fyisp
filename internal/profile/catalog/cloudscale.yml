@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: cloudscale-rma1
     host: objects.rma.cloudscale.ch
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: rma1
     city: Ruemlang
     country: CH
@@ -27,7 +27,7 @@ targets:
       bytes: 187
   - name: cloudscale-lpg1
     host: objects.lpg.cloudscale.ch
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lpg1
     city: Lupfig
     country: CH

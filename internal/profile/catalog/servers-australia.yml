@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: ServersAustralia-Sydney
     host: speedtest.mirror.serversaustralia.com.au
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: syd
     city: Sydney
     country: AU

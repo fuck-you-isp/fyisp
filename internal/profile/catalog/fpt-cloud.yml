@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: FPTCloud-HAN02
     host: s3-han02.fptcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: han02
     city: Hanoi
     country: VN
@@ -28,7 +28,7 @@ targets:
       bytes: 214
   - name: FPTCloud-SGN10
     host: s3-sgn10.fptcloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sgn10
     city: Ho Chi Minh City
     country: VN

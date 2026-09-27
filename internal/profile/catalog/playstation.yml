@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: PSN-np-ps5
     host: ps5.np.playstation.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: global
     country: US
     geo: na
@@ -25,7 +25,7 @@ targets:
       tcp: true
   - name: PSN-web-api
     host: m.np.playstation.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     country: US
     geo: na

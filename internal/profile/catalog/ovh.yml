@@ -24,7 +24,7 @@ notes: >-
 targets:
   - name: OVH-eu-west-rbx
     host: lil1-rbx.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eu-west-rbx
     city: Roubaix
@@ -39,7 +39,7 @@ targets:
       bytes: 223
   - name: OVH-eu-west-gra
     host: lil2-gra.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eu-west-gra
     city: Gravelines
@@ -54,7 +54,7 @@ targets:
       bytes: 223
   - name: OVH-eu-west-sbg
     host: sxb1-sbg.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eu-west-sbg
     city: Strasbourg
@@ -69,7 +69,7 @@ targets:
       bytes: 223
   - name: OVH-eu-west-par-a
     host: par3-cch.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eu-west-par-a
     city: Paris
@@ -84,7 +84,7 @@ targets:
       bytes: 223
   - name: OVH-eu-west-par-b
     host: par3-ieb.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eu-west-par-b
     city: Paris
@@ -99,7 +99,7 @@ targets:
       bytes: 223
   - name: OVH-eu-west-par-c
     host: par3-mr9.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eu-west-par-c
     city: Paris
@@ -114,7 +114,7 @@ targets:
       bytes: 223
   - name: OVH-eu-west-eri
     host: lon1-eri.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eu-west-eri
     city: Erith
@@ -129,7 +129,7 @@ targets:
       bytes: 223
   - name: OVH-ca-east-bhs
     host: ymq1-bhs.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ca-east-bhs
     city: Beauharnois
@@ -144,7 +144,7 @@ targets:
       bytes: 223
   - name: OVH-us-east-vin
     host: was1-vin.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: us-east-vin
     city: Vint Hill
@@ -159,7 +159,7 @@ targets:
       bytes: 223
   - name: OVH-us-west-hil
     host: pdx1-hil.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: us-west-hil
     city: Hillsboro
@@ -174,7 +174,7 @@ targets:
       bytes: 223
   - name: OVH-ap-south-mum
     host: bom1-ynm1.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ap-south-mum
     city: Mumbai
@@ -189,7 +189,7 @@ targets:
       bytes: 223
   - name: OVH-ap-southeast-sgp
     host: sin1-sgp.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ap-southeast-sgp
     city: Singapore
@@ -204,7 +204,7 @@ targets:
       bytes: 223
   - name: OVH-ap-southeast-syd
     host: syd1-sy2.speedtest.network.ovh.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ap-southeast-syd
     city: Sydney

@@ -22,7 +22,7 @@ notes: >-
 targets:
   - name: Volcengine-cn-beijing
     host: tos-cn-beijing.volces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-beijing
     city: Beijing
     country: CN
@@ -37,7 +37,7 @@ targets:
       bytes: 216
   - name: Volcengine-cn-shanghai
     host: ecs.cn-shanghai.volcengineapi.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-shanghai
     city: Shanghai
     country: CN
@@ -52,7 +52,7 @@ targets:
       bytes: 175
   - name: Volcengine-cn-guangzhou
     host: ecs.cn-guangzhou.volcengineapi.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-guangzhou
     city: Guangzhou
     country: CN

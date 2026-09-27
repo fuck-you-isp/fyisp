@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: InterServer-Secaucus
     host: speedtest.is.cc
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: nj
     city: Secaucus
@@ -29,7 +29,7 @@ targets:
       bytes: 278
   - name: InterServer-LosAngeles
     host: lax.speedtest.is.cc
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: la
     city: Los Angeles

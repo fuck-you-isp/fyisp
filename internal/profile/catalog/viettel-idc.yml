@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: ViettelIDC-North
     host: s3-north.viettelidc.com.vn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: north
     city: Hanoi
     country: VN
@@ -31,7 +31,7 @@ targets:
       bytes: 218
   - name: ViettelIDC-South
     host: bdg-speedtest.viettelidc.com.vn.prod.hosts.ooklaserver.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 8080
     path: /hello
     region: south

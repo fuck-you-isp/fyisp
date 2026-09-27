@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: SpartanHost-Seattle
     host: lg.sea.spartanhost.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sea
     city: Seattle
@@ -29,7 +29,7 @@ targets:
       bytes: 162
   - name: SpartanHost-Ashburn
     host: lg.ash.spartanhost.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ash
     city: Ashburn

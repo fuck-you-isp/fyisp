@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: BytePlus-ap-southeast-1
     host: tos-ap-southeast-1.bytepluses.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-1
     city: Johor
     country: MY
@@ -32,7 +32,7 @@ targets:
       bytes: 213
   - name: BytePlus-ap-southeast-3
     host: tos-ap-southeast-3.bytepluses.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-3
     city: Jakarta
     country: ID
@@ -46,7 +46,7 @@ targets:
       bytes: 217
   - name: BytePlus-cn-hongkong
     host: tos-cn-hongkong.bytepluses.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-hongkong
     city: Hong Kong
     country: HK

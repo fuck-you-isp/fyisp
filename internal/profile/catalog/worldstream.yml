@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: Worldstream-Naaldwijk
     host: speedtest.worldstream.nl
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 8080
     region: naaldwijk
     city: Naaldwijk

@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: IncogNET-Amsterdam
     host: am-nl-eu.lg.as40663.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: am-nl
     city: Amsterdam
@@ -30,7 +30,7 @@ targets:
       bytes: 326
   - name: IncogNET-KansasCity
     host: kc-mo-na.lg.as40663.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: kc-mo
     city: Kansas City
@@ -45,7 +45,7 @@ targets:
       bytes: 326
   - name: IncogNET-LibertyLake
     host: lb-wa-na.lg.as40663.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lb-wa
     city: Liberty Lake
@@ -60,7 +60,7 @@ targets:
       bytes: 286
   - name: IncogNET-Sofia
     host: sf-bg-eu.lg.as40663.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sf-bg
     city: Sofia
@@ -90,7 +90,7 @@ targets:
       bytes: 0
   - name: IncogNET-ValleyForge
     host: vf-pa-na.lg.as40663.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: vf-pa
     city: Valley Forge

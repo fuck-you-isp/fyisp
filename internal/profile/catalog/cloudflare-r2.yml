@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Cloudflare-R2
     host: r2.cloudflarestorage.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     anycast: true
     notes: >-
       Anycast; HTTPS fails (certificate expired 2026-09-09, still expired on 2026-09-27).

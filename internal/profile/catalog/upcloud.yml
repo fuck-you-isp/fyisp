@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: UpCloud-fi-hel1
     host: fi-hel1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: fi-hel1
     city: Helsinki
@@ -30,7 +30,7 @@ targets:
       bytes: 162
   - name: UpCloud-fi-hel2
     host: fi-hel2.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: fi-hel2
     city: Helsinki
@@ -45,7 +45,7 @@ targets:
       bytes: 162
   - name: UpCloud-de-fra1
     host: de-fra1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: de-fra1
     city: Frankfurt
@@ -60,7 +60,7 @@ targets:
       bytes: 162
   - name: UpCloud-nl-ams1
     host: nl-ams1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: nl-ams1
     city: Amsterdam
@@ -75,7 +75,7 @@ targets:
       bytes: 162
   - name: UpCloud-uk-lon1
     host: uk-lon1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: uk-lon1
     city: London
@@ -90,7 +90,7 @@ targets:
       bytes: 162
   - name: UpCloud-pl-waw1
     host: pl-waw1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: pl-waw1
     city: Warsaw
@@ -105,7 +105,7 @@ targets:
       bytes: 162
   - name: UpCloud-es-mad1
     host: es-mad1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: es-mad1
     city: Madrid
@@ -120,7 +120,7 @@ targets:
       bytes: 162
   - name: UpCloud-se-sto1
     host: se-sto1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: se-sto1
     city: Stockholm
@@ -135,7 +135,7 @@ targets:
       bytes: 162
   - name: UpCloud-dk-cph1
     host: dk-cph1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: dk-cph1
     city: Copenhagen
@@ -150,7 +150,7 @@ targets:
       bytes: 162
   - name: UpCloud-no-svg1
     host: no-svg1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: no-svg1
     city: Stavanger
@@ -165,7 +165,7 @@ targets:
       bytes: 162
   - name: UpCloud-us-nyc1
     host: us-nyc1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: us-nyc1
     city: New York
@@ -180,7 +180,7 @@ targets:
       bytes: 162
   - name: UpCloud-us-chi1
     host: us-chi1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: us-chi1
     city: Chicago
@@ -195,7 +195,7 @@ targets:
       bytes: 162
   - name: UpCloud-us-sjo1
     host: us-sjo1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: us-sjo1
     city: San Jose
@@ -210,7 +210,7 @@ targets:
       bytes: 162
   - name: UpCloud-sg-sin1
     host: sg-sin1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: sg-sin1
     city: Singapore
@@ -225,7 +225,7 @@ targets:
       bytes: 162
   - name: UpCloud-au-syd1
     host: au-syd1.ping.upcloud.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: au-syd1
     city: Sydney

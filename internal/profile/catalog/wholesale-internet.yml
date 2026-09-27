@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: WholesaleInternet-KansasCity
     host: speedtest.nocix.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: kc
     city: Kansas City

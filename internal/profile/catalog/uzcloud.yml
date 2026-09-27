@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: UzCloud-Tashkent
     host: s3.uzcloud.uz
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: tas
     city: Tashkent
     country: UZ

@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: Utho-Noida
     host: innoida.utho.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: innoida
     city: Noida
     country: IN
@@ -28,7 +28,7 @@ targets:
       bytes: 254
   - name: Utho-Mumbai
     host: inmumbai.utho.io
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: inmumbai
     city: Mumbai
     country: IN

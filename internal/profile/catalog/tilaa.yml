@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: Tilaa-Haarlem
     host: api.tilaa.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hlm1
     city: Haarlem
     country: NL
@@ -29,7 +29,7 @@ targets:
       bytes: 48
   - name: Tilaa-Amsterdam
     host: ns2.tilaa.nl
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 53
     region: ams
     city: Amsterdam

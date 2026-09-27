@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: Naver-kr
     host: kr.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: kr-standard
     city: Seoul
     country: KR
@@ -32,7 +32,7 @@ targets:
       bytes: 255
   - name: Naver-gov-kr
     host: kr.object.gov-ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: gov-kr
     city: Seoul
     country: KR
@@ -62,7 +62,7 @@ targets:
       bytes: 255
   - name: Naver-jp
     host: jp.object.ncpstorage.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-standard
     city: Tokyo
     country: JP
@@ -76,7 +76,7 @@ targets:
       bytes: 218
   - name: Naver-sg
     host: sg.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: sg-standard
     city: Singapore
     country: SG
@@ -90,7 +90,7 @@ targets:
       bytes: 255
   - name: Naver-us
     host: us.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: us-standard
     city: San Jose
     country: US
@@ -104,7 +104,7 @@ targets:
       bytes: 255
   - name: Naver-de
     host: de.object.ncloudstorage.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: de-standard
     city: Frankfurt
     country: DE

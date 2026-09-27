@@ -20,7 +20,7 @@ notes: >-
 targets:
   - name: TransIP-AMS0
     host: mirror.transip.net
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     path: /favicon.ico
     region: ams0
     city: Amsterdam
@@ -35,7 +35,7 @@ targets:
       bytes: 4286
   - name: TransIP-RTM0
     host: ns1.transip.nl
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 53
     region: rtm0
     city: Alblasserdam

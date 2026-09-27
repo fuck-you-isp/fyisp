@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: IonSwitch-CoeurDAlene
     host: lg.ionswitch.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: cda01
     city: Coeur d'Alene

@@ -15,7 +15,7 @@ targets:
   - name: BinaryLane-syd
     host: syd-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: syd
     city: Sydney
     country: AU
@@ -30,7 +30,7 @@ targets:
   - name: BinaryLane-mel
     host: mel-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mel
     city: Melbourne
     country: AU
@@ -45,7 +45,7 @@ targets:
   - name: BinaryLane-bne
     host: bne-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bne
     city: Brisbane
     country: AU
@@ -60,7 +60,7 @@ targets:
   - name: BinaryLane-per
     host: per-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: per
     city: Perth
     country: AU
@@ -75,7 +75,7 @@ targets:
   - name: BinaryLane-adl
     host: adl-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: adl
     city: Adelaide
     country: AU
@@ -90,7 +90,7 @@ targets:
   - name: BinaryLane-sin
     host: sin-lg.binarylane.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sin
     city: Singapore
     country: SG

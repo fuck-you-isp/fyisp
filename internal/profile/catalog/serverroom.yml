@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: ServerRoom-NewYork
     host: speedtest-ny.serverroom.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ny
     city: New York
@@ -30,7 +30,7 @@ targets:
       bytes: 153
   - name: ServerRoom-Miami
     host: speedtest-mia.serverroom.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mia
     city: Miami
@@ -45,7 +45,7 @@ targets:
       bytes: 153
   - name: ServerRoom-SanFrancisco
     host: speedtest-sf.serverroom.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sf
     city: San Francisco
@@ -60,7 +60,7 @@ targets:
       bytes: 153
   - name: ServerRoom-Amsterdam
     host: speedtest-ams.serverroom.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ams
     city: Amsterdam
@@ -75,7 +75,7 @@ targets:
       bytes: 153
   - name: ServerRoom-Bucharest
     host: speedtest-buc.serverroom.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: buc
     city: Bucharest

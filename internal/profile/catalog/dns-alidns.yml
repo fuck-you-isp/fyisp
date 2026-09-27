@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: alidns
     host: 223.5.5.5
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]
@@ -23,7 +23,7 @@ targets:
       bytes: 76
   - name: alidns-2
     host: 223.6.6.6
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, secondary]

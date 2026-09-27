@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: Advin-LosAngeles
     host: lg-lax.advinservers.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lax
     city: Los Angeles
@@ -29,7 +29,7 @@ targets:
       bytes: 196
   - name: Advin-Secaucus
     host: lg-ewr.advinservers.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ewr
     city: Secaucus
@@ -44,7 +44,7 @@ targets:
       bytes: 196
   - name: Advin-KansasCity
     host: lg-mci.advinservers.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mci
     city: Kansas City
@@ -59,7 +59,7 @@ targets:
       bytes: 196
   - name: Advin-Miami
     host: lg-mia.advinservers.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mia
     city: Miami
@@ -74,7 +74,7 @@ targets:
       bytes: 196
   - name: Advin-Nuremberg
     host: lg-nbg.advinservers.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: nbg
     city: Nuremberg
@@ -89,7 +89,7 @@ targets:
       bytes: 196
   - name: Advin-Osaka
     host: lg-kix.advinservers.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: kix
     city: Osaka
@@ -104,7 +104,7 @@ targets:
       bytes: 196
   - name: Advin-Johor
     host: lg-jhb.advinservers.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: jhb
     city: Johor

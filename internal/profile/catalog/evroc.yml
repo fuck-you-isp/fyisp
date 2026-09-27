@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: evroc-se-sto
     host: s3.se-sto.evroc.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: se-sto
     city: Stockholm
     country: SE

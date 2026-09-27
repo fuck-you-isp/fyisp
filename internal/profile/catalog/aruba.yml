@@ -20,7 +20,7 @@ notes: >-
 targets:
   - name: Aruba-dc1-Arezzo
     host: api.dc1.computing.cloud.it
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     host_overrides:
       icmp: r1-it.storage.cloud.it
     region: dc1
@@ -38,7 +38,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc2-Arezzo
     host: api.dc2.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc2
     city: Arezzo
     country: IT
@@ -54,7 +54,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc3-Czechia
     host: api.dc3.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc3
     city: Ktis
     country: CZ
@@ -70,7 +70,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc4-Paris
     host: api.dc4.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc4
     city: Saint-Denis
     country: FR
@@ -86,7 +86,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc5-Frankfurt
     host: api.dc5.computing.cloud.it
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc5
     city: Frankfurt
     country: DE
@@ -102,7 +102,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc6-UK
     host: api.dc6.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc6
     city: Slough
     country: GB
@@ -118,7 +118,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc7-Bergamo
     host: api.dc7.computing.cloud.it
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     host_overrides:
       icmp: speedtest.aruba.it
     region: dc7
@@ -136,7 +136,7 @@ targets:
       bytes: 1233
   - name: Aruba-dc8-Poland
     host: api.dc8.computing.cloud.it
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dc8
     city: Psary
     country: PL

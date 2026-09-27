@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: CMeCloud-wuxi-1
     host: eos-wuxi-1.cmecloud.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: wuxi-1
     city: Suzhou
     country: CN
@@ -31,7 +31,7 @@ targets:
       bytes: 214
   - name: CMeCloud-jinan-1
     host: eos-jinan-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: jinan-1
     city: Jinan
     country: CN
@@ -45,7 +45,7 @@ targets:
       bytes: 214
   - name: CMeCloud-ningbo-1
     host: eos-ningbo-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: ningbo-1
     city: Hangzhou
     country: CN
@@ -59,7 +59,7 @@ targets:
       bytes: 214
   - name: CMeCloud-shanghai-1
     host: eos-shanghai-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: shanghai-1
     city: Shanghai
     country: CN
@@ -73,7 +73,7 @@ targets:
       bytes: 214
   - name: CMeCloud-zhengzhou-1
     host: eos-zhengzhou-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: zhengzhou-1
     city: Zhengzhou
     country: CN
@@ -87,7 +87,7 @@ targets:
       bytes: 214
   - name: CMeCloud-hunan-1
     host: eos-hunan-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: hunan-1
     city: Changsha
     country: CN
@@ -101,7 +101,7 @@ targets:
       bytes: 214
   - name: CMeCloud-zhuzhou-1
     host: eos-zhuzhou-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: zhuzhou-1
     city: Changsha
@@ -116,7 +116,7 @@ targets:
       bytes: 214
   - name: CMeCloud-guangzhou-1
     host: eos-guangzhou-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: guangzhou-1
     city: Guangzhou
     country: CN
@@ -130,7 +130,7 @@ targets:
       bytes: 214
   - name: CMeCloud-dongguan-1
     host: eos-dongguan-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: dongguan-1
     city: Dongguan
     country: CN
@@ -144,7 +144,7 @@ targets:
       bytes: 214
   - name: CMeCloud-beijing-1
     host: eos-beijing-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: beijing-1
     city: Beijing
     country: CN
@@ -158,7 +158,7 @@ targets:
       bytes: 214
   - name: CMeCloud-beijing-2
     host: eos-beijing-2.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: beijing-2
     city: Beijing
     country: CN
@@ -172,7 +172,7 @@ targets:
       bytes: 214
   - name: CMeCloud-beijing-4
     host: eos-beijing-4.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: beijing-4
     city: Beijing
     country: CN
@@ -186,7 +186,7 @@ targets:
       bytes: 214
   - name: CMeCloud-huhehaote-1
     host: eos-huhehaote-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: huhehaote-1
     city: Hohhot
     country: CN
@@ -200,7 +200,7 @@ targets:
       bytes: 214
   - name: CMeCloud-chengdu-1
     host: eos-chengdu-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: chengdu-1
     city: Chengdu
     country: CN
@@ -214,7 +214,7 @@ targets:
       bytes: 214
   - name: CMeCloud-chongqing-1
     host: eos-chongqing-1.cmecloud.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: chongqing-1
     city: Chongqing
     country: CN
@@ -228,7 +228,7 @@ targets:
       bytes: 214
   - name: CMeCloud-guiyang-1
     host: eos-guiyang-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: guiyang-1
     city: Guiyang
     country: CN
@@ -242,7 +242,7 @@ targets:
       bytes: 214
   - name: CMeCloud-xian-1
     host: eos-xian-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: xian-1
     city: Xi'an
     country: CN
@@ -272,7 +272,7 @@ targets:
       tcp: false
   - name: CMeCloud-yunnan-2
     host: eos-yunnan-2.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: yunnan-2
     city: Kunming
     country: CN
@@ -286,7 +286,7 @@ targets:
       bytes: 214
   - name: CMeCloud-tianjin-1
     host: eos-tianjin-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: tianjin-1
     city: Tianjin
     country: CN
@@ -300,7 +300,7 @@ targets:
       bytes: 214
   - name: CMeCloud-jilin-1
     host: eos-jilin-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: jilin-1
     city: Changchun
     country: CN
@@ -314,7 +314,7 @@ targets:
       bytes: 214
   - name: CMeCloud-hubei-1
     host: eos-hubei-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: hubei-1
     city: Xiangyang
     country: CN
@@ -328,7 +328,7 @@ targets:
       bytes: 214
   - name: CMeCloud-jiangxi-1
     host: eos-jiangxi-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: jiangxi-1
     city: Nanchang
     country: CN
@@ -342,7 +342,7 @@ targets:
       bytes: 214
   - name: CMeCloud-gansu-1
     host: eos-gansu-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: gansu-1
     city: Lanzhou
     country: CN
@@ -358,7 +358,7 @@ targets:
       bytes: 214
   - name: CMeCloud-shanxi-1
     host: eos-shanxi-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: shanxi-1
     city: Taiyuan
     country: CN
@@ -372,7 +372,7 @@ targets:
       bytes: 214
   - name: CMeCloud-liaoning-1
     host: eos-liaoning-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: liaoning-1
     city: Shenyang
     country: CN
@@ -386,7 +386,7 @@ targets:
       bytes: 214
   - name: CMeCloud-hebei-1
     host: eos-hebei-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: hebei-1
     city: Shijiazhuang
     country: CN
@@ -400,7 +400,7 @@ targets:
       bytes: 214
   - name: CMeCloud-fujian-1
     host: eos-fujian-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: fujian-1
     city: Xiamen
     country: CN
@@ -414,7 +414,7 @@ targets:
       bytes: 214
   - name: CMeCloud-guangxi-1
     host: eos-guangxi-1.cmecloud.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: guangxi-1
     city: Nanning
     country: CN
@@ -428,7 +428,7 @@ targets:
       bytes: 214
   - name: CMeCloud-anhui-1
     host: eos-anhui-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: anhui-1
     city: Huainan
     country: CN
@@ -442,7 +442,7 @@ targets:
       bytes: 214
   - name: CMeCloud-xinjiang-1
     host: eos-xinjiang-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: xinjiang-1
     country: CN
     geo: as
@@ -458,7 +458,7 @@ targets:
       bytes: 214
   - name: CMeCloud-hainan-1
     host: eos-hainan-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: hainan-1
     country: CN
     geo: as
@@ -475,7 +475,7 @@ targets:
       bytes: 214
   - name: CMeCloud-heilongjiang-1
     host: eos-heilongjiang-1.cmecloud.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: heilongjiang-1
     city: Harbin
     country: CN

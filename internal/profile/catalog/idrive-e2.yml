@@ -19,7 +19,7 @@ notes: >-
 targets:
   - name: IDrive-e2-us-west-1
     host: s3.us-west-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-1
     country: US
     geo: na
@@ -32,7 +32,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-west-2
     host: s3.us-west-2.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-2
     city: Los Angeles
     country: US
@@ -46,7 +46,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-west-3
     host: s3.us-west-3.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-3
     city: San Jose
     country: US
@@ -60,7 +60,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-west-4
     host: s3.us-west-4.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-4
     country: US
     geo: na
@@ -73,7 +73,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-southwest-1
     host: s3.us-southwest-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-southwest-1
     city: Phoenix
     country: US
@@ -87,7 +87,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-midwest-1
     host: s3.us-midwest-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-midwest-1
     city: Chicago
     country: US
@@ -101,7 +101,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-central-1
     host: s3.us-central-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-central-1
     city: Dallas
     country: US
@@ -115,7 +115,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-east-1
     host: s3.us-east-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-1
     country: US
     geo: na
@@ -128,7 +128,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-us-southeast-1
     host: s3.us-southeast-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-southeast-1
     city: Miami
     country: US
@@ -142,7 +142,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-ca-east-1
     host: s3.ca-east-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-east-1
     city: Montreal
     country: CA
@@ -156,7 +156,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-eu-west-1
     host: s3.eu-west-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-1
     city: Dublin
     country: IE
@@ -170,7 +170,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-eu-west-2
     host: s3.eu-west-2.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-2
     city: London
     country: GB
@@ -184,7 +184,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-eu-west-3
     host: s3.eu-west-3.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-3
     city: London
     country: GB
@@ -198,7 +198,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-eu-west-4
     host: s3.eu-west-4.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-4
     city: Paris
     country: FR
@@ -212,7 +212,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-eu-central-1
     host: s3.eu-central-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-1
     city: Frankfurt
     country: DE
@@ -226,7 +226,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-eu-central-2
     host: s3.eu-central-2.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-2
     city: Frankfurt
     country: DE
@@ -240,7 +240,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-eu-south-1
     host: s3.eu-south-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-south-1
     city: Milan
     country: IT
@@ -254,7 +254,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-ap-southeast-1
     host: s3.ap-southeast-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-1
     city: Singapore
     country: SG
@@ -268,7 +268,7 @@ targets:
       bytes: 138
   - name: IDrive-e2-ap-northeast-1
     host: s3.ap-northeast-1.idrivee2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-northeast-1
     city: Tokyo
     country: JP

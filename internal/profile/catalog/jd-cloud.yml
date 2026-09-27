@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: JDCloud-cn-north-1
     host: s3.cn-north-1.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-north-1
     city: Beijing
     country: CN
@@ -31,7 +31,7 @@ targets:
       bytes: 166
   - name: JDCloud-cn-east-1
     host: s3.cn-east-1.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-1
     city: Suqian
     country: CN
@@ -45,7 +45,7 @@ targets:
       bytes: 166
   - name: JDCloud-cn-east-2
     host: s3.cn-east-2.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-east-2
     city: Shanghai
     country: CN
@@ -59,7 +59,7 @@ targets:
       bytes: 166
   - name: JDCloud-cn-south-1
     host: s3.cn-south-1.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-south-1
     city: Guangzhou
     country: CN
@@ -73,7 +73,7 @@ targets:
       bytes: 166
   - name: JDCloud-eu-west-1
     host: s3.eu-west-1.jdcloud-oss.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-1
     city: Amsterdam
     country: NL

@@ -22,7 +22,7 @@ notes: >-
 targets:
   - name: IONOS-de-fra
     host: s3.eu-central-1.ionoscloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de/fra
     city: Frankfurt
     country: DE
@@ -55,7 +55,7 @@ targets:
       bytes: 0
   - name: IONOS-de-txl
     host: s3.eu-central-2.ionoscloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de/txl
     city: Berlin
     country: DE
@@ -88,7 +88,7 @@ targets:
       bytes: 0
   - name: IONOS-gb-lhr
     host: logging.gb-lhr.ionos.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: gb/lhr
     city: London
     country: GB
@@ -104,7 +104,7 @@ targets:
       bytes: 146
   - name: IONOS-gb-bhx
     host: logging.gb-bhx.ionos.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: gb/bhx
     city: Worcester
     country: GB
@@ -120,7 +120,7 @@ targets:
       bytes: 146
   - name: IONOS-fr-par
     host: logging.fr-par.ionos.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: fr/par
     city: Paris
     country: FR
@@ -136,7 +136,7 @@ targets:
       bytes: 146
   - name: IONOS-es-vit
     host: s3.eu-south-2.ionoscloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: es/vit
     city: Logrono
     country: ES
@@ -152,7 +152,7 @@ targets:
       bytes: 218
   - name: IONOS-us-las
     host: logging.us-las.ionos.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: us/las
     city: Las Vegas
     country: US
@@ -168,7 +168,7 @@ targets:
       bytes: 146
   - name: IONOS-us-ewr
     host: logging.us-ewr.ionos.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: us/ewr
     city: Newark
     country: US
@@ -184,7 +184,7 @@ targets:
       bytes: 146
   - name: IONOS-us-mci
     host: s3.us-central-1.ionoscloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us/mci
     city: Lenexa
     country: US

@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: Safespring-sto1
     host: s3.sto1.safedc.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sto1
     city: Stockholm
     country: SE
@@ -29,7 +29,7 @@ targets:
       bytes: 214
   - name: Safespring-sto2
     host: s3.sto2.safedc.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sto2
     city: Stockholm
     country: SE
@@ -43,7 +43,7 @@ targets:
       bytes: 214
   - name: Safespring-osl2
     host: s3.osl2.safedc.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: osl2
     city: Oslo
     country: NO
@@ -57,7 +57,7 @@ targets:
       bytes: 214
   - name: Safespring-dco1
     host: s3.dco1.safedc.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dco1
     city: Kalix
     country: SE

@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: Exoscale-ch-gva-2
     host: sos-ch-gva-2.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ch-gva-2
     city: Geneva
     country: CH
@@ -28,7 +28,7 @@ targets:
       bytes: 110
   - name: Exoscale-ch-dk-2
     host: sos-ch-dk-2.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ch-dk-2
     city: Zurich
     country: CH
@@ -42,7 +42,7 @@ targets:
       bytes: 110
   - name: Exoscale-de-fra-1
     host: sos-de-fra-1.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de-fra-1
     city: Frankfurt
     country: DE
@@ -56,7 +56,7 @@ targets:
       bytes: 110
   - name: Exoscale-de-muc-1
     host: sos-de-muc-1.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de-muc-1
     city: Munich
     country: DE
@@ -74,7 +74,7 @@ targets:
       bytes: 110
   - name: Exoscale-at-vie-1
     host: sos-at-vie-1.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: at-vie-1
     city: Vienna
     country: AT
@@ -88,7 +88,7 @@ targets:
       bytes: 110
   - name: Exoscale-at-vie-2
     host: sos-at-vie-2.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: at-vie-2
     city: Vienna
     country: AT
@@ -102,7 +102,7 @@ targets:
       bytes: 110
   - name: Exoscale-bg-sof-1
     host: sos-bg-sof-1.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bg-sof-1
     city: Sofia
     country: BG
@@ -116,7 +116,7 @@ targets:
       bytes: 110
   - name: Exoscale-hr-zag-1
     host: sos-hr-zag-1.exo.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hr-zag-1
     city: Zagreb
     country: HR

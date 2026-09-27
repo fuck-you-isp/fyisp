@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: ColoCrossing-Atlanta
     host: lg.atl.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: atl
     city: Atlanta
@@ -31,7 +31,7 @@ targets:
       bytes: 146
   - name: ColoCrossing-Buffalo
     host: lg.buf.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: buf
     city: Buffalo
@@ -46,7 +46,7 @@ targets:
       bytes: 146
   - name: ColoCrossing-Chicago
     host: lg.chi.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: chi
     city: Chicago
@@ -61,7 +61,7 @@ targets:
       bytes: 146
   - name: ColoCrossing-Dallas
     host: lg.dal.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: dal
     city: Dallas
@@ -76,7 +76,7 @@ targets:
       bytes: 146
   - name: ColoCrossing-Dublin
     host: lg.dub.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: dub
     city: Dublin
@@ -91,7 +91,7 @@ targets:
       bytes: 146
   - name: ColoCrossing-LosAngeles
     host: lg.la.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: la
     city: Los Angeles
@@ -121,7 +121,7 @@ targets:
       bytes: 0
   - name: ColoCrossing-SanJose
     host: lg.sj.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sj
     city: San Jose
@@ -136,7 +136,7 @@ targets:
       bytes: 146
   - name: ColoCrossing-Seattle
     host: lg.sea.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sea
     city: Seattle
@@ -151,7 +151,7 @@ targets:
       bytes: 146
   - name: ColoCrossing-Toronto
     host: lg.tor.colocrossing.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: tor
     city: Toronto

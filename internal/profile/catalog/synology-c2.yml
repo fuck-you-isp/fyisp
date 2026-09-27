@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: SynologyC2-eu-001
     host: eu-001.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-001
     city: Frankfurt
     country: DE
@@ -29,7 +29,7 @@ targets:
       bytes: 70
   - name: SynologyC2-eu-002
     host: eu-002.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-002
     city: Frankfurt
     country: DE
@@ -43,7 +43,7 @@ targets:
       bytes: 70
   - name: SynologyC2-eu-003
     host: eu-003.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-003
     city: Frankfurt
     country: DE
@@ -57,7 +57,7 @@ targets:
       bytes: 70
   - name: SynologyC2-eu-004
     host: eu-004.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-004
     city: Frankfurt
     country: DE
@@ -71,7 +71,7 @@ targets:
       bytes: 70
   - name: SynologyC2-eu-005
     host: eu-005.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-005
     city: Frankfurt
     country: DE
@@ -85,7 +85,7 @@ targets:
       bytes: 70
   - name: SynologyC2-us-001
     host: us-001.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-001
     city: Seattle
     country: US
@@ -99,7 +99,7 @@ targets:
       bytes: 70
   - name: SynologyC2-us-002
     host: us-002.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-002
     city: Seattle
     country: US
@@ -113,7 +113,7 @@ targets:
       bytes: 70
   - name: SynologyC2-us-003
     host: us-003.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-003
     city: Seattle
     country: US
@@ -127,7 +127,7 @@ targets:
       bytes: 70
   - name: SynologyC2-us-004
     host: us-004.s3.synologyc2.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-004
     city: Seattle
     country: US
@@ -141,7 +141,7 @@ targets:
       bytes: 70
   - name: SynologyC2-tw-001
     host: tw-001.s3.synologyc2.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: tw-001
     country: TW
     geo: as

@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: FDC-Amsterdam
     host: lg-ams.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ams
     city: Amsterdam
     country: NL
@@ -28,7 +28,7 @@ targets:
       bytes: 0
   - name: FDC-Ashburn
     host: lg-iad.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: iad
     city: Ashburn
     country: US
@@ -42,7 +42,7 @@ targets:
       bytes: 0
   - name: FDC-Atlanta
     host: lg-atl.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: atl
     city: Atlanta
     country: US
@@ -56,7 +56,7 @@ targets:
       bytes: 0
   - name: FDC-Chicago
     host: lg-chie.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: chi
     city: Chicago
     country: US
@@ -70,7 +70,7 @@ targets:
       bytes: 0
   - name: FDC-Dallas
     host: lg-dfw.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dfw
     city: Dallas
     country: US
@@ -84,7 +84,7 @@ targets:
       bytes: 0
   - name: FDC-Denver
     host: lg-dene.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: den
     city: Denver
     country: US
@@ -98,7 +98,7 @@ targets:
       bytes: 0
   - name: FDC-Dublin
     host: lg-dub.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dub
     city: Dublin
     country: IE
@@ -112,7 +112,7 @@ targets:
       bytes: 0
   - name: FDC-Frankfurt
     host: lg-fr8.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fra
     city: Frankfurt
     country: DE
@@ -126,7 +126,7 @@ targets:
       bytes: 0
   - name: FDC-HongKong
     host: lg-hkg.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hkg
     city: Hong Kong
     country: HK
@@ -140,7 +140,7 @@ targets:
       bytes: 0
   - name: FDC-Lisbon
     host: lg-lis.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lis
     city: Lisbon
     country: PT
@@ -154,7 +154,7 @@ targets:
       bytes: 0
   - name: FDC-London
     host: lg-lon.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lon
     city: London
     country: GB
@@ -168,7 +168,7 @@ targets:
       bytes: 0
   - name: FDC-LosAngeles
     host: lg-lax.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lax
     city: Los Angeles
     country: US
@@ -182,7 +182,7 @@ targets:
       bytes: 0
   - name: FDC-Madrid
     host: lg-mad.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mad
     city: Madrid
     country: ES
@@ -196,7 +196,7 @@ targets:
       bytes: 0
   - name: FDC-Miami
     host: lg-mia.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mia
     city: Miami
     country: US
@@ -210,7 +210,7 @@ targets:
       bytes: 0
   - name: FDC-Paris
     host: lg-pa10.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: par
     city: Paris
     country: FR
@@ -224,7 +224,7 @@ targets:
       bytes: 0
   - name: FDC-Prague
     host: lg-prg.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: prg
     city: Prague
     country: CZ
@@ -238,7 +238,7 @@ targets:
       bytes: 0
   - name: FDC-SaoPaulo
     host: lg-spb.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sao
     city: Sao Paulo
     country: BR
@@ -252,7 +252,7 @@ targets:
       bytes: 0
   - name: FDC-Seattle
     host: lg-sea.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sea
     city: Seattle
     country: US
@@ -266,7 +266,7 @@ targets:
       bytes: 0
   - name: FDC-Singapore
     host: lg-sin.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sin
     city: Singapore
     country: SG
@@ -280,7 +280,7 @@ targets:
       bytes: 0
   - name: FDC-Tokyo
     host: lg-hnd.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tyo
     city: Tokyo
     country: JP
@@ -294,7 +294,7 @@ targets:
       bytes: 0
   - name: FDC-Toronto
     host: lg-tor.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tor
     city: Toronto
     country: CA
@@ -308,7 +308,7 @@ targets:
       bytes: 0
   - name: FDC-Vienna
     host: lg-vie.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: vie
     city: Vienna
     country: AT
@@ -322,7 +322,7 @@ targets:
       bytes: 0
   - name: FDC-Warsaw
     host: lg-war.fdcservers.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: waw
     city: Warsaw
     country: PL

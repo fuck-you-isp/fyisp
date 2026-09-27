@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: Elastx-se-sto
     host: swift.elastx.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: se-sto
     city: Stockholm
     country: SE

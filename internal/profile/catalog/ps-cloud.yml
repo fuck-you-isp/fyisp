@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: PSCloud-Almaty
     host: storage-object.pscloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: kz-ala-1
     city: Almaty
     country: KZ
@@ -45,7 +45,7 @@ targets:
       tcp: false
   - name: PSCloud-Tashkent
     host: s3.uz-tas-1.pscloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uz-tas-1
     city: Tashkent
     country: UZ

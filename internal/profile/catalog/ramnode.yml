@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: RamNode-EWR
     host: lg.ewr.ramnode.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ewr
     city: Piscataway
@@ -28,7 +28,7 @@ targets:
       bytes: 207
   - name: RamNode-ATL
     host: lg.atl.ramnode.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: atl
     city: Atlanta
@@ -43,7 +43,7 @@ targets:
       bytes: 207
   - name: RamNode-LAX
     host: lg.lax.ramnode.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lax
     city: Los Angeles
@@ -58,7 +58,7 @@ targets:
       bytes: 207
   - name: RamNode-SEA
     host: lg.pnw.ramnode.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sea
     city: Seattle
@@ -73,7 +73,7 @@ targets:
       bytes: 207
   - name: RamNode-NLX
     host: lg.nlx.ramnode.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: nlx
     city: Amsterdam

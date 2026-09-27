@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: VNGCloud-HCM03
     host: hcm03.vstorage.vngcloud.vn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hcm03
     city: Ho Chi Minh City
     country: VN
@@ -26,7 +26,7 @@ targets:
       bytes: 70
   - name: VNGCloud-HCM04
     host: hcm04.vstorage.vngcloud.vn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hcm04
     city: Ho Chi Minh City
     country: VN
@@ -40,7 +40,7 @@ targets:
       bytes: 150
   - name: VNGCloud-HAN01
     host: han01.vstorage.vngcloud.vn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: han01
     city: Hanoi
     country: VN

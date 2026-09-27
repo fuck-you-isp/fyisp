@@ -20,7 +20,7 @@ targets:
   - name: Serverius-Dronten
     host: speedtest1.serverius.net
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: SDC1
     city: Dronten
     country: NL
@@ -35,7 +35,7 @@ targets:
   - name: Serverius-Meppel
     host: speedtest2.serverius.net
     path: /robots.txt
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: SDC2
     city: Meppel
     country: NL
@@ -50,7 +50,7 @@ targets:
   - name: Serverius-Apeldoorn
     host: speedtest3.serverius.net
     path: /robots.txt
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: SDC3
     city: Apeldoorn
     country: NL

@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: EdgeUno-BuenosAires
     host: stats.eze1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: eze1
     city: Buenos Aires
@@ -33,7 +33,7 @@ targets:
       bytes: 146
   - name: EdgeUno-LaPaz
     host: stats.lpb1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lpb1
     city: La Paz
@@ -48,7 +48,7 @@ targets:
       bytes: 153
   - name: EdgeUno-SaoPaulo
     host: stats.gru1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: gru1
     city: Barueri
@@ -63,7 +63,7 @@ targets:
       bytes: 146
   - name: EdgeUno-RioDeJaneiro
     host: stats.rio1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: rio1
     city: Rio de Janeiro
@@ -78,7 +78,7 @@ targets:
       bytes: 146
   - name: EdgeUno-Brasilia
     host: stats.bsb1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: bsb1
     city: Brasilia
@@ -93,7 +93,7 @@ targets:
       bytes: 146
   - name: EdgeUno-PortoAlegre
     host: stats.poa1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: poa1
     city: Porto Alegre
@@ -108,7 +108,7 @@ targets:
       bytes: 146
   - name: EdgeUno-Curitiba
     host: stats.cwb1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: cwb1
     city: Curitiba
@@ -123,7 +123,7 @@ targets:
       bytes: 146
   - name: EdgeUno-Fortaleza
     host: stats.for1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: for1
     city: Fortaleza
@@ -153,7 +153,7 @@ targets:
       bytes: 0
   - name: EdgeUno-Santiago
     host: stats.scl1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: scl1
     city: Santiago
@@ -168,7 +168,7 @@ targets:
       bytes: 146
   - name: EdgeUno-Barranquilla
     host: stats.baq1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: baq1
     city: Barranquilla
@@ -183,7 +183,7 @@ targets:
       bytes: 26
   - name: EdgeUno-Bogota
     host: speedtest.bog.edgeuno.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: bog
     city: Bogota
@@ -198,7 +198,7 @@ targets:
       bytes: 16
   - name: EdgeUno-Quito
     host: stats.uio1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: uio1
     city: Quito
@@ -213,7 +213,7 @@ targets:
       bytes: 146
   - name: EdgeUno-Lima
     host: stats.lim1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lim1
     city: Lima
@@ -228,7 +228,7 @@ targets:
       bytes: 153
   - name: EdgeUno-Guadalajara
     host: stats.gdl1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: gdl1
     city: Guadalajara
@@ -243,7 +243,7 @@ targets:
       bytes: 162
   - name: EdgeUno-MexicoCity
     host: stats.mex1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mex1
     city: Mexico City
@@ -258,7 +258,7 @@ targets:
       bytes: 146
   - name: EdgeUno-Queretaro
     host: stats.qro1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: qro1
     city: Queretaro
@@ -273,7 +273,7 @@ targets:
       bytes: 146
   - name: EdgeUno-SanJuan
     host: stats.sju1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: sju1
     city: San Juan
@@ -288,7 +288,7 @@ targets:
       bytes: 146
   - name: EdgeUno-Miami
     host: stats.mia1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: mia1
     city: Miami
@@ -303,7 +303,7 @@ targets:
       bytes: 153
   - name: EdgeUno-Dallas
     host: stats.dal1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: dal1
     city: Dallas
@@ -318,7 +318,7 @@ targets:
       bytes: 153
   - name: EdgeUno-Ashburn
     host: stats.iad1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: iad1
     city: Ashburn
@@ -333,7 +333,7 @@ targets:
       bytes: 26
   - name: EdgeUno-NewYork
     host: stats.jfk1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: jfk1
     city: New York
@@ -348,7 +348,7 @@ targets:
       bytes: 146
   - name: EdgeUno-LosAngeles
     host: stats.lax1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lax1
     city: Los Angeles
@@ -363,7 +363,7 @@ targets:
       bytes: 26
   - name: EdgeUno-Frankfurt
     host: stats.fra1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: fra1
     city: Frankfurt
@@ -378,7 +378,7 @@ targets:
       bytes: 26
   - name: EdgeUno-London
     host: stats.lon1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: lon1
     city: London
@@ -393,7 +393,7 @@ targets:
       bytes: 26
   - name: EdgeUno-Istanbul
     host: stats.ist1.edgeuno.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: ist1
     city: Istanbul

@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: Clouvider-London
     host: lon.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lon
     city: London
     country: GB
@@ -28,7 +28,7 @@ targets:
       bytes: 0
   - name: Clouvider-Manchester
     host: man.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: man
     city: Manchester
     country: GB
@@ -42,7 +42,7 @@ targets:
       bytes: 0
   - name: Clouvider-Amsterdam
     host: ams.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ams
     city: Amsterdam
     country: NL
@@ -56,7 +56,7 @@ targets:
       bytes: 0
   - name: Clouvider-Frankfurt
     host: fra.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fra
     city: Frankfurt
     country: DE
@@ -70,7 +70,7 @@ targets:
       bytes: 0
   - name: Clouvider-NewYork
     host: nyc.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nyc
     city: New York
     country: US
@@ -84,7 +84,7 @@ targets:
       bytes: 0
   - name: Clouvider-Ashburn
     host: ash.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ash
     city: Ashburn
     country: US
@@ -98,7 +98,7 @@ targets:
       bytes: 0
   - name: Clouvider-Atlanta
     host: atl.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: atl
     city: Atlanta
     country: US
@@ -112,7 +112,7 @@ targets:
       bytes: 0
   - name: Clouvider-Dallas
     host: dal.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dal
     city: Dallas
     country: US
@@ -126,7 +126,7 @@ targets:
       bytes: 0
   - name: Clouvider-Phoenix
     host: phx.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: phx
     city: Phoenix
     country: US
@@ -140,7 +140,7 @@ targets:
       bytes: 0
   - name: Clouvider-LosAngeles
     host: la.speedtest.clouvider.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: la
     city: Los Angeles
     country: US

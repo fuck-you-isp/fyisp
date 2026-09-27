@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: EA-accounts
     host: accounts.ea.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: "aws:us-east-1"
     city: Ashburn
     country: US
@@ -28,7 +28,7 @@ targets:
       bytes: 0
   - name: EA-gateway
     host: gateway.ea.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: global
     country: US
     geo: na

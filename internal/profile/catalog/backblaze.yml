@@ -19,7 +19,7 @@ notes: >-
 targets:
   - name: Backblaze-us-west-000
     host: s3.us-west-000.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-000
     country: US
     geo: na
@@ -32,7 +32,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-west-001
     host: s3.us-west-001.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-001
     country: US
     geo: na
@@ -45,7 +45,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-west-002
     host: s3.us-west-002.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-002
     country: US
     geo: na
@@ -58,7 +58,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-west-004
     host: s3.us-west-004.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-004
     country: US
     geo: na
@@ -71,7 +71,7 @@ targets:
       bytes: 180
   - name: Backblaze-us-east-005
     host: s3.us-east-005.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-005
     city: Reston
     country: US
@@ -85,7 +85,7 @@ targets:
       bytes: 180
   - name: Backblaze-eu-central-003
     host: s3.eu-central-003.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-003
     city: Amsterdam
     country: NL
@@ -99,7 +99,7 @@ targets:
       bytes: 180
   - name: Backblaze-ca-east-006
     host: s3.ca-east-006.backblazeb2.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-east-006
     city: Toronto
     country: CA

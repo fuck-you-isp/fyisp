@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: Magalu-br-se1
     host: br-se1.magaluobjects.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: br-se1
     city: Sao Paulo
     country: BR
@@ -26,7 +26,7 @@ targets:
       bytes: 69
   - name: Magalu-br-ne1
     host: br-ne1.magaluobjects.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: br-ne1
     city: Fortaleza
     country: BR

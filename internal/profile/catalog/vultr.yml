@@ -16,7 +16,7 @@ targets:
   - name: Vultr-ewr
     host: nj-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ewr
     city: New Jersey
     country: US
@@ -31,7 +31,7 @@ targets:
   - name: Vultr-ord
     host: il-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ord
     city: Chicago
     country: US
@@ -46,7 +46,7 @@ targets:
   - name: Vultr-atl
     host: ga-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: atl
     city: Atlanta
     country: US
@@ -61,7 +61,7 @@ targets:
   - name: Vultr-mia
     host: fl-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mia
     city: Miami
     country: US
@@ -76,7 +76,7 @@ targets:
   - name: Vultr-dfw
     host: tx-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dfw
     city: Dallas
     country: US
@@ -91,7 +91,7 @@ targets:
   - name: Vultr-lax
     host: lax-ca-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lax
     city: Los Angeles
     country: US
@@ -106,7 +106,7 @@ targets:
   - name: Vultr-sjc
     host: sjo-ca-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sjc
     city: Silicon Valley
     country: US
@@ -121,7 +121,7 @@ targets:
   - name: Vultr-sea
     host: wa-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sea
     city: Seattle
     country: US
@@ -136,7 +136,7 @@ targets:
   - name: Vultr-hnl
     host: hon-hi-us-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hnl
     city: Honolulu
     country: US
@@ -151,7 +151,7 @@ targets:
   - name: Vultr-yto
     host: tor-ca-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: yto
     city: Toronto
     country: CA
@@ -166,7 +166,7 @@ targets:
   - name: Vultr-mex
     host: mex-mx-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mex
     city: Mexico City
     country: MX
@@ -181,7 +181,7 @@ targets:
   - name: Vultr-sao
     host: sao-br-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sao
     city: Sao Paulo
     country: BR
@@ -196,7 +196,7 @@ targets:
   - name: Vultr-scl
     host: scl-cl-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: scl
     city: Santiago
     country: CL
@@ -211,7 +211,7 @@ targets:
   - name: Vultr-ams
     host: ams-nl-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ams
     city: Amsterdam
     country: NL
@@ -226,7 +226,7 @@ targets:
   - name: Vultr-fra
     host: fra-de-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fra
     city: Frankfurt
     country: DE
@@ -241,7 +241,7 @@ targets:
   - name: Vultr-cdg
     host: par-fr-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cdg
     city: Paris
     country: FR
@@ -256,7 +256,7 @@ targets:
   - name: Vultr-lhr
     host: lon-gb-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lhr
     city: London
     country: GB
@@ -271,7 +271,7 @@ targets:
   - name: Vultr-man
     host: man-uk-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: man
     city: Manchester
     country: GB
@@ -286,7 +286,7 @@ targets:
   - name: Vultr-mad
     host: mad-es-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mad
     city: Madrid
     country: ES
@@ -301,7 +301,7 @@ targets:
   - name: Vultr-mxp
     host: mxp-it-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mxp
     city: Milan
     country: IT
@@ -316,7 +316,7 @@ targets:
   - name: Vultr-sto
     host: sto-se-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sto
     city: Stockholm
     country: SE
@@ -331,7 +331,7 @@ targets:
   - name: Vultr-waw
     host: waw-pl-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: waw
     city: Warsaw
     country: PL
@@ -346,7 +346,7 @@ targets:
   - name: Vultr-tlv
     host: tlv-il-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tlv
     city: Tel Aviv
     country: IL
@@ -361,7 +361,7 @@ targets:
   - name: Vultr-jnb
     host: jnb-za-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jnb
     city: Johannesburg
     country: ZA
@@ -376,7 +376,7 @@ targets:
   - name: Vultr-blr
     host: blr-in-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: blr
     city: Bangalore
     country: IN
@@ -391,7 +391,7 @@ targets:
   - name: Vultr-bom
     host: bom-in-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bom
     city: Mumbai
     country: IN
@@ -406,7 +406,7 @@ targets:
   - name: Vultr-del
     host: del-in-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: del
     city: Delhi NCR
     country: IN
@@ -421,7 +421,7 @@ targets:
   - name: Vultr-nrt
     host: hnd-jp-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nrt
     city: Tokyo
     country: JP
@@ -436,7 +436,7 @@ targets:
   - name: Vultr-itm
     host: osk-jp-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: itm
     city: Osaka
     country: JP
@@ -451,7 +451,7 @@ targets:
   - name: Vultr-icn
     host: sel-kor-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: icn
     city: Seoul
     country: KR
@@ -466,7 +466,7 @@ targets:
   - name: Vultr-sgp
     host: sgp-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sgp
     city: Singapore
     country: SG
@@ -481,7 +481,7 @@ targets:
   - name: Vultr-syd
     host: syd-au-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: syd
     city: Sydney
     country: AU
@@ -496,7 +496,7 @@ targets:
   - name: Vultr-mel
     host: mel-au-ping.vultr.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mel
     city: Melbourne
     country: AU

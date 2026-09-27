@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Infomaniak-dc3-a
     host: api.pub1.infomaniak.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc3-a
     city: Geneva
     country: CH
@@ -33,7 +33,7 @@ targets:
       bytes: 0
   - name: Infomaniak-dc4-a
     host: api.pub2.infomaniak.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc4-a
     city: Geneva
     country: CH

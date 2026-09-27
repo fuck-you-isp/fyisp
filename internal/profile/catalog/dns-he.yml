@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: he-doh
     host: ordns.he.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]

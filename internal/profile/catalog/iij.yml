@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: IIJ-Tokyo
     host: ftp.iij.ad.jp
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-east
     city: Tokyo
     country: JP

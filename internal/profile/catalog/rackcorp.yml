@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: RackCorp-au-nsw
     host: au-nsw.s3.rackcorp.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: au-nsw
     city: Sydney
     country: AU
@@ -95,7 +95,7 @@ targets:
       tcp: false
   - name: RackCorp-ph
     host: ph.s3.rackcorp.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ph
     city: Manila
     country: PH
@@ -111,7 +111,7 @@ targets:
       bytes: 213
   - name: RackCorp-th
     host: th.s3.rackcorp.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: th
     city: Bangkok
     country: TH
@@ -140,7 +140,7 @@ targets:
       tcp: true
   - name: RackCorp-mn
     host: mn.s3.rackcorp.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mn
     city: Ulaanbaatar
     country: MN
@@ -154,7 +154,7 @@ targets:
       bytes: 213
   - name: RackCorp-kg
     host: kg.s3.rackcorp.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: kg
     city: Bishkek
     country: KG
@@ -168,7 +168,7 @@ targets:
       bytes: 213
   - name: RackCorp-id
     host: id.s3.rackcorp.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: id
     city: Jakarta
     country: ID

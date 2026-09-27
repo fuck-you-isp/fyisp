@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Wasabi-us-east-1
     host: s3.us-east-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-1
     city: Ashburn
     country: US
@@ -31,7 +31,7 @@ targets:
       bytes: 49
   - name: Wasabi-us-east-2
     host: s3.us-east-2.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-2
     city: Manassas
     country: US
@@ -45,7 +45,7 @@ targets:
       bytes: 49
   - name: Wasabi-us-central-1
     host: s3.us-central-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-central-1
     city: Plano
     country: US
@@ -59,7 +59,7 @@ targets:
       bytes: 49
   - name: Wasabi-us-west-1
     host: s3.us-west-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-1
     city: Hillsboro
     country: US
@@ -73,7 +73,7 @@ targets:
       bytes: 49
   - name: Wasabi-us-west-2
     host: s3.us-west-2.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west-2
     city: San Jose
     country: US
@@ -87,7 +87,7 @@ targets:
       bytes: 49
   - name: Wasabi-ca-central-1
     host: s3.ca-central-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-central-1
     city: Toronto
     country: CA
@@ -101,7 +101,7 @@ targets:
       bytes: 49
   - name: Wasabi-eu-central-1
     host: s3.eu-central-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-1
     city: Amsterdam
     country: NL
@@ -115,7 +115,7 @@ targets:
       bytes: 49
   - name: Wasabi-eu-central-2
     host: s3.eu-central-2.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-2
     city: Frankfurt
     country: DE
@@ -129,7 +129,7 @@ targets:
       bytes: 49
   - name: Wasabi-eu-west-1
     host: s3.eu-west-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-1
     city: London
     country: GB
@@ -143,7 +143,7 @@ targets:
       bytes: 49
   - name: Wasabi-eu-west-2
     host: s3.eu-west-2.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-2
     city: Paris
     country: FR
@@ -157,7 +157,7 @@ targets:
       bytes: 49
   - name: Wasabi-eu-west-3
     host: s3.eu-west-3.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-3
     city: London
     country: GB
@@ -171,7 +171,7 @@ targets:
       bytes: 49
   - name: Wasabi-eu-south-1
     host: s3.eu-south-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-south-1
     city: Milan
     country: IT
@@ -185,7 +185,7 @@ targets:
       bytes: 49
   - name: Wasabi-ap-northeast-1
     host: s3.ap-northeast-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-northeast-1
     city: Tokyo
     country: JP
@@ -199,7 +199,7 @@ targets:
       bytes: 49
   - name: Wasabi-ap-northeast-2
     host: s3.ap-northeast-2.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-northeast-2
     city: Osaka
     country: JP
@@ -213,7 +213,7 @@ targets:
       bytes: 49
   - name: Wasabi-ap-southeast-1
     host: s3.ap-southeast-1.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-1
     city: Singapore
     country: SG
@@ -227,7 +227,7 @@ targets:
       bytes: 49
   - name: Wasabi-ap-southeast-2
     host: s3.ap-southeast-2.wasabisys.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast-2
     city: Sydney
     country: AU

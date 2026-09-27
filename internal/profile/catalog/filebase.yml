@@ -12,7 +12,7 @@ notes: >-
 targets:
   - name: Filebase
     host: s3.filebase.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     anycast: true
     notes: >-
       GeoDNS: US, Singapore or European front depending on the client.

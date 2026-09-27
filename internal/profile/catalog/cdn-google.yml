@@ -20,7 +20,7 @@ notes: >-
 targets:
   - name: CDN-Google
     host: www.gstatic.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/generate_204"
     anycast: true
     tags: [geodns]

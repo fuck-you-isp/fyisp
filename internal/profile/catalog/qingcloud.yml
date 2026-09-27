@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: QingCloud-pek3a
     host: pek3a.qsstor.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: pek3a
     city: Beijing
     country: CN
@@ -31,7 +31,7 @@ targets:
       bytes: 231
   - name: QingCloud-pek3b
     host: pek3b.qsstor.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: pek3b
     city: Beijing
     country: CN
@@ -45,7 +45,7 @@ targets:
       bytes: 231
   - name: QingCloud-sh1a
     host: sh1a.qsstor.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sh1a
     city: Shanghai
     country: CN
@@ -59,7 +59,7 @@ targets:
       bytes: 231
   - name: QingCloud-gd2
     host: gd2.qsstor.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     notes: "ping dropped: 20-100% ICMP loss in a 7-minute fyisp run on 2026-09-27 while TCP/HTTPS were clean (ICMP filtered or rate-limited), so ping is not measured"
     region: gd2
     city: Guangzhou

@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: UCloud-cn-bj2
     host: s3-cn-bj.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-bj2
     city: Beijing
     country: CN
@@ -48,7 +48,7 @@ targets:
       bytes: 0
   - name: UCloud-cn-wlcb
     host: s3-cn-wlcb.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-wlcb
     city: Ulanqab
     country: CN
@@ -78,7 +78,7 @@ targets:
       bytes: 0
   - name: UCloud-cn-sh2
     host: s3-cn-sh2.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-sh2
     city: Shanghai
     country: CN
@@ -124,7 +124,7 @@ targets:
       bytes: 0
   - name: UCloud-cn-gd
     host: s3-cn-gd.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-gd
     city: Guangzhou
     country: CN
@@ -154,7 +154,7 @@ targets:
       bytes: 0
   - name: UCloud-cn-guiyang1
     host: s3-cn-guiyang1.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-guiyang1
     city: Guiyang
     country: CN
@@ -168,7 +168,7 @@ targets:
       bytes: 204
   - name: UCloud-hk
     host: s3-hk.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hk
     city: Hong Kong
     country: HK
@@ -182,7 +182,7 @@ targets:
       bytes: 204
   - name: UCloud-tw-tp
     host: s3-tw-tp.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tw-tp
     city: Taipei
     country: TW
@@ -196,7 +196,7 @@ targets:
       bytes: 204
   - name: UCloud-sg
     host: s3-sg.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sg
     city: Singapore
     country: SG
@@ -210,7 +210,7 @@ targets:
       bytes: 204
   - name: UCloud-jpn-tky
     host: s3-jpn-tky.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jpn-tky
     city: Tokyo
     country: JP
@@ -224,7 +224,7 @@ targets:
       bytes: 204
   - name: UCloud-kr-seoul
     host: s3-kr-seoul.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: kr-seoul
     city: Seoul
     country: KR
@@ -238,7 +238,7 @@ targets:
       bytes: 204
   - name: UCloud-th-bkk
     host: s3-th-bkk.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: th-bkk
     city: Bangkok
     country: TH
@@ -252,7 +252,7 @@ targets:
       bytes: 204
   - name: UCloud-idn-jakarta
     host: s3-idn-jakarta.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: idn-jakarta
     city: Jakarta
     country: ID
@@ -266,7 +266,7 @@ targets:
       bytes: 204
   - name: UCloud-vn-sng
     host: s3-vn-sng.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: vn-sng
     city: Ho Chi Minh City
     country: VN
@@ -296,7 +296,7 @@ targets:
       bytes: 0
   - name: UCloud-ind-mumbai
     host: s3-ind-mumbai.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ind-mumbai
     city: Mumbai
     country: IN
@@ -310,7 +310,7 @@ targets:
       bytes: 204
   - name: UCloud-pk-khi
     host: s3-pk-khi.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: pk-khi
     city: Karachi
     country: PK
@@ -324,7 +324,7 @@ targets:
       bytes: 204
   - name: UCloud-us-den
     host: s3-us-den.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-den
     city: Denver
     country: US
@@ -338,7 +338,7 @@ targets:
       bytes: 204
   - name: UCloud-us-ca
     host: s3-us-ca.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-ca
     city: Los Angeles
     country: US
@@ -352,7 +352,7 @@ targets:
       bytes: 204
   - name: UCloud-us-ws
     host: s3-us-ws.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-ws
     city: Washington
     country: US
@@ -366,7 +366,7 @@ targets:
       bytes: 204
   - name: UCloud-bra-saopaulo
     host: s3-bra-saopaulo.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bra-saopaulo
     city: Sao Paulo
     country: BR
@@ -380,7 +380,7 @@ targets:
       bytes: 204
   - name: UCloud-ge-fra
     host: s3-ge-fra.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ge-fra
     city: Frankfurt
     country: DE
@@ -394,7 +394,7 @@ targets:
       bytes: 204
   - name: UCloud-uk-london
     host: s3-uk-london.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uk-london
     city: London
     country: GB
@@ -408,7 +408,7 @@ targets:
       bytes: 204
   - name: UCloud-uae-dubai
     host: s3-uae-dubai.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uae-dubai
     city: Dubai
     country: AE
@@ -422,7 +422,7 @@ targets:
       bytes: 204
   - name: UCloud-afr-nigeria
     host: s3-afr-nigeria.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: afr-nigeria
     city: Lagos
     country: NG
@@ -436,7 +436,7 @@ targets:
       bytes: 204
   - name: UCloud-uz-tas
     host: s3-uz-tas.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: uz-tas
     city: Tashkent
     country: UZ
@@ -450,7 +450,7 @@ targets:
       bytes: 204
   - name: UCloud-kz-ala
     host: s3-kz-ala.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: kz-ala
     city: Almaty
     country: KZ
@@ -464,7 +464,7 @@ targets:
       bytes: 204
   - name: UCloud-mx-mex
     host: s3-mx-mex.ufileos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mx-mex
     city: Mexico City
     country: MX

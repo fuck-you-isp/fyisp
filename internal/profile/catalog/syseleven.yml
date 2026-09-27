@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: SysEleven-ham1
     host: objectstorage-replicated.ham1.cloud.syseleven.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ham1
     city: Hamburg
     country: DE
@@ -31,7 +31,7 @@ targets:
       bytes: 187
   - name: SysEleven-dus2
     host: objectstorage-replicated.dus2.cloud.syseleven.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dus2
     city: Duesseldorf
     country: DE
@@ -45,7 +45,7 @@ targets:
       bytes: 187
   - name: SysEleven-cbk
     host: s3.cbk.cloud.syseleven.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cbk
     city: Berlin
     country: DE
@@ -60,7 +60,7 @@ targets:
       bytes: 174
   - name: SysEleven-dbl
     host: s3.dbl.cloud.syseleven.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dbl
     city: Berlin
     country: DE
@@ -75,7 +75,7 @@ targets:
       bytes: 174
   - name: SysEleven-fes
     host: s3.fes.cloud.syseleven.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fes
     city: Frankfurt
     country: DE

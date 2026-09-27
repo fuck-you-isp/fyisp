@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: NIPACloud-BKK
     host: s3-bkk.nipa.cloud
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bkk
     city: Bangkok
     country: TH

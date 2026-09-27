@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: CTYun-ahwh
     host: oos-ahwh.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ahwh
     city: Wuhu
     country: CN
@@ -34,7 +34,7 @@ targets:
       bytes: 204
   - name: CTYun-hbwh
     host: oos-hbwh.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hbwh
     city: Wuhan
     country: CN
@@ -48,7 +48,7 @@ targets:
       bytes: 204
   - name: CTYun-gslz
     host: oos-gslz.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: gslz
     city: Lanzhou
     country: CN
@@ -62,7 +62,7 @@ targets:
       bytes: 204
   - name: CTYun-hazz
     host: oos-hazz.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hazz
     city: Zhengzhou
     country: CN
@@ -76,7 +76,7 @@ targets:
       bytes: 204
   - name: CTYun-gzgy
     host: oos-gzgy.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: gzgy
     city: Guiyang
     country: CN
@@ -90,7 +90,7 @@ targets:
       bytes: 204
   - name: CTYun-hesjz
     host: oos-hesjz.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hesjz
     city: Shijiazhuang
     country: CN
@@ -104,7 +104,7 @@ targets:
       bytes: 204
   - name: CTYun-gdsz
     host: oos-gdsz.ctyunapi.cn
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: gdsz
     city: Shenzhen
     country: CN
@@ -120,7 +120,7 @@ targets:
       bytes: 204
   - name: CTYun-sdqd
     host: oos-sdqd.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sdqd
     city: Qingdao
     country: CN
@@ -134,7 +134,7 @@ targets:
       bytes: 204
   - name: CTYun-xjwlmq
     host: oos-xjwlmq.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: xjwlmq
     city: Urumqi
     country: CN
@@ -148,7 +148,7 @@ targets:
       bytes: 204
   - name: CTYun-lnsy
     host: oos-lnsy.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lnsy
     city: Shenyang
     country: CN
@@ -162,7 +162,7 @@ targets:
       bytes: 204
   - name: CTYun-sccd
     host: oos-sccd.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sccd
     city: Chengdu
     country: CN
@@ -176,7 +176,7 @@ targets:
       bytes: 204
   - name: CTYun-jssz
     host: oos-jssz.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jssz
     city: Suzhou
     country: CN
@@ -192,7 +192,7 @@ targets:
       bytes: 204
   - name: CTYun-sh
     host: oos-sh.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sh
     city: Shanghai
     country: CN
@@ -206,7 +206,7 @@ targets:
       bytes: 204
   - name: CTYun-hq-sh
     host: oos-hq-sh.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hq-sh
     city: Shanghai
     country: CN
@@ -220,7 +220,7 @@ targets:
       bytes: 204
   - name: CTYun-hq-bj
     host: oos-hq-bj.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hq-bj
     city: Beijing
     country: CN
@@ -236,7 +236,7 @@ targets:
       bytes: 204
   - name: CTYun-hz
     host: oos-hz.ctyunapi.cn
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hz
     city: Hangzhou
     country: CN

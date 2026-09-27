@@ -56,16 +56,17 @@ type Provider struct {
 type CatalogTarget struct {
 	Name    string   `yaml:"name"`
 	Host    string   `yaml:"host"`
-	Kinds   []string `yaml:"kinds"`
-	Port    int      `yaml:"port"`
-	Path    string   `yaml:"path"`
+	Kinds   []string `yaml:"kinds"` // [tcp], or [] while unreachable
+	Port    int      `yaml:"port"`  // TCP port, default 443
+	Path    string   `yaml:"path"`  // historical HTTPS path: validated, not probed
 	Region  string   `yaml:"region"`
 	City    string   `yaml:"city"`
 	Country string   `yaml:"country"`
 	Geo     string   `yaml:"geo"`
 	Anycast bool     `yaml:"anycast"`
 	Tags    []string `yaml:"tags"`
-	// HostOverrides probes some kinds on another host (kind -> host).
+	// HostOverrides probes some kinds on another host (kind -> host). Only
+	// tcp is used; https and icmp entries are historical (see SCHEMA.md).
 	HostOverrides map[string]string `yaml:"host_overrides"`
 	// Verified and Notes are research metadata: accepted in any shape,
 	// never used for probing.
@@ -214,13 +215,17 @@ func (p *Provider) validate() error {
 			bad("target %q: host: %v", t.Name, err)
 		}
 		// Empty kinds mark a known but currently unreachable endpoint: kept
-		// in the catalog, skipped by every profile.
+		// in the catalog, skipped by every profile. Catalog targets are
+		// probed over TCP only.
 		ks := map[model.ProbeKind]bool{}
 		for _, k := range t.Kinds {
 			kind, err := parseKind(k)
-			if err != nil {
+			switch {
+			case err != nil:
 				bad("target %q: %v", t.Name, err)
-			} else if ks[kind] {
+			case kind != model.KindTCP:
+				bad("target %q: kind %s: catalog targets are probed over TCP only (kinds: [tcp], or [] while unreachable)", t.Name, kind)
+			case ks[kind]:
 				bad("target %q: kind %s listed twice", t.Name, kind)
 			}
 			ks[kind] = true

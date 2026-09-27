@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: OTC-eu-de
     host: iam.eu-de.otc.t-systems.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-de
     city: Magdeburg
     country: DE
@@ -31,7 +31,7 @@ targets:
       bytes: 260
   - name: OTC-eu-nl
     host: iam.eu-nl.otc.t-systems.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-nl
     city: Amsterdam
     country: NL
@@ -45,7 +45,7 @@ targets:
       bytes: 260
   - name: OTC-eu-ch2
     host: iam-pub.eu-ch2.sc.otc.t-systems.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-ch2
     city: Bern
     country: CH

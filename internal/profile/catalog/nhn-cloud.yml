@@ -29,7 +29,7 @@ targets:
       bytes: 70
   - name: NHN-kr2
     host: kr2-api-object-storage.nhncloudservice.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: KR2
     city: Pyeongchon
     country: KR
@@ -59,7 +59,7 @@ targets:
       bytes: 70
   - name: NHN-jp1
     host: jp1-api-object-storage.nhncloudservice.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: JP1
     city: Tokyo
     country: JP

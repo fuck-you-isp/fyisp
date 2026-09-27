@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: cloudflare-dns
     host: 1.1.1.1
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]
@@ -30,7 +30,7 @@ targets:
       bytes: 65
   - name: cloudflare-dns-2
     host: 1.0.0.1
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, secondary]
@@ -42,7 +42,7 @@ targets:
       bytes: 65
   - name: cloudflare-doh
     host: cloudflare-dns.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]

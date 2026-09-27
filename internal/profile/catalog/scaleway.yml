@@ -20,7 +20,7 @@ targets:
   - name: Scaleway-fr-par
     host: s3.fr-par.scw.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fr-par
     city: Paris
     country: FR
@@ -35,7 +35,7 @@ targets:
   - name: Scaleway-nl-ams
     host: s3.nl-ams.scw.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nl-ams
     city: Amsterdam
     country: NL
@@ -50,7 +50,7 @@ targets:
   - name: Scaleway-pl-waw
     host: s3.pl-waw.scw.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: pl-waw
     city: Warsaw
     country: PL
@@ -65,7 +65,7 @@ targets:
   - name: Scaleway-it-mil
     host: s3.it-mil.scw.cloud
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: it-mil
     city: Milan
     country: IT

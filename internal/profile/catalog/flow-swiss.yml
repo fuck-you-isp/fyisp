@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: FlowSwiss-ALP1
     host: os.alp1.flow.swiss
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ALP1
     city: Luzern
     country: CH
@@ -29,7 +29,7 @@ targets:
       bytes: 97
   - name: FlowSwiss-ALP2
     host: os.alp2.flow.swiss
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ALP2
     city: Luzern
     country: CH
@@ -44,7 +44,7 @@ targets:
       bytes: 97
   - name: FlowSwiss-ZRH1
     host: os.zrh1.flow.swiss
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ZRH1
     city: Zurich
     country: CH

@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: Outscale-eu-west-2
     host: api.eu-west-2.outscale.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west-2
     city: Paris
     country: FR
@@ -31,7 +31,7 @@ targets:
       bytes: 201
   - name: Outscale-cloudgouv-eu-west-1
     host: api.cloudgouv-eu-west-1.outscale.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cloudgouv-eu-west-1
     city: Paris
     country: FR
@@ -46,7 +46,7 @@ targets:
       bytes: 201
   - name: Outscale-us-east-2
     host: api.us-east-2.outscale.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-2
     city: Clifton, New Jersey
     country: US
@@ -60,7 +60,7 @@ targets:
       bytes: 201
   - name: Outscale-us-west-1
     host: oos.us-west-1.outscale.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: us-west-1
     city: San Jose
     country: US
@@ -75,7 +75,7 @@ targets:
       bytes: 174
   - name: Outscale-ap-northeast-1
     host: oos.ap-northeast-1.outscale.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: ap-northeast-1
     city: Tokyo
     country: JP

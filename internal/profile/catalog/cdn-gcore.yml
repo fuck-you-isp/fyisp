@@ -17,7 +17,7 @@ notes: >-
 targets:
   - name: CDN-Gcore
     host: gcore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/robots.txt"
     anycast: true
     tags: []

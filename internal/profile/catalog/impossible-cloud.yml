@@ -14,7 +14,7 @@ notes: >-
 targets:
   - name: ImpossibleCloud-eu-central-2
     host: eu-central-2.storage.impossibleapi.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: eu-central-2
     city: Frankfurt
     country: DE
@@ -28,7 +28,7 @@ targets:
       bytes: 198
   - name: ImpossibleCloud-eu-west-1
     host: eu-west-1.storage.impossibleapi.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: eu-west-1
     city: Amsterdam
     country: NL
@@ -42,7 +42,7 @@ targets:
       bytes: 197
   - name: ImpossibleCloud-eu-west-2
     host: eu-west-2.storage.impossibleapi.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: eu-west-2
     city: London
     country: GB
@@ -56,7 +56,7 @@ targets:
       bytes: 197
   - name: ImpossibleCloud-eu-west-3
     host: eu-west-3.storage.impossibleapi.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: eu-west-3
     city: Paris
     country: FR
@@ -70,7 +70,7 @@ targets:
       bytes: 197
   - name: ImpossibleCloud-eu-north-1
     host: eu-north-1.storage.impossibleapi.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: eu-north-1
     city: Copenhagen
     country: DK
@@ -84,7 +84,7 @@ targets:
       bytes: 197
   - name: ImpossibleCloud-us-east-1
     host: us-east-1.storage.impossibleapi.net
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: us-east-1
     city: New York
     country: US

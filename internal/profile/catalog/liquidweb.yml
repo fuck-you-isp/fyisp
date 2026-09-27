@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: LiquidWeb-Lansing
     host: lg.liquidweb.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: lan
     city: Lansing
     country: US
@@ -31,7 +31,7 @@ targets:
       tcp: true
   - name: LiquidWeb-Phoenix
     host: phoenix-test.liquidweb.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /robots.txt
     region: phx
     city: Phoenix
@@ -46,7 +46,7 @@ targets:
       bytes: 153
   - name: LiquidWeb-Amsterdam
     host: amsterdam-test.liquidweb.name
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 80
     region: ams
     city: Amsterdam

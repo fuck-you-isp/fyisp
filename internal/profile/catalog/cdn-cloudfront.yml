@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: CDN-CloudFront
     host: d1.awsstatic.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     anycast: true
     tags: [geodns]
     notes: >-

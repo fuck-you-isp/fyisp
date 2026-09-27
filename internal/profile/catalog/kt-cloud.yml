@@ -15,7 +15,7 @@ notes: >-
 targets:
   - name: KTCloud-Seoul
     host: obj-e-1.ktcloud.com
-    kinds: [https, tcp]
+    kinds: [tcp]
     region: obj-e-1
     city: Seoul
     country: KR

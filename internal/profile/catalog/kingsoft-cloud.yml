@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: Kingsoft-cn-beijing
     host: ks3-cn-beijing.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-beijing
     city: Beijing
     country: CN
@@ -31,7 +31,7 @@ targets:
       bytes: 238
   - name: Kingsoft-cn-shanghai
     host: ks3-cn-shanghai.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-shanghai
     city: Shanghai
     country: CN
@@ -62,7 +62,7 @@ targets:
       bytes: 263
   - name: Kingsoft-cn-qingyang
     host: ks3-cn-qingyang.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-qingyang
     city: Qingyang
     country: CN
@@ -76,7 +76,7 @@ targets:
       bytes: 263
   - name: Kingsoft-cn-qinghai
     host: ks3-cn-qinghai.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-qinghai
     city: Xining
     country: CN
@@ -91,7 +91,7 @@ targets:
       bytes: 238
   - name: Kingsoft-cn-ningxia
     host: ks3-cn-ningxia.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cn-ningxia
     city: Zhongwei
     country: CN
@@ -106,7 +106,7 @@ targets:
       bytes: 238
   - name: Kingsoft-jr-beijing
     host: ks3-jr-beijing.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jr-beijing
     city: Beijing
     country: CN
@@ -120,7 +120,7 @@ targets:
       bytes: 238
   - name: Kingsoft-jr-shanghai
     host: ks3-jr-shanghai.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jr-shanghai
     city: Shanghai
     country: CN
@@ -150,7 +150,7 @@ targets:
       bytes: 0
   - name: Kingsoft-sgp
     host: ks3-sgp.ksyuncs.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sgp
     city: Singapore
     country: SG

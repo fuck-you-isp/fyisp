@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: QazCloud-Astana
     host: s3.qazcloud.kz
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ast
     city: Astana
     country: KZ

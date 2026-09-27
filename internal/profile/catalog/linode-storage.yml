@@ -23,7 +23,7 @@ notes: >-
 targets:
   - name: LinodeObj-us-east-1
     host: us-east-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east-1
     city: Newark
     country: US
@@ -37,7 +37,7 @@ targets:
       bytes: 214
   - name: LinodeObj-us-southeast-1
     host: us-southeast-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-southeast-1
     city: Atlanta
     country: US
@@ -51,7 +51,7 @@ targets:
       bytes: 214
   - name: LinodeObj-us-iad-1
     host: us-iad-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-iad-1
     city: Washington
     country: US
@@ -65,7 +65,7 @@ targets:
       bytes: 214
   - name: LinodeObj-us-iad-18
     host: us-iad-18.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-iad-18
     city: Washington
     country: US
@@ -79,7 +79,7 @@ targets:
       bytes: 110
   - name: LinodeObj-us-ord-1
     host: us-ord-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-ord-1
     city: Chicago
     country: US
@@ -93,7 +93,7 @@ targets:
       bytes: 214
   - name: LinodeObj-us-sea-1
     host: us-sea-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-sea-1
     city: Seattle
     country: US
@@ -107,7 +107,7 @@ targets:
       bytes: 214
   - name: LinodeObj-us-lax-1
     host: us-lax-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-lax-1
     city: Los Angeles
     country: US
@@ -121,7 +121,7 @@ targets:
       bytes: 214
   - name: LinodeObj-us-mia-1
     host: us-mia-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-mia-1
     city: Miami
     country: US
@@ -135,7 +135,7 @@ targets:
       bytes: 214
   - name: LinodeObj-br-gru-1
     host: br-gru-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: br-gru-1
     city: Sao Paulo
     country: BR
@@ -149,7 +149,7 @@ targets:
       bytes: 214
   - name: LinodeObj-eu-central-1
     host: eu-central-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central-1
     city: Frankfurt
     country: DE
@@ -163,7 +163,7 @@ targets:
       bytes: 214
   - name: LinodeObj-de-fra-1
     host: de-fra-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de-fra-1
     city: Frankfurt
     country: DE
@@ -177,7 +177,7 @@ targets:
       bytes: 110
   - name: LinodeObj-fr-par-1
     host: fr-par-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fr-par-1
     city: Paris
     country: FR
@@ -191,7 +191,7 @@ targets:
       bytes: 214
   - name: LinodeObj-fr-par-13
     host: fr-par-13.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fr-par-13
     city: Paris
     country: FR
@@ -205,7 +205,7 @@ targets:
       bytes: 110
   - name: LinodeObj-se-sto-1
     host: se-sto-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: se-sto-1
     city: Stockholm
     country: SE
@@ -219,7 +219,7 @@ targets:
       bytes: 214
   - name: LinodeObj-nl-ams-1
     host: nl-ams-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nl-ams-1
     city: Amsterdam
     country: NL
@@ -233,7 +233,7 @@ targets:
       bytes: 214
   - name: LinodeObj-it-mil-1
     host: it-mil-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: it-mil-1
     city: Milan
     country: IT
@@ -247,7 +247,7 @@ targets:
       bytes: 214
   - name: LinodeObj-es-mad-1
     host: es-mad-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: es-mad-1
     city: Madrid
     country: ES
@@ -261,7 +261,7 @@ targets:
       bytes: 214
   - name: LinodeObj-gb-lon-1
     host: gb-lon-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: gb-lon-1
     city: London
     country: GB
@@ -275,7 +275,7 @@ targets:
       bytes: 110
   - name: LinodeObj-ap-south-1
     host: ap-south-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-south-1
     city: Singapore
     country: SG
@@ -289,7 +289,7 @@ targets:
       bytes: 214
   - name: LinodeObj-sg-sin-1
     host: sg-sin-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sg-sin-1
     city: Singapore
     country: SG
@@ -303,7 +303,7 @@ targets:
       bytes: 110
   - name: LinodeObj-jp-osa-1
     host: jp-osa-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-osa-1
     city: Osaka
     country: JP
@@ -317,7 +317,7 @@ targets:
       bytes: 214
   - name: LinodeObj-jp-tyo-1
     host: jp-tyo-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-tyo-1
     city: Tokyo
     country: JP
@@ -331,7 +331,7 @@ targets:
       bytes: 110
   - name: LinodeObj-in-maa-1
     host: in-maa-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: in-maa-1
     city: Chennai
     country: IN
@@ -345,7 +345,7 @@ targets:
       bytes: 214
   - name: LinodeObj-in-bom-1
     host: in-bom-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: in-bom-1
     city: Mumbai
     country: IN
@@ -359,7 +359,7 @@ targets:
       bytes: 110
   - name: LinodeObj-id-cgk-1
     host: id-cgk-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: id-cgk-1
     city: Jakarta
     country: ID
@@ -373,7 +373,7 @@ targets:
       bytes: 214
   - name: LinodeObj-au-mel-1
     host: au-mel-1.linodeobjects.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: au-mel-1
     city: Melbourne
     country: AU

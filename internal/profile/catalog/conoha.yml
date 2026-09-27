@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: ConoHa-tyo1
     host: identity.tyo1.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tyo1
     city: Tokyo
     country: JP
@@ -30,7 +30,7 @@ targets:
       bytes: 327
   - name: ConoHa-tyo2
     host: identity.tyo2.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tyo2
     city: Tokyo
     country: JP
@@ -44,7 +44,7 @@ targets:
       bytes: 327
   - name: ConoHa-tyo3
     host: identity.tyo3.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tyo3
     city: Tokyo
     country: JP
@@ -58,7 +58,7 @@ targets:
       bytes: 327
   - name: ConoHa-c3j1
     host: identity.c3j1.conoha.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: c3j1
     city: Tokyo
     country: JP

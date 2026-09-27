@@ -19,7 +19,7 @@ notes: >-
 targets:
   - name: plusserver-pco-prod1
     host: prod1.api.pco.get-cloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 5000
     region: prod1
     city: Cologne
@@ -35,7 +35,7 @@ targets:
       bytes: 282
   - name: plusserver-pco-prod2
     host: prod2.api.pco.get-cloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 5000
     region: prod2
     city: Hamburg
@@ -51,7 +51,7 @@ targets:
       bytes: 282
   - name: plusserver-pco-prod3
     host: prod3.api.pco.get-cloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 5000
     region: prod3
     city: Hamburg
@@ -67,7 +67,7 @@ targets:
       bytes: 282
   - name: plusserver-pco-prod4
     host: prod4.api.pco.get-cloud.io
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 5000
     region: prod4
     city: Duesseldorf
@@ -83,7 +83,7 @@ targets:
       bytes: 282
   - name: plusserver-s3-de-west-1
     host: s3.de-west-1.psmanaged.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de-west-1
     city: Cologne
     country: DE
@@ -98,7 +98,7 @@ targets:
       bytes: 213
   - name: plusserver-s3-de-north-2
     host: s3.de-north-2.psmanaged.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de-north-2
     city: Hamburg
     country: DE

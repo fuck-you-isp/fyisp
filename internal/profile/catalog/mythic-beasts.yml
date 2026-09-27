@@ -23,7 +23,7 @@ targets:
   - name: MythicBeasts-London-SOV
     host: mirror-sov-a.mythic-beasts.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sov
     city: London
     country: GB
@@ -37,7 +37,7 @@ targets:
       bytes: 333
   - name: MythicBeasts-London-CLL
     host: cll.proxy.mythic-beasts.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: cll
     city: London
     country: GB
@@ -51,7 +51,7 @@ targets:
   - name: MythicBeasts-Cambridge
     host: mirror-cam-a.mythic-beasts.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cam
     city: Cambridge
     country: GB
@@ -65,7 +65,7 @@ targets:
       bytes: 333
   - name: MythicBeasts-Amsterdam
     host: ns2.mythic-beasts.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     port: 53
     region: ams
     city: Amsterdam

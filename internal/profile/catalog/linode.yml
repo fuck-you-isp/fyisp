@@ -23,7 +23,7 @@ targets:
   - name: Linode-us-southeast
     host: speedtest.atlanta.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-southeast
     city: Atlanta
     country: US
@@ -38,7 +38,7 @@ targets:
   - name: Linode-us-ord
     host: speedtest.chicago.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-ord
     city: Chicago
     country: US
@@ -53,7 +53,7 @@ targets:
   - name: Linode-us-central
     host: speedtest.dallas.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-central
     city: Dallas
     country: US
@@ -68,7 +68,7 @@ targets:
   - name: Linode-us-west
     host: speedtest.fremont.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-west
     city: Fremont
     country: US
@@ -83,7 +83,7 @@ targets:
   - name: Linode-us-lax
     host: speedtest.los-angeles.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-lax
     city: Los Angeles
     country: US
@@ -98,7 +98,7 @@ targets:
   - name: Linode-us-mia
     host: speedtest.miami.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-mia
     city: Miami
     country: US
@@ -113,7 +113,7 @@ targets:
   - name: Linode-us-east
     host: speedtest.newark.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-east
     city: Newark
     country: US
@@ -128,7 +128,7 @@ targets:
   - name: Linode-us-sea
     host: speedtest.seattle.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-sea
     city: Seattle
     country: US
@@ -143,7 +143,7 @@ targets:
   - name: Linode-us-iad
     host: speedtest.washington.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-iad
     city: "Washington, DC"
     country: US
@@ -158,7 +158,7 @@ targets:
   - name: Linode-ca-central
     host: speedtest.toronto1.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ca-central
     city: Toronto
     country: CA
@@ -173,7 +173,7 @@ targets:
   - name: Linode-br-gru
     host: speedtest.sao-paulo.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: br-gru
     city: Sao Paulo
     country: BR
@@ -188,7 +188,7 @@ targets:
   - name: Linode-nl-ams
     host: speedtest.amsterdam.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nl-ams
     city: Amsterdam
     country: NL
@@ -203,7 +203,7 @@ targets:
   - name: Linode-eu-central
     host: speedtest.frankfurt.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-central
     city: Frankfurt
     country: DE
@@ -218,7 +218,7 @@ targets:
   - name: Linode-de-fra-2
     host: de-fra-2.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: de-fra-2
     city: Frankfurt
     country: DE
@@ -233,7 +233,7 @@ targets:
   - name: Linode-eu-west
     host: speedtest.london.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: eu-west
     city: London
     country: GB
@@ -248,7 +248,7 @@ targets:
   - name: Linode-gb-lon
     host: gb-lon.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: gb-lon
     city: London
     country: GB
@@ -263,7 +263,7 @@ targets:
   - name: Linode-es-mad
     host: speedtest.madrid.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: es-mad
     city: Madrid
     country: ES
@@ -278,7 +278,7 @@ targets:
   - name: Linode-it-mil
     host: speedtest.milan.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: it-mil
     city: Milan
     country: IT
@@ -293,7 +293,7 @@ targets:
   - name: Linode-fr-par
     host: speedtest.paris.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fr-par
     city: Paris
     country: FR
@@ -308,7 +308,7 @@ targets:
   - name: Linode-se-sto
     host: speedtest.stockholm.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: se-sto
     city: Stockholm
     country: SE
@@ -323,7 +323,7 @@ targets:
   - name: Linode-in-maa
     host: speedtest.chennai.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: in-maa
     city: Chennai
     country: IN
@@ -338,7 +338,7 @@ targets:
   - name: Linode-id-cgk
     host: speedtest.jakarta.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: id-cgk
     city: Jakarta
     country: ID
@@ -353,7 +353,7 @@ targets:
   - name: Linode-ap-west
     host: speedtest.mumbai1.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-west
     city: Mumbai
     country: IN
@@ -368,7 +368,7 @@ targets:
   - name: Linode-in-bom-2
     host: in-bom-2.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: in-bom-2
     city: Mumbai
     country: IN
@@ -383,7 +383,7 @@ targets:
   - name: Linode-jp-osa
     host: speedtest.osaka.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-osa
     city: Osaka
     country: JP
@@ -398,7 +398,7 @@ targets:
   - name: Linode-ap-south
     host: speedtest.singapore.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-south
     city: Singapore
     country: SG
@@ -413,7 +413,7 @@ targets:
   - name: Linode-sg-sin-2
     host: sg-sin-2.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sg-sin-2
     city: Singapore
     country: SG
@@ -428,7 +428,7 @@ targets:
   - name: Linode-ap-northeast
     host: speedtest.tokyo2.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-northeast
     city: Tokyo
     country: JP
@@ -443,7 +443,7 @@ targets:
   - name: Linode-jp-tyo-3
     host: jp-tyo-3.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: jp-tyo-3
     city: Tokyo
     country: JP
@@ -458,7 +458,7 @@ targets:
   - name: Linode-au-mel
     host: au-mel.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: au-mel
     city: Melbourne
     country: AU
@@ -473,7 +473,7 @@ targets:
   - name: Linode-ap-southeast
     host: speedtest.sydney.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ap-southeast
     city: Sydney
     country: AU
@@ -488,7 +488,7 @@ targets:
   - name: Linode-us-iad-2
     host: us-iad-2.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: us-iad-2
     city: "Washington, DC"
     country: US
@@ -503,7 +503,7 @@ targets:
   - name: Linode-fr-par-2
     host: fr-par-2.speedtest.linode.com
     path: /robots.txt
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fr-par-2
     city: Paris
     country: FR

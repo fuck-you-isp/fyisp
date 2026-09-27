@@ -16,7 +16,7 @@ notes: >-
 targets:
   - name: Glesys-Falkenberg
     host: objects.dc-fbg1.glesys.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc-fbg1
     city: Falkenberg
     country: SE
@@ -30,7 +30,7 @@ targets:
       bytes: 187
   - name: Glesys-Stockholm
     host: objects.dc-sto1.glesys.net
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: dc-sto1
     city: Stockholm
     country: SE

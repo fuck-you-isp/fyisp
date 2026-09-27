@@ -13,7 +13,7 @@ notes: >-
 targets:
   - name: HostUp-Stockholm
     host: speedtest.hostup.se
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sto
     city: Stockholm
     country: SE

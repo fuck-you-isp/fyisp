@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: Cleura-Sto2
     host: sto2.citycloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 5000
     region: sto2
     city: Stockholm
@@ -34,7 +34,7 @@ targets:
       bytes: 274
   - name: Cleura-Kna1
     host: kna1.citycloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 5000
     region: kna1
     city: Karlskrona
@@ -50,7 +50,7 @@ targets:
       bytes: 274
   - name: Cleura-Fra1
     host: fra1.citycloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     port: 5000
     region: fra1
     city: Frankfurt

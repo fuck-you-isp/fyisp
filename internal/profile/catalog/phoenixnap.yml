@@ -19,7 +19,7 @@ notes: >-
 targets:
   - name: phoenixNAP-phx
     host: speedtest.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: PHX
     city: Phoenix
     country: US
@@ -31,7 +31,7 @@ targets:
       tcp: true
   - name: phoenixNAP-ash
     host: speedash.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     notes: TLS certificate expired 2026-05-28 (and no intermediate chain); tcp/icmp only
     region: ASH
     city: Ashburn
@@ -44,7 +44,7 @@ targets:
       tcp: true
   - name: phoenixNAP-atl
     host: speedatl.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: ATL
     city: Atlanta
     country: US
@@ -56,7 +56,7 @@ targets:
       tcp: true
   - name: phoenixNAP-chi
     host: speedchi.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: CHI
     city: Chicago
     country: US
@@ -68,7 +68,7 @@ targets:
       tcp: true
   - name: phoenixNAP-nld
     host: speednld.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: NLD
     city: Amsterdam
     country: NL
@@ -80,7 +80,7 @@ targets:
       tcp: true
   - name: phoenixNAP-sgp
     host: speedsin.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: SGP
     city: Singapore
     country: SG
@@ -92,7 +92,7 @@ targets:
       tcp: true
   - name: phoenixNAP-srb
     host: speedsrb.phoenixnap.com
-    kinds: [tcp, icmp]
+    kinds: [tcp]
     region: SRB
     city: Belgrade
     country: RS

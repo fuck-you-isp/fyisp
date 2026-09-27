@@ -23,7 +23,7 @@ notes: >-
 targets:
   - name: DO-nyc3
     host: nyc3.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nyc3
     city: New York
     country: US
@@ -37,7 +37,7 @@ targets:
       bytes: 214
   - name: DO-sfo2
     host: sfo2.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sfo2
     city: San Francisco
     country: US
@@ -51,7 +51,7 @@ targets:
       bytes: 214
   - name: DO-sfo3
     host: sfo3.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sfo3
     city: San Francisco
     country: US
@@ -65,7 +65,7 @@ targets:
       bytes: 214
   - name: DO-tor1
     host: tor1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: tor1
     city: Toronto
     country: CA
@@ -79,7 +79,7 @@ targets:
       bytes: 214
   - name: DO-atl1
     host: atl1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: atl1
     city: Atlanta
     country: US
@@ -93,7 +93,7 @@ targets:
       bytes: 214
   - name: DO-ric1
     host: ric1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ric1
     city: Richmond
     country: US
@@ -107,7 +107,7 @@ targets:
       bytes: 214
   - name: DO-mkc1
     host: mkc1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mkc1
     city: Kansas City
     country: US
@@ -121,7 +121,7 @@ targets:
       bytes: 214
   - name: DO-mem1
     host: mem1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: mem1
     city: Memphis
     country: US
@@ -135,7 +135,7 @@ targets:
       bytes: 214
   - name: DO-ams3
     host: ams3.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: ams3
     city: Amsterdam
     country: NL
@@ -149,7 +149,7 @@ targets:
       bytes: 214
   - name: DO-lon1
     host: lon1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: lon1
     city: London
     country: GB
@@ -163,7 +163,7 @@ targets:
       bytes: 214
   - name: DO-fra1
     host: fra1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: fra1
     city: Frankfurt
     country: DE
@@ -177,7 +177,7 @@ targets:
       bytes: 214
   - name: DO-sgp1
     host: sgp1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: sgp1
     city: Singapore
     country: SG
@@ -191,7 +191,7 @@ targets:
       bytes: 214
   - name: DO-blr1
     host: blr1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: blr1
     city: Bangalore
     country: IN
@@ -205,7 +205,7 @@ targets:
       bytes: 214
   - name: DO-syd1
     host: syd1.digitaloceanspaces.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: syd1
     city: Sydney
     country: AU

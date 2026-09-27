@@ -23,7 +23,7 @@ notes: >-
 targets:
   - name: Baidu-bj
     host: bls-log.bj.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bj
     city: Beijing
     country: CN
@@ -38,7 +38,7 @@ targets:
       bytes: 128
   - name: Baidu-gz
     host: bls-log.gz.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: gz
     city: Guangzhou
     country: CN
@@ -52,7 +52,7 @@ targets:
       bytes: 128
   - name: Baidu-su
     host: bcc.su.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: su
     city: Suzhou
     country: CN
@@ -66,7 +66,7 @@ targets:
       bytes: 130
   - name: Baidu-nj
     host: bls-log.nj.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: nj
     city: Nanjing
     country: CN
@@ -81,7 +81,7 @@ targets:
       bytes: 128
   - name: Baidu-cd
     host: bls-log.cd.baidubce.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: cd
     city: Chengdu
     country: CN
@@ -95,7 +95,7 @@ targets:
       bytes: 128
   - name: Baidu-bd
     host: bd.bcebos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: bd
     city: Baoding
     country: CN
@@ -110,7 +110,7 @@ targets:
       bytes: 101
   - name: Baidu-yq
     host: yq.bcebos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: yq
     city: Yangquan
     country: CN
@@ -125,7 +125,7 @@ targets:
       bytes: 101
   - name: Baidu-hkg
     host: hkg.bcebos.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     region: hkg
     city: Hong Kong
     country: HK

@@ -18,7 +18,7 @@ notes: >-
 targets:
   - name: CloudSigma-GVA
     host: direct.gva.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: ZRH
     city: Geneva
@@ -34,7 +34,7 @@ targets:
       bytes: 0
   - name: CloudSigma-FRA
     host: direct.fra.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: FRA
     city: Frankfurt
@@ -49,7 +49,7 @@ targets:
       bytes: 0
   - name: CloudSigma-DUS
     host: direct.dus.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: DUS
     city: Duesseldorf
@@ -64,7 +64,7 @@ targets:
       bytes: 0
   - name: CloudSigma-DUB
     host: direct.ec.servecentric.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: DUB
     city: Dublin
@@ -80,7 +80,7 @@ targets:
       bytes: 0
   - name: CloudSigma-WDC
     host: direct.wdc.alpha3cloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: WDC
     city: Ashburn
@@ -96,7 +96,7 @@ targets:
       bytes: 0
   - name: CloudSigma-MTY
     host: direct.mty.stratospherecloud.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: MTY
     city: Monterrey
@@ -112,7 +112,7 @@ targets:
       bytes: 0
   - name: CloudSigma-CAI
     host: direct.cai.cloudadore.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: CAI
     city: Cairo
@@ -128,7 +128,7 @@ targets:
       bytes: 0
   - name: CloudSigma-RUH
     host: direct.ruh.cld.v2.sa
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: RUH
     city: Riyadh
@@ -143,7 +143,7 @@ targets:
       bytes: 0
   - name: CloudSigma-TYO
     host: direct.tyo.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: TYO
     city: Tokyo
@@ -158,7 +158,7 @@ targets:
       bytes: 0
   - name: CloudSigma-JHB
     host: direct.jhb.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: JHB
     city: Johor Bahru
@@ -173,7 +173,7 @@ targets:
       bytes: 0
   - name: CloudSigma-MNL
     host: direct.mnl.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: MNL
     city: Manila
@@ -188,7 +188,7 @@ targets:
       bytes: 0
   - name: CloudSigma-MNL2
     host: direct.mnl2.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: MNL2
     city: Manila
@@ -203,7 +203,7 @@ targets:
       bytes: 0
   - name: CloudSigma-CRK
     host: direct.crk.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: CRK
     city: Clark
@@ -218,7 +218,7 @@ targets:
       bytes: 0
   - name: CloudSigma-PER
     host: direct.per.cloudsigma.com
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: /api/2.0/balance/
     region: PER
     city: Perth

@@ -11,7 +11,7 @@ notes: >-
 targets:
   - name: dnssb-dns
     host: 185.222.222.222
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh]
@@ -23,7 +23,7 @@ targets:
       bytes: 106
   - name: dnssb-dns-2
     host: 45.11.45.11
-    kinds: [https, tcp, icmp]
+    kinds: [tcp]
     path: "/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB"
     anycast: true
     tags: [doh, secondary]
