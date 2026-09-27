@@ -1,0 +1,225 @@
+provider: ovh-storage
+display: OVHcloud Object Storage
+kind: cloud
+category: [storage]
+sources:
+  - https://help.ovhcloud.com/csm/en-public-cloud-storage-s3-location
+  - https://www.ovhcloud.com/en/public-cloud/regions-availability/
+notes: >-
+  OVHcloud Public Cloud Object Storage S3 endpoints s3.<region>.io.cloud.ovh.net (.ovh.us for the US
+  regions), one per region. Anonymous GET / returns a 307 redirect with a ~247 B body. Complements the
+  ovh provider (Proof speed-test servers) and fills its gaps: Warsaw, Limburg (de), Toronto and Milan.
+  Caveat: gra, sbg and rbx resolve into the same /24 (141.95.161.0/24); their RTTs differ slightly
+  (26-34 ms from Helsinki) and fit northern/eastern France, but they may share a network front. The
+  .perf. hostnames are the same addresses and are not listed separately.
+targets:
+  - name: OVHObj-gra
+    host: s3.gra.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: gra
+    city: Gravelines
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-sbg
+    host: s3.sbg.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: sbg
+    city: Strasbourg
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-rbx
+    host: s3.rbx.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: rbx
+    city: Roubaix
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-de
+    host: s3.de.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: de
+    city: Limburg
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-uk
+    host: s3.uk.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: uk
+    city: London
+    country: GB
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-waw
+    host: s3.waw.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: waw
+    city: Warsaw
+    country: PL
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-eu-west-par
+    host: s3.eu-west-par.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: eu-west-par
+    city: Paris
+    country: FR
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-eu-south-mil
+    host: s3.eu-south-mil.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: eu-south-mil
+    city: Milan
+    country: IT
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-bhs
+    host: s3.bhs.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: bhs
+    city: Beauharnois
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-ca-east-tor
+    host: s3.ca-east-tor.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: ca-east-tor
+    city: Toronto
+    country: CA
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-us-east-va
+    host: s3.us-east-va.io.cloud.ovh.us
+    kinds: [https, tcp, icmp]
+    region: us-east-va
+    city: Vint Hill
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 243
+  - name: OVHObj-us-west-or
+    host: s3.us-west-or.io.cloud.ovh.us
+    kinds: [https, tcp, icmp]
+    region: us-west-or
+    city: Hillsboro
+    country: US
+    geo: na
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 243
+  - name: OVHObj-sgp
+    host: s3.sgp.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: sgp
+    city: Singapore
+    country: SG
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-ap-south-mum
+    host: s3.ap-south-mum.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: ap-south-mum
+    city: Mumbai
+    country: IN
+    geo: as
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247
+  - name: OVHObj-ap-southeast-syd
+    host: s3.ap-southeast-syd.io.cloud.ovh.net
+    kinds: [https, tcp, icmp]
+    region: ap-southeast-syd
+    city: Sydney
+    country: AU
+    geo: oc
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 307
+      bytes: 247

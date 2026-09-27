@@ -1,0 +1,23 @@
+provider: filebase
+display: Filebase
+kind: cloud
+category: [storage]
+sources:
+  - https://docs.filebase.com/api-documentation/s3-compatible-api
+notes: >-
+  Filebase exposes a single S3 endpoint, s3.filebase.com, which is GeoDNS-routed (US, Singapore and
+  European addresses on OVHcloud depending on the client), so it is listed once as anycast. Anonymous
+  GET / returns a 403 XML body (191 B).
+targets:
+  - name: Filebase
+    host: s3.filebase.com
+    kinds: [https, tcp, icmp]
+    anycast: true
+    notes: >-
+      GeoDNS: US, Singapore or European front depending on the client.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 403
+      bytes: 191

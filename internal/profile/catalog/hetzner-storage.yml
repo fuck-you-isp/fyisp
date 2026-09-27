@@ -1,0 +1,53 @@
+provider: hetzner-storage
+display: Hetzner Object Storage
+kind: cloud
+category: [storage]
+sources:
+  - https://docs.hetzner.com/storage/object-storage/overview/
+notes: >-
+  Hetzner Object Storage endpoints <location>.your-objectstorage.com for all three locations (fsn1,
+  nbg1, hel1). Anonymous GET / returns a 200 ListAllMyBuckets XML body (214 B). Separate from the
+  hetzner provider (speed-test hosts) so the storage front ends can be selected on their own.
+targets:
+  - name: HetznerObj-fsn1
+    host: fsn1.your-objectstorage.com
+    kinds: [https, tcp, icmp]
+    region: fsn1
+    city: Falkenstein
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: HetznerObj-nbg1
+    host: nbg1.your-objectstorage.com
+    kinds: [https, tcp, icmp]
+    region: nbg1
+    city: Nuremberg
+    country: DE
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214
+  - name: HetznerObj-hel1
+    host: hel1.your-objectstorage.com
+    kinds: [https, tcp, icmp]
+    region: hel1
+    city: Helsinki
+    country: FI
+    geo: eu
+    anycast: false
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 200
+      bytes: 214

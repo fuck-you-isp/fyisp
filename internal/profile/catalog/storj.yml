@@ -1,0 +1,25 @@
+provider: storj
+display: Storj
+kind: cloud
+category: [storage]
+sources:
+  - https://docs.storj.io/dcs/api/s3/s3-compatible-gateway
+  - https://docs.storj.io/learn/concepts/satellite
+notes: >-
+  Storj's hosted S3 gateway gateway.storjshare.io is a single GeoDNS name (European clients get
+  185.244.226.3, American and Asian clients 136.0.77.3). The satellite-specific names
+  gateway.{us1,eu1,ap1}.storjshare.io are not regional (ap1 and us1 resolve to the US address), so
+  only the global name is listed, as anycast. Anonymous GET / returns a 401 XML body (198 B).
+targets:
+  - name: Storj-gateway
+    host: gateway.storjshare.io
+    kinds: [https, tcp, icmp]
+    anycast: true
+    notes: >-
+      GeoDNS: resolves to a European or US gateway depending on the client.
+    verified:
+      date: 2026-09-27
+      icmp: true
+      tcp: true
+      https: 401
+      bytes: 198
