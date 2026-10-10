@@ -1260,6 +1260,13 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 		out.Problems = append(out.Problems, pr)
 	}
 	out.Counts.CallPatches = len(callRuns)
+	if span := out.To - out.From; span > 0 && !first.IsZero() {
+		measured := out.To - max(out.From, first.UnixMilli())
+		for _, sp := range off {
+			measured -= min(sp.To, out.To) - max(sp.From, out.From, first.UnixMilli())
+		}
+		out.Coverage = round2(max(0, float64(measured)) / float64(span))
+	}
 	// One app named when every app problem was about the same one; a
 	// long-standing block is a known issue, not a problem.
 	app, apps, known := "", map[string]bool{}, false

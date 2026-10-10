@@ -69,6 +69,7 @@
       "provider": 0,
       "other": 0
     },
+    "coverage": 1,
     "problems": [
       {
         "id": 12,
@@ -204,6 +205,7 @@
       "provider": 0,
       "other": 0
     },
+    "coverage": 0.91,
     "problems": [
       {
         "id": 12,

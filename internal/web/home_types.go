@@ -174,13 +174,16 @@ type HomeHistory struct {
 	To    int64  `json:"to"`
 	// FirstData is the first measurement in the store (0: none yet); days
 	// before it have no record.
-	FirstData int64          `json:"first_data,omitempty"`
-	Days      []HomeDay      `json:"days"`
-	Summary   string         `json:"summary"`
-	Counts    HomeCounts     `json:"counts"`
-	Sides     HomeSides      `json:"sides"`
-	Problems  []HomeProblem  `json:"problems"`
-	Work      *HomeWorkCalls `json:"work,omitempty"`
+	FirstData int64      `json:"first_data,omitempty"`
+	Days      []HomeDay  `json:"days"`
+	Summary   string     `json:"summary"`
+	Counts    HomeCounts `json:"counts"`
+	Sides     HomeSides  `json:"sides"`
+	// Coverage is the share of [From, To) that was measured: not before
+	// FirstData and not in an off span (0 to 1, two decimals).
+	Coverage float64        `json:"coverage"`
+	Problems []HomeProblem  `json:"problems"`
+	Work     *HomeWorkCalls `json:"work,omitempty"`
 	// Known is an ongoing known issue (a long-standing call block), shown
 	// after the summary: Text then Since formatted ("Some call connections
 	// have been blocked since" + "Fri 1:12 PM").
