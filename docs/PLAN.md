@@ -48,7 +48,7 @@ That's 1.69 GB of images using 7–9% of a CPU core and 187–451 MiB of RAM (me
   - Mode `nearby` tests 3 nearby providers and 1 far region every 15 minutes; mode `custom` tests the user's own list.
   - The catalog (45 servers, regions) is data in `internal/profile/catalog/iperf3/`, built in; it changes only with a release.
   - Busy servers fall back to another port, then another provider in the city, then a nearby city, and are recorded as busy, never slow.
-  - One queue for scheduled tests, Test now and "Test all servers" sweeps, also open to share-link visitors with per-visitor limits.
+  - One queue for scheduled tests, Test now and "Test every server" sweeps, also open to share-link visitors with per-visitor limits.
   - Scores against each server's 14-day p90; latency under load at the ISP edge and gateway every 150 ms per direction, lost probes counted; the connection type.
   - A finding that tells the ISP's network, one provider, one route and one server apart, with the ISP edge's idle RTT as the access-network control.
   - Probes during a test (+2 s) are masked as "not measured", so a test never starts an incident or a bad call minute. The masked share is shown in `/api/status`.

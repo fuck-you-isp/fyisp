@@ -2658,7 +2658,7 @@ const CALL_STATES = {
   unusable: { label: 'Unusable', head: 'Calls will break up' },
   blocked: { label: 'Blocked', head: 'Calls are blocked on this network' },
   not_enough_data: { label: 'Not enough data yet', head: 'Not enough data yet' },
-  server_not_answering: { label: 'This test server isn\'t answering, not your connection', head: 'The test servers aren\'t answering, not your connection' },
+  server_not_answering: { label: 'This test server isn\'t answering; your other call checks look normal', head: 'The test servers aren\'t answering; your other call checks look normal' },
 };
 const BAD_CALL = new Set(['poor', 'unusable']);
 /** @type {Object<string,string>} */
@@ -2985,7 +2985,7 @@ class Calls {
     const st = d.state, c = d.cause, p = d.path;
     if (st === 'good') return '';
     if (st === 'not_enough_data') return 'fyisp needs a few minutes of measurements of your call path.';
-    if (st === 'server_not_answering') return 'The call-path test servers stopped answering while the rest of your connection works: that is on their side.';
+    if (st === 'server_not_answering') return 'The call-path test servers stopped answering, while your other call checks look normal.';
     if (st === 'blocked') {
       const why = CALL_CAUSE[c?.kind || 'udp_blocked'];
       return d.quiet ? `It has been this way for hours (common on hotel and office networks): ${why}.` : `Blocked: ${why}.`;

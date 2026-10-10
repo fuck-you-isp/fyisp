@@ -1185,11 +1185,11 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 }
 
 /* Speed heatmap: one blue hue, lightness carries the value (ux-speed §6.1); worse = more contrast with the page. */
-:root { --hm1: #262c36; --hm2: #33496e; --hm3: #4d71b0; --hm4: #86a8e6; --hm5: #cfdcff; --hm-line: #3a4252; --hm-hatch: rgba(13, 13, 13, 0.25); }
+:root { --hm1: #363f50; --hm2: #3f5c90; --hm3: #5f86c8; --hm4: #93b3ec; --hm5: #d3e0ff; --hm-line: #4a5466; --hm-hatch: rgba(13, 13, 13, 0.25); }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) { --hm1: #f1f4f9; --hm2: #bacbe6; --hm3: #7f9dd0; --hm4: #4565ab; --hm5: #1d2c66; --hm-line: #d0d7e2; --hm-hatch: rgba(255, 255, 255, 0.25); }
+  :root:not([data-theme="dark"]) { --hm1: #c0cbdf; --hm2: #8ea6d1; --hm3: #6081c1; --hm4: #3c5ca3; --hm5: #1d2c66; --hm-line: #9aa7bd; --hm-hatch: rgba(255, 255, 255, 0.25); }
 }
-:root[data-theme="light"] { --hm1: #f1f4f9; --hm2: #bacbe6; --hm3: #7f9dd0; --hm4: #4565ab; --hm5: #1d2c66; --hm-line: #d0d7e2; --hm-hatch: rgba(255, 255, 255, 0.25); }
+:root[data-theme="light"] { --hm1: #c0cbdf; --hm2: #8ea6d1; --hm3: #6081c1; --hm4: #3c5ca3; --hm5: #1d2c66; --hm-line: #9aa7bd; --hm-hatch: rgba(255, 255, 255, 0.25); }
 .sp-evidence { display: flex; flex-direction: column; gap: 12px; }
 .sp-evidence > section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
 .sp-evidence h2 { margin: 0; font-size: 16px; }
@@ -1212,13 +1212,13 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-hm tr.sel .sp-rl .sp-rb { font-weight: 600; }
 .sp-hm tr.sel .sp-rl { box-shadow: inset 3px 0 0 var(--accent); padding-left: 6px; }
 .sp-grp th { text-align: left; padding: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
-.sp-c { height: 24px; border-radius: 3px; background: var(--hm1); box-shadow: inset 0 0 0 1px var(--hm-line); cursor: pointer; text-align: center; font-size: 11px; position: relative; }
-.sp-c.b2 { background: var(--hm2); box-shadow: none; }
-.sp-c.b3 { background: var(--hm3); box-shadow: none; }
-.sp-c.b4 { background: var(--hm4); box-shadow: none; }
-.sp-c.b5 { background: var(--hm5) repeating-linear-gradient(45deg, var(--hm-hatch) 0 2px, transparent 2px 6px); box-shadow: none; }
-.sp-c.none { background: transparent; box-shadow: inset 0 0 0 1px var(--nodata); }
-.sp-c.few { background: color-mix(in srgb, var(--hm2) 50%, transparent); box-shadow: inset 0 0 0 1px var(--hm-line); }
+.sp-c { height: 24px; border-radius: 3px; background: var(--hm1); cursor: pointer; text-align: center; font-size: 11px; position: relative; }
+.sp-c.b2 { background: var(--hm2); }
+.sp-c.b3 { background: var(--hm3); }
+.sp-c.b4 { background: var(--hm4); }
+.sp-c.b5 { background: var(--hm5) repeating-linear-gradient(45deg, var(--hm-hatch) 0 2px, transparent 2px 6px); }
+.sp-c.none { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--nodata) 45%, transparent) 0 1px, transparent 1px 5px); box-shadow: inset 0 0 0 1px var(--nodata); }
+.sp-c.few { background: transparent; outline: 1px dashed var(--ink-2); outline-offset: -2px; }
 .sp-dot { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--ink-2); }
 .sp-c:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sp-hm.nums .sp-c { background: transparent; box-shadow: inset 0 0 0 1px var(--grid); color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -1353,3 +1353,9 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
   .sp-st td[data-k]::before { content: attr(data-k) ": "; color: var(--ink-2); font-size: 11px; }
   .sp-st td.sp-skip { margin-left: auto; }
 }
+
+/* Touch targets: at least 24 px for the heatmap's row names, its controls and the checkbox. */
+.sp-rb { display: inline-flex; align-items: center; min-height: 24px; }
+.sp-ctl .seg.sm button { min-height: 28px; }
+.sp-check input { width: 20px; height: 20px; margin: 0; }
+.sp-check { min-height: 28px; }
