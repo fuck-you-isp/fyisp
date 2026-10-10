@@ -41,6 +41,10 @@ type speedEntryJSON struct {
 	Direction  *string   `json:"direction"` // running: picking, download, upload
 	Tests      []int64   `json:"tests"`
 	WaitReason *string   `json:"wait_reason"` // waiting: "cooldown" (a share-link sweep held until est_start); else null
+	// StoppedReason: finished before its last test: "cancelled", "unreachable"
+	// (a sweep's servers stopped answering) or "limit" (the share link's
+	// budget or time); else null.
+	StoppedReason *string `json:"stopped_reason"`
 	// Results: a sweep's servers in order, with each one's status (part=entry
 	// and part=sweep only).
 	Results []speedJobJSON `json:"results,omitempty"`
@@ -54,6 +58,22 @@ type speedJobJSON struct {
 	// DownBps and UpBps: the result (ok only).
 	DownBps *float64 `json:"down_bps"`
 	UpBps   *float64 `json:"up_bps"`
+}
+
+// jobStatus is a sweep's job i before its stored test is looked up:
+// "testing", "waiting", or "skipped" (run without a stored result, e.g.
+// cancelled mid-test, or never reached by a finished sweep); a run job's
+// stored outcome replaces "skipped".
+func jobStatus(e speedtest.Entry, i int) string {
+	switch {
+	case i < e.Ran:
+		return "skipped"
+	case e.State == speedtest.StateRunning && i == e.Step-1:
+		return "testing"
+	case e.State == speedtest.StateWaiting || e.State == speedtest.StateRunning:
+		return "waiting"
+	}
+	return "skipped" // finished early: never reached
 }
 
 // speedResults fills a sweep entry's results from the stored tests.
@@ -74,20 +94,14 @@ func (s *server) speedResults(ctx context.Context, j *speedEntryJSON, e speedtes
 	}
 	j.Results = make([]speedJobJSON, len(e.Servers))
 	for i, id := range e.Servers {
-		r := speedJobJSON{Server: names.ref(id), Status: "waiting"}
-		switch {
-		case i < e.Ran:
-			r.Status = "skipped" // cancelled mid-test, or not saved
-			k := slices.IndexFunc(ts, func(t model.SpeedTest) bool { return t.ID == e.JobTests[i] })
-			if e.JobTests[i] != 0 && k >= 0 {
-				t := ts[k]
-				r.Status, r.Test = t.Outcome, &t.ID
-				if t.Outcome == model.SpeedOK {
-					r.DownBps, r.UpBps = t.DownBps, t.UpBps
-				}
+		r := speedJobJSON{Server: names.ref(id), Status: jobStatus(e, i)}
+		k := slices.IndexFunc(ts, func(t model.SpeedTest) bool { return t.ID == e.JobTests[i] })
+		if r.Status == "skipped" && i < e.Ran && e.JobTests[i] != 0 && k >= 0 {
+			t := ts[k]
+			r.Status, r.Test = t.Outcome, &t.ID
+			if t.Outcome == model.SpeedOK {
+				r.DownBps, r.UpBps = t.DownBps, t.UpBps
 			}
-		case e.State == speedtest.StateRunning && i == e.Step-1:
-			r.Status = "testing"
 		}
 		j.Results[i] = r
 	}
@@ -209,6 +223,7 @@ func (s *server) speedEntry(e speedtest.Entry, v speedViewer, st speedtest.State
 	if e.Held {
 		j.WaitReason = strPtr("cooldown")
 	}
+	j.StoppedReason = strPtr(e.Stopped)
 	if e.State == speedtest.StateRunning {
 		if e.Server != "" {
 			ref := names.ref(e.Server)
