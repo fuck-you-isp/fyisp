@@ -43,7 +43,7 @@
             "kind": "unusable",
             "label": "Call traffic",
             "source": "calls",
-            "text": "Calls were choppy. Nothing on this side looked wrong."
+            "text": "Calls were choppy. No cause was seen on this side."
           },
           {
             "from": 1791548460000,
@@ -167,7 +167,7 @@
             "kind": "unusable",
             "label": "Call traffic",
             "source": "calls",
-            "text": "Calls were choppy. Nothing on this side looked wrong."
+            "text": "Calls were choppy. No cause was seen on this side."
           },
           {
             "from": 1791548460000,
@@ -337,7 +337,7 @@
         "level": "good",
         "state": "reachable",
         "label": "Reachable",
-        "note": "Calls use the same call path (Breaking up)."
+        "note": "Same call quality as the other apps: Breaking up."
       },
       {
         "app": "meet",
@@ -351,41 +351,37 @@
         "title": "Zoom",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "slack",
         "title": "Slack",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "discord",
         "title": "Discord",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "webex",
         "title": "Webex",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       }
-    ]
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so they can't be tested ahead of time."
   }
 }

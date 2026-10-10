@@ -32,7 +32,7 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791548520000,
+            "from": 1791547500000,
             "to": 1791549000000,
             "level": "warn",
             "who": "app",
@@ -47,7 +47,7 @@
         "off": []
       }
     ],
-    "summary": "1 problem today, with apps or websites.",
+    "summary": "1 problem today, with Outlook.",
     "counts": {
       "problems": 1,
       "home": 0,
@@ -63,13 +63,13 @@
     "problems": [
       {
         "id": 41,
-        "from": 1791548520000,
+        "from": 1791547500000,
         "ongoing": true,
         "kind": "service",
         "who": "app",
         "where": "Outlook",
         "peak_loss": 1,
-        "details": "#v=calls\u0026from=1791546720000\u0026to=1791549000000\u0026o=1"
+        "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
       }
     ],
     "work": {
@@ -146,7 +146,7 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791548520000,
+            "from": 1791547500000,
             "to": 1791549000000,
             "level": "warn",
             "who": "app",
@@ -161,7 +161,7 @@
         "off": []
       }
     ],
-    "summary": "1 problem this week, with apps or websites.",
+    "summary": "1 problem this week, with Outlook.",
     "counts": {
       "problems": 1,
       "home": 0,
@@ -177,13 +177,13 @@
     "problems": [
       {
         "id": 41,
-        "from": 1791548520000,
+        "from": 1791547500000,
         "ongoing": true,
         "kind": "service",
         "who": "app",
         "where": "Outlook",
         "peak_loss": 1,
-        "details": "#v=calls\u0026from=1791546720000\u0026to=1791549000000\u0026o=1"
+        "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
       }
     ],
     "work": {
@@ -202,10 +202,9 @@
       "kind": "service",
       "calls": "good",
       "headline": "This connection is fine",
-      "cause": "Calls, work apps and websites are all working.",
-      "hint": "Outlook isn't answering from here. That's most likely a problem on their side.",
+      "cause": "Calls and websites are working. Outlook isn't answering from here. That's most likely a problem on their side.",
       "try": [],
-      "announce": "This connection is fine. Calls, work apps and websites are all working."
+      "announce": "This connection is fine. Calls and websites are working."
     },
     "path": [
       {
@@ -266,7 +265,7 @@
         "level": "warn",
         "state": "mostly",
         "label": "Mostly working",
-        "note": "Outlook isn't loading reliably from here. That's usually a problem on their side.",
+        "note": "Outlook isn't answering from here. That's most likely a problem on their side.",
         "names": [
           "Outlook",
           "Microsoft 365",
@@ -311,7 +310,7 @@
         "level": "good",
         "state": "reachable",
         "label": "Reachable",
-        "note": "Calls use the same call path (Good)."
+        "note": "Same call quality as the other apps: Good."
       },
       {
         "app": "meet",
@@ -325,41 +324,37 @@
         "title": "Zoom",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "slack",
         "title": "Slack",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "discord",
         "title": "Discord",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "webex",
         "title": "Webex",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so it can't be tested ahead of time."
+        "label": "Reachable"
       }
-    ]
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so they can't be tested ahead of time."
   }
 }

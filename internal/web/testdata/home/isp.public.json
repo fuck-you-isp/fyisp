@@ -41,7 +41,7 @@
             "level": "bad",
             "who": "provider",
             "kind": "isp",
-            "label": "Provider network",
+            "label": "Most likely the provider's network",
             "source": "incident",
             "incident": 22,
             "ongoing": true,
@@ -51,7 +51,7 @@
         "off": []
       }
     ],
-    "summary": "1 problem today, in the provider's network.",
+    "summary": "1 problem today, most likely in the provider's network.",
     "counts": {
       "problems": 1,
       "home": 0,
@@ -71,7 +71,7 @@
         "ongoing": true,
         "kind": "isp",
         "who": "provider",
-        "where": "Provider network (past the router)",
+        "where": "Most likely the provider network (past the router)",
         "peak_loss": 0.62,
         "details": "#v=calls\u0026from=1791546360000\u0026to=1791549000000\u0026o=1"
       }
@@ -119,7 +119,7 @@
             "level": "bad",
             "who": "provider",
             "kind": "isp",
-            "label": "Provider network",
+            "label": "Most likely the provider's network",
             "source": "incident",
             "incident": 21,
             "text": "The problem was most likely in the provider's network. The home network looked fine."
@@ -167,7 +167,7 @@
             "level": "bad",
             "who": "provider",
             "kind": "isp",
-            "label": "Provider network",
+            "label": "Most likely the provider's network",
             "source": "incident",
             "incident": 22,
             "ongoing": true,
@@ -177,7 +177,7 @@
         "off": []
       }
     ],
-    "summary": "2 problems this week, both in the provider's network.",
+    "summary": "2 problems this week, both most likely in the provider's network.",
     "counts": {
       "problems": 2,
       "home": 0,
@@ -197,7 +197,7 @@
         "ongoing": true,
         "kind": "isp",
         "who": "provider",
-        "where": "Provider network (past the router)",
+        "where": "Most likely the provider network (past the router)",
         "peak_loss": 0.62,
         "details": "#v=calls\u0026from=1791546360000\u0026to=1791549000000\u0026o=1"
       },
@@ -207,7 +207,7 @@
         "to": 1791204960000,
         "kind": "isp",
         "who": "provider",
-        "where": "Provider network (past the router)",
+        "where": "Most likely the provider network (past the router)",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791202260000\u0026to=1791206760000\u0026o=1"
       }
@@ -230,11 +230,11 @@
       "calls": "unusable",
       "since": 1791548160000,
       "headline": "The provider's network is having trouble",
-      "cause": "The home Wi-Fi and router are fine. The trouble starts just past them.",
+      "cause": "The home network (Wi-Fi and router) looks fine. The trouble starts just past it.",
       "try": [],
       "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
       "fact_at": 1791548700000,
-      "announce": "The provider's network is having trouble. The home Wi-Fi and router are fine."
+      "announce": "The provider's network is having trouble. The home network (Wi-Fi and router) looks fine."
     },
     "path": [
       {
@@ -256,6 +256,7 @@
         "state": "warn",
         "words": "Dropping some data",
         "blamed": true,
+        "culprit": "Problem is here",
         "tooltip": "The provider's first piece of equipment past the home router."
       },
       {
@@ -296,10 +297,9 @@
       {
         "id": "work",
         "title": "Work apps",
-        "level": "bad",
+        "level": "affected",
         "state": "down",
-        "label": "Unreliable",
-        "note": "6 of 6 aren't loading reliably from here.",
+        "label": "Affected by the problem above",
         "names": [
           "Outlook",
           "Microsoft 365",
@@ -321,10 +321,9 @@
       {
         "id": "web",
         "title": "Websites",
-        "level": "bad",
+        "level": "affected",
         "state": "down",
-        "label": "Unreliable",
-        "note": "5 of 5 aren't loading reliably from here.",
+        "label": "Affected by the problem above",
         "names": [
           "Cloudflare",
           "Akamai",
@@ -407,6 +406,7 @@
         "label": "Can't tell right now",
         "note": "This app can't be checked while the connection has a problem."
       }
-    ]
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so they can't be tested ahead of time."
   }
 }

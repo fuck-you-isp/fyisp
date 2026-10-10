@@ -58,7 +58,10 @@ type HomeLive struct {
 	Other *HomeOther `json:"other,omitempty"`
 	Calls *HomeCalls `json:"calls,omitempty"`
 	Apps  []HomeApp  `json:"apps"`
-	Steps []HomeStep `json:"steps,omitempty"` // warming up only
+	// AppsNote is one line about the apps that can't be tested ahead of a
+	// call (they have no note of their own).
+	AppsNote string     `json:"apps_note,omitempty"`
+	Steps    []HomeStep `json:"steps,omitempty"` // warming up only
 }
 
 // HomeAnswer is the one answer at the top of Home.
@@ -90,11 +93,14 @@ type HomeAnswer struct {
 // HomeNode is one step of the path strip: device, router, provider,
 // internet, apps.
 type HomeNode struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	State   string `json:"state"` // ok | warn | bad | unknown | finding
-	Words   string `json:"words"` // state in words: "OK", "Dropping some data", "Not answering", ...
-	Blamed  bool   `json:"blamed,omitempty"`
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	State  string `json:"state"` // ok | warn | bad | unknown | finding
+	Words  string `json:"words"` // state in words: "OK", "Dropping some data", "Not answering", ...
+	Blamed bool   `json:"blamed,omitempty"`
+	// Culprit is the blamed node's sub-label: "Problem is here" when sure,
+	// "Problem is probably here" otherwise.
+	Culprit string `json:"culprit,omitempty"`
 	Tooltip string `json:"tooltip,omitempty"`
 }
 
@@ -174,6 +180,10 @@ type HomeHistory struct {
 	Counts    HomeCounts     `json:"counts"`
 	Problems  []HomeProblem  `json:"problems"`
 	Work      *HomeWorkCalls `json:"work,omitempty"`
+	// Known is an ongoing known issue (a long-standing call block), shown
+	// after the summary: Text then Since formatted ("Some call connections
+	// have been blocked since" + "Fri 1:12 PM").
+	Known *HomeKnown `json:"known,omitempty"`
 }
 
 // HomeDay is one local day of the timeline, oldest first.
@@ -274,4 +284,10 @@ type HomeAt struct {
 	Cause    string `json:"cause"`
 	Fact     string `json:"fact,omitempty"`
 	FactAt   int64  `json:"fact_at,omitempty"`
+}
+
+// HomeKnown is a known issue: information, not a problem.
+type HomeKnown struct {
+	Since int64  `json:"since"`
+	Text  string `json:"text"`
 }

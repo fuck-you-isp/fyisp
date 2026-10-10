@@ -47,7 +47,7 @@
         "off": []
       }
     ],
-    "summary": "No problems today.",
+    "summary": "No new problems today.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -71,7 +71,11 @@
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791453600000\u0026to=1791549000000\u0026o=1"
       }
-    ]
+    ],
+    "known": {
+      "since": 1791455400000,
+      "text": "Some call connections have been blocked since"
+    }
   },
   "history_week": {
     "part": "history",
@@ -169,7 +173,7 @@
         "off": []
       }
     ],
-    "summary": "No problems in the last 7 days.",
+    "summary": "No new problems in the last 7 days.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -193,7 +197,11 @@
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791453600000\u0026to=1791549000000\u0026o=1"
       }
-    ]
+    ],
+    "known": {
+      "since": 1791455400000,
+      "text": "Some call connections have been blocked since"
+    }
   },
   "live": {
     "part": "live",
@@ -256,7 +264,7 @@
         "title": "Calls",
         "level": "info",
         "state": "blocked",
-        "label": "This network always blocks call traffic",
+        "label": "Some call connections blocked",
         "names": [
           "Teams",
           "Google Meet",
@@ -310,7 +318,7 @@
         "level": "good",
         "state": "reachable",
         "label": "Reachable",
-        "note": "Calls use your call path (Blocked)."
+        "note": "Some call connections blocked, as for your other apps."
       },
       {
         "app": "meet",
@@ -324,41 +332,37 @@
         "title": "Zoom",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "slack",
         "title": "Slack",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "discord",
         "title": "Discord",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "webex",
         "title": "Webex",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       }
-    ]
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

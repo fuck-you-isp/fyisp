@@ -132,11 +132,11 @@ func Build(name string, now time.Time, loc *time.Location) (*Scenario, error) {
 		s.burst = choppy(10 * time.Minute)
 		v.List = []model.Incident{inc(31, model.VerdictUpstream, since(10*time.Minute), time.Time{}, 0.6)}
 	case "one-app-down":
-		v.V = model.Verdict{Kind: model.VerdictService, Since: since(8 * time.Minute), Targets: []string{"M365-Outlook"}}
+		v.V = model.Verdict{Kind: model.VerdictService, Since: since(25 * time.Minute), Targets: []string{"M365-Outlook"}}
 		s.lost = func(t model.Target, _ model.ProbeKind, ts time.Time) bool {
-			return recent(ts, 8*time.Minute) && is(t, "M365-Outlook")
+			return recent(ts, 25*time.Minute) && is(t, "M365-Outlook")
 		}
-		v.List = []model.Incident{inc(41, model.VerdictService, since(8*time.Minute), time.Time{}, 1, "M365-Outlook")}
+		v.List = []model.Incident{inc(41, model.VerdictService, since(25*time.Minute), time.Time{}, 1, "M365-Outlook")}
 	case "calls-choppy":
 		v.V = model.Verdict{Kind: model.VerdictUDPDegraded, Since: since(9 * time.Minute)}
 		s.burst = choppy(10 * time.Minute)

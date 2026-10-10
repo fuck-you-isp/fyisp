@@ -145,7 +145,7 @@ func TestHomeLiveGood(t *testing.T) {
 	}
 	// Teams without its relay: reachable, its calls take the path.
 	i := slices.IndexFunc(l.Apps, func(x HomeApp) bool { return x.App == "teams" })
-	if i < 0 || l.Apps[i].State != "reachable" || l.Apps[i].Note != "Calls use your call path (Good)." {
+	if i < 0 || l.Apps[i].State != "reachable" || l.Apps[i].Note != "Same call quality as your other apps: Good." || l.AppsNote != "Zoom chooses a server when each call starts, so we can't test it ahead of time." {
 		t.Errorf("apps %+v", l.Apps)
 	}
 	if l.Calls == nil || l.Calls.Delay != "very_short" || l.Calls.Dropouts != "none" || l.Calls.Smoothness != "steady" || l.Calls.WorstAt != 0 {
@@ -175,14 +175,15 @@ func TestHomeLiveRelevance(t *testing.T) {
 	}
 	w := l.Tiles[1]
 	if w.ID != tileWork || w.State != tileMostly || !slices.Equal(w.Affected, []string{"Outlook"}) || w.OK != 2 ||
-		w.Note != "Outlook isn't answering from here. That's usually a problem on their side." {
+		w.Note != "Outlook isn't answering from here. That's most likely a problem on their side." {
 		t.Errorf("work %+v", w)
 	}
 
-	// The same verdict about one work app out of three is a hint.
+	// The same verdict about one work app out of three: what works, and the tile's sentence.
 	fv.v.Targets = []string{"M365-Outlook"}
 	l, _ = s.homeLive(context.Background(), voiceYou, now)
-	if a := l.Answer; a.Level != levelGood || a.Who != whoNone || a.Hint != "Outlook isn't answering from here. That's most likely a problem on their side." {
+	if a := l.Answer; a.Level != levelGood || a.Who != whoNone ||
+		a.Cause != "Calls and websites are working. Outlook isn't answering from here. That's most likely a problem on their side." {
 		t.Errorf("answer %+v", a)
 	}
 
@@ -306,7 +307,7 @@ func TestHomeAnswer(t *testing.T) {
 		{"upstream", model.Verdict{Kind: model.VerdictUpstream, Evidence: ev("services_loss", 0.6)}, "good", nil,
 			levelBad, whoBeyond, confSure, "Many websites and apps are hard to reach"},
 		{"dns", model.Verdict{Kind: model.VerdictDNS}, "good", nil, levelWarn, whoDNS, confLikely, "Websites and apps may not open"},
-		{"offline", model.Verdict{Kind: model.VerdictNoNetwork}, "unusable", nil, levelBad, whoOffline, "", "You're offline"},
+		{"offline", model.Verdict{Kind: model.VerdictNoNetwork}, "unusable", nil, levelBad, whoOffline, "", "No internet connection"},
 		{"quiet block", model.Verdict{Kind: model.VerdictUDPBlocked, Quiet: true}, "blocked", nil,
 			levelInfo, whoCallTraffic, "", "This network always blocks the fast connection calls use"},
 		{"stun block", model.Verdict{Kind: model.VerdictSTUNBlocked}, "blocked", nil,
@@ -407,7 +408,7 @@ func TestHomeHistory(t *testing.T) {
 	// The ISP incident crosses midnight: on both days, clipped.
 	d4, d5 := h.Days[4], h.Days[5]
 	if len(d4.Runs) != 1 || d4.Runs[0].Who != whoProvider || d4.Runs[0].To != d4.To || d4.Runs[0].Incident != 1 ||
-		len(d5.Runs) != 1 || d5.Runs[0].From != d5.From || d5.Runs[0].Label != "Your provider" {
+		len(d5.Runs) != 1 || d5.Runs[0].From != d5.From || d5.Runs[0].Label != "Most likely your provider" {
 		t.Errorf("runs %+v / %+v", d4.Runs, d5.Runs)
 	}
 	// The cloud-region incident is left out; the ongoing LAN one is today.
@@ -428,15 +429,15 @@ func TestHomeHistory(t *testing.T) {
 	if h.Counts.Problems != 2 || h.Counts.Home != 1 || h.Counts.Provider != 1 || len(h.Problems) != 2 || h.Problems[0].ID != 3 || !h.Problems[0].Ongoing {
 		t.Errorf("counts %+v problems %+v", h.Counts, h.Problems)
 	}
-	if h.Summary != "2 problems this week: 1 from your internet provider and 1 in your home network." {
+	if h.Summary != "2 problems this week: 1 most likely from your internet provider and 1 most likely in your home network." {
 		t.Errorf("summary %q", h.Summary)
 	}
-	if h.FirstData == 0 || h.Problems[1].Where != "Your provider's network (past your router)" {
+	if h.FirstData == 0 || h.Problems[1].Where != "Most likely your provider's network (past your router)" {
 		t.Errorf("first %d where %q", h.FirstData, h.Problems[1].Where)
 	}
 
 	h, _ = s.homeHistory(context.Background(), homeParams{part: "history", span: "d", voice: voicePublic, tz: 120}, now)
-	if len(h.Days) != 1 || h.Summary != "1 problem today, in the home network." || h.Problems[0].Where != "Home network (Wi-Fi or router)" {
+	if len(h.Days) != 1 || h.Summary != "1 problem today, most likely in the home network." || h.Problems[0].Where != "Most likely the home network (Wi-Fi or router)" {
 		t.Errorf("public today: %q %+v", h.Summary, h.Problems)
 	}
 }
@@ -512,7 +513,7 @@ func TestHomeCopyWords(t *testing.T) {
 		}
 		for _, st := range []string{tileWorking, tileMostly, tileSlow, tileDown, tileChecking} {
 			for _, dead := range []int{0, 2} {
-				texts = append(texts, cp.tileLabel(st, false, dead > 0, dead > 0), cp.tileLabel(st, true, dead > 0, dead > 0), cp.tileNote(st, []string{"A", "websites using B", "C", "D"}, 2, dead, 4))
+				texts = append(texts, cp.tileLabel(st, false, dead > 0, dead > 0), cp.tileLabel(st, true, dead > 0, dead > 0), cp.tileNote(tileWork, st, []string{"A", "websites using B", "C", "D"}, 2, dead, 4), cp.tileNote(tileWeb, st, []string{"A", "B"}, 2, dead, 4))
 			}
 		}
 		for _, id := range []string{"device", "router", "provider", "internet", "apps"} {
@@ -523,8 +524,8 @@ func TestHomeCopyWords(t *testing.T) {
 		for _, who := range []string{whoHome, whoProvider, whoBeyond, whoDNS, whoApp, whoCallTraffic, whoOffline} {
 			texts = append(texts, cp.where(who, ""), cp.runLabel(who, ""))
 		}
-		if got := cp.summary(HomeCounts{Problems: 7, Provider: 3, Home: 1, DNS: 1, App: 1, CallTraffic: 1}, "w", false); voice == voiceYou &&
-			got != "7 problems this week: 3 from your internet provider, 1 in your home network and 3 others." {
+		if got := cp.summary(HomeCounts{Problems: 7, Provider: 3, Home: 1, DNS: 1, App: 1, CallTraffic: 1}, "w", false, "", false); voice == voiceYou &&
+			got != "7 problems this week: 3 most likely from your internet provider, 1 most likely in your home network and 3 others." {
 			t.Errorf("summary %q", got)
 		}
 		for _, tc := range []struct {
@@ -532,21 +533,27 @@ func TestHomeCopyWords(t *testing.T) {
 			span string
 			want string
 		}{
-			{HomeCounts{CallPatches: 1}, "d", "Calls had 1 rough patch today, with nothing wrong on your side."},
+			{HomeCounts{CallPatches: 1}, "d", "Calls had 1 rough patch today. We didn't see a cause on your side."},
 			{HomeCounts{CallPatches: 2}, "w", "No other problems in the last 7 days. Calls had 2 rough patches today."},
-			{HomeCounts{Problems: 1, Provider: 1, CallPatches: 2}, "d", "1 problem today, from your internet provider. Calls also had 2 other rough patches today."},
+			{HomeCounts{Problems: 1, Provider: 1, CallPatches: 2}, "d", "1 problem today, most likely from your internet provider. Calls also had 2 other rough patches today."},
 		} {
-			if got := cp.summary(tc.n, tc.span, false); voice == voiceYou && got != tc.want {
+			if got := cp.summary(tc.n, tc.span, false, "", false); voice == voiceYou && got != tc.want {
 				t.Errorf("summary %+v: %q", tc.n, got)
 			}
-			texts = append(texts, cp.summary(tc.n, tc.span, false))
+			texts = append(texts, cp.summary(tc.n, tc.span, false, "", false))
+		}
+		if got := cp.summary(HomeCounts{Problems: 1, App: 1}, "d", false, "Outlook", false); got != "1 problem today, with Outlook." {
+			t.Errorf("summary one app %q", got)
+		}
+		if got := cp.summary(HomeCounts{}, "d", false, "", true); got != "No new problems today." {
+			t.Errorf("summary known %q", got)
 		}
 		texts = append(texts, cp.callPatch(levelWarn), cp.callPatch(levelBad), cp.otherNote(tileDown, 3, 3, 3, 1330), cp.otherNote(tileMostly, 1, 0, 0, 84))
 		if got := cp.otherNote(tileDown, 3, 3, 3, 1330); got != "3 of 1,330 aren't answering from here." {
 			t.Errorf("other note %q", got)
 		}
 		for _, n := range []HomeCounts{{}, {Problems: 1, Provider: 1}, {Problems: 3, Provider: 2, Home: 1}, {Problems: 4, App: 1, DNS: 1, Offline: 1, CallTraffic: 1}} {
-			texts = append(texts, cp.summary(n, "d", false), cp.summary(n, "w", false), cp.summary(n, "w", true))
+			texts = append(texts, cp.summary(n, "d", false, "", false), cp.summary(n, "w", false, "", false), cp.summary(n, "w", true, "", false))
 		}
 		for _, f := range []string{"loss", "jitter", "latency", ""} {
 			texts = append(texts, cp.fact(f, 0.14), cp.pathCause(f))
@@ -561,7 +568,7 @@ func TestHomeCopyWords(t *testing.T) {
 				}
 			}
 		}
-		texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good"), cp.picksServer("Zoom"),
+		texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good"), cp.picksServer([]string{"Zoom"}), cp.picksServer([]string{"Zoom", "Slack"}), cp.culprit(true), cp.culprit(false), cp.affectedBy(whoHome), cp.affectedBy(whoOffline), cp.knownBlock(),
 			cp.callWords("short", "rare", "bit_uneven"), cp.appsWords("warn", []string{"work apps", "websites"}), cp.cantTell(), cp.callLabel("cant_tell"), cp.quietHint())
 		for _, x := range texts {
 			if voice == voicePublic && regexp.MustCompile(`\b[Yy]our\b`).MatchString(x) {

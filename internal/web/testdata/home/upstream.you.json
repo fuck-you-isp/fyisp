@@ -244,6 +244,7 @@
         "state": "bad",
         "words": "Not answering",
         "blamed": true,
+        "culprit": "Problem is here",
         "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
       },
       {
@@ -277,10 +278,9 @@
       {
         "id": "work",
         "title": "Work apps",
-        "level": "bad",
+        "level": "affected",
         "state": "down",
-        "label": "Unreliable",
-        "note": "6 of 6 aren't loading reliably from here.",
+        "label": "Affected by the problem above",
         "names": [
           "Outlook",
           "Microsoft 365",
@@ -302,10 +302,9 @@
       {
         "id": "web",
         "title": "Websites",
-        "level": "bad",
+        "level": "affected",
         "state": "down",
-        "label": "Unreliable",
-        "note": "5 of 5 aren't loading reliably from here.",
+        "label": "Affected by the problem above",
         "names": [
           "Cloudflare",
           "Akamai",
@@ -388,6 +387,7 @@
         "label": "Can't tell right now",
         "note": "We can't check this app while your connection has a problem."
       }
-    ]
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }
