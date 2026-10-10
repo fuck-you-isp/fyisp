@@ -167,6 +167,9 @@ type callsParams struct {
 	from, to time.Time
 	capped   bool
 	key      string
+	// skip (Home only): minutes overlapping these spans are not scored,
+	// as if not measured: an outage the verdict already explained.
+	skip []HomeSpan
 }
 
 // parseCalls parses /api/calls?from=&to= with /api/panel's time rules
@@ -332,6 +335,17 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 	idx := map[string]int{}
 	for i, t := range udp {
 		mins[i], idx[t.Name] = udpMinutes(cols, t.Name, n), i
+	}
+	for m := range n {
+		ms := start.UnixMilli() + int64(m)*out.Step
+		for _, sp := range p.skip {
+			if ms < sp.To && ms+out.Step > sp.From {
+				for i := range mins {
+					mins[i][m] = callq.Empty
+				}
+				break
+			}
+		}
 	}
 	dead := callq.NotAnswering(mins)
 

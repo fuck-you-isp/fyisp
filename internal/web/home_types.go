@@ -85,6 +85,9 @@ type HomeAnswer struct {
 	Try      []string `json:"try"`
 	Fact     string   `json:"fact,omitempty"`
 	FactAt   int64    `json:"fact_at,omitempty"`
+	// Recovered is when an outage that ended in the last quarter of an
+	// hour ended, with Level good: "Back to normal since 3:12 PM".
+	Recovered int64 `json:"recovered,omitempty"`
 	// Announce is the short text a screen reader should speak when Level
 	// or Who changes (the client announces only on change).
 	Announce string `json:"announce"`
