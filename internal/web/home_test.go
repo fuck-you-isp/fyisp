@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +96,10 @@ func TestHomeParams(t *testing.T) {
 		{q: "tz=abc", bad: true},
 		{q: "voice=them", bad: true},
 		{q: "from=now-1h", bad: true},
+		{q: "part=at&at=1760000000000", part: "at", span: "d", voice: "you"},
+		{q: "part=at", bad: true},
+		{q: "part=at&at=soon", bad: true},
+		{q: "part=live&at=1760000000000", bad: true},
 	} {
 		q, _ := url.ParseQuery(tc.q)
 		p, err := parseHome(q, tc.public)
@@ -517,6 +522,16 @@ func TestHomeCopyWords(t *testing.T) {
 		for _, f := range []string{"loss", "jitter", "latency", ""} {
 			texts = append(texts, cp.fact(f, 0.14), cp.pathCause(f))
 		}
+		for _, m := range []bool{false, true} {
+			for _, st := range []string{"", "good", "fair", "poor", "unusable", "blocked", "server_not_answering"} {
+				for _, who := range []string{whoNone, whoHome, whoProvider, whoBeyond, whoDNS, whoApp, whoCallTraffic, whoOffline} {
+					for _, k := range []string{"", "udp_blocked"} {
+						h, c := cp.atWords(m, st, who != whoNone, who, k)
+						texts = append(texts, h, c)
+					}
+				}
+			}
+		}
 		texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good"), cp.picksServer("Zoom"),
 			cp.callWords("short", "rare", "bit_uneven"), cp.appsWords("warn", 2), cp.quietHint())
 		for _, x := range texts {
@@ -535,6 +550,53 @@ func TestHomeCopyWords(t *testing.T) {
 		}
 		if regexp.MustCompile(`\d{1,2}:\d{2}|\d+ ?%`).MatchString(x) {
 			t.Errorf("%q holds a time or a percentage", x)
+		}
+	}
+}
+
+func TestHomeAt(t *testing.T) {
+	now := time.Now().Truncate(time.Minute).Add(30 * time.Second)
+	s, _, fv := homeFixture(t, homeProfile(), now, nil, true)
+	fv.list = []model.Incident{{ID: 7, Start: now.Add(-4 * time.Minute), Kind: model.VerdictISP, PeakLoss: 0.3}}
+	a, err := s.homeAt(context.Background(), now.Add(-2*time.Minute), voiceYou, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.Measured || (a.Calls != "poor" && a.Calls != "unusable") || a.Level != levelBad || a.Who != whoProvider || a.Kind != "isp" ||
+		a.BadFrom == 0 || a.BadTo <= a.BadFrom || a.Fact == "" || a.To != now.UnixMilli() ||
+		a.Cause != "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine." {
+		t.Errorf("choppy: %+v", a)
+	}
+	// Twenty minutes earlier: good, no incident; the honest answer.
+	fv.list = nil
+	a, _ = s.homeAt(context.Background(), now.Add(-25*time.Minute), voicePublic, now)
+	if !a.Measured || a.Calls != "good" || a.Level != levelGood || a.Headline != "The connection was good for calls then" ||
+		!strings.Contains(a.Cause, "other side") {
+		t.Errorf("good: %+v", a)
+	}
+	// Before the history: not measured.
+	a, _ = s.homeAt(context.Background(), now.Add(-3*time.Hour), voiceYou, now)
+	if a.Measured || a.Headline != "We weren't checking at that time" {
+		t.Errorf("unmeasured: %+v", a)
+	}
+	// Through the handler: the future is a 400.
+	h := Local(s.d, LocalOptions{Addr: "127.0.0.1:3000"})
+	if w := do(h, "GET", "/api/home?part=at&at="+strconv.FormatInt(time.Now().Add(time.Hour).UnixMilli(), 10), localHdr); w.Code != 400 {
+		t.Errorf("future: %d", w.Code)
+	}
+}
+
+func TestHomeName(t *testing.T) {
+	for _, tc := range []struct {
+		t    model.Target
+		want string
+	}{
+		{model.Target{Name: "WhatsApp-Chat", Tags: []string{"home:calls", "app:whatsapp"}}, "WhatsApp"},
+		{model.Target{Name: "M365-Outlook", Tags: []string{"home:work"}}, "M365 Outlook"},
+		{model.Target{Name: "CDN-Cloudflare"}, "CDN Cloudflare"},
+	} {
+		if got := homeName(tc.t); got != tc.want {
+			t.Errorf("%s: %q", tc.t.Name, got)
 		}
 	}
 }
