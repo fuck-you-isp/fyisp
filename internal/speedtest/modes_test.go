@@ -311,6 +311,8 @@ func TestSlotTimeRotation(t *testing.T) {
 
 // TestSweepGap: a sweep's tests leave SweepGap of unmasked time between
 // them (after the mask's tail), so monitoring is never blind for minutes.
+// The wait is the queue's Pause, outside the charged Exec; MaskTail covers
+// 2 × the slowest RTT the probes under load can see.
 func TestSweepGap(t *testing.T) {
 	h := newHarness(t, Options{})
 	job := h.s.slotJob(target{server: "Near", nearby: -1})
@@ -318,11 +320,21 @@ func TestSweepGap(t *testing.T) {
 	h.mu.Lock()
 	h.slept = nil
 	h.mu.Unlock()
-	h.job(t, job, "sweep")
+	if !h.s.pause(context.Background(), job, "manual") || !h.s.pause(context.Background(), job, "sweep") {
+		t.Fatal("pause")
+	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.slept) == 0 || h.slept[0] != MaskTail+SweepGap {
-		t.Errorf("slept %v before the second sweep test, want %v first", h.slept, MaskTail+SweepGap)
+	if len(h.slept) != 1 || h.slept[0] != MaskTail+SweepGap {
+		t.Errorf("slept %v before the next sweep test (none before a single test), want %v", h.slept, MaskTail+SweepGap)
+	}
+	h.mu.Unlock()
+	h.slept = nil
+	h.job(t, job, "sweep") // Exec itself never waits
+	if slices.Contains(h.slept, MaskTail+SweepGap) {
+		t.Error("execJob waited the gap: it would be charged to the share link")
+	}
+	if 2*LoadTimeout > MaskTail {
+		t.Errorf("MaskTail %v is under 2 × LoadTimeout", MaskTail)
 	}
 }
 
