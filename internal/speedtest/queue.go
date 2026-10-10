@@ -696,6 +696,10 @@ func (q *Queue) Run(ctx context.Context) {
 	}
 }
 
+// beforeNextJob, in tests, runs before execute takes the lock for job i
+// (to race a Cancel against a sweep's yield).
+var beforeNextJob func(id uint64, i int)
+
 // gapLocked reports a share-link sweep that may not start yet: the last
 // one ended less than PublicSweepGap ago. A paused sweep resumes anyway.
 func (q *Queue) gapLocked(e *qentry, now time.Time) bool {
@@ -707,7 +711,14 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		if ctx.Err() != nil {
 			break
 		}
+		if beforeNextJob != nil {
+			beforeNextJob(e.ID, i)
+		}
 		q.mu.Lock()
+		if e.State == StateCancelled { // cancelled since the check: never re-queue it
+			q.mu.Unlock()
+			break
+		}
 		// A public sweep yields between its tests to the owner's entries
 		// and schedule slots: it waits again at the head of the share
 		// link's entries and resumes here.

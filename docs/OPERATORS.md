@@ -12,4 +12,4 @@ fyisp is a home internet monitor. If a user turns its speed tests on (they are o
 
 **When your server is busy** (ACCESS_DENIED, or refusing), fyisp tries at most 2 other ports, then another provider. After 3 busy scheduled tests in a row it leaves your server alone for 6 hours.
 
-**To have your server removed:** contact the fyisp maintainers: **<contact to be filled in by the owner before release>**. Removal ships in the next release; until then users can stop testing it with `--speedtest-skip=<server id>` (the ids are in [`internal/profile/catalog/iperf3/`](../internal/profile/catalog/iperf3/)). The list of operators and what fyisp sends is in [`IPERF3-TERMS.md`](IPERF3-TERMS.md).
+**To have your server removed:** open an issue at https://github.com/fuck-you-isp/fyisp/issues, or use the contact in [SECURITY.md](../SECURITY.md). Removal ships in the next release; until then users can stop testing it with `--speedtest-skip=<server id>` (the ids are in [`internal/profile/catalog/iperf3/`](../internal/profile/catalog/iperf3/)). The list of operators and what fyisp sends is in [`IPERF3-TERMS.md`](IPERF3-TERMS.md).

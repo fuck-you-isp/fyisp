@@ -58,7 +58,7 @@ GET api/speed?days=7&tz=120[&exclude_fallback=1]
 | Param | Values | Default | Notes |
 |---|---|---|---|
 | `days` | `7`, `30` | `7` | The span of the rows. The pattern and the finding are judged over 30 days. |
-| `tz` | minutes east of UTC, integer from -840 to 840 | `0` | Rounded to 15 min and echoed. Hours of day are local to it. Send `-new Date().getTimezoneOffset()`. |
+| `tz` | an IANA zone (`Europe/Berlin`), or minutes east of UTC (-840 to 840) | the server's zone | Send `Intl.DateTimeFormat().resolvedOptions().timeZone`: hours of day are then local and right on both sides of a DST change. Minutes are a fixed offset (rounded to 15). Echoed as `tz` (minutes east of UTC now) and `tz_name` (the zone; "" for minutes). Home's `tz` takes the same forms. |
 | `exclude_fallback` | `0`, `1` | `0` | `1` leaves fallback tests out of the region rows. |
 | `row`, `region`, `server` | an id | | One row's view (below). |
 
@@ -68,7 +68,7 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
 
 ```jsonc
 {
-  "at": 1760104800000, "tz": 120, "days": 7, "exclude_fallback": false,
+  "at": 1760104800000, "tz": 120, "tz_name": "Europe/Berlin", "days": 7, "exclude_fallback": false,
   "mode": "regions",              // "off" | "regions" | "nearby" | "custom"
   "modes": ["off", "regions", "nearby"],   // offered here; "custom" only with --speedtest-server
   "enabled": true,                // mode != "off"

@@ -3380,6 +3380,7 @@
  "set_by_flag": false,
  "spacing_s": 1800,
  "tz": 120,
+ "tz_name": "",
  "under_load": {
   "layers": [
    {

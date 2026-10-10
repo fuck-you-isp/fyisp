@@ -666,6 +666,43 @@ func TestQueueSweepGapAtStart(t *testing.T) {
 	f.release <- struct{}{}
 }
 
+// TestQueueCancelBeatsYield: the owner cancels a public sweep just as it
+// yields between tests; the cancel wins and the sweep is not re-queued.
+func TestQueueCancelBeatsYield(t *testing.T) {
+	q, f := newQueueHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	sw, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "B", Who: WhoOwner}); err != nil {
+		t.Fatal(err)
+	}
+	// The cancel lands after the sweep's context check, before it yields.
+	beforeNextJob = func(id uint64, i int) {
+		if id == sw.ID && i == 1 {
+			q.Cancel(id)
+		}
+	}
+	defer func() { beforeNextJob = nil }()
+	f.release <- struct{}{}
+	<-f.started // the owner's test
+	if x, _ := q.Get(sw.ID); x.State != StateCancelled {
+		t.Errorf("sweep after cancel: %s", x.State)
+	}
+	if st := q.State(); len(st.Waiting) != 0 || st.Running == nil || st.Running.Who != WhoOwner {
+		t.Errorf("queue %+v", st)
+	}
+	f.release <- struct{}{}
+	waitFor(t, func() bool { return q.State().Running == nil })
+	if got := f.log(); len(got) != 2 {
+		t.Errorf("ran %v; the cancelled sweep came back", got)
+	}
+}
+
 // TestBudgetChargesTheWire: a share-link test against a real (fake) iperf3
 // server charges the budget at least every byte the server moved, both
 // directions, ramp-up included.

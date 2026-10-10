@@ -194,7 +194,8 @@ type speedUnderLoad struct {
 // speedJSON is api/speed?part=summary.
 type speedJSON struct {
 	At              int64              `json:"at"`
-	TZ              int                `json:"tz"`
+	TZ              int                `json:"tz"`      // minutes east of UTC now
+	TZName          string             `json:"tz_name"` // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
 	Days            int                `json:"days"`
 	ExcludeFallback bool               `json:"exclude_fallback"`
 	Mode            speedtest.Mode     `json:"mode"`
@@ -358,6 +359,7 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 type speedParams struct {
 	part            string
 	days, tz        int
+	zone            zoneParam
 	excludeFallback bool
 	row             string
 	from, to        time.Time
@@ -382,13 +384,11 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 		return nil
 	}
 	tz := func() error {
-		if s := q.Get("tz"); s != "" {
-			v, err := strconv.Atoi(s)
-			if err != nil || v < -840 || v > 840 {
-				return badReq("bad tz %q: want minutes east of UTC, -840 to 840", s)
-			}
-			p.tz = int(math.Round(float64(v)/15)) * 15
+		z, err := parseZone(q.Get("tz"), now)
+		if err != nil {
+			return err
 		}
+		p.zone, p.tz = z, z.min
 		return nil
 	}
 	switch p.part {
@@ -424,7 +424,7 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 		if ids > 1 || len(p.row) > 64 {
 			return p, badReq("one of row, server or region")
 		}
-		p.key = fmt.Sprintf("speed\x00%d\x00%d\x00%v\x00%s", p.days, p.tz, p.excludeFallback, p.row)
+		p.key = fmt.Sprintf("speed\x00%d\x00%s\x00%v\x00%s", p.days, p.zone.key, p.excludeFallback, p.row)
 	case "windows":
 		if err := only("windows", "days", "tz", "exclude_fallback", "server", "region", "row", "id"); err != nil {
 			return p, err
@@ -565,7 +565,7 @@ func strPtr(s string) *string {
 
 func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.State, names speedNames, now time.Time) (*speedJSON, error) {
 	cat := s.d.Speed.Catalog()
-	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
+	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
 		Enabled: st.Mode != speedtest.ModeOff, SetByFlag: st.SetByFlag, Extra: append([]string{}, st.Extra...),
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
@@ -611,7 +611,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	if err != nil {
 		return nil, err
 	}
-	tz := time.Duration(p.tz) * time.Minute
+	tz := p.zone.loc
 	byRegion, byServer := map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}
 	var span, last24 []model.SpeedTest
 	var avgBytes []float64
@@ -724,7 +724,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	if out.EdgeHours, err = s.edgeHours(ctx, now, tz); err != nil {
 		return nil, err
 	}
-	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, TZ: tz, Catalog: cat, EdgeIdle: edgeIdle(out.EdgeHours)})
+	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, Loc: tz, Catalog: cat, EdgeIdle: edgeIdle(out.EdgeHours)})
 	out.Coverage = speedCoverage(span, tz, cat)
 	out.UnderLoad = speedUnderLoadOf(span)
 	if s.public { // the share link's wording: a visitor's line is not "yours"
@@ -762,7 +762,7 @@ func edgeIdle(eh []speedEdgeHour) [24]float64 {
 // edgeHours reads the ISP edge's hourly RTT over speedtest.PatternSpan and
 // folds it into 24 local hours of day (see speedEdgeHour); nil without an
 // ISP edge target.
-func (s *server) edgeHours(ctx context.Context, now time.Time, tz time.Duration) ([]speedEdgeHour, error) {
+func (s *server) edgeHours(ctx context.Context, now time.Time, tz *time.Location) ([]speedEdgeHour, error) {
 	var key model.SeriesKey
 	if p := s.d.Profile(); p != nil {
 		for _, t := range p.Targets {
@@ -788,7 +788,7 @@ func (s *server) edgeHours(ctx context.Context, now time.Time, tz time.Duration)
 			if n+l == 0 {
 				continue
 			}
-			h := res.Start.Add(time.Duration(i) * res.Step).Add(tz).UTC().Hour()
+			h := res.Start.Add(time.Duration(i) * res.Step).In(tz).Hour()
 			ok[h] += n
 			lost[h] += l
 			if n > 0 && i < len(c.Mean) && !math.IsNaN(float64(c.Mean[i])) {
@@ -824,7 +824,7 @@ func (r *speedRow) publicWording() {
 var publicWording = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual", "your provider", "the internet provider",
 	"Your router's", "The router's", "your home", "the home")
 
-func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz time.Duration) speedRow {
+func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz *time.Location) speedRow {
 	row := speedRow{ID: id, Kind: kind, Label: label, Stats: speedtest.Summarize(ts, tz)}
 	if row.Stats.LatestAt != nil {
 		row.LatestAt = ms(*row.Stats.LatestAt)
@@ -835,7 +835,7 @@ func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz time.Duration) 
 
 // speedCoverage is per local hour: scheduled ok tests and the providers
 // that answered (a pattern's hour needs ≥ 2 providers).
-func speedCoverage(ts []model.SpeedTest, tz time.Duration, cat *speedtest.Catalog) []speedHour {
+func speedCoverage(ts []model.SpeedTest, tz *time.Location, cat *speedtest.Catalog) []speedHour {
 	out := make([]speedHour, 24)
 	provs := make([]map[string]bool, 24)
 	for h := range 24 {
@@ -845,7 +845,7 @@ func speedCoverage(ts []model.SpeedTest, tz time.Duration, cat *speedtest.Catalo
 		if t.OnDemand() || t.Outcome != model.SpeedOK {
 			continue
 		}
-		h := t.Start.Add(tz).UTC().Hour()
+		h := t.Start.In(tz).Hour()
 		out[h].N++
 		if sv, ok := cat.Server(t.Server); ok {
 			provs[h][sv.Provider] = true
@@ -986,6 +986,7 @@ func rowKnown(id string, st speedtest.State, names speedNames, public bool) bool
 type speedOneJSON struct {
 	At              int64           `json:"at"`
 	TZ              int             `json:"tz"`
+	TZName          string          `json:"tz_name"`
 	Days            int             `json:"days"`
 	ExcludeFallback bool            `json:"exclude_fallback"`
 	Kind            string          `json:"kind"`
@@ -996,7 +997,7 @@ type speedOneJSON struct {
 
 func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State, names speedNames, now time.Time) (*speedOneJSON, error) {
 	from := now.Add(-time.Duration(p.days) * 24 * time.Hour)
-	out := &speedOneJSON{At: now.UnixMilli(), TZ: p.tz, Days: p.days, ExcludeFallback: p.excludeFallback, Tests: []speedTestJSON{}}
+	out := &speedOneJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), Days: p.days, ExcludeFallback: p.excludeFallback, Tests: []speedTestJSON{}}
 	var keep func(model.SpeedTest) bool
 	var label, id string
 	var servers []string
@@ -1028,7 +1029,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 	for _, t := range ts[max(0, len(ts)-speedTestsCap):] {
 		out.Tests = append(out.Tests, names.test(t))
 	}
-	out.Row = speedRowOf(id, out.Kind, label, ts, time.Duration(p.tz)*time.Minute)
+	out.Row = speedRowOf(id, out.Kind, label, ts, p.zone.loc)
 	out.Row.Servers = servers
 	for _, r := range st.Rows {
 		if r.ID == id || names.ref(r.ID).ID == id {
@@ -1043,7 +1044,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 }
 
 // speedHome is Home's speed line (nil: nothing on Home).
-func (s *server) speedHome(ctx context.Context, now time.Time, tz time.Duration, voicePublic bool) *speedtest.HomeSpeed {
+func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location, voicePublic bool) *speedtest.HomeSpeed {
 	if s.d.Speed == nil || s.d.Speed.State().Mode == speedtest.ModeOff {
 		return nil
 	}
@@ -1052,7 +1053,7 @@ func (s *server) speedHome(ctx context.Context, now time.Time, tz time.Duration,
 		return nil
 	}
 	eh, _ := s.edgeHours(ctx, now, tz)
-	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, TZ: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: edgeIdle(eh)})
+	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, Loc: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: edgeIdle(eh)})
 	line := speedtest.HomeLine(f, ts, tz, now)
 	if line != nil && voicePublic {
 		line.Text = strings.ReplaceAll(line.Text, "your daytime", "the daytime")
@@ -1142,4 +1143,13 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 			"time_day_max_s":  int64(speedtest.PublicTimePerDay / time.Second)}
 	}
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+// zoneLabel is the IANA name the hours are in: the parameter's, or the
+// server's own for no tz (its TZ, else "Local"), "" for a fixed offset.
+func zoneLabel(z zoneParam) string {
+	if z.name != "" || z.loc != time.Local {
+		return z.name
+	}
+	return time.Local.String()
 }

@@ -65,11 +65,49 @@ type Server struct {
 }
 
 // PublicIPv4 reports a public unicast IPv4 address: not private, CGNAT,
-// loopback, link-local, multicast or unspecified.
+// loopback, link-local, multicast, or any other IANA special-purpose block.
 func PublicIPv4(a netip.Addr) bool {
 	a = a.Unmap()
-	return a.Is4() && a.IsGlobalUnicast() && !a.IsPrivate() && !cgnat.Contains(a)
+	if !a.Is4() || !a.IsGlobalUnicast() || a.IsPrivate() {
+		return false
+	}
+	for _, p := range specialIPv4 {
+		if p.Contains(a) {
+			return false
+		}
+	}
+	return true
 }
+
+// specialIPv4 is the IANA IPv4 special-purpose address registry's blocks
+// that are not globally reachable (RFC 6890 and successors).
+var specialIPv4 = func() []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range []string{
+		"0.0.0.0/8",          // this network
+		"10.0.0.0/8",         // private
+		"100.64.0.0/10",      // shared address space (CGNAT)
+		"127.0.0.0/8",        // loopback
+		"169.254.0.0/16",     // link-local
+		"172.16.0.0/12",      // private
+		"192.0.0.0/24",       // IETF protocol assignments
+		"192.0.2.0/24",       // TEST-NET-1
+		"192.31.196.0/24",    // AS112-v4
+		"192.52.193.0/24",    // AMT
+		"192.88.99.0/24",     // deprecated 6to4 relay anycast
+		"192.168.0.0/16",     // private
+		"192.175.48.0/24",    // direct delegation AS112
+		"198.18.0.0/15",      // benchmarking
+		"198.51.100.0/24",    // TEST-NET-2
+		"203.0.113.0/24",     // TEST-NET-3
+		"224.0.0.0/4",        // multicast
+		"240.0.0.0/4",        // reserved
+		"255.255.255.255/32", // limited broadcast
+	} {
+		out = append(out, netip.MustParsePrefix(s))
+	}
+	return out
+}()
 
 // PrivateIPv4 reports an address on the user's own networks: RFC 1918,
 // CGNAT (100.64/10), link-local or loopback.
