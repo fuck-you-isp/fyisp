@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"net/netip"
@@ -69,9 +70,14 @@ const (
 	// InvestigationKeep is how long a finished trace's state is shown.
 	InvestigationKeep = time.Hour
 	// Public starts: per client (Cf-Connecting-Ip), at most one new trace
-	// per PublicInvestigateEvery and PublicInvestigatePerHour an hour.
-	PublicInvestigateEvery   = 30 * time.Second
-	PublicInvestigatePerHour = 10
+	// per PublicInvestigateEvery and PublicInvestigatePerHour an hour; at
+	// most MaxPublicInvestigations of the slots (the owner keeps one); and
+	// a finished target can be started again from the share link only
+	// after PublicInvestigateCooldown.
+	PublicInvestigateEvery    = 30 * time.Second
+	PublicInvestigatePerHour  = 10
+	MaxPublicInvestigations   = MaxInvestigations - 1
+	PublicInvestigateCooldown = 5 * time.Minute
 	// MaxTraceHops bounds hop numbers accepted by /api/trace/panel.
 	MaxTraceHops = 40
 	// MaxHopStats and MaxRouteChanges cap list lengths in responses.
@@ -711,6 +717,7 @@ type investigationJSON struct {
 type invSession struct {
 	inv     Investigation
 	started time.Time
+	public  bool // started from the share link
 }
 
 func (se *invSession) json(target string) *investigationJSON {
@@ -726,7 +733,7 @@ func (se *invSession) json(target string) *investigationJSON {
 func (se *invSession) running() bool { _, ended := se.inv.Progress(); return ended.IsZero() }
 
 // Investigations tracks on-demand traces. One value is shared by the local
-// and the public handler (Deps.Investigations), so MaxInvestigations holds
+// and the public handler (Deps.Investigations), so the slot limits hold
 // across both.
 type Investigations struct {
 	mu  sync.Mutex
@@ -739,7 +746,19 @@ func NewInvestigations() *Investigations {
 	return &Investigations{m: map[string]*invSession{}, now: time.Now}
 }
 
-var errTooManyInvestigations = errors.New("too many on-demand traces running")
+// invError is a refused start: a stable code for the UI (docs/TRACE-API.md)
+// and, for the limits, how long to wait.
+type invError struct {
+	status int
+	code   string
+	msg    string
+	retry  time.Duration
+}
+
+func (e *invError) Error() string { return e.msg }
+
+// errNoSlot: every slot this listener may use is taken.
+var errNoSlot = &invError{http.StatusTooManyRequests, "busy", "too many on-demand traces running", 30 * time.Second}
 
 // pruneLocked drops finished traces older than InvestigationKeep. mu is held.
 func (iv *Investigations) pruneLocked(now time.Time) {
@@ -759,30 +778,44 @@ func (iv *Investigations) running(target string) bool {
 }
 
 // start starts target's trace for InvestigateRounds rounds. A running one
-// is returned as is (its count is not reset); a finished one starts afresh.
-func (iv *Investigations) start(src TraceSource, target string) (*investigationJSON, error) {
+// is returned as is (its count is not reset). A finished one starts afresh,
+// from the share link only after PublicInvestigateCooldown. Public starts
+// may hold at most MaxPublicInvestigations of the MaxInvestigations slots,
+// so the owner always has one.
+func (iv *Investigations) start(src TraceSource, target string, public bool) (st *investigationJSON, created bool, err error) {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	iv.pruneLocked(iv.now())
-	if se := iv.m[target]; se != nil && se.running() {
-		return se.json(target), nil
-	}
-	n := 0
-	for _, se := range iv.m {
-		if se.running() {
-			n++
+	now := iv.now()
+	iv.pruneLocked(now)
+	if se := iv.m[target]; se != nil {
+		_, ended := se.inv.Progress()
+		switch {
+		case ended.IsZero():
+			return se.json(target), false, nil
+		case public && now.Sub(ended) < PublicInvestigateCooldown:
+			return nil, false, &invError{http.StatusTooManyRequests, "cooldown", "this target was traced a moment ago; try again later",
+				PublicInvestigateCooldown - now.Sub(ended)}
 		}
 	}
-	if n >= MaxInvestigations {
-		return nil, errTooManyInvestigations
+	all, pub := 0, 0
+	for _, se := range iv.m {
+		if se.running() {
+			all++
+			if se.public {
+				pub++
+			}
+		}
+	}
+	if all >= MaxInvestigations || (public && pub >= MaxPublicInvestigations) {
+		return nil, false, errNoSlot
 	}
 	inv, err := src.Investigate(target, InvestigateRounds)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	se := &invSession{inv: inv, started: iv.now()}
+	se := &invSession{inv: inv, started: now, public: public}
 	iv.m[target] = se
-	return se.json(target), nil
+	return se.json(target), true, nil
 }
 
 // state is target's trace, if it runs or finished recently.
@@ -796,31 +829,67 @@ func (iv *Investigations) state(target string) *investigationJSON {
 	return nil
 }
 
-// investigate starts a trace for POST /api/investigate?target= once the
-// listener's own checks passed; limit (public only) is asked before a new
-// trace starts, not for one that already runs.
-func (s *server) investigate(w http.ResponseWriter, r *http.Request, limit func() (bool, time.Duration)) {
-	q := r.URL.Query()
-	if err := checkParams(q, "target"); err != nil {
-		writeErr(w, r, http.StatusBadRequest, err.Error())
-		return
+// writeInvErr writes a refused investigate request: {"error", "code",
+// "retry_after" (seconds, with Retry-After)}.
+func writeInvErr(w http.ResponseWriter, r *http.Request, status int, code, msg string, retry time.Duration) {
+	body := map[string]any{"error": msg, "code": code}
+	if retry > 0 {
+		secs := int((retry + time.Second - 1) / time.Second)
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		body["retry_after"] = secs
 	}
-	target := q.Get("target")
-	if !s.checkTarget(w, r, target) { // profile target names only
+	writeJSON(w, r, status, body)
+}
+
+// investigateBodyMax caps the request body; the route takes none.
+const investigateBodyMax = 1 << 10
+
+// investigateRequest applies the request checks both listeners share: POST,
+// no body, exactly one target parameter. It writes the refusal and returns
+// "" on failure. The response is never cached. The listener then checks the
+// origin, and investigate the target name.
+func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) string {
+	w.Header().Set("Cache-Control", "no-store")
+	if s.d.Trace == nil {
+		writeInvErr(w, r, http.StatusNotFound, "unavailable", "tracing is not available", 0)
+		return ""
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeInvErr(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", 0)
+		return ""
+	}
+	if n, _ := io.Copy(io.Discard, http.MaxBytesReader(w, r.Body, investigateBodyMax)); n > 0 {
+		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "this request takes no body", 0)
+		return ""
+	}
+	q := r.URL.Query()
+	if err := checkParams(q, "target"); err != nil || len(q["target"]) != 1 {
+		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "want exactly one target parameter", 0)
+		return ""
+	}
+	return q.Get("target")
+}
+
+// investigate starts the trace once the listener's checks passed; limit
+// (public only) is asked before a new trace starts, not for one that
+// already runs. Logs name the target and the error, never the client.
+func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string, limit func() (bool, time.Duration), started func()) {
+	if !s.knownTarget(target) { // profile target names only, never a host or an address
+		writeInvErr(w, r, http.StatusNotFound, "unknown_target", "unknown target", 0)
 		return
 	}
 	if limit != nil && !s.inv.running(target) {
 		if ok, wait := limit(); !ok {
-			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds()+0.999)))
-			writeErr(w, r, http.StatusTooManyRequests, "too many traces started from here; try again later")
+			writeInvErr(w, r, http.StatusTooManyRequests, "rate_limited", "too many traces started from here; try again later", wait)
 			return
 		}
 	}
-	st, err := s.inv.start(s.d.Trace, target)
+	st, created, err := s.inv.start(s.d.Trace, target, s.public)
+	var ie *invError
 	switch {
-	case errors.Is(err, errTooManyInvestigations):
-		w.Header().Set("Retry-After", "30")
-		writeErr(w, r, http.StatusTooManyRequests, err.Error())
+	case errors.As(err, &ie):
+		writeInvErr(w, r, ie.status, ie.code, ie.msg, ie.retry)
 		return
 	case err != nil:
 		s.d.log().Warn("investigate", "target", target, "err", err)
@@ -828,10 +897,12 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, limit func(
 		if !s.public {
 			msg += ": " + err.Error()
 		}
-		writeErr(w, r, http.StatusInternalServerError, msg)
+		writeInvErr(w, r, http.StatusInternalServerError, "failed", msg, 0)
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
+	if started != nil && created {
+		started()
+	}
 	writeJSON(w, r, http.StatusOK, st)
 }
 
@@ -839,54 +910,59 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, limit func(
 // listener: same origin and the CSRF token, no admin token (anyone who
 // can open the dashboard may trace a profile target).
 func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) {
-	if h.d.Trace == nil {
-		writeErr(w, r, http.StatusNotFound, "tracing is not available")
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
+	target := h.investigateRequest(w, r)
+	if target == "" {
 		return
 	}
 	if !sameOrigin(r) {
-		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
+		writeInvErr(w, r, http.StatusForbidden, "forbidden", "cross-origin request refused", 0)
 		return
 	}
 	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
-		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
+		writeInvErr(w, r, http.StatusForbidden, "forbidden", "missing or bad "+HeaderCSRF, 0)
 		return
 	}
-	h.investigate(w, r, nil)
+	h.investigate(w, r, target, nil, nil)
 }
 
-// startLimiter limits new public trace starts per client.
+// startLimiter limits new public trace starts per client. Only starts that
+// happened count: a refused one (cooldown, no slot) does not.
 type startLimiter struct {
 	mu sync.Mutex
 	m  map[string][]time.Time // client -> starts in the last hour
 }
 
-// allow records a start for key at now if the limits allow it; otherwise
-// it says how long to wait.
-func (l *startLimiter) allow(key string, now time.Time) (bool, time.Duration) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.m == nil || len(l.m) > 4096 {
-		l.m = map[string][]time.Time{} // bounded: forget everyone rather than grow
-	}
-	ts := l.m[key][:0:0]
+// recent returns key's starts in the last hour. mu is held.
+func (l *startLimiter) recent(key string, now time.Time) []time.Time {
+	var ts []time.Time
 	for _, t := range l.m[key] {
 		if now.Sub(t) < time.Hour {
 			ts = append(ts, t)
 		}
 	}
+	return ts
+}
+
+// check reports whether key may start a trace at now, or how long to wait.
+func (l *startLimiter) check(key string, now time.Time) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ts := l.recent(key, now)
 	switch {
 	case len(ts) > 0 && now.Sub(ts[len(ts)-1]) < PublicInvestigateEvery:
-		l.m[key] = ts
 		return false, PublicInvestigateEvery - now.Sub(ts[len(ts)-1])
 	case len(ts) >= PublicInvestigatePerHour:
-		l.m[key] = ts
 		return false, time.Hour - now.Sub(ts[0])
 	}
-	l.m[key] = append(ts, now)
 	return true, 0
+}
+
+// record counts a start by key at now.
+func (l *startLimiter) record(key string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.m == nil || len(l.m) > 4096 {
+		l.m = map[string][]time.Time{} // bounded: forget everyone rather than grow
+	}
+	l.m[key] = append(l.recent(key, now), now)
 }

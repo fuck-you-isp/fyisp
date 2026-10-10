@@ -54,6 +54,11 @@ func Public(d Deps, secret string) http.Handler {
 	}
 }
 
+// clientKey identifies a public client by Cf-Connecting-Ip, which
+// Cloudflare's edge sets on every tunnelled request (overwriting any value
+// the client sent). That is trustworthy only because the public listener
+// binds 127.0.0.1 and only the in-process tunnel connects to it: keep it
+// loopback-only. Never log the key.
 func clientKey(r *http.Request) string {
 	if ip := r.Header.Get("Cf-Connecting-Ip"); ip != "" {
 		return ip
@@ -126,20 +131,21 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 // the public listener's only write route: anyone with the link may trace a
 // profile target. Same origin only; new starts are limited per client; the
 // global MaxInvestigations is shared with the local listener.
+//
+// sameOrigin works behind the tunnel: cloudflared passes the visitor's Host
+// (the trycloudflare hostname) to the origin unchanged, so a same-origin
+// browser POST carries Origin https://<that host> (TestLiveSameOrigin in
+// internal/tunnel checks this on a real tunnel).
 func (h *publicHandler) servePublicInvestigate(w http.ResponseWriter, r *http.Request) {
-	if h.d.Trace == nil {
-		notFound(w, r)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
+	target := h.investigateRequest(w, r)
+	if target == "" {
 		return
 	}
 	if !sameOrigin(r) {
-		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
+		writeInvErr(w, r, http.StatusForbidden, "forbidden", "cross-origin request refused", 0)
 		return
 	}
 	key := clientKey(r)
-	h.investigate(w, r, func() (bool, time.Duration) { return h.starts.allow(key, h.now()) })
+	h.investigate(w, r, target, func() (bool, time.Duration) { return h.starts.check(key, h.now()) },
+		func() { h.starts.record(key, h.now()) })
 }

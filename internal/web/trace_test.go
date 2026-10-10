@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -524,10 +526,16 @@ func TestInvestigate(t *testing.T) {
 }
 
 // TestPublicInvestigate: anyone with the link may trace a profile target,
-// same origin only, with per-client and global limits.
+// same origin only, with per-client, slot and cooldown limits; refusals
+// carry a stable code.
 func TestPublicInvestigate(t *testing.T) {
 	d, ft, _ := traceFixture(t)
-	d.Investigations = NewInvestigations()
+	invs := NewInvestigations()
+	d.Investigations = invs
+	p := d.Profile()
+	for i := range 16 {
+		p.Targets = append(p.Targets, model.Target{Name: fmt.Sprintf("T%d", i), Group: "common"})
+	}
 	h := Public(d, testSecret).(*publicHandler)
 	now := time.Now()
 	h.now = func() time.Time { return now }
@@ -535,74 +543,125 @@ func TestPublicInvestigate(t *testing.T) {
 	hdr := func(ip string) map[string]string {
 		return map[string]string{"Host": "x.trycloudflare.com", "Origin": "https://x.trycloudflare.com", "Sec-Fetch-Site": "same-origin", "Cf-Connecting-Ip": ip}
 	}
+	code := func(w *httptest.ResponseRecorder) string {
+		var e struct{ Code string }
+		_ = json.Unmarshal(w.Body.Bytes(), &e)
+		return e.Code
+	}
 	for name, c := range map[string]struct {
 		method, path string
 		hdr          map[string]string
-		code         int
+		body         string
+		status       int
+		code         string
 	}{
-		"cross-origin":       {"POST", base + "?target=Alpha", map[string]string{"Origin": "https://evil.com", "Cf-Connecting-Ip": "1.1.1.1"}, 403},
-		"no origin":          {"POST", base + "?target=Alpha", map[string]string{"Cf-Connecting-Ip": "1.1.1.1"}, 403},
-		"not a target":       {"POST", base + "?target=8.8.8.8", hdr("1.1.1.1"), 404},
-		"host, not a target": {"POST", base + "?target=evil.example.com", hdr("1.1.1.1"), 404},
-		"GET":                {"GET", base + "?target=Alpha", hdr("1.1.1.1"), 405},
-		"bad secret":         {"POST", "/s/" + strings.Repeat("0", len(testSecret)) + "/api/investigate?target=Alpha", hdr("1.1.1.1"), 404},
+		"cross-origin":    {"POST", base + "?target=Alpha", map[string]string{"Host": "x.trycloudflare.com", "Origin": "https://evil.com", "Cf-Connecting-Ip": "1.1.1.1"}, "", 403, "forbidden"},
+		"cross-site":      {"POST", base + "?target=Alpha", map[string]string{"Host": "x.trycloudflare.com", "Sec-Fetch-Site": "cross-site", "Cf-Connecting-Ip": "1.1.1.1"}, "", 403, "forbidden"},
+		"no origin":       {"POST", base + "?target=Alpha", map[string]string{"Cf-Connecting-Ip": "1.1.1.1"}, "", 403, "forbidden"},
+		"an address":      {"POST", base + "?target=8.8.8.8", hdr("1.1.1.1"), "", 404, "unknown_target"},
+		"a host":          {"POST", base + "?target=evil.example.com", hdr("1.1.1.1"), "", 404, "unknown_target"},
+		"two targets":     {"POST", base + "?target=Alpha&target=Beta", hdr("1.1.1.1"), "", 400, "bad_request"},
+		"other parameter": {"POST", base + "?target=Alpha&host=8.8.8.8", hdr("1.1.1.1"), "", 400, "bad_request"},
+		"a body":          {"POST", base + "?target=Alpha", hdr("1.1.1.1"), `{"target":"Alpha","host":"8.8.8.8"}`, 400, "bad_request"},
+		"a big body":      {"POST", base + "?target=Alpha", hdr("1.1.1.1"), strings.Repeat("x", 4<<10), 400, "bad_request"},
+		"GET":             {"GET", base + "?target=Alpha", hdr("1.1.1.1"), "", 405, "method_not_allowed"},
+		"bad secret":      {"POST", "/s/" + strings.Repeat("0", len(testSecret)) + "/api/investigate?target=Alpha", hdr("1.1.1.1"), "", 404, ""},
 	} {
-		if w := do(h, c.method, c.path, c.hdr); w.Code != c.code {
-			t.Errorf("%s: %d, want %d (%s)", name, w.Code, c.code, w.Body.String())
+		r := httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))
+		for k, v := range c.hdr {
+			if k == "Host" {
+				r.Host = v
+				continue
+			}
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != c.status || code(w) != c.code {
+			t.Errorf("%s: %d %q, want %d %q (%s)", name, w.Code, code(w), c.status, c.code, w.Body.String())
+		}
+		if c.status != 404 || c.code != "" {
+			if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+				t.Errorf("%s: Cache-Control %q", name, cc)
+			}
 		}
 	}
 	if len(ft.started) != 0 {
 		t.Fatalf("refused requests started traces: %v", ft.started)
 	}
 	w := do(h, "POST", base+"?target=Alpha", hdr("1.1.1.1"))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"rounds_max":250`) || len(ft.started) != 1 {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"rounds_max":250`) || len(ft.started) != 1 || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("start: %d %s", w.Code, w.Body.String())
 	}
-	// Re-posting the running trace is free; a new one within 30 s isn't.
-	if w := do(h, "POST", base+"?target=Alpha", hdr("1.1.1.1")); w.Code != 200 || len(ft.started) != 1 {
-		t.Errorf("re-post: %d", w.Code)
+	// Redacted like every public trace view: no private hop addresses.
+	tv := do(h, "GET", "/s/"+testSecret+"/api/trace?target=Alpha", hdr("5.5.5.5")).Body.String()
+	for _, a := range []string{"192.168.1.1", "100.72.0.1", "10.20.0.1"} {
+		if strings.Contains(tv, a) {
+			t.Errorf("public trace view of a public start shows %s", a)
+		}
 	}
-	if w := do(h, "POST", base+"?target=Beta", hdr("1.1.1.1")); w.Code != 429 || w.Header().Get("Retry-After") == "" {
-		t.Errorf("second start within 30 s: %d", w.Code)
+	if !strings.Contains(tv, `"investigation":{"target":"Alpha"`) {
+		t.Errorf("public trace view: %s", tv)
 	}
-	// Another client may; then the global limit (shared with the local
-	// listener) holds.
-	if w := do(h, "POST", base+"?target=Beta", hdr("2.2.2.2")); w.Code != 200 {
-		t.Errorf("other client: %d", w.Code)
+	// Re-posting the running trace is free and doesn't reset it.
+	ft.sessions[0].advance(10)
+	w = do(h, "POST", base+"?target=Alpha", hdr("1.1.1.1"))
+	if w.Code != 200 || len(ft.started) != 1 || !strings.Contains(w.Body.String(), `"rounds_done":10`) {
+		t.Errorf("re-post: %d %s", w.Code, w.Body.String())
 	}
-	p := d.Profile()
-	for i := range 4 {
-		p.Targets = append(p.Targets, model.Target{Name: fmt.Sprintf("T%d", i), Group: "common"})
+	// A new start within 30 s isn't.
+	w = do(h, "POST", base+"?target=Beta", hdr("1.1.1.1"))
+	if w.Code != 429 || code(w) != "rate_limited" || w.Header().Get("Retry-After") == "" || !strings.Contains(w.Body.String(), `"retry_after":`) {
+		t.Errorf("second start within 30 s: %d %s", w.Code, w.Body.String())
+	}
+	// Public starts hold at most 3 slots: the owner keeps one.
+	for i, ip := range []string{"2.2.2.2", "3.3.3.3"} {
+		if w := do(h, "POST", fmt.Sprintf("%s?target=T%d", base, i), hdr(ip)); w.Code != 200 {
+			t.Errorf("public T%d: %d", i, w.Code)
+		}
+	}
+	if w := do(h, "POST", base+"?target=T2", hdr("4.4.4.4")); w.Code != 429 || code(w) != "busy" {
+		t.Errorf("fourth public slot: %d %s", w.Code, w.Body.String())
 	}
 	lh := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
 	local := map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000", "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123"}
-	for i := range 2 {
-		if w := do(lh, "POST", fmt.Sprintf("/api/investigate?target=T%d", i), local); w.Code != 200 {
-			t.Errorf("local T%d: %d", i, w.Code)
-		}
+	if w := do(lh, "POST", "/api/investigate?target=T3", local); w.Code != 200 {
+		t.Errorf("owner's slot: %d %s", w.Code, w.Body.String())
 	}
-	if w := do(h, "POST", base+"?target=T2", hdr("3.3.3.3")); w.Code != 429 || !strings.Contains(w.Body.String(), "too many on-demand traces") {
-		t.Errorf("global limit across listeners: %d %s", w.Code, w.Body.String())
+	if w := do(lh, "POST", "/api/investigate?target=T4", local); w.Code != 429 || code(w) != "busy" {
+		t.Errorf("global 4: %d %s", w.Code, w.Body.String())
+	}
+	// Finished: the share link can't restart a target for 5 minutes; the
+	// owner can.
+	for _, se := range ft.sessions {
+		se.advance(1000)
+	}
+	if w := do(h, "POST", base+"?target=Alpha", hdr("6.6.6.6")); w.Code != 429 || code(w) != "cooldown" || w.Header().Get("Retry-After") == "" {
+		t.Errorf("public restart within the cooldown: %d %s", w.Code, w.Body.String())
+	}
+	if w := do(lh, "POST", "/api/investigate?target=Alpha", local); w.Code != 200 {
+		t.Errorf("owner restart: %d %s", w.Code, w.Body.String())
+	}
+	invs.mu.Lock()
+	invs.now = func() time.Time { return time.Now().Add(PublicInvestigateCooldown + time.Second) }
+	invs.mu.Unlock()
+	if w := do(h, "POST", base+"?target=T0", hdr("6.6.6.6")); w.Code != 200 {
+		t.Errorf("public restart after the cooldown: %d %s", w.Code, w.Body.String())
 	}
 	// Per client: at most 10 an hour.
 	for _, se := range ft.sessions {
-		se.advance(1000) // all finished: the global limit is out of the way
+		se.advance(1000)
 	}
-	codes := map[int]int{}
+	codes := map[string]int{}
 	for i := range 12 {
 		now = now.Add(31 * time.Second)
-		codes[do(h, "POST", fmt.Sprintf("%s?target=T%d", base, i%4), hdr("4.4.4.4")).Code]++
+		w := do(h, "POST", fmt.Sprintf("%s?target=T%d", base, 4+i), hdr("7.7.7.7"))
+		codes[strconv.Itoa(w.Code)+code(w)]++
 		for _, se := range ft.sessions {
 			se.advance(1000)
 		}
 	}
-	if codes[200] != PublicInvestigatePerHour || codes[429] != 2 {
+	if codes["200"] != PublicInvestigatePerHour || codes["429rate_limited"] != 2 {
 		t.Errorf("per hour: %v", codes)
-	}
-	// The public trace view shows the state, nothing more.
-	var tr traceResp
-	_ = json.Unmarshal(do(h, "GET", "/s/"+testSecret+"/api/trace?target=Alpha", hdr("5.5.5.5")).Body.Bytes(), &tr)
-	if tr.Investigation == nil || tr.Investigation.Target != "Alpha" {
-		t.Errorf("public trace: %+v", tr.Investigation)
 	}
 }
