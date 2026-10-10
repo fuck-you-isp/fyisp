@@ -191,9 +191,11 @@ func (c callsResp) app(id string) int {
 }
 
 func TestCallsGood(t *testing.T) {
-	now := time.Now()
+	now := time.Date(2026, 10, 9, 12, 30, 30, 0, time.UTC) // fixed: the minute count must not depend on when the test runs
 	cs, d, _ := callsFixture(t, now, true, nil)
-	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
+	lh := Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
+	lh.now = func() time.Time { return now }
+	h := http.Handler(lh)
 	c, _ := getCalls(t, h, "/api/calls?from=now-10m", localHdr)
 	if c.State != "good" || c.Cause != nil || c.Quiet {
 		t.Errorf("top state %q cause %+v", c.State, c.Cause)
@@ -243,12 +245,26 @@ func TestCallsGood(t *testing.T) {
 		t.Errorf("zoom %+v", z)
 	}
 
-	// Without the opt-in Teams relay there is no Teams row (the UI says
-	// how to add it).
+	// Without the opt-in Teams relay, Teams is a "shared" row: its calls
+	// take the call path, its website is measured, and it never changes
+	// the top state.
 	_, d, _ = callsFixture(t, now, false, nil)
-	c, _ = getCalls(t, Local(d, LocalOptions{Addr: "127.0.0.1:3000"}), "/api/calls", localHdr)
-	if c.app("teams") >= 0 || c.app("meet") < 0 || c.State != "good" {
-		t.Errorf("without the relay: %+v", c.Apps)
+	lh = Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
+	lh.now = func() time.Time { return now }
+	c, _ = getCalls(t, lh, "/api/calls", localHdr)
+	i := c.app("teams")
+	if i < 0 || c.app("meet") < 0 || c.State != "good" {
+		t.Fatalf("without the relay: %+v", c.Apps)
+	}
+	if tm := c.Apps[i]; tm.UDP != "shared" || tm.State != "" || tm.WebSamples == 0 || tm.WebMs == nil || *tm.WebMs != 24 {
+		t.Errorf("teams without the relay: %+v", tm)
+	}
+	apps = nil
+	for _, a := range c.Apps {
+		apps = append(apps, a.App+":"+a.UDP)
+	}
+	if !slices.Equal(apps, []string{"teams:shared", "meet:measured", "zoom:not_measurable", "discord:not_measurable"}) {
+		t.Errorf("apps without the relay: %v", apps)
 	}
 }
 
@@ -257,7 +273,9 @@ func TestCallsGood(t *testing.T) {
 // state is the worst of the path verdict, the UDP verdicts and the path's
 // score, with its cause.
 func TestCallsStates(t *testing.T) {
-	now := time.Now()
+	// A fixed clock: which bursts lose a request (ts%25) and how full the
+	// last minute is must not depend on when the test runs.
+	now := time.Date(2026, 10, 9, 12, 30, 30, 0, time.UTC)
 	ok := burst{rtt: 20, jitter: 2, answered: 5}
 	cases := []struct {
 		name    string
@@ -424,7 +442,9 @@ func TestCallsStates(t *testing.T) {
 			if tc.verdict != "" {
 				fv.v = model.Verdict{Kind: tc.verdict, Since: now.Add(-time.Hour), Summary: "Something."}
 			}
-			c, _ := getCalls(t, Local(d, LocalOptions{Addr: "127.0.0.1:3000"}), "/api/calls?from=now-10m", localHdr)
+			h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
+			h.now = func() time.Time { return now }
+			c, _ := getCalls(t, h, "/api/calls?from=now-10m", localHdr)
 			if c.State != tc.top {
 				t.Errorf("top state %q, want %q", c.State, tc.top)
 			}

@@ -5,6 +5,7 @@
 //	fyisp-webdev -listen 0.0.0.0:3000 -public 0.0.0.0:3001 -backfill 6h
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 //	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
+//	fyisp-webdev -home isp                    # a Home scenario (internal/web/homescen)
 package main
 
 import (
@@ -28,100 +29,25 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/web"
+	"github.com/fuck-you-isp/fyisp/internal/web/homescen"
 )
 
-var names = strings.Fields(`Google-Meet Microsoft-Teams Discord google-dns cloudflare-dns quad9-dns open-dns dev-GHCR dev-GitHub
-DevTunnel-Global DevTunnel-UkSouth DevTunnel-NorthEurope DevTunnel-WestEurope DevTunnel-EastUs DevTunnel-EastUs2 DevTunnel-WestUs3
-DevTunnel-WestUs2 DevTunnel-SouthEastAsia DevTunnel-BrazilSouth DevTunnel-CentralIndia DevTunnel-AustraliaEast DevTunnel-AustraliaCentral
-Hetzner-Falkenstein Hetzner-Nuremberg Hetzner-Helsinki Hetzner-Ashburn Hetzner-Hillsboro Hetzner-Singapore
-AWS-us-east-1 AWS-us-east-2 AWS-us-west-1 AWS-us-west-2 AWS-af-south-1 AWS-ap-east-1 AWS-ap-east-2 AWS-ap-south-1 AWS-ap-south-2
-AWS-ap-southeast-1 AWS-ap-southeast-2 AWS-ap-southeast-3 AWS-ap-southeast-4 AWS-ap-southeast-5 AWS-ap-southeast-6 AWS-ap-southeast-7
-AWS-ap-northeast-1 AWS-ap-northeast-2 AWS-ap-northeast-3 AWS-ca-central-1 AWS-ca-west-1 AWS-eu-central-1 AWS-eu-central-2 AWS-eu-west-1
-AWS-eu-west-2 AWS-eu-west-3 AWS-eu-north-1 AWS-eu-south-1 AWS-eu-south-2 AWS-il-central-1 AWS-mx-central-1 AWS-me-south-1 AWS-me-central-1
-AWS-sa-east-1 GCP-us-west1 GCP-us-west2 GCP-us-west3 GCP-us-west4 GCP-us-central1 GCP-us-east1 GCP-us-east4 GCP-us-east5 GCP-us-south1
-GCP-northamerica-northeast1 GCP-northamerica-northeast2 GCP-southamerica-east1 GCP-southamerica-west1 GCP-europe-west1 GCP-europe-west2
-GCP-europe-west3 GCP-europe-west4 GCP-europe-west6 GCP-europe-west8 GCP-europe-west9 GCP-europe-west10 GCP-europe-west12
-GCP-europe-north1 GCP-europe-southwest1 GCP-europe-central2`)
-
-// pathTargets mirror v0.2's network-path layers: the gateway and ISP edge
-// (hosts resolved at runtime) and three anycast resolvers.
-var pathTargets = []model.Target{
-	{Name: "Gateway", Host: model.HostGateway, Group: "path", Layer: model.LayerGateway, Kinds: []model.ProbeKind{model.KindICMP}},
-	{Name: "ISP-edge", Host: model.HostEdge, Group: "path", Layer: model.LayerEdge, Kinds: []model.ProbeKind{model.KindICMP}},
-	{Name: "Cloudflare-anycast", Host: "1.1.1.1", Group: "path", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
-	{Name: "Google-anycast", Host: "8.8.8.8", Group: "path", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
-	{Name: "Quad9-anycast", Host: "9.9.9.9", Group: "path", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
+// udpBase are base RTTs (ms) of the STUN targets' fake bursts (see
+// probe.FakeBurst), with the opt-in Teams relay for -profile default,calls
+// (its region shows in the state hook).
+var udpBase = map[string]float64{
+	"Meet-STUN": 9, "Cloudflare-STUN": 6, "Cloudflare-UDP53": 6, "Twilio-STUN-global": 24, "Teams-Relay": 31,
 }
 
-// udpTargets are the default profile's STUN targets plus the opt-in Teams
-// relay (its region shows in the state hook): fake bursts, see
-// probe.FakeBurst. Base RTTs in ms.
-var udpTargets = []struct {
-	name, tag string
-	iv        time.Duration
-	base      float64
-}{
-	{"Meet-STUN", "app:meet", 5 * time.Second, 9},
-	{"Cloudflare-STUN", "", 5 * time.Second, 6},
-	{"Cloudflare-UDP53", "udp-53", 15 * time.Second, 6},
-	{"Twilio-STUN-global", "", 5 * time.Second, 24},
-	{"Teams-Relay", "app:teams", 5 * time.Second, 31},
-}
-
-// devProfile mirrors the default profile's 91 targets and 8 groups, plus
-// the network-path group and the Teams relay.
-func devProfile() *model.Profile {
-	p := &model.Profile{Name: "dev", Groups: []model.Group{
-		{ID: "path", Title: "Network path", Order: 0},
-		{ID: "common", Title: "Common Services (<100ms is good for audio/video calls)", Order: 1},
-		{ID: "dns", Title: "DNS", Order: 2},
-		{ID: "devtunnels", Title: "DevTunnels", Order: 3},
-		{ID: "dev", Title: "Various Dev Related Services", Order: 4},
-		{ID: "aws", Title: "Amazon Web Services", Order: 5},
-		{ID: "hetzner", Title: "Hetzner", Order: 6},
-		{ID: "gcp", Title: "Google Cloud Platform", Order: 7},
-		{ID: "calls", Title: "Call path (UDP)", Order: 8},
-	}}
-	for _, t := range pathTargets {
-		t.Interval = 15 * time.Second
-		p.Targets = append(p.Targets, t)
+// devProfile is the default profile, network path included. Probes and
+// traces are fake: no host is ever contacted.
+func devProfile() (*model.Profile, error) {
+	p, err := profile.Default()
+	if err != nil {
+		return nil, err
 	}
-	for _, n := range names {
-		g := "common"
-		switch {
-		case strings.HasSuffix(n, "-dns"):
-			g = "dns"
-		case strings.HasPrefix(n, "DevTunnel-"):
-			g = "devtunnels"
-		case strings.HasPrefix(n, "dev-"):
-			g = "dev"
-		case strings.HasPrefix(n, "AWS-"):
-			g = "aws"
-		case strings.HasPrefix(n, "Hetzner-"):
-			g = "hetzner"
-		case strings.HasPrefix(n, "GCP-"):
-			g = "gcp"
-		}
-		t := model.Target{Name: n, Host: strings.ToLower(n) + ".invalid", Group: g, Interval: 15 * time.Second}
-		switch n {
-		case "Google-Meet":
-			t.Tags = []string{"app:meet"}
-		case "Microsoft-Teams":
-			t.Tags = []string{"app:teams"}
-		case "Discord":
-			t.Tags = []string{"app:discord"}
-		}
-		p.Targets = append(p.Targets, t)
-	}
-	for _, u := range udpTargets {
-		t := model.Target{Name: u.name, Host: strings.ToLower(u.name) + ".invalid", Port: 3478, Group: "calls",
-			Kinds: []model.ProbeKind{model.KindUDP}, Interval: u.iv, Tags: []string{"udp-path"}}
-		if u.tag != "" {
-			t.Tags = append(t.Tags, u.tag)
-		}
-		p.Targets = append(p.Targets, t)
-	}
-	return p
+	p.Name = "dev"
+	return p, nil
 }
 
 // Synthetic history windows, as fractions of the backfill range before now.
@@ -154,10 +80,8 @@ func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time) {
 		case model.LayerAnycast:
 			base = 12 + float64(i%3)*2
 		}
-		for _, u := range udpTargets {
-			if u.name == t.Name {
-				base = u.base
-			}
+		if b, ok := udpBase[t.Name]; ok {
+			base = b
 		}
 		for _, k := range t.ProbeKinds() {
 			iv := t.Interval
@@ -262,20 +186,28 @@ func main() {
 	vCycle := flag.Duration("verdict-cycle", 20*time.Second, "how long each fake verdict kind lasts")
 	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, udp_blocked, stun_blocked (quiet), udp_degraded, warming_up)")
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
-	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP-edge samples (shows \"discovering…\")")
+	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP edge samples (shows \"discovering…\")")
 	noTrace := flag.Bool("no-trace", false, "run without a trace source (Investigate view hidden)")
 	noNotes := flag.Bool("no-notes", false, "run without an annotation store (notes hidden)")
 	noReports := flag.Bool("no-reports", false, "run without reports")
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
+	home := flag.String("home", "", "a Home scenario instead of the fake probes and verdict (the real /api/home over its data): "+strings.Join(homescen.Names, ", "))
 	flag.Parse()
+	if *home == "public" { // the isp scenario; open the share link for the public voice
+		*home = "isp"
+	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	p := devProfile()
+	p, err := devProfile()
+	if err != nil {
+		log.Error("profile", "err", err)
+		os.Exit(2)
+	}
 	if *named != "" {
 		reg, err := profile.Builtin()
 		if err == nil {
@@ -308,7 +240,15 @@ func main() {
 		}
 	}
 	now := time.Now()
-	// sink adds the evening slowdown and drops ISP-edge samples with
+	var sc *homescen.Scenario
+	if *home != "" {
+		if sc, err = homescen.Build(*home, now, time.Local); err != nil {
+			log.Error("-home", "err", err)
+			os.Exit(2)
+		}
+		p = sc.Profile
+	}
+	// sink adds the evening slowdown and drops ISP edge samples with
 	// -edge-undiscovered.
 	sink := func(inner model.Sink) model.Sink {
 		inner = callsSink(slowSink(inner, now.Add(-slowFor)), *callsMode, now)
@@ -316,19 +256,35 @@ func main() {
 			return inner
 		}
 		return model.SinkFunc(func(s model.Sample) {
-			if s.Key.Target != "ISP-edge" {
+			if s.Key.Target != "ISP edge" {
 				inner.Observe(s)
 			}
 		})
 	}
 	st := store.NewFake()
 	var warm web.Warmup
-	if *bf > 0 {
-		log.Info("backfilling", "range", *bf)
-		backfill(sink(st), p, *bf, now)
-	}
 	pr := &probe.Fake{Seed: 42, LossRate: *loss}
-	go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm})) }()
+	switch {
+	case sc != nil:
+		// The scenario's own samples, going on as they were.
+		st, *bf = sc.Store, 7*24*time.Hour
+		for _, t := range p.Targets { // reporting, except while warming up
+			if *home != "warming" || t.Layer != "" {
+				warm.Observe(model.Sample{Key: model.SeriesKey{Target: t.Name}, Slot: now})
+			}
+		}
+		go func() {
+			for t := time.NewTicker(5 * time.Second); ctx.Err() == nil; <-t.C {
+				sc.Fill(time.Now())
+			}
+		}()
+	default:
+		if *bf > 0 {
+			log.Info("backfilling", "range", *bf)
+			backfill(sink(st), p, *bf, now)
+		}
+		go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm})) }()
+	}
 
 	sec := *secret
 	if sec == "" {
@@ -359,7 +315,10 @@ func main() {
 		go ft.run(ctx)
 		d.Trace = ft
 	}
-	if !*noVerdict {
+	switch {
+	case sc != nil:
+		d.Verdict = sc.Verdict
+	case !*noVerdict:
 		d.Verdict = callsVerdict{newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge), *callsMode, now}
 	}
 	var notes *fakeNotes

@@ -3,18 +3,24 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[]}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[],home?:string}} TargetInfo */
 /** @typedef {{target:string,kind:string,ratio:number,now_ms:number,normal_ms:number}} SlowItem */
 /** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[],quiet?:boolean}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
 /** @typedef {{target:string,kind:string,interval:number,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
 
-const uPlot = /** @type {any} */ (window).uPlot;
+import {
+  meta, MODE, TOKEN, $, h, storageGet, storageSet, mqLight,
+  effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
+  fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
+  hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput, copyText,
+  useStatus,
+} from './core.js';
+import { Home } from './home.js';
+import { Report } from './report.js';
 
-const meta = (/** @type {string} */ n) => document.querySelector(`meta[name="${n}"]`)?.getAttribute('content') || '';
-const MODE = meta('fyisp-mode') === 'public' ? 'public' : 'local';
-const TOKEN = meta('fyisp-token');
+const uPlot = /** @type {any} */ (window).uPlot;
 
 const RANGES = [['5m', 300], ['30m', 1800], ['1h', 3600], ['6h', 21600], ['24h', 86400], ['48h', 172800], ['7d', 604800], ['30d', 2592000], ['90d', 7776000]];
 // Probe kinds, main kind first: shipped profiles measure every service with
@@ -37,17 +43,17 @@ const PATH_GROUP = 'path';
 // Verdict kinds: headline, short badge, and what it means (the "?" tooltip).
 /** @type {Object<string,{label:string,short:string,why:string}>} */
 const VERDICTS = {
-  ok: { label: 'All good', short: 'OK', why: 'Your router, your ISP and the internet are all answering normally.' },
+  ok: { label: 'All good', short: 'OK', why: 'Your router, your internet provider and the internet are all answering normally.' },
   warming_up: { label: 'Warming up', short: 'Warming up', why: 'fyisp has just started and needs a couple of minutes of measurements before it can say whose fault a problem is.' },
-  lan: { label: 'Home network problem', short: 'LAN', why: 'Your router (the gateway) is not answering reliably, so the problem is inside your home: Wi-Fi, cables or the router itself. Your ISP is not to blame for this one.' },
-  isp: { label: 'ISP problem', short: 'ISP', why: 'Your router answers fine, but the first hop on your ISP\'s side does not. The problem is in your ISP\'s network.' },
-  upstream: { label: 'Internet problem beyond your ISP', short: 'Upstream', why: 'Your router and your ISP\'s first hop answer, but most of the internet (including the big anycast resolvers) does not: your ISP\'s upstream links or peering are failing.' },
-  dns: { label: 'DNS problem', short: 'DNS', why: 'The network path works, but name lookups are failing widely. The DNS resolver you use (often your router\'s or your ISP\'s) is the likely culprit.' },
-  service: { label: 'Some services are down', short: 'Service', why: 'Your connection is fine; only some services or regions are unhealthy. That is on their side, not yours or your ISP\'s.' },
-  no_network: { label: 'No network', short: 'No network', why: 'This machine has no route to the internet: Wi-Fi off, cable unplugged, or no network configured.' },
-  udp_blocked: { label: 'UDP blocked', short: 'UDP blocked', why: 'Your connection works, but UDP, which call audio and video use, gets no answers from several independent call services, not even on port 53. A firewall on this network (or on this computer) is blocking it. Calls fall back to slower TCP relays or fail.' },
-  stun_blocked: { label: 'Call ports blocked', short: 'STUN blocked', why: 'Your connection works and UDP gets through on port 53, but the ports calls use (STUN, e.g. 3478 and 19302) get no answers from several call services. A firewall is blocking them; calls may fall back to slower relays.' },
-  udp_degraded: { label: 'Call quality degraded', short: 'Calls', why: 'Your connection looks fine for browsing, but the UDP path call audio and video use is losing packets or jittery towards several call services. Calls may sound choppy.' },
+  lan: { label: 'Home network problem', short: 'Home network', why: 'Your router (the gateway) is not answering reliably, so the problem is most likely inside your home: Wi-Fi, cables or the router itself. Your internet provider looks fine from here.' },
+  isp: { label: 'Internet provider problem', short: 'Provider', why: 'Your router answers fine, but the first hop on your internet provider\'s side (the ISP edge) does not. The problem is most likely in your provider\'s network.' },
+  upstream: { label: 'Problem further out on the internet', short: 'Internet', why: 'Your router and your provider\'s first hop answer, but much of the internet (including the big anycast resolvers) does not. That is either your provider\'s links to the rest of the internet, or a wider outage.' },
+  dns: { label: 'Name lookup (DNS) problem', short: 'Name lookup', why: 'The network path works, but name lookups are failing widely. The DNS resolver you use (often your router\'s or your provider\'s) is the likely culprit.' },
+  service: { label: 'Some services aren\'t answering', short: 'One service', why: 'Your connection looks fine; only some services or regions aren\'t answering from here. That is most likely on their side, though a region can also be unreachable through your provider\'s routes.' },
+  no_network: { label: 'No network', short: 'Offline', why: 'The device running fyisp has no route to the internet: Wi-Fi off, cable unplugged, or no network configured.' },
+  udp_blocked: { label: 'Calls blocked (UDP)', short: 'Calls blocked', why: 'Your connection works, but UDP, which call audio and video use, gets no answers from several independent call services, not even on port 53. A firewall on this network (or on this computer) is blocking it. Calls fall back to slower TCP relays or fail.' },
+  stun_blocked: { label: 'Call ports blocked (STUN)', short: 'Calls blocked', why: 'Your connection works and UDP gets through on port 53, but the ports calls use (STUN, e.g. 3478 and 19302) get no answers from several call services. A firewall is blocking them; calls may fall back to slower relays.' },
+  udp_degraded: { label: 'Call quality degraded', short: 'Calls choppy', why: 'Your connection looks fine for browsing, but the UDP path call audio and video use is losing packets or jittery towards several call services. Calls may sound choppy.' },
 };
 // Shown instead of the label for a long-standing block (the verdict's quiet flag).
 const QUIET_LABEL = { udp_blocked: 'This network blocks UDP', stun_blocked: 'This network blocks call ports' };
@@ -63,15 +69,15 @@ const LAYERS = [
 const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
 
 /**
- * Page state; everything but band lives in the URL hash. view: 'calls' (Calls),
- * 'o' (Overview) or 'c' (charts), null for the profile's default; focus: a target shown alone
+ * Page state; everything but band lives in the URL hash. view: 'h' (Home),
+ * 'calls' (Calls), 'o' (Overview) or 'c' (charts), null for Home; focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
- * problems-only, heatmap cell and heatmap mode.
+ * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter.
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '' };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '' };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -113,53 +119,16 @@ let lastVerdict = 0;
 let incidents = [];
 let incidentsLoaded = false;
 
-const $ = (/** @type {string} */ s) => /** @type {HTMLElement} */ (document.querySelector(s));
-
-/**
- * @param {string} tag
- * @param {Object<string, any>} [props]
- * @param {...(Node|string|null|undefined|false)} kids
- */
-function h(tag, props, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k === 'text') el.textContent = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? '' : String(v));
-  }
-  for (const c of kids) if (c != null && c !== false) el.append(c);
-  return el;
-}
-
 // ---------- theme ----------
 
-function storageGet(/** @type {string} */ k) { try { return localStorage.getItem(k); } catch { return null; } }
-function storageSet(/** @type {string} */ k, /** @type {string} */ v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
-
-const mqLight = window.matchMedia('(prefers-color-scheme: light)');
-function effectiveTheme() {
-  const t = document.documentElement.dataset.theme;
-  if (t === 'light' || t === 'dark') return t;
-  return mqLight.matches ? 'light' : 'dark';
-}
 function applyTheme(/** @type {string|null} */ t) {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
   const b = $('#theme');
-  b.textContent = effectiveTheme() === 'dark' ? 'Light' : 'Dark';
-  b.setAttribute('aria-label', `Switch to ${b.textContent.toLowerCase()} theme`);
-}
-/** @type {Map<string,string>} */
-const cssCache = new Map();
-function css(/** @type {string} */ name) {
-  let v = cssCache.get(name);
-  if (v == null) {
-    v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    cssCache.set(name, v);
-  }
-  return v;
+  const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+  b.textContent = '◐';
+  b.setAttribute('aria-label', `Switch to ${next} theme`);
+  b.title = `Switch to ${next} theme`;
 }
 function themeChanged() {
   cssCache.clear();
@@ -168,26 +137,11 @@ function themeChanged() {
   renderLayers();
   if (inv && state.inv) { inv.sig = ''; inv.render(); }
   calls?.render();
+  home?.render();
 }
 
 // ---------- colours ----------
 
-/** @param {string} hex @param {number} a */
-function rgba(hex, a) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
-}
-/** Mix a colour towards white (t>0) or black (t<0). */
-function shade(/** @type {string} */ hex, /** @type {number} */ t) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  const f = (/** @type {number} */ c) => Math.round(t > 0 ? c + (255 - c) * t : c * (1 + t));
-  const r = f(n >> 16), g = f((n >> 8) & 255), b = f(n & 255);
-  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
-}
 // Colour follows the target's position in its group (never its rank on
 // screen). Beyond 8 targets the same 8 hues repeat at other lightness steps;
 // the legend, the tooltip and click-to-isolate carry identity.
@@ -198,51 +152,29 @@ function seriesColor(/** @type {number} */ i) {
 }
 function reasonColor(/** @type {string} */ r) { return css(`--r-${r}`) || '#999999'; }
 
-// ---------- formatting ----------
-
-function fmtMs(/** @type {number|null|undefined} */ v) {
-  if (v == null || !isFinite(v)) return '—';
-  if (v < 10) return v.toFixed(2);
-  if (v < 100) return v.toFixed(1);
-  return v.toFixed(0);
+// Glossary for Details: the short explanation of each technical term (ux-content §4).
+// The same text is in the footer's Glossary; term() marks a word with it as a hover hint.
+/** @type {Object<string,string>} */
+const GLOSSARY = {
+  mos: 'Call quality score from 1 (unusable) to 4.5 (excellent), estimated from delay, dropouts and jitter. Good ≥ 4.0, Fair ≥ 3.6, Poor ≥ 3.1.',
+  jitter: 'How unevenly packets arrive. Steady below 10 ms; noticeable from 30 ms, when call apps add delay to smooth it out.',
+  loss: 'Share of test messages that never came back. Above about 5%, people on a call start to hear gaps.',
+  rtt: 'Time for a message to reach a server and come back, in milliseconds. Under 150 ms feels instant on a call.',
+  stun: 'A tiny “what’s my address?” request that call apps send before a call. fyisp uses it to test the path call audio takes.',
+  udp: 'The fast, no-retry way call audio and video travel. If it’s blocked, calls fall back to slower routes.',
+  anycast: 'Big services (Cloudflare, Google, Quad9 DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.',
+  'isp edge': 'The first piece of your internet provider’s equipment past your router.',
+  p95: '95 out of 100 measurements were faster than this. Shows the slow moments the median hides.',
+  bursts: '5 STUN requests sent quickly, 20 ms apart, like call audio packets. Loss and jitter are measured per burst.',
+};
+/** A technical word with its glossary text as a hint (the footer's Glossary has it for everyone). */
+function term(/** @type {string} */ key, /** @type {string} */ text = key) {
+  const tip = GLOSSARY[key.toLowerCase()];
+  return tip ? h('abbr', { class: 'gl', title: tip, text }) : text;
 }
-function fmtPct(/** @type {number} */ f) {
-  if (!isFinite(f)) return '—';
-  if (f === 0) return '0%';
-  if (f < 0.001) return '<0.1%';
-  return (f * 100).toFixed(f < 0.1 ? 1 : 0) + '%';
-}
-function fmtTime(/** @type {number} */ ms, /** @type {number} */ spanMs) {
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: spanMs <= 6 * 3600e3 ? '2-digit' : undefined });
-  if (spanMs <= 24 * 3600e3) return time;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
-}
-/** Clock time; with the date when not today. */
-function fmtWhen(/** @type {number} */ ms) {
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (d.toDateString() === new Date().toDateString()) return time;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
-}
-/** A duration in words: "45 s", "13 min", "2 h 5 min", "3 d 4 h". */
-function fmtDur(/** @type {number} */ ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s} s`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m} min`;
-  const hh = Math.floor(m / 60), mm = m % 60;
-  if (hh < 48) return mm ? `${hh} h ${mm} min` : `${hh} h`;
-  const dd = Math.floor(hh / 24), rh = hh % 24;
-  return rh ? `${dd} d ${rh} h` : `${dd} d`;
-}
+/** Smooth scrolling unless the reader asked for reduced motion. @returns {ScrollBehavior} */
+function smooth() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; }
 function verdictColor(/** @type {string} */ kind) { return css(`--v-${kind}`) || css('--muted') || '#898781'; }
-function fmtStep(/** @type {number} */ ms) {
-  if (ms < 60e3) return `${Math.round(ms / 1e3)}s`;
-  if (ms < 3600e3) return `${Math.round(ms / 60e3)}m`;
-  if (ms < 86400e3) return `${Math.round(ms / 3600e3)}h`;
-  return `${Math.round(ms / 86400e3)}d`;
-}
 
 // ---------- URL hash state ----------
 
@@ -264,7 +196,10 @@ function readHash() {
   }
   fixKinds();
   const v = p.get('v');
-  state.view = v === 'o' || v === 'c' || v === 'calls' ? v : null;
+  state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' ? v : null;
+  state.hw = p.get('hw') === 'w' ? 'w' : 'd';
+  const ot = p.get('ot');
+  state.ot = ot && /^[a-z]+$/.test(ot) ? ot : '';
   state.focus = p.get('f') || null;
   state.os = p.get('os') || '';
   state.oq = p.get('oq') || '';
@@ -278,6 +213,10 @@ function readHash() {
 /** The last hash the page applied (hashchange and popstate both fire on Back). */
 let lastHash = '';
 function hashString() {
+  // Home's hash carries only Home's own state: no Details range or kinds.
+  if (!state.view || state.view === 'h') {
+    if (!state.inv && !(state.focus && focusPanel())) return state.hw === 'w' ? '#hw=w' : '';
+  }
   const p = new URLSearchParams();
   p.set('r', state.range);
   if (state.from != null && state.to != null) { p.set('from', String(state.from)); p.set('to', String(state.to)); }
@@ -287,6 +226,8 @@ function hashString() {
   if (state.reports) p.set('rp', '1');
   if (state.inv) p.set('t', state.inv);
   if (state.view) p.set('v', state.view);
+  if (state.hw === 'w') p.set('hw', 'w');
+  if (state.ot) p.set('ot', state.ot);
   if (state.focus) p.set('f', state.focus);
   if (state.os) p.set('os', state.os);
   if (state.oq) p.set('oq', state.oq);
@@ -298,7 +239,7 @@ function hashString() {
 }
 function writeHash() {
   const s = hashString();
-  if (location.hash !== s) history.replaceState(history.state, '', s);
+  if (location.hash !== s) history.replaceState(history.state, '', s || location.pathname + location.search);
   lastHash = location.hash;
 }
 function isRelative() { return state.from == null; }
@@ -307,42 +248,6 @@ function queryRange() {
   if (state.from != null && state.to != null) return { from: String(state.from), to: String(state.to) };
   return { from: 'now-' + state.range, to: 'now' };
 }
-
-// ---------- fetch ----------
-
-/**
- * GET/POST JSON with a small retry on 429/503 (the public link is rate limited).
- * @param {string} url @param {RequestInit} [init] @param {number} [tries]
- */
-async function fetchJSON(url, init, tries = 3) {
-  for (let i = 0; ; i++) {
-    const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init });
-    if ((res.status === 429 || res.status === 503) && i < tries - 1) {
-      const wait = Math.min(5, Number(res.headers.get('Retry-After')) || 1) * 1000 * (1 + Math.random());
-      await new Promise((r) => setTimeout(r, wait));
-      if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
-      continue;
-    }
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, body });
-    return body;
-  }
-}
-
-// ---------- tooltip ----------
-
-const tip = $('#tip');
-function showTip(/** @type {Node[]} */ nodes, /** @type {number} */ x, /** @type {number} */ y) {
-  tip.replaceChildren(...nodes);
-  tip.hidden = false;
-  const r = tip.getBoundingClientRect();
-  let left = x + 14, top = y + 14;
-  if (left + r.width > window.innerWidth - 8) left = x - r.width - 14;
-  if (top + r.height > window.innerHeight - 8) top = y - r.height - 14;
-  tip.style.left = Math.max(8, left) + 'px';
-  tip.style.top = Math.max(8, top) + 'px';
-}
-function hideTip() { tip.hidden = true; }
 
 // ---------- panels ----------
 
@@ -1251,7 +1156,7 @@ class Investigate {
     const t = targetInfo(this.target);
     if (MODE !== 'local' || !t || t.trace || this.poking || document.hidden) return;
     if (status && status.controls === 'disabled') {
-      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started without --admin-token';
+      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started with --admin-token=off';
       this.renderStatus();
       return;
     }
@@ -1265,7 +1170,7 @@ class Investigate {
     this.lastPoke = Date.now();
     /** @type {Record<string,string>} */
     const headers = { 'X-FYISP-Token': TOKEN };
-    if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+    if (!await addAdmin(headers)) { this.poking = false; return; }
     try {
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
       if (target !== this.target) return;
@@ -1672,43 +1577,11 @@ class Investigate {
 
 // ---------- write helper ----------
 
-/** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] */
-async function apiWrite(method, url, body) {
-  /** @type {Record<string,string>} */
-  const headers = { 'X-FYISP-Token': TOKEN };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
-  try {
-    return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
-  } catch (e) {
-    const err = /** @type {any} */ (e);
-    if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
-    throw e;
-  }
-}
-
-/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind without --admin-token. */
-function canWrite() { return MODE === 'local' && !!status && status.controls !== 'disabled'; }
-
 /** The current view as absolute milliseconds. */
 function viewRange() {
   if (state.from != null && state.to != null) return { from: state.from, to: state.to };
   const to = Date.now();
   return { from: to - rangeSecs() * 1000, to };
-}
-
-/** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */
-function toLocalInput(/** @type {number} */ ms) {
-  const d = new Date(ms);
-  const p = (/** @type {number} */ n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-function fromLocalInput(/** @type {string} */ s) { const t = s ? new Date(s).getTime() : NaN; return isFinite(t) ? t : NaN; }
-
-async function copyText(/** @type {string} */ text, /** @type {HTMLElement} */ btn) {
-  const label = btn.textContent;
-  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch { window.prompt('Copy this link:', text); }
-  setTimeout(() => { btn.textContent = label; }, 1500);
 }
 
 // ---------- notes (annotations) ----------
@@ -1827,7 +1700,10 @@ function noteTipNodes(/** @type {Note[]} */ list) {
 function bindNoteGestures(u) {
   const over = /** @type {HTMLElement} */ (u.over);
   const timeAt = (/** @type {number} */ clientX) => Math.round(u.posToVal(clientX - over.getBoundingClientRect().left, 'x') * 1000);
-  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); }, true);
+  // Focusable (not in the tab order), so the note editor can return focus to the chart it was opened from.
+  over.tabIndex = -1;
+  over.setAttribute('aria-label', 'Chart');
+  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); if (notesOn && canWrite()) over.focus({ preventScroll: true }); }, true);
   over.addEventListener('contextmenu', (e) => {
     if (!notesOn || !canWrite()) return;
     e.preventDefault();
@@ -1847,7 +1723,7 @@ function bindNoteGestures(u) {
     if (e.pointerType !== 'touch' || !notesOn || !canWrite()) return;
     sx = e.clientX; sy = e.clientY;
     cancel();
-    timer = window.setTimeout(() => { timer = 0; hideTip(); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
+    timer = window.setTimeout(() => { timer = 0; hideTip(); over.focus({ preventScroll: true }); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
   });
   over.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
   over.addEventListener('pointerup', cancel);
@@ -1868,9 +1744,22 @@ function onChartSelect(/** @type {any} */ u) {
   u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
 }
 
-const notePop = h('div', { id: 'note-pop', class: 'pop', role: 'dialog', 'aria-label': 'Note', hidden: true });
+// The note editor is a modal <dialog> (the browser traps focus in it); when
+// it closes, focus returns to what opened it: the "+ note" button, a note's
+// Edit button, or the chart (whose overlay is focusable for this).
+const notePop = /** @type {HTMLDialogElement} */ (h('dialog', { id: 'note-pop', class: 'pop', 'aria-label': 'Note' }));
+/** @type {HTMLElement|null} */
+let noteOpener = null;
+notePop.addEventListener('close', () => {
+  notePop.replaceChildren();
+  const o = noteOpener;
+  noteOpener = null;
+  if (o && o.isConnected) o.focus({ preventScroll: true });
+});
+// A click on the backdrop (outside the editor's box) closes it.
+notePop.addEventListener('mousedown', (e) => { if (e.target === notePop) closeNoteEditor(); });
 
-function closeNoteEditor() { notePop.hidden = true; notePop.replaceChildren(); }
+function closeNoteEditor() { if (notePop.open) notePop.close(); }
 
 /**
  * The note popover: add (note null) or edit. preset gives the time(s) of a new note.
@@ -1878,6 +1767,8 @@ function closeNoteEditor() { notePop.hidden = true; notePop.replaceChildren(); }
  */
 function openNoteEditor(note, x, y, preset) {
   hideTip();
+  const ae = document.activeElement;
+  noteOpener = ae instanceof HTMLElement && ae !== document.body ? ae : null;
   const at = note ? Date.parse(note.at) : (preset ? preset.at : Date.now());
   const end = note ? (note.end ? Date.parse(note.end) : NaN) : (preset && preset.end ? preset.end : NaN);
   const atIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(at), required: true, 'aria-label': 'When' }));
@@ -1920,9 +1811,8 @@ function openNoteEditor(note, x, y, preset) {
       save.disabled = false;
     }
   });
-  form.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNoteEditor(); });
   notePop.replaceChildren(form);
-  notePop.hidden = false;
+  if (!notePop.open) notePop.showModal();
   const r = notePop.getBoundingClientRect();
   let left = x + 8, top = y + 8;
   if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 8);
@@ -1933,13 +1823,13 @@ function openNoteEditor(note, x, y, preset) {
 }
 
 async function deleteNote(/** @type {Note} */ n) {
-  if (!window.confirm(`Delete this note?\n\n${n.text}`)) return;
+  if (!await confirmDialog('Delete this note?', n.text, 'Delete')) return;
   try {
     await apiWrite('DELETE', `api/annotations/${n.id}`);
     closeNoteEditor();
     await loadNotes();
   } catch (e) {
-    window.alert(`Could not delete: ${/** @type {Error} */ (e).message}`);
+    await alertDialog('Couldn’t delete the note', /** @type {Error} */ (e).message);
   }
 }
 
@@ -2041,37 +1931,37 @@ let bigProfile = false;
 /** @type {Overview|null} */
 let ov = null;
 
-/** The view on screen: Calls ('calls'), the Overview ('o') or the chart wall ('c'). Focus is always charts. */
+/** The view on screen: Home ('h', the default for every profile), or in Details Calls ('calls'), the Overview ('o') or the chart wall ('c'). Focus is always charts. */
 function currentView() {
   if (state.focus && focusPanel()) return 'c';
-  if (state.view === 'calls' && !callsOn) return bigProfile ? 'o' : 'c';
-  return state.view || defaultView();
+  if (state.view === 'calls' && !callsOn) return detailsView();
+  return state.view || 'h';
 }
-/** The profile's own view: Calls for the default and calls profiles (and small ones with a call path), the Overview for big ones. */
-function defaultView() { return callsOn && callsDefault ? 'calls' : bigProfile ? 'o' : 'c'; }
+/** Details' own view: Calls when the profile has a call path or call apps, the Overview for big profiles, else the charts. */
+function detailsView() { return callsOn ? 'calls' : bigProfile ? 'o' : 'c'; }
 function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
 /** The kind the Overview shows: the first selected of TCP, HTTPS, ICMP. */
 function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || kindsOffered[0]; }
 function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.targets.some((t) => t.name === state.focus)) || null : null; }
 /** Panels that are on screen and may load: the path panel always, the others per view and focus. */
 function panelShown(/** @type {Panel} */ p) {
+  if (currentView() === 'h') return false; // Details loads its charts only when opened
   if (p.isPath) return true;
   if (currentView() !== 'c') return false;
   const fp = focusPanel();
   return !fp || fp === p;
 }
 function loadStale() { for (const p of panels) if (p.visible && p.stale && panelShown(p)) p.load(); }
-function fmtInt(/** @type {number} */ n) { return n.toLocaleString('en-US'); }
-function median(/** @type {number[]} */ v) {
-  if (!v.length) return NaN;
-  const s = [...v].sort((a, b) => a - b), m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
 /** Worst first: state, then loss, then ratio. */
 function bySeverity(/** @type {OvRow} */ a, /** @type {OvRow} */ b) {
   return (OV_STATES[a.state]?.rank ?? 9) - (OV_STATES[b.state]?.rank ?? 9) || b.loss - a.loss || (b.ratio ?? 0) - (a.ratio ?? 0) || a.target.localeCompare(b.target);
 }
 function geoOf(/** @type {TargetInfo} */ t) { return t.geo || ''; }
+/** Home's tile names, for the Overview's ot= filter (a Home tile's "See details"). */
+/** @type {Object<string,string>} */
+const HOME_TILE = { calls: 'Calls', work: 'Work apps', web: 'Websites', other: 'Other services' };
+/** A target's Home tile, as the server assigns it (profile.HomeCategory via /api/profile). */
+function homeCategory(/** @type {TargetInfo} */ t) { return t.home || ''; }
 function locationOf(/** @type {TargetInfo} */ t) { return [t.city, t.country].filter(Boolean).join(', '); }
 function windowWords(/** @type {OvData} */ d) {
   return isRelative() ? `last ${fmtDur(Number(rangeSecs()) * 1000)}` : `${fmtWhen(d.from)} – ${fmtWhen(d.to)}`;
@@ -2327,8 +2217,12 @@ class Overview {
       const kind = KIND_LABEL[/** @type {'https'} */ (d.kind)];
       kids.push(h('span', { class: 'muted', text: ` This line covers ${kind} over the whole range and counts ${what}; the verdict above judges every kind over the last minute.` }));
     }
-    const un = d.summary.targets - d.summary.measured;
-    if (un) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
+    // Rows still too new to judge can already show heavy loss in the table:
+    // say so, so "none are losing packets" never sits next to a 100% row.
+    const early = d.rows.filter((r) => r.state === 'unmeasured' && r.lost > 0).length;
+    if (early) kids.push(h('span', { text: ` ${fmtInt(early)} more ${early === 1 ? 'is' : 'are'} losing packets, but ${early === 1 ? 'it has' : 'they have'} too few checks yet to judge (Status “Not measured”).` }));
+    const un = d.summary.targets - d.summary.measured - early;
+    if (un > 0) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
     if (d.capped) kids.push(h('span', { class: 'muted', text: ` The Overview covers at most the last 30 days of the range.` }));
     this.breadth.replaceChildren(...kids);
   }
@@ -2394,6 +2288,12 @@ class Overview {
         text: `${p ? p.title : pid}${g != null ? ' · ' + GEO_TITLE[g] : ''} ×`, onclick: () => this.setCell(''),
       }));
     } else this.cellChip.replaceChildren();
+    if (state.ot) {
+      this.cellChip.append(h('button', {
+        class: 'btn sm on', type: 'button', title: 'Show every target',
+        text: `${HOME_TILE[state.ot] || state.ot} ×`, onclick: () => { state.ot = ''; writeHash(); this.renderControls(); this.applyRows(); },
+      }));
+    }
     const m = this.mode();
     const noNormal = !this.data || this.data.summary.with_normal === 0;
     this.modeSeg.replaceChildren(
@@ -2439,6 +2339,7 @@ class Overview {
       let ok = true;
       if (q) ok = [t.name, t.provider_title, t.city, t.country].some((x) => x && x.toLowerCase().includes(q));
       if (ok && state.og) ok = geoOf(t) === state.og;
+      if (ok && state.ot) ok = homeCategory(t) === state.ot;
       if (ok && state.op) ok = PROBLEMS.has(st);
       if (ok && pid) ok = (t.provider || t.group) === pid && (pg === undefined || geoOf(t) === pg);
       e.tr.hidden = !ok;
@@ -2573,7 +2474,7 @@ class Overview {
     }
     if (state.oc) {
       const r = this.tableBox.getBoundingClientRect();
-      if (r.top > window.innerHeight) this.tableBox.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      if (r.top > window.innerHeight) this.tableBox.scrollIntoView({ block: 'start', behavior: smooth() });
     }
   }
 }
@@ -2637,7 +2538,6 @@ const CALL_BLAME_ORDER = ['no_network', 'lan', 'isp', 'upstream', 'udp_blocked',
 /** @type {Calls|null} */
 let calls = null;
 let callsOn = false; // the profile has call-path (udp-path) or app targets
-let callsDefault = false; // Calls is the profile's default view
 
 function callsShown() { return !!calls && currentView() === 'calls' && !(state.inv && inv); }
 function callLabel(/** @type {string} */ st) { return (CALL_STATES[st] || { label: st }).label; }
@@ -2668,10 +2568,10 @@ function workHours(/** @type {number} */ now) {
 /** The state colour token of a call state. */
 function callColor(/** @type {string|null} */ st) {
   switch (st) {
-    case 'good': return css('--v-ok');
-    case 'fair': return css('--v-service');
-    case 'poor': return css('--v-lan');
-    case 'unusable': return css('--v-isp');
+    case 'good': return css('--c-good');
+    case 'fair': return css('--c-fair');
+    case 'poor': return css('--c-poor');
+    case 'unusable': return css('--c-bad');
   }
   return '';
 }
@@ -2753,7 +2653,7 @@ class Calls {
     this.statsEl = h('span', { class: 'cq-stats' });
     this.causeEl = h('p', { class: 'cq-cause' });
     this.updatedEl = h('span', { class: 'cq-updated muted small' });
-    this.top = h('section', { class: 'panel cq-top', 'aria-label': 'Call quality now', 'aria-live': 'polite' },
+    this.top = h('section', { class: 'panel cq-top', 'aria-label': 'Call quality now' },
       h('div', { class: 'cq-line' }, this.dot, this.headEl, this.statsEl,
         whyButton('Your call path', 'fyisp sends tiny STUN requests over UDP, the way call audio and video travel, to Google, Cloudflare and Twilio servers every few seconds. They answer from the edge nearest to you, so this measures your connection to the nearest edge, not the other people on the call.')),
       this.causeEl,
@@ -3075,7 +2975,7 @@ class Calls {
     g.fillStyle = css('--surface-2');
     g.fillRect(0, 0, W, H);
     const d = this.day;
-    const none = css('--grid');
+    const none = css('--nodata');
     for (let i = 0; i < total; i++) {
       const t = wh[0] + i * 60e3;
       if (t >= now) break;
@@ -3181,8 +3081,12 @@ class Calls {
       det.addEventListener('toggle', () => { if (det.open) this.open.add(app.app); else this.open.delete(app.app); });
       items.push(h('li', {}, det));
     }
-    if (!d.apps.some((x) => x.app === 'teams') && MODE === 'local') {
-      items.push(h('li', { class: 'cq-app cq-hint' }, h('b', { text: 'Teams' }), h('span', { class: 'muted' }, ' add it with ', h('code', { text: '--profile default,calls' }))));
+    // Apps whose own call server is not measured (Teams without its opt-in relay): their calls take the call path.
+    for (const app of d.apps.filter((x) => x.udp === 'shared')) {
+      const st = d.path ? d.path.state : 'not_enough_data';
+      const web = (app.web_samples || 0) === 0 ? '' : app.web_ms == null ? ' Its website is not answering right now.' : ` Website reachable, ${fmtMs(app.web_ms)} ms.`;
+      items.push(h('li', { class: 'cq-app cq-other' }, h('b', { text: APP_TITLE[app.app] || app.app }),
+        h('p', { class: 'muted', text: `Calls use your call path (${callLabel(st)}).${web}` })));
     }
     const other = d.apps.filter((x) => x.udp === 'not_measurable');
     if (other.length) {
@@ -3200,12 +3104,15 @@ class Calls {
 
   /** An app row's expanded part: MOS, jitter, p95 and the last hour's sparkline. */
   appDetail(/** @type {CallsApp} */ app) {
+    /** @type {(string|Node)[]} */
     const facts = [];
-    if (app.mos != null) facts.push(`MOS ${app.mos.toFixed(2)} (worst minute)`);
-    if (app.jitter_ms != null) facts.push(`jitter ${fmtMs(app.jitter_ms)} ms`);
-    if (app.rtt_p95_ms != null) facts.push(`p95 ${fmtMs(app.rtt_p95_ms)} ms`);
-    facts.push(`${app.samples || 0} bursts${app.unknown ? `, ${app.unknown} failed otherwise (not counted as loss)` : ''}`);
-    const box = h('div', { class: 'cq-app-more' }, h('p', { class: 'small', text: facts.join(' · ') }));
+    const sep = () => { if (facts.length) facts.push(' · '); };
+    if (app.mos != null) { sep(); facts.push(term('MOS'), ` ${app.mos.toFixed(2)} (worst minute)`); }
+    if (app.jitter_ms != null) { sep(); facts.push(term('jitter'), ` ${fmtMs(app.jitter_ms)} ms`); }
+    if (app.rtt_p95_ms != null) { sep(); facts.push(term('p95'), ` ${fmtMs(app.rtt_p95_ms)} ms`); }
+    sep();
+    facts.push(term('bursts', `${app.samples || 0} bursts`), app.unknown ? `, ${app.unknown} failed otherwise (not counted as loss)` : '');
+    const box = h('div', { class: 'cq-app-more' }, h('p', { class: 'small' }, ...facts));
     const d = this.day;
     const g = d && d.apps.find((x) => x.app === app.app);
     if (d && g && g.minutes) {
@@ -3303,6 +3210,47 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
   });
 }
 
+// ---------- Home and the Home | Details switch ----------
+
+/** Home, or on the share link the report. @type {Home|Report|null} */
+let home = null;
+/** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
+let onNav = () => {};
+function homeShown() { return !!home && currentView() === 'h' && !(state.inv && inv); }
+
+/** The header's Home | Details switch. */
+function renderViewNav() {
+  const v = currentView();
+  const nav = $('#viewnav');
+  nav.replaceChildren(
+    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
+    h('button', { type: 'button', text: 'Details', 'aria-current': v !== 'h' ? 'page' : null, onclick: () => { if (currentView() === 'h') openDetails(''); } }));
+}
+
+/**
+ * Opens Details with pushState, so Back returns to Home. hash pre-sets the
+ * Details state (a tile's filter, a zoomed range); empty opens Details' own view.
+ * @param {string} hash
+ */
+function openDetails(hash) {
+  if (!hash) {
+    state.view = detailsView();
+    state.focus = null;
+    hash = hashString();
+  }
+  history.pushState({ fyispHome: true }, '', hash);
+  onNav();
+  window.scrollTo({ top: 0 });
+}
+/** Back to Home: Back when Details was opened from Home, else a new entry. */
+function goHome() {
+  if (history.state && history.state.fyispHome) { history.back(); return; }
+  state.view = null;
+  state.focus = null;
+  history.pushState(null, '', hashString() || location.pathname + location.search);
+  onNav();
+}
+
 // ---------- view switch & focus ----------
 
 const viewSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'View' });
@@ -3335,6 +3283,10 @@ function renderViewBar() {
 /** Applies the view and focus to the page: which panels show, the focus bar, isolation. */
 function applyView() {
   const v = currentView();
+  document.body.classList.toggle('home-on', v === 'h');
+  if (home) home.el.hidden = v !== 'h';
+  if (v !== 'h') document.title = MODE === 'public' ? 'Details · Internet quality report' : 'Details · fyisp';
+  renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
   if (ov) ov.el.hidden = v !== 'o';
@@ -3439,6 +3391,18 @@ async function loadReports() {
 }
 
 /** Open / Download / Copy public link / Publish / Delete for one report. */
+/**
+ * After an action re-renders the control that started it, focus would fall to
+ * <body>: put it on the replacement (or a fallback) instead.
+ * @param {() => (Element|null)} find
+ */
+function refocus(find) {
+  const ae = document.activeElement;
+  if (ae && ae !== document.body && ae.isConnected) return;
+  const el = /** @type {HTMLElement|null} */ (find());
+  el?.focus({ preventScroll: true });
+}
+
 function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ after, big = false) {
   const cls = big ? 'btn' : 'tbtn';
   const kids = [
@@ -3448,8 +3412,8 @@ function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ af
   const link = reportPublicURL(r);
   if (r.public && r.redacted) {
     const copy = h('button', {
-      class: cls, type: 'button', text: 'Copy public link', disabled: !link,
-      title: link ? link : 'Start your public link (top of the page) to get this report\'s address',
+      class: cls, type: 'button', text: 'Copy link', disabled: !link,
+      title: link ? link : 'Share a live view first (top of the page) to get this report’s link',
       onclick: () => copyText(link, copy),
     });
     kids.push(copy);
@@ -3457,22 +3421,25 @@ function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ af
   if (canWrite()) {
     if (r.redacted) {
       kids.push(h('button', {
-        class: cls, type: 'button', text: r.public ? 'Unpublish' : 'Publish',
-        title: r.public ? 'Stop serving this snapshot on your public link' : 'Serve this redacted snapshot on your public link',
+        class: cls, type: 'button', text: r.public ? 'Remove from shared link' : 'Show on shared link', 'data-rid': r.id, 'data-act': 'pub',
+        title: r.public ? 'Stop showing this report on your shared link' : 'Show this report (safe to share) on your shared link',
         onclick: async () => {
-          try { await apiWrite('PUT', `api/reports/${r.id}`, { public: !r.public }); } catch (e) { window.alert(/** @type {Error} */ (e).message); }
+          try { await apiWrite('PUT', `api/reports/${r.id}`, { public: !r.public }); } catch (e) { await alertDialog('Couldn’t change the report', /** @type {Error} */ (e).message); }
           await loadReports();
           after();
+          refocus(() => document.querySelector(`[data-rid="${r.id}"][data-act="pub"]`) || $('#reports > summary'));
         },
       }));
     }
     kids.push(h('button', {
       class: cls + ' danger', type: 'button', text: 'Delete',
       onclick: async () => {
-        if (!window.confirm(`Delete the report "${r.title}"?`)) return;
-        try { await apiWrite('DELETE', `api/reports/${r.id}`); } catch (e) { window.alert(/** @type {Error} */ (e).message); }
+        if (!await confirmDialog(`Delete “${r.title}”?`, 'This can’t be undone.', 'Delete')) return;
+        try { await apiWrite('DELETE', `api/reports/${r.id}`); } catch (e) { await alertDialog('Couldn’t delete the report', /** @type {Error} */ (e).message); }
         await loadReports();
         after();
+        // The row is gone: the Reports heading (or, in the "ready" dialog, its first control).
+        refocus(() => (reportDlg && reportDlg.open ? reportDlg.querySelector('button, a') : null) || $('#reports > summary'));
       },
     }));
   }
@@ -3486,7 +3453,7 @@ function renderReports() {
   $('#reports-count').textContent = `· ${reports.length} saved`;
   const list = $('#reports-list');
   if (!reports.length) {
-    list.replaceChildren(h('p', { class: 'muted o-empty', text: 'No reports yet. "Create report" builds a self-contained page (prints to PDF) for the current range; "Report" on an outage builds one for that incident.' }));
+    list.replaceChildren(h('p', { class: 'muted o-empty', text: 'Need proof for your provider or IT team? A report is a page you can print or save as a PDF. It shows what went wrong and when. “Create report” makes one for the current range; “Report” on an outage makes one for that problem.' }));
     return;
   }
   list.replaceChildren(...reports.map((r) => h('div', { class: 'r-item' },
@@ -3494,8 +3461,8 @@ function renderReports() {
       h('span', { class: 'r-title', text: r.title }),
       h('span', { class: 'r-meta muted' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · created ${fmtWhen(Date.parse(r.created))} · ${fmtBytes(r.bytes)}`),
       h('span', { class: 'r-badges' },
-        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; public notes only' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'redacted' : 'private details' }),
-        r.public && r.redacted ? h('span', { class: 'nbadge pub', title: 'Served on your public link while sharing is on', text: 'on public link' }) : null)),
+        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; public notes only' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'safe to share' : 'private' }),
+        r.public && r.redacted ? h('span', { class: 'nbadge pub', title: 'Shown on your shared link while sharing is on', text: 'on shared link' }) : null)),
     reportActions(r, renderReports))));
 }
 
@@ -3520,22 +3487,22 @@ function openReportDialog(preset) {
     pub.disabled = priv.checked;
     if (priv.checked) pub.checked = false;
     pubHint.textContent = priv.checked
-      ? 'Reports with private details cannot be published; they stay on this machine.'
-      : shareURL() ? 'Anyone with your public link can open it.' : 'It will be served once you start your public link.';
+      ? 'Reports with private details stay on this device.'
+      : shareURL() ? 'Anyone with your shared link can open it.' : 'It will appear when you share a live view.';
   };
   priv.addEventListener('change', syncPub);
   syncPub();
   const err = h('div', { class: 'perr', role: 'alert' });
-  const go = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: 'Create report' }));
+  const go = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: 'Make the report' }));
   const form = h('form', { class: 'dlg-form', method: 'dialog' },
-    h('h2', { text: 'Create report' }),
-    h('p', { class: 'muted small', text: 'A self-contained page with the verdicts, outage log, charts, statistics and notes for this range. Open it to print or save as PDF.' }),
+    h('h2', { text: 'Make a report' }),
+    h('p', { class: 'muted small', text: 'A page showing your connection’s problems, charts and notes for the time you pick. You can print it or save it as a PDF.' }),
     h('label', { class: 'fld' }, h('span', { text: 'Title' }), title),
     h('div', { class: 'fld-row' },
       h('label', { class: 'fld' }, h('span', { text: 'From' }), fromIn),
       h('label', { class: 'fld' }, h('span', { text: 'To' }), toIn)),
-    h('label', { class: 'chk' }, priv, h('span', {}, ' Include private details', h('span', { class: 'hint', text: 'Addresses, router names and private notes. Leave unchecked for a redacted report you can send to your ISP.' }))),
-    h('label', { class: 'chk' }, pub, h('span', {}, ' Publish on my public link', pubHint)),
+    h('label', { class: 'chk' }, priv, h('span', {}, ' Include private details', h('span', { class: 'hint', text: 'Your network addresses, device names and private notes. Leave this off if you’ll send the report to anyone else.' }))),
+    h('label', { class: 'chk' }, pub, h('span', {}, ' Also show it on my shared link', pubHint)),
     err,
     h('div', { class: 'pop-actions' },
       h('span', { class: 'grow' }),
@@ -3544,9 +3511,9 @@ function openReportDialog(preset) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const a = fromLocalInput(fromIn.value), b = fromLocalInput(toIn.value);
-    if (!(isFinite(a) && isFinite(b) && b > a)) { err.textContent = '"To" must be after "From".'; return; }
+    if (!(isFinite(a) && isFinite(b) && b > a)) { err.textContent = 'The end time must be after the start time.'; return; }
     go.disabled = true;
-    go.textContent = 'Building…';
+    go.textContent = 'Making your report…';
     err.textContent = '';
     try {
       /** @type {ReportMeta} */
@@ -3556,9 +3523,9 @@ function openReportDialog(preset) {
       await loadReports();
       showReportDone(dlg, r);
     } catch (e2) {
-      err.textContent = `Could not build the report: ${/** @type {Error} */ (e2).message}`;
+      err.textContent = `Couldn’t make the report. Try again. (${/** @type {Error} */ (e2).message})`;
       go.disabled = false;
-      go.textContent = 'Create report';
+      go.textContent = 'Make the report';
     }
   });
   dlg.replaceChildren(form);
@@ -3574,11 +3541,11 @@ function showReportDone(/** @type {HTMLDialogElement} */ dlg, /** @type {ReportM
     showReportDone(dlg, cur);
   };
   dlg.replaceChildren(h('div', { class: 'dlg-form' },
-    h('h2', { text: 'Report ready' }),
+    h('h2', { text: 'Your report is ready' }),
     h('p', { class: 'r-title', text: r.title }),
     h('p', { class: 'muted small' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · ${fmtBytes(r.bytes)} · `,
-      r.redacted ? 'redacted' : 'includes private details', r.public && r.redacted ? ' · on your public link' : ''),
-    r.public && r.redacted && !shareURL() ? h('p', { class: 'hint', text: 'Start your public link to share it; the report\'s address is your public link followed by r/<id>.' }) : null,
+      r.redacted ? 'safe to share' : 'private: for you only', r.public && r.redacted ? ' · on your shared link' : ''),
+    r.public && r.redacted && !shareURL() ? h('p', { class: 'hint', text: 'Share a live view first, then you can copy this report’s link.' }) : null,
     reportActions(r, refresh, true),
     h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }), h('button', { class: 'btn', type: 'button', text: 'Close', onclick: () => dlg.close() }))));
 }
@@ -3608,6 +3575,8 @@ async function refreshAll() {
   updateRefreshLabel();
   try {
     if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), inv.load()]);
+    // Home makes two requests; the status (for sharing and notes) at most twice a minute.
+    else if (homeShown()) await Promise.all([Date.now() - statusAt > 30e3 ? loadStatus() : null, /** @type {Home} */ (home).refresh()]);
     else {
       // Hidden panels (the Overview is showing, or focus) load when shown.
       await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
@@ -3633,22 +3602,7 @@ function focusTarget(/** @type {string} */ name) {
   p.isolate(name);
   const bar = $('.top');
   const top = p.el.getBoundingClientRect().top + window.scrollY - (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) - 8;
-  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-}
-
-/** A small "?" button that explains a verdict kind (hover, focus or tap). */
-function whyButton(/** @type {string} */ title, /** @type {string} */ text) {
-  const b = h('button', { class: 'why', type: 'button', 'aria-label': `What this means: ${text}`, text: '?' });
-  const show = () => {
-    const r = b.getBoundingClientRect();
-    showTip([h('div', { class: 't', text: 'What this means' }), h('div', { class: 'why-title', text: title }), h('div', { text })], r.left, r.bottom - 6);
-  };
-  b.addEventListener('mouseenter', show);
-  b.addEventListener('focus', show);
-  b.addEventListener('click', (e) => { e.stopPropagation(); if (tip.hidden) show(); else hideTip(); });
-  b.addEventListener('mouseleave', hideTip);
-  b.addEventListener('blur', hideTip);
-  return b;
+  window.scrollTo({ top: Math.max(0, top), behavior: smooth() });
 }
 
 // The banner shows at most this many target chips, then "+N more".
@@ -3778,7 +3732,7 @@ function renderOutages() {
     h('span', { class: 'o-dur', text: fmtDur(b - a) }),
     h('span', { class: `kbadge v-${kind}`, text: info.short }),
     h('span', { class: 'o-sum', text: inc.summary }),
-    h('span', { class: 'o-peak', title: 'Worst one-minute loss', text: `peak ${fmtPct(inc.peak_loss)} loss` }));
+    h('span', { class: 'o-peak', title: 'Worst one-minute loss', text: inc.peak_loss >= 0.995 ? 'worst minute: nothing got through' : `worst minute: ${fmtPct(inc.peak_loss)} lost` }));
     const tt = incidentTraceTarget(inc);
     const tb = tt ? h('button', {
       class: 'tbtn o-trace', type: 'button', title: `Trace ${tt} hop by hop during this incident`, text: `Trace ${tt}`,
@@ -3806,14 +3760,15 @@ function refreshMs() { return state.inv ? INV_REFRESH_MS : REFRESH_MS; }
 
 setInterval(() => {
   calls?.tick();
-  if (document.hidden || refreshing) return;
+  home?.tick();
+  if (document.hidden || refreshing || homeShown()) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   // The banner is always "now", even when zoomed; it is cheap to poll.
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
 }, 1000);
 document.addEventListener('visibilitychange', () => {
   updateRefreshLabel();
-  if (document.hidden) return;
+  if (document.hidden || homeShown()) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
   if (inv && state.inv) inv.keepalive();
@@ -3872,20 +3827,35 @@ function renderTools() {
   el.hidden = !kids.length;
 }
 
-function adminHeader() {
-  let t = null;
-  try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
-  if (!t) {
-    t = window.prompt('Admin token (--admin-token) for sharing, notes and reports:') || '';
-    try { if (t) sessionStorage.setItem('fyisp-admin', t); } catch { /* ignore */ }
-  }
+/** Takes the token of an "open this link" URL (#admin=…) out of the address bar and history entry. */
+function takeAdminFragment() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const t = p.get('admin');
+  if (t == null) return '';
+  p.delete('admin');
+  const rest = p.toString();
+  history.replaceState(history.state, '', location.pathname + location.search + (rest ? '#' + rest : ''));
   return t;
 }
+
+/** Exchanges the link's admin token for the HttpOnly session cookie. @param {string} t */
+async function adminLogin(t) {
+  try {
+    await fetchJSON('api/admin/session', { method: 'POST', headers: { 'X-FYISP-Token': TOKEN, 'X-FYISP-Admin': t } }, 1);
+    try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ }
+  } catch (e) {
+    adminLinkErr = /** @type {any} */ (e).status === 403
+      ? 'This link is not valid any more. Open the newest link from fyisp\'s log.'
+      : 'Could not use this link: ' + /** @type {any} */ (e).message;
+  }
+}
+/** Why an "open this link" URL did not work (shown as a notice). */
+let adminLinkErr = '';
 
 async function shareAction(/** @type {'start'|'stop'} */ what) {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
-  if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+  if (!await addAdmin(headers)) return; // the token dialog was cancelled
   try {
     const r = await fetchJSON(`api/share/${what}`, { method: 'POST', headers }, 1);
     status.share = r.share;
@@ -3895,6 +3865,8 @@ async function shareAction(/** @type {'start'|'stop'} */ what) {
     status.share = { ...(status.share || {}), phase: 'error', last_err: err.message };
   }
   renderShare();
+  // The button that started this was replaced: focus the new controls.
+  refocus(() => $('#share').querySelector('button, input'));
   loadStatus();
 }
 
@@ -3903,7 +3875,7 @@ function renderShare() {
   const badge = $('#mode-badge');
   if (MODE === 'public') {
     badge.hidden = false;
-    badge.textContent = 'Public view · read-only';
+    badge.textContent = 'Shared view (read-only)';
     el.replaceChildren();
     return;
   }
@@ -3940,14 +3912,22 @@ function renderShare() {
       kids.push(h('span', { class: 'muted', text: sh.phase === 'starting' ? 'Creating public link…' : sh.phase === 'reconnecting' ? 'Reconnecting public link…' : `Sharing: ${sh.phase}` }));
       if (!disabled) kids.push(h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => shareAction('stop') }));
   }
-  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started without --admin-token' }));
+  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started with --admin-token=off' }));
+  // It re-renders on every status poll: keep keyboard focus on the same control (or the first one).
+  const ae = document.activeElement;
+  const had = ae instanceof HTMLElement && el.contains(ae) ? ae.textContent || ae.tagName : '';
   el.replaceChildren(...kids);
+  if (had) {
+    const ctl = /** @type {HTMLElement[]} */ ([...el.querySelectorAll('button, input')]);
+    (ctl.find((x) => (x.textContent || x.tagName) === had) || ctl[0])?.focus({ preventScroll: true });
+  }
 }
 
 function renderNotices() {
   const el = $('#notices');
   const out = [];
   if (!status) { el.replaceChildren(); return; }
+  if (adminLinkErr) out.push(h('div', { class: 'notice danger' }, adminLinkErr));
   if (status.targets && status.ready < status.targets) {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));
   }
@@ -3967,9 +3947,12 @@ function renderNotices() {
 }
 
 let statusTimer = 0;
+/** When the status was last loaded. */
+let statusAt = 0;
 async function loadStatus() {
   try {
     status = await fetchJSON('api/status');
+    statusAt = Date.now();
   } catch {
     return;
   }
@@ -3985,6 +3968,7 @@ async function loadStatus() {
 // ---------- boot ----------
 
 async function main() {
+  useStatus(() => status);
   applyTheme(storageGet('fyisp-theme'));
   $('#theme').addEventListener('click', () => {
     const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
@@ -3995,6 +3979,7 @@ async function main() {
   mqLight.addEventListener('change', () => { applyTheme(storageGet('fyisp-theme')); themeChanged(); });
   // Taps elsewhere close a tooltip opened by tapping (touch screens have no hover).
   document.addEventListener('click', hideTip);
+  const adminTok = takeAdminFragment();
   readHash();
   const log = /** @type {HTMLDetailsElement} */ ($('#outages'));
   log.open = state.log;
@@ -4007,11 +3992,14 @@ async function main() {
   repBox.addEventListener('toggle', () => { if (state.reports !== repBox.open) { state.reports = repBox.open; writeHash(); } if (repBox.open) loadReports(); });
   document.body.append(notePop);
   // Clicks outside the note popover close it.
-  document.addEventListener('mousedown', (e) => { if (!notePop.hidden && !notePop.contains(/** @type {Node} */ (e.target))) closeNoteEditor(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !notePop.hidden) closeNoteEditor(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    hideTip(); // tooltips close on Escape (WCAG 1.4.13)
+  });
   // Back from focus mode restores the Overview's scroll position itself.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-  const onNav = () => {
+  onNav = () => {
     if (location.hash === lastHash) return;
     lastHash = location.hash;
     readHash(); log.open = state.log; notesBox.open = state.notes; repBox.open = state.reports;
@@ -4020,8 +4008,10 @@ async function main() {
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
   renderShare();
+  if (adminTok && MODE === 'local') await adminLogin(adminTok);
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
+  if (st) statusAt = Date.now();
   traceOn = !!(prof.features && prof.features.trace);
   notesOn = !!(prof.features && prof.features.notes);
   reportsOn = MODE === 'local' && !!(prof.features && prof.features.reports);
@@ -4040,7 +4030,8 @@ async function main() {
   repBox.open = state.reports;
   renderNotes();
   renderReports();
-  if (reportsOn) loadReports();
+  // The reports list is Details only (Home loads it when Details opens).
+  if (reportsOn && state.view && state.view !== 'h') loadReports();
   renderControls();
   renderShare();
   renderNotices();
@@ -4051,14 +4042,11 @@ async function main() {
   panels = groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
   bigProfile = targets.filter((t) => !t.layer).length > OVERVIEW_MIN;
   callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
-  const pathUDP = targets.filter((t) => (t.tags || []).includes('udp-path'));
-  callsDefault = callsOn && (String(prof.name || '').split(',').some((n) => n === 'default' || n === 'calls') ||
-    (pathUDP.length > 0 && targets.filter((t) => !t.layer && !pathUDP.includes(t)).length <= OVERVIEW_MIN));
   ov = new Overview();
   calls = callsOn ? new Calls() : null;
-  // The path panel on top, then the view switch, then Calls, the Overview or the charts (Calls moves above the path panel, see style.css).
+  // The view switch, then Calls, the network path, the Overview or the charts: DOM order is visual order.
   const path = panels.filter((p) => p.isPath).map((p) => p.el);
-  $('#panels').replaceChildren(...path, viewBar, focusBar, calls ? calls.el : '', ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
+  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
   if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
@@ -4075,6 +4063,23 @@ async function main() {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
+  if (MODE === 'public') {
+    const r = new Report();
+    r.openDetails = openDetails;
+    home = r;
+    $('h1').textContent = 'Internet quality report';
+    document.body.classList.add('public');
+  } else home = new Home({
+    span: () => state.hw,
+    setSpan: (s) => { state.hw = s; writeHash(); },
+    openDetails,
+    status: () => status,
+    startShare: () => shareAction('start'),
+    notesOn: () => notesOn,
+    notesChanged: () => { if (!homeShown()) loadNotes(); },
+    reportsOn: () => reportsOn,
+  });
+  $('#notices').before(home.el);
   applyView();
   showView();
   writeHash();

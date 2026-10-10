@@ -202,6 +202,7 @@ func (h *harness) startPathProbe(t *testing.T) *pathProc {
 // are probed over ICMP every second; netem loss between the client and the
 // gateway shows up as loss on the Gateway series.
 func TestNetworkPath(t *testing.T) {
+	const netemPhase = 150 * time.Second
 	parallel(t)
 	h := newHarness(t)
 	pp := h.startPathProbe(t)
@@ -236,10 +237,13 @@ func TestNetworkPath(t *testing.T) {
 		}
 	}
 
-	// netem loss on the gateway's LAN side (its replies to the client).
+	// netem loss on the gateway's LAN side (its replies to the client),
+	// for 150s: about 146 pings, so the 15-45% bound is about 4 standard
+	// deviations from 30% each way (with 56 pings it was 3, and failed
+	// about once in 15 runs).
 	h.nsRun(t, h.gw, "tc", "qdisc", "add", "dev", "g0", "root", "netem", "loss", "30%")
 	t0 = time.Now()
-	time.Sleep(60 * time.Second)
+	time.Sleep(netemPhase)
 	t1 = time.Now()
 	h.nsRun(t, h.gw, "tc", "qdisc", "del", "dev", "g0", "root")
 	time.Sleep(4 * time.Second)
@@ -247,8 +251,8 @@ func TestNetworkPath(t *testing.T) {
 		ok, lost, by, mean := pp.samples(name, t0.Add(time.Second), t1.Add(-3*time.Second))
 		ratio := float64(lost) / float64(max(ok+lost, 1))
 		t.Logf("netem 30%% loss on client<->gw: %-8s ok=%d lost=%d (%.1f%%) %v mean=%.3fms", name, ok, lost, 100*ratio, by, mean)
-		if ok+lost < 45 {
-			t.Errorf("%s: only %d samples in 56s, want one per second", name, ok+lost)
+		if want := int(netemPhase/time.Second) - 15; ok+lost < want {
+			t.Errorf("%s: only %d samples in %s, want one per second", name, ok+lost, netemPhase-4*time.Second)
 		}
 		if ratio < 0.15 || ratio > 0.45 {
 			t.Errorf("%s: loss %.3f under 30%% netem loss", name, ratio)

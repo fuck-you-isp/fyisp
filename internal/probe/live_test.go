@@ -15,7 +15,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 )
 
-// TestLiveDefaultProfile probes the real 87 targets for FYISP_LIVE_DEFAULT
+// TestLiveDefaultProfile probes the real default targets for FYISP_LIVE_DEFAULT
 // (a duration, e.g. 40s) and prints a per-kind summary.
 func TestLiveDefaultProfile(t *testing.T) {
 	d, err := time.ParseDuration(os.Getenv("FYISP_LIVE_DEFAULT"))

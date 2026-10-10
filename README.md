@@ -1,16 +1,18 @@
 # fyisp
 
-Single-binary internet quality monitor: probes hyperscalers &amp; popular services, stores 90 days locally, shows whose fault it is, shares a public link.
+Is your internet good enough for calls and work right now, and when it isn't, is it your Wi-Fi or your internet provider? fyisp answers that in plain words, keeps 90 days of evidence, and makes a report you can send to your provider.
 
-fyisp ("F\*\*\* You ISP") measures how well your connection reaches AWS, Azure, Google Cloud, Cloudflare, GitHub, video-call services and more, so you can show your ISP where the problem is. It replaces the old [docker-compose stack](https://github.com/fuck-you-isp/docker-compose) (network_exporter + Prometheus + Grafana + cloudflared) with one static binary:
+fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It runs on your computer (or a NAS or Raspberry Pi), checks your connection every few seconds, and shows the answer at <http://127.0.0.1:3000>:
 
-- **Probes** every target with a TCP connect every 15s, pings your own path (router, your ISP's first hop, three anycast resolvers), and measures the UDP path calls use with tiny STUN requests ([Call quality](#call-quality)), without admin rights.
-- **Stores every sample for 90 days** in a local SQLite file (about 300 MB), including *why* a probe failed: timeout, refused, reset, unreachable, DNS, no network.
-- **Shows charts** at <http://127.0.0.1:3000>. Failures are gaps coloured by reason, never a fake 0 ms.
-- **Shares a public, read-only, redacted link** if you ask it to (`--share`).
-- **No telemetry.** fyisp only talks to the probe targets, your DNS resolver and, only while sharing, Cloudflare.
+- **Calls, work apps and websites.** It checks the path that call audio and video take, the call and chat apps (Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp), Microsoft 365 and Google Workspace, and the networks most websites are served from.
+- **Whose fault it is.** It also checks your own router and your provider's first hop, so it can say *your Wi-Fi or router*, *your internet provider*, *the wider internet* or *one app*.
+- **When it was bad.** A timeline of today and this week, a *Mark a bad call* button, and *What happened at …?* for any time you pick.
+- **Proof for your provider.** *Make a report* gives you a link to a read-only, redacted 7-day report (no addresses, no notes) that you can send to your provider or your IT team.
+- **Private.** No account, no telemetry, nothing to install to try it. fyisp only talks to the services it checks, your DNS resolver and, only while you share a report, Cloudflare. Its data stays on your machine.
 
-> **Status:** v0.1 is in development. The downloads, one-line launchers and container image below work once the repository is made public at the v0.1 release.
+Technical users get every number under **Details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
+
+> **New in v0.6: the default changed.** Plain `fyisp` now checks the 22 targets above (calls, work apps, websites) instead of the 91 targets of v0.5 and earlier (mostly cloud regions and developer services), and opens on the plain-words **Home** view. The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
 
 ## Quick start
 
@@ -20,9 +22,9 @@ fyisp ("F\*\*\* You ISP") measures how well your connection reaches AWS, Azure, 
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh
 ```
 
-Then open <http://127.0.0.1:3000>. Pass options after `sh -s --`, e.g. `... | sh -s -- --share`.
+Then open <http://127.0.0.1:3000>. Pass options after `sh -s --`, e.g. `... | sh -s -- --profile streaming`.
 
-The launcher (`run.sh`) is pinned to the release it came from. It downloads the matching binary into a temporary directory, **refuses to run it unless its SHA-256 matches the release's `SHA256SUMS`**, also checks the GitHub build provenance attestation if the [GitHub CLI](https://cli.github.com/) is installed and logged in, runs it, and deletes it when fyisp exits. Nothing is installed.
+The launcher (`run.sh`) is pinned to the release it came from. It downloads the matching binary into a temporary directory, **refuses to run it unless its SHA-256 matches the release's `SHA256SUMS`**, also checks the GitHub build provenance attestation if the [GitHub CLI](https://cli.github.com/) is installed and logged in, runs it, and deletes it when fyisp exits. Nothing is installed, so fyisp stops when you close the terminal: see [Keep it running](#keep-it-running).
 
 ### Windows (PowerShell)
 
@@ -30,7 +32,23 @@ The launcher (`run.sh`) is pinned to the release it came from. It downloads the 
 & ([scriptblock]::Create((irm https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.ps1)))
 ```
 
-Add fyisp options at the end, e.g. `... ))) --share`. `run.ps1` does the same checks as `run.sh`.
+Add fyisp options at the end, e.g. `... ))) --profile streaming`. `run.ps1` does the same checks as `run.sh`.
+
+### What you see: Home and Details
+
+![fyisp Home: one answer, the path from your router to the internet, tiles for calls, work apps and websites, and today's timeline](docs/img/home.png)
+
+**Home** opens first. It answers one question, *is my internet OK for calls and work?*, in plain words, without numbers:
+
+- **The answer card**: one sentence (*Your internet is fine*, *Your internet provider is having trouble*, *No internet connection*), the chain *Your router → Your provider → The internet → Apps & websites* with a mark on the link that is most likely at fault, *What does this mean?* and, when something is wrong, *What you can try*.
+- **Mark a bad call**: one click saves "now" (with Undo) and says what fyisp saw at that minute, including when your connection looked fine and the problem was more likely the app or the other person's connection. *Was it earlier?* picks another time.
+- **Tiles** for *Calls*, *Work apps* and *Websites* (and *Other services* when you measure more): *Working*, *Slow*, *Not working*, or for calls *Good*, *Some glitches*, *Choppy*, *Breaking up*, *Blocked*. A tile names the one app that fails, e.g. *Zoom isn't answering*.
+- **When was it bad?**: today or this week, block by block, with a sentence such as *2 rough patches this week, both most likely your internet provider*. Time when fyisp wasn't running is hatched and never counted as bad.
+- **What happened at …?** and **Make a report**.
+
+**Details** (the switch at the top; Back returns to Home) is the full instrument panel: the verdict and outage log, notes, reports, the [Calls view](#call-quality) with scores per app, the [Overview](#the-overview-large-profiles), charts for every service, traceroutes (*Investigate*), CSV export, and the share controls. Clicking a tile on Home opens Details filtered to that tile.
+
+The public report link shows the same Home in the third person (*Internet quality report*), with no addresses, notes or buttons, and Details one click away.
 
 ### Download the binary yourself
 
@@ -56,7 +74,10 @@ Code signing is planned: free Windows signing through the [SignPath Foundation](
 
 ```sh
 docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
+docker logs fyisp 2>&1 | grep -m1 -o 'http://[^ "]*#admin=[0-9a-f]*'
 ```
+
+Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`) once in your browser. It turns on *Mark a bad call*, notes, reports and sharing for that browser; see [Controls under Docker](#controls-under-docker) below.
 
 Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The container runs as an unprivileged user (65532) from a `scratch` image and keeps its data in the `/data` volume. `-p 3000:3000` makes the UI reachable from your network; use `-p 127.0.0.1:3000:3000` to keep it on this machine. ICMP works without extra capabilities on Docker 20.10+, which allows unprivileged ping sockets inside containers.
 
@@ -67,12 +88,21 @@ fyisp options go **after the image name** (the image already sets `--data-dir=/d
 docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --share
 docker logs fyisp 2>&1 | grep 'public link ready'
 
-# Or turn sharing on and off from the UI: set an admin token
-docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --admin-token "$(openssl rand -hex 16)"
-docker inspect fyisp --format '{{join .Args " "}}'   # shows the token again
+# Keep the dashboard read-only for everyone (no notes, reports or share buttons)
+docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --admin-token=off
 ```
 
-Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. That is why its *Create public link* / *Stop sharing* buttons are off by default and the UI says *Share controls disabled*. `--share` still starts the link at startup without them. With `--admin-token`, the buttons come back and the browser asks for the token once per tab. If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
+#### Controls under Docker
+
+Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. Changes (*Mark a bad call*, notes, reports, *Create public link* / *Stop sharing*) therefore need an admin token. On first start fyisp generates one, keeps it in the data volume (`/data/admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
+
+- Open the link once per browser. The page swaps the token for a cookie that only this dashboard sees and removes it from the address bar. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers. Looking at the dashboard needs no token.
+- Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`.
+- To sign every browser out, delete the token and restart; a new link is logged: `docker run --rm -v fyisp:/data busybox rm /data/admin-token && docker restart fyisp`.
+- `--admin-token=<your own>` uses that token instead (the browser asks for it, or open `http://…:3000/#admin=<token>`). `--admin-token=off` disables changes entirely; `--share` still starts the public link at startup.
+- The dashboard is plain HTTP: someone who can watch your network traffic could copy the cookie, as with any HTTP login. Keep it on a network you trust, or use `-p 127.0.0.1:3000:3000`.
+
+If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
 
 **Use host networking on Linux for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
 
@@ -84,16 +114,77 @@ With `--network host`, `-p` is ignored: fyisp listens on the host directly (the 
 
 **Docker Desktop (macOS, Windows)** runs containers inside a Linux VM: the container's gateway is the VM's virtual network, every probe is NATed by the VM, and `--network host` means the VM's network, not your Mac's or PC's. The charts are still useful, but the Gateway and ISP edge layers (and so the *Wi-Fi/router* vs *ISP* verdicts) are not about your real network there. For layer-accurate verdicts, run the native binary on macOS and Windows (see [Quick start](#quick-start)).
 
-### systemd (Linux service)
+## Keep it running
+
+fyisp can only tell you about time when it was running. Started from a terminal or the launcher, it stops when you close that window or log out, and Home shows those hours hatched: *fyisp wasn't running*. To have it start by itself, install the binary once and register it with your system, as below. It then runs in the background whenever you're logged in (or, on Linux and Docker, whenever the machine is on) and you just open <http://127.0.0.1:3000>.
+
+A laptop that sleeps still leaves gaps; that's expected and never counted as a problem. For a complete record, run fyisp on something that is always on and on the same network: a NAS, a Raspberry Pi or a home server, with [Docker](#docker) or [systemd](#linux-systemd).
+
+### macOS (LaunchAgent)
+
+In Terminal (Apple silicon; on an Intel Mac use `fyisp-darwin-amd64`):
 
 ```sh
+mkdir -p ~/.local/bin && cd ~/.local/bin
+curl -fsSLO https://github.com/fuck-you-isp/fyisp/releases/latest/download/fyisp-darwin-arm64
+curl -fsSLO https://github.com/fuck-you-isp/fyisp/releases/latest/download/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing && mv fyisp-darwin-arm64 fyisp && chmod +x fyisp
+
+cat > ~/Library/LaunchAgents/io.github.fuck-you-isp.fyisp.plist <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>io.github.fuck-you-isp.fyisp</string>
+  <key>ProgramArguments</key><array><string>$HOME/.local/bin/fyisp</string><string>--open-browser=false</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/fyisp.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/fyisp.log</string>
+</dict></plist>
+PLIST
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.fuck-you-isp.fyisp.plist
+```
+
+fyisp now starts whenever you log in. Its log is `~/Library/Logs/fyisp.log`. To stop it for good: `launchctl bootout gui/$(id -u)/io.github.fuck-you-isp.fyisp && rm ~/Library/LaunchAgents/io.github.fuck-you-isp.fyisp.plist`. Downloaded with `curl`, the binary carries no quarantine mark, so Gatekeeper doesn't block it.
+
+### Windows (Task Scheduler)
+
+In PowerShell (on an ARM PC use `fyisp-windows-arm64.exe`):
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\fyisp"; New-Item -ItemType Directory -Force $dir | Out-Null
+$url = "https://github.com/fuck-you-isp/fyisp/releases/latest/download"
+Invoke-WebRequest "$url/fyisp-windows-amd64.exe" -OutFile "$dir\fyisp.exe"
+Invoke-WebRequest "$url/SHA256SUMS" -OutFile "$dir\SHA256SUMS"
+$want = (Select-String -Path "$dir\SHA256SUMS" -Pattern 'fyisp-windows-amd64\.exe$').Line.Split(' ')[0]
+if ((Get-FileHash "$dir\fyisp.exe").Hash -ne $want) { Remove-Item "$dir\fyisp.exe"; throw "checksum mismatch" }
+
+$action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command & '$dir\fyisp.exe' --open-browser=false"
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName fyisp -Action $action -Trigger $trigger -Settings $settings
+Start-ScheduledTask -TaskName fyisp
+```
+
+fyisp now starts, hidden, whenever you log in. To stop it for good: `Unregister-ScheduledTask -TaskName fyisp -Confirm:$false`, then end `fyisp.exe` in Task Manager.
+
+### Linux (systemd)
+
+```sh
+curl -fsSLO https://github.com/fuck-you-isp/fyisp/releases/latest/download/fyisp-linux-amd64   # or -arm64, -armv7
+curl -fsSLO https://github.com/fuck-you-isp/fyisp/releases/latest/download/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
 sudo install -m 0755 fyisp-linux-amd64 /usr/local/bin/fyisp
 sudo curl --proto '=https' --tlsv1.2 -fsSL -o /etc/systemd/system/fyisp.service \
   https://raw.githubusercontent.com/fuck-you-isp/fyisp/main/packaging/fyisp.service
 sudo systemctl daemon-reload && sudo systemctl enable --now fyisp
 ```
 
-[`packaging/fyisp.service`](packaging/fyisp.service) runs fyisp as a transient unprivileged user (`DynamicUser`) with a read-only system, no access to home directories and a system-call filter; data lives in `/var/lib/fyisp`. The comments in the unit show how to enable `--share` or `CAP_NET_RAW` with a drop-in (`sudo systemctl edit fyisp`).
+fyisp now runs whenever the machine is on, from boot. [`packaging/fyisp.service`](packaging/fyisp.service) runs it as a transient unprivileged user (`DynamicUser`) with a read-only system, no access to home directories and a system-call filter; data lives in `/var/lib/fyisp`. Options go in a drop-in (`sudo systemctl edit fyisp`), e.g. `Environment=FYISP_PROFILE=default,streaming`; the comments in the unit show how to enable `--share` or `CAP_NET_RAW`.
+
+### Docker, NAS and Raspberry Pi
+
+The [Docker command](#docker) above already uses `--restart unless-stopped`: the container comes back after a reboot as long as Docker itself starts at boot (the default on Linux; on Docker Desktop, turn on *Start Docker Desktop when you sign in*).
 
 ## Whose fault is it? (verdicts)
 
@@ -126,17 +217,17 @@ Call audio and video travel over UDP, and a TCP connect says little about them. 
 
 ### The Calls view
 
-**Calls | Overview | Charts** switches view. Calls opens first with `default` and `calls` (alone or combined with other profiles); other profiles open on the charts, or on the Overview when they are large.
+Home's *Calls* tile and *Mark a bad call* are built on these measurements. **Details** has the full view: **Calls | Overview | Charts** switches between them, and Details opens on Calls whenever the profile has STUN targets (as `default` and `calls` do); otherwise on the charts, or on the Overview when the profile is large.
 
 - **The top card** gives one answer, e.g. *● Good for calls · 32 ms · 0% loss · steady*, refreshed every few seconds with *updated 4 s ago*: the pre-call check. It is the worst of the path verdict (it never says Good while the banner shows an ISP outage, and it names that cause inline), the UDP verdicts below, your call path's score and the measured apps' scores. When it is not Good it says why, e.g. *Poor: 8% loss on your call path (worst minute 14:12)*.
 - **Working hours**: a strip for Mon–Fri 09–17 local time, coloured per minute (good, fair, poor, unusable, no data), with a summary such as *Today 09–17: Good 92% · Poor 14:10–14:16*. Click a minute to ask about it.
 - **What happened at …?**: pick a time (the default is the last 60 minutes) and get one sentence about the 15 minutes either side of it that names the layer at fault, e.g. *14:10–14:16: 8% loss at your ISP edge; Wi-Fi/router fine*. It uses the outage log, so it blames layers the same way the verdicts do. It links to the charts and to *Create evidence report*.
-- **By app**, over the last 5 minutes: Teams and Meet each get a state, round trip and loss; expanding a row shows the MOS, jitter, p95 round trip and the last hour. Zoom, Slack, Discord, WhatsApp and Webex share one row (see below) that says whether their websites are reachable over TCP.
-- **Mark a bad call**: one click saves a **private** note at 2 minutes ago with the call stats of that moment (state, MOS, round trip, jitter, loss; no addresses). *When?* moves it to 15 or 30 minutes ago. The note can be edited, and *Create evidence report* builds a report around it. On a phone the button sticks to the bottom of the screen.
+- **By app**, over the last 5 minutes: Meet (and Teams with the opt-in relay) gets a state, round trip and loss; expanding a row shows the MOS, jitter, p95 round trip and the last hour. Without the relay, Teams gets its own row: its calls take your call path, plus whether its website answers. Zoom, Slack, Discord, WhatsApp and Webex share one row (see below) that says whether their websites are reachable over TCP.
+- **Mark a bad call** (the same button as on Home): one click saves a **private** note at 2 minutes ago with the call stats of that moment (state, MOS, round trip, jitter, loss; no addresses). *When?* moves it to 15 or 30 minutes ago. The note can be edited, and *Create evidence report* builds a report around it. On a phone the button sticks to the bottom of the screen.
 
 A STUN server that stops answering while the others still answer is shown as *This test server isn't answering, not your connection*. After a start the view says *Not enough data yet* until 10 bursts have been measured.
 
-The public link (`--share`) shows only the top card, the working-hours strip and public notes: no app rows, no Teams relay region, no target names, and no Mark button.
+On the public link, Details' Calls view shows only the top card, the working-hours strip and public notes: no app rows, no Teams relay region, no target names, and no Mark button.
 
 ### How it is measured
 
@@ -158,7 +249,7 @@ This is the one list of the STUN servers fyisp ships; the catalog files ([`calls
 | Cloudflare-UDP53 | `stun.cloudflare.com:53` | 15 s | `default`, `calls` | call path; also tells *STUN ports blocked* from *UDP blocked* |
 | Twilio-STUN-global | `global.stun.twilio.com:3478` | 5 s | `default`, `calls` | call path (GeoDNS to the nearest Twilio region) |
 | Twilio-us1 … Twilio-in1 | `{us1,us2,ie1,de1,sg1,jp1,au1,br1,in1}.stun.twilio.com:3478` | 30 s | `calls` | fixed regions, a world map of the UDP path (not in the call path) |
-| Teams-Relay | `worldaz.tr.teams.microsoft.com:3478` | 5 s | `calls` | call path (GeoDNS to an Azure region); Microsoft Teams |
+| Teams-Relay | `worldaz.tr.teams.microsoft.com:3478` | 5 s | `calls` (opt-in) | call path (GeoDNS to an Azure region); Microsoft Teams |
 
 ### The score
 
@@ -188,12 +279,12 @@ The loss penalty is softer than G.711's tables because Opus forward error correc
 | App | Measured over | Profile |
 |---|---|---|
 | Google Meet | `stun.l.google.com`, the STUN server Chrome and Meet use | `default`, `calls` |
-| Microsoft Teams | the Teams Transport Relay that Teams clients use | **opt-in**: `--profile default,calls` (or `--profile calls`) |
-| Zoom, Slack, Discord, WhatsApp, Webex | not measurable | |
+| Microsoft Teams | `default`: your call path (Teams calls take it) plus its website over TCP. With the relay: the Teams Transport Relay that Teams clients use | relay **opt-in**: `--profile default,calls` (or `--profile calls`) |
+| Zoom, Slack, Discord, WhatsApp, Webex | not measurable: your call path plus their websites over TCP | `default`, `calls` |
 
 Zoom, Slack (Amazon Chime), Discord, WhatsApp and Webex hand out a media server per meeting, only after you sign in, and those servers ignore STUN without that session. They can't be tested ahead of a call; if your call path is Good, they usually are too. fyisp still checks their websites over TCP.
 
-The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch region between lookups; the local view shows where it landed (*via Sweden Central*). It is opt-in because Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)). The Calls view shows how to add it.
+The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch region between lookups; the local view shows where it landed (*via Sweden Central*). It is opt-in because Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)).
 
 ### Verdicts, metrics and the off switch
 
@@ -210,69 +301,60 @@ The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch r
 
 ## What to measure (profiles)
 
-By default fyisp measures 91 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud, plus four public STUN servers ([list](#stun-servers)) that measure the UDP path call audio and video use: a burst of 5 tiny STUN Binding Requests every 5 seconds each, with round-trip time, jitter and loss ([Call quality](#call-quality)). `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
+By default fyisp measures **22 targets** a home and a remote worker rely on, plus your own [network path](#whose-fault-is-it-verdicts) (router, your provider's first hop, three public DNS resolvers):
+
+| Home tile | Group in Details | Targets |
+|---|---|---|
+| **Calls** | Call path | 4 public STUN servers ([list](#stun-servers)): Google Meet's, Cloudflare's (on its STUN port and on port 53) and Twilio's |
+| **Calls** | Call & chat apps | Microsoft Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp |
+| **Work apps** | Work apps | Outlook, the Microsoft 365 portal, Microsoft sign-in, Gmail, Google Docs, Google Drive |
+| **Websites** | Websites | Cloudflare, Akamai, Fastly, Amazon CloudFront and Google's edge, the networks most websites are served from |
+
+Each service gets a TCP connect (handshake, then close; no data, no login) every 15 seconds. The STUN servers get a burst of 5 tiny Binding Requests every 5 seconds ([Call quality](#call-quality)); `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `fyisp profiles default` lists every target with its host.
+
+**Everything else is opt-in.** `--profile` picks from the built-in **target catalog** (about 1,400 endpoints, one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand). For containers, compose files and NAS templates, the environment variable `FYISP_PROFILE` does the same; `--profile` and `--config` win over it.
 
 ```sh
 fyisp profiles                       # list the profiles, with target and panel counts
 fyisp profiles aws                   # the targets of a profile (region, city, country)
-fyisp --profile aws,europe           # combine profiles (a union)
+fyisp --profile default,streaming    # the default plus streaming (combine profiles: a union)
 fyisp --profile clouds --geo eu      # only the targets of a profile in one region (na sa eu me af as oc)
-fyisp --profile default,dns          # the default targets plus every public resolver
+FYISP_PROFILE=default,calls fyisp    # the same as --profile default,calls
+docker run ... -e FYISP_PROFILE=default,streaming ghcr.io/fuck-you-isp/fyisp
 ```
 
 | Profiles | What |
 |---|---|
-| `default` | the 87 original targets plus 4 STUN targets (used without `--profile`) |
-| `calls` | call quality: every [STUN server](#stun-servers), some only in this profile, plus Teams, Meet, Zoom, Slack, Discord, WhatsApp and Webex over TCP; `--profile default,calls` adds it to the default |
-| `all` | every target in the catalog |
+| `default` | the 22 services above: calls, work apps, websites (used without `--profile`) |
+| `calls` | call quality in depth: every [STUN server](#stun-servers), including the Teams relay and 9 Twilio regions, plus the call apps over TCP; `--profile default,calls` adds it to the default |
+| `streaming` | YouTube, Netflix, Spotify, Disney+, Prime Video, Twitch, Apple TV and Music (left out of the default, see [Privacy](#privacy)) |
+| `common` | everyday services: calls and chat, productivity, streaming, social sites |
+| `gaming` | game platforms and cloud gaming (Xbox, PlayStation, Battle.net, GeForce NOW, ...) |
 | `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / VPS, bare-metal, regional and object-storage clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, ...) / both; one panel per provider and region |
 | `storage` | object storage clouds (Backblaze B2, Wasabi, IDrive e2, R2, ...) plus Hetzner, Linode and OVH object storage |
-| `cdn`, `dns` | CDN edges, public DNS resolvers (their DNS-over-HTTPS/TLS endpoints) |
-| `common`, `dev`, `streaming`, `gaming` | everyday services, developer services, streaming, game platforms |
+| `cdn`, `dns`, `dev` | CDN edges, public DNS resolvers (their DNS-over-HTTPS/TLS endpoints), developer services |
 | `north-america`, `south-america`, `europe`, `middle-east`, `africa`, `asia`, `oceania` | every catalog target located there (anycast endpoints have no region and are left out) |
+| `all` | every target in the catalog |
 | `aws`, `gcp`, `azure`, `hetzner`, ... | every provider in the catalog is a profile of its own |
 
-Target names are identities (a name keeps its history): when a profile is combined with `default` and both have a target of the same name (e.g. `AWS-us-east-1`), the catalog's definition is used. `default` on its own never changes.
+Targets outside the default show on Home in an **Other services** tile: its state counts, but it never names one of hundreds of endpoints. Target names are identities (a name keeps its history), so a target in several profiles is one series.
 
-There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count. Per 100 targets: about 0.4% of one CPU core, 0.7 KB/s of download and 1.3 KB/s of upload (a TCP connect sends more small packets than it receives).
+There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open Details on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count; see [What it costs](#what-it-costs).
 
-With the call-quality STUN targets (v0.5), measured on 2026-10-10 (Linux amd64, Docker, Frankfurt area; the three profiles ran side by side for 17 minutes; CPU, memory and traffic from `/metrics` `process_*` counters over the last 8.6 minutes, after an 8-minute warm-up; the Network path group included):
+### What it costs
+
+Measured on 2026-10-10 with the v0.6 `default` (Linux amd64, Docker, Frankfurt area; CPU, memory and traffic from the `/metrics` `process_*` counters over 8.6 minutes, after an 8-minute warm-up; the Network path group included), next to the v0.5 runs of the same method:
 
 | Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
 |---|---:|---:|---:|---:|---:|---:|
-| `default` | 91 + 5 (4 STUN) | 2.4% | 77 MB | 1.7 / 2.0 KB/s | 10 GB | 0.29 GB |
-| `default --no-udp` | 87 + 5 | 2.3% | 78 MB | 1.5 / 1.9 KB/s | 9 GB | 0.28 GB |
+| **`default` (v0.6)** | 22 + 5 (4 STUN) | **0.8%** | **74 MB** | **0.75 / 0.76 KB/s** | **4.0 GB** | **0.08 GB** |
+| `default` (v0.5, 91 targets) | 91 + 5 (4 STUN) | 2.4% | 77 MB | 1.7 / 2.0 KB/s | 10 GB | 0.29 GB |
 | `calls` | 31 + 5 (15 STUN) | 0.6% | 60 MB | 0.9 / 0.8 KB/s | 4.5 GB | 0.07 GB |
+| `all` (TCP only, v0.4) | 1411 | 5.9% | 96 MB | 10.3 / 18.8 KB/s | 76 GB | |
 
-- The 4 STUN targets of `default` add about 0.2 KB/s down and 0.1 KB/s up (about 0.6 GB a month), about 10 MB of disk over 90 days (+4%), and no CPU or memory difference beyond the noise between two runs.
-- Disk is extrapolated from the stored data, not from the file size, because a 17-minute database is mostly empty 16 KB pages. The method: take the compressed sample blobs of the two partial hours the run covered (10.8 and 6.1 minutes), fit bytes = per-hour overhead + rate × minutes, and take that at 60 minutes, then add one hour of summaries, × 2,160 hours. A full hour compresses better than the fitted line, so this errs high; SQLite's page and index overhead adds a few percent on top.
-
-The rows below measure TCP-only probing, before the STUN targets. They were measured on 2026-09-27 (Linux amd64, Docker; 4 minutes after a 1-minute warm-up, from `/metrics` `process_*` counters; the Network path group included; no disk figures):
-
-| Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month |
-|---|---:|---:|---:|---:|---:|
-| `default` | 92 | 1.8% | 71 MB | 1.3 / 1.8 KB/s | 8 GB |
-| `all` | 1411 | 5.9% | 96 MB | 10.3 / 18.8 KB/s | 76 GB |
-
-In a side-by-side run of the same 1411-target catalog, the previous HTTPS + TCP + ICMP probing used 20.4% of a core, 240 MB and 130 / 93 KB/s.
-
-The table below was measured **before that change, with HTTPS, TCP and ICMP probes on every target**; it is kept for reference (disk figures included) and overstates today's CPU, memory and traffic several times. Measured on 2026-09-27 (Linux amd64, Docker; 25 minutes per profile after a 5-minute warm-up; the Network path group included). The cloud rows were measured with the larger v0.4.0 catalog; since v0.4.1 the catalog is slightly larger (`clouds` 1330, `all` 1599 targets; GPU clouds, PaaS and sanctioned locations removed):
-
-| Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
-|---|---:|---:|---:|---:|---:|---:|
-| `dns` | 33 | 0.8% | 65 MB | 3.8 / 1.9 KB/s | 15 GB | 0.13 GB |
-| `common` | 72 | 1.1% | 72 MB | 8.0 / 2.6 KB/s | 28 GB | 0.24 GB |
-| `default` | 92 | 3.3% | 84 MB | 21 / 9 KB/s | 81 GB | 0.57 GB |
-| `hyperscalers` | 299 | 4.9% | 115 MB | 34 / 17 KB/s | 135 GB | 1.4 GB |
-| `europe` | 381 | 6.0% | 111 MB | 41 / 21 KB/s | 165 GB | 1.4 GB |
-| `devclouds` | 743 | 11.6% | 155 MB | 80 / 41 KB/s | 320 GB | 3.1 GB |
-| `clouds` | 1037 | 15.8% | 205 MB | 114 / 58 KB/s | 456 GB | 4.5 GB |
-| `all` | 1306 | 18.4% | 231 MB | 142 / 70 KB/s | 564 GB | 5.4 GB |
-
-- `default` costs more CPU than its size suggests because it runs 7 continuous hop-by-hop traces.
-- TLS session resumption, added after this run, cut download by a further ~23% and CPU by ~10% on `all` (110 KB/s, 18.4% vs 20.3% in a side-by-side run); it matters today only for `--config` targets that ask for HTTPS.
-- Traffic per month matters on metered connections: every target gets a TCP connect every 15 seconds, around the clock.
-- Disk is about 1.4 bytes per measurement (compressed hourly blocks), plus about 40% for summaries and indexes.
+- Traffic per month matters on metered connections (mobile hotspots, LTE/5G home internet, satellite): every target is checked around the clock.
+- Disk is extrapolated from the stored data, not from the file size, because a young database is mostly empty 16 KB pages. The v0.6 run covered one full clock hour: its compressed sample blobs took 32.9 KB and the hourly summaries about 0.9 KB per hour, × 2,160 hours = 73 MB, plus a few percent for SQLite's pages and indexes. (The v0.5 rows were fitted from two partial hours.)
+- Per 100 extra TCP targets: about 0.4% of one CPU core, 0.7 KB/s of download and 1.3 KB/s of upload (a TCP connect sends more small packets than it receives). The two always-on traceroutes of `default` (Microsoft Teams and Cloudflare) cost a little CPU on top.
 
 A `--config` file can start from any profiles and change them:
 
@@ -301,6 +383,15 @@ With more than 150 targets (e.g. `--profile clouds` or `all`) the dashboard open
 
 The Overview's window is at most 30 days (it reads every target at once). Filters, sort, view and focus are kept in the URL, so a link opens the same view; the public link shows the same Overview.
 
+## Privacy
+
+fyisp has no account and no telemetry, and its data stays on your machine. What others can see:
+
+- **The services it checks** see a TCP connection from your public IP address every 15 seconds (STUN servers: a few tiny packets every 5 seconds). No data is sent, nobody logs in, no cookies.
+- **Your DNS resolver** sees fyisp look up each service's name about once a minute, all day. That resolver is usually your provider's, a Pi-hole, or **on a work laptop, your employer's**, whose security tools may log every lookup. This is why the default sticks to call apps, work apps and the big CDNs: lookups for `netflix.com` or `tiktok.com` every minute from a work laptop would look like you stream all day. Streaming (`--profile streaming`) and social sites (part of `--profile common`) are opt-in for that reason.
+- **On a work laptop**, keep the default, and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists exactly which names fyisp looks up.
+- **A shared report** is public to anyone with its link: the 7-day report and the charts behind it, without addresses, host names or private notes (see [Sharing a public link](#sharing-a-public-link---share)).
+
 ## ICMP permissions
 
 fyisp never asks for admin rights. Only the Network path is pinged (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
@@ -313,10 +404,10 @@ or carry on without ICMP: the services and the anycast resolvers are still measu
 
 ## Sharing a public link (`--share`)
 
-Sharing is **off by default**. Start it with `fyisp --share` or the *Share* button in the local UI; fyisp then prints exactly what becomes public.
+Sharing is **off by default**. Start it with *Make a report* on Home, the share controls in Details, or `fyisp --share`; fyisp then prints exactly what becomes public. The link opens on the report: Home in the third person (*Internet quality report*, with times in absolute form and the time zone), with Details one click away.
 
 - fyisp opens a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) from inside the process (no `cloudflared` install, no Cloudflare account) and prints a link like `https://<random-words>.trycloudflare.com/s/<secret>/`.
-- **What is public:** the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, no write routes, and requests are rate-limited.
+- **What is public:** the report, the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, no write routes, and requests are rate-limited.
 - **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
 - The tunnel tries QUIC (UDP port 7844) first and switches to HTTP/2 over TCP port 443 after about 30 seconds if UDP is blocked. Force one with `--share-protocol quic` or `--share-protocol http2`.
 - The link is random. It changes when fyisp restarts, or when the tunnel has to be re-created after 5 minutes without a connection. The browser on your machine always opens `127.0.0.1`, never the public link.

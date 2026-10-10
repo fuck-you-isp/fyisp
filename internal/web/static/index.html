@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="fyisp-mode" content="{{mode}}">
 <meta name="fyisp-token" content="{{token}}">
-<title>F*** you ISP!</title>
+<title>fyisp</title>
 <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="static/vendor/uPlot.min.css">
 <link rel="stylesheet" href="static/style.css">
@@ -17,21 +17,22 @@
 <body>
 <header class="top">
   <div class="brand">
-    <h1>F*** you ISP!</h1>
+    <h1>fyisp</h1>
     <span id="mode-badge" class="badge" hidden></span>
     <span id="profile-badge" class="badge" hidden></span>
   </div>
-  <div id="share" class="share" aria-live="polite"></div>
+  <nav id="viewnav" class="seg viewnav" aria-label="View"></nav>
+  <div id="share" class="share"></div>
   <div class="controls">
     <div id="ranges" class="seg" role="group" aria-label="Time range"></div>
     <div id="kinds" class="seg" role="group" aria-label="Probe kinds"></div>
     <div id="tools" class="tools" hidden></div>
-    <span id="refresh" class="muted small" aria-live="polite"></span>
-    <button id="theme" class="btn ghost" type="button" title="Toggle light/dark">Theme</button>
+    <span id="refresh" class="muted small"></span>
+    <button id="theme" class="btn ghost theme" type="button">◐</button>
   </div>
 </header>
-<div id="notices" class="notices" aria-live="polite"></div>
-<section id="verdict" class="verdict" aria-live="polite" aria-label="Current verdict" hidden></section>
+<div id="notices" class="notices"></div>
+<section id="verdict" class="verdict" aria-label="Current verdict" hidden></section>
 <details id="outages" class="outages" hidden>
   <summary><span class="o-title">Outage log</span> <span id="outages-count" class="muted"></span></summary>
   <div id="outages-list" class="o-list"></div>
@@ -46,12 +47,37 @@
 </details>
 <main id="panels" class="grid"></main>
 <div id="tip" class="tip" role="tooltip" hidden></div>
-<footer class="foot muted small">
-  <span>Lines break where no probe succeeded. The strip under each chart shows lost samples by reason; grey hatching means not measured (fyisp was not running), which is not loss.</span>
-  <span>Drag on a chart to zoom, double-click to reset. Click a legend entry to isolate it, Ctrl/Cmd-click to toggle.</span>
-  <span>Faint coloured bands on the charts mark incidents from the outage log; click an incident to zoom to it.</span>
-  <span>Flags mark notes. On your own dashboard, right-click a chart (long-press on a phone) to add a note at that time, or Shift-drag to add one over a range; click a flag to edit it. Blue flags are shown on your public link.</span>
-  <span>"×2.3 normal" means a target is 2.3 times slower than its usual latency (its median over the past week). The "Normal band" shades each target's usual range (median to p95).</span>
+<footer class="foot small">
+  <details class="foot-help">
+    <summary>How to read these charts</summary>
+    <ul>
+      <li>Lines break where no probe succeeded. The strip under each chart shows lost samples by reason; grey hatching means not measured (fyisp was not running), which is not loss.</li>
+      <li>Drag on a chart to zoom, double-click to reset. Click a legend entry to isolate it, Ctrl/Cmd-click to toggle.</li>
+      <li>Faint coloured bands on the charts mark incidents from the outage log; click an incident to zoom to it.</li>
+      <li>Flags mark notes. On your own dashboard, right-click a chart (long-press on a phone) to add a note at that time, or Shift-drag to add one over a range; click a flag to edit it. Blue flags are shown on your public link.</li>
+      <li><b>×2.3 normal</b>: 2.3 times slower than usual for this target (its typical time over the past week). The “Normal band” shades each target’s usual range (median to p95).</li>
+    </ul>
+  </details>
+  <details class="foot-help" id="glossary">
+    <summary>Glossary</summary>
+    <dl>
+      <dt>MOS</dt><dd>Call quality score from 1 (unusable) to 4.5 (excellent), estimated from delay, dropouts and jitter. Good ≥ 4.0, Fair ≥ 3.6, Poor ≥ 3.1.</dd>
+      <dt>Jitter</dt><dd>How unevenly packets arrive. Steady below 10 ms; noticeable from 30 ms, when call apps add delay to smooth it out.</dd>
+      <dt>Loss (packet loss)</dt><dd>Share of test messages that never came back. Above about 5%, people on a call start to hear gaps. “Not measured” is never counted as loss.</dd>
+      <dt>RTT (round-trip time)</dt><dd>Time for a message to reach a server and come back, in milliseconds. Under 150 ms feels instant on a call.</dd>
+      <dt>STUN</dt><dd>A tiny “what’s my address?” request that call apps send before a call. fyisp uses it to test the path call audio takes.</dd>
+      <dt>Burst</dt><dd>5 STUN requests sent quickly, 20 ms apart, like call audio packets. Loss and jitter are measured per burst.</dd>
+      <dt>UDP</dt><dd>The fast, no-retry way call audio and video travel. If it’s blocked, calls fall back to slower routes.</dd>
+      <dt>TCP</dt><dd>The reliable way web pages and apps connect. fyisp times how long opening a connection takes.</dd>
+      <dt>ICMP (ping)</dt><dd>The “are you there?” message used to check your router and provider. Some equipment answers it slowly on purpose.</dd>
+      <dt>Gateway</dt><dd>Your router: the first box every message from this device passes through.</dd>
+      <dt>ISP edge</dt><dd>The first piece of your internet provider’s equipment past your router.</dd>
+      <dt>Anycast</dt><dd>Big services (Cloudflare, Google, Quad9 DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.</dd>
+      <dt>p95</dt><dd>95 out of 100 measurements were faster than this. Shows the slow moments the median hides.</dd>
+      <dt>Median</dt><dd>The middle value: half the measurements were faster, half slower.</dd>
+      <dt>DNS</dt><dd>The internet’s address book: it turns names like zoom.us into addresses. If it fails, apps can’t be found even though the connection works.</dd>
+    </dl>
+  </details>
 </footer>
 </body>
 </html>

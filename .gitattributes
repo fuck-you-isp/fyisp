@@ -1,2 +1,4 @@
 # Golden files are compared byte for byte; keep LF on Windows checkouts.
 *.golden text eol=lf
+# Test fixtures compared byte for byte; keep LF on Windows checkouts.
+**/testdata/**/*.json text eol=lf

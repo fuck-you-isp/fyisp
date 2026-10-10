@@ -130,7 +130,9 @@ type callsGroup struct {
 }
 
 // callsApp is one app. UDP is "measured" (Group set; Region is the Teams
-// relay's cloud region, local only) or "not_measurable". Web* is the TCP
+// relay's cloud region, local only), "shared" (an app whose own call
+// target is not in the profile, e.g. Teams without its opt-in relay: its
+// calls take the call path, Path) or "not_measurable". Web* is the TCP
 // connect time to the app's websites over the window (omitted without TCP
 // targets): mean RTT, loss fraction and samples.
 type callsApp struct {
@@ -165,6 +167,9 @@ type callsParams struct {
 	from, to time.Time
 	capped   bool
 	key      string
+	// skip (Home only): minutes overlapping these spans are not scored,
+	// as if not measured: an outage the verdict already explained.
+	skip []HomeSpan
 }
 
 // parseCalls parses /api/calls?from=&to= with /api/panel's time rules
@@ -331,6 +336,17 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 	for i, t := range udp {
 		mins[i], idx[t.Name] = udpMinutes(cols, t.Name, n), i
 	}
+	for m := range n {
+		ms := start.UnixMilli() + int64(m)*out.Step
+		for _, sp := range p.skip {
+			if ms < sp.To && ms+out.Step > sp.From {
+				for i := range mins {
+					mins[i][m] = callq.Empty
+				}
+				break
+			}
+		}
+	}
 	dead := callq.NotAnswering(mins)
 
 	v := model.Verdict{Kind: VerdictUnknown}
@@ -424,8 +440,10 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 					app.Region = r
 				}
 			}
-		case a.Measurable || len(wt) == 0:
-			continue // Teams without the relay (opt-in), or an app not in the profile
+		case len(wt) == 0:
+			continue // an app not in the profile
+		case a.Measurable:
+			app.UDP = "shared" // Teams without its opt-in relay: its calls take the shared call path
 		}
 		var sum float64
 		var ok, lost int

@@ -192,72 +192,24 @@ func (s *server) overview(ctx context.Context, p overviewParams) (*overviewJSON,
 		titles[g.ID] = g.Title
 	}
 	var targets []model.Target
-	var keys []model.SeriesKey
 	for _, t := range prof.Targets {
-		if isPath(t) || !hasKind(t, p.kind) {
-			continue
+		if !isPath(t) && hasKind(t, p.kind) {
+			targets = append(targets, t)
 		}
-		targets = append(targets, t)
-		keys = append(keys, model.SeriesKey{Target: t.Name, Kind: p.kind})
 	}
-	cols := map[model.SeriesKey]*store.SeriesCols{}
-	if len(keys) > 0 {
-		res, err := s.d.Store.Panel(ctx, store.PanelQuery{Keys: keys, From: p.from, To: p.to, MaxPoints: 1})
-		if err != nil {
-			return nil, err
-		}
-		for i := range res.Series {
-			cols[res.Series[i].Key] = &res.Series[i]
-		}
+	rows, err := s.overviewRows(ctx, p.kind, p.from, p.to, targets)
+	if err != nil {
+		return nil, err
 	}
 	type seen struct{ all, affected map[string]bool }
 	provs := seen{map[string]bool{}, map[string]bool{}}
 	geos := seen{map[string]bool{}, map[string]bool{}}
 	sm := &out.Summary
 	for i, t := range targets {
-		row := overviewRow{Target: t.Name}
-		var sum float64
-		var lostBy [model.MaxReason + 1]int64
-		if c := cols[keys[i]]; c != nil {
-			for j, m := range c.Mean {
-				k := int64(at(c.N, j))
-				row.Lost += int64(at(c.Lost, j))
-				if k == 0 || math.IsNaN(float64(m)) {
-					continue
-				}
-				sum += float64(m) * float64(k)
-				row.N += k
-			}
-			for rs, v := range c.LostBy {
-				if rs != model.ReasonGap && rs <= model.MaxReason {
-					for _, x := range v {
-						lostBy[rs] += int64(x)
-					}
-				}
-			}
+		row := rows[i]
+		if row.NormalMs != nil {
+			sm.WithNormal++
 		}
-		if row.N > 0 {
-			v := round2(sum / float64(row.N))
-			row.NowMs = &v
-		}
-		if row.N+row.Lost > 0 {
-			row.Loss = float64(row.Lost) / float64(row.N+row.Lost)
-		}
-		if row.Lost > 0 {
-			row.Reason = dominantReason(lostBy[:])
-		}
-		if s.d.Baselines != nil {
-			if b, ok := s.d.Baselines.Get(keys[i], p.to); ok && finite(b.MedianMs, b.P95Ms) && b.MedianMs > 0 {
-				med, p95 := round2(b.MedianMs), round2(b.P95Ms)
-				row.NormalMs, row.NormalP95Ms, row.HourOfDay = &med, &p95, b.HourOfDay
-				if row.NowMs != nil {
-					ratio := round2(sum / float64(row.N) / b.MedianMs)
-					row.Ratio = &ratio
-				}
-				sm.WithNormal++
-			}
-		}
-		row.State = rowState(row)
 		prov, _ := providerOf(t, titles)
 		provs.all[prov] = true
 		if t.Geo != "" {
@@ -288,6 +240,107 @@ func (s *server) overview(ctx context.Context, p overviewParams) (*overviewJSON,
 	sm.Providers, sm.ProvidersAffected = len(provs.all), len(provs.affected)
 	sm.Geos, sm.GeosAffected = len(geos.all), len(geos.affected)
 	return out, nil
+}
+
+// overviewRows computes the Overview row of each target (which must have
+// kind) over [from, to): one store query, plus the baselines.
+func (s *server) overviewRows(ctx context.Context, kind model.ProbeKind, from, to time.Time, targets []model.Target) ([]overviewRow, error) {
+	return s.overviewRowsMasked(ctx, kind, from, to, targets, nil)
+}
+
+// overviewRowsMasked is overviewRows leaving out the minutes that overlap
+// skip (Home: an outage the verdict already explained). A row whose
+// samples were all left out is ok: the outage explained them.
+func (s *server) overviewRowsMasked(ctx context.Context, kind model.ProbeKind, from, to time.Time, targets []model.Target, skip []HomeSpan) ([]overviewRow, error) {
+	rows := make([]overviewRow, len(targets))
+	keys := make([]model.SeriesKey, len(targets))
+	for i, t := range targets {
+		keys[i] = model.SeriesKey{Target: t.Name, Kind: kind}
+	}
+	cols := map[model.SeriesKey]*store.SeriesCols{}
+	points := 1
+	if len(skip) > 0 {
+		points = int(to.Sub(from)/time.Minute) + 2 // minute buckets to mask
+	}
+	var res *store.PanelResult
+	if len(keys) > 0 {
+		var err error
+		if res, err = s.d.Store.Panel(ctx, store.PanelQuery{Keys: keys, From: from, To: to, MaxPoints: points}); err != nil {
+			return nil, err
+		}
+		for i := range res.Series {
+			cols[res.Series[i].Key] = &res.Series[i]
+		}
+	}
+	masked := func(j int) bool {
+		if len(skip) == 0 || res == nil {
+			return false
+		}
+		bs := res.Start.Add(time.Duration(j) * res.Step).UnixMilli()
+		be := bs + res.Step.Milliseconds()
+		for _, sp := range skip {
+			if bs < sp.To && be > sp.From {
+				return true
+			}
+		}
+		return false
+	}
+	for i, t := range targets {
+		row := overviewRow{Target: t.Name}
+		var sum float64
+		var lostBy [model.MaxReason + 1]int64
+		hidden := false
+		if c := cols[keys[i]]; c != nil {
+			for j, m := range c.Mean {
+				k := int64(at(c.N, j))
+				if masked(j) {
+					hidden = hidden || k+int64(at(c.Lost, j)) > 0
+					continue
+				}
+				row.Lost += int64(at(c.Lost, j))
+				if k == 0 || math.IsNaN(float64(m)) {
+					continue
+				}
+				sum += float64(m) * float64(k)
+				row.N += k
+			}
+			for rs, v := range c.LostBy {
+				if rs != model.ReasonGap && rs <= model.MaxReason {
+					for j, x := range v {
+						if !masked(j) {
+							lostBy[rs] += int64(x)
+						}
+					}
+				}
+			}
+		}
+		if row.N > 0 {
+			v := round2(sum / float64(row.N))
+			row.NowMs = &v
+		}
+		if row.N+row.Lost > 0 {
+			row.Loss = float64(row.Lost) / float64(row.N+row.Lost)
+		}
+		if row.Lost > 0 {
+			row.Reason = dominantReason(lostBy[:])
+		}
+		if s.d.Baselines != nil {
+			if b, ok := s.d.Baselines.Get(keys[i], to); ok && finite(b.MedianMs, b.P95Ms) && b.MedianMs > 0 {
+				med, p95 := round2(b.MedianMs), round2(b.P95Ms)
+				row.NormalMs, row.NormalP95Ms, row.HourOfDay = &med, &p95, b.HourOfDay
+				if row.NowMs != nil {
+					ratio := round2(sum / float64(row.N) / b.MedianMs)
+					row.Ratio = &ratio
+				}
+			}
+		}
+		row.State = rowState(row)
+		if row.State == stateUnmeasured && hidden {
+			row.State = stateOK // what is left is too little to judge, and the outage explained the rest
+		}
+		rows[i] = row
+	}
+	return rows, nil
 }
 
 // rowState classifies a row: too few samples, then loss (with enough

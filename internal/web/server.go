@@ -89,6 +89,7 @@ type server struct {
 	now    func() time.Time
 	sem    chan struct{}   // bounds concurrent panel queries (public only)
 	cache  *respCache      // public only
+	hcache *respCache      // /api/home?part=history, local and public
 	inv    *investigations // on-demand traces; local only
 }
 
@@ -99,7 +100,8 @@ func newServer(d Deps, public bool, token string) *server {
 	}
 	d.firsts = &firstCache{}
 	html := strings.NewReplacer("{{mode}}", mode, "{{token}}", token).Replace(indexTmpl)
-	return &server{d: d, public: public, index: []byte(html), now: time.Now}
+	hc := newRespCache(HomeHistoryTTL, 64, 4<<20, 1<<20)
+	return &server{d: d, public: public, index: []byte(html), now: time.Now, hcache: hc}
 }
 
 // route is one GET route under the handler's base path.
@@ -122,6 +124,7 @@ const (
 	routeBaselines
 	routeOverview
 	routeCalls
+	routeHome
 )
 
 func lookup(rel string) route {
@@ -154,6 +157,8 @@ func lookup(rel string) route {
 		return routeOverview
 	case "api/calls":
 		return routeCalls
+	case "api/home":
+		return routeHome
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -210,6 +215,8 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveOverview(w, r)
 	case routeCalls:
 		s.serveCalls(w, r)
+	case routeHome:
+		s.serveHome(w, r)
 	case routeTrace, routeTracePanel, routeRouteChanges:
 		switch {
 		case s.d.Trace == nil:
@@ -253,6 +260,7 @@ type localStatus struct {
 	Status
 	Mode     string `json:"mode"`
 	Controls string `json:"controls"` // "enabled", "admin" (needs admin token) or "disabled"
+	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
 }
 
 // publicStatus is the redacted /api/status: no version, no hints, no error

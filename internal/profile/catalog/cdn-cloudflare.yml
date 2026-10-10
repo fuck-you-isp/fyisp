@@ -24,7 +24,7 @@ targets:
     kinds: [tcp]
     path: "/cdn-cgi/trace"
     anycast: true
-    tags: [edge-trace]
+    tags: [edge-trace, home:web]
     notes: >-
       colo= in the body names the answering PoP.
     verified:

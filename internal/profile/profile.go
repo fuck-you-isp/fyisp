@@ -1,5 +1,6 @@
-// Package profile loads target profiles: the embedded default and local
-// --config files (which may extend the default).
+// Package profile loads target profiles: the embedded default (a selection
+// of catalog targets, see default.yml), the named profiles over the catalog
+// and local --config files (which may extend them).
 //
 // File format (YAML):
 //
@@ -12,7 +13,7 @@
 //	  - {name: router, host: 192.168.1.1, group: home, kinds: [icmp]}
 //	remove: [Discord]           # with extends: drop targets by name
 //	override:                   # with extends: change fields of a target by name
-//	  - {name: dev-GitHub, interval: 30s}
+//	  - {name: Zoom, interval: 30s}
 //	targets: [...]              # without extends: the full target list
 //	path: false                 # optional: leave out the built-in "Network path" group
 //
@@ -42,7 +43,7 @@
 // network path. Targets using them must have kinds [icmp].
 //
 // Network path group: Default and every loaded file (standalone or
-// extending the default) get a built-in group "path" ("Network path", shown
+// extending a profile) get a built-in group "path" ("Network path", shown
 // first) that measures the layers of the path: the gateway and the ISP edge
 // (ICMP every second), and three anycast resolvers (ICMP and TCP). A file
 // opts out with `path: false` at the top level. Its target names are
@@ -57,6 +58,7 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -163,7 +165,11 @@ func WithoutPath(p *model.Profile) {
 // Default returns a fresh copy of the embedded default profile, with the
 // network path group.
 func Default() (*model.Profile, error) {
-	p, err := defaultBase()
+	r, err := Builtin()
+	if err != nil {
+		return nil, err
+	}
+	p, err := defaultBase(r.Catalog)
 	if err != nil {
 		return nil, err
 	}
@@ -171,14 +177,32 @@ func Default() (*model.Profile, error) {
 	return p, nil
 }
 
-// defaultBase is the embedded default profile without the path group.
-func defaultBase() (*model.Profile, error) {
+// defaultBase is the embedded default profile without the path group. Its
+// targets name catalog targets: each is the catalog entry in the group
+// default.yml gives it, plus its always-on trace; default.yml sets nothing
+// else.
+func defaultBase(c *Catalog) (*model.Profile, error) {
 	fp, err := decode(defaultYAML)
 	if err != nil {
 		return nil, fmt.Errorf("default profile: %w", err)
 	}
-	p, err := standalone(fp)
-	if err != nil {
+	p := &model.Profile{Name: fp.Name, Version: fp.Version, Groups: slices.Clone(fp.Groups)}
+	var errs []error
+	for _, ft := range fp.Targets {
+		ct, ok := c.Target(ft.Name)
+		switch {
+		case !ok || !ct.Probeable():
+			errs = append(errs, fmt.Errorf("target %q: not a probeable catalog target", ft.Name))
+			continue
+		case !reflect.DeepEqual(ft, fileTarget{Name: ft.Name, Group: ft.Group, Trace: ft.Trace}):
+			errs = append(errs, fmt.Errorf("target %q: only name, group and trace may be set (the rest comes from the catalog)", ft.Name))
+			continue
+		}
+		t := ct.toTarget(ft.Group, c.Provider(ct.Provider))
+		t.Trace = ft.Trace != nil && *ft.Trace
+		p.Targets = append(p.Targets, t)
+	}
+	if err := errors.Join(errs...); err != nil {
 		return nil, fmt.Errorf("default profile: %w", err)
 	}
 	return p, nil
@@ -242,19 +266,11 @@ func parse(fp *fileProfile) (*model.Profile, error) {
 	if len(fp.Targets) > 0 {
 		return nil, errors.New("targets: not allowed with extends; use add/remove/override")
 	}
-	var base *model.Profile
-	var err error
-	if len(fp.Extends) == 1 && fp.Extends[0] == "default" {
-		base, err = defaultBase()
-	} else {
-		var r *Registry
-		if r, err = Builtin(); err == nil {
-			var b *sel
-			if b, err = r.base(fp.Extends, nil); err == nil {
-				base = b.Profile
-			}
-		}
+	r, err := Builtin()
+	if err != nil {
+		return nil, fmt.Errorf("extends: %w", err)
 	}
+	base, err := r.base(fp.Extends, nil)
 	if err != nil {
 		return nil, fmt.Errorf("extends: %w", err)
 	}
@@ -524,6 +540,9 @@ func Validate(p *model.Profile, l Limits) error {
 		if err := checkHost(t.Host, l.AllowPrivateIPs); err != nil {
 			bad("target %q: host: %v", t.Name, err)
 		}
+		if err := checkHomeTags(t.Tags); err != nil {
+			bad("target %q: %v", t.Name, err)
+		}
 		special := isSpecial(t.Host)
 		for k, h := range t.HostOverrides {
 			if !validKind(k) || k == model.KindUDP {
@@ -643,19 +662,12 @@ func WithoutUDP(p *model.Profile) {
 	p.Groups = slices.DeleteFunc(p.Groups, func(g model.Group) bool { return !inUse[g.ID] })
 }
 
-// shippedUDP holds the STUN targets fyisp ships (default.yml and the
-// catalog) by name: they may probe faster than MinUDPInterval, and do not
-// count against MaxCustomUDP. A target only counts as shipped while its
-// host, port and interval are unchanged.
+// shippedUDP holds the STUN targets fyisp ships (the catalog's, which the
+// default selects from) by name: they may probe faster than
+// MinUDPInterval, and do not count against MaxCustomUDP. A target only
+// counts as shipped while its host, port and interval are unchanged.
 var shippedUDP = sync.OnceValue(func() map[string]model.Target {
 	out := map[string]model.Target{}
-	if p, err := defaultBase(); err == nil {
-		for _, t := range p.Targets {
-			if t.IsUDP() {
-				out[t.Name] = t
-			}
-		}
-	}
 	if r, err := Builtin(); err == nil {
 		for _, ct := range r.Catalog.Targets {
 			if t := ct.toTarget("", nil); t.IsUDP() {

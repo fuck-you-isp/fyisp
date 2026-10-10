@@ -46,7 +46,7 @@ import (
 // Providers. Independence is judged by the registrable part of the host's
 // domain (udpProvider), not by the catalog's provider ID: calls-stun.yml
 // lists Google's, Cloudflare's, Twilio's and Microsoft's servers under one
-// provider, and default.yml's copies carry none. One dead STUN service
+// provider, and a --config file's STUN targets carry none. One dead STUN service
 // therefore never raises a verdict.
 //
 // Evidence (besides the TCP rules' keys): udp_providers (providers judged),
@@ -253,6 +253,10 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 			fmt.Sprintf("Calls may sound choppy: the UDP path to %d call services shows %s, while the rest of your connection looks fine.", nPoor, strings.Join(what, " and ")), poorT)
 	}
 }
+
+// UDPQuietAfter is how long a blocked verdict lasts before it is Quiet
+// (the dashboard treats older blocks as information, not as problems).
+const UDPQuietAfter = udpQuietAfter
 
 // markQuiet sets Quiet on a blocked verdict that has lasted udpQuietAfter
 // without a break (udp_blocked and stun_blocked count as one).
