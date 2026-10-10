@@ -27,6 +27,9 @@ type fakeSpeed struct {
 	tests   []model.SpeedTest
 	started []string
 	q       *speedtest.Queue // not run: entries stay waiting
+	public  bool             // the share link's opt-in at start
+	budget  int64
+	bytes   int64 // > 0: tests are instant and transfer this much (for a running queue)
 }
 
 func (f *fakeSpeed) State() speedtest.State { f.mu.Lock(); defer f.mu.Unlock(); return f.st }
@@ -63,10 +66,14 @@ func (f *fakeSpeed) Queue() *speedtest.Queue {
 				}
 				return nil, speedtest.ErrUnknownID
 			},
-			Exec: func(ctx context.Context, j speedtest.Job, trigger string) (int64, bool) {
+			Exec: func(ctx context.Context, j speedtest.Job, trigger string) (int64, bool, int64) {
+				if f.bytes > 0 { // a run queue: each test is instant and uses f.bytes
+					return 0, false, f.bytes
+				}
 				<-ctx.Done()
-				return 0, false
-			}})
+				return 0, false, 0
+			},
+			Public: &f.public, PublicBudget: f.budget})
 	}
 	return f.q
 }
@@ -99,7 +106,7 @@ var speedServers = []speedtest.Server{
 // 23:00 UTC; the UK uses its fallback a lot in the last day; a manual test
 // against the own server now and then; a busy test every 50th.
 func newFakeSpeedEvery(step time.Duration) *fakeSpeed {
-	f := &fakeSpeed{}
+	f := &fakeSpeed{public: true}
 	ms := func(v float64) *float64 { return &v }
 	rtt := 12.4
 	f.st = speedtest.State{Mode: speedtest.ModeRegions, Modes: []speedtest.Mode{"off", "regions", "nearest", "custom"},
@@ -584,5 +591,76 @@ func TestSpeedPublicQueue(t *testing.T) {
 	}
 	if w := do(pub, "GET", speedPub+"/api/speed?part=queue&id=1", vis("1.1.1.1")); w.Code != 400 {
 		t.Errorf("id outside part=entry: %d", w.Code)
+	}
+}
+
+// TestSpeedPublicOptInBudget: the share link's tests are an owner opt-in
+// (403 disabled; the Details toggle turns them on), and spend a 24-hour
+// data budget (429 budget_exhausted with resets_at); part=queue says so,
+// and labels each entry's origin for the owner only.
+func TestSpeedPublicOptInBudget(t *testing.T) {
+	f := newFakeSpeedEvery(5 * time.Hour)
+	f.public, f.budget, f.bytes = false, 5e9, 3e9
+	loc, pub, _ := speedHandlers(t, f, LocalOptions{})
+	vis := func(ip string) map[string]string {
+		return map[string]string{"Host": "x.trycloudflare.com", "Origin": "https://x.trycloudflare.com", "Sec-Fetch-Site": "same-origin", "Cf-Connecting-Ip": ip}
+	}
+	queue := func(h http.Handler, path string, hdr map[string]string) speedQueueJSON {
+		var q speedQueueJSON
+		json.Unmarshal(do(h, "GET", path, hdr).Body.Bytes(), &q)
+		return q
+	}
+	w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", vis("1.1.1.1"))
+	if w.Code != 403 || !strings.Contains(w.Body.String(), `"code":"disabled"`) || w.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("off: %d %s", w.Code, w.Body.String())
+	}
+	if q := queue(pub, speedPub+"/api/speed?part=queue", vis("1.1.1.1")); q.PublicStart || q.PublicEnabled {
+		t.Errorf("off: %+v", q)
+	}
+	// The owner turns it on (Details toggle).
+	r := httptest.NewRequest("POST", "/api/speed/config", strings.NewReader(`{"public": true}`))
+	for k, v := range speedPOSTHeaders() {
+		if k == "Host" {
+			r.Host = v
+		} else {
+			r.Header.Set(k, v)
+		}
+	}
+	cw := httptest.NewRecorder()
+	loc.ServeHTTP(cw, r)
+	if cw.Code != 200 || !strings.Contains(cw.Body.String(), `"public":true`) {
+		t.Fatalf("toggle: %d %s", cw.Code, cw.Body.String())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.Queue().Run(ctx)
+	for i, ip := range []string{"1.1.1.1", "2.2.2.2"} {
+		if w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", vis(ip)); w.Code != 202 {
+			t.Fatalf("start %d: %d %s", i, w.Code, w.Body.String())
+		}
+		for queue(loc, "/api/speed?part=queue", speedHost).Budget.UsedBytes < int64(i+1)*3e9 {
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+	q := queue(pub, speedPub+"/api/speed?part=queue", vis("3.3.3.3"))
+	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 5e9 || q.Budget.UsedBytes != 6e9 || q.Budget.RemainingBytes != 0 || q.Budget.ResetsAt == nil {
+		t.Errorf("spent: %+v", q)
+	}
+	w = do(pub, "POST", speedPub+"/api/speed/run?kind=sweep", vis("3.3.3.3"))
+	var e struct {
+		Code       string
+		ResetsAt   int64 `json:"resets_at"`
+		RetryAfter int   `json:"retry_after"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &e)
+	if w.Code != 429 || e.Code != "budget_exhausted" || e.ResetsAt != *q.Budget.ResetsAt || e.RetryAfter <= 0 || w.Header().Get("Retry-After") == "" {
+		t.Errorf("budget: %d %s", w.Code, w.Body.String())
+	}
+	// The owner is not limited; origins are labelled for the owner only.
+	if w := do(loc, "POST", "/api/speed/run?kind=sweep", speedPOSTHeaders()); w.Code != 202 || !strings.Contains(w.Body.String(), `"origin":"owner"`) {
+		t.Errorf("owner: %d %s", w.Code, w.Body.String())
+	}
+	if body := do(pub, "GET", speedPub+"/api/speed?part=queue", vis("3.3.3.3")).Body.String(); strings.Contains(body, `"origin"`) {
+		t.Errorf("origin on the share link: %s", body)
 	}
 }

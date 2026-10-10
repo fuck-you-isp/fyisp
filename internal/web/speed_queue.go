@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"slices"
@@ -19,8 +21,9 @@ import (
 // never carries an address.
 type speedEntryJSON struct {
 	ID         uint64    `json:"id"`
-	Kind       string    `json:"kind"` // single | sweep | scheduled
-	Who        string    `json:"who"`  // you | someone | scheduled
+	Kind       string    `json:"kind"`             // single | sweep | scheduled
+	Who        string    `json:"who"`              // you | someone | scheduled
+	Origin     string    `json:"origin,omitempty"` // local only: owner | public | scheduled
 	State      string    `json:"state"`
 	Target     *speedRef `json:"target"`   // the server or region; null: the nearest, a sweep or a slot
 	Position   int       `json:"position"` // waiting: 1 is next; else 0
@@ -46,6 +49,20 @@ type speedQueueJSON struct {
 	Running    *speedEntryJSON  `json:"running"`
 	Waiting    []speedEntryJSON `json:"waiting"`
 	LastSweep  *speedEntryJSON  `json:"last_sweep"`
+	// PublicEnabled: the owner lets the share link queue tests (the
+	// Details toggle); PublicStart: the share link may start one now (on,
+	// budget left, room in the queue).
+	PublicEnabled bool            `json:"public_enabled"`
+	PublicStart   bool            `json:"public_start"`
+	Budget        speedBudgetJSON `json:"budget"`
+}
+
+// speedBudgetJSON is the share link's rolling 24-hour data budget.
+type speedBudgetJSON struct {
+	LimitBytes     int64  `json:"limit_bytes"`
+	UsedBytes      int64  `json:"used_bytes"`
+	RemainingBytes int64  `json:"remaining_bytes"`
+	ResetsAt       *int64 `json:"resets_at"` // when spent: when enough use ages out
 }
 
 // speedViewer is who looks at the queue: the owner (local) or a share-link
@@ -59,7 +76,15 @@ func (s *server) speedViewer(r *http.Request) speedViewer {
 	if !s.public {
 		return speedViewer{}
 	}
-	return speedViewer{public: true, key: limitKey(clientKey(r))}
+	return speedViewer{public: true, key: visitorKey(r)}
+}
+
+// visitorKey is the queue's per-visitor key: a hash of the client's
+// address group (limitKey of Cf-Connecting-Ip), so entries never hold an
+// address.
+func visitorKey(r *http.Request) string {
+	sum := sha256.Sum256([]byte("fyisp-speed-visitor\x00" + limitKey(clientKey(r))))
+	return hex.EncodeToString(sum[:12])
 }
 
 func (v speedViewer) mine(e speedtest.Entry) bool {
@@ -105,6 +130,9 @@ func (s *server) speedEntry(e speedtest.Entry, v speedViewer, st speedtest.State
 		EstStart: e.EstStart.UnixMilli(), EstFinish: e.EstFinish.UnixMilli(), Step: e.Step, Steps: e.Steps, Tests: e.Tests}
 	if j.Tests == nil {
 		j.Tests = []int64{}
+	}
+	if !s.public {
+		j.Origin = map[speedtest.Who]string{speedtest.WhoOwner: "owner", speedtest.WhoPublic: "public", speedtest.WhoSchedule: "scheduled"}[e.Who]
 	}
 	if e.State == speedtest.StateRunning {
 		if e.Server != "" {
@@ -189,6 +217,10 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 			out.LastSweep = &j
 		}
 		out.Mine = mine
+		out.PublicEnabled = qs.Public
+		out.Budget = speedBudgetJSON{LimitBytes: qs.BudgetLimit, UsedBytes: qs.BudgetUsed,
+			RemainingBytes: max(qs.BudgetLimit-qs.BudgetUsed, 0), ResetsAt: msPtr(qs.BudgetResets)}
+		out.PublicStart = qs.Public && qs.BudgetResets.IsZero() && !qs.Full
 		writeJSON(w, r, http.StatusOK, out)
 	}
 }
@@ -231,11 +263,10 @@ func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, req speedt
 	st := s.d.Speed.State()
 	names := newSpeedNames(st, s.public)
 	e, dup, err := s.d.Speed.Queue().Enqueue(req)
-	var full *speedtest.QueueFullError
-	switch {
-	case errors.As(err, &full):
-		writeInvErr(w, r, http.StatusTooManyRequests, "queue_full", full.Reason, 0)
+	if queueRefused(w, r, err, s.now()) {
 		return
+	}
+	switch {
 	case errors.Is(err, speedtest.ErrUnknownID):
 		writeErr(w, r, http.StatusNotFound, "no such server or region")
 		return
@@ -320,13 +351,11 @@ func (h *publicHandler) servePublicSpeedRun(w http.ResponseWriter, r *http.Reque
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", err.Error(), 0)
 		return
 	}
-	key := limitKey(clientKey(r))
-	req := speedtest.Request{Kind: kind, Target: id, Who: speedtest.WhoPublic, Visitor: key}
+	key := limitKey(clientKey(r)) // the start limiter's (in memory only)
+	req := speedtest.Request{Kind: kind, Target: id, Who: speedtest.WhoPublic, Visitor: visitorKey(r)}
 	// The queue's answer first: a duplicate or a refusal is not a start.
 	dup, err := h.d.Speed.Queue().Admit(req)
-	var full *speedtest.QueueFullError
-	if errors.As(err, &full) {
-		writeInvErr(w, r, http.StatusTooManyRequests, "queue_full", full.Reason, 0)
+	if queueRefused(w, r, err, h.now()) {
 		return
 	}
 	if ok, wait := h.speedStarts.check(key, h.now()); !ok && !dup {
@@ -334,6 +363,28 @@ func (h *publicHandler) servePublicSpeedRun(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	h.enqueueSpeed(w, r, req, func() { h.speedStarts.record(key, h.now()) })
+}
+
+// queueRefused writes the queue's refusals of a share-link request: 403
+// disabled (the owner hasn't opted in), 429 budget_exhausted (with
+// resets_at), 429 queue_full. It reports whether it wrote one.
+func queueRefused(w http.ResponseWriter, r *http.Request, err error, now time.Time) bool {
+	var full *speedtest.QueueFullError
+	var budget *speedtest.BudgetError
+	switch {
+	case errors.Is(err, speedtest.ErrPublicDisabled):
+		writeInvErr(w, r, http.StatusForbidden, "disabled", "the owner hasn't turned on tests from the share link", 0)
+	case errors.As(err, &budget):
+		secs := int((budget.ResetsAt.Sub(now) + time.Second - 1) / time.Second)
+		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
+		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": budget.Error(), "code": "budget_exhausted",
+			"resets_at": budget.ResetsAt.UnixMilli(), "retry_after": max(secs, 1)})
+	case errors.As(err, &full):
+		writeInvErr(w, r, http.StatusTooManyRequests, "queue_full", full.Reason, 0)
+	default:
+		return false
+	}
+	return true
 }
 
 // strictPOST checks a public write's request: POST, no body, only these

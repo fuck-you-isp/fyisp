@@ -40,7 +40,8 @@ func newFakeSpeed(now time.Time, bf time.Duration) *fakeSpeed {
 		panic(err)
 	}
 	f := &fakeSpeed{cat: cat, mode: speedtest.ModeRegions, next: now.Add(37 * time.Second), r: rand.New(rand.NewPCG(3, 4))}
-	f.q = speedtest.NewQueue(speedtest.QueueOptions{Resolve: f.resolve, Exec: f.exec, Live: f.live})
+	on := true // the dev server's share link may queue tests
+	f.q = speedtest.NewQueue(speedtest.QueueOptions{Resolve: f.resolve, Exec: f.exec, Live: f.live, Public: &on})
 	span := min(max(bf, 2*24*time.Hour), 30*24*time.Hour)
 	spacing := 15 * time.Minute / time.Duration(len(cat.Regions))
 	for cycle := now.Add(-span).Truncate(15 * time.Minute); cycle.Before(now.Add(-15 * time.Minute)); cycle = cycle.Add(15 * time.Minute) {
@@ -155,7 +156,7 @@ func (f *fakeSpeed) resolve(kind speedtest.Kind, id string) ([]speedtest.Job, er
 }
 
 // exec fakes one test (18 s), or stops early when cancelled.
-func (f *fakeSpeed) exec(ctx context.Context, j speedtest.Job, trigger string) (int64, bool) {
+func (f *fakeSpeed) exec(ctx context.Context, j speedtest.Job, trigger string) (int64, bool, int64) {
 	reg := speedtest.Region{ID: j.Region, Chain: []string{j.Chain[0].ID}}
 	if reg.ID == "" {
 		reg.ID = "uk" // speeds of a near server
@@ -176,7 +177,7 @@ func (f *fakeSpeed) exec(ctx context.Context, j speedtest.Job, trigger string) (
 		f.mu.Unlock()
 		select {
 		case <-ctx.Done():
-			return 0, false
+			return 0, false, 0
 		case <-time.After(9 * time.Second):
 		}
 	}
@@ -187,7 +188,11 @@ func (f *fakeSpeed) exec(ctx context.Context, j speedtest.Job, trigger string) (
 		t.Region = ""
 	}
 	f.tests = append(f.tests, t)
-	return t.ID, true
+	var bytes int64
+	if t.DownBps != nil && t.UpBps != nil {
+		bytes = int64((*t.DownBps + *t.UpBps) * 8 / 8) // 8 s measured each way
+	}
+	return t.ID, true, bytes
 }
 
 func (f *fakeSpeed) live() (string, string, time.Time) {

@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -65,9 +64,6 @@ const (
 // ErrMode is a mode this install does not offer.
 var ErrMode = errors.New("unknown speed test mode")
 
-// running is process-wide: two schedulers (tests) never run tests at once.
-var running atomic.Bool
-
 // Store keeps results and the schedule setting (*store.SQLite).
 type Store interface {
 	SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error
@@ -96,8 +92,14 @@ type Options struct {
 	Ping func(ctx context.Context, host string) (time.Duration, error)
 	// OnResult is called after every saved test (metrics).
 	OnResult func(model.SpeedTest)
-	Log      *slog.Logger
-	Now      func() time.Time
+	// Public (--speedtest-public), when set, is whether the share link may
+	// queue tests at start; otherwise the saved Details choice, else off.
+	// PublicBudget is its bytes per rolling 24 hours (default
+	// DefaultPublicBudget).
+	Public       *bool
+	PublicBudget int64
+	Log          *slog.Logger
+	Now          func() time.Time
 
 	// Tests: the iperf3 run, the RTT check, the sleep and the random source.
 	run   func(ctx context.Context, c Config) (Result, error)
@@ -200,7 +202,12 @@ func New(o Options) *Scheduler {
 		o.Interval = max(o.Interval, MinInterval)
 	}
 	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff}
-	s.q = NewQueue(QueueOptions{Resolve: s.resolve, Exec: s.execJob, Live: s.live, Log: o.Log, Now: o.Now})
+	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Live: s.live, Log: o.Log, Now: o.Now,
+		Public: o.Public, PublicBudget: o.PublicBudget}
+	if o.Store != nil {
+		qo.Settings = o.Store
+	}
+	s.q = NewQueue(qo)
 	return s
 }
 
@@ -244,7 +251,7 @@ func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
 }
 
 // execJob runs one queued test (QueueOptions.Exec).
-func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool) {
+func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool, int64) {
 	return s.runTarget(ctx, target{region: j.Region, chain: j.Chain}, trigger)
 }
 
@@ -420,13 +427,14 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		wait := time.Hour
 		if !s.next.IsZero() {
 			if wait = s.next.Sub(now); wait <= 0 {
-				plan := s.planLocked(s.mode)
-				late := now.Sub(s.next) > s.spacingLocked(s.mode)/2
-				if s.slot < len(plan) && !late {
+				// Every due slot goes into the queue, late ones too: the
+				// queue drops a slot that waits ScheduledStale, and never
+				// stacks two. The slot times themselves never move.
+				if plan := s.planLocked(s.mode); s.slot < len(plan) {
 					t := plan[s.slot]
 					tg = &t
 				}
-				s.advanceLocked() // a late slot is skipped: later ones never move
+				s.advanceLocked()
 			}
 		}
 		s.mu.Unlock()
@@ -562,11 +570,11 @@ func (s *Scheduler) setRun(dir, server string) {
 
 // runTarget runs one slot: the chain's servers in order until one
 // measures, within SlotBudget; then saves and reports the result.
-func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) (int64, bool) {
-	if !running.CompareAndSwap(false, true) {
-		return 0, false
-	}
-	defer running.Store(false)
+//
+// The queue is its only caller (one runner): tests never overlap. It
+// returns the stored test's ID and the bytes transferred, even for a test
+// that was cut short (the share link's budget counts them).
+func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) (id int64, saved bool, bytes int64) {
 	now := s.o.Now()
 	s.mu.Lock()
 	s.cur = &RunState{Started: now, ExpectedEnd: now.Add(EstTestTime + 5*time.Second), Direction: "picking", Region: tg.region}
@@ -580,13 +588,14 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) (i
 		tg.chain = s.nearest(ctx)
 	}
 	if ctx.Err() != nil {
-		return 0, false
+		return 0, false, 0
 	}
 	t := model.SpeedTest{Trigger: trigger, Region: tg.region, Outcome: model.SpeedUnreachable}
 	if len(tg.chain) == 0 {
 		now := s.o.Now()
 		t.Start, t.End = now, now
-		return s.save(ctx, &t)
+		id, saved = s.save(ctx, &t)
+		return id, saved, 0
 	}
 	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
@@ -597,7 +606,7 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) (i
 			break
 		}
 		t.Server, t.Fallback, t.Port = sv.ID, i > 0, 0
-		s.testServer(sctx, sv, &t)
+		bytes += s.testServer(sctx, sv, &t)
 		if t.Outcome == model.SpeedOK || t.DownBps != nil || sctx.Err() != nil {
 			break // measured (a failed upload keeps the download), or out of time
 		}
@@ -605,7 +614,7 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) (i
 	t.End = s.o.Now()
 	win := s.o.Windows.End(t.End)
 	if ctx.Err() != nil {
-		return 0, false // shutting down or cancelled: not a result
+		return 0, false, bytes // shutting down or cancelled: not a result
 	}
 	if l := s.o.Load; l != nil {
 		set := func(layer string, from, to time.Time, into **float64) {
@@ -618,7 +627,8 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) (i
 		set(LayerCall, win.Start.Add(-idleWindow), win.Start, &t.IdleCallMs)
 		set(LayerCall, win.Start, win.End, &t.LoadedCallMs)
 	}
-	return s.save(ctx, &t)
+	id, saved = s.save(ctx, &t)
+	return id, saved, bytes
 }
 
 // save stores t and reports it; it returns t's stored ID.
@@ -648,22 +658,24 @@ func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) (int64, bool) 
 func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
 
 // testServer runs download then upload against sv.
-func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest) {
+// It returns the bytes transferred.
+func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest) (bytes int64) {
 	port := 0
 	for _, dir := range []Direction{Download, Upload} {
 		s.setRun(dir.String(), sv.ID)
 		if port != 0 && !s.o.sleep(ctx, relisten) {
 			t.Outcome = model.SpeedFailed
-			return
+			return bytes
 		}
 		res, p, attempts, outcome := s.direction(ctx, sv, dir, port, t.Start)
+		bytes += res.Bytes
 		t.Attempts += attempts
 		if p != 0 {
 			t.Port, port = p, p
 		}
 		t.Outcome = outcome
 		if outcome != model.SpeedOK {
-			return
+			return bytes
 		}
 		bps := res.BitsPerSecond()
 		var re *int64
@@ -677,6 +689,7 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			t.UpBps, t.UpRetrans = &bps, re
 		}
 	}
+	return bytes
 }
 
 // direction runs one direction: first on port (0: a random one), then,

@@ -36,9 +36,13 @@ catalog (Leaseweb, OVH, Clouvider, Scaleway and others; the README lists them)
 and to servers you name with `--speedtest-server`, and to no one else. Those
 servers see your public IP address. "Test now", sweeps, cancelling and the
 mode choice are write actions behind the same protections as notes (same
-origin, CSRF token, admin token). People with the share link may queue a
-test or a sweep of every server (`POST /s/<secret>/api/speed/run`), but
-never change the mode or cancel anything. Every test waits in one queue and
+origin, CSRF token, admin token). Only if the owner turns it on
+(`--speedtest-public` or the Details toggle; off by default), people with
+the share link may queue a test or a sweep of every server (`POST
+/s/<secret>/api/speed/run`), but never change the mode or cancel anything.
+Their tests may transfer at most `--speedtest-public-budget` (default 50 GB)
+per rolling 24 hours, counted from the bytes actually sent and received and
+kept across restarts. Every test waits in one queue and
 exactly one runs at a time, with the owner's tests first. The share link's
 entries are capped: one waiting entry per visitor, 3 waiting sweeps and 12
 waiting entries in all. Each visitor (`Cf-Connecting-Ip`, IPv6 per /64)
