@@ -39,7 +39,9 @@ func TestSpeedSection(t *testing.T) {
 	}
 	own := 900e6
 	tests = append(tests, model.SpeedTest{Start: start.Add(time.Hour), End: start.Add(time.Hour + 20*time.Second), Outcome: model.SpeedOK,
-		Server: "192.168.1.20:5201", DownBps: &own, UpBps: &own, Trigger: "manual"})
+		Server: "192.168.1.20:5201", DownBps: &own, UpBps: &own, Trigger: "manual"},
+		model.SpeedTest{Start: start.Add(2 * time.Hour), End: start.Add(2*time.Hour + 20*time.Second), Outcome: model.SpeedBusy,
+			Server: "Leaseweb-London", Trigger: "public_sweep"})
 	d.SpeedTests = func(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 		var out []model.SpeedTest
 		for _, x := range tests {
@@ -53,7 +55,8 @@ func TestSpeedSection(t *testing.T) {
 	checkStatic(t, html)
 	for _, want := range []string{
 		`id="speed"`, "<h2>Speed tests</h2>",
-		"1345 speed tests ran in this range: 1311 measured, 34 found the test servers busy (not counted as slow).",
+		"1346 speed tests ran in this range: 1311 measured, 35 found the test servers busy (not counted as slow).",
+		"Of these, 1 started by hand and 1 started from the share link; the rest were scheduled.",
 		"Evenings are slower: about 50% below your daytime speed (19:00–23:00 UTC, every region alike).",
 		"The largest dip: UK, 50% slower",
 		"<td>UK</td><td>Clouvider London</td><td class=\"n\">672</td><td class=\"n\">400 Mbit/s</td>",

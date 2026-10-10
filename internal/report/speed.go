@@ -17,6 +17,10 @@ type speedView struct {
 	Summary string
 	Pattern string
 	Rows    []speedRow
+	// Owner and Public count the tests started by hand and from the share
+	// link (the rest were scheduled); Origins says so, "" when all were.
+	Owner, Public int
+	Origins       string
 }
 
 type speedRow struct {
@@ -73,7 +77,14 @@ func (r *run) speedSection() *speedView {
 	var ok, busy, other int
 	groups := map[string][]model.SpeedTest{}
 	var order []string
+	v := &speedView{}
 	for _, t := range r.speed {
+		switch t.Origin() {
+		case "owner":
+			v.Owner++
+		case "public":
+			v.Public++
+		}
 		switch t.Outcome {
 		case model.SpeedOK:
 			ok++
@@ -88,7 +99,6 @@ func (r *run) speedSection() *speedView {
 		}
 		groups[k] = append(groups[k], t)
 	}
-	v := &speedView{}
 	v.Summary = fmt.Sprintf("%s ran in this range: %d measured", plural(len(r.speed), "speed test", "speed tests"), ok)
 	if busy > 0 {
 		v.Summary += fmt.Sprintf(", %d found the test servers busy (not counted as slow)", busy)
@@ -163,6 +173,16 @@ func (r *run) speedSection() *speedView {
 		}
 		row.Trouble = strings.Join(trouble, ", ")
 		v.Rows = append(v.Rows, row)
+	}
+	var asked []string
+	if v.Owner > 0 {
+		asked = append(asked, fmt.Sprintf("%d started by hand", v.Owner))
+	}
+	if v.Public > 0 {
+		asked = append(asked, fmt.Sprintf("%d started from the share link", v.Public))
+	}
+	if len(asked) > 0 {
+		v.Origins = "Of these, " + strings.Join(asked, " and ") + "; the rest were scheduled. Tests someone started are left out of the time-of-day patterns, but their probe gaps count like any other."
 	}
 	if worst != "" {
 		v.Pattern = strings.TrimSpace(v.Pattern + fmt.Sprintf(" The largest dip: %s, %d%% slower at its worst hours.", worst, int(worstDrop*100+0.5)))

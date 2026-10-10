@@ -204,8 +204,19 @@ type Queue struct {
 	lastSweep *qentry
 	public    bool      // the owner lets the share link queue tests
 	ledger    []usage   // the share link's tests, last 24 h, oldest first
-	sweepEnd  time.Time // when the last public sweep ended
+	sweepEnd  time.Time // when the last public sweep ended (saved with the ledger)
+	pubFrom   time.Time // a share-link test runs: its time from here is not in the ledger yet
 }
+
+// savedLedger is the ledger's saved form (SettingPublicLedger).
+type savedLedger struct {
+	Uses     []usage
+	SweepEnd time.Time `json:",omitzero"`
+}
+
+// chargeEvery is how often a running share-link test's time is charged
+// (and saved) while it runs.
+const chargeEvery = 15 * time.Second
 
 // usage is the bytes one share-link test transferred and how long it kept
 // the line under test.
@@ -246,9 +257,9 @@ func (q *Queue) load(ctx context.Context) {
 		q.public = pub == "1"
 	}
 	if okLed {
-		var l []usage
+		var l savedLedger
 		if json.Unmarshal([]byte(led), &l) == nil {
-			q.ledger = l
+			q.ledger, q.sweepEnd = l.Uses, l.SweepEnd
 		}
 	}
 	q.pruneLedgerLocked(q.o.Now())
@@ -319,6 +330,10 @@ func (q *Queue) timeLocked(now time.Time) (hour, day time.Duration, resetsAt tim
 			hour += u.Dur
 		}
 	}
+	if !q.pubFrom.IsZero() && now.After(q.pubFrom) { // the running test's time so far
+		hour += now.Sub(q.pubFrom)
+		day += now.Sub(q.pubFrom)
+	}
 	reset := func(span, limit, used time.Duration) time.Time {
 		left := used
 		for _, u := range q.ledger {
@@ -343,16 +358,33 @@ func (q *Queue) timeLocked(now time.Time) (hour, day time.Duration, resetsAt tim
 	return hour, day, resetsAt
 }
 
-// spend adds a share-link test's bytes and time to the ledger and saves it.
-func (q *Queue) spend(bytes int64, dur time.Duration) {
-	if bytes <= 0 && dur <= 0 {
-		return
-	}
+// spend adds a share-link test's bytes and the time since pubFrom (when
+// set) to the ledger and saves it; final ends the test's charging.
+func (q *Queue) spend(bytes int64, final bool) {
 	q.mu.Lock()
 	now := q.o.Now()
+	var dur time.Duration
+	if !q.pubFrom.IsZero() {
+		dur = max(now.Sub(q.pubFrom), 0)
+		q.pubFrom = now
+	}
+	if final {
+		q.pubFrom = time.Time{}
+	}
+	if bytes <= 0 && dur <= 0 {
+		q.mu.Unlock()
+		return
+	}
 	q.pruneLedgerLocked(now)
 	q.ledger = append(q.ledger, usage{At: now, Bytes: bytes, Dur: dur})
-	b, _ := json.Marshal(q.ledger)
+	q.mu.Unlock()
+	q.save()
+}
+
+// save writes the ledger and the last public sweep's end.
+func (q *Queue) save() {
+	q.mu.Lock()
+	b, _ := json.Marshal(savedLedger{Uses: q.ledger, SweepEnd: q.sweepEnd})
 	q.mu.Unlock()
 	if q.o.Settings != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -615,9 +647,14 @@ func (q *Queue) Run(ctx context.Context) {
 		now := q.o.Now()
 		q.dropStaleLocked(now)
 		var e *qentry
-		for len(q.waiting) > 0 && e == nil {
-			e = q.waiting[0]
-			q.waiting = q.waiting[1:]
+		for i := 0; i < len(q.waiting) && e == nil; {
+			e = q.waiting[i]
+			if q.gapLocked(e, now) {
+				e = nil // a share-link sweep waits out the gap after the last one; others go by
+				i++
+				continue
+			}
+			q.waiting = slices.Delete(q.waiting, i, i+1)
 			if e.Who == WhoPublic && q.publicLocked(now) != nil {
 				q.finishLocked(e, StateDropped, now) // turned off, or the budget ran out while it waited
 				e = nil
@@ -638,13 +675,25 @@ func (q *Queue) Run(ctx context.Context) {
 			q.execute(ectx, e)
 			continue
 		}
+		wait := time.Minute // stale slots are dropped even when idle
+		q.mu.Lock()
+		if gap := q.sweepEnd.Add(PublicSweepGap).Sub(q.o.Now()); gap > 0 && slices.ContainsFunc(q.waiting, func(w *qentry) bool { return q.gapLocked(w, q.o.Now()) }) {
+			wait = min(wait, gap)
+		}
+		q.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			return
 		case <-q.wake:
-		case <-time.After(time.Minute): // stale slots are dropped even when idle
+		case <-time.After(wait):
 		}
 	}
+}
+
+// gapLocked reports a share-link sweep that may not start yet: the last
+// one ended less than PublicSweepGap ago. A paused sweep resumes anyway.
+func (q *Queue) gapLocked(e *qentry, now time.Time) bool {
+	return e.Who == WhoPublic && e.Kind == KindSweep && e.next == 0 && !q.sweepEnd.IsZero() && now.Before(q.sweepEnd.Add(PublicSweepGap))
 }
 
 func (q *Queue) execute(ctx context.Context, e *qentry) {
@@ -671,7 +720,28 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		}
 		e.Step = i + 1
 		q.mu.Unlock()
-		t0 := q.o.Now()
+		var charging chan struct{}
+		var charged sync.WaitGroup
+		if e.Who == WhoPublic {
+			// The line is under test (and probes masked) whether or not the
+			// test finishes: charge its time as it runs.
+			q.mu.Lock()
+			q.pubFrom = q.o.Now()
+			q.mu.Unlock()
+			charging = make(chan struct{})
+			charged.Go(func() {
+				t := time.NewTicker(chargeEvery)
+				defer t.Stop()
+				for {
+					select {
+					case <-charging:
+						return
+					case <-t.C:
+						q.spend(0, false)
+					}
+				}
+			})
+		}
 		id, saved, bytes := q.o.Exec(ctx, e.jobs[i], trigger(e.Kind, e.Who))
 		q.mu.Lock()
 		e.Ran = i + 1
@@ -681,7 +751,9 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		}
 		q.mu.Unlock()
 		if e.Who == WhoPublic {
-			q.spend(bytes, q.o.Now().Sub(t0))
+			close(charging)
+			charged.Wait()
+			q.spend(bytes, true)
 			q.mu.Lock()
 			stop := q.publicLocked(q.o.Now()) != nil
 			q.mu.Unlock()
@@ -689,6 +761,9 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 				break // a sweep stops when the budget runs out (or the owner turned it off)
 			}
 		}
+	}
+	if e.Kind == KindSweep && e.Who == WhoPublic {
+		defer q.save() // after the unlock: sweepEnd survives a restart
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -835,6 +910,11 @@ func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
 				break
 			}
 			at = at.Add(time.Duration(max(w.Steps, 1)) * EstJob)
+		}
+		if q.gapLocked(e, now) {
+			if g := q.sweepEnd.Add(PublicSweepGap); g.After(at) {
+				at = g
+			}
 		}
 		out.EstStart = at
 		out.EstFinish = at.Add(time.Duration(max(e.Steps, 1)) * EstJob)

@@ -228,7 +228,7 @@ There is no cooldown. Sweep and Test now results are stored with `on_demand: tru
 - 10 minutes in any hour;
 - 60 minutes in any 24 hours.
 
-A new public sweep can start at the earliest 30 minutes after the last one ended (429 `cooldown` with `resets_at`); single tests are not affected. A capped share link gets 429 `time_cap` with `resets_at`. Visitors therefore can't blank out the monitoring.
+A new public sweep can start at the earliest 30 minutes after the last one ended (429 `cooldown` with `resets_at`); one already waiting stays waiting until then while other entries go by, and its `est_start` says when. The end time is saved, so a restart doesn't reset the gap. Single tests are not affected. Test time is charged while a test runs, every 15 s, and counts whether the test finishes, fails or is cancelled. A capped share link gets 429 `time_cap` with `resets_at`. Visitors therefore can't blank out the monitoring.
 
 ### `GET api/speed?part=queue`
 
