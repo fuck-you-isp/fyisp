@@ -153,7 +153,7 @@ func newFixture(t testing.TB, days int, step time.Duration) *fixture {
 		}
 	}
 
-	// Traces: cloudflare-dns and Discord (both traced in the default profile).
+	// Traces: CDN-Cloudflare and Microsoft-Teams (both traced in the default profile).
 	routeA := []netip.Addr{gwIP, cgnatIP, edgeIP, hop4IP, hop5IP, {}, farIP, dstIP}
 	routeB := []netip.Addr{gwIP, cgnatIP, edgeIP, hop4IP, hop5bIP, {}, farIP, dstIP}
 	for _, h := range []model.HopInfo{
@@ -170,7 +170,7 @@ func newFixture(t testing.TB, days int, step time.Duration) *fixture {
 		f.st.ObserveHop(h)
 	}
 	changeAt := from.Add(time.Duration(days) * 12 * time.Hour)
-	for _, target := range []string{"cloudflare-dns", "Discord"} {
+	for _, target := range []string{"CDN-Cloudflare", "Microsoft-Teams"} {
 		f.st.ObserveRoute(model.Route{Target: target, Hops: routeA, Since: from})
 		f.st.ObserveRoute(model.Route{Target: target, Hops: routeB, Since: changeAt})
 		f.st.ObserveRouteChange(model.RouteChange{Target: target, At: changeAt, From: routeA, To: routeB, FirstDiff: 5})

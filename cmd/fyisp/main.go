@@ -155,7 +155,7 @@ func parseFlags(args []string) (config, error) {
 	fs.BoolVar(&c.ephemeral, "ephemeral", false, "keep data in a temporary directory deleted on exit")
 	fs.StringVar(&retention, "retention", "90d", "how long to keep data (max 90d), e.g. 14d or 48h")
 	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]` or other named profiles")
-	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: default)")
+	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: $FYISP_PROFILE, else default)")
 	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
@@ -192,7 +192,17 @@ func parseFlags(args []string) (config, error) {
 	if c.configPath != "" && (len(c.profiles) > 0 || len(c.geos) > 0) {
 		return c, fmt.Errorf("--config and --profile/--geo are mutually exclusive: use `extends: [%s]` in the file", strings.Join(c.profiles, ", "))
 	}
+	envProfiles(&c.profiles, c.configPath)
 	return c, nil
+}
+
+// envProfiles fills in profiles from FYISP_PROFILE (for container and NAS
+// templates, where an environment variable is easier to set than an
+// argument) unless --profile or --config was given: the flags win.
+func envProfiles(p *profileNames, configPath string) {
+	if v := os.Getenv("FYISP_PROFILE"); v != "" && len(*p) == 0 && configPath == "" {
+		_ = p.Set(v)
+	}
 }
 
 // hostList is --allow-host: Host header values, repeatable or comma-separated.

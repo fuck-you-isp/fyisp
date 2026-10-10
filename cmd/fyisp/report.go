@@ -27,7 +27,7 @@ func cmdReport(args []string) int {
 	configPath := fs.String("config", "", "profile file the data was recorded with (default: the built-in profile)")
 	var profiles profileNames
 	var geos geoList
-	fs.Var(&profiles, "profile", "profiles the data was recorded with (as given to fyisp --profile)")
+	fs.Var(&profiles, "profile", "profiles the data was recorded with (as given to fyisp --profile; default: $FYISP_PROFILE, else default)")
 	fs.Var(&geos, "geo", "regions the data was recorded with (as given to fyisp --geo)")
 	noPath := fs.Bool("no-path", false, "the data was recorded with --no-path")
 	noUDP := fs.Bool("no-udp", false, "the data was recorded with --no-udp")
@@ -68,6 +68,7 @@ func cmdReport(args []string) int {
 	if *configPath != "" && (len(profiles) > 0 || len(geos) > 0) {
 		return fail(2, fmt.Errorf("--config and --profile/--geo are mutually exclusive"))
 	}
+	envProfiles(&profiles, *configPath)
 	// No target limit: the report covers whatever the run was allowed.
 	prof, err := loadProfile(config{configPath: *configPath, profiles: profiles, geos: geos, noPath: *noPath, noUDP: *noUDP})
 	if err != nil {

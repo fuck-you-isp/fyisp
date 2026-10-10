@@ -277,6 +277,9 @@ func (p *Provider) validate() error {
 		case t.Geo != "" && !slices.Contains(Geos, t.Geo):
 			bad("target %q: geo %q, want one of %s", t.Name, t.Geo, strings.Join(Geos, ", "))
 		}
+		if err := checkHomeTags(t.Tags); err != nil {
+			bad("target %q: %v", t.Name, err)
+		}
 		if t.Country != "" && !countryRe.MatchString(t.Country) {
 			bad("target %q: country %q, want an ISO 3166-1 alpha-2 code like US", t.Name, t.Country)
 		}

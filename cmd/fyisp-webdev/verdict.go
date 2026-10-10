@@ -31,8 +31,8 @@ type scripted struct {
 }
 
 var script = []scripted{
-	{model.VerdictService, "Your connection is fine. AWS-ap-east-1 and Discord are not responding; that is on their side, not yours.",
-		[]string{"AWS-ap-east-1", "Discord"},
+	{model.VerdictService, "Your connection is fine. Webex and Discord are not responding; that is on their side, not yours.",
+		[]string{"Webex", "Discord"},
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0.02, "gateway_rtt_ms": 1.6, "edge_rtt_ms": 7.4, "anycast_rtt_ms": 13.1}},
 	{model.VerdictOK, "Everything looks healthy: your router, your ISP and the internet are all responding normally.", nil,
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0.001}},
@@ -71,7 +71,7 @@ func newFakeVerdict(now time.Time, backfill, cycle time.Duration, fixed model.Ve
 			{ID: 3, Start: isp.from, End: isp.to, Kind: model.VerdictISP, PeakLoss: 0.6,
 				Summary: "Your ISP dropped 60% of packets while your router was fine."},
 			{ID: 4, Start: at(0.15), End: at(0.15).Add(6 * time.Minute), Kind: model.VerdictService, PeakLoss: 0.12,
-				Summary: "AWS-ap-east-1 was unreachable; everything else was fine.", Targets: []string{"AWS-ap-east-1"}},
+				Summary: "Webex was unreachable; everything else was fine.", Targets: []string{"Webex"}},
 		}
 	}
 	return f
