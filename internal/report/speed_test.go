@@ -17,12 +17,12 @@ func TestSpeedSection(t *testing.T) {
 	for i := range 7 * 96 {
 		at := start.Add(time.Duration(i) * 15 * time.Minute)
 		for _, reg := range []string{"uk", "us-east"} {
-			x := model.SpeedTest{Start: at, End: at.Add(23 * time.Second), Outcome: model.SpeedOK, Region: reg, Server: "Clouvider-London"}
+			x := model.SpeedTest{Start: at, End: at.Add(23 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, FallbackLevel: "none", Region: reg, Server: "Clouvider-London"}
 			base := 400e6
 			if reg == "us-east" {
 				x.Server, base = "Leaseweb-NewYork", 150e6
 				if i%10 == 0 {
-					x.Server, x.Fallback = "Clouvider-NewYork", true
+					x.Server, x.Fallback, x.FallbackLevel = "Clouvider-NewYork", true, "same_metro"
 				}
 			}
 			if i%40 == 3 {
@@ -32,7 +32,8 @@ func TestSpeedSection(t *testing.T) {
 				if h := at.Hour(); h >= 19 && h <= 22 {
 					down /= 2
 				}
-				x.DownBps, x.UpBps = &down, &up
+				sc := down / base
+				x.DownBps, x.UpBps, x.ScoreDown = &down, &up, &sc
 			}
 			tests = append(tests, x)
 		}

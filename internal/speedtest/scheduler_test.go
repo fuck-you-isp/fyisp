@@ -16,51 +16,9 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// memStore is an in-memory Store.
-type memStore struct {
-	mu       sync.Mutex
-	tests    []model.SpeedTest
-	settings map[string]string
-}
-
-func (m *memStore) SaveSpeedTest(_ context.Context, t *model.SpeedTest) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	t.ID = int64(len(m.tests) + 1)
-	m.tests = append(m.tests, *t)
-	return nil
-}
-
-func (m *memStore) SpeedTests(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var out []model.SpeedTest
-	for _, t := range m.tests {
-		if !t.Start.Before(from) && !t.Start.After(to) {
-			out = append(out, t)
-		}
-	}
-	return out, nil
-}
-
-func (m *memStore) Setting(_ context.Context, k string) (string, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	v, ok := m.settings[k]
-	return v, ok, nil
-}
-
-func (m *memStore) SetSetting(_ context.Context, k, v string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.settings == nil {
-		m.settings = map[string]string{}
-	}
-	m.settings[k] = v
-	return nil
-}
-
-// testCatalog: two regions with fallback chains, and a far server.
+// testCatalog: a metro of three providers with a nearby city, a far
+// region whose servers include a dead one, a single-port server, and an
+// opt-in region.
 func testCatalog(t *testing.T) *Catalog {
 	t.Helper()
 	c, err := LoadCatalog(fstest.MapFS{
@@ -68,14 +26,27 @@ func testCatalog(t *testing.T) *Catalog {
 display: Prov
 sources: [https://example.com]
 servers:
-  - {id: Near, host: near.example, ports: 5201-5210, city: Here, country: GB, geo: eu, verified: {date: 2026-10-10}}
-  - {id: Mid, host: mid.example, ports: 9204-9240, city: There, country: NL, geo: eu, verified: {date: 2026-10-10}}
-  - {id: Far, host: far.example, ports: 5200-5209, city: Away, country: JP, geo: as, verified: {date: 2026-10-10}}
-  - {id: Dead, host: dead.example, ports: 5200, city: Nowhere, country: US, geo: na, verified: {date: 2026-10-10}}
+  - {id: Near, host: near.example, ports: 5201-5210, city: Here, metro: here, country: GB, geo: eu, capacity_gbps: 1, verified: {date: 2026-10-10}}
+  - {id: Far, host: far.example, ports: 5200-5209, city: Away, metro: away, country: JP, geo: as, verified: {date: 2026-10-10}}
+`)},
+		"q.yml": {Data: []byte(`provider: q
+display: Other
+sources: [https://example.com]
+servers:
+  - {id: Mid, host: mid.example, ports: 9204-9240, city: Here, metro: here, country: GB, geo: eu, verified: {date: 2026-10-10}}
+  - {id: Single, host: single.example, ports: "5201", city: Next, metro: next, country: GB, geo: eu, verified: {date: 2026-10-10}}
+  - {id: Dead, host: dead.example, ports: 5200-5201, city: Away, metro: away, country: JP, geo: as, verified: {date: 2026-10-10}}
+`)},
+		"r.yml": {Data: []byte(`provider: r
+display: Third
+sources: [https://example.com]
+servers:
+  - {id: Third, host: third.example, ports: 5201-5202, city: Here, metro: here, country: GB, geo: eu, verified: {date: 2026-10-10}}
 `)},
 		"regions.yml": {Data: []byte(`regions:
-  - {id: home, title: Home, chain: [Near, Mid]}
-  - {id: away, title: Away, chain: [Dead, Far]}
+  - {id: home, title: Home, servers: [Near, Mid, Third], nearby: [Single]}
+  - {id: away, title: Away, servers: [Dead, Far]}
+  - {id: us-east, title: US East, servers: [Far], default: false}
 `)},
 	})
 	if err != nil {
@@ -87,7 +58,7 @@ servers:
 // harness wires a Scheduler to stubs: RTTs per host, a scripted run.
 type harness struct {
 	s     *Scheduler
-	st    *memStore
+	st    *MemStore
 	now   time.Time
 	mu    sync.Mutex
 	rtt   map[string]time.Duration
@@ -98,10 +69,11 @@ type harness struct {
 }
 
 func newHarness(t *testing.T, o Options) *harness {
-	h := &harness{st: &memStore{}, now: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC), step: 6 * time.Second,
-		rtt: map[string]time.Duration{"far.example": 90 * time.Millisecond, "near.example": 10 * time.Millisecond, "mid.example": 30 * time.Millisecond}}
+	h := &harness{st: &MemStore{}, now: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC), step: 6 * time.Second,
+		rtt: map[string]time.Duration{"far.example": 90 * time.Millisecond, "near.example": 10 * time.Millisecond,
+			"mid.example": 12 * time.Millisecond, "third.example": 40 * time.Millisecond, "single.example": 11 * time.Millisecond}}
 	h.run = func(c Config, n int) (Result, error) {
-		return Result{Direction: c.Direction, Bytes: 125_000_000, Elapsed: 9 * time.Second, Retransmits: 3}, nil
+		return Result{Direction: c.Direction, Bytes: 125_000_000, Elapsed: 9 * time.Second, Retransmits: 3, TotalBytes: 130_000_000}, nil
 	}
 	if o.Catalog == nil {
 		o.Catalog = testCatalog(t)
@@ -139,27 +111,41 @@ func newHarness(t *testing.T, o Options) *harness {
 
 func (h *harness) clock() time.Time { h.mu.Lock(); defer h.mu.Unlock(); return h.now }
 
-// slot runs one target (as the schedule would) and returns its result.
-func (h *harness) slot(t *testing.T, tg target) model.SpeedTest {
-	t.Helper()
-	n := len(h.st.tests)
-	h.s.runTarget(context.Background(), tg, "schedule")
-	if len(h.st.tests) != n+1 {
-		t.Fatalf("%d tests saved", len(h.st.tests)-n)
-	}
-	return h.st.tests[n]
+func (h *harness) setRun(f func(c Config, n int) (Result, error)) {
+	h.mu.Lock()
+	h.run = f
+	h.mu.Unlock()
 }
 
-func (h *harness) region(t *testing.T, id string) model.SpeedTest {
-	h.s.mu.Lock()
-	var tg target
-	for _, x := range h.s.planLocked(ModeRegions) {
-		if x.region == id {
-			tg = x
-		}
+// entry queues and runs one entry synchronously; it returns the tests it
+// saved.
+func (h *harness) entry(t *testing.T, e *Entry) []model.SpeedTest {
+	t.Helper()
+	n := len(h.st.tests)
+	if _, _, err := h.s.q.add(e, h.clock()); err != nil {
+		t.Fatal(err)
 	}
-	h.s.mu.Unlock()
-	return h.slot(t, tg)
+	p := h.s.q.pop(h.clock())
+	if p == nil {
+		t.Fatal("nothing to run")
+	}
+	h.s.runEntry(context.Background(), p)
+	return h.st.tests[n:]
+}
+
+// slot runs the scheduled slot of a region or server.
+func (h *harness) slot(t *testing.T, tg target) model.SpeedTest {
+	t.Helper()
+	if tg.region == "" && tg.server == "" {
+		tg.nearby = 0
+	} else {
+		tg.nearby = -1
+	}
+	ts := h.entry(t, &Entry{Kind: KindScheduled, Who: WhoScheduled, Target: tg.row(), slot: &tg})
+	if len(ts) != 1 {
+		t.Fatalf("%d tests", len(ts))
+	}
+	return ts[0]
 }
 
 func hostPort(c Config) (string, int) {
@@ -168,116 +154,151 @@ func hostPort(c Config) (string, int) {
 	return h, n
 }
 
-func TestIntervalFloor(t *testing.T) {
+// TestRotation: every hour of the day sees every provider over N days, for
+// N 1..5, whatever the seed; one hour on consecutive days rotates even
+// when the local day crosses UTC midnight.
+func TestRotation(t *testing.T) {
+	for n := 1; n <= 5; n++ {
+		for _, seed := range []uint32{0, 7, 1 << 31} {
+			for h := int64(0); h < 24; h++ {
+				seen := map[int]bool{}
+				for d := int64(100); d < 100+int64(n); d++ {
+					seen[Rotation(d, h, seed, n)] = true
+				}
+				if len(seen) != n {
+					t.Fatalf("n %d seed %d hour %d: %d providers in %d days", n, seed, h, len(seen), n)
+				}
+			}
+		}
+	}
 	c := testCatalog(t)
-	if iv := New(Options{Catalog: c, Interval: 5 * time.Minute}).Interval(); iv != MinInterval {
-		t.Errorf("catalog servers: %v, want the 15m floor", iv)
+	r := c.Regions[0]
+	firsts := map[string]bool{}
+	for d := range 3 {
+		at := time.Date(2026, 10, 10+d, 23, 30, 0, 0, time.UTC) // 00:30 the next day in UTC+1
+		firsts[r.Chain(c, at, 5)[0].Server.ID] = true
 	}
-	own, _ := Custom("10.0.0.5:5201", c)
-	if iv := New(Options{Catalog: c, Interval: 5 * time.Minute, Custom: own}).Interval(); iv != 5*time.Minute {
-		t.Errorf("own server: %v, want no floor", iv)
-	}
-	mixed, _ := Custom("10.0.0.5:5201,Far", c)
-	if iv := New(Options{Catalog: c, Interval: 5 * time.Minute, Custom: mixed}).Interval(); iv != MinInterval {
-		t.Errorf("own and catalog servers: %v, want the floor", iv)
+	if len(firsts) != 3 {
+		t.Errorf("one hour on 3 days: %v", firsts)
 	}
 }
 
-// TestCycle: slots are spaced exactly interval/N within a cycle; each
-// cycle starts at its base ± Jitter, never sooner than cycleGap after the
-// previous cycle's last slot.
-func TestCycle(t *testing.T) {
-	h := newHarness(t, Options{Catalog: testCatalog(t)})
+// TestChain: the rotated provider first, the rest of the metro, then the
+// nearby city, with fallback levels.
+func TestChain(t *testing.T) {
+	c := testCatalog(t)
+	home := c.Regions[0]
+	at := time.Date(2026, 10, 10, 20, 0, 0, 0, time.UTC)
+	var ids, levels []string
+	for _, s := range home.Chain(c, at, 0) {
+		ids, levels = append(ids, s.Server.ID), append(levels, s.Level)
+	}
+	idx := Rotation(at.Unix()/86400, 20, 0, 3)
+	want := []string{"Near", "Mid", "Third"}
+	want = append(append(want[idx:], want[:idx]...), "Single")
+	if strings.Join(ids, " ") != strings.Join(want, " ") || strings.Join(levels, " ") != "none same_metro same_metro nearby_city" {
+		t.Errorf("%v %v", ids, levels)
+	}
+	if s, _ := c.Server("Single"); !s.SinglePort() {
+		t.Error("single port")
+	}
+	if s, _ := c.Server("Near"); s.CapacityMbps != 1000 {
+		t.Errorf("capacity %v", s.CapacityMbps)
+	}
+}
+
+// TestSchedule: regions hourly, on the install's phase, spaced evenly;
+// jitter only on cycle starts; opt-in regions join.
+func TestSchedule(t *testing.T) {
+	h := newHarness(t, Options{})
 	s := h.s
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mode = ModeRegions
-	start := h.now
-	s.restartLocked(start)
-	if d := s.next.Sub(start); d < firstDelay || d > firstDelay+Jitter {
-		t.Fatalf("first slot after %v", d)
+	if iv := s.IntervalFor(ModeRegions); iv != time.Hour {
+		t.Fatalf("interval %v", iv)
+	}
+	if iv := s.IntervalFor(ModeNearby); iv != 15*time.Minute {
+		t.Fatalf("nearby interval %v", iv)
+	}
+	now := h.now
+	s.restartLocked(now)
+	if s.next.Before(now.Add(firstDelay)) || s.next.After(now.Add(time.Hour+firstDelay)) {
+		t.Fatalf("first slot %v after start", s.next.Sub(now))
+	}
+	if off := s.cycleBase.Sub(s.cycleBase.Truncate(time.Hour)); off != s.phase(time.Hour) {
+		t.Errorf("cycle base %v past the hour, phase %v", off, s.phase(time.Hour))
 	}
 	sp := s.spacingLocked(ModeRegions)
-	if sp != MinInterval/2 {
+	if sp != 30*time.Minute { // 2 default regions
 		t.Fatalf("spacing %v", sp)
 	}
-	base := s.cycleBase
-	var offs []time.Duration
-	prev := s.next
-	for c := range 200 {
-		s.advanceLocked() // slot 1
-		if s.next.Sub(prev) != sp {
-			t.Fatalf("cycle %d: slot spacing %v", c, s.next.Sub(prev))
+	n := len(s.planLocked(ModeRegions))
+	for c := range 50 {
+		for s.slot != n-1 {
+			prev := s.next
+			s.advanceLocked()
+			if s.next.Sub(prev) != sp {
+				t.Fatalf("cycle %d: spacing %v", c, s.next.Sub(prev))
+			}
 		}
 		last := s.next
-		s.advanceLocked() // next cycle's slot 0
-		base = base.Add(MinInterval)
-		off := s.next.Sub(base)
-		offs = append(offs, off)
-		if off < -Jitter || off > Jitter || s.next.Sub(last) < cycleGap {
-			t.Fatalf("cycle %d: start %v from base, %v after the last slot", c, off, s.next.Sub(last))
+		base := s.cycleBase.Add(time.Hour)
+		s.advanceLocked()
+		if off := s.cycleStart.Sub(base); off < -Jitter || off > Jitter || s.next.Sub(last) < min(cycleGap, sp/2) {
+			t.Fatalf("cycle %d: start %v from base", c, off)
 		}
-		prev = s.next
 	}
-	lo, hi := time.Hour, -time.Hour
-	for _, o := range offs {
-		lo, hi = min(lo, o), max(hi, o)
+	if load := s.planLoadLocked(ModeRegions); load.TestsPerHour != 2 || load.Share != 2*15.0/3600 {
+		t.Errorf("load %+v", load)
 	}
-	if hi-lo < 80*time.Second {
-		t.Errorf("cycle start jitter %v..%v", lo, hi)
+	s.extra = []string{"us-east"}
+	if n := len(s.planLocked(ModeRegions)); n != 3 {
+		t.Errorf("with the opt-in region: %d slots", n)
 	}
-	if share := s.plannedShareLocked(ModeRegions); share != 2*15.0/900 {
-		t.Errorf("planned share %v", share)
+	other := New(Options{Catalog: s.o.Catalog, rand: rand.New(rand.NewPCG(9, 9))})
+	if other.seed == s.seed {
+		t.Error("two installs, one seed")
 	}
 }
 
 // TestRegionFallback: a busy first server gets 2 more ports, then the next
-// server in the chain; the result records the server used and fallback.
+// server; unreachable moves on at once; a single-port server gets one try.
 func TestRegionFallback(t *testing.T) {
 	h := newHarness(t, Options{})
-	h.run = func(c Config, n int) (Result, error) {
-		if host, _ := hostPort(c); host == "near.example" {
+	c := h.s.o.Catalog
+	first := c.Regions[0].Chain(c, h.clock(), h.s.seed)
+	h.setRun(func(cf Config, n int) (Result, error) {
+		if host, _ := hostPort(cf); host == first[0].Server.Host {
 			return Result{}, ErrBusy
 		}
-		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
-	}
-	r := h.region(t, "home")
-	if r.Outcome != model.SpeedOK || r.Region != "home" || r.Server != "Mid" || !r.Fallback || r.Attempts != 3+2 || r.UpBps == nil {
+		return Result{Bytes: 1e6, Elapsed: time.Second, TotalBytes: 2e6}, nil
+	})
+	r := h.slot(t, target{region: "home"})
+	if r.Outcome != model.SpeedOK || r.Region != "home" || r.Server != first[1].Server.ID || r.FallbackLevel != FallbackSameMetro || !r.Fallback || r.Bytes != 4e6 {
 		t.Fatalf("%+v", r)
 	}
-	_, p1 := hostPort(h.calls[0])
-	_, p2 := hostPort(h.calls[1])
-	_, p3 := hostPort(h.calls[2])
-	if p1 == p2 || p2 == p3 || p1 == p3 || h.slept[0] != AttemptGap {
-		t.Errorf("busy ports %d %d %d, slept %v", p1, p2, p3, h.slept)
+	if busyTries := r.Attempts - 2; busyTries != MaxAttempts && !(first[0].Server.SinglePort() && busyTries == 1) {
+		t.Errorf("attempts %d", r.Attempts)
 	}
-	if host, p := hostPort(h.calls[3]); host != "mid.example" || p < 9204 || p > 9240 || p != r.Port {
-		t.Errorf("fallback call %v, port %d", h.calls[3], r.Port)
-	}
-
-	// Unreachable (a timeout, DNS): the next server at once.
+	// Unreachable (a timeout): the next server at once.
 	h.calls = nil
-	h.run = func(c Config, n int) (Result, error) {
-		if host, _ := hostPort(c); host == "dead.example" {
+	h.setRun(func(cf Config, n int) (Result, error) {
+		if host, _ := hostPort(cf); host == "dead.example" {
 			return Result{}, fmt.Errorf("%w: i/o timeout", ErrUnreachable)
 		}
 		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
+	})
+	ch := c.Regions[1].Chain(c, h.clock(), h.s.seed)
+	r = h.slot(t, target{region: "away"})
+	if ch[0].Server.ID == "Dead" && (r.Server != "Far" || len(h.calls) != 3) {
+		t.Errorf("unreachable first: %+v, %d calls", r, len(h.calls))
 	}
-	if r = h.region(t, "away"); r.Server != "Far" || !r.Fallback || r.Outcome != model.SpeedOK || h.calls[0].Addr != "dead.example:5200" || len(h.calls) != 3 {
-		t.Errorf("unreachable first: %+v, calls %v", r, h.calls)
-	}
-
-	// The first server answers: no fallback.
+	// A busy single-port server: one try.
 	h.calls = nil
-	h.run = func(Config, int) (Result, error) { return Result{Bytes: 1e6, Elapsed: time.Second}, nil }
-	if r = h.region(t, "home"); r.Server != "Near" || r.Fallback {
-		t.Errorf("first server fine: %+v", r)
-	}
-
-	// Every server busy: busy, the last server tried, never a speed.
-	h.run = func(Config, int) (Result, error) { return Result{}, ErrBusy }
-	if r = h.region(t, "home"); r.Outcome != model.SpeedBusy || r.Server != "Mid" || r.DownBps != nil {
-		t.Errorf("all busy: %+v", r)
+	h.setRun(func(Config, int) (Result, error) { return Result{}, ErrBusy })
+	if r = h.slot(t, target{server: "Single"}); len(h.calls) != 1 || r.Outcome != model.SpeedBusy {
+		t.Errorf("single port: %d calls, %+v", len(h.calls), r)
 	}
 }
 
@@ -285,257 +306,137 @@ func TestRegionFallback(t *testing.T) {
 // server re-listening), not "unreachable"; refused on every try is.
 func TestRefused(t *testing.T) {
 	h := newHarness(t, Options{})
-	h.run = func(c Config, n int) (Result, error) {
+	h.setRun(func(c Config, n int) (Result, error) {
 		if n == 1 {
 			return Result{}, fmt.Errorf("%w: connection refused", ErrRefused)
 		}
 		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
-	}
-	if r := h.region(t, "home"); r.Outcome != model.SpeedOK || r.Server != "Near" || r.Attempts != 3 {
+	})
+	if r := h.slot(t, target{server: "Mid"}); r.Outcome != model.SpeedOK || r.Attempts != 3 {
 		t.Errorf("refused once: %+v", r)
 	}
-	// The upload refused right after the download: another port, after the
-	// 1 s re-listen pause.
 	h.calls, h.slept = nil, nil
-	h.run = func(c Config, n int) (Result, error) {
+	h.setRun(func(c Config, n int) (Result, error) {
 		if c.Direction == Upload && n == 2 {
 			return Result{}, fmt.Errorf("%w: connection refused", ErrRefused)
 		}
 		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
-	}
-	if r := h.region(t, "home"); r.Outcome != model.SpeedOK || r.UpBps == nil || h.calls[1].Addr != h.calls[0].Addr || h.calls[2].Addr == h.calls[1].Addr || h.slept[0] != relisten {
+	})
+	if r := h.slot(t, target{server: "Mid"}); r.Outcome != model.SpeedOK || r.UpBps == nil || h.calls[1].Addr != h.calls[0].Addr || h.calls[2].Addr == h.calls[1].Addr || h.slept[0] != relisten {
 		t.Errorf("upload refused once: %+v, calls %v, slept %v", r, h.calls, h.slept)
 	}
-	h.calls = nil
-	h.run = func(Config, int) (Result, error) { return Result{}, fmt.Errorf("%w: connection refused", ErrRefused) }
-	if r := h.region(t, "home"); r.Outcome != model.SpeedUnreachable {
+	h.setRun(func(Config, int) (Result, error) { return Result{}, fmt.Errorf("%w: connection refused", ErrRefused) })
+	if r := h.slot(t, target{server: "Mid"}); r.Outcome != model.SpeedUnreachable {
 		t.Errorf("always refused: %+v", r)
 	}
 }
 
 // TestSlotBudget: no new attempt or fallback once the slot has used its
-// budget; a measured download is kept when the upload fails.
+// budget; a measured download is kept when the upload fails; every
+// attempt is adaptive and byte-capped.
 func TestSlotBudget(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.step = 9 * time.Second
-	h.run = func(Config, int) (Result, error) { return Result{}, ErrBusy }
-	r := h.region(t, "home")
+	h.setRun(func(Config, int) (Result, error) { return Result{}, ErrBusy })
+	r := h.slot(t, target{region: "home"})
 	if el := r.End.Sub(r.Start); el > SlotBudget+h.step || len(h.calls) > 3 {
 		t.Errorf("slot took %v with %d calls", el, len(h.calls))
 	}
 	h.calls, h.step = nil, 6*time.Second
-	h.run = func(c Config, n int) (Result, error) {
+	h.setRun(func(c Config, n int) (Result, error) {
 		if c.Direction == Upload {
 			return Result{}, errors.New("protocol error")
 		}
-		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
-	}
-	if r = h.region(t, "home"); r.Outcome != model.SpeedFailed || r.DownBps == nil || r.Fallback || len(h.calls) != 2 {
+		return Result{Bytes: 1e6, Elapsed: time.Second, CappedByBytes: true, Ramp: 300 * time.Millisecond}, nil
+	})
+	r = h.slot(t, target{region: "home"})
+	if r.Outcome != model.SpeedFailed || r.DownBps == nil || r.Fallback || len(h.calls) != 2 || !r.DownShort || r.DownSecs != 1 {
 		t.Errorf("upload failed: %+v, %d calls", r, len(h.calls))
 	}
-	// Adaptive length on every attempt.
-	if c := h.calls[0]; c.Duration != MaxMeasure || c.MinDuration != MinMeasure || c.Timeout != DirTimeout {
+	if x := ParseExtra(r.Extra); x.RampMs[0] != 300 {
+		t.Errorf("extra %q", r.Extra)
+	}
+	if c := h.calls[0]; c.Duration != MaxMeasure || c.MinDuration != MinMeasure || c.Timeout != DirTimeout || c.MaxBytes != MaxBytes {
 		t.Errorf("config %+v", c)
 	}
 }
 
-// TestNearest: the two nearest catalog servers by RTT, alternating;
-// re-picked after a day.
-func TestNearest(t *testing.T) {
+// TestNearby: the nearest server, then the closest of other providers
+// (the nearest's metro preferred), 3 providers in all; the far region by
+// continent.
+func TestNearby(t *testing.T) {
 	h := newHarness(t, Options{})
-	var got []string
-	for range 4 {
-		got = append(got, h.slot(t, target{}).Server)
-	}
-	if fmt.Sprint(got) != "[Near Mid Near Mid]" {
-		t.Errorf("servers %v", got)
+	h.s.pick(context.Background())
+	h.s.mu.Lock()
+	picked, far := h.s.picked, h.s.far
+	h.s.mode = ModeNearby
+	h.s.mu.Unlock()
+	// Near (10 ms) first. Other's nearest is Single (11 ms, another metro),
+	// but Mid (12 ms) is in Near's metro: preferred. Then Third.
+	if strings.Join(picked, " ") != "Near Mid Third" || far != "us-east" {
+		t.Errorf("picked %v, far %s", picked, far)
 	}
 	st := h.s.State()
-	if len(st.Servers) != 4 || !st.Servers[0].Picked || !st.Servers[1].Picked || st.Servers[2].Picked || st.Servers[3].RTTms != nil || *st.Servers[0].RTTms != 10 {
-		t.Errorf("state %+v", st.Servers)
+	if !st.Servers[0].Picked || st.Servers[2].RTTms == nil || len(st.Rows) != 4 || st.Rows[0].Why != "nearest Prov" || st.Rows[3].Why != "far: US East" {
+		t.Errorf("state %+v %+v", st.Servers[:2], st.Rows)
 	}
-	h.mu.Lock()
-	h.now = h.now.Add(RepickEvery)
-	h.rtt["far.example"] = time.Millisecond
-	h.mu.Unlock()
-	h.slot(t, target{})
-	if st := h.s.State(); !st.Servers[2].Picked || st.Servers[1].Picked {
-		t.Errorf("re-pick %+v", st.Servers)
+	if r := h.slot(t, target{}); r.Server != "Near" || r.Region != "" {
+		t.Errorf("nearby slot %+v", r)
+	}
+	if r := h.slot(t, target{region: "far"}); r.Region != "us-east" || r.Server != "Far" {
+		t.Errorf("far slot %+v", r)
 	}
 }
 
-func TestModesAndTestNow(t *testing.T) {
+// TestScore: results relative to the server's baseline once it has 20
+// first-choice scheduled tests; capped_by_server near the link capacity.
+func TestScore(t *testing.T) {
 	h := newHarness(t, Options{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() { h.s.Run(ctx); close(done) }()
-	if st := h.s.State(); st.Mode != ModeOff || !st.Next.IsZero() || len(st.Modes) != 3 {
-		t.Fatalf("off by default: %+v", st)
+	f := func(v float64) *float64 { return &v }
+	for i := range 25 {
+		at := h.now.Add(-time.Duration(i+1) * time.Hour)
+		h.st.tests = append(h.st.tests, model.SpeedTest{Start: at, Trigger: "schedule", Outcome: model.SpeedOK, Server: "Mid",
+			FallbackLevel: FallbackNone, DownBps: f(float64(100+i) * 1e6), UpBps: f(20e6)})
 	}
-	if _, err := h.s.SetMode(ctx, ModeCustom); !errors.Is(err, ErrMode) {
-		t.Errorf("custom without servers: %v", err)
+	if d, u, ok := Baseline(h.st.tests, "Mid", h.now); !ok || d < 120e6 || u != 20e6 {
+		t.Fatalf("baseline %v %v %v", d, u, ok)
 	}
-	if _, err := h.s.TestNow("Nope"); err == nil {
-		t.Error("unknown id accepted")
+	if _, _, ok := Baseline(h.st.tests[:10], "Mid", h.now); ok {
+		t.Error("a baseline from 10 tests")
 	}
-	release := make(chan struct{})
-	h.mu.Lock()
-	h.run = func(c Config, n int) (Result, error) {
-		<-release
-		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
-	}
-	h.mu.Unlock()
-	if _, err := h.s.TestNow("away"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.s.TestNow(""); !errors.Is(err, ErrRunning) {
-		t.Errorf("second: %v", err)
-	}
-	for h.s.State().Running == nil || h.s.State().Running.Direction == "picking" {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if st := h.s.State(); st.Running.Server != "Dead" || st.Running.Region != "away" || st.Running.ExpectedEnd.Before(st.Running.Started) {
-		t.Errorf("running %+v", st.Running)
-	}
-	close(release)
-	for h.s.State().Running != nil {
-		time.Sleep(5 * time.Millisecond)
-	}
-	h.st.mu.Lock()
-	if len(h.st.tests) != 1 || h.st.tests[0].Trigger != "manual" || h.st.tests[0].Region != "away" {
-		t.Fatalf("tests %+v", h.st.tests)
-	}
-	h.st.mu.Unlock()
-	next, err := h.s.SetMode(ctx, ModeRegions)
-	if err != nil || next.Sub(h.clock()) < firstDelay || next.Sub(h.clock()) > firstDelay+Jitter || h.st.settings[SettingKey] != "regions" {
-		t.Errorf("regions: %v %v %v", next, err, h.st.settings)
-	}
-	if st := h.s.State(); st.Mode != ModeRegions || !st.Next.Equal(next) || st.NextRegion != "home" || st.NextServer != "Near" || st.Spacing != MinInterval/2 {
-		t.Errorf("state %+v", st)
-	}
-	cancel()
-	<-done
-	// The saved mode is picked up at the next start; a flag wins over it.
-	h2 := newHarness(t, Options{})
-	h2.st.settings = map[string]string{SettingKey: "nearest"}
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	go h2.s.Run(ctx2)
-	for h2.s.State().Mode != ModeNearest {
-		time.Sleep(5 * time.Millisecond)
-	}
-	cancel2()
-	h3 := newHarness(t, Options{Mode: ModeRegions})
-	h3.st.settings = map[string]string{SettingKey: "off"}
-	ctx3, cancel3 := context.WithCancel(context.Background())
-	go h3.s.Run(ctx3)
-	for h3.s.State().Mode != ModeRegions {
-		time.Sleep(5 * time.Millisecond)
-	}
-	cancel3()
-}
-
-// TestPlannedShareWarning: more slots than the line can bear warn.
-func TestPlannedShareWarning(t *testing.T) {
-	c := testCatalog(t)
-	var many []string
-	for i := range 20 {
-		many = append(many, fmt.Sprintf("10.0.0.%d:5201", i+1))
-	}
-	own, _ := Custom(strings.Join(many, ","), c)
-	s := New(Options{Catalog: c, Custom: own, Interval: 15 * time.Minute})
-	s.SetMode(context.Background(), ModeCustom)
-	st := s.State()
-	if st.PlannedShare != 20*15.0/900 || !strings.Contains(st.Warning, "About 33% of the time") || st.Spacing != 45*time.Second {
-		t.Errorf("%v %q %v", st.PlannedShare, st.Warning, st.Spacing)
-	}
-	s.SetMode(context.Background(), ModeRegions)
-	if st := s.State(); st.Warning != "" {
-		t.Errorf("regions: %q", st.Warning)
-	}
-}
-
-// TestMask: exactly the probes that ran during a test (from Sample.At to
-// their arrival) or within MaskTail after it are blanked.
-func TestMask(t *testing.T) {
-	w := &Windows{}
-	t0 := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
-	w.Add(Window{Start: t0, End: t0.Add(20 * time.Second)})
-	now := t0
-	var got []model.Sample
-	m := Mask{Inner: model.SinkFunc(func(s model.Sample) { got = append(got, s) }), Windows: w, Now: func() time.Time { return now }}
-	gw := model.SeriesKey{Target: "Gateway", Kind: model.KindICMP}
-	for _, c := range []struct {
-		at, arrive time.Duration // from t0
-		masked     bool
-	}{
-		{-10 * time.Second, -9 * time.Second, false},       // before
-		{-2 * time.Second, 100 * time.Millisecond, true},   // ran into the test
-		{10 * time.Second, 11 * time.Second, true},         // during
-		{21 * time.Second, 21500 * time.Millisecond, true}, // in the 2 s tail
-		{22500 * time.Millisecond, 23 * time.Second, false},
-	} {
-		now = t0.Add(c.arrive)
-		m.Observe(model.Sample{Key: gw, Slot: t0.Add(c.at).Truncate(time.Second), At: t0.Add(c.at), RTT: 30 * time.Millisecond})
-		s := got[len(got)-1]
-		if masked := s.Lost && s.Reason == model.ReasonGap && s.RTT == 0; masked != c.masked {
-			t.Errorf("probe at %v: masked %v, want %v", c.at, masked, c.masked)
+	h.setRun(func(c Config, n int) (Result, error) {
+		if c.Direction == Download {
+			return Result{Bytes: 75e6 / 8 * 9, Elapsed: 9 * time.Second}, nil
 		}
+		return Result{Bytes: 20e6 / 8, Elapsed: time.Second}, nil
+	})
+	r := h.slot(t, target{server: "Mid"})
+	if r.ScoreDown == nil || *r.ScoreDown < 0.5 || *r.ScoreDown > 0.7 || r.ScoreUp == nil || *r.ScoreUp != 1 {
+		t.Errorf("score %v %v", r.ScoreDown, r.ScoreUp)
 	}
-	// 20 s plus the 2 s tail of the last 5 minutes.
-	if sh := w.Share(t0.Add(time.Minute), 5*time.Minute); sh < 21.9/300 || sh > 22.1/300 {
-		t.Errorf("share %v", sh)
-	}
-	w.Begin(t0.Add(time.Hour))
-	if !w.Overlaps(t0.Add(2*time.Hour), t0.Add(2*time.Hour)) || w.Overlaps(t0.Add(10*time.Minute), t0.Add(20*time.Minute)) {
-		t.Error("running window")
-	}
-}
-
-func TestLoadTap(t *testing.T) {
-	p := &model.Profile{Targets: []model.Target{
-		{Name: "Gateway", Layer: model.LayerGateway, Kinds: []model.ProbeKind{model.KindICMP}},
-		{Name: "Meet-STUN", Kinds: []model.ProbeKind{model.KindUDP}, Port: 19302, Tags: []string{"udp-path"}},
-		{Name: "Twilio-jp1", Kinds: []model.ProbeKind{model.KindUDP}, Port: 3478, Tags: []string{"udp-path"}, Geo: "as"},
-	}}
-	h := newHarness(t, Options{})
-	tap := NewLoadTap(p, h.clock)
-	h.s.o.Load = tap
-	gw := model.SeriesKey{Target: "Gateway", Kind: model.KindICMP}
-	call := model.SeriesKey{Target: "Meet-STUN", Kind: model.KindUDP}
-	feed := func(k model.SeriesKey, ms float64, n int) {
-		for range n {
-			tap.Observe(model.Sample{Key: k, RTT: time.Duration(ms * float64(time.Millisecond))})
-		}
-	}
-	h.mu.Lock()
-	h.now = h.now.Add(-30 * time.Second)
-	h.mu.Unlock()
-	feed(gw, 2, 10)
-	feed(call, 15, 5)
-	feed(model.SeriesKey{Target: "Twilio-jp1", Kind: model.KindUDP}, 300, 5) // not the core path
-	h.mu.Lock()
-	h.now = h.now.Add(30 * time.Second)
-	h.run = func(c Config, n int) (Result, error) {
-		feed(gw, 40, 5)
-		feed(call, 80, 3)
-		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
-	}
-	h.mu.Unlock()
-	r := h.region(t, "home")
-	if *r.IdleGatewayMs != 2 || *r.LoadedGatewayMs != 40 || *r.IdleCallMs != 15 || *r.LoadedCallMs != 80 {
-		t.Errorf("load %v %v %v %v", *r.IdleGatewayMs, *r.LoadedGatewayMs, *r.IdleCallMs, *r.LoadedCallMs)
+	// Near's link is 1 Gbit/s: 950 Mbit/s measured the server.
+	h.setRun(func(Config, int) (Result, error) { return Result{Bytes: 950e6 / 8, Elapsed: time.Second}, nil })
+	if r := h.slot(t, target{server: "Near"}); !r.CappedByServer {
+		t.Errorf("not capped: %+v", r)
 	}
 }
 
-// TestBuiltinCatalog: the shipped catalog's servers and regions.
 func TestBuiltinCatalog(t *testing.T) {
 	c, err := Builtin()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Servers) != 41 || len(c.Regions) != 9 {
-		t.Fatalf("%d servers, %d regions", len(c.Servers), len(c.Regions))
+	if len(c.Servers) != 45 {
+		t.Fatalf("%d servers", len(c.Servers))
+	}
+	var defaults []string
+	for _, r := range c.Regions {
+		if r.Default {
+			defaults = append(defaults, r.ID)
+		}
+	}
+	if strings.Join(defaults, " ") != "uk eu-west eu-central us-east us-central us-west asia-east asia-southeast oceania" {
+		t.Errorf("default regions %v", defaults)
 	}
 	labels := map[string]string{}
 	for _, s := range c.Servers {
@@ -543,20 +444,21 @@ func TestBuiltinCatalog(t *testing.T) {
 			t.Errorf("label %q of %s and %s", s.Label, prev, s.ID)
 		}
 		labels[s.Label] = s.ID
-		if s.Label == "" || s.Provider == "" || s.ports() < 1 {
-			t.Errorf("%+v", s)
-		}
 	}
-	want := map[string]string{"uk": "Clouvider-London Leaseweb-London OVH-London", "oceania": "Leaseweb-Sydney OVH-Sydney"}
-	for _, r := range c.Regions {
-		if w, ok := want[r.ID]; ok && strings.Join(r.Chain, " ") != w {
-			t.Errorf("%s: %v", r.ID, r.Chain)
-		}
+	us := c.Regions[3]
+	if us.ID != "us-east" || strings.Join(us.Servers, " ") != "Leaseweb-NewYork InterServer-Secaucus Clouvider-NewYork" || len(us.Providers(c)) != 3 {
+		t.Errorf("%+v", us)
 	}
-	if s, _ := c.Server("Leaseweb-NewYork"); s.Label != "Leaseweb New York" || s.Host != "speedtest.nyc1.us.leaseweb.net" || s.PortMin != 5201 {
+	if s, _ := c.Server("InterServer-Secaucus"); s.Label != "InterServer Secaucus NJ" || s.Metro != "new-york" {
 		t.Errorf("%+v", s)
 	}
-	if s, _ := c.Server("Eranium-Amsterdam"); s.Provider != "Eranium" || s.Label != "Eranium Amsterdam" {
+	if s, _ := c.Server("HE-Fremont"); !s.SinglePort() || s.Host != "iperf.he.net" {
+		t.Errorf("%+v", s)
+	}
+	if s, _ := c.Server("OVH-Roubaix"); s.CapacityMbps != 20000 {
+		t.Errorf("%+v", s)
+	}
+	if s, _ := c.Server("OVH-London"); s.Label != "OVH Erith" {
 		t.Errorf("%+v", s)
 	}
 	cs, err := Custom("Leaseweb-Tokyo, 192.168.1.20:5201", c)
@@ -571,15 +473,17 @@ func TestBuiltinCatalog(t *testing.T) {
 }
 
 func TestCatalogErrors(t *testing.T) {
-	good := "provider: p\ndisplay: P\nsources: [x]\nservers:\n  - {id: A, host: a.example, ports: 5201-5210, city: C, country: GB, geo: eu, verified: {date: 2026-10-10}}\n"
+	good := "provider: p\ndisplay: P\nsources: [x]\nservers:\n  - {id: A, host: a.example, ports: 5201-5210, city: C, metro: c, country: GB, geo: eu, verified: {date: 2026-10-10}}\n  - {id: B, host: b.example, ports: \"5201\", city: D, metro: d, country: GB, geo: eu, verified: {date: 2026-10-10}}\n"
 	for want, files := range map[string]fstest.MapFS{
 		"want first-last": {"p.yml": {Data: []byte(strings.Replace(good, "5201-5210", "9-3", 1))}},
 		"private address": {"p.yml": {Data: []byte(strings.Replace(good, "a.example", "10.0.0.1", 1))}},
 		"duplicate id":    {"p.yml": {Data: []byte(good)}, "q.yml": {Data: []byte(good)}},
 		"sources":         {"p.yml": {Data: []byte(strings.Replace(good, "sources: [x]\n", "", 1))}},
 		"verified.date":   {"p.yml": {Data: []byte(strings.Replace(good, ", verified: {date: 2026-10-10}", "", 1))}},
+		"metro":           {"p.yml": {Data: []byte(strings.Replace(good, "metro: c, ", "", 1))}},
 		"geo \"xx\"":      {"p.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: xx", 1))}},
-		"no server \"B\"": {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: [{id: r, title: R, chain: [A, B]}]")}},
+		"no server \"Z\"": {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: [{id: r, title: R, servers: [A, Z]}]")}},
+		"use nearby":      {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: [{id: r, title: R, servers: [A, B]}]")}},
 		"field bogus":     {"p.yml": {Data: []byte(good + "bogus: 1\n")}},
 	} {
 		if _, err := LoadCatalog(files); err == nil || !strings.Contains(err.Error(), want) {

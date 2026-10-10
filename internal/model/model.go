@@ -363,7 +363,7 @@ type SpeedTest struct {
 	ID      int64     `json:"id"`
 	Start   time.Time `json:"start"`
 	End     time.Time `json:"end"`
-	Trigger string    `json:"trigger"` // "schedule" or "manual"
+	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now) or "sweep"
 	Outcome string    `json:"outcome"`
 	// Region is the catalog region the test was for ("" outside mode
 	// regions); Server the server actually used: a catalog ID, or host:port
@@ -378,10 +378,31 @@ type SpeedTest struct {
 	// Retransmits of the sending side, nil when unknown.
 	DownRetrans *int64 `json:"down_retrans"`
 	UpRetrans   *int64 `json:"up_retrans"`
-	// Latency under load: median RTT to the gateway and the call path in
-	// the 2 minutes before the test (idle) and during it (loaded).
+	// Latency under load: median RTT to the gateway in the 2 minutes
+	// before the test (idle) and during it (loaded). The ISP edge's, per
+	// direction with lost probes, is in Extra.
 	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
 	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
-	IdleCallMs      *float64 `json:"idle_call_ms"`
-	LoadedCallMs    *float64 `json:"loaded_call_ms"`
+	// FallbackLevel is "none", "same_metro" or "nearby_city".
+	FallbackLevel string `json:"fallback_level"`
+	// Entry is the queue entry that ran the test (a sweep's tests share it).
+	Entry int64 `json:"entry"`
+	// CappedByServer: a direction measured within 10% of the server's
+	// published link capacity (the server, not the line, set the limit).
+	CappedByServer bool `json:"capped_by_server"`
+	// DownShort/UpShort: the direction hit the per-test byte cap, so its
+	// measured time (DownSecs/UpSecs) may be short.
+	DownShort bool    `json:"down_short"`
+	UpShort   bool    `json:"up_short"`
+	DownSecs  float64 `json:"down_s"`
+	UpSecs    float64 `json:"up_s"`
+	Bytes     int64   `json:"bytes"` // data used, both directions
+	// ScoreDown/ScoreUp: the result relative to the server's baseline (the
+	// p90 of its first-choice scheduled tests over 14 days); nil while the
+	// server has fewer than 20 such tests.
+	ScoreDown *float64 `json:"score_down"`
+	ScoreUp   *float64 `json:"score_up"`
+	// Extra holds further measurements as JSON (latency under load per
+	// direction, connection type): see speedtest.Extra.
+	Extra string `json:"extra,omitempty"`
 }

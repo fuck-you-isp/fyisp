@@ -1,7 +1,9 @@
 package web
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"strings"
@@ -30,9 +32,11 @@ const (
 
 type publicHandler struct {
 	*server
-	prefix string // "/s/<secret>/"
-	secret string
-	lim    *limiter
+	prefix   string // "/s/<secret>/"
+	secret   string
+	lim      *limiter
+	token    string   // the shared page's token (speed test POSTs)
+	speedLim *limiter // speed test POSTs, per client
 }
 
 // Public returns the tunnel origin's handler. The UI and read-only API live
@@ -42,14 +46,19 @@ func Public(d Deps, secret string) http.Handler {
 	if len(secret) < MinSecretLen || strings.ContainsAny(secret, "/?#%") {
 		panic("web: public secret too short or not URL-safe")
 	}
-	s := newServer(d, true, "")
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	tok := hex.EncodeToString(b[:])
+	s := newServer(d, true, tok)
 	s.sem = make(chan struct{}, PublicMaxQueries)
 	s.cache = newRespCache(PublicCacheTTL, PublicCacheEntries, PublicCacheBytes, PublicCacheMaxEntry)
 	return &publicHandler{
-		server: s,
-		prefix: "/s/" + secret + "/",
-		secret: secret,
-		lim:    newLimiter(PublicRate, PublicBurst, PublicClientRate, PublicClientBurst),
+		server:   s,
+		prefix:   "/s/" + secret + "/",
+		secret:   secret,
+		lim:      newLimiter(PublicRate, PublicBurst, PublicClientRate, PublicClientBurst),
+		token:    tok,
+		speedLim: newLimiter(1, 3, speedPostRate, speedPostBurst),
 	}
 }
 
@@ -91,6 +100,11 @@ func (h *publicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Redirect(w, r, h.prefix, http.StatusMovedPermanently)
+		return
+	}
+	if action, ok := strings.CutPrefix(rel, "api/speed/"); ok {
+		hd.Set("Cache-Control", "private, no-store")
+		h.serveSpeedPublicPOST(w, r, action)
 		return
 	}
 	if id, ok := strings.CutPrefix(rel, "r/"); ok {

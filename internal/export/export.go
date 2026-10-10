@@ -26,9 +26,11 @@
 //	3,2026-09-26T12:00:00.000Z,2026-09-26T12:30:00.000Z,1,call dropped
 //
 // Speed tests (--speedtests), one row per test, oldest first; bits per
-// second and milliseconds, empty when not measured or unknown:
+// second, seconds and milliseconds, empty when not measured or unknown;
+// the edge columns are the ISP edge's latency before (idle) and during
+// each direction (lost: probes without an answer):
 //
-//	id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms
+//	id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,connection,idle_gateway_ms,loaded_gateway_ms,idle_edge_ms,down_edge_p50_ms,down_edge_p90_ms,down_edge_lost,up_edge_p50_ms,up_edge_p90_ms,up_edge_lost
 //
 // The SQLite format holds the same columns in a table named samples (raw;
 // ts is the column ts_utc, lost is NULL when not measured) or summary_1h;
@@ -50,6 +52,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -97,8 +100,10 @@ var (
 	AnnotationHeader = []string{"id", "at", "end", "public", "text"}
 	// SpeedTestHeader: start and end in TimeFormat; outcome ok, busy (the
 	// server ran another test: not a slow result), unreachable or failed.
-	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "port", "attempts", "down_bps", "up_bps",
-		"down_retrans", "up_retrans", "idle_gateway_ms", "loaded_gateway_ms", "idle_call_ms", "loaded_call_ms"}
+	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "fallback_level", "port", "attempts", "down_bps", "up_bps",
+		"down_retrans", "up_retrans", "down_s", "up_s", "down_capped_by_bytes", "up_capped_by_bytes", "capped_by_server", "bytes", "score_down", "score_up",
+		"connection", "idle_gateway_ms", "loaded_gateway_ms", "idle_edge_ms", "down_edge_p50_ms", "down_edge_p90_ms", "down_edge_lost",
+		"up_edge_p50_ms", "up_edge_p90_ms", "up_edge_lost"}
 )
 
 // Run exports to o.Output, or as CSV to stdout when o.Output is "" or "-".
@@ -239,10 +244,27 @@ func WriteSpeedTests(ctx context.Context, sr SpeedTestReader, w io.Writer, from,
 	if err := cw.Write(SpeedTestHeader); err != nil {
 		return err
 	}
+	secs := func(v float64) string {
+		if v == 0 {
+			return ""
+		}
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	}
+	dir := func(d *speedtest.LoadedDir) []string {
+		if d == nil {
+			return []string{"", "", ""}
+		}
+		return []string{secs(d.P50), secs(d.P90), strconv.Itoa(d.Lost)}
+	}
 	for _, t := range ts {
-		if err := cw.Write([]string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
-			t.Trigger, t.Outcome, t.Region, t.Server, fb(t.Fallback), strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
-			i(t.DownRetrans), i(t.UpRetrans), f(t.IdleGatewayMs), f(t.LoadedGatewayMs), f(t.IdleCallMs), f(t.LoadedCallMs)}); err != nil {
+		x := speedtest.ParseExtra(t.Extra)
+		edge := x.Latency[speedtest.LayerEdge]
+		row := []string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
+			t.Trigger, t.Outcome, t.Region, t.Server, fb(t.Fallback), t.FallbackLevel, strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
+			i(t.DownRetrans), i(t.UpRetrans), secs(t.DownSecs), secs(t.UpSecs), fb(t.DownShort), fb(t.UpShort), fb(t.CappedByServer),
+			strconv.FormatInt(t.Bytes, 10), f(t.ScoreDown), f(t.ScoreUp), x.Connection, f(t.IdleGatewayMs), f(t.LoadedGatewayMs), f(edge.IdleMs)}
+		row = append(append(row, dir(edge.Down)...), dir(edge.Up)...)
+		if err := cw.Write(row); err != nil {
 			return err
 		}
 	}

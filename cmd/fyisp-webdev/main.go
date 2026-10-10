@@ -341,7 +341,7 @@ func main() {
 		d.Reports = fr
 	}
 	if !*noSpeed {
-		d.Speed = newFakeSpeed(now, *bf)
+		d.Speed = newFakeSpeed(ctx, now, *bf, log)
 	}
 	if !*noBaselines {
 		fb := newFakeBaselines(ctx, st, p, now, *bf)

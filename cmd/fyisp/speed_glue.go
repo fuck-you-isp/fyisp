@@ -4,22 +4,28 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/metrics"
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
-// speedFlag is --speedtest[=MODE][,every=DUR]: alone it means regions;
-// MODE is on (regions), regions, nearest, custom or off. Unset, the saved
-// Details choice decides (off by default).
+// speedFlag is --speedtest[=MODE][,every=DUR][,add=REGION...][,far=REGION...]:
+// alone (or on) it means speedtest.DefaultMode, or custom with
+// --speedtest-server; MODE is regions, nearby, custom or off. add= (mode
+// regions) and far= (mode nearby) take region IDs, comma-separated. Unset, the saved Details
+// choice decides (off by default).
 type speedFlag struct {
 	set   bool
 	mode  speedtest.Mode
 	every time.Duration
+	extra []string
 }
 
 func (f *speedFlag) String() string {
@@ -30,6 +36,9 @@ func (f *speedFlag) String() string {
 	if f.every > 0 {
 		s += ",every=" + f.every.String()
 	}
+	if len(f.extra) > 0 {
+		s += ",add=" + strings.Join(f.extra, ",")
+	}
 	return s
 }
 
@@ -37,46 +46,61 @@ func (f *speedFlag) IsBoolFlag() bool { return true }
 
 func (f *speedFlag) Set(v string) error {
 	*f = speedFlag{set: true}
+	regions := false
 	for _, part := range strings.Split(strings.ToLower(strings.TrimSpace(v)), ",") {
-		switch part = strings.TrimSpace(part); part {
-		case "true", "on", "":
-		case "false", "off":
-			f.mode = speedtest.ModeOff
-		case "regions", "nearest", "custom":
-			f.mode = speedtest.Mode(part)
-		default:
-			d, ok := strings.CutPrefix(part, "every=")
-			iv, err := time.ParseDuration(d)
-			if !ok || err != nil || iv <= 0 {
-				return fmt.Errorf("want regions, nearest, custom, off and/or every=<duration> (e.g. regions,every=30m)")
+		part = strings.TrimSpace(part)
+		switch {
+		case part == "true" || part == "on" || part == "":
+			f.mode, regions = "", false // checkSpeedFlags: the default mode, or custom with --speedtest-server
+		case part == "false" || part == "off":
+			f.mode, regions = speedtest.ModeOff, false
+		case part == "regions" || part == "nearby" || part == "custom":
+			f.mode, regions = speedtest.Mode(part), false
+		case strings.HasPrefix(part, "every="):
+			iv, err := time.ParseDuration(strings.TrimPrefix(part, "every="))
+			if err != nil || iv <= 0 {
+				return fmt.Errorf("bad interval in %q", part)
 			}
-			f.every = iv
+			f.every, regions = iv, false
+		case strings.HasPrefix(part, "add=") || strings.HasPrefix(part, "far="):
+			regions = true
+			f.extra = append(f.extra, part[4:])
+		case regions && !strings.Contains(part, "="):
+			f.extra = append(f.extra, part)
+		default:
+			return fmt.Errorf("want regions, nearby, custom, off, every=<duration>, add=<regions> or far=<regions> (e.g. nearby,far=us-west)")
 		}
 	}
 	return nil
 }
 
-// checkSpeedFlags settles the mode (--speedtest alone: regions, or custom
-// with --speedtest-server) and checks the servers and the interval floor.
+// checkSpeedFlags settles the mode (--speedtest alone: the default mode, or
+// custom with --speedtest-server) and checks the servers, the regions and
+// the interval floor.
 func checkSpeedFlags(c *config) error {
+	cat, err := speedtest.Builtin()
+	if err != nil {
+		return err
+	}
 	var custom []speedtest.Server
 	if c.speedServer != "" {
-		cat, err := speedtest.Builtin()
-		if err != nil {
-			return err
-		}
 		if custom, err = speedtest.Custom(c.speedServer, cat); err != nil {
 			return err
 		}
 	}
 	if c.speed.set && c.speed.mode == "" {
-		c.speed.mode = speedtest.ModeRegions
+		c.speed.mode = speedtest.DefaultMode
 		if len(custom) > 0 {
 			c.speed.mode = speedtest.ModeCustom
 		}
 	}
 	if c.speed.mode == speedtest.ModeCustom && len(custom) == 0 {
 		return fmt.Errorf("--speedtest=custom needs --speedtest-server")
+	}
+	for _, r := range c.speed.extra {
+		if !slices.ContainsFunc(cat.Regions, func(x speedtest.Region) bool { return x.ID == r }) {
+			return fmt.Errorf("--speedtest: no region %q (see the README's \"Speed tests\")", r)
+		}
 	}
 	if c.speed.every > 0 && c.speed.every < speedtest.MinInterval && !(c.speed.mode == speedtest.ModeCustom && speedtest.OwnOnly(custom)) {
 		return fmt.Errorf("--speedtest every=%s: at least %s against public servers (any interval in mode custom with only your own servers)", c.speed.every, speedtest.MinInterval)
@@ -85,27 +109,42 @@ func checkSpeedFlags(c *config) error {
 }
 
 // newSpeed sets up the speed tests: the scheduler (always present, so the
-// Details choice and Test now work; it only tests when a mode is on), the
-// load tap and the windows the mask uses.
-func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, error) {
+// Details choice, Test now and sweeps work; it schedules only when a mode
+// is on), the load tap and the windows the mask uses. path is the network
+// path (gateway, ISP edge, interface); nil: no latency under load.
+func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, func(), error) {
 	cat, err := speedtest.Builtin()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("speed test catalog: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("speed test catalog: %w", err)
 	}
-	o := speedtest.Options{Catalog: cat, Mode: c.speed.mode, Interval: c.speed.every, Store: st, Windows: &speedtest.Windows{}, Log: log,
+	o := speedtest.Options{Catalog: cat, Mode: c.speed.mode, Interval: c.speed.every, Extra: c.speed.extra, Store: st,
+		Windows: &speedtest.Windows{}, Log: log,
 		Ping: func(ctx context.Context, host string) (time.Duration, error) {
 			return probe.PingOnce(ctx, host, 2*time.Second)
 		}}
 	if c.speedServer != "" {
 		if o.Custom, err = speedtest.Custom(c.speedServer, cat); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 	o.Load = speedtest.NewLoadTap(prof, nil)
+	closer := func() {}
+	if path != nil {
+		o.Conn = func() string { return netinfo.LinkType(path().Iface) }
+		if pg, err := probe.OpenPinger(); err == nil {
+			closer = func() { _ = pg.Close() }
+			o.Prober = &speedtest.FastProber{Ping: pg.Ping, Targets: func() map[string]netip.Addr {
+				p := path()
+				return map[string]netip.Addr{speedtest.LayerEdge: p.Edge, speedtest.LayerGateway: p.Gateway}
+			}}
+		} else if log != nil {
+			log.Info("speed tests: no ICMP socket; latency under load is not measured", "err", err)
+		}
+	}
 	sm := metrics.NewSpeed()
 	mc.Register(sm)
 	o.OnResult = sm.Observe
-	return speedtest.New(o), o.Load, o.Windows, nil
+	return speedtest.New(o), o.Load, o.Windows, closer, nil
 }
 
 // maskedTrace blanks trace hop samples taken during a speed test, like

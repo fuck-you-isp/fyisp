@@ -16,6 +16,7 @@ import (
 type speedView struct {
 	Summary string
 	Pattern string
+	Finding *speedtest.Finding // where a slowdown points (public wording, hours in UTC); nil without one
 	Rows    []speedRow
 }
 
@@ -47,10 +48,9 @@ func mbps(bps float64) string {
 
 // speedNames gives region titles and public server labels (own servers
 // are "Your server": a report never shows a host).
-func speedNames() (regions map[string]string, label func(string) string) {
+func speedNames(cat *speedtest.Catalog) (regions map[string]string, label func(string) string) {
 	regions = map[string]string{}
-	cat, err := speedtest.Builtin()
-	if err != nil {
+	if cat == nil {
 		return regions, func(string) string { return "Your server" }
 	}
 	for _, x := range cat.Regions {
@@ -69,7 +69,8 @@ func (r *run) speedSection() *speedView {
 	if len(r.speed) == 0 {
 		return nil
 	}
-	titles, label := speedNames()
+	cat, _ := speedtest.Builtin()
+	titles, label := speedNames(cat)
 	var ok, busy, other int
 	groups := map[string][]model.SpeedTest{}
 	var order []string
@@ -96,11 +97,20 @@ func (r *run) speedSection() *speedView {
 	if other > 0 {
 		v.Summary += fmt.Sprintf(", %d could not reach them", other)
 	}
-	v.Summary += ". Each test is iperf3 with 8 streams, 3 to 8 seconds each way after a 1-second ramp-up."
+	v.Summary += ". Each test is iperf3 over IPv4 with 8 streams, 3 to 8 seconds each way after a ramp-up of up to 1 second, at most 200 MB." +
+		" Only scheduled tests count toward the patterns below; Test now and Test all servers do not."
 	if p := speedtest.PooledPattern(r.speed, 0); p != nil {
 		v.Pattern = strings.TrimSuffix(p.Text, ".") + fmt.Sprintf(" (%02d:00–%02d:00 UTC, every region alike).", p.DipFrom, p.DipTo)
 	} else if ok >= 48 {
 		v.Pattern = "There is no clear time-of-day pattern."
+	}
+	if cat != nil {
+		f := speedtest.FindFinding(speedtest.FindingInput{Tests: r.speed, Catalog: cat})
+		switch f.Case {
+		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer:
+			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (hours in UTC)."
+			v.Finding = &f
+		}
 	}
 	// Regions first, then the other servers.
 	slices.SortStableFunc(order, func(a, b string) int {

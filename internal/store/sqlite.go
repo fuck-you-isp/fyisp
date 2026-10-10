@@ -189,6 +189,17 @@ CREATE TABLE speedtests(
 	region          TEXT NOT NULL DEFAULT '',
 	server          TEXT NOT NULL,
 	fallback        INT  NOT NULL DEFAULT 0,
+	fallback_level  TEXT NOT NULL DEFAULT 'none',
+	entry           INT  NOT NULL DEFAULT 0,
+	capped_server   INT  NOT NULL DEFAULT 0,
+	down_short      INT  NOT NULL DEFAULT 0,
+	up_short        INT  NOT NULL DEFAULT 0,
+	down_s          REAL NOT NULL DEFAULT 0,
+	up_s            REAL NOT NULL DEFAULT 0,
+	bytes           INT  NOT NULL DEFAULT 0,
+	score_down      REAL,
+	score_up        REAL,
+	extra           TEXT,
 	port            INT  NOT NULL DEFAULT 0,
 	attempts        INT  NOT NULL DEFAULT 0,
 	down_bps        REAL,
@@ -196,9 +207,7 @@ CREATE TABLE speedtests(
 	down_retrans    INT,
 	up_retrans      INT,
 	idle_gw_ms      REAL,
-	loaded_gw_ms    REAL,
-	idle_call_ms    REAL,
-	loaded_call_ms  REAL
+	loaded_gw_ms    REAL
 );
 CREATE INDEX speedtests_start ON speedtests(start_ms);
 `,

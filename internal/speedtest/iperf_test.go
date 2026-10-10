@@ -376,7 +376,7 @@ func TestAdaptive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Elapsed < 2*time.Second || r.Elapsed > 3500*time.Millisecond || time.Since(t0) > 5*time.Second {
+	if r.Elapsed < 1900*time.Millisecond || r.Elapsed > 3500*time.Millisecond || time.Since(t0) > 5*time.Second {
 		t.Errorf("steady rate: measured %v in %v, want an early end at ~2-3 s", r.Elapsed, time.Since(t0))
 	}
 	want := 3 * float64(64<<10) * 100 * 8

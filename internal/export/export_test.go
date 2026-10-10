@@ -440,8 +440,9 @@ func TestSpeedTests(t *testing.T) {
 	re := int64(12)
 	for _, x := range []model.SpeedTest{
 		{Start: t0, End: t0.Add(23 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, Region: "uk", Server: "Clouvider-London", Port: 5203, Attempts: 2,
-			DownBps: &down, UpBps: &up, DownRetrans: &re, LoadedGatewayMs: &ms},
-		{Start: t0.Add(15 * time.Minute), End: t0.Add(15*time.Minute + 6*time.Second), Trigger: "schedule", Outcome: model.SpeedBusy, Region: "eu-central", Server: "Eranium-Amsterdam", Fallback: true, Port: 5209, Attempts: 3},
+			DownBps: &down, UpBps: &up, DownRetrans: &re, LoadedGatewayMs: &ms, FallbackLevel: "none", DownSecs: 4.2, UpSecs: 3, Bytes: 180 << 20,
+			Extra: `{"connection":"wired","latency":{"edge":{"idle_ms":8,"down":{"p50_ms":21,"p90_ms":34.5,"sent":28,"lost":1}}}}`},
+		{Start: t0.Add(15 * time.Minute), End: t0.Add(15*time.Minute + 6*time.Second), Trigger: "schedule", Outcome: model.SpeedBusy, Region: "eu-central", Server: "Eranium-Amsterdam", Fallback: true, FallbackLevel: "same_metro", Port: 5209, Attempts: 3},
 	} {
 		if err := s.SaveSpeedTest(ctx, &x); err != nil {
 			t.Fatal(err)
@@ -459,9 +460,9 @@ func TestSpeedTests(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := strings.Join([]string{
-		"id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms",
-		"1,2026-09-01T00:00:00.000Z,2026-09-01T00:00:23.000Z,schedule,ok,uk,Clouvider-London,0,5203,2,412345678.5,40000000,12,,,9.8,,",
-		"2,2026-09-01T00:15:00.000Z,2026-09-01T00:15:06.000Z,schedule,busy,eu-central,Eranium-Amsterdam,1,5209,3,,,,,,,,",
+		"id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,connection,idle_gateway_ms,loaded_gateway_ms,idle_edge_ms,down_edge_p50_ms,down_edge_p90_ms,down_edge_lost,up_edge_p50_ms,up_edge_p90_ms,up_edge_lost",
+		"1,2026-09-01T00:00:00.000Z,2026-09-01T00:00:23.000Z,schedule,ok,uk,Clouvider-London,0,none,5203,2,412345678.5,40000000,12,,4.2,3,0,0,0,188743680,,,wired,,9.8,8,21,34.5,1,,,",
+		"2,2026-09-01T00:15:00.000Z,2026-09-01T00:15:06.000Z,schedule,busy,eu-central,Eranium-Amsterdam,1,same_metro,5209,3,,,,,,,0,0,0,0,,,,,,,,,,,,",
 	}, "\n") + "\n"
 	if buf.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", buf.String(), want)

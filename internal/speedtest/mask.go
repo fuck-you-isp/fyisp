@@ -198,7 +198,8 @@ const tapKeep = idleWindow + 2*time.Minute
 // idleWindow is the span before a test whose RTTs are "idle".
 const idleWindow = 2 * time.Minute
 
-// NewLoadTap watches p's gateway (ICMP) and core call-path STUN targets.
+// NewLoadTap watches p's gateway and ISP edge (ICMP) and core call-path
+// STUN targets: their idle RTT before a test.
 func NewLoadTap(p *model.Profile, now func() time.Time) *LoadTap {
 	if now == nil {
 		now = time.Now
@@ -211,6 +212,8 @@ func NewLoadTap(p *model.Profile, now func() time.Time) *LoadTap {
 		switch {
 		case tg.Layer == model.LayerGateway:
 			t.layers[model.SeriesKey{Target: tg.Name, Kind: model.KindICMP}] = LayerGateway
+		case tg.Layer == model.LayerEdge:
+			t.layers[model.SeriesKey{Target: tg.Name, Kind: model.KindICMP}] = LayerEdge
 		case callq.IsCorePath(tg):
 			t.layers[model.SeriesKey{Target: tg.Name, Kind: model.KindUDP}] = LayerCall
 		}

@@ -7,20 +7,21 @@ sources:
 notes: >-
   Ports checked open with one TCP connect each (team lead, 2026-10-10); iperf3 tests
   confirmed where verified.iperf3 is true.
+  capacity_gbps is the link YABS's server list states (yabs.sh IPERF_LOCS labels), where it states one.
 servers:
-  - {id: Leaseweb-Amsterdam, host: speedtest.ams1.nl.leaseweb.net, ports: 5201-5210, city: Amsterdam, country: NL, geo: eu, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Amsterdam2, label: Leaseweb Amsterdam 2, host: speedtest.ams2.nl.leaseweb.net, ports: 5201-5210, city: Amsterdam, country: NL, geo: eu, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Frankfurt, host: speedtest.fra1.de.leaseweb.net, ports: 5201-5210, city: Frankfurt, country: DE, geo: eu, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-London, host: speedtest.lon12.uk.leaseweb.net, ports: 5201-5210, city: London, country: GB, geo: eu, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-NewYork, host: speedtest.nyc1.us.leaseweb.net, ports: 5201-5210, city: New York, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Washington, host: speedtest.wdc2.us.leaseweb.net, ports: 5201-5210, city: Washington, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Dallas, host: speedtest.dal13.us.leaseweb.net, ports: 5201-5210, city: Dallas, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-SanFrancisco, host: speedtest.sfo12.us.leaseweb.net, ports: 5201-5210, city: San Francisco, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-LosAngeles, host: speedtest.lax12.us.leaseweb.net, ports: 5201-5210, city: Los Angeles, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Miami, host: speedtest.mia11.us.leaseweb.net, ports: 5201-5210, city: Miami, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Chicago, host: speedtest.chi11.us.leaseweb.net, ports: 5201-5210, city: Chicago, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Montreal, host: speedtest.mtl2.ca.leaseweb.net, ports: 5201-5210, city: Montreal, country: CA, geo: na, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Singapore, host: speedtest.sin1.sg.leaseweb.net, ports: 5201-5210, city: Singapore, country: SG, geo: as, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-HongKong, host: speedtest.hkg12.hk.leaseweb.net, ports: 5201-5210, city: Hong Kong, country: HK, geo: as, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Tokyo, host: speedtest.tyo11.jp.leaseweb.net, ports: 5201-5210, city: Tokyo, country: JP, geo: as, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Leaseweb-Sydney, host: speedtest.syd12.au.leaseweb.net, ports: 5201-5210, city: Sydney, country: AU, geo: oc, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Amsterdam, host: speedtest.ams1.nl.leaseweb.net, ports: 5201-5210, city: Amsterdam, country: NL, metro: amsterdam, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Amsterdam2, label: Leaseweb Amsterdam 2, host: speedtest.ams2.nl.leaseweb.net, ports: 5201-5210, city: Amsterdam, country: NL, metro: amsterdam, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Frankfurt, host: speedtest.fra1.de.leaseweb.net, ports: 5201-5210, city: Frankfurt, country: DE, metro: frankfurt, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-London, host: speedtest.lon12.uk.leaseweb.net, ports: 5201-5210, city: London, country: GB, metro: london, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-NewYork, host: speedtest.nyc1.us.leaseweb.net, ports: 5201-5210, city: New York, country: US, metro: new-york, capacity_gbps: 10, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Washington, host: speedtest.wdc2.us.leaseweb.net, ports: 5201-5210, city: Washington, country: US, metro: washington, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Dallas, host: speedtest.dal13.us.leaseweb.net, ports: 5201-5210, city: Dallas, country: US, metro: dallas, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-SanFrancisco, host: speedtest.sfo12.us.leaseweb.net, ports: 5201-5210, city: San Francisco, country: US, metro: bay-area, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-LosAngeles, host: speedtest.lax12.us.leaseweb.net, ports: 5201-5210, city: Los Angeles, country: US, metro: los-angeles, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Miami, host: speedtest.mia11.us.leaseweb.net, ports: 5201-5210, city: Miami, country: US, metro: miami, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Chicago, host: speedtest.chi11.us.leaseweb.net, ports: 5201-5210, city: Chicago, country: US, metro: chicago, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Montreal, host: speedtest.mtl2.ca.leaseweb.net, ports: 5201-5210, city: Montreal, country: CA, metro: montreal, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Singapore, host: speedtest.sin1.sg.leaseweb.net, ports: 5201-5210, city: Singapore, country: SG, metro: singapore, capacity_gbps: 10, geo: as, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-HongKong, host: speedtest.hkg12.hk.leaseweb.net, ports: 5201-5210, city: Hong Kong, country: HK, metro: hong-kong, geo: as, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Tokyo, host: speedtest.tyo11.jp.leaseweb.net, ports: 5201-5210, city: Tokyo, country: JP, metro: tokyo, geo: as, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Leaseweb-Sydney, host: speedtest.syd12.au.leaseweb.net, ports: 5201-5210, city: Sydney, country: AU, metro: sydney, geo: oc, verified: {date: 2026-10-10, tcp: true}}

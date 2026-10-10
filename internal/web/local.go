@@ -160,11 +160,9 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/admin/session":
 		h.serveAdminSession(w, r)
 		return
-	case "/api/speed/run":
-		h.serveSpeedRun(w, r)
-		return
-	case "/api/speed/config":
-		h.serveSpeedConfig(w, r)
+	}
+	if rest, ok := strings.CutPrefix(p, "/api/speed/"); ok {
+		h.serveSpeedPOST(w, r, rest)
 		return
 	}
 	if rest, ok := strings.CutPrefix(p, "/api/annotations"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
