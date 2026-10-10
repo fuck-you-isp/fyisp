@@ -101,6 +101,23 @@ func (w *Windows) Overlaps(from, to time.Time) bool {
 	return false
 }
 
+// SweepGap is the unmasked time left between a sweep's tests, so the path
+// probes still get real samples while every server is tested.
+const SweepGap = 4 * time.Second
+
+// LastEnd is the end of the newest ended window (zero for none).
+func (w *Windows) LastEnd() time.Time {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var last time.Time
+	for _, x := range w.list {
+		if x.End.After(last) {
+			last = x.End
+		}
+	}
+	return last
+}
+
 // Running reports whether a test runs now.
 func (w *Windows) Running() bool {
 	w.mu.Lock()
