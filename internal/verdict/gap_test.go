@@ -126,3 +126,25 @@ func TestMaskedThenRealLoss(t *testing.T) {
 		})
 	}
 }
+
+// TestOutageDuringSweep: a real outage while a sweep runs. Its tests fail
+// fast, so every 6 s 2 s are masked and the 4 s between lose every probe
+// with "no network": each window is about a third masked, yet the outage is
+// no_network, not held at an early transitional kind. (Found by ux-eng.)
+func TestOutageDuringSweep(t *testing.T) {
+	h := newHarness(t)
+	h.run(3 * time.Minute)
+	h.fx = []behavior{func(_ model.Target, _ model.ProbeKind, at time.Time) (outcome, bool) {
+		if at.Sub(t0)%(6*time.Second) < 2*time.Second {
+			return outcome{lost: true, reason: model.ReasonGap}, true
+		}
+		return outcome{lost: true, reason: model.ReasonNoNetwork}, true
+	}}
+	h.run(2 * time.Minute)
+	if v := h.e.Current(); v.Kind != model.VerdictNoNetwork {
+		t.Fatalf("verdict %+v, want no_network", v)
+	}
+	if in := h.st.all(); len(in) == 0 || in[len(in)-1].Kind != model.VerdictNoNetwork || !in[len(in)-1].End.IsZero() {
+		t.Fatalf("incidents %+v", in)
+	}
+}
