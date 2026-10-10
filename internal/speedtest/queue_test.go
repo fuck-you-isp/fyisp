@@ -750,6 +750,22 @@ func TestQueuePauseNotCharged(t *testing.T) {
 	}
 }
 
+// TestQueueEstimatesSweepPause: a sweep's estimates include the pause
+// before each of its tests.
+func TestQueueEstimatesSweepPause(t *testing.T) {
+	q, _ := newQueueHarness(t, func(o *QueueOptions) { o.EstSweepPause = 6 * time.Second })
+	now := q.o.Now()
+	sw, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	one, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner})
+	x, _ := q.Get(sw.ID)
+	if want := now.Add(3 * (EstJob + 6*time.Second)); !x.EstFinish.Equal(want) {
+		t.Errorf("sweep finishes %v, want %v", x.EstFinish, want)
+	}
+	if y, _ := q.Get(one.ID); !y.EstStart.Equal(x.EstFinish) || !y.EstFinish.Equal(x.EstFinish.Add(EstJob)) {
+		t.Errorf("single %v–%v after the sweep's %v", y.EstStart, y.EstFinish, x.EstFinish)
+	}
+}
+
 // TestBudgetChargesTheWire: a share-link test against a real (fake) iperf3
 // server charges the budget at least every byte the server moved, both
 // directions, ramp-up included.
