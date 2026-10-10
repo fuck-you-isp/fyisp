@@ -91,6 +91,9 @@ type server struct {
 	cache  *respCache      // public only
 	hcache *respCache      // /api/home?part=history, local and public
 	inv    *Investigations // on-demand traces (Deps.Investigations, shared)
+	// canControl reports whether r may use the write routes (local only;
+	// api/speed's "configurable").
+	canControl func(r *http.Request) bool
 }
 
 func newServer(d Deps, public bool, token string) *server {
@@ -129,6 +132,7 @@ const (
 	routeOverview
 	routeCalls
 	routeHome
+	routeSpeed
 )
 
 func lookup(rel string) route {
@@ -163,6 +167,8 @@ func lookup(rel string) route {
 		return routeCalls
 	case "api/home":
 		return routeHome
+	case "api/speed":
+		return routeSpeed
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -221,6 +227,8 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveCalls(w, r)
 	case routeHome:
 		s.serveHome(w, r)
+	case routeSpeed:
+		s.serveSpeed(w, r)
 	case routeTrace, routeTracePanel, routeRouteChanges:
 		switch {
 		case s.d.Trace == nil:

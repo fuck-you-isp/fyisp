@@ -177,6 +177,29 @@ CREATE TABLE reports(
 );
 CREATE INDEX reports_created ON reports(created_ms);
 `,
+	// v5 (fyisp v1.1): speed test results (see speedtests.go). Settings
+	// changed in the dashboard live in meta (key 'setting:<name>').
+	`
+CREATE TABLE speedtests(
+	id              INTEGER PRIMARY KEY,
+	start_ms        INT  NOT NULL,
+	end_ms          INT  NOT NULL,
+	trigger         TEXT NOT NULL,
+	outcome         TEXT NOT NULL,
+	server          TEXT NOT NULL,
+	port            INT  NOT NULL DEFAULT 0,
+	attempts        INT  NOT NULL DEFAULT 0,
+	down_bps        REAL,
+	up_bps          REAL,
+	down_retrans    INT,
+	up_retrans      INT,
+	idle_gw_ms      REAL,
+	loaded_gw_ms    REAL,
+	idle_call_ms    REAL,
+	loaded_call_ms  REAL
+);
+CREATE INDEX speedtests_start ON speedtests(start_ms);
+`,
 }
 
 // SchemaVersion is the schema version this build writes.

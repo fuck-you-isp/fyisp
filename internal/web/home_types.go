@@ -62,6 +62,15 @@ type HomeLive struct {
 	// call (they have no note of their own).
 	AppsNote string     `json:"apps_note,omitempty"`
 	Steps    []HomeStep `json:"steps,omitempty"` // warming up only
+	// Speed is a clear time-of-day pattern in the speed tests (see
+	// docs/SPEEDTEST-API.md), nil without one.
+	Speed *HomeSpeed `json:"speed,omitempty"`
+}
+
+// HomeSpeed is Home's one line about speed.
+type HomeSpeed struct {
+	Text  string `json:"text"`
+	Level string `json:"level"` // info
 }
 
 // HomeAnswer is the one answer at the top of Home.

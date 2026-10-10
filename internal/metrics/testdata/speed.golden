@@ -1,0 +1,19 @@
+# HELP fyisp_speed_download_bits_per_second Download speed of the latest speed test against this server that measured it (iperf3, 8 streams, the first second left out).
+# TYPE fyisp_speed_download_bits_per_second gauge
+fyisp_speed_download_bits_per_second{server="Clouvider-London"} 4.12e+08
+fyisp_speed_download_bits_per_second{server="Eranium-Amsterdam"} 3.9e+08
+# HELP fyisp_speed_loaded_rtt_seconds Latency under load of the latest speed test against this server: the median RTT to the gateway or the call path in the 2 minutes before the test (load="idle") and during it (load="loaded").
+# TYPE fyisp_speed_loaded_rtt_seconds gauge
+fyisp_speed_loaded_rtt_seconds{layer="call",load="idle",server="Clouvider-London"} 0.014
+fyisp_speed_loaded_rtt_seconds{layer="call",load="loaded",server="Clouvider-London"} 0.061
+fyisp_speed_loaded_rtt_seconds{layer="gateway",load="idle",server="Clouvider-London"} 0.0012
+fyisp_speed_loaded_rtt_seconds{layer="gateway",load="loaded",server="Clouvider-London"} 0.0095
+# HELP fyisp_speed_tests_total Speed tests since start by server and outcome (ok, busy: the server was running another test, unreachable, failed).
+# TYPE fyisp_speed_tests_total counter
+fyisp_speed_tests_total{outcome="busy",server="Clouvider-London"} 1
+fyisp_speed_tests_total{outcome="failed",server="Eranium-Amsterdam"} 1
+fyisp_speed_tests_total{outcome="ok",server="Clouvider-London"} 1
+fyisp_speed_tests_total{outcome="unreachable",server=""} 1
+# HELP fyisp_speed_upload_bits_per_second Upload speed of the latest speed test against this server that measured it.
+# TYPE fyisp_speed_upload_bits_per_second gauge
+fyisp_speed_upload_bits_per_second{server="Clouvider-London"} 4.1e+07

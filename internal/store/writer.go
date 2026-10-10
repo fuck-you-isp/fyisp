@@ -865,7 +865,7 @@ func (s *SQLite) flushFailed(items []*flushItem, err error) error {
 }
 
 // Prune deletes every hour that ends at or before `before` (and incidents
-// that ended, route changes that happened, annotations that ended and hop
+// that ended, route changes that happened, annotations and speed tests that ended and hop
 // addresses last seen before the first kept hour; never reports), returns the free pages to the OS
 // (incremental_vacuum) and truncates the WAL.
 //
@@ -951,6 +951,9 @@ func (s *SQLite) prune(ctx context.Context, hour int64) error {
 	// first kept hour. Reports are user-created snapshots and are never
 	// pruned by retention (SaveReport caps their number instead).
 	if _, err := tx.ExecContext(ctx, `DELETE FROM annotations WHERE coalesce(end_ms, at_ms) < ?`, hour*hourMs); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM speedtests WHERE end_ms < ?`, hour*hourMs); err != nil {
 		return err
 	}
 	day := hour / 24

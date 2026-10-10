@@ -71,7 +71,10 @@ type Deps struct {
 	// region from the name's CNAME and address-change epochs (the probe
 	// runner: probe.Runner implements probe.UDPStateSource).
 	UDP probe.UDPStateSource
-	Log *slog.Logger
+	// Speed runs the speed tests (speedtest.Scheduler); nil: the speed
+	// routes answer 404 and the UI hides Speed.
+	Speed SpeedSource
+	Log   *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }

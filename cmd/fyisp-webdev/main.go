@@ -191,6 +191,7 @@ func main() {
 	noNotes := flag.Bool("no-notes", false, "run without an annotation store (notes hidden)")
 	noReports := flag.Bool("no-reports", false, "run without reports")
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
+	noSpeed := flag.Bool("no-speed", false, "run without speed tests (Speed hidden)")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
 	home := flag.String("home", "", "a Home scenario instead of the fake probes and verdict (the real /api/home over its data): "+strings.Join(homescen.Names, ", "))
@@ -339,6 +340,9 @@ func main() {
 			}
 		}
 		d.Reports = fr
+	}
+	if !*noSpeed {
+		d.Speed = newFakeSpeed(now, *bf)
 	}
 	if !*noBaselines {
 		fb := newFakeBaselines(ctx, st, p, now, *bf)
