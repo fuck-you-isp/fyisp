@@ -1236,7 +1236,8 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-cmp li.dips .sp-cmp-word { font-weight: 600; }
 .sp-cmp-bars { display: flex; flex-direction: column; gap: 2px; }
 .sp-bar-day, .sp-bar-dip { display: block; height: 6px; border-radius: 3px; background: var(--hm3); flex: none; }
-.sp-cmp-row { display: flex; align-items: center; gap: 6px; }
+.sp-cmp-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sp-cmp-track { flex: 1; min-width: 0; }
 .sp-cmp-l { flex: none; width: 7.5em; font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-bar-dip { background: var(--hm5); }
 .sp-cmp-val { font-variant-numeric: tabular-nums; color: var(--ink-2); }

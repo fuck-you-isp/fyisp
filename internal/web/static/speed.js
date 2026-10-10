@@ -146,7 +146,7 @@ export class Speed {
         ? `Your test used about ${bytes(this.perTest)}.`
         : `Done: ${t.label}, ${mbps(t.down_bps)} down${up}${pct}.${t.up_bps == null ? ' The upload didn’t finish.' : ''}${fb ? ' ' + fb : ''}`;
     } else {
-      this.result = t.outcome === 'busy' ? 'That server is busy with someone else’s test. We tried 3 times.'
+      this.result = t.outcome === 'cancelled' ? 'The test was cancelled.' : t.outcome === 'busy' ? 'That server is busy with someone else’s test. We tried 3 times.'
         : t.outcome === 'unreachable' ? 'That server didn’t answer.' : 'The test didn’t finish.';
     }
     this.say.textContent = this.result;
@@ -391,7 +391,7 @@ export class Speed {
     if (t) {
       const region = t.region ? d.regions.find((r) => r.id === t.region)?.title : '';
       const res = t.outcome === 'ok' ? `${mbps(t.down_bps)} down, ${mbps(t.up_bps)} up`
-        : t.outcome === 'busy' ? 'server busy' : t.outcome === 'unreachable' ? 'didn’t answer' : 'didn’t finish';
+        : t.outcome === 'busy' ? 'server busy' : t.outcome === 'unreachable' ? 'didn’t answer' : t.outcome === 'cancelled' ? 'cancelled' : 'didn’t finish';
       lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)}${zoneSuffix()} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
     }
     if (d.enabled && d.masked_share_24h > 0) {

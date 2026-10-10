@@ -95,6 +95,7 @@ function resultWord(t) {
   if (t.outcome === 'busy') return 'Server busy';
   if (t.outcome === 'unreachable') return 'Didn’t answer';
   if (t.outcome === 'failed') return 'Didn’t finish';
+  if (t.outcome === 'cancelled') return 'Cancelled';
   const bits = [t.fallback_level === 'nearby_city' ? 'Backup city ◤' : t.fallback ? 'Backup server ◤' : 'OK'];
   if (t.capped_by_server) bits.push('limited by server ⊘');
   return bits.join(' · ');
@@ -498,7 +499,8 @@ export class SpeedMap {
       const dips = b != null && b <= a * 0.75;
       const name = servers.get(id)?.label || id;
       const text = b != null ? `${name}: ${pct(a)} by day, ${pct(b)} from ${dipWord}, ${dips ? 'dips' : 'no dip'}` : `${name}: usually ${pct(a)} of normal`;
-      const bar = (/** @type {number} */ x, /** @type {string} */ c) => { const s = h('span', { class: 'sp-bar-' + c }); s.style.width = `${Math.min(100, Math.round(x * 100))}%`; return s; };
+      // The bar sits in a track beside its label, so its width is a share of the track, never more.
+      const bar = (/** @type {number} */ x, /** @type {string} */ c) => { const s = h('span', { class: 'sp-bar-' + c }); s.style.width = `${Math.min(100, Math.round(x * 100))}%`; return h('span', { class: 'sp-cmp-track' }, s); };
       const lk = look.get(id);
       const sw = h('span', { class: 'sp-shape', 'aria-hidden': 'true', text: lk ? SHAPE_CHAR[/** @type {'circle'} */ (lk.shape)] : '' });
       if (lk) sw.style.color = lk.color;
@@ -528,7 +530,8 @@ export class SpeedMap {
     const d = /** @type {SpeedSummary} */ (this.d);
     const best = v.row.best_down_bps || 0;
     let list = [...v.tests].reverse();
-    if (this.problems) list = list.filter((t) => t.outcome !== 'ok' || t.fallback);
+    // A test the owner stopped isn't a problem with the line.
+    if (this.problems) list = list.filter((t) => (t.outcome !== 'ok' && t.outcome !== 'cancelled') || t.fallback);
     const shown = list.slice(0, this.shown);
     const regionTitle = (/** @type {string|null} */ id) => (id ? d.regions.find((r) => r.id === id)?.title || id : '');
     const rows = shown.map((t) => {
