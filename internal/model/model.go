@@ -363,7 +363,7 @@ type SpeedTest struct {
 	ID      int64     `json:"id"`
 	Start   time.Time `json:"start"`
 	End     time.Time `json:"end"`
-	Trigger string    `json:"trigger"` // "schedule" or "manual"
+	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now) or "sweep"
 	Outcome string    `json:"outcome"`
 	// Region is the catalog region the test was for ("" outside mode
 	// regions); Server the server actually used: a catalog ID, or host:port
@@ -385,3 +385,8 @@ type SpeedTest struct {
 	IdleCallMs      *float64 `json:"idle_call_ms"`
 	LoadedCallMs    *float64 `json:"loaded_call_ms"`
 }
+
+// OnDemand reports a test someone asked for (Test now, a sweep) rather than
+// a schedule slot: patterns leave these out (they cluster at the hours
+// people look, and sweeps hit every server at once).
+func (t SpeedTest) OnDemand() bool { return t.Trigger == "manual" || t.Trigger == "sweep" }

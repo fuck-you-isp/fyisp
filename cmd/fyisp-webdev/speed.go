@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"time"
 
@@ -16,7 +16,8 @@ import (
 // range (2 to 30 days). Speed falls with distance (Europe fastest), every
 // region is ~40% slower 19-23 local server time, first choices are busy
 // now and then (fallback, or busy when the whole chain is), and loaded
-// latency is stored. Test now runs a 20 s fake test.
+// latency is stored. Queued tests (Test now, sweeps) run 18 s fake tests
+// through the real queue.
 type fakeSpeed struct {
 	mu    sync.Mutex
 	cat   *speedtest.Catalog
@@ -25,6 +26,7 @@ type fakeSpeed struct {
 	run   *speedtest.RunState
 	tests []model.SpeedTest
 	r     *rand.Rand
+	q     *speedtest.Queue
 }
 
 // regionBase is each region's typical download from the fake vantage
@@ -38,6 +40,7 @@ func newFakeSpeed(now time.Time, bf time.Duration) *fakeSpeed {
 		panic(err)
 	}
 	f := &fakeSpeed{cat: cat, mode: speedtest.ModeRegions, next: now.Add(37 * time.Second), r: rand.New(rand.NewPCG(3, 4))}
+	f.q = speedtest.NewQueue(speedtest.QueueOptions{Resolve: f.resolve, Exec: f.exec, Live: f.live})
 	span := min(max(bf, 2*24*time.Hour), 30*24*time.Hour)
 	spacing := 15 * time.Minute / time.Duration(len(cat.Regions))
 	for cycle := now.Add(-span).Truncate(15 * time.Minute); cycle.Before(now.Add(-15 * time.Minute)); cycle = cycle.Add(15 * time.Minute) {
@@ -120,39 +123,80 @@ func (f *fakeSpeed) SpeedTests(_ context.Context, from, to time.Time) ([]model.S
 	return out, nil
 }
 
-// TestNow walks through download (9 s) and upload (9 s) of a region (or
-// the UK): id may be a region or server ID.
-func (f *fakeSpeed) TestNow(id string) (time.Time, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.run != nil {
-		return time.Time{}, speedtest.ErrRunning
+// Queue is the real speed-test queue over a fake test: each job walks
+// through download (9 s) and upload (9 s) and stores a synthetic result.
+func (f *fakeSpeed) Queue() *speedtest.Queue { return f.q }
+
+// resolve turns queue requests into jobs: a region (or the first), a
+// server, or every server for a sweep.
+func (f *fakeSpeed) resolve(kind speedtest.Kind, id string) ([]speedtest.Job, error) {
+	if kind == speedtest.KindSweep {
+		var out []speedtest.Job
+		for _, sv := range f.cat.Servers {
+			out = append(out, speedtest.Job{Chain: []speedtest.Server{sv}})
+		}
+		return out, nil
 	}
-	reg := f.cat.Regions[0]
+	if id == "" {
+		reg := f.cat.Regions[0]
+		sv, _ := f.cat.Server(reg.Chain[0])
+		return []speedtest.Job{{Region: reg.ID, Chain: []speedtest.Server{sv}}}, nil
+	}
 	for _, r := range f.cat.Regions {
 		if r.ID == id {
-			reg = r
+			sv, _ := f.cat.Server(r.Chain[0])
+			return []speedtest.Job{{Region: r.ID, Chain: []speedtest.Server{sv}}}, nil
 		}
 	}
-	if _, ok := f.cat.Server(id); id != "" && reg.ID != id && !ok {
-		return time.Time{}, errors.New("no server or region " + id)
+	if sv, ok := f.cat.Server(id); ok {
+		return []speedtest.Job{{Chain: []speedtest.Server{sv}}}, nil
+	}
+	return nil, speedtest.ErrUnknownID
+}
+
+// exec fakes one test (18 s), or stops early when cancelled.
+func (f *fakeSpeed) exec(ctx context.Context, j speedtest.Job, trigger string) (int64, bool) {
+	reg := speedtest.Region{ID: j.Region, Chain: []string{j.Chain[0].ID}}
+	if reg.ID == "" {
+		reg.ID = "uk" // speeds of a near server
+		for _, r := range f.cat.Regions {
+			if slices.Contains(r.Chain, j.Chain[0].ID) {
+				reg.ID = r.ID
+			}
+		}
 	}
 	now := time.Now()
-	f.run = &speedtest.RunState{Started: now, ExpectedEnd: now.Add(20 * time.Second), Direction: "download", Server: reg.Chain[0], Region: reg.ID}
-	time.AfterFunc(9*time.Second, func() {
+	f.mu.Lock()
+	f.run = &speedtest.RunState{Started: now, ExpectedEnd: now.Add(20 * time.Second), Direction: "download", Server: j.Chain[0].ID, Region: j.Region}
+	f.mu.Unlock()
+	defer func() { f.mu.Lock(); f.run = nil; f.mu.Unlock() }()
+	for _, step := range []string{"download", "upload"} {
 		f.mu.Lock()
-		defer f.mu.Unlock()
-		if f.run != nil {
-			f.run.Direction = "upload"
+		f.run.Direction = step
+		f.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return 0, false
+		case <-time.After(9 * time.Second):
 		}
-	})
-	time.AfterFunc(18*time.Second, func() {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		f.tests = append(f.tests, f.result(now, reg, "manual"))
-		f.run = nil
-	})
-	return now, nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t := f.result(now, reg, trigger)
+	if j.Region == "" {
+		t.Region = ""
+	}
+	f.tests = append(f.tests, t)
+	return t.ID, true
+}
+
+func (f *fakeSpeed) live() (string, string, time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.run == nil {
+		return "", "", time.Time{}
+	}
+	return f.run.Direction, f.run.Server, f.run.ExpectedEnd
 }
 
 func (f *fakeSpeed) SetMode(_ context.Context, m speedtest.Mode) (time.Time, error) {

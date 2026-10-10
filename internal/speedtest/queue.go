@@ -1,0 +1,529 @@
+package speedtest
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"slices"
+	"sync"
+	"time"
+)
+
+// The speed-test queue: every test (Test now, a sweep of every server,
+// scheduled slots) waits in one process-wide FIFO and exactly one runs at a
+// time. The owner's requests go ahead of the share link's (never pre-empting
+// the running test); the share link's are capped. See docs/SPEEDTEST-API.md.
+
+// Kind is what an entry tests.
+type Kind string
+
+const (
+	KindSingle    Kind = "single"    // one server, one region's chain, or the nearest servers
+	KindSweep     Kind = "sweep"     // every server, one test each
+	KindScheduled Kind = "scheduled" // a schedule slot
+)
+
+// Who asked for an entry.
+type Who string
+
+const (
+	WhoOwner    Who = "owner"    // the local dashboard
+	WhoPublic   Who = "public"   // the share link
+	WhoSchedule Who = "schedule" // the schedule
+)
+
+// Entry states.
+const (
+	StateWaiting   = "waiting"
+	StateRunning   = "running"
+	StateDone      = "done"
+	StateCancelled = "cancelled"
+	StateDropped   = "dropped" // a scheduled slot that waited too long
+)
+
+// Queue limits.
+const (
+	// MaxPublicWaiting bounds the share link's waiting entries in all;
+	// a visitor may have one waiting, and at most MaxPublicSweeps of them
+	// may be sweeps.
+	MaxPublicWaiting = 12
+	MaxPublicSweeps  = 3
+	// ScheduledStale: a scheduled slot still waiting this long is dropped
+	// (the schedule never stacks; the next slot comes anyway).
+	ScheduledStale = 10 * time.Minute
+	// KeepFinished is how long a finished entry can be polled by id.
+	KeepFinished = time.Hour
+	// EstJob is a typical test, for the queue's estimates.
+	EstJob = EstTestTime + 5*time.Second
+)
+
+// Job is one test: a region's chain, one server, or (no chain) the nearest
+// servers.
+type Job struct {
+	Region string
+	Chain  []Server
+}
+
+// Request asks for an entry. Target is a server or region ID ("" with
+// KindSingle: the nearest servers). Visitor is the share link's per-client
+// key (never shown).
+type Request struct {
+	Kind    Kind
+	Target  string
+	Who     Who
+	Visitor string
+}
+
+// Entry is a snapshot of one queue entry.
+type Entry struct {
+	ID        uint64
+	Kind      Kind
+	Who       Who
+	Visitor   string // the share link's client key; never shown
+	Target    string // a server or region ID; "" for the nearest, a sweep or a slot
+	State     string
+	Position  int // waiting: 1 is next; 0 otherwise
+	Enqueued  time.Time
+	Started   time.Time
+	Finished  time.Time
+	EstStart  time.Time
+	EstFinish time.Time
+	Step      int // the test running or last run, 1-based
+	Steps     int
+	Server    string // running: the server under test
+	Direction string // running: picking, download, upload
+	Tests     []int64
+}
+
+// Refusals.
+var (
+	ErrQueueFull = errors.New("the queue is full")
+	ErrUnknownID = errors.New("no such server or region")
+	ErrNoEntry   = errors.New("no such queue entry")
+)
+
+// QueueFullError says why the share link may not add an entry.
+type QueueFullError struct{ Reason string }
+
+func (e *QueueFullError) Error() string { return e.Reason }
+func (e *QueueFullError) Unwrap() error { return ErrQueueFull }
+
+// QueueOptions configure a Queue.
+type QueueOptions struct {
+	// Resolve turns a request into its tests: single (a server, a region's
+	// chain, "" for the nearest), sweep (every server), scheduled (filled
+	// in by EnqueueScheduled). An unknown ID is ErrUnknownID.
+	Resolve func(kind Kind, id string) ([]Job, error)
+	// Exec runs one test with trigger ("manual", "sweep" or "schedule")
+	// and returns the stored test's ID, if one was saved. It must return
+	// promptly once ctx ends.
+	Exec func(ctx context.Context, j Job, trigger string) (id int64, saved bool)
+	// Live reports the running test's direction and server (optional).
+	Live func() (direction, server string, expectedEnd time.Time)
+	Log  *slog.Logger
+	Now  func() time.Time
+}
+
+type qentry struct {
+	Entry
+	jobs   []Job
+	cancel context.CancelFunc
+}
+
+// Queue runs speed tests one at a time, in order.
+type Queue struct {
+	o    QueueOptions
+	wake chan struct{}
+
+	mu        sync.Mutex
+	nextID    uint64
+	waiting   []*qentry
+	running   *qentry
+	finished  map[uint64]*qentry
+	lastSweep *qentry
+}
+
+// NewQueue returns a Queue; Run drives it.
+func NewQueue(o QueueOptions) *Queue {
+	if o.Log == nil {
+		o.Log = slog.Default()
+	}
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+	return &Queue{o: o, wake: make(chan struct{}, 1), finished: map[uint64]*qentry{}}
+}
+
+func (q *Queue) poke() {
+	select {
+	case q.wake <- struct{}{}:
+	default:
+	}
+}
+
+func trigger(k Kind) string {
+	switch k {
+	case KindSweep:
+		return "sweep"
+	case KindScheduled:
+		return "schedule"
+	}
+	return "manual"
+}
+
+// same reports an equivalent request from the same requester (the owner,
+// the schedule, or one share-link visitor): asking again returns the entry.
+// Different visitors get entries of their own (the caps bound them).
+func (e *qentry) same(r Request) bool {
+	if e.Kind != r.Kind || e.Who != r.Who || (r.Who == WhoPublic && e.Visitor != r.Visitor) {
+		return false
+	}
+	return e.Kind != KindSingle || e.Target == r.Target
+}
+
+// Enqueue adds a request, or returns the same requester's equivalent entry
+// already queued or running (duplicate). The owner's entries go after the
+// owner's waiting ones and ahead of everyone else's. The share link's are
+// refused with a *QueueFullError when the visitor already has one
+// waiting, when MaxPublicSweeps sweeps or MaxPublicWaiting entries are
+// waiting.
+func (q *Queue) Enqueue(r Request) (Entry, bool, error) {
+	if r.Kind != KindSingle && r.Kind != KindSweep {
+		return Entry{}, false, fmt.Errorf("speed test queue: kind %q", r.Kind)
+	}
+	if r.Kind == KindSweep {
+		r.Target = ""
+	}
+	jobs, err := q.o.Resolve(r.Kind, r.Target)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
+	if e := q.running; e != nil && e.same(r) {
+		return q.snapshotLocked(e, now), true, nil
+	}
+	for _, e := range q.waiting {
+		if e.same(r) {
+			return q.snapshotLocked(e, now), true, nil
+		}
+	}
+	if err := q.capsLocked(r); err != nil {
+		return Entry{}, false, err
+	}
+	q.nextID++
+	e := &qentry{Entry: Entry{ID: q.nextID, Kind: r.Kind, Who: r.Who, Visitor: r.Visitor, Target: r.Target,
+		State: StateWaiting, Enqueued: now, Steps: len(jobs)}, jobs: jobs}
+	if r.Who != WhoPublic {
+		e.Visitor = ""
+	}
+	q.insertLocked(e)
+	q.poke()
+	return q.snapshotLocked(e, now), false, nil
+}
+
+// capsLocked applies the share link's caps to a new entry. q.mu is held.
+func (q *Queue) capsLocked(r Request) error {
+	if r.Who != WhoPublic {
+		return nil
+	}
+	pub, sweeps := 0, 0
+	for _, e := range q.waiting {
+		if e.Who != WhoPublic {
+			continue
+		}
+		pub++
+		if e.Kind == KindSweep {
+			sweeps++
+		}
+		if e.Visitor == r.Visitor {
+			return &QueueFullError{"you already have a test waiting"}
+		}
+	}
+	switch {
+	case pub >= MaxPublicWaiting:
+		return &QueueFullError{"the queue is full"}
+	case r.Kind == KindSweep && sweeps >= MaxPublicSweeps:
+		return &QueueFullError{"enough full sweeps are already waiting"}
+	}
+	return nil
+}
+
+// Admit says what Enqueue would do with r right now: return an existing
+// entry (dup), refuse it (a *QueueFullError), or add it (neither). The
+// share link asks first, so a refusal or a duplicate never counts as a
+// new start against its per-client limits.
+func (q *Queue) Admit(r Request) (dup bool, err error) {
+	if r.Kind == KindSweep {
+		r.Target = ""
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if (q.running != nil && q.running.same(r)) || slices.ContainsFunc(q.waiting, func(e *qentry) bool { return e.same(r) }) {
+		return true, nil
+	}
+	return false, q.capsLocked(r)
+}
+
+// EnqueueScheduled adds a schedule slot, unless one is already waiting (the
+// schedule never stacks). It reports whether it was added.
+func (q *Queue) EnqueueScheduled(j Job) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, e := range q.waiting {
+		if e.Kind == KindScheduled {
+			return false
+		}
+	}
+	q.nextID++
+	q.insertLocked(&qentry{Entry: Entry{ID: q.nextID, Kind: KindScheduled, Who: WhoSchedule, State: StateWaiting,
+		Enqueued: q.o.Now(), Steps: 1}, jobs: []Job{j}})
+	q.poke()
+	return true
+}
+
+// insertLocked places e: the owner's after the owner's waiting entries,
+// everyone else's at the end.
+func (q *Queue) insertLocked(e *qentry) {
+	if e.Who != WhoOwner {
+		q.waiting = append(q.waiting, e)
+		return
+	}
+	i := 0
+	for i < len(q.waiting) && q.waiting[i].Who == WhoOwner {
+		i++
+	}
+	q.waiting = slices.Insert(q.waiting, i, e)
+}
+
+// finishLocked moves e to the finished entries in state st.
+func (q *Queue) finishLocked(e *qentry, st string, now time.Time) {
+	e.State, e.Finished, e.cancel = st, now, nil
+	q.finished[e.ID] = e
+	for id, f := range q.finished {
+		if now.Sub(f.Finished) >= KeepFinished {
+			delete(q.finished, id)
+		}
+	}
+}
+
+// Cancel cancels a waiting or running entry (the owner's control).
+func (q *Queue) Cancel(id uint64) (Entry, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
+	if e := q.running; e != nil && e.ID == id {
+		e.State = StateCancelled // the runner finishes it once the test returns
+		if e.cancel != nil {
+			e.cancel()
+		}
+		return q.snapshotLocked(e, now), nil
+	}
+	for i, e := range q.waiting {
+		if e.ID == id {
+			q.waiting = slices.Delete(q.waiting, i, i+1)
+			q.finishLocked(e, StateCancelled, now)
+			return q.snapshotLocked(e, now), nil
+		}
+	}
+	if e, ok := q.finished[id]; ok {
+		return q.snapshotLocked(e, now), nil
+	}
+	return Entry{}, ErrNoEntry
+}
+
+// ClearPublic cancels every waiting share-link entry and returns how many.
+func (q *Queue) ClearPublic() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
+	n := 0
+	q.waiting = slices.DeleteFunc(q.waiting, func(e *qentry) bool {
+		if e.Who != WhoPublic {
+			return false
+		}
+		q.finishLocked(e, StateCancelled, now)
+		n++
+		return true
+	})
+	return n
+}
+
+// dropStaleLocked drops scheduled slots that waited ScheduledStale.
+func (q *Queue) dropStaleLocked(now time.Time) {
+	q.waiting = slices.DeleteFunc(q.waiting, func(e *qentry) bool {
+		if e.Kind == KindScheduled && now.Sub(e.Enqueued) >= ScheduledStale {
+			q.finishLocked(e, StateDropped, now)
+			q.o.Log.Info("speed test: dropped a scheduled test that waited too long")
+			return true
+		}
+		return false
+	})
+}
+
+// Run executes entries one at a time until ctx ends.
+func (q *Queue) Run(ctx context.Context) {
+	for {
+		q.mu.Lock()
+		now := q.o.Now()
+		q.dropStaleLocked(now)
+		var e *qentry
+		if len(q.waiting) > 0 {
+			e = q.waiting[0]
+			q.waiting = q.waiting[1:]
+			e.State, e.Started = StateRunning, now
+			q.running = e
+		}
+		var ectx context.Context
+		if e != nil {
+			ectx, e.cancel = context.WithCancel(ctx)
+		}
+		q.mu.Unlock()
+		if e != nil {
+			q.execute(ectx, e)
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-q.wake:
+		case <-time.After(time.Minute): // stale slots are dropped even when idle
+		}
+	}
+}
+
+func (q *Queue) execute(ctx context.Context, e *qentry) {
+	for i, j := range e.jobs {
+		if ctx.Err() != nil {
+			break
+		}
+		q.mu.Lock()
+		e.Step = i + 1
+		q.mu.Unlock()
+		id, saved := q.o.Exec(ctx, j, trigger(e.Kind))
+		if saved {
+			q.mu.Lock()
+			e.Tests = append(e.Tests, id)
+			q.mu.Unlock()
+		}
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	cancel := e.cancel
+	st := StateDone
+	if e.State == StateCancelled || ctx.Err() != nil {
+		st = StateCancelled
+	}
+	q.running = nil
+	q.finishLocked(e, st, q.o.Now())
+	if e.Kind == KindSweep && st == StateDone {
+		q.lastSweep = e
+	}
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// QueueState is the queue for the API.
+type QueueState struct {
+	Running   *Entry
+	Waiting   []Entry
+	LastSweep *Entry
+	// PublicWaiting and PublicSweeps count the share link's waiting
+	// entries; Full and SweepsFull say whether it may add more.
+	PublicWaiting, PublicSweeps int
+	Full, SweepsFull            bool
+}
+
+// State reports the running entry, the waiting ones in order with their
+// estimates, and the last finished sweep.
+func (q *Queue) State() QueueState {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
+	var st QueueState
+	if q.running != nil {
+		e := q.snapshotLocked(q.running, now)
+		st.Running = &e
+	}
+	for _, e := range q.waiting {
+		st.Waiting = append(st.Waiting, q.snapshotLocked(e, now))
+		if e.Who == WhoPublic {
+			st.PublicWaiting++
+			if e.Kind == KindSweep {
+				st.PublicSweeps++
+			}
+		}
+	}
+	st.Full = st.PublicWaiting >= MaxPublicWaiting
+	st.SweepsFull = st.PublicSweeps >= MaxPublicSweeps
+	if q.lastSweep != nil {
+		e := q.snapshotLocked(q.lastSweep, now)
+		st.LastSweep = &e
+	}
+	return st
+}
+
+// Get returns an entry by id: waiting, running, or finished less than
+// KeepFinished ago.
+func (q *Queue) Get(id uint64) (Entry, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
+	if e := q.running; e != nil && e.ID == id {
+		return q.snapshotLocked(e, now), true
+	}
+	for _, e := range q.waiting {
+		if e.ID == id {
+			return q.snapshotLocked(e, now), true
+		}
+	}
+	if e, ok := q.finished[id]; ok && now.Sub(e.Finished) < KeepFinished {
+		return q.snapshotLocked(e, now), true
+	}
+	return Entry{}, false
+}
+
+// runningLeftLocked estimates the running entry's remaining time.
+func (q *Queue) runningLeftLocked(now time.Time) time.Duration {
+	e := q.running
+	if e == nil {
+		return 0
+	}
+	left := time.Duration(max(e.Steps-e.Step, 0)) * EstJob
+	cur := EstJob
+	if q.o.Live != nil {
+		if _, _, end := q.o.Live(); !end.IsZero() {
+			cur = max(end.Sub(now), 0)
+		}
+	}
+	return left + cur
+}
+
+// snapshotLocked copies e with its position, estimates and live detail.
+func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
+	out := e.Entry
+	out.Tests = slices.Clone(e.Tests)
+	switch e.State {
+	case StateRunning:
+		out.EstStart = e.Started
+		out.EstFinish = now.Add(q.runningLeftLocked(now))
+		if q.o.Live != nil {
+			out.Direction, out.Server, _ = q.o.Live()
+		}
+	case StateWaiting:
+		at := now.Add(q.runningLeftLocked(now))
+		for i, w := range q.waiting {
+			if w == e {
+				out.Position = i + 1
+				break
+			}
+			at = at.Add(time.Duration(max(w.Steps, 1)) * EstJob)
+		}
+		out.EstStart = at
+		out.EstFinish = at.Add(time.Duration(max(e.Steps, 1)) * EstJob)
+	}
+	return out
+}

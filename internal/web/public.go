@@ -30,10 +30,11 @@ const (
 
 type publicHandler struct {
 	*server
-	prefix string // "/s/<secret>/"
-	secret string
-	lim    *limiter
-	starts startLimiter // new on-demand traces per client
+	prefix      string // "/s/<secret>/"
+	secret      string
+	lim         *limiter
+	starts      startLimiter // new on-demand traces per client
+	speedStarts startLimiter // new speed-test queue entries per client
 }
 
 // Public returns the tunnel origin's handler. The UI and read-only API live
@@ -102,6 +103,10 @@ func (h *publicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if rel == "api/investigate" {
 		h.servePublicInvestigate(w, r)
+		return
+	}
+	if rel == "api/speed/run" {
+		h.servePublicSpeedRun(w, r)
 		return
 	}
 	if id, ok := strings.CutPrefix(rel, "r/"); ok {

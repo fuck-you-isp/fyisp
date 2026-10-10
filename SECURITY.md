@@ -34,11 +34,19 @@ Speed tests are off unless you switch them on (`--speedtest` or the Details
 choice). Then fyisp sends iperf3 traffic to public iperf3 servers in its
 catalog (Leaseweb, OVH, Clouvider, Scaleway and others; the README lists them)
 and to servers you name with `--speedtest-server`, and to no one else. Those
-servers see your public IP address. "Test now" and the mode choice are write
-actions behind the same protections as notes (same origin, CSRF token, admin
-token); the share link has neither. The share link shows server labels
-(provider and city) but never hosts, addresses or ports, and shows your own
-servers only as "Your server".
+servers see your public IP address. "Test now", sweeps, cancelling and the
+mode choice are write actions behind the same protections as notes (same
+origin, CSRF token, admin token). People with the share link may queue a
+test or a sweep of every server (`POST /s/<secret>/api/speed/run`), but
+never change the mode or cancel anything. Every test waits in one queue and
+exactly one runs at a time, with the owner's tests first. The share link's
+entries are capped: one waiting entry per visitor, 3 waiting sweeps and 12
+waiting entries in all. Each visitor (`Cf-Connecting-Ip`, IPv6 per /64)
+may start 1 per 30 s and 10 per hour. That route is same-origin only,
+takes only `kind` and `id` and no body, and is never cached. The share link
+shows server labels (provider and city) but never hosts, addresses or ports,
+shows your own servers only as "Your server", and shows the queue's other
+entries only as "someone".
 
 The public share link hides the STUN target names and the Teams relay region
 (the Azure region fyisp's relay lookup landed in, which hints at where you

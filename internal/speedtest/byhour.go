@@ -237,8 +237,10 @@ func GroupKey(t model.SpeedTest) string {
 // PooledPattern is the time-of-day pattern of the user's own line: each ok
 // test as a fraction of its region's (or server's) p90 download, pooled, so
 // far servers that always read lower don't hide or fake a dip. Fallback
-// tests are left out (another server, another baseline).
+// tests are left out (another server, another baseline), and so are
+// on-demand ones (Test now, sweeps).
 func PooledPattern(tests []model.SpeedTest, tz time.Duration) *Pattern {
+	tests = Scheduled(tests)
 	by := map[string][]float64{}
 	for _, t := range tests {
 		if t.Outcome == model.SpeedOK && t.DownBps != nil && !t.Fallback {
@@ -259,4 +261,16 @@ func PooledPattern(tests []model.SpeedTest, tz time.Duration) *Pattern {
 		norm = append(norm, model.SpeedTest{Start: t.Start, Outcome: model.SpeedOK, DownBps: &r})
 	}
 	return FindPattern(ByHour(norm, tz))
+}
+
+// Scheduled keeps the schedule's tests: patterns and per-row hours leave
+// on-demand tests (Test now, sweeps) out.
+func Scheduled(tests []model.SpeedTest) []model.SpeedTest {
+	var out []model.SpeedTest
+	for _, t := range tests {
+		if !t.OnDemand() {
+			out = append(out, t)
+		}
+	}
+	return out
 }

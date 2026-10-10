@@ -167,6 +167,9 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/speed/config":
 		h.serveSpeedConfig(w, r)
 		return
+	case "/api/speed/cancel":
+		h.serveSpeedCancel(w, r)
+		return
 	}
 	if rest, ok := strings.CutPrefix(p, "/api/annotations"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
 		h.serveNotes(w, r, strings.TrimPrefix(rest, "/"))

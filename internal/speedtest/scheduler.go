@@ -62,9 +62,6 @@ const (
 	pickParallel = 8
 )
 
-// ErrRunning: one test at a time, process-wide.
-var ErrRunning = errors.New("a speed test is already running")
-
 // ErrMode is a mode this install does not offer.
 var ErrMode = errors.New("unknown speed test mode")
 
@@ -119,6 +116,7 @@ type target struct {
 type Scheduler struct {
 	o    Options
 	wake chan struct{}
+	q    *Queue
 
 	mu         sync.Mutex
 	mode       Mode
@@ -126,7 +124,6 @@ type Scheduler struct {
 	cycleStart time.Time
 	slot       int
 	next       time.Time // the next slot; zero when off
-	manual     *target   // a queued Test now
 	cur        *RunState
 	picked     []string // the nearest servers, by ID
 	pickedAt   time.Time
@@ -202,7 +199,64 @@ func New(o Options) *Scheduler {
 	if !OwnOnly(o.Custom) {
 		o.Interval = max(o.Interval, MinInterval)
 	}
-	return &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff}
+	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff}
+	s.q = NewQueue(QueueOptions{Resolve: s.resolve, Exec: s.execJob, Live: s.live, Log: o.Log, Now: o.Now})
+	return s
+}
+
+// Queue is the speed-test queue: every test, scheduled or on demand, runs
+// through it, one at a time.
+func (s *Scheduler) Queue() *Queue { return s.q }
+
+// resolve turns a queue request into its tests (QueueOptions.Resolve).
+func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
+	switch kind {
+	case KindSweep:
+		var out []Job
+		for _, sv := range s.o.Catalog.Servers {
+			out = append(out, Job{Chain: []Server{sv}})
+		}
+		for _, sv := range s.o.Custom {
+			if _, ok := s.o.Catalog.Server(sv.ID); !ok {
+				out = append(out, Job{Chain: []Server{sv}})
+			}
+		}
+		return out, nil
+	case KindSingle:
+		if id == "" {
+			return []Job{{}}, nil // the nearest servers
+		}
+		if sv, ok := s.server(id); ok {
+			return []Job{{Chain: []Server{sv}}}, nil
+		}
+		if r, ok := s.region(id); ok {
+			j := Job{Region: r.ID}
+			for _, x := range r.Chain {
+				if sv, ok := s.o.Catalog.Server(x); ok {
+					j.Chain = append(j.Chain, sv)
+				}
+			}
+			return []Job{j}, nil
+		}
+		return nil, ErrUnknownID
+	}
+	return nil, fmt.Errorf("speed test queue: kind %q", kind)
+}
+
+// execJob runs one queued test (QueueOptions.Exec).
+func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool) {
+	return s.runTarget(ctx, target{region: j.Region, chain: j.Chain}, trigger)
+}
+
+// live is the running test's direction, server and expected end
+// (QueueOptions.Live).
+func (s *Scheduler) live() (string, string, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cur == nil {
+		return "", "", time.Time{}
+	}
+	return s.cur.Direction, s.cur.Server, s.cur.ExpectedEnd
 }
 
 // OwnOnly reports a non-empty custom list of the user's own servers only:
@@ -353,14 +407,18 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	s.restartLocked(s.o.Now())
 	s.mu.Unlock()
 	s.warn(mode)
+	qdone := make(chan struct{})
+	go func() {
+		defer close(qdone)
+		s.q.Run(ctx)
+	}()
+	defer func() { <-qdone }()
 	for {
 		s.mu.Lock()
 		now := s.o.Now()
-		m := s.manual
-		s.manual = nil
 		var tg *target
 		wait := time.Hour
-		if m == nil && !s.next.IsZero() {
+		if !s.next.IsZero() {
 			if wait = s.next.Sub(now); wait <= 0 {
 				plan := s.planLocked(s.mode)
 				late := now.Sub(s.next) > s.spacingLocked(s.mode)/2
@@ -373,11 +431,11 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		}
 		s.mu.Unlock()
 		switch {
-		case m != nil:
-			s.runTarget(ctx, *m, "manual")
-			continue
 		case tg != nil:
-			s.runTarget(ctx, *tg, "schedule")
+			// Into the queue: it runs after what is ahead of it, and is
+			// dropped if it waits too long; a slot already waiting is
+			// not stacked.
+			s.q.EnqueueScheduled(Job{Region: tg.region, Chain: tg.chain})
 			continue
 		case wait <= 0:
 			continue
@@ -392,36 +450,6 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		}
 		t.Stop()
 	}
-}
-
-// TestNow queues a test to run immediately: of the server or region with
-// this ID, else of the nearest servers. It fails with ErrRunning while one
-// runs or is queued, and with an error for an unknown ID.
-func (s *Scheduler) TestNow(id string) (time.Time, error) {
-	tg := target{}
-	if id != "" {
-		if sv, ok := s.server(id); ok {
-			tg.chain = []Server{sv}
-		} else if r, ok := s.region(id); ok {
-			tg.region = r.ID
-			for _, x := range r.Chain {
-				if sv, ok := s.o.Catalog.Server(x); ok {
-					tg.chain = append(tg.chain, sv)
-				}
-			}
-		} else {
-			return time.Time{}, fmt.Errorf("no server or region %q", id)
-		}
-	}
-	s.mu.Lock()
-	if s.manual != nil || s.cur != nil || running.Load() {
-		s.mu.Unlock()
-		return time.Time{}, ErrRunning
-	}
-	s.manual = &tg
-	s.mu.Unlock()
-	s.poke()
-	return s.o.Now(), nil
 }
 
 func (s *Scheduler) server(id string) (Server, bool) {
@@ -534,9 +562,9 @@ func (s *Scheduler) setRun(dir, server string) {
 
 // runTarget runs one slot: the chain's servers in order until one
 // measures, within SlotBudget; then saves and reports the result.
-func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
+func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) (int64, bool) {
 	if !running.CompareAndSwap(false, true) {
-		return
+		return 0, false
 	}
 	defer running.Store(false)
 	now := s.o.Now()
@@ -552,14 +580,13 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
 		tg.chain = s.nearest(ctx)
 	}
 	if ctx.Err() != nil {
-		return
+		return 0, false
 	}
 	t := model.SpeedTest{Trigger: trigger, Region: tg.region, Outcome: model.SpeedUnreachable}
 	if len(tg.chain) == 0 {
 		now := s.o.Now()
 		t.Start, t.End = now, now
-		s.save(ctx, &t)
-		return
+		return s.save(ctx, &t)
 	}
 	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
@@ -578,7 +605,7 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
 	t.End = s.o.Now()
 	win := s.o.Windows.End(t.End)
 	if ctx.Err() != nil {
-		return // shutting down: not a result
+		return 0, false // shutting down or cancelled: not a result
 	}
 	if l := s.o.Load; l != nil {
 		set := func(layer string, from, to time.Time, into **float64) {
@@ -591,13 +618,17 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
 		set(LayerCall, win.Start.Add(-idleWindow), win.Start, &t.IdleCallMs)
 		set(LayerCall, win.Start, win.End, &t.LoadedCallMs)
 	}
-	s.save(ctx, &t)
+	return s.save(ctx, &t)
 }
 
-func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) {
+// save stores t and reports it; it returns t's stored ID.
+func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) (int64, bool) {
+	saved := false
 	if s.o.Store != nil {
 		if err := s.o.Store.SaveSpeedTest(ctx, t); err != nil {
 			s.o.Log.Warn("speed test: saving the result failed", "err", err)
+		} else {
+			saved = true
 		}
 	}
 	args := []any{"region", t.Region, "server", t.Server, "fallback", t.Fallback, "outcome", t.Outcome, "attempts", t.Attempts, "trigger", t.Trigger}
@@ -611,6 +642,7 @@ func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) {
 	if s.o.OnResult != nil {
 		s.o.OnResult(*t)
 	}
+	return t.ID, saved
 }
 
 func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
