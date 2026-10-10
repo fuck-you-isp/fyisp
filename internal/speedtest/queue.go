@@ -185,6 +185,9 @@ type QueueOptions struct {
 	// the probes unmasked time between a sweep's tests); that time is not
 	// charged to the share link. It returns false when ctx ended.
 	Pause func(ctx context.Context, j Job, trigger string) bool
+	// EstSweepPause is Pause's typical wait before each of a sweep's
+	// tests, for the estimates (0: none).
+	EstSweepPause time.Duration
 	// Live reports the running test's direction and server (optional).
 	Live func() (direction, server string, expectedEnd time.Time)
 	Log  *slog.Logger
@@ -901,7 +904,7 @@ func (q *Queue) runningLeftLocked(now time.Time) time.Duration {
 	if e == nil {
 		return 0
 	}
-	left := time.Duration(max(e.Steps-e.Step, 0)) * EstJob
+	left := time.Duration(max(e.Steps-e.Step, 0)) * q.estJob(e)
 	cur := EstJob
 	if q.o.Live != nil {
 		if _, _, end := q.o.Live(); !end.IsZero() {
@@ -930,7 +933,7 @@ func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
 				out.Position = i + 1
 				break
 			}
-			at = at.Add(time.Duration(max(w.Steps, 1)) * EstJob)
+			at = at.Add(time.Duration(max(w.Steps, 1)) * q.estJob(w))
 		}
 		if q.gapLocked(e, now) {
 			out.Held = true
@@ -939,7 +942,15 @@ func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
 			}
 		}
 		out.EstStart = at
-		out.EstFinish = at.Add(time.Duration(max(e.Steps, 1)) * EstJob)
+		out.EstFinish = at.Add(time.Duration(max(e.Steps, 1)) * q.estJob(e))
 	}
 	return out
+}
+
+// estJob is one of e's tests with the pause before it.
+func (q *Queue) estJob(e *qentry) time.Duration {
+	if e.Kind == KindSweep {
+		return EstJob + q.o.EstSweepPause
+	}
+	return EstJob
 }
