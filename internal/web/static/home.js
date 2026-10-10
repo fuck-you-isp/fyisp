@@ -16,7 +16,7 @@ import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, c
 /** @typedef {{app:string,title:string,level:string,state:string,label:string,note?:string}} HomeApp */
 /** @typedef {{id:string,label:string,done:boolean}} HomeStep */
 /** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],steps?:HomeStep[]}} HomeLive */
-/** @typedef {{from:number,to:number,level:string,who:string,kind?:string,label:string,source:string,incident?:number,ongoing?:boolean}} HomeRun */
+/** @typedef {{from:number,to:number,level:string,who:string,kind?:string,label:string,text?:string,source:string,incident?:number,ongoing?:boolean}} HomeRun */
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
 /** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,peak_loss:number,details:string}} HomeProblem */
@@ -46,9 +46,9 @@ const KEEP_RUNNING = 'https://github.com/fuck-you-isp/fyisp#keep-it-running';
 /** @type {Object<string,{icon:string,word:string}>} */
 const LEVELS = {
   good: { icon: '✓', word: 'OK' },
-  warn: { icon: '!', word: 'Some trouble' },
-  bad: { icon: '✕', word: 'Trouble' },
-  info: { icon: 'i', word: 'Note' },
+  warn: { icon: '!', word: 'Minor problem' },
+  bad: { icon: '✕', word: 'Problem' },
+  info: { icon: 'i', word: 'Known issue' },
   checking: { icon: '…', word: 'Checking' },
 };
 /** @type {Object<string,string>} path node states */
@@ -110,7 +110,8 @@ export class Home {
     /** @type {number|null} "What happened at…?": the picked time (ms); null before the first pick */
     this.askAt = null;
     this.askSeq = 0;
-    this.blockIdx = 0; // the timeline's roving focus
+    this.blockIdx = -1; // the timeline's roving focus (-1: not placed yet)
+    this.historySpan = '';
 
     // Live regions: one polite announcer (state changes only) and one
     // assertive one for offline / calls breaking up.
@@ -306,7 +307,8 @@ export class Home {
       h('span', { class: 'sr-only', text: s.done ? ', checked' : ', not checked yet' }))));
 
     // The path chain: router → provider → internet (→ apps when at fault).
-    const nodes = (d.path || []).filter((n) => n.id !== 'device' && (n.id !== 'apps' || n.state !== 'ok' || n.blamed));
+    // This device and Apps & websites appear only when they are part of the story (offline; an app at fault).
+    const nodes = (d.path || []).filter((n) => (n.id !== 'device' && n.id !== 'apps') || n.state !== 'ok' || n.blamed);
     this.pathEl.hidden = a.level === 'checking' || !nodes.length;
     const items = [];
     nodes.forEach((n, i) => {
@@ -315,7 +317,7 @@ export class Home {
         h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: NODE_ICON[n.state] || '?' }),
         h('span', { class: 'ho-node-l', text: n.label }),
         n.state !== 'ok' ? h('span', { class: 'ho-node-w', text: n.words }) : h('span', { class: 'sr-only', text: `: ${n.words}` }),
-        n.blamed ? h('span', { class: 'ho-node-b', text: 'Problem is probably here' }) : null));
+        n.blamed ? h('span', { class: 'ho-node-b', text: n.id === 'device' ? 'Problem is here' : 'Problem is probably here' }) : null));
     });
     this.pathEl.replaceChildren(...items);
 
@@ -336,8 +338,8 @@ export class Home {
     if (d && d.answer.since && d.answer.level !== 'good' && d.answer.level !== 'checking') {
       bits.push(`Since ${when(d.answer.since)} (${minutes(Date.now() - d.answer.since)})`);
     }
-    if (this.liveAt && d) bits.push(`Checked ${ago(Date.now() - this.liveAt)}`);
-    else if (d && d.answer.level === 'checking') bits.push('First results in about 2 minutes');
+    if (d && d.answer.level === 'checking') bits.push('First results in about 2 minutes');
+    else if (this.liveAt && d) bits.push(`Checked ${ago(Date.now() - this.liveAt)}`);
     this.metaEl.textContent = bits.join(' · ');
   }
 
@@ -392,15 +394,16 @@ export class Home {
     this.tilesEl.replaceChildren(...(d.tiles || []).map((t) => {
       const lvl = lost ? 'checking' : t.level;
       const names = t.names.join(' · ') + (t.more ? ` +${t.more}` : '');
+      const label = lost ? `${t.label} (as of ${clock(this.liveAt)})` : t.label;
       const a = h('a', {
         class: `ho-tile lvl-${cls(lvl)}`, href: tileHash(t),
+        'aria-label': `${t.title}: ${label}.${t.note ? ' ' + t.note : ''} See details`,
         onclick: (/** @type {MouseEvent} */ e) => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return; e.preventDefault(); this.host.openDetails(tileHash(t)); },
       },
       h('span', { class: 'ho-tile-t' }, h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: (LEVELS[lvl] || LEVELS.checking).icon }), t.title),
-      h('span', { class: 'ho-tile-l', text: lost ? `${t.label} (as of ${clock(this.liveAt)})` : t.label }),
+      h('span', { class: 'ho-tile-l', text: label }),
       t.note ? h('span', { class: 'ho-tile-n', text: t.note }) : null,
-      names ? h('span', { class: 'ho-tile-x', text: names }) : null,
-      h('span', { class: 'sr-only', text: '. See details' }));
+      names ? h('span', { class: 'ho-tile-x', 'aria-hidden': 'true', text: names }) : null);
       return h('li', {}, a);
     }));
     this.tilesEl.dataset.n = String((d.tiles || []).length);
@@ -427,7 +430,8 @@ export class Home {
     }
     // The summary sentence, with the times of the first few problems.
     const times = d.problems.slice(0, 3).map((p) => (p.ongoing ? `since ${when(p.from)}` : range(p.from, /** @type {number} */ (p.to))));
-    this.sumEl.textContent = d.summary + (times.length ? ` (${times.join(', ')}${d.problems.length > 3 ? ', …' : ''})` : '');
+    this.sumEl.replaceChildren(h('span', { text: d.summary }));
+    if (times.length) this.sumEl.append(h('span', { class: 'ho-times', text: `When: ${times.join(', ')}${d.problems.length > 3 ? ', …' : ''}.` }));
     const phone = window.matchMedia('(max-width: 767.98px)').matches;
     const per = phone ? 3 : 1; // hours per block: blocks stay ≥ 24 px wide on a phone
     const rows = [];
@@ -448,16 +452,33 @@ export class Home {
         if (st.kind !== 'later') blocks.push(cell);
         cells.push(cell);
       }
+      const strip = h('div', { class: 'ho-cells' }, ...cells);
+      if (day.to < day.from + 86400e3) {
+        // Today: a "now" marker; the hours after it are faded.
+        // The word "now" only on the one-day strip: on the week it would sit on the row above.
+        const now = h('span', { class: 'ho-now', 'aria-hidden': 'true' }, d.span === 'd' ? h('span', { text: 'now' }) : null);
+        now.style.left = `${((day.to - day.from) / 86400e3) * 100}%`;
+        strip.append(now);
+      }
       rows.push(h('div', { class: 'ho-row' },
-        h('span', { class: 'ho-day', 'aria-hidden': 'true', text: d.span === 'd' ? 'Today' : name }),
-        h('div', { class: 'ho-cells' }, ...cells)));
+        h('span', { class: 'ho-day', 'aria-hidden': 'true', text: d.span === 'd' ? 'Today' : name }), strip));
     }
-    // Hour marks under the strips.
-    const marks = h('div', { class: 'ho-row ho-marks', 'aria-hidden': 'true' }, h('span', { class: 'ho-day' }),
-      h('div', { class: 'ho-cells' }, ...[0, 6, 12, 18].map((x) => h('span', { text: clock(new Date(d.days[0].from).setHours(x, 0, 0, 0)).replace(':00', '') }))));
+    // Hour marks under the strips, each at hour/24 of the strip.
+    const axis = h('div', { class: 'ho-axis' });
+    for (const x of [0, 6, 12, 18]) {
+      const m = h('span', { text: clock(new Date(d.days[0].from).setHours(x, 0, 0, 0)).replace(':00', '') });
+      m.style.left = `${(x / 24) * 100}%`;
+      axis.append(m);
+    }
+    const marks = h('div', { class: 'ho-row ho-marks', 'aria-hidden': 'true' }, h('span', { class: 'ho-day' }), axis);
     const grid = h('div', { class: 'ho-grid', role: 'group', 'aria-label': `${d.span === 'd' ? 'Today' : 'The last 7 days'}, ${per === 1 ? 'one block per hour' : `one block per ${per} hours`}. Use the arrow keys to move between blocks.` }, ...rows, marks);
     // Roving focus: one tab stop, arrows move across blocks (and rows).
-    this.blockIdx = Math.min(this.blockIdx, Math.max(0, blocks.length - 1));
+    // It starts at the latest problem block, else the current hour (the last block that has happened).
+    if (this.blockIdx < 0 || this.blockIdx >= blocks.length || this.historySpan !== d.span) {
+      const lastRun = blocks.map((b) => b.classList.contains('b-run')).lastIndexOf(true);
+      this.blockIdx = lastRun >= 0 ? lastRun : blocks.length - 1;
+      this.historySpan = d.span;
+    }
     if (blocks[this.blockIdx]) blocks[this.blockIdx].tabIndex = 0;
     grid.addEventListener('keydown', (e) => {
       const i = blocks.indexOf(/** @type {HTMLElement} */ (e.target));
@@ -476,8 +497,8 @@ export class Home {
     const anyOff = d.days.some((x) => x.off.length);
     this.legendEl.replaceChildren(...[
       h('span', {}, h('span', { class: 'ho-key b-fine', 'aria-hidden': 'true' }), 'No problems'),
-      h('span', {}, h('span', { class: 'ho-key b-run lvl-warn', 'aria-hidden': 'true' }), 'Some trouble'),
-      h('span', {}, h('span', { class: 'ho-key b-run lvl-bad', 'aria-hidden': 'true' }), 'Trouble'),
+      h('span', {}, h('span', { class: 'ho-key b-run lvl-warn', 'aria-hidden': 'true' }), LEVELS.warn.word),
+      h('span', {}, h('span', { class: 'ho-key b-run lvl-bad', 'aria-hidden': 'true' }), LEVELS.bad.word),
       h('span', {}, h('span', { class: 'ho-key b-off', 'aria-hidden': 'true' }), 'fyisp wasn’t running'),
       d.days.some((x) => x.no_record) || (d.first_data && d.first_data > d.from) ? h('span', {}, h('span', { class: 'ho-key b-none', 'aria-hidden': 'true' }), 'No record yet') : null,
       anyOff ? h('a', { class: 'ho-keep', href: KEEP_RUNNING, target: '_blank', rel: 'noopener', text: 'How to keep it running' }) : null,
@@ -642,7 +663,11 @@ export class Home {
   async report() {
     const st = this.host.status();
     const out = this.reportOut;
-    const counts = this.history && this.history.span === 'w' ? this.history.counts : null;
+    // The home-network warning needs the week's counts, whatever span is on screen.
+    let counts = this.history && this.history.span === 'w' ? this.history.counts : null;
+    if (!counts) {
+      try { counts = (await fetchJSON('api/home?' + new URLSearchParams({ part: 'history', span: 'w', tz: this.tz() }))).counts; } catch { /* no warning then */ }
+    }
     const kids = [];
     // Honest when the evidence points home.
     if (counts && counts.home > (counts.provider || 0) + (counts.beyond || 0)) {
@@ -723,7 +748,7 @@ function blockState(day, d, a, b) {
   return { kind: 'fine' };
 }
 
-/** "Tue 14:00 to 15:00, choppy, most likely your internet provider". */
+/** "Tue 14:00 to 15:00, problem: The problem was most likely with your internet provider. …" (the run's text is the server's). */
 function blockLabel(/** @type {string} */ day, /** @type {number} */ a, /** @type {number} */ b, /** @type {{kind:string,level?:string,run?:HomeRun|null}} */ st) {
   const t = `${day} ${clock(a)} to ${clock(b)}`;
   switch (st.kind) {
@@ -733,5 +758,5 @@ function blockLabel(/** @type {string} */ day, /** @type {number} */ a, /** @typ
     case 'fine': return `${t}, no problems`;
   }
   const r = /** @type {HomeRun} */ (st.run);
-  return `${t}, ${st.level === 'bad' ? 'trouble' : 'some trouble'}${r.label ? ', ' + r.label : ''}`;
+  return `${t}, ${(LEVELS[st.level || 'warn'] || LEVELS.warn).word.toLowerCase()}: ${r.text || r.label}`;
 }

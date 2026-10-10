@@ -190,6 +190,10 @@ function readHash() {
 /** The last hash the page applied (hashchange and popstate both fire on Back). */
 let lastHash = '';
 function hashString() {
+  // Home's hash carries only Home's own state: no Details range or kinds.
+  if (!state.view || state.view === 'h') {
+    if (!state.inv && !(state.focus && focusPanel())) return state.hw === 'w' ? '#hw=w' : '';
+  }
   const p = new URLSearchParams();
   p.set('r', state.range);
   if (state.from != null && state.to != null) { p.set('from', String(state.from)); p.set('to', String(state.to)); }
@@ -212,7 +216,7 @@ function hashString() {
 }
 function writeHash() {
   const s = hashString();
-  if (location.hash !== s) history.replaceState(history.state, '', s);
+  if (location.hash !== s) history.replaceState(history.state, '', s || location.pathname + location.search);
   lastHash = location.hash;
 }
 function isRelative() { return state.from == null; }
@@ -3194,9 +3198,9 @@ function openDetails(hash) {
 /** Back to Home: Back when Details was opened from Home, else a new entry. */
 function goHome() {
   if (history.state && history.state.fyispHome) { history.back(); return; }
-  state.view = 'h';
+  state.view = null;
   state.focus = null;
-  history.pushState(null, '', hashString());
+  history.pushState(null, '', hashString() || location.pathname + location.search);
   onNav();
 }
 
