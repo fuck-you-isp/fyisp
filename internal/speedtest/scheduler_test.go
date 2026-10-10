@@ -552,6 +552,15 @@ func TestBuiltinCatalog(t *testing.T) {
 		if sv.Zone() == nil {
 			t.Errorf("%s: no time zone for metro %q", sv.ID, sv.Metro)
 		}
+		if c.RegionOf(sv.ID) == "" {
+			t.Errorf("%s: in no region", sv.ID)
+		}
+	}
+	for id, want := range map[string]string{"Leaseweb-HongKong": "asia-east", "Leaseweb-Washington": "us-east", "Leaseweb-SanFrancisco": "us-west",
+		"OVH-Roubaix": "eu-west", "OVH-Gravelines": "eu-west", "Clouvider-London": "uk"} {
+		if got := c.RegionOf(id); got != want {
+			t.Errorf("%s: region %s, want %s", id, got, want)
+		}
 	}
 	if len(c.Servers) != 45 {
 		t.Fatalf("%d servers", len(c.Servers))

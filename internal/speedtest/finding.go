@@ -826,8 +826,8 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 			label = s.Label
 		}
 		claim = fmt.Sprintf("Only %s %s from about %s.", label, slowVerb1(f.Up), when)
-		f.Text = claim + " That's most likely that server's own busy time, not your connection."
-		f.TextPublic = claim + " That's most likely that server's own busy time, not the connection."
+		f.Text = claim + " That's most likely that server's own busy time: the other servers in its city stay normal then."
+		f.TextPublic = f.Text
 		f.evidence(minTests, minProv)
 		return
 	}
@@ -1059,12 +1059,28 @@ func HomeLine(f Finding, tests []model.SpeedTest, loc *time.Location, now time.T
 		what = "Uploads are slower in the " + lowerFirst(part)
 	}
 	text := fmt.Sprintf("%s: about %d%% below your %s speed (around %s).", what, int(f.Drop*100+0.5), ref, hoursText(f.Hours))
+	// Where it is, as sure as the finding's tier.
+	shows := "Every test server shows it"
+	if len(f.Regions) < f.RegionsJudged || len(f.FarRegions) > 0 {
+		shows = "Most test servers show it"
+	}
+	switch f.Tier {
+	case TierPointsTo:
+		text += " " + shows + ", which points to your internet provider's network."
+	case TierMostLikely:
+		text += " " + shows + ", so it's most likely your internet provider's network."
+	default:
+		text += " " + shows + " so far, so it may be your internet provider's network."
+	}
 	impact := "ok"
 	if (len(down) > 0 && callq.Quantile(down, 0.1) < videoDownBps) || (len(up) > 0 && callq.Quantile(up, 0.1) < videoUpBps) {
 		impact = "video_risk"
 		text += " At those times it may be too slow for video calls."
 	} else {
 		text += " That's still plenty for video calls."
+	}
+	if f.Caveat != "" {
+		text += " " + f.Caveat
 	}
 	return &HomeSpeed{Text: text, Kind: "pattern", Impact: impact}
 }
