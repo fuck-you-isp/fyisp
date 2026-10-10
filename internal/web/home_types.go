@@ -222,6 +222,9 @@ type HomeCounts struct {
 	App         int `json:"app"`
 	CallTraffic int `json:"calltraffic"`
 	Offline     int `json:"offline"`
+	// Services counts app incidents about targets outside the Home tiles
+	// (cloud regions and the like); App counts the others.
+	Services int `json:"services"`
 	// CallPatches counts today's rough patches for calls that no incident
 	// explains (runs with source "calls"); not part of Problems.
 	CallPatches int `json:"call_patches"`

@@ -999,6 +999,9 @@ type homeIncident struct {
 	who   string
 	level string
 	label string
+	// services: an app incident about "other" targets only (cloud regions
+	// and the like), worded as services, never apps or websites.
+	services bool
 }
 
 func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (*HomeHistory, error) {
@@ -1067,8 +1070,12 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 				if len(rel) == 0 {
 					continue // a cloud region the user doesn't use
 				}
-				if len(rel) == 1 && hs.cat[rel[0]] != tileOther {
+				x.services = !slices.ContainsFunc(rel, func(n string) bool { return hs.cat[n] != tileOther })
+				if len(rel) == 1 && !x.services {
 					x.label = homeNameOf(prof, rel[0])
+				}
+				if x.services {
+					x.label = cp.someServices()
 				}
 			}
 			incs = append(incs, x)
@@ -1123,7 +1130,12 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 	}
 
 	for _, in := range incs { // newest first
-		out.Counts.add(in.who)
+		if in.services {
+			out.Counts.Problems++
+			out.Counts.Services++
+		} else {
+			out.Counts.add(in.who)
+		}
 		if len(out.Problems) >= homeMaxProblems {
 			continue
 		}

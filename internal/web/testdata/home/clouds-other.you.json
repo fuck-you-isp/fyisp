@@ -36,7 +36,7 @@
             "level": "warn",
             "who": "app",
             "kind": "service",
-            "label": "Some apps",
+            "label": "Some online services",
             "source": "incident",
             "incident": 91,
             "ongoing": true,
@@ -46,16 +46,17 @@
         "off": []
       }
     ],
-    "summary": "1 problem today, with apps or websites.",
+    "summary": "1 problem today, with online services.",
     "counts": {
       "problems": 1,
       "home": 0,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
-      "app": 1,
+      "app": 0,
       "calltraffic": 0,
       "offline": 0,
+      "services": 1,
       "call_patches": 0
     },
     "problems": [
@@ -65,7 +66,7 @@
         "ongoing": true,
         "kind": "service",
         "who": "app",
-        "where": "Some apps and websites",
+        "where": "Some online services",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791546480000\u0026to=1791549000000\u0026o=1"
       }
@@ -144,7 +145,7 @@
             "level": "warn",
             "who": "app",
             "kind": "service",
-            "label": "Some apps",
+            "label": "Some online services",
             "source": "incident",
             "incident": 91,
             "ongoing": true,
@@ -154,16 +155,17 @@
         "off": []
       }
     ],
-    "summary": "1 problem this week, with apps or websites.",
+    "summary": "1 problem this week, with online services.",
     "counts": {
       "problems": 1,
       "home": 0,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
-      "app": 1,
+      "app": 0,
       "calltraffic": 0,
       "offline": 0,
+      "services": 1,
       "call_patches": 0
     },
     "problems": [
@@ -173,7 +175,7 @@
         "ongoing": true,
         "kind": "service",
         "who": "app",
-        "where": "Some apps and websites",
+        "where": "Some online services",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791546480000\u0026to=1791549000000\u0026o=1"
       }

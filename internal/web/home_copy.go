@@ -250,6 +250,9 @@ func thousands(n int) string {
 	return s
 }
 
+// someServices names incidents about services outside the Home tiles.
+func (c homeCopy) someServices() string { return "Some online services" }
+
 // callPatch is a calls-only rough patch (no incident explains it).
 func (c homeCopy) callPatch(level string) string {
 	if level == levelBad {
@@ -650,6 +653,7 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 		{n.CallTraffic, c.v("with the connection calls use", "with call traffic")},
 		{n.DNS, "with name lookups"},
 		{n.App, "with apps or websites"},
+		{n.Services, "with online services"},
 		{n.Offline, c.v("with no connection", "while the device was offline")},
 	}
 	var used []part
