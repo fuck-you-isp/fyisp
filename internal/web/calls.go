@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"net/http"
 	"net/url"
@@ -24,14 +23,6 @@ const (
 	// callsMinSamples: fewer bursts (answered or timed out) in the window
 	// than this is "not enough data yet".
 	callsMinSamples = 10
-)
-
-// Verdict kinds of the UDP checks (internal/verdict): lower priority than
-// every path kind, so they are current only while the path is healthy.
-const (
-	verdictUDPBlocked  model.VerdictKind = "udp_blocked"
-	verdictSTUNBlocked model.VerdictKind = "stun_blocked"
-	verdictUDPDegraded model.VerdictKind = "udp_degraded"
 )
 
 // Call states, worst first (callRank). The bands are callq's.
@@ -343,7 +334,7 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 	if s.d.Verdict != nil {
 		v = s.d.Verdict.Current()
 	}
-	blocked := v.Kind == verdictUDPBlocked || v.Kind == verdictSTUNBlocked
+	blocked := v.Kind == model.VerdictUDPBlocked || v.Kind == model.VerdictSTUNBlocked
 
 	group := func(ts []model.Target) *callsGroup {
 		g := &callsGroup{}
@@ -473,10 +464,10 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		cs = append(cs, cand{string(callq.Fair), &callsCause{Source: "verdict", Kind: v.Kind, Summary: v.Summary}})
 	case model.VerdictNoNetwork:
 		cs = append(cs, cand{string(callq.Unusable), &callsCause{Source: "verdict", Kind: v.Kind, Summary: v.Summary}})
-	case verdictUDPBlocked, verdictSTUNBlocked:
+	case model.VerdictUDPBlocked, model.VerdictSTUNBlocked:
 		cs = append(cs, cand{callBlocked, &callsCause{Source: "udp", Kind: v.Kind, Summary: v.Summary}})
-		out.Quiet = verdictQuiet(v)
-	case verdictUDPDegraded:
+		out.Quiet = v.Quiet
+	case model.VerdictUDPDegraded:
 		cs = append(cs, cand{string(callq.Poor), &callsCause{Source: "udp", Kind: v.Kind, Summary: v.Summary}})
 	}
 	if out.Path != nil {
@@ -497,19 +488,4 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		out.Cause = best.cause
 	}
 	return out, nil
-}
-
-// verdictQuiet reports the verdict's quiet flag (a UDP block demoted to
-// information after hours; see internal/verdict). It is read through the
-// verdict's JSON so that this package does not depend on the field's
-// arrival order.
-func verdictQuiet(v model.Verdict) bool {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return false
-	}
-	var q struct {
-		Quiet bool `json:"quiet"`
-	}
-	return json.Unmarshal(b, &q) == nil && q.Quiet
 }

@@ -322,11 +322,11 @@ func TestCallsStates(t *testing.T) {
 			},
 		},
 		{
-			name: "blocked", fill: func(string, time.Time) burst { return burst{} }, verdict: verdictUDPBlocked,
+			name: "blocked", fill: func(string, time.Time) burst { return burst{} }, verdict: model.VerdictUDPBlocked,
 			top: "blocked", cause: "udp:udp_blocked", path: "blocked", apps: map[string]string{"meet": "blocked", "teams": "blocked"},
 		},
 		{
-			name: "STUN ports blocked", verdict: verdictSTUNBlocked,
+			name: "STUN ports blocked", verdict: model.VerdictSTUNBlocked,
 			fill: func(name string, ts time.Time) burst {
 				if name == "Cloudflare-STUN" {
 					return ok // stands in for UDP 53
@@ -348,7 +348,7 @@ func TestCallsStates(t *testing.T) {
 			top: "fair", cause: "verdict:dns", path: "good",
 		},
 		{
-			name: "UDP degraded", verdict: verdictUDPDegraded,
+			name: "UDP degraded", verdict: model.VerdictUDPDegraded,
 			top: "poor", cause: "udp:udp_degraded", path: "good",
 		},
 		{
