@@ -67,7 +67,7 @@ const (
 //
 //	i)  all UDP to the responder dropped, port 53 too -> udp_blocked, then ok
 //	i2) the STUN ports dropped, port 53 answers        -> stun_blocked
-//	j)  netem delay 200ms ±200ms                       -> path band fair or worse, udp_degraded
+//	j)  netem delay 100ms ±90ms                        -> path band fair or worse, udp_degraded
 //	k)  netem loss 10%                                 -> udp_loss 5-16%, band below good
 //	l)  one provider's server dropped                  -> no verdict, server_not_answering
 //	m)  UDP dropped from the start                     -> udp_blocked only after the 2-minute warm-up
@@ -141,16 +141,20 @@ func TestUDP(t *testing.T) {
 		h.checkNoMappedAddr(t)
 	})
 
-	// j) Jitter. The call score is a simplified E-model in which jitter
-	// counts twice towards the one-way delay: delay 200ms ±200ms (uniform)
-	// gives an in-burst jitter (mean |ΔRTT| of consecutive replies) of
-	// about 130ms and a median RTT of about 200ms, MOS ≈ 3.5 (poor). A
-	// smaller jitter scores better than one might expect: ±30ms (≈ 20ms
-	// in-burst) is good (MOS 4.38), ±150ms (≈ 100ms) only just fair (3.9).
+	// j) Jitter: delay 100ms ±90ms (uniform) on the requests gives an
+	// in-burst jitter (mean |ΔRTT| of consecutive replies) of about 60ms. The
+	// E-model alone still scores that Good (MOS ≈ 4.3: jitter counts only as
+	// delay); the jitter caps (callq.JitterPoorMs) make the path Poor, and
+	// the median burst jitter of each provider stays well above
+	// udp_degraded's 30ms for the 3 minutes it needs. Milder cases, measured:
+	// ±30ms gives about 20ms in-burst (Good); ±50ms about 32ms (Fair by the
+	// cap, but a provider's 1-minute median dips under 30ms often enough to
+	// keep resetting udp_degraded's 3 minutes); ±70ms about 47ms reaches
+	// udp_degraded after 3m15s alone, but took 5 minutes under a full run.
 	t.Run("j-udp-jitter", func(t *testing.T) {
 		parallel(t)
 		h := newUDPHarness(t)
-		h.shapeSTUN(t, "delay", "200ms", "200ms")
+		h.shapeSTUN(t, "delay", "100ms", "90ms")
 		start := h.startUDP(t)
 		v, raw := h.waitVerdictVia(t, "udp_degraded", udpDegradedTimeout)
 		t.Logf("entered udp_degraded %s after start: %s", time.Since(start).Round(time.Second), strings.TrimSpace(string(raw)))
@@ -167,11 +171,11 @@ func TestUDP(t *testing.T) {
 			t.Errorf("/api/calls has no path: %s", craw)
 		case !slices.Contains([]string{"fair", "poor", "unusable"}, c.Path.State):
 			t.Errorf("path state %q, want fair, poor or unusable", c.Path.State)
-		case !(val(c.Path.Jitter) > 10):
-			t.Errorf("path jitter %v ms, want > 10", val(c.Path.Jitter))
+		case !(val(c.Path.Jitter) >= 30):
+			t.Errorf("path jitter %v ms, want >= 30", val(c.Path.Jitter))
 		}
 		if c.State == "good" {
-			t.Errorf("/api/calls top state good under 100ms of jitter")
+			t.Errorf("/api/calls top state good under 60ms of jitter")
 		}
 		h.logShaping(t)
 		h.expectTCPOK(t, "j-tcp", start, time.Now())
