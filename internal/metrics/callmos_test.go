@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -129,5 +130,26 @@ func TestCallMOS(t *testing.T) {
 	feedBurst(c2, "Meet-STUN", now.Add(-time.Second), 20, 5, 0)
 	if got := gatherMOS(t, c2); len(got) != 0 {
 		t.Errorf("one burst: %v", got)
+	}
+}
+
+// Jitter caps the score as it caps the Calls band: 35 ms of jitter on an
+// otherwise clean, short path is at most Fair (3.9).
+func TestCallMOSJitterCap(t *testing.T) {
+	now := time.Date(2026, 10, 10, 14, 0, 30, 0, time.UTC)
+	p := callMOSProfile()
+	c := NewCallMOS(func() *model.Profile { return p })
+	c.now = func() time.Time { return now }
+	for ts := now.Add(-6 * time.Minute); ts.Before(now); ts = ts.Add(5 * time.Second) {
+		for _, target := range []string{"Meet-STUN", "Cloudflare-STUN"} {
+			key := func(k model.ProbeKind) model.SeriesKey { return model.SeriesKey{Target: target, Kind: k} }
+			c.Observe(model.Sample{Key: key(model.KindUDP), Slot: ts, RTT: 20 * time.Millisecond})
+			c.Observe(model.Sample{Key: key(model.KindUDPJitter), Slot: ts, RTT: 35 * time.Millisecond})
+			c.Observe(model.Sample{Key: key(model.KindUDPLoss), Slot: ts})
+		}
+	}
+	got := gatherMOS(t, c)
+	if v, want := got["path"], callq.GoodMOS-callq.CapMargin; math.Abs(v-want) > 1e-9 || callq.BandOf(v) != callq.Fair {
+		t.Errorf("path MOS %v under 35 ms of jitter, want %v (Fair)", v, want)
 	}
 }

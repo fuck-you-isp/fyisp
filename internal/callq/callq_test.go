@@ -94,11 +94,14 @@ func TestJitterCaps(t *testing.T) {
 		}
 		// A short, clean path: the MOS alone says Good, so the cap decides.
 		m := Minute{RTT: 20, Jitter: c.jitter, Loss: 0, Bursts: 12}
-		if c.jitter <= JitterUnusableMs && BandOf(m.MOS()) != Good {
-			t.Fatalf("jitter %v: MOS %.2f is not Good before the cap", c.jitter, m.MOS())
+		if c.jitter <= JitterUnusableMs && BandOf(m.RawMOS()) != Good {
+			t.Fatalf("jitter %v: MOS %.2f is not Good before the cap", c.jitter, m.RawMOS())
 		}
-		if got := m.Band(); got != c.want {
-			t.Errorf("jitter %v: band %s, want %s", c.jitter, got, c.want)
+		if got := m.Band(); got != c.want || got != Capped(BandOf(m.RawMOS()), c.jitter) || BandOf(m.MOS()) != got {
+			t.Errorf("jitter %v: band %s (MOS %.2f), want %s", c.jitter, got, m.MOS(), c.want)
+		}
+		if want := min(m.RawMOS(), JitterCapMOS(c.jitter)); c.want != Good && m.MOS() != want {
+			t.Errorf("jitter %v: MOS %.2f, want %.2f", c.jitter, m.MOS(), want)
 		}
 		if c.want != Good && m.Factor() != "jitter" {
 			t.Errorf("jitter %v: factor %s, want jitter (the cap decided the band)", c.jitter, m.Factor())
@@ -117,14 +120,14 @@ func TestJitterCaps(t *testing.T) {
 	if m := (Minute{RTT: 20, Jitter: 35, Loss: 20, Bursts: 12}); m.Band() != Unusable || m.Factor() != "loss" {
 		t.Errorf("20%% loss, 35 ms jitter: band %s factor %s, want unusable by loss", m.Band(), m.Factor())
 	}
-	// The worst minute is the worst band, then the lowest MOS: a capped
-	// minute with a high MOS beats a Fair one with a lower MOS.
+	// The worst minute is the lowest (capped) MOS: a minute capped to Poor
+	// whose E-model MOS is Good beats a Fair one.
 	s := Summarize([]Minute{
 		{RTT: 30, Jitter: 3, Loss: 7, Bursts: 12},  // Fair by MOS
 		{RTT: 20, Jitter: 60, Loss: 0, Bursts: 12}, // Good by MOS, Poor by jitter
 		{RTT: 20, Jitter: 2, Loss: 0, Bursts: 12},
 	})
-	if s.Worst != 1 || s.Band != Poor || s.Factor != "jitter" || BandOf(s.MOS) != Good {
+	if s.Worst != 1 || s.Band != Poor || s.Factor != "jitter" || s.MOS != FairMOS-CapMargin {
 		t.Errorf("worst minute %d band %s factor %s (MOS %.2f), want 1 poor by jitter", s.Worst, s.Band, s.Factor, s.MOS)
 	}
 }
