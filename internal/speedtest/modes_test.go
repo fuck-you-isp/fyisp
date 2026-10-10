@@ -208,3 +208,38 @@ func TestSkipAndRest(t *testing.T) {
 		t.Error("Test now of a resting server")
 	}
 }
+
+// TestScheduleThroughQueue (ux-eng's, ported): a late slot is queued, not
+// skipped (it is only dropped after waiting ScheduledStale in the queue);
+// and a Test now asked for while a test runs is never lost: it runs next.
+func TestScheduleThroughQueue(t *testing.T) {
+	h := newHarness(t, Options{Mode: ModeRegions})
+	release := make(chan struct{})
+	h.setRun(func(c Config, n int) (Result, error) {
+		<-release
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second}, nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { h.s.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	waitFor(t, func() bool { return !h.s.State().Next.IsZero() })
+	st := h.s.State()
+	// Late by more than half the spacing: the old scheduler skipped it.
+	h.mu.Lock()
+	h.now = st.Next.Add(st.Spacing/2 + time.Minute)
+	h.mu.Unlock()
+	h.s.poke()
+	waitFor(t, func() bool { return h.s.Queue().State().Running != nil })
+	e, _, err := h.s.Queue().Enqueue(Request{Kind: KindSingle, Target: "away", Who: WhoOwner})
+	if err != nil || e.State != StateWaiting {
+		t.Fatalf("test now: %+v %v", e, err)
+	}
+	close(release)
+	waitFor(t, func() bool { h.st.mu.Lock(); defer h.st.mu.Unlock(); return len(h.st.tests) >= 2 })
+	h.st.mu.Lock()
+	defer h.st.mu.Unlock()
+	if h.st.tests[0].Trigger != "schedule" || h.st.tests[1].Trigger != "manual" || h.st.tests[1].Region != "away" {
+		t.Errorf("tests %+v", h.st.tests)
+	}
+}

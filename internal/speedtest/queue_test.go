@@ -503,6 +503,13 @@ func TestQueueScheduledAheadOfPublic(t *testing.T) {
 		<-f.started
 	}
 	f.release <- struct{}{}
+	// The next public sweep waits out the gap after this one.
+	waitFor(t, func() bool { return q.State().Running == nil && !q.State().SweepAt.IsZero() })
+	if n := len(f.log()); n != 4 {
+		t.Fatalf("ran %v during the gap", f.log())
+	}
+	f.advance(PublicSweepGap)
+	q.poke()
 	waitFor(t, func() bool { return len(f.log()) >= 5 })
 	if got := f.log(); !eq(got[:5], []string{"public_sweep:A", "schedule:uk", "public_sweep:B", "public_sweep:C", "public_sweep:A"}) {
 		t.Errorf("ran %v", got)
@@ -576,6 +583,87 @@ func TestQueuePublicTime(t *testing.T) {
 	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "C", Who: WhoPublic, Visitor: "v7"}); !errors.As(err, &be) || !be.Time {
 		t.Errorf("day cap: %v", err)
 	}
+}
+
+// TestQueuePublicTimeAccrues: a share-link test's time counts while it runs
+// and when it is cancelled (the probes were masked either way).
+func TestQueuePublicTimeAccrues(t *testing.T) {
+	set := &memSettings{}
+	q, f := newQueueHarness(t, func(o *QueueOptions) { o.Settings = set })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	f.advance(3 * time.Minute)
+	if st := q.State(); st.TimeHour != 3*time.Minute || st.TimeDay != 3*time.Minute {
+		t.Errorf("while running: hour %v day %v", st.TimeHour, st.TimeDay)
+	}
+	if _, err := q.Cancel(e.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateCancelled && q.State().Running == nil })
+	if st := q.State(); st.TimeHour != 3*time.Minute {
+		t.Errorf("after cancel: hour %v", st.TimeHour)
+	}
+	// Saved: a restart keeps the time.
+	q2, _ := newQueueHarness(t, func(o *QueueOptions) { o.Settings = set; o.Now = q.o.Now })
+	q2.load(context.Background())
+	if st := q2.State(); st.TimeHour != 3*time.Minute {
+		t.Errorf("after restart: hour %v", st.TimeHour)
+	}
+}
+
+// TestQueueSweepGapAtStart: a share-link sweep queued while another runs
+// waits out the gap after it (singles go by), and the gap survives a
+// restart.
+func TestQueueSweepGapAtStart(t *testing.T) {
+	set := &memSettings{}
+	q, f := newQueueHarness(t, func(o *QueueOptions) { o.Settings = set })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	first, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	second, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	single, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v3"})
+	f.release <- struct{}{}
+	for range 2 {
+		<-f.started
+		f.release <- struct{}{}
+	}
+	waitFor(t, func() bool { x, _ := q.Get(first.ID); return x.State == StateDone })
+	<-f.started // the single goes by the held sweep
+	if st := q.State(); st.Running == nil || st.Running.ID != single.ID {
+		t.Fatalf("running %+v, want the single", st.Running)
+	}
+	f.release <- struct{}{}
+	waitFor(t, func() bool { x, _ := q.Get(single.ID); return x.State == StateDone })
+	ends := q.State().SweepAt
+	if x, _ := q.Get(second.ID); x.State != StateWaiting || !x.EstStart.Equal(ends) || !x.Held {
+		t.Fatalf("held sweep: %+v, want waiting until %v", x, ends)
+	}
+	q2, _ := newQueueHarness(t, func(o *QueueOptions) { o.Settings = set; o.Now = q.o.Now })
+	q2.load(context.Background())
+	if st := q2.State(); !st.SweepAt.Equal(ends) {
+		t.Errorf("after restart: sweep at %v, want %v", st.SweepAt, ends)
+	}
+	f.advance(PublicSweepGap)
+	q.poke()
+	<-f.started
+	if x, _ := q.Get(second.ID); x.State != StateRunning {
+		t.Errorf("after the gap: %+v", x)
+	}
+	f.release <- struct{}{}
 }
 
 // TestBudgetChargesTheWire: a share-link test against a real (fake) iperf3
