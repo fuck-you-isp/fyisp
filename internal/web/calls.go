@@ -130,7 +130,9 @@ type callsGroup struct {
 }
 
 // callsApp is one app. UDP is "measured" (Group set; Region is the Teams
-// relay's cloud region, local only) or "not_measurable". Web* is the TCP
+// relay's cloud region, local only), "shared" (an app whose own call
+// target is not in the profile, e.g. Teams without its opt-in relay: its
+// calls take the call path, Path) or "not_measurable". Web* is the TCP
 // connect time to the app's websites over the window (omitted without TCP
 // targets): mean RTT, loss fraction and samples.
 type callsApp struct {
@@ -424,8 +426,10 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 					app.Region = r
 				}
 			}
-		case a.Measurable || len(wt) == 0:
-			continue // Teams without the relay (opt-in), or an app not in the profile
+		case len(wt) == 0:
+			continue // an app not in the profile
+		case a.Measurable:
+			app.UDP = "shared" // Teams without its opt-in relay: its calls take the shared call path
 		}
 		var sum float64
 		var ok, lost int

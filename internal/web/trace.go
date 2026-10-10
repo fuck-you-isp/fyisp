@@ -446,6 +446,11 @@ func routeSeq(hops []netip.Addr) [][]netip.Addr {
 // runCached renders through the public cache (and concurrency bound) when
 // there is one, and writes the result or a redacted error.
 func (s *server) runCached(w http.ResponseWriter, r *http.Request, key string, render func(ctx context.Context) (*cached, error)) {
+	s.runCachedIn(s.cache, w, r, key, render)
+}
+
+// runCachedIn is runCached with another response cache (nil: none).
+func (s *server) runCachedIn(cache *respCache, w http.ResponseWriter, r *http.Request, key string, render func(ctx context.Context) (*cached, error)) {
 	fill := func(ctx context.Context) (*cached, error) {
 		if s.sem != nil {
 			select {
@@ -461,8 +466,8 @@ func (s *server) runCached(w http.ResponseWriter, r *http.Request, key string, r
 	defer cancel()
 	var c *cached
 	var err error
-	if s.cache != nil {
-		c, err = s.cache.get(ctx, key, fill)
+	if cache != nil {
+		c, err = cache.get(ctx, key, fill)
 	} else {
 		c, err = fill(ctx)
 	}

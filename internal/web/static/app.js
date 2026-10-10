@@ -3012,8 +3012,12 @@ class Calls {
       det.addEventListener('toggle', () => { if (det.open) this.open.add(app.app); else this.open.delete(app.app); });
       items.push(h('li', {}, det));
     }
-    if (!d.apps.some((x) => x.app === 'teams') && MODE === 'local') {
-      items.push(h('li', { class: 'cq-app cq-hint' }, h('b', { text: 'Teams' }), h('span', { class: 'muted' }, ' add it with ', h('code', { text: '--profile default,calls' }))));
+    // Apps whose own call server is not measured (Teams without its opt-in relay): their calls take the call path.
+    for (const app of d.apps.filter((x) => x.udp === 'shared')) {
+      const st = d.path ? d.path.state : 'not_enough_data';
+      const web = (app.web_samples || 0) === 0 ? '' : app.web_ms == null ? ' Its website is not answering right now.' : ` Website reachable, ${fmtMs(app.web_ms)} ms.`;
+      items.push(h('li', { class: 'cq-app cq-other' }, h('b', { text: APP_TITLE[app.app] || app.app }),
+        h('p', { class: 'muted', text: `Calls use your call path (${callLabel(st)}).${web}` })));
     }
     const other = d.apps.filter((x) => x.udp === 'not_measurable');
     if (other.length) {

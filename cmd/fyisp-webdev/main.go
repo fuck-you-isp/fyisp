@@ -5,6 +5,7 @@
 //	fyisp-webdev -listen 0.0.0.0:3000 -public 0.0.0.0:3001 -backfill 6h
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 //	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
+//	fyisp-webdev -home isp                    # canned /api/home (docs/HOME-API.md)
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -191,7 +193,24 @@ func main() {
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
+	home := flag.String("home", "", "serve a canned /api/home scenario: "+strings.Join(homeScenarios, ", "))
 	flag.Parse()
+	if *home != "" {
+		if !slices.Contains(homeScenarios, *home) {
+			fmt.Fprintf(os.Stderr, "-home: unknown scenario %q\n", *home)
+			os.Exit(2)
+		}
+		// The Details view tells the same story, unless -verdict or -calls say otherwise.
+		set := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+		k, c := homeVerdict(*home)
+		if !set["verdict"] {
+			*vKind = k
+		}
+		if !set["calls"] {
+			*callsMode = c
+		}
+	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -315,8 +334,12 @@ func main() {
 		return &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 			WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	}
-	ls := srv(*listen, web.Local(d, web.LocalOptions{Addr: *listen, AdminToken: *admin}))
-	ps := srv(*public, web.Public(d, sec))
+	var lh, ph http.Handler = web.Local(d, web.LocalOptions{Addr: *listen, AdminToken: *admin}), web.Public(d, sec)
+	if *home != "" {
+		lh, ph = homeHandler(*home, false, lh), homeHandler(*home, true, ph)
+	}
+	ls := srv(*listen, lh)
+	ps := srv(*public, ph)
 	for _, s := range []*http.Server{ls, ps} {
 		go func() {
 			if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
