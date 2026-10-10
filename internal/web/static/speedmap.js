@@ -7,7 +7,7 @@
 // no build step.
 // @ts-check
 
-import { h, fetchJSON, css, rgba, showTip, hideTip, MODE } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, MODE } from './core.js';
 import { clock } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -90,6 +90,7 @@ export class SpeedMap {
     /** @type {{key:string,asc:boolean}} */
     this.sort = { key: 'label', asc: true };
     this.found = '';
+    this.skipNote = '';
     /** The heatmap cell that holds the tab stop: [row, column]. */
     this.cur = [0, 0];
 
@@ -199,7 +200,7 @@ export class SpeedMap {
         type: 'button', text: l, 'aria-pressed': String(v === cur), onclick: () => { if (v !== cur) set(v); },
       })));
     const controls = h('div', { class: 'sp-ctl' },
-      seg('Rows', [['regions', d.mode === 'nearby' || d.mode === 'nearest' ? 'Nearby' : d.mode === 'custom' ? 'Your servers' : 'Regions'], ['servers', 'Every server']], this.rows, (v) => { this.rows = /** @type {'regions'} */ (v); this.cur = [0, 0]; this.renderMap(); }),
+      seg('Rows', [['regions', d.mode === 'nearby' || d.mode === 'nearest' ? 'Nearby' : d.mode === 'custom' ? 'Your servers' : 'Regions'], ['servers', 'Every server']], this.rows, (v) => { this.rows = /** @type {'regions'} */ (v); this.cur = [0, 0]; this.renderMap(); this.renderSummary(); }),
       seg('Span', [['7', '7 days'], ['30', '30 days']], String(this.host.days()), (v) => this.host.setDays(Number(v))),
       seg('Show', [['pct', '% of normal'], ['mbps', 'Mbit/s']], this.unit, (v) => { this.unit = /** @type {'pct'} */ (v); this.renderMap(); this.renderRow(); }),
       seg('Direction', [['down', 'Download'], ['up', 'Upload']], this.dir, (v) => { this.dir = /** @type {'down'} */ (v); this.renderMap(); this.renderRow(); }),
@@ -219,7 +220,7 @@ export class SpeedMap {
         group = x.group;
         body.push(h('tr', { class: 'sp-grp' }, h('th', { scope: 'rowgroup', colspan: String(cols.length + 1), text: group })));
       }
-      const label = x.row.label;
+      const label = x.row.label + (x.row.learning ? ' (learning)' : '');
       const tr = h('tr', { class: x.key === sel ? 'sel' : '', 'aria-selected': String(x.key === sel) },
         h('th', { scope: 'row', class: 'sp-rl' }, h('button', { type: 'button', class: 'sp-rb', tabindex: '-1', text: label, title: `Show ${label}`, onclick: () => this.select(x.key) })));
       cols.forEach((c, j) => {
@@ -407,7 +408,7 @@ export class SpeedMap {
         h('span', { class: 'muted small', text: isRegion ? chain.map((id) => servers.get(id)?.label || id).join(' · ') : (servers.get(r.id)?.display || '') })),
       r.why ? h('p', { class: 'muted small', text: `Tested because: ${r.why}` }) : '',
       r.note ? h('p', { class: 'notice warn', text: r.note }) : '',
-      h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}` }),
+      h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}${r.learning && this.unit === 'pct' ? ' (learning: its normal isn’t known yet)' : ''}` }),
       h('div', { class: 'sp-chart' }, byHour),
       legend,
       h('p', { class: 'muted small', text: 'One mark per test; the line is each hour’s median.' + (dipHours.length ? ` Shaded: ${hourRange(dipHours)}.` : '') }),
@@ -522,10 +523,33 @@ export class SpeedMap {
 
   // ---------- every row, sortable ----------
 
+  /** Skips a server, or tests it again: the whole list goes to config, minus the start-up setting's. @param {string} id @param {boolean} skip */
+  async setSkip(id, skip) {
+    const d = /** @type {SpeedSummary} */ (this.d);
+    const list = new Set(d.servers.filter((x) => x.skipped && !x.skip_locked).map((x) => x.id));
+    if (skip) list.add(id); else list.delete(id);
+    const label = d.servers.find((x) => x.id === id)?.label || id;
+    try {
+      await apiWrite('POST', 'api/speed/config', { skip: [...list] }, 'Changing which servers are tested needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
+      this.skipNote = skip ? `${label} is skipped. It won’t be tested.` : `${label} will be tested again.`;
+    } catch (e) {
+      this.skipNote = /** @type {any} */ (e).status === 0 ? '' : 'Couldn’t change that. Try again.';
+    }
+    this.say.textContent = this.skipNote;
+    await this.host.refresh();
+    /** @type {HTMLElement|null} */ (this.sumEl.querySelector(`input[aria-label="Test ${label}"]`))?.focus();
+  }
+
   renderSummary() {
     const d = /** @type {SpeedSummary} */ (this.d);
     const regions = this.rows === 'regions';
-    const list = regions ? d.per_region : d.per_server;
+    // Every catalog server in server mode, the skipped ones too (they have no tests), so the owner can turn them back on.
+    const have = new Map(d.per_server.map((r) => [r.id, r]));
+    const empty = (/** @type {import('./speed.js').SpeedServer} */ x) => /** @type {SpeedRow} */ ({ id: x.id, kind: 'server', label: x.label, latest_at: null, n: 0, busy: 0, unreachable: 0, failed: 0, fallback: 0,
+      down_median_bps: null, down_p10_bps: null, up_median_bps: null, up_p10_bps: null, best_down_bps: null, dip: null, hours: [] });
+    const list = regions ? d.per_region : d.servers.map((x) => have.get(x.id) || empty(x));
+    const srv = new Map(d.servers.map((x) => [x.id, x]));
+    const owner = !regions && MODE === 'local' && canWrite();
     /** @type {[string,string,(r:SpeedRow)=>number|string|null,(r:SpeedRow)=>string][]} */
     const cols = [
       ['label', regions ? 'Region' : 'Server', (r) => r.label, (r) => r.label],
@@ -537,6 +561,7 @@ export class SpeedMap {
       ['busy', 'Busy', (r) => r.busy, (r) => String(r.busy)],
       ['failed', 'Failed', (r) => r.unreachable + r.failed, (r) => String(r.unreachable + r.failed)],
       ['last', 'Last test', (r) => r.latest_at, (r) => (r.latest_at ? clock(r.latest_at) : '—')],
+      ...(!regions ? /** @type {typeof cols} */ ([['state', 'State', (r) => serverState(srv.get(r.id)), (r) => serverState(srv.get(r.id))]]) : []),
     ];
     const col = cols.find((c) => c[0] === this.sort.key) || cols[0];
     const sorted = [...list].sort((a, b) => {
@@ -550,6 +575,8 @@ export class SpeedMap {
     const sel = this.host.sel();
     this.sumEl.replaceChildren(
       h('h2', { id: 'sp-sum-h', text: regions ? 'Every region' : 'Every server' }),
+      owner ? h('p', { class: 'muted small', text: 'Untick a server to skip it: it is never tested, by the schedule or a full test.' }) : '',
+      this.skipNote ? h('p', { class: 'sp-note', text: this.skipNote }) : '',
       h('div', { class: 'sp-sum-wrap' }, h('table', { class: 'sp-st' },
         h('thead', {}, h('tr', {}, ...cols.map(([k, l]) => h('th', {
           scope: 'col', class: k === 'label' ? '' : 'num', 'aria-sort': this.sort.key === k ? (this.sort.asc ? 'ascending' : 'descending') : null,
@@ -557,14 +584,28 @@ export class SpeedMap {
           this.sort = { key: k, asc: this.sort.key === k ? !this.sort.asc : k === 'label' };
           this.renderSummary();
           /** @type {HTMLElement|null} */ (this.sumEl.querySelector(`th[aria-sort] .sp-sort`))?.focus();
-        } }))))),
+        } }))), owner ? h('th', { scope: 'col', text: 'Schedule' }) : null)),
         h('tbody', {}, ...sorted.map((r) => {
           const key = (regions ? 'r:' : 's:') + r.id;
-          return h('tr', { class: key === sel ? 'sel' : '' }, ...cols.map(([k, , , f], i) => (i === 0
-            ? h('th', { scope: 'row' }, h('button', { type: 'button', class: 'sp-rb', text: f(r), onclick: () => this.select(key) }))
-            : h('td', { class: 'num', 'data-k': cols[i][1], text: f(r) }))));
+          const x = srv.get(r.id);
+          return h('tr', { class: (key === sel ? 'sel' : '') + (x && x.skipped ? ' skipped' : '') }, ...cols.map(([k, , , f], i) => (i === 0
+            ? h('th', { scope: 'row' }, r.n ? h('button', { type: 'button', class: 'sp-rb', text: f(r), onclick: () => this.select(key) }) : h('span', { text: f(r) }),
+              r.learning ? h('span', { class: 'muted small', text: ' (learning)' }) : '')
+            : h('td', { class: k === 'state' ? '' : 'num', 'data-k': cols[i][1], text: f(r) }))),
+          owner && x ? h('td', { class: 'sp-skip' }, h('label', { class: 'sp-check', title: x.skip_locked ? 'Skipped by a start-up setting (--speedtest-skip)' : '' },
+            h('input', { type: 'checkbox', checked: !x.skipped, disabled: !!x.skip_locked, 'aria-label': `Test ${x.label}`, onchange: (/** @type {Event} */ e) => this.setSkip(x.id, !/** @type {HTMLInputElement} */ (e.target).checked) }),
+            'Test')) : null);
         })))));
   }
+}
+
+/** A server's schedule state in words. @param {import('./speed.js').SpeedServer|undefined} x */
+function serverState(x) {
+  if (!x) return '';
+  if (x.skip_locked) return 'Skipped (start-up setting)';
+  if (x.skipped) return 'Skipped';
+  if (x.rest_until && x.rest_until > Date.now()) return `Resting until ${clock(x.rest_until)}`;
+  return 'Tested';
 }
 
 /** "Leaseweb London was busy, so Clouvider London ran it." @param {SpeedSummary} d @param {SpeedTest} t */

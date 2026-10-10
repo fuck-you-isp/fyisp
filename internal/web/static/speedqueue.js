@@ -13,7 +13,7 @@ import { clock } from './home.js';
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
 /** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[],wait_reason?:string|null}} QueueEntry */
 /** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
-/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
+/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean}} QueueHost */
 
@@ -54,6 +54,8 @@ function queueError(e) {
   const s = Number(b.retry_after) || Number(e.retryAfter) || 0;
   switch (b.code) {
     case 'queue_full': return 'The test queue is full right now. Try again later.';
+    case 'speed_off': return 'Speed tests are off on this connection right now.';
+    case 'skipped': return 'The owner skipped that server.';
     case 'rate_limited': return `You’ve asked for several tests recently. Try again ${s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while'}.`;
     case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), b.budget === 'time');
     case 'time_cap': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), true);
@@ -194,6 +196,7 @@ export class SpeedQueue {
       if (q?.budget?.sweep_available_at && q.budget.sweep_available_at > Date.now()) return nextSweep(q.budget.sweep_available_at);
       return q?.sweeps_full ? 'Three full tests are already waiting. Try again later.' : '';
     }
+    if (q.speed_on === false) return 'Speed tests are off on this connection right now.';
     if (!q.public_enabled) return 'Only the owner of this connection can start tests here.';
     const b = q.budget;
     if (b && b.remaining_bytes <= 0) return pausedUntil(b.resets_at || 0);
@@ -432,7 +435,7 @@ function mbit(b) {
 /** A reading that hit the per-direction byte cap is a lower bound: "≥ 940 Mbit/s (short test)". @param {any} t @param {'down'|'up'} dir */
 function reading(t, dir) {
   const b = t[`${dir}_bps`];
-  return b != null && (t[`${dir}_short`] || t[`${dir}_capped`]) ? `≥ ${mbit(b)} (short test)` : mbit(b);
+  return b != null && t[`${dir}_short`] ? `≥ ${mbit(b)} (short test)` : mbit(b);
 }
 /** @param {SpeedTest} t */
 function resultWord(t) {

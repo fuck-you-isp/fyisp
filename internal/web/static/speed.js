@@ -13,15 +13,15 @@ import { clock } from './home.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
 
-/** @typedef {{id:string,label:string,display?:string,provider:string,city:string,country:string,geo:string,area?:string,region:string|null,rtt_ms:number|null,picked:boolean,custom:boolean,capacity_mbps?:number}} SpeedServer */
+/** @typedef {{id:string,label:string,display?:string,provider:string,city:string,country:string,geo:string,area?:string,region:string|null,rtt_ms:number|null,picked:boolean,custom:boolean,capacity_mbps?:number,skipped?:boolean,skip_locked?:boolean,rest_until?:number|null}} SpeedServer */
 /** @typedef {{hour:number,n:number,n_fallback:number,n_failed:number,n_capped:number,down_median_bps:number|null,up_median_bps:number|null,score_median:number|null,up_score_median:number|null,servers:Object<string,number>}} SpeedHour */
 /** @typedef {{text:string,level:string,hours:number[],drop:number}} SpeedPattern */
-/** @typedef {{id:string,kind:string,label:string,why?:string,note?:string,scheduled?:boolean,servers?:string[],server_now?:string,latest_at:number|null,n:number,busy:number,unreachable:number,failed:number,fallback:number,fallback_share?:number,fallback_share_24h?:number,capped_by_server?:number,down_median_bps:number|null,down_p10_bps:number|null,up_median_bps:number|null,up_p10_bps:number|null,best_down_bps:number|null,score_median?:number|null,dip:SpeedPattern|null,up_dip?:SpeedPattern|null,hours:SpeedHour[]}} SpeedRow */
+/** @typedef {{id:string,kind:string,label:string,why?:string,note?:string,scheduled?:boolean,servers?:string[],server_now?:string,latest_at:number|null,n:number,busy:number,unreachable:number,failed:number,fallback:number,fallback_share?:number,fallback_share_24h?:number,capped_by_server?:number,down_median_bps:number|null,down_p10_bps:number|null,up_median_bps:number|null,up_p10_bps:number|null,best_down_bps:number|null,score_median?:number|null,learning?:boolean,dip:SpeedPattern|null,up_dip?:SpeedPattern|null,hours:SpeedHour[]}} SpeedRow */
 /** @typedef {{n:number,lost:number,loss:number,p50_ms:number,p95_ms:number}} SpeedLat */
-/** @typedef {{id:number,start:number,end:number,trigger:string,on_demand?:boolean,outcome:string,region:string|null,server:string,label:string,display?:string,provider?:string,city?:string,fallback:boolean,fallback_level?:string,attempts:number,down_bps:number|null,up_bps:number|null,down_short?:boolean,up_short?:boolean,down_s?:number,up_s?:number,capped_by_server?:boolean,score?:number|null,up_score?:number|null,bytes?:number,down_retrans:number|null,up_retrans:number|null,idle_gateway_ms:number|null,loaded_gateway_ms:number|null,conn?:string,handoff?:{asn:number,name:string,isp_asn:number},latency?:{edge?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat},gateway?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat}},port?:number}} SpeedTest */
+/** @typedef {{id:number,start:number,end:number,trigger:string,on_demand?:boolean,outcome:string,region:string|null,server:string,label:string,display?:string,provider?:string,city?:string,fallback:boolean,fallback_level?:string,attempts:number,down_bps:number|null,up_bps:number|null,down_short?:boolean,up_short?:boolean,capped_by_budget?:boolean,down_s?:number,up_s?:number,capped_by_server?:boolean,score?:number|null,up_score?:number|null,bytes?:number,down_retrans:number|null,up_retrans:number|null,idle_gateway_ms:number|null,loaded_gateway_ms:number|null,conn?:string,handoff?:{asn:number,name:string,isp_asn:number},latency?:{edge?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat},gateway?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat}},port?:number}} SpeedTest */
 /** @typedef {{case:string,text:string,text_public:string,evidence:string,hours:number[],drop:number,days:number,tests:number,regions:string[],providers:string[]}} SpeedFinding */
 /** @typedef {{entry?:number,kind?:string,started:number,expected_end:number,direction:string,server:{id:string,label:string}|null,step?:number,steps?:number}} SpeedRunning */
-/** @typedef {{at:number,tz:number,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,masked_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{layers:any[],text:string[]}|null}} SpeedSummary */
+/** @typedef {{at:number,tz:number,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,masked_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{layers:any[],text:string[]}|null}} SpeedSummary */
 
 // Seconds a test fills the line in each direction (a 1 s ramp-up, then 3 to 8 s), and a whole test with its pauses.
 const DIR_S = 6, TEST_S = 15;
@@ -60,6 +60,7 @@ function speedError(e) {
   switch (e.body?.code) {
     case 'forbidden': return 'Speed tests can only be changed from the device running fyisp.';
     case 'not_found': return 'That server isn’t in the list any more.';
+    case 'skipped': return 'You skipped that server. Turn it back on under Every server to test it.';
     case 'bad_request': return 'fyisp didn’t accept that setting.';
   }
   if (e.status === 0) return ''; // the admin dialog was cancelled
@@ -178,7 +179,7 @@ export class Speed {
     fill(this.headEl, [
       h('div', { class: 'sp-on' },
         h('p', { class: 'sp-state' }, h('b', { text: 'Speed tests: On' }), ` · ${modeName(d.mode)}${next ? ' · ' + next : ''}`,
-          d.bytes_month ? h('span', { class: 'muted small sp-used', text: ` · Used this month: ${bytes(d.bytes_month)}` }) : null),
+          d.bytes_month ? h('span', { class: 'muted small sp-used', text: ` · Data used: ${d.bytes_24h ? `${bytes(d.bytes_24h)} today, ` : ''}${bytes(d.bytes_month)} this month` }) : null),
         h('div', { class: 'sp-acts' },
           h('span', { class: 'sp-split' },
             h('button', { class: 'btn primary', type: 'button', text: 'Test now', disabled: !can, onclick: () => this.run('') }),
@@ -432,6 +433,8 @@ function serverItem(s, row, group) {
   const bits = [];
   if (row && row.down_median_bps != null) bits.push(`usually ${mbps(row.down_median_bps)}`);
   if (row && row.latest_at) bits.push(`last ${clock(row.latest_at)}`);
+  if (s.skipped) bits.push('skipped');
+  else if (s.rest_until && s.rest_until > Date.now()) bits.push(`resting until ${clock(s.rest_until)} (busy several times)`);
   if (row && row.busy && !row.n) bits.push('busy last time');
   else if (row && row.unreachable && !row.n) bits.push('didn’t answer last time');
   return { id: s.id, label: s.label, sub: bits.join(' · '), find: `${s.label} ${s.provider} ${s.city} ${s.country} ${group}` };

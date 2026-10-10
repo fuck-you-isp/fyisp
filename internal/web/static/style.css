@@ -1332,3 +1332,6 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-c.fb::after { content: ""; position: absolute; left: 0; top: 0; border-top: 7px solid var(--ink-2); border-right: 7px solid transparent; border-top-left-radius: 3px; }
 .sp-x { position: absolute; right: 2px; top: -1px; font-size: 11px; color: var(--ink-2); }
 .sp-used { white-space: nowrap; }
+
+.sp-st tr.skipped th, .sp-st tr.skipped td { color: var(--ink-2); }
+.sp-skip { white-space: nowrap; }
