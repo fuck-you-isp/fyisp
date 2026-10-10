@@ -1034,3 +1034,39 @@ body.home-on #reports, body.home-on #panels, body.home-on .foot, body.home-on #i
   .ho-path .ho-arrow { display: none; }
   .ho-node { border-radius: 10px; }
 }
+
+/* ---------- the public report (report.js) ---------- */
+.rp-head p { margin: 0 0 4px; }
+.rp-zone { font-weight: 600; color: var(--ink); }
+.rp-kicker { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: none; }
+.rp-period { margin: 6px 0 0; color: var(--ink-2); }
+.rp-sides { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.rp-side { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); }
+.rp-side .rp-n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rp-side.some { border-color: color-mix(in srgb, var(--v-isp) 45%, var(--border)); }
+.rp-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+.rp-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--ink-2); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.rp-table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.rp-table tr:last-child td { border-bottom: 0; }
+.rp-table tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rp-when { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rp-where { font-weight: 600; }
+.rp-what { min-width: 16em; }
+.rp-foot { font-size: 14px; }
+@media (max-width: 767.98px) {
+  .rp-sides { grid-template-columns: minmax(0, 1fr); }
+  /* The table becomes cards. */
+  .rp-table thead { display: none; }
+  .rp-table, .rp-table tbody, .rp-table tr, .rp-table td { display: block; }
+  .rp-table tr { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .rp-table td { padding: 2px 0; border: 0; }
+  .rp-table td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--ink-2); }
+  .rp-when { white-space: normal; }
+  .rp-what { min-width: 0; }
+}
+
+@media (max-width: 767.98px) {
+  /* The report's longer title and badge: let the header wrap. */
+  body.public.home-on .top { flex-wrap: wrap; }
+  body.public h1 { font-size: 17px; }
+}
