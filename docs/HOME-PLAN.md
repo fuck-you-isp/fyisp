@@ -114,7 +114,7 @@ The old 91-target `default.yml` is **deleted**, along with `testdata/network_exp
 - ⚖ **"Make a report" is the single proof flow.** The report is the public link: a redacted 7-day summary for a support agent or the employer's IT. It warns honestly when most problems were in the home.
   - The live share-link controls move to Details.
   - "Copy a message for support chat" is cut.
-- **Write actions under Docker:** the README's Docker command currently loses Mark and Notes. On first start without `--admin-token`, fyisp generates a token and prints a one-time "open this link" URL in the logs, like Jupyter. Without it, Home explains in plain words and never prints flags. *Should; needs the security review's sign-off.*
+- **Write actions under Docker:** the README's Docker command currently loses Mark and Notes. On first start without `--admin-token`, fyisp generates a token and prints a one-time "open this link" URL in the logs, like Jupyter. Without it, Home explains in plain words and never prints flags. *Done (security-reviewed): the token lives in `<data-dir>/admin-token`, the link is `#admin=<token>`, and `/api/status` reports `controls` and `admin` (this browser has the session).*
 
 ### Header
 - "fyisp" plus a Home | Details switch (`aria-current`) and a theme icon.

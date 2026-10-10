@@ -160,7 +160,7 @@ func parseFlags(args []string) (config, error) {
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls when --listen is not loopback")
+	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, sharing) when --listen is not loopback; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
@@ -361,7 +361,11 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	localAddr := localLn.Addr().String()
-	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: c.adminToken, ExtraHosts: c.allowHosts}))
+	adminTok, adminStored, err := resolveAdminToken(c.adminToken, localAddr, dir)
+	if err != nil {
+		return err
+	}
+	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}))
 	publicSrv := newServer(web.Public(deps, secret))
 	serve := func(name string, s *http.Server, ln net.Listener) {
 		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -385,13 +389,23 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		log.Warn("ICMP probes disabled", "hint", caps.ICMPHint)
 	}
 	fmt.Fprintf(os.Stderr, "\n  Dashboard:  %s\n\n", localURL)
+	openURL := localURL
+	if adminStored {
+		// The generated token, every start (like Jupyter), so a recreated
+		// container on the same volume can still show it. Reading the log
+		// already takes as much access as reading the data directory.
+		link := adminLink(localURL, adminTok)
+		log.Info("open this link once in your browser to use notes, reports and sharing", "url", link)
+		fmt.Fprintf(os.Stderr, "  To use notes, reports and sharing, open this link once:\n  %s\n\n", link)
+		openURL = link
+	}
 	if c.share {
 		if err := share.Start(ctx); err != nil {
 			log.Warn("could not start the public link", "err", err)
 		}
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {
-		openBrowser(localURL)
+		openBrowser(openURL)
 	}
 
 	// Probing, persistence and retention.

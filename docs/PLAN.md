@@ -169,7 +169,7 @@ The prototype binary is 6.4 MB before the tunnel is added.
 - **Local listener** (`--listen 127.0.0.1:3000`, trying 3001–3010 if busy unless set explicitly):
   - Host-header allowlist: anything else gets 421.
   - POST routes (start/stop sharing) must be same-origin and carry a per-process CSRF token.
-  - With `--listen 0.0.0.0`, those POST routes are disabled unless `--admin-token` is set.
+  - With `--listen 0.0.0.0`, those POST routes need an admin token: `--admin-token`, or one generated into `<data-dir>/admin-token` (0600) and logged as `http://…/#admin=<token>`. The page exchanges the fragment for an HttpOnly, SameSite=Strict cookie (`POST /api/admin/session`). `--admin-token=off` disables the routes.
   - `/metrics` is served here, and pprof only with `--pprof 127.0.0.1:…`.
   - The browser opens to `127.0.0.1`, never to the tunnel URL.
 - **Public listener** (loopback on an ephemeral port; the tunnel's origin): routes come from an allowlist, and anything else doesn't exist.

@@ -253,6 +253,7 @@ type localStatus struct {
 	Status
 	Mode     string `json:"mode"`
 	Controls string `json:"controls"` // "enabled", "admin" (needs admin token) or "disabled"
+	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
 }
 
 // publicStatus is the redacted /api/status: no version, no hints, no error
