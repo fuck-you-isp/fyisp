@@ -40,6 +40,7 @@ type speedEntryJSON struct {
 	Server     *speedRef `json:"server"`    // running: the server under test
 	Direction  *string   `json:"direction"` // running: picking, download, upload
 	Tests      []int64   `json:"tests"`
+	WaitReason *string   `json:"wait_reason"` // waiting: "cooldown" (a share-link sweep held until est_start); else null
 	// Results: a sweep's servers in order, with each one's status (part=entry
 	// and part=sweep only).
 	Results []speedJobJSON `json:"results,omitempty"`
@@ -204,6 +205,9 @@ func (s *server) speedEntry(e speedtest.Entry, v speedViewer, st speedtest.State
 	}
 	if !s.public {
 		j.Origin = map[speedtest.Who]string{speedtest.WhoOwner: "owner", speedtest.WhoPublic: "public", speedtest.WhoSchedule: "scheduled"}[e.Who]
+	}
+	if e.Held {
+		j.WaitReason = strPtr("cooldown")
 	}
 	if e.State == speedtest.StateRunning {
 		if e.Server != "" {

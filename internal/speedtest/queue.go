@@ -117,6 +117,9 @@ type Entry struct {
 	Servers  []string
 	JobTests []int64
 	Ran      int
+	// Held: a waiting share-link sweep that may not start before EstStart
+	// (the gap after the last one).
+	Held bool
 }
 
 // Refusals.
@@ -912,6 +915,7 @@ func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
 			at = at.Add(time.Duration(max(w.Steps, 1)) * EstJob)
 		}
 		if q.gapLocked(e, now) {
+			out.Held = true
 			if g := q.sweepEnd.Add(PublicSweepGap); g.After(at) {
 				at = g
 			}

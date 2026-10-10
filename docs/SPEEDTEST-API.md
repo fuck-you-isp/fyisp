@@ -277,6 +277,7 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null: running only
   "direction": "download",      // |null: running only ("picking" | "download" | "upload")
   "tests": [412, 413],          // the stored tests so far
+  "wait_reason": null,          // waiting: "cooldown" = a share-link sweep held until est_start (30 min after the last one); else null
   "results": [                  // a sweep's servers in order (part=entry and part=sweep only)
     {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "status": "ok", "test": 412,
      "down_bps": 412000000, "up_bps": 38000000},

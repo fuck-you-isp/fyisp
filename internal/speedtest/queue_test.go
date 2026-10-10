@@ -649,7 +649,7 @@ func TestQueueSweepGapAtStart(t *testing.T) {
 	f.release <- struct{}{}
 	waitFor(t, func() bool { x, _ := q.Get(single.ID); return x.State == StateDone })
 	ends := q.State().SweepAt
-	if x, _ := q.Get(second.ID); x.State != StateWaiting || !x.EstStart.Equal(ends) {
+	if x, _ := q.Get(second.ID); x.State != StateWaiting || !x.EstStart.Equal(ends) || !x.Held {
 		t.Fatalf("held sweep: %+v, want waiting until %v", x, ends)
 	}
 	q2, _ := newQueueHarness(t, func(o *QueueOptions) { o.Settings = set; o.Now = q.o.Now })
