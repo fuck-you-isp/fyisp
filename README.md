@@ -141,10 +141,24 @@ The public link (`--share`) shows only the top card, the working-hours strip and
 ### How it is measured
 
 - Every STUN target gets **one long-lived UDP socket**, as a real call does (one address and port pair, so there is no new NAT mapping per sample). It is reopened only when the server's address changes or after an error.
-- Each sample is a **burst of 5 STUN Binding Requests, 20 ms apart** (RFC 5389, 20 bytes each, no attributes; never TURN, never credentials). Bursts run every 5 seconds per target, every 15 s for Cloudflare on port 53 and every 30 s for the Twilio regions.
+- Each sample is a **burst of 5 STUN Binding Requests, 20 ms apart** (RFC 5389, 20 bytes each, no attributes; never TURN, never credentials). Bursts run every 5 seconds per target unless the [list below](#stun-servers) says otherwise.
 - A burst records the **median round trip**, the **in-burst jitter** (the mean difference between consecutive round trips, close to what a call's jitter buffer sees) and **loss**: requests not answered within 1 s. Only timeouts count as loss. A refused port or a failed DNS lookup is *unknown*, never loss. `--timeout` does not apply to UDP.
-- A burst never spans an address change, so a Teams relay switching region is never counted as jitter.
+- A burst never spans an address change, so a GeoDNS server switching region (the Teams relay) is never counted as jitter.
 - Each one-minute bucket is scored on its own, and a window is judged by its **worst minute**: a 5-minute mean would hide a 30-second stall.
+
+#### STUN servers
+
+This is the one list of the STUN servers fyisp ships; the catalog files ([`calls-stun.yml`](internal/profile/catalog/calls-stun.yml), [`twilio.yml`](internal/profile/catalog/twilio.yml)) are the source of truth. Each server's terms are reviewed in [docs/STUN-TERMS.md](docs/STUN-TERMS.md).
+
+| Target | Server | Every | Profile | Role |
+|---|---|---|---|---|
+| Meet-STUN | `stun.l.google.com:19302` | 5 s | `default`, `calls` | call path (anycast); Google Meet |
+| Meet-STUN-3478 | `stun.l.google.com:3478` | 5 s | `calls` | call path; Google Meet, for networks that block 19302 |
+| Cloudflare-STUN | `stun.cloudflare.com:3478` | 5 s | `default`, `calls` | call path (anycast) |
+| Cloudflare-UDP53 | `stun.cloudflare.com:53` | 15 s | `default`, `calls` | call path; also tells *STUN ports blocked* from *UDP blocked* |
+| Twilio-STUN-global | `global.stun.twilio.com:3478` | 5 s | `default`, `calls` | call path (GeoDNS to the nearest Twilio region) |
+| Twilio-us1 … Twilio-in1 | `{us1,us2,ie1,de1,sg1,jp1,au1,br1,in1}.stun.twilio.com:3478` | 30 s | `calls` | fixed regions, a world map of the UDP path (not in the call path) |
+| Teams-Relay | `worldaz.tr.teams.microsoft.com:3478` | 5 s | `calls` | call path (GeoDNS to an Azure region); Microsoft Teams |
 
 ### The score
 
@@ -167,14 +181,14 @@ The loss penalty is softer than G.711's tables because Opus forward error correc
 | Poor | 3.1 to 3.6 | 60–70 |
 | Unusable | below 3.1 | below 60 |
 
-*Your call path* combines the anycast and GeoDNS STUN servers (Google, Cloudflare, Twilio global): each minute takes the median of the servers' round trip, jitter and loss, so one bad server does not make the path bad.
+*Your call path* combines the anycast and GeoDNS STUN servers marked *call path* above: each minute takes the median of the servers' round trip, jitter and loss, so one bad server does not make the path bad.
 
 ### Which apps are measured
 
 | App | Measured over | Profile |
 |---|---|---|
-| Google Meet | `stun.l.google.com:19302`, the STUN server Chrome and Meet use (also `:3478` in `calls`, for networks that block 19302) | `default`, `calls` |
-| Microsoft Teams | `worldaz.tr.teams.microsoft.com:3478`, the Teams Transport Relay that Teams clients use | **opt-in**: `--profile default,calls` (or `--profile calls`) |
+| Google Meet | `stun.l.google.com`, the STUN server Chrome and Meet use | `default`, `calls` |
+| Microsoft Teams | the Teams Transport Relay that Teams clients use | **opt-in**: `--profile default,calls` (or `--profile calls`) |
 | Zoom, Slack, Discord, WhatsApp, Webex | not measurable | |
 
 Zoom, Slack (Amazon Chime), Discord, WhatsApp and Webex hand out a media server per meeting, only after you sign in, and those servers ignore STUN without that session. They can't be tested ahead of a call; if your call path is Good, they usually are too. fyisp still checks their websites over TCP.
@@ -189,14 +203,14 @@ The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch r
 
 ### Limits
 
-- **Anycast targets measure the path to the nearest edge.** Google and Cloudflare answer from a data centre near you, not from the meeting's media server or the other people on the call. Most call problems are on your own connection, which is exactly that path; a problem beyond the provider's edge is not seen.
+- **Anycast targets measure the path to the nearest edge.** Anycast and GeoDNS servers answer from a data centre near you, not from the meeting's media server or the other people on the call. Most call problems are on your own connection, which is exactly that path; a problem beyond the provider's edge is not seen.
 - **Idle probes miss bufferbloat.** Calls often break when the link is busy (an upload, a backup, someone streaming), because queues only fill under load. fyisp's probes are tiny and see a quiet link, so a call can be bad while the strip is green. Mark the call, and compare with the TCP charts at that time.
 - **IPv4 only.** STUN is measured over IPv4; a call that goes over IPv6 takes a path fyisp doesn't measure.
 - The score is a model, not the app's own rating: expect it to agree on the band, not the decimal.
 
 ## What to measure (profiles)
 
-By default fyisp measures 91 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud, plus four public STUN servers (Google Meet, Cloudflare on ports 3478 and 53, Twilio) that measure the UDP path call audio and video use: a burst of 5 tiny STUN Binding Requests every 5 seconds each (15 s on port 53), with round-trip time, jitter and loss. `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
+By default fyisp measures 91 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud, plus four public STUN servers ([list](#stun-servers)) that measure the UDP path call audio and video use: a burst of 5 tiny STUN Binding Requests every 5 seconds each, with round-trip time, jitter and loss ([Call quality](#call-quality)). `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
 
 ```sh
 fyisp profiles                       # list the profiles, with target and panel counts
@@ -209,7 +223,7 @@ fyisp --profile default,dns          # the default targets plus every public res
 | Profiles | What |
 |---|---|
 | `default` | the 87 original targets plus 4 STUN targets (used without `--profile`) |
-| `calls` | call quality: every STUN target (Google Meet, Cloudflare, Twilio global and 9 regions, and the Microsoft Teams relay, which is only in this profile) plus Teams, Meet, Zoom, Slack, Discord, WhatsApp and Webex over TCP; `--profile default,calls` adds it to the default |
+| `calls` | call quality: every [STUN server](#stun-servers), some only in this profile, plus Teams, Meet, Zoom, Slack, Discord, WhatsApp and Webex over TCP; `--profile default,calls` adds it to the default |
 | `all` | every target in the catalog |
 | `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / VPS, bare-metal, regional and object-storage clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, ...) / both; one panel per provider and region |
 | `storage` | object storage clouds (Backblaze B2, Wasabi, IDrive e2, R2, ...) plus Hetzner, Linode and OVH object storage |
@@ -303,7 +317,7 @@ Sharing is **off by default**. Start it with `fyisp --share` or the *Share* butt
 
 - fyisp opens a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) from inside the process (no `cloudflared` install, no Cloudflare account) and prints a link like `https://<random-words>.trycloudflare.com/s/<secret>/`.
 - **What is public:** the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, no write routes, and requests are rate-limited.
-- **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
+- **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
 - The tunnel tries QUIC (UDP port 7844) first and switches to HTTP/2 over TCP port 443 after about 30 seconds if UDP is blocked. Force one with `--share-protocol quic` or `--share-protocol http2`.
 - The link is random. It changes when fyisp restarts, or when the tunnel has to be re-created after 5 minutes without a connection. The browser on your machine always opens `127.0.0.1`, never the public link.
 - Quick tunnels are a free Cloudflare service meant for testing and demos. They come with no uptime guarantee, are rate-limited, and are subject to [Cloudflare's terms](https://www.cloudflare.com/website-terms/). fyisp is not affiliated with Cloudflare.

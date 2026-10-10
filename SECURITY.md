@@ -21,8 +21,8 @@ fyisp has no telemetry. It talks to its probe targets, your DNS resolver and,
 only while sharing, Cloudflare's quick tunnel. Every probe target, TCP or UDP,
 sees your public IP address, as any website you visit does.
 
-The STUN servers fyisp measures calls with (Google, Cloudflare, Twilio and,
-with the `calls` profile, Microsoft Teams) are no different: they see your
+The STUN servers fyisp measures calls with (listed in the README under
+"STUN servers") are no different: they see your
 public IP address and the time of each request. A STUN answer also contains
 your public address as the server sees it (XOR-MAPPED-ADDRESS); fyisp's parser
 skips that attribute without decoding it, keeps no raw datagrams, and never
