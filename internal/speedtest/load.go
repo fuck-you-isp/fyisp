@@ -71,6 +71,27 @@ type loadRun struct {
 	down, up [2][]loadSample // [gateway, edge]
 }
 
+// loadedRTT is the median RTT of the run's probes under load, lost ones
+// at LoadTimeout (0 without probes).
+func (lr *loadRun) loadedRTT() time.Duration {
+	var ms []float64
+	for _, dir := range [][2][]loadSample{lr.down, lr.up} {
+		for _, layer := range dir {
+			for _, x := range layer {
+				if x.lost {
+					ms = append(ms, float64(LoadTimeout/time.Millisecond))
+				} else {
+					ms = append(ms, x.ms)
+				}
+			}
+		}
+	}
+	if len(ms) == 0 {
+		return 0
+	}
+	return time.Duration(callq.Median(ms) * float64(time.Millisecond))
+}
+
 // probe pings the run's addresses every lr.every from now until stop is
 // called; stop waits for the probes in flight and returns the samples,
 // [gateway, edge].

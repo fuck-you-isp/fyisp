@@ -3,8 +3,11 @@ package speedtest
 import (
 	"context"
 	"errors"
+	"net"
 	"net/netip"
 	"slices"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -298,5 +301,65 @@ func TestSlotTimeRotation(t *testing.T) {
 	h.mu.Unlock()
 	if ts := h.slot(t, target{region: "home", at: at}); ts.Server != want {
 		t.Errorf("server %s, want %s (the slot's hour), not %s", ts.Server, want, later)
+	}
+}
+
+// TestSweepGap: a sweep's tests leave SweepGap of unmasked time between
+// them (after the mask's tail), so monitoring is never blind for minutes.
+func TestSweepGap(t *testing.T) {
+	h := newHarness(t, Options{})
+	job := h.s.slotJob(target{server: "Near", nearby: -1})
+	h.job(t, job, "sweep")
+	h.mu.Lock()
+	h.slept = nil
+	h.mu.Unlock()
+	h.job(t, job, "sweep")
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.slept) == 0 || h.slept[0] != MaskTail+SweepGap {
+		t.Errorf("slept %v before the second sweep test, want %v first", h.slept, MaskTail+SweepGap)
+	}
+}
+
+// TestCancelMasksUntilStreamsClose: cancelling a test mid-download (a real
+// run against the fake iperf3 server) stores nothing, and the mask window
+// lasts until the run's streams are closed and its goroutines gone (plus
+// AbortTail): a probe sent while the streams were still open is masked.
+func TestCancelMasksUntilStreamsClose(t *testing.T) {
+	f := newFakeServer(t, "stall")
+	host, port, _ := net.SplitHostPort(f.addr())
+	p, _ := strconv.Atoi(port)
+	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: true}
+	st := &MemStore{}
+	var returned time.Time
+	var mu sync.Mutex
+	started := make(chan struct{}, 4)
+	s := New(Options{Catalog: &Catalog{byID: map[string]int{}}, Custom: []Server{sv}, Store: st,
+		Fake: &Fake{Run: func(ctx context.Context, c Config) (Result, error) {
+			started <- struct{}{}
+			r, err := Run(ctx, c) // returns once its streams are closed and their goroutines exited
+			mu.Lock()
+			returned = time.Now()
+			mu.Unlock()
+			return r, err
+		}}})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { <-started; time.Sleep(300 * time.Millisecond); cancel() }()
+	id, saved, _ := s.execJob(ctx, s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
+	if saved || id != 0 {
+		t.Fatalf("a cancelled test was saved (%d)", id)
+	}
+	if ts, _ := st.SpeedTests(context.Background(), time.Time{}, time.Now().Add(time.Hour)); len(ts) != 0 {
+		t.Fatalf("stored %+v", ts)
+	}
+	mu.Lock()
+	ret := returned
+	mu.Unlock()
+	end := s.o.Windows.LastEnd()
+	if end.Before(ret.Add(AbortTail)) {
+		t.Errorf("window ends %v, before the streams closed (%v) plus AbortTail", end, ret)
+	}
+	if !s.o.Windows.Overlaps(ret.Add(-time.Millisecond), ret.Add(-time.Millisecond)) || !s.o.Windows.Overlaps(ret.Add(AbortTail), ret.Add(AbortTail)) {
+		t.Error("probes while the streams were open, or in the abort tail, are not masked")
 	}
 }
