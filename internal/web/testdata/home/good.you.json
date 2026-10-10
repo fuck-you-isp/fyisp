@@ -57,6 +57,11 @@
       "services": 0,
       "call_patches": 1
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [],
     "work": {
       "measured": 330,
@@ -157,6 +162,11 @@
       "offline": 0,
       "services": 0,
       "call_patches": 1
+    },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 0
     },
     "problems": [],
     "work": {

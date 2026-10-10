@@ -139,3 +139,53 @@ func checkGoldenCopy(t *testing.T, name, voice string, b []byte) {
 		}
 	}
 }
+
+// TestHomePublicReportGolden pins the public report (the share link's
+// week, through the public route, voice forced to public) for two
+// scenarios, and checks its redaction: no hosts, no addresses.
+func TestHomePublicReportGolden(t *testing.T) {
+	hostish := regexp.MustCompile(`[a-z0-9-]+\.(com|net|org|goog|us|gg|io)\b|\b\d{1,3}(\.\d{1,3}){3}\b|evidence|region`)
+	for _, name := range []string{"isp", "week-with-gaps"} {
+		sc, err := homescen.Build(name, homeNow, homeNow.Location())
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := Deps{Profile: func() *model.Profile { return sc.Profile }, Store: sc.Store, Verdict: sc.Verdict,
+			Status: func() Status { return Status{} }}
+		h := Public(d, testSecret).(*publicHandler)
+		h.now = func() time.Time { return homeNow }
+		w := do(h, "GET", "/s/"+testSecret+"/api/home?part=history&span=w&tz=120&voice=you", nil)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", name, w.Code, w.Body.String())
+		}
+		var v any
+		if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := json.MarshalIndent(v, "", "  ")
+		got = append(got, '\n')
+		if m := hostish.Find(got); m != nil {
+			t.Errorf("%s: the public report says %q", name, m)
+		}
+		var hh HomeHistory
+		_ = json.Unmarshal(got, &hh)
+		if hh.Voice != voicePublic || len(hh.Days) != 7 || hh.Sides.Home+hh.Sides.Provider+hh.Sides.Other != hh.Counts.Problems {
+			t.Errorf("%s: voice %s days %d sides %+v counts %+v", name, hh.Voice, len(hh.Days), hh.Sides, hh.Counts)
+		}
+		checkGoldenCopy(t, "report."+name, voicePublic, []byte(`{"history_week":`+string(got)+`}`))
+		path := filepath.Join("testdata", "home", "report."+name+".json")
+		if *update {
+			if err := os.WriteFile(path, got, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%v (run with -update)", err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s differs from the golden file; run go test ./internal/web -run TestHomePublicReportGolden -update and review the diff", path)
+		}
+	}
+}

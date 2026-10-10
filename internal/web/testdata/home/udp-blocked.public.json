@@ -60,6 +60,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [
       {
         "id": 61,
@@ -68,6 +73,9 @@
         "kind": "stun_blocked",
         "who": "calltraffic",
         "where": "Call traffic",
+        "side": "other",
+        "level": "info",
+        "text": "The network was blocking call traffic.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791453600000\u0026to=1791549000000\u0026o=1"
       }
@@ -186,6 +194,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [
       {
         "id": 61,
@@ -194,6 +207,9 @@
         "kind": "stun_blocked",
         "who": "calltraffic",
         "where": "Call traffic",
+        "side": "other",
+        "level": "info",
+        "text": "The network was blocking call traffic.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791453600000\u0026to=1791549000000\u0026o=1"
       }

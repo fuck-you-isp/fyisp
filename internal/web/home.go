@@ -1222,6 +1222,16 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 	}
 
 	for _, in := range incs { // newest first
+		if in.level != levelInfo {
+			switch sideOf(in.who) {
+			case "home":
+				out.Sides.Home++
+			case "provider":
+				out.Sides.Provider++
+			default:
+				out.Sides.Other++
+			}
+		}
 		switch {
 		case in.level == levelInfo:
 			// not a problem; still in the table, the timeline and runs
@@ -1235,7 +1245,11 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 			continue
 		}
 		pr := HomeProblem{ID: in.ID, From: in.Start.UnixMilli(), Ongoing: in.End.IsZero(), Kind: string(in.Kind), Who: in.who,
-			Where: cp.where(in.who, in.label), PeakLoss: clamp01(in.PeakLoss)}
+			Where: cp.where(in.who, in.label), Side: sideOf(in.who), Level: in.level, Text: cp.wasWhere(in.who, in.Kind),
+			PeakLoss: clamp01(in.PeakLoss)}
+		if in.who == whoHome || in.who == whoProvider {
+			pr.Confidence = confLikely
+		}
 		end := now
 		if !in.End.IsZero() {
 			pr.To = in.End.UnixMilli()
@@ -1606,4 +1620,15 @@ func hasCallPath(p *model.Profile) bool {
 		return false
 	}
 	return slices.ContainsFunc(p.Targets, callq.IsCorePath)
+}
+
+// sideOf groups who for the report.
+func sideOf(who string) string {
+	switch who {
+	case whoHome, whoOffline:
+		return "home"
+	case whoProvider:
+		return "provider"
+	}
+	return "other"
 }
