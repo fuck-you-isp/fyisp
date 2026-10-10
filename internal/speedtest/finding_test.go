@@ -264,3 +264,40 @@ func TestSummarize(t *testing.T) {
 		t.Errorf("%+v", st)
 	}
 }
+
+// TestFindingThin: webdev-like data (47 hours of hourly tests from
+// mid-afternoon: 3 dates, at most 2 tests per region-hour) never reads "no
+// time of day stands out": it is still learning, and names the dip it sees.
+func TestFindingThin(t *testing.T) {
+	c := findingCatalog(t)
+	start := time.Date(2026, 9, 1, 13, 0, 0, 0, time.UTC)
+	var ts []model.SpeedTest
+	for k := range 47 { // webdev's 2-day backfill: 3 dates, at most 2 tests per region-hour
+		for i, r := range c.Regions {
+			at := start.Add(time.Duration(k)*time.Hour + time.Duration(i)*20*time.Minute)
+			sv := r.Chain(c, at, 0)[0].Server.ID
+			sc := 1.0
+			if h := at.Hour(); h >= 21 || h < 1 {
+				sc = 0.55
+			}
+			down := sc * 400e6
+			ts = append(ts, model.SpeedTest{Start: at, Trigger: "schedule", Outcome: model.SpeedOK, Region: r.ID, Server: sv,
+				FallbackLevel: FallbackNone, DownBps: &down, ScoreDown: &sc})
+		}
+	}
+	f := FindFinding(FindingInput{Tests: ts, Catalog: c})
+	if f.Case != CaseNotEnough || f.Tier != TierEarly || len(f.Hours) == 0 || f.Hours[0] != 21 ||
+		!strings.Contains(f.Text, "Evenings are slower: about 50% below your daytime speed so far (around 9 pm to 1 am)") || !strings.Contains(f.Text, "more day") ||
+		strings.Contains(f.TextPublic, "your") {
+		t.Errorf("%s %s %v: %s / %s", f.Case, f.Tier, f.Hours, f.Text, f.TextPublic)
+	}
+	flat := ts[:0:0]
+	for _, x := range ts {
+		one := 1.0
+		x.ScoreDown = &one
+		flat = append(flat, x)
+	}
+	if f := FindFinding(FindingInput{Tests: flat, Catalog: c}); f.Case != CaseNotEnough || !strings.HasPrefix(f.Text, "Still learning:") {
+		t.Errorf("flat: %s %s", f.Case, f.Text)
+	}
+}

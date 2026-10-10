@@ -100,6 +100,9 @@ func FindFinding(in FindingInput) Finding {
 		return f
 	}
 	f.Evidence = fmt.Sprintf("Based on %s over %s.", plural(len(tests), "test", "tests"), plural(f.Days, "day", "days"))
+	if f.thin(in, tests) {
+		return f
+	}
 	for _, up := range []bool{false, true} {
 		if f.find(in, tests, up) {
 			f.wording(in, tests)
@@ -110,6 +113,51 @@ func FindFinding(in FindingInput) Finding {
 	f.Text = "No time of day stands out. Speeds stay within about 10% of normal."
 	f.TextPublic = f.Text
 	return f
+}
+
+// thin reports coverage too thin to judge, and fills the "still learning"
+// finding: fewer than minHours hours of day have MinPerHour scored tests
+// pooled, or fewer than half the rows (regions, or servers outside
+// regions) have minHours such hours on their own. Saying "no time of day
+// stands out" then would be wrong. A dip already visible in the pooled
+// tests is named, as an early sign without a "where".
+func (f *Finding) thin(in FindingInput, tests []model.SpeedTest) bool {
+	var noFallback []model.SpeedTest
+	groups := map[string][]model.SpeedTest{}
+	for _, t := range tests {
+		if !t.Fallback {
+			noFallback = append(noFallback, t)
+			groups[GroupKey(t)] = append(groups[GroupKey(t)], t)
+		}
+	}
+	pooled := HourMedians(noFallback, in.TZ, false)
+	covered, rows := countValid(pooled), 0
+	for _, ts := range groups {
+		if countValid(HourMedians(ts, in.TZ, false)) >= minHours {
+			rows++
+		}
+	}
+	if covered >= minHours && 2*rows >= len(groups) && rows > 0 {
+		return false
+	}
+	// About how many more days: each row gets this many tests per hour of
+	// day per day so far.
+	perDay := float64(len(noFallback)) / float64(max(len(groups), 1)*24*f.Days)
+	more := 1
+	if perDay > 0 {
+		more = max(1, int(math.Ceil(float64(MinPerHour)/perDay))-f.Days)
+	}
+	f.Case = CaseNotEnough
+	wait := "about " + plural(more, "more day", "more days")
+	if p := FindDip(pooled, false); p != nil {
+		f.Tier, f.Hours, f.Drop = TierEarly, p.Hours, p.Drop
+		f.Text = fmt.Sprintf("%s so far (around %s). Not every region has enough tests at each hour yet to say where: %s.",
+			strings.TrimSuffix(p.Text, "."), hoursText(p.Hours), wait)
+	} else {
+		f.Text = fmt.Sprintf("Still learning: %d of 24 hours of the day have enough tests so far. We need %s to compare times of day.", covered, wait)
+	}
+	f.TextPublic = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual").Replace(f.Text)
+	return true
 }
 
 // providerOf is a test's server's provider.
