@@ -28,14 +28,18 @@ func Flags(fs *flag.FlagSet) func(now time.Time) (Options, error) {
 	to := fs.String("to", "", "end time, same forms as --from (default: newest data)")
 	var targets, kinds multi
 	fs.Var(&targets, "target", "target name to export (repeatable or comma-separated; default all)")
-	fs.Var(&kinds, "kind", "probe kind: https, tcp, icmp, trace (traceroute hops; repeatable or comma-separated; default all)")
+	fs.Var(&kinds, "kind", "probe kind: https, tcp, icmp, trace (traceroute hops), udp, udp_jitter, udp_loss (repeatable or comma-separated; default all)")
 	notes := fs.Bool("annotations", false, "export the timeline annotations (CSV: id,at,end,public,text) instead of samples")
+	speed := fs.Bool("speedtests", false, "export the speed tests (CSV: id,start,end,trigger,outcome,server,...) instead of samples")
 	out := fs.String("output", "", "output file, created with mode 0600 (default stdout; required for sqlite)")
 	fs.StringVar(out, "o", "", "shorthand for --output")
 	return func(now time.Time) (Options, error) {
-		o := Options{Format: *format, Tier: *tier, Targets: targets, Output: *out, Annotations: *notes}
-		if o.Annotations && o.Format != FormatCSV {
-			return o, fmt.Errorf("--annotations is exported as CSV only")
+		o := Options{Format: *format, Tier: *tier, Targets: targets, Output: *out, Annotations: *notes, SpeedTests: *speed}
+		if o.Annotations && o.SpeedTests {
+			return o, fmt.Errorf("--annotations and --speedtests are separate exports")
+		}
+		if (o.Annotations || o.SpeedTests) && o.Format != FormatCSV {
+			return o, fmt.Errorf("--annotations and --speedtests are exported as CSV only")
 		}
 		switch o.Format {
 		case FormatCSV:

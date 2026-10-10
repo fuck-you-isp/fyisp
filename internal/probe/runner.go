@@ -255,23 +255,25 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 			if s.key.Kind == model.KindUDP {
 				defer s.udp.close()
 				schedule(ctx, c, s.iv, s.phase, func(slot time.Time) {
+					at := time.Now()
 					smps, ok := r.probeUDP(ctx, s)
 					if !ok || ctx.Err() != nil {
 						return
 					}
 					for _, smp := range smps { // one slot for the three siblings
-						smp.Slot = slot
+						smp.Slot, smp.At = slot, at
 						sink.Observe(smp)
 					}
 				})
 				return
 			}
 			schedule(ctx, c, s.iv, s.phase, func(slot time.Time) {
+				at := time.Now()
 				smp, ok := r.probe(ctx, s, png)
 				if !ok || ctx.Err() != nil {
 					return // not measured, or shutting down
 				}
-				smp.Slot = slot
+				smp.Slot, smp.At = slot, at
 				sink.Observe(smp)
 			})
 		}()

@@ -30,6 +30,36 @@ stores, logs or exports the address (a test checks samples, the API, metrics,
 reports and logs for it). Socket errors are stored only as a reason code,
 never as text that could contain an address. `--no-udp` turns STUN off.
 
+Speed tests are off unless you switch them on (`--speedtest` or the Details
+choice). Then fyisp sends iperf3 traffic over IPv4 to public iperf3 servers in
+its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
+Scaleway and others; the README lists them) and to servers you name with
+`--speedtest-server`, and to no one else. The catalog is built into the
+binary and never fetched. Those servers see your public IP address. Each test
+moves at most 200 MB. Once a day per server, fyisp traceroutes the path to
+it to name the first network past your ISP (shown locally only). "Test now", sweeps, cancelling and the
+mode choice are write actions behind the same protections as notes (same
+origin, CSRF token, admin token). Only while speed tests are on and the owner turns it on
+(`--speedtest-public` or the Details toggle; off by default), people with
+the share link may queue a test or a sweep of every server (`POST
+/s/<secret>/api/speed/run`), but never change the mode or cancel anything.
+Their tests may transfer at most `--speedtest-public-budget` (default 10 GB)
+per rolling 24 hours, counted from every byte on the wire (all attempts,
+ramp-up included) and kept across restarts. Because probes are masked
+during a test, the share link's tests may also keep the line under test at
+most 10 minutes per hour and 60 per day, a public sweep can start only 30
+minutes after the last one, and a public sweep yields to the owner's and
+scheduled tests between servers. Visitors can't blank out the monitoring. Every test waits in one queue and
+exactly one runs at a time: the owner's tests first, then scheduled ones, then
+the share link's. The share link's
+entries are capped: one waiting entry per visitor, 3 waiting sweeps and 12
+waiting entries in all. Each visitor (`Cf-Connecting-Ip`, IPv6 per /64)
+may start 1 per 30 s and 10 per hour. That route is same-origin only,
+takes only `kind` and `id` and no body, and is never cached. The share link
+shows server labels (provider and city) but never hosts, addresses or ports,
+shows your own servers only as "Your server", and shows the queue's other
+entries only as "someone".
+
 The public share link hides the STUN target names and the Teams relay region
 (the Azure region fyisp's relay lookup landed in, which hints at where you
 are), along with the other redactions listed in the README.

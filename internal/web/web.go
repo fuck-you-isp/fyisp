@@ -71,7 +71,10 @@ type Deps struct {
 	// region from the name's CNAME and address-change epochs (the probe
 	// runner: probe.Runner implements probe.UDPStateSource).
 	UDP probe.UDPStateSource
-	Log *slog.Logger
+	// Speed runs the speed tests (speedtest.Scheduler); nil: the speed
+	// routes answer 404 and the UI hides Speed.
+	Speed SpeedSource
+	Log   *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }
@@ -87,6 +90,9 @@ type Status struct {
 	Ready   int         `json:"ready"`   // targets that have reported at least one sample (see Warmup)
 	Share   ShareState  `json:"share"`
 	Store   store.Stats `json:"store"`
+	// SpeedMasked is the share of the last 24 hours under speed test
+	// (probes then are stored as not measured); nil without speed tests.
+	SpeedMasked *float64 `json:"speed_masked_share_24h,omitempty"`
 }
 
 // Share phases used by the UI. Anything else is shown verbatim.

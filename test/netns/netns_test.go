@@ -12,7 +12,8 @@
 // /api/panel, /api/status and /metrics. TestNetworkPath (path_test.go)
 // covers gateway/ISP edge discovery, TestVerdict (verdict_test.go) the
 // verdict and the outage log, TestUDP (udp_test.go) the call path: STUN
-// bursts, the UDP verdicts and /api/calls under UDP-only faults.
+// bursts, the UDP verdicts and /api/calls under UDP-only faults, TestSpeed
+// (speed_test.go) speed tests against lab iperf3 servers on a shaped line.
 //
 // The topologies share nothing (namespaces, responders, resolver, CA, data
 // directories, fyisp processes), so the scenarios run in parallel: a full
@@ -48,6 +49,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -641,7 +643,7 @@ func (h *harness) setupTopology(t *testing.T) {
 	}
 	// Targets live on the internet namespace's loopback; every namespace's default route
 	// leads there through the chain.
-	for _, a := range append([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr, stunAddr}, anycastAddrs...) {
+	for _, a := range slices.Concat([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr, stunAddr}, anycastAddrs, iperfAddrs) {
 		h.run(t, "ip", "-n", h.inet, "addr", "add", a.String()+"/32", "dev", "lo")
 	}
 	// Unprivileged ICMP (ping sockets) is off in a new namespace
