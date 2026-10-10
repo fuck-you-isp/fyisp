@@ -42,7 +42,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [],
     "work": {
@@ -101,7 +102,8 @@
             "kind": "isp",
             "label": "Provider network",
             "source": "incident",
-            "incident": 81
+            "incident": 81,
+            "text": "The problem was most likely in the provider's network. The home network looked fine."
           }
         ],
         "off": [
@@ -140,7 +142,8 @@
             "kind": "isp",
             "label": "Provider network",
             "source": "incident",
-            "incident": 82
+            "incident": 82,
+            "text": "The problem was most likely in the provider's network. The home network looked fine."
           },
           {
             "from": 1791468120000,
@@ -150,7 +153,8 @@
             "kind": "lan",
             "label": "Home network",
             "source": "incident",
-            "incident": 83
+            "incident": 83,
+            "text": "The problem was most likely in the home network (Wi-Fi or router)."
           }
         ],
         "off": []
@@ -174,7 +178,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {

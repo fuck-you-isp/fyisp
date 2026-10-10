@@ -44,7 +44,8 @@
             "label": "Your provider",
             "source": "incident",
             "incident": 22,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
           }
         ],
         "off": []
@@ -59,7 +60,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {
@@ -118,7 +120,8 @@
             "kind": "isp",
             "label": "Your provider",
             "source": "incident",
-            "incident": 21
+            "incident": 21,
+            "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
           }
         ],
         "off": []
@@ -166,7 +169,8 @@
             "label": "Your provider",
             "source": "incident",
             "incident": 22,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
           }
         ],
         "off": []
@@ -181,7 +185,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {

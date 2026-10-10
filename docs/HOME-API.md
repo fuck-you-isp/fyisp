@@ -109,7 +109,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 
 **Relevance rule:**
 - A `service` verdict changes the answer only if one of its targets is in a `calls`, `work` or `web` tile, and then only as much as the tiles it touches: a call app always makes it `warn`; one target of a tile that is `mostly` working leaves the answer `good` with `answer.hint` naming it ("M365 Outlook isn't answering from here. That's most likely a problem on their side.").
-- When only `other` targets are affected, the answer stays `good` and `other.line` carries a muted line ("1 other service isn't working well from here."). The `other` tile is shown whenever the profile has such targets (e.g. `--profile default,aws`), but it never raises the answer.
+- When only `other` targets are affected, the answer stays `good` and `other.line` carries a muted line ("1 other service isn't working well from here."). The `other` tile never names targets (`names` and `affected` are empty); its note counts them: "3 of 1,330 aren't answering from here." It is shown whenever the profile has such targets (e.g. `--profile default,aws`), but it never raises the answer.
 - **Exception:** when the profile has no targets in the Home tiles (e.g. `--profile clouds`), the `other` tile *is* the user's set. It then escalates like any tile, and the answer follows it: `warn` "Some services aren't answering", or `bad` when it is `down`.
 
 ## `part=live`
@@ -230,7 +230,8 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
       "work_from": 1759734000000, "work_to": 1759762800000,   // Mon-Fri 09:00-17:00 local
       "runs": [
         { "from": 1759749660000, "to": 1759750560000, "level": "bad", "who": "provider", "kind": "isp",
-          "label": "Your provider", "source": "incident", "incident": 41 }
+          "label": "Your provider", "source": "incident", "incident": 41,
+          "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine." }
       ],
       "off": [ { "from": 1759701600000, "to": 1759730400000 } ]   // fyisp wasn't running
     },
@@ -248,7 +249,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
     }
   ],
   "summary": "2 rough patches this week, both from your internet provider.",
-  "counts": { "problems": 2, "home": 0, "provider": 2, "beyond": 0, "dns": 0, "app": 0, "calltraffic": 0, "offline": 0 },
+  "counts": { "problems": 2, "home": 0, "provider": 2, "beyond": 0, "dns": 0, "app": 0, "calltraffic": 0, "offline": 0, "call_patches": 1 },
   "problems": [
     { "id": 44, "from": 1760103660000, "ongoing": true, "kind": "isp", "who": "provider",
       "where": "Your provider's network (past your router)", "peak_loss": 0.62,
@@ -273,10 +274,14 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
   - Today they are minute-accurate.
   - Older days use the hourly tier: a partly measured hour counts as running.
   - Days, or parts of days, before `first_data` are not in `off`. A whole day before it has `no_record: true`; draw "No record yet", not hatching.
+- **`runs[].text`** is the stretch in a past-tense sentence for its tooltip, with no times: an incident's place ("The problem was most likely your Wi-Fi or router."), or, for a calls-only run, "Calls had some glitches. Nothing on your side looked wrong." / "Calls were choppy. …".
+- **`counts.call_patches`** counts today's calls-only runs. They are not in `problems`, but the summary mentions them.
 - **`summary`** is one sentence with no times, e.g.:
   - "No problems today." / "No problems in the last 7 days."
   - "1 problem today, from your internet provider."
   - "3 problems this week: 2 from your internet provider, 1 in your home network."
+  - "Calls had 1 rough patch today, with nothing wrong on your side." (calls-only)
+  - "1 problem today, from your internet provider. Calls also had 2 other rough patches today."
 
   Show the run times from `runs`/`problems` next to it.
 - **`counts`:** incidents in the span by `who`; `problems` is the total. The public summary uses them for "provider side vs home side".

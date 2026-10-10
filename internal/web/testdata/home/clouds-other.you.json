@@ -39,7 +39,8 @@
             "label": "Some apps",
             "source": "incident",
             "incident": 91,
-            "ongoing": true
+            "ongoing": true,
+            "text": "Your connection was fine; some online services had trouble."
           }
         ],
         "off": []
@@ -54,7 +55,8 @@
       "dns": 0,
       "app": 1,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {
@@ -145,7 +147,8 @@
             "label": "Some apps",
             "source": "incident",
             "incident": 91,
-            "ongoing": true
+            "ongoing": true,
+            "text": "Your connection was fine; some online services had trouble."
           }
         ],
         "off": []
@@ -160,7 +163,8 @@
       "dns": 0,
       "app": 1,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {
@@ -183,7 +187,6 @@
       "level": "bad",
       "who": "app",
       "kind": "service",
-      "app": "AWS us east 2",
       "since": 1791548280000,
       "headline": "Some services aren't answering",
       "cause": "Your connection is fine, but some services aren't answering from here. That's most likely on their side.",
@@ -235,27 +238,7 @@
         "state": "down",
         "label": "Many are unreliable",
         "note": "13 of 38 aren't loading reliably from here.",
-        "names": [
-          "AWS us east 1",
-          "AWS us east 2",
-          "AWS us west 1"
-        ],
-        "more": 35,
-        "affected": [
-          "AWS us east 2",
-          "AWS af south 1",
-          "AWS ap south 1",
-          "AWS ap southeast 2",
-          "AWS ap southeast 5",
-          "AWS ap northeast 1",
-          "AWS ca central 1",
-          "AWS eu central 2",
-          "AWS eu west 3",
-          "AWS eu south 2",
-          "AWS me central 1",
-          "AWS us gov west 1",
-          "AWS eusc de east 1"
-        ],
+        "names": [],
         "ok": 25,
         "total": 38,
         "details": "#v=o\u0026ot=other"

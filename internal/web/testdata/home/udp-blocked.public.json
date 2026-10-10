@@ -44,7 +44,8 @@
             "label": "Call traffic",
             "source": "incident",
             "incident": 61,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The network was blocking call traffic."
           }
         ],
         "off": []
@@ -59,7 +60,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 1,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {
@@ -141,7 +143,8 @@
             "label": "Call traffic",
             "source": "incident",
             "incident": 61,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The network was blocking call traffic."
           }
         ],
         "off": []
@@ -162,7 +165,8 @@
             "label": "Call traffic",
             "source": "incident",
             "incident": 61,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The network was blocking call traffic."
           }
         ],
         "off": []
@@ -177,7 +181,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 1,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {

@@ -44,7 +44,8 @@
             "label": "Further out",
             "source": "incident",
             "incident": 31,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The home network and the provider's nearest equipment looked fine. The problem was further out on the internet."
           }
         ],
         "off": []
@@ -59,7 +60,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {
@@ -155,7 +157,8 @@
             "label": "Further out",
             "source": "incident",
             "incident": 31,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The home network and the provider's nearest equipment looked fine. The problem was further out on the internet."
           }
         ],
         "off": []
@@ -170,7 +173,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {
