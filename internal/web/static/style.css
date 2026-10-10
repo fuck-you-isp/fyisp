@@ -39,6 +39,9 @@
   --v-dns: #9085e9;
   --v-service: #e0a800;
   --v-no_network: #b02a2a;
+  --v-udp_blocked: #d55181;
+  --v-stun_blocked: #b673d6;
+  --v-udp_degraded: #2fa8a0;
   --v-other: #898781;
 }
 @media (prefers-color-scheme: light) {
@@ -72,6 +75,9 @@
     --v-dns: #5b4bc8;
     --v-service: #b58300;
     --v-no_network: #8a1c1c;
+    --v-udp_blocked: #b8386a;
+    --v-stun_blocked: #8a49b0;
+    --v-udp_degraded: #16857e;
     --v-other: #6f6e69;
   }
 }
@@ -105,6 +111,9 @@
   --v-dns: #5b4bc8;
   --v-service: #b58300;
   --v-no_network: #8a1c1c;
+  --v-udp_blocked: #b8386a;
+  --v-stun_blocked: #8a49b0;
+  --v-udp_degraded: #16857e;
   --v-other: #6f6e69;
 }
 
@@ -262,6 +271,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .v-dns { --vc: var(--v-dns); }
 .v-service { --vc: var(--v-service); }
 .v-no_network { --vc: var(--v-no_network); }
+.v-udp_blocked { --vc: var(--v-udp_blocked); }
+.v-stun_blocked { --vc: var(--v-stun_blocked); }
+.v-udp_degraded { --vc: var(--v-udp_degraded); }
+/* A long-standing UDP block (the verdict's quiet flag): information, not an alarm. */
+.verdict.quiet { --vc: var(--muted); border-left-width: 4px; background: var(--surface); }
+.verdict.quiet .v-summary { font-size: 15px; font-weight: 400; color: var(--ink-2); }
 .v-other { --vc: var(--v-other); }
 .v-head { display: flex; align-items: center; gap: 8px; }
 .v-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--vc); flex: none; }
@@ -725,4 +740,96 @@ th[aria-sort] .ov-sort { color: var(--ink); }
   .ovt-box { scroll-margin-top: 8px; }
   .hm-wrap { max-height: 60vh; }
   .ov-q { max-width: none; }
+}
+
+/* ---------- calls (call quality) ---------- */
+.calls { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; align-items: start; }
+.calls .cq-top, .calls .cq-mark, .calls .cq-day { grid-column: 1 / -1; }
+/* Calls comes first: the view switch, then Calls, then the network path. */
+body.calls-on .viewbar { order: -2; }
+body.calls-on .calls { order: -1; }
+.cs-good { --cc: var(--v-ok); }
+.cs-fair { --cc: var(--v-service); }
+.cs-poor { --cc: var(--v-lan); }
+.cs-unusable { --cc: var(--v-isp); }
+.cs-blocked { --cc: var(--v-udp_blocked); }
+.cs-not_enough_data, .cs-server_not_answering, .cs-other { --cc: var(--muted); }
+.cs-none { --cc: var(--grid); }
+.chip.cs-good, .chip.cs-fair, .chip.cs-poor, .chip.cs-unusable, .chip.cs-none { background: var(--cc); }
+
+.cq-top {
+  padding: 12px 16px; border: 1px solid color-mix(in srgb, var(--cc) 45%, var(--border));
+  border-left: 6px solid var(--cc); background: color-mix(in srgb, var(--cc) 11%, var(--surface));
+}
+.cq-top.quiet { --cc: var(--muted); border-left-width: 4px; background: var(--surface); }
+.cq-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.cq-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--cc); flex: none; align-self: center; }
+.cq-state { font-size: 22px; font-weight: 650; line-height: 1.25; }
+.cq-top.quiet .cq-state { font-size: 18px; font-weight: 600; color: var(--ink-2); }
+.cq-stats { font-size: 18px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cq-line .why { align-self: center; }
+.cq-cause { margin: 6px 0 0; font-size: 15px; color: var(--ink); text-wrap: pretty; }
+.cq-meta { margin-top: 6px; }
+
+.cq-mark { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.cq-marked { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--ink-2); }
+
+.cq-strip-sum { margin: 2px 0 8px; font-size: 14px; font-variant-numeric: tabular-nums; text-wrap: pretty; }
+.cq-strip-wrap { position: relative; height: 20px; }
+.cq-strip { display: block; width: 100%; height: 20px; border-radius: 4px; cursor: pointer; }
+.cq-hours { display: flex; justify-content: space-between; margin-top: 2px; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cq-legend { margin-top: 6px; }
+
+.cq-ask-in { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.cq-ask-in .fld { flex: 0 1 230px; }
+.cq-ask input[type="datetime-local"] {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--page); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 8px; width: 100%; min-width: 0;
+}
+.cq-answer {
+  --cc: var(--muted); margin: 10px 0 8px; padding: 2px 0 2px 10px; border-left: 4px solid var(--cc);
+  font-size: 15px; font-weight: 600; text-wrap: pretty;
+}
+.cq-answer:empty { display: none; }
+.cq-links { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.cq-apps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cq-apps-list > li { border-bottom: 1px solid var(--border); padding: 7px 0; }
+.cq-apps-list > li:last-child { border-bottom: 0; }
+.cq-app > summary {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(7em, auto); gap: 2px 10px; align-items: baseline;
+  cursor: pointer; list-style: none;
+}
+.cq-app > summary::-webkit-details-marker { display: none; }
+.cq-app > summary::before { content: "▸"; color: var(--muted); position: absolute; margin-left: -14px; }
+.cq-app[open] > summary::before { content: "▾"; }
+.cq-app > summary { position: relative; margin-left: 14px; }
+.cq-app-name { min-width: 0; overflow-wrap: anywhere; }
+.cq-badge {
+  justify-self: start; white-space: nowrap; font-size: 11px; font-weight: 600; padding: 0 8px; border-radius: 999px; line-height: 18px;
+  color: var(--ink); background: color-mix(in srgb, var(--cc) 20%, transparent); border: 1px solid color-mix(in srgb, var(--cc) 60%, transparent);
+}
+.cq-badge.cs-server_not_answering { white-space: normal; }
+.cq-app-stats { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.cq-app-more { margin: 6px 0 2px 14px; }
+.cq-app-more p { margin: 0 0 6px; color: var(--ink-2); }
+.cq-spark { display: block; width: 100%; max-width: 360px; height: 28px; }
+.cq-other p, .cq-hint p { margin: 2px 0 0; font-size: 13px; text-wrap: pretty; }
+.cq-app-none { padding: 8px 0; }
+code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); padding: 0 4px; border-radius: 4px; color: var(--ink); }
+
+@media (max-width: 767.98px) {
+  .calls { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .cq-top { padding: 10px 12px; }
+  .cq-state { font-size: 19px; }
+  .cq-stats { font-size: 15px; }
+  /* Two-line app cards. */
+  .cq-app > summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .cq-app-stats { grid-column: 1 / -1; text-align: left; }
+  /* The Mark button stays at hand while scrolling. */
+  .cq-mark {
+    position: sticky; bottom: 0; z-index: 15; margin: 0 -12px; padding: 8px 12px;
+    background: var(--page); border-top: 1px solid var(--border);
+  }
+  .cq-markbtn { flex: 1 1 100%; padding: 8px 10px; }
 }
