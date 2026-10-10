@@ -712,9 +712,12 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 			return nil, err
 		}
 	}
-	if len(latest) > 0 {
-		l := names.test(latest[len(latest)-1])
-		out.Latest = &l
+	for i := len(latest) - 1; i >= 0; i-- { // the newest result (a cancelled test is none)
+		if latest[i].Outcome != model.SpeedCancelled {
+			l := names.test(latest[i])
+			out.Latest = &l
+			break
+		}
 	}
 	for i := len(latest) - 1; i >= 0; i-- { // the newest test that knows
 		if c := latest[i].Conn; c != "" && c != model.ConnUnknown {

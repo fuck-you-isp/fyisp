@@ -3,6 +3,7 @@ package speedtest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"slices"
@@ -384,5 +385,26 @@ func TestCancelMasksUntilStreamsClose(t *testing.T) {
 	}
 	if !s.o.Windows.Overlaps(ret.Add(-time.Millisecond), ret.Add(-time.Millisecond)) || !s.o.Windows.Overlaps(ret.Add(AbortTail), ret.Add(AbortTail)) {
 		t.Error("probes while the streams were open, or in the abort tail, are not masked")
+	}
+}
+
+// TestSweepStopsWhenUnreachable: during an outage a sweep stops after
+// SweepUnreachable unreachable servers in a row instead of masking the
+// monitoring for every server.
+func TestSweepStopsWhenUnreachable(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.setRun(func(c Config, n int) (Result, error) { return Result{}, fmt.Errorf("%w: no route", ErrUnreachable) })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { h.s.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	e, _, err := h.s.Queue().Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { x, _ := h.s.Queue().Get(e.ID); return x.State == StateDone })
+	x, _ := h.s.Queue().Get(e.ID)
+	if x.Ran != SweepUnreachable || x.Steps <= SweepUnreachable {
+		t.Errorf("ran %d of %d", x.Ran, x.Steps)
 	}
 }
