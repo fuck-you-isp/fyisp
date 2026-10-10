@@ -34,11 +34,11 @@ groups:
   - {id: web, title: Web}
   - {id: calls, title: Calls}
 targets:
-  - {name: alpha,   host: 203.0.113.10,   group: core, interval: 6s}
-  - {name: bravo,   host: 203.0.113.11,   group: core, interval: 6s}
-  - {name: charlie, host: 203.0.113.12,   group: web,  interval: 6s}
-  - {name: delta,   host: svc.fyisp.test, group: web,  interval: 6s}
-  - {name: kilo,    host: www.fyisp.test, group: web,  interval: 6s}
+  - {name: alpha,   host: 203.0.113.10,   group: core, interval: 6s, tags: [home:work]}
+  - {name: bravo,   host: 203.0.113.11,   group: core, interval: 6s, tags: [home:work]}
+  - {name: charlie, host: 203.0.113.12,   group: web,  interval: 6s, tags: [home:work]}
+  - {name: delta,   host: svc.fyisp.test, group: web,  interval: 6s, tags: [home:web]}
+  - {name: kilo,    host: www.fyisp.test, group: web,  interval: 6s, tags: [home:web]}
   - {name: stun-a,  host: stun.provider-a.test, port: 3478, group: calls, kinds: [udp], interval: 6s,  tags: [udp-path, app:meet]}
   - {name: stun-b,  host: stun.provider-b.test, port: 3479, group: calls, kinds: [udp], interval: 6s,  tags: [udp-path, app:teams]}
   - {name: stun-53, host: stun.provider-b.test, port: 53,   group: calls, kinds: [udp], interval: 15s, tags: [udp-path, udp-53]}
@@ -107,6 +107,7 @@ func TestUDP(t *testing.T) {
 			t.Errorf("/api/calls path %s, want blocked", c.Path)
 		}
 		h.expectTCPOK(t, "i-tcp", applied, time.Now())
+		h.checkHome(t, "i-udp-block", "udp_blocked", nil)
 
 		h.nft(t, "flush chain inet fyt fault")
 		reverted := time.Now()
@@ -115,6 +116,7 @@ func TestUDP(t *testing.T) {
 		if c, raw := h.calls(t); c.State == "blocked" {
 			t.Errorf("/api/calls still blocked after recovery: %s", raw)
 		}
+		h.checkHome(t, "i-recovered", "ok", nil)
 		h.checkNoMappedAddr(t)
 	})
 
@@ -139,6 +141,7 @@ func TestUDP(t *testing.T) {
 			t.Errorf("/api/calls state %q cause %+v, want blocked by stun_blocked: %s", c.State, c.Cause, craw)
 		}
 		h.expectTCPOK(t, "i2-tcp", applied, time.Now())
+		h.checkHome(t, "i2-stun-ports-block", "stun_blocked", nil)
 		h.checkNoMappedAddr(t)
 	})
 
