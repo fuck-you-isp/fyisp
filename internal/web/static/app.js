@@ -19,6 +19,7 @@ import {
 } from './core.js';
 import { Home } from './home.js';
 import { Report } from './report.js';
+import { Speed } from './speed.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
 
@@ -196,7 +197,7 @@ function readHash() {
   }
   fixKinds();
   const v = p.get('v');
-  state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' ? v : null;
+  state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' || v === 'speed' ? v : null;
   state.hw = p.get('hw') === 'w' ? 'w' : 'd';
   const ot = p.get('ot');
   state.ot = ot && /^[a-z]+$/.test(ot) ? ot : '';
@@ -1741,6 +1742,19 @@ function drawNotes(/** @type {any} */ u) {
 
 // false once this fyisp answers 404 (no speed tests): stop asking.
 let speedOn = true;
+/** Details → Speed, when this fyisp has speed tests. @type {Speed|null} */
+let speed = null;
+
+/** Whether this fyisp has speed tests: the light part=running answers 404 when not. */
+async function speedAvailable() {
+  try {
+    await fetchJSON('api/speed?part=running');
+    return true;
+  } catch (e) {
+    if (/** @type {any} */ (e).status === 404) { speedOn = false; return false; }
+    return true; // another error: show the tab, which says it can't load
+  }
+}
 /** @type {SpeedWindow[]} */
 let speedWins = [];
 
@@ -2060,17 +2074,19 @@ let ov = null;
 function currentView() {
   if (state.focus && focusPanel()) return 'c';
   if (state.view === 'calls' && !callsOn) return detailsView();
+  if (state.view === 'speed' && !speed) return detailsView();
   return state.view || 'h';
 }
 /** Details' own view: Calls when the profile has a call path or call apps, the Overview for big profiles, else the charts. */
 function detailsView() { return callsOn ? 'calls' : bigProfile ? 'o' : 'c'; }
 function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
+function speedShown() { return !!speed && currentView() === 'speed' && !(state.inv && inv); }
 /** The kind the Overview shows: the first selected of TCP, HTTPS, ICMP. */
 function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || kindsOffered[0]; }
 function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.targets.some((t) => t.name === state.focus)) || null : null; }
 /** Panels that are on screen and may load: the path panel always, the others per view and focus. */
 function panelShown(/** @type {Panel} */ p) {
-  if (currentView() === 'h') return false; // Details loads its charts only when opened
+  if (currentView() === 'h' || currentView() === 'speed') return false; // Details loads its charts only when opened; Speed has none
   if (p.isPath) return true;
   if (currentView() !== 'c') return false;
   const fp = focusPanel();
@@ -3389,7 +3405,7 @@ function setView(/** @type {string} */ v) {
   state.focus = null;
   writeHash();
   applyView();
-  if (v === 'o') ov?.load(); else if (v === 'calls') calls?.refresh(); else loadStale();
+  if (v === 'o') ov?.load(); else if (v === 'calls') calls?.refresh(); else if (v === 'speed') speed?.refresh(); else loadStale();
 }
 
 function renderViewBar() {
@@ -3397,10 +3413,12 @@ function renderViewBar() {
   viewSeg.replaceChildren(
     callsOn ? h('button', { type: 'button', text: 'Calls', 'aria-pressed': String(v === 'calls'), title: 'Is your connection good for calls?', onclick: () => setView('calls') }) : null,
     h('button', { type: 'button', text: 'Overview', 'aria-pressed': String(v === 'o'), title: 'Every target in one table and heatmap', onclick: () => setView('o') }),
-    h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }));
+    h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }),
+    speed ? h('button', { type: 'button', text: 'Speed', 'aria-pressed': String(v === 'speed'), title: 'Download and upload speed through the day', onclick: () => setView('speed') }) : null);
   const hint = /** @type {HTMLElement} */ (viewBar.lastElementChild);
   const n = panels.filter((p) => !p.isPath).length;
-  hint.textContent = v === 'calls' ? 'Measured with tiny STUN tests over UDP, the path call audio and video take'
+  hint.textContent = v === 'speed' ? 'Measured with short download and upload tests to public test servers'
+    : v === 'calls' ? 'Measured with tiny STUN tests over UDP, the path call audio and video take'
     : v === 'o' ? `${fmtInt(allTargets.filter((t) => !t.layer).length)} targets; click a row to see its chart` : `${n} chart panel${n === 1 ? '' : 's'}`;
 }
 
@@ -3415,7 +3433,9 @@ function applyView() {
   renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
+  document.body.classList.toggle('speed-on', v === 'speed');
   if (ov) ov.el.hidden = v !== 'o';
+  if (speed) speed.el.hidden = v !== 'speed';
   if (calls) calls.el.hidden = v !== 'calls';
   const fp = focusPanel();
   for (const p of panels) {
@@ -3707,6 +3727,7 @@ async function refreshAll() {
       // Hidden panels (the Overview is showing, or focus) load when shown.
       await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), loadSpeedWindows(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
         callsShown() ? /** @type {Calls} */ (calls).refresh() : null,
+        speedShown() ? /** @type {Speed} */ (speed).refresh() : null,
         ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
     }
   } finally {
@@ -4169,9 +4190,10 @@ async function main() {
   callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
   ov = new Overview();
   calls = callsOn ? new Calls() : null;
+  speed = await speedAvailable() ? new Speed() : null;
   // The view switch, then Calls, the network path, the Overview or the charts: DOM order is visual order.
   const path = panels.filter((p) => p.isPath).map((p) => p.el);
-  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
+  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', speed ? speed.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
   if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
