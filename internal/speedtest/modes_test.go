@@ -138,10 +138,11 @@ func TestMask(t *testing.T) {
 	}
 }
 
-// TestAbortTail: a test cut short masks AbortTail more than one that ended
-// normally.
+// TestAbortTail: a test cut short masks (and stores) AbortTail more than
+// one that ended normally.
 func TestAbortTail(t *testing.T) {
-	for _, fail := range []bool{false, true} {
+	var spans [2]time.Duration
+	for i, fail := range []bool{false, true} {
 		h := newHarness(t, Options{})
 		h.setRun(func(c Config, n int) (Result, error) {
 			if fail {
@@ -150,11 +151,15 @@ func TestAbortTail(t *testing.T) {
 			return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second}, nil
 		})
 		ts := h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
-		end := ts[0].End
-		after := end.Add(MaskTail + time.Second)
-		if got := h.s.o.Windows.Overlaps(after, after); got != fail {
-			t.Errorf("failed %v: masked %v at end+%v", fail, got, MaskTail+time.Second)
+		spans[i] = ts[0].End.Sub(ts[0].Start)
+		if end := h.s.o.Windows.LastEnd(); !end.Equal(ts[0].End) {
+			t.Errorf("failed %v: window ends %v, stored %v", fail, end, ts[0].End)
 		}
+	}
+	// The harness clock moves 6 s per run call (and 1 s for the relisten
+	// pause): ok makes 2 calls, failed 1.
+	if spans[0] != 13*time.Second || spans[1] != 6*time.Second+AbortTail {
+		t.Errorf("windows %v (ok) and %v (failed): want 13s and 6s + AbortTail", spans[0], spans[1])
 	}
 }
 
@@ -322,7 +327,8 @@ func TestSweepGap(t *testing.T) {
 }
 
 // TestCancelMasksUntilStreamsClose: cancelling a test mid-download (a real
-// run against the fake iperf3 server) stores nothing, and the mask window
+// run against the fake iperf3 server) stores a "cancelled" row without
+// speeds (never a result, never counted), and the mask window
 // lasts until the run's streams are closed and its goroutines gone (plus
 // AbortTail): a probe sent while the streams were still open is masked.
 func TestCancelMasksUntilStreamsClose(t *testing.T) {
@@ -349,12 +355,17 @@ func TestCancelMasksUntilStreamsClose(t *testing.T) {
 	if saved || id != 0 {
 		t.Fatalf("a cancelled test was saved (%d)", id)
 	}
-	if ts, _ := st.SpeedTests(context.Background(), time.Time{}, time.Now().Add(time.Hour)); len(ts) != 0 {
-		t.Fatalf("stored %+v", ts)
-	}
 	mu.Lock()
 	ret := returned
 	mu.Unlock()
+	// A row without speeds keeps the masked window explained.
+	ts, _ := st.SpeedTests(context.Background(), time.Time{}, time.Now().Add(time.Hour))
+	if len(ts) != 1 || ts[0].Outcome != model.SpeedCancelled || ts[0].DownBps != nil || ts[0].Server != sv.ID || ts[0].End.Before(ret.Add(AbortTail)) {
+		t.Fatalf("stored %+v", ts)
+	}
+	if st := Summarize(ts, nil); st.N != 0 || st.Failed != 0 || st.Busy != 0 {
+		t.Errorf("a cancelled test counted: %+v", st)
+	}
 	end := s.o.Windows.LastEnd()
 	if end.Before(ret.Add(AbortTail)) {
 		t.Errorf("window ends %v, before the streams closed (%v) plus AbortTail", end, ret)

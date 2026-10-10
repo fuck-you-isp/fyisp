@@ -287,8 +287,13 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		end = end.Add(max(0, 2*lr.loadedRTT()-MaskTail))
 	}
 	win := s.o.Windows.End(end)
+	t.End = end // the stored window covers what was masked
 	if ctx.Err() != nil {
-		return nil, false, t.Bytes // cancelled or shutting down: not a result
+		// Cancelled or shutting down: not a result, but a row without
+		// speeds keeps its masked window explained. Never linked to a
+		// sweep (saved false).
+		s.saveCancelled(context.WithoutCancel(ctx), t, used)
+		return nil, false, t.Bytes
 	}
 	if t.Latency = latency(s.o.Load, s.o.Windows, lr, win.Start); t.Latency != nil {
 		g := t.Latency.Gateway
@@ -314,6 +319,23 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	}
 	saved := s.save(ctx, &t, x)
 	return &t, saved, t.Bytes
+}
+
+// saveCancelled stores a cancelled test: its window (Start, End), server,
+// trigger and the data it used, no speeds.
+func (s *Scheduler) saveCancelled(ctx context.Context, t model.SpeedTest, used Server) {
+	c := model.SpeedTest{Start: t.Start, End: t.End, Trigger: t.Trigger, Outcome: model.SpeedCancelled, Region: t.Region,
+		Server: used.ID, FallbackLevel: t.FallbackLevel, Fallback: t.Fallback, Port: t.Port, Attempts: t.Attempts,
+		Bytes: t.Bytes, Conn: t.Conn}
+	if s.o.Store != nil {
+		if err := s.o.Store.SaveSpeedTest(ctx, &c); err != nil {
+			s.o.Log.Warn("speed test: saving a cancelled test failed", "err", err)
+		}
+	}
+	s.o.Log.Info("speed test cancelled", "server", c.Server, "trigger", c.Trigger)
+	if s.o.OnResult != nil {
+		s.o.OnResult(c)
+	}
 }
 
 // handoffBudget bounds one handoff traceroute (after the test's window).

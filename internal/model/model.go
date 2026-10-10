@@ -354,6 +354,10 @@ const (
 	SpeedBusy        = "busy"        // every attempt found the server running another test: never a slow result
 	SpeedUnreachable = "unreachable" // the server did not accept a connection
 	SpeedFailed      = "failed"      // anything else (timeout, protocol error)
+	// SpeedCancelled: stopped by the owner (or shutdown) mid-test. Stored
+	// without speeds so its masked window stays explained (charts, Home);
+	// never counted as a result, busy or failed.
+	SpeedCancelled = "cancelled"
 )
 
 // SpeedTest is one iperf3 speed test (download then upload). Start..End is

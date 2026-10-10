@@ -82,7 +82,7 @@ func (r *run) speedSection() *speedView {
 	}
 	cat, _ := speedtest.Builtin()
 	titles, label := speedNames(cat)
-	var ok, busy, other int
+	var ok, busy, other, cancelled int
 	groups := map[string][]model.SpeedTest{}
 	var order []string
 	v := &speedView{}
@@ -98,6 +98,8 @@ func (r *run) speedSection() *speedView {
 			ok++
 		case model.SpeedBusy:
 			busy++
+		case model.SpeedCancelled:
+			cancelled++
 		default:
 			other++
 		}
@@ -113,6 +115,9 @@ func (r *run) speedSection() *speedView {
 	}
 	if other > 0 {
 		v.Summary += fmt.Sprintf(", %d could not reach them", other)
+	}
+	if cancelled > 0 {
+		v.Summary += fmt.Sprintf(", %d were cancelled", cancelled)
 	}
 	v.Summary += ". " + speedMethod(r.speed) + " Only scheduled tests count toward the patterns below; Test now and Test all servers do not."
 	if p := speedtest.PooledPattern(r.speed, time.UTC); p != nil {

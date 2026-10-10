@@ -267,7 +267,7 @@ The latency under load over the span: per layer, the median over tests.
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
   "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | from the share link "public" | "public_sweep"
   "on_demand": false,             // not "schedule": never in rows, patterns or the finding
-  "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed"
+  "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed" | "cancelled"
   "region": "us-east",            // |null when the test was for no region
   "server": "Leaseweb-NewYork", "label": "Leaseweb New York", "display": "US East · Leaseweb, New York",
   "provider": "Leaseweb", "city": "New York",
@@ -301,6 +301,7 @@ The latency under load over the span: per layer, the median over tests.
 - `busy`: every port and server tried within the slot's budget was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
 - `unreachable`: no server accepted a connection (timeouts, DNS failures, or refusals on every port).
 - `failed`: anything else.
+- `cancelled`: stopped mid-test (the owner's cancel, or shutdown). Stored without speeds only so its window stays explained (charts shade it; Home never calls it "not running"); never a result, never busy or failed, never linked to a sweep. `end` includes AbortTail.
 
 When a download worked but the upload failed, `down_bps` is set and `outcome` is the upload's.
 
