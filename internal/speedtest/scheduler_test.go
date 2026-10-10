@@ -548,6 +548,11 @@ func TestBuiltinCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, sv := range c.Servers {
+		if sv.Zone() == nil {
+			t.Errorf("%s: no time zone for metro %q", sv.ID, sv.Metro)
+		}
+	}
 	if len(c.Servers) != 45 {
 		t.Fatalf("%d servers", len(c.Servers))
 	}

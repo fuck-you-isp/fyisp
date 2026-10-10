@@ -222,12 +222,17 @@ const (
 	minHours    = 12
 	minRun      = 2
 	dipRatio    = 0.75
+	mildRatio   = 0.9                 // the finding's "a little slower": a 10-25% dip
 	PatternSpan = 30 * 24 * time.Hour // the span patterns are judged over
 )
 
 // FindDip returns the clearest dip of 24 hourly medians (NaN: no data), or
 // nil.
-func FindDip(med [24]float64, up bool) *Pattern {
+func FindDip(med [24]float64, up bool) *Pattern { return findDip(med, up, dipRatio) }
+
+// findDip is FindDip with the low hours at most ratio of the others'
+// median (mildRatio: the finding's "a little slower").
+func findDip(med [24]float64, up bool, ratio float64) *Pattern {
 	var valid []float64
 	for _, v := range med {
 		if !math.IsNaN(v) {
@@ -238,7 +243,7 @@ func FindDip(med [24]float64, up bool) *Pattern {
 		return nil
 	}
 	ref := callq.Median(valid)
-	low := func(h int) bool { return !math.IsNaN(med[h]) && med[h] <= dipRatio*ref }
+	low := func(h int) bool { return !math.IsNaN(med[h]) && med[h] <= ratio*ref }
 	var best *Pattern
 	for start := range 24 {
 		if !low(start) || low((start+23)%24) {
@@ -263,7 +268,7 @@ func FindDip(med [24]float64, up bool) *Pattern {
 			}
 		}
 		others := callq.Median(out)
-		if others <= 0 || callq.Median(in) > dipRatio*others {
+		if others <= 0 || callq.Median(in) > ratio*others {
 			continue
 		}
 		drop := 1 - callq.Median(in)/others

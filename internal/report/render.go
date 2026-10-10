@@ -387,6 +387,12 @@ const pageTmpl = `<!doctype html>
 {{- with .Finding}}
 <p><strong>{{.Text}}</strong> {{.Evidence}}{{if .Caveat}} {{.Caveat}}{{end}}</p>
 {{- end}}
+{{- if .Ask}}
+<p class="ask"><strong>What to ask your provider:</strong> {{.Ask}}</p>
+{{- end}}
+{{- if .Connection}}
+<p>{{.Connection}}{{if .Latency}} {{.Latency}}{{end}}</p>
+{{- end}}
 <div class="tw"><table class="speed">
 <thead><tr><th>Region</th><th>Server</th><th class="n">Tests</th><th class="n">Download (median)</th><th class="n">Download (slowest 10%)</th><th class="n">Upload (median)</th><th>Slowest hours</th><th>Busy or failed</th></tr></thead>
 <tbody>{{range .Rows}}<tr><td>{{.Name}}</td><td>{{.Server}}</td><td class="n">{{.Tests}}</td><td class="n">{{.Down}}</td><td class="n">{{.DownP10}}</td><td class="n">{{.Up}}</td><td class="t">{{.Dip}}</td><td>{{.Trouble}}</td></tr>

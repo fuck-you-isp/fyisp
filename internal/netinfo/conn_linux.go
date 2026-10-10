@@ -13,8 +13,9 @@ import (
 // ConnType reports the connection type of iface: model.ConnWiFi for a
 // wireless interface (cfg80211 exposes /sys/class/net/<if>/wireless or
 // phy80211, and DEVTYPE=wlan in uevent), model.ConnWired for any other
-// Ethernet-type interface, model.ConnUnknown otherwise (tunnels, VPNs, an
-// unknown interface).
+// Ethernet-type interface backed by a device, model.ConnUnknown otherwise
+// (veth and bridges inside containers, VM and VPN interfaces, an unknown
+// interface).
 func ConnType(iface string) string {
 	if iface == "" || iface == "." || iface == ".." || strings.Contains(iface, "/") {
 		return model.ConnUnknown
@@ -28,8 +29,27 @@ func ConnType(iface string) string {
 	if b, err := os.ReadFile(filepath.Join(dir, "uevent")); err == nil && strings.Contains(string(b), "DEVTYPE=wlan") {
 		return model.ConnWiFi
 	}
+	// Virtual interfaces (a container's veth, a bridge, a VM's or VPN's
+	// tun/tap) say nothing about the machine's own link: unknown. A
+	// physical NIC has a device link.
+	if virtualName(iface) {
+		return model.ConnUnknown
+	}
+	if _, err := os.Stat(filepath.Join(dir, "device")); err != nil {
+		return model.ConnUnknown
+	}
 	if b, err := os.ReadFile(filepath.Join(dir, "type")); err == nil && strings.TrimSpace(string(b)) == "1" { // ARPHRD_ETHER
 		return model.ConnWired
 	}
 	return model.ConnUnknown
+}
+
+// virtualName reports interface names of virtual links.
+func virtualName(iface string) bool {
+	for _, p := range []string{"veth", "docker", "br-", "virbr", "tun", "tap", "vnet", "cni", "flannel", "cali", "wg", "tailscale", "zt"} {
+		if strings.HasPrefix(iface, p) {
+			return true
+		}
+	}
+	return false
 }

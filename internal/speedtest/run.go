@@ -21,6 +21,11 @@ import (
 // Extra is a test's further measurements, stored as JSON.
 type Extra struct {
 	RampMs [2]float64 `json:"ramp_ms"` // down, up: the ramp-up left out
+	// Bridged: the "ISP edge" had a private address, so fyisp most likely
+	// runs behind another router (a container's bridge network, a VM, a
+	// second router): the edge may be the home router, and the link type
+	// is not this machine's.
+	Bridged bool `json:"bridged,omitempty"`
 }
 
 // ParseExtra reads a test's Extra ("" gives the zero value).
@@ -234,6 +239,11 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	lr := s.loadRun()
 	if lr != nil {
 		defer lr.p.Close()
+	}
+	if s.o.Path != nil {
+		if _, edge := s.o.Path(); edge.IsValid() && edge.Unmap().IsPrivate() { // RFC 1918 (not CGNAT: some ISPs number their edge there)
+			x.Bridged = true
+		}
 	}
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)

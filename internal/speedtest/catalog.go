@@ -450,3 +450,37 @@ func hasKey[V any](m map[string]V, k string) bool {
 	_, ok := m[k]
 	return ok
 }
+
+// metroZones is each catalog metro's time zone: the finding asks whether a
+// slowdown's hours are evening at the far end too.
+var metroZones = map[string]string{
+	"amsterdam": "Europe/Amsterdam", "atlanta": "America/New_York", "bay-area": "America/Los_Angeles", "chicago": "America/Chicago",
+	"dallas": "America/Chicago", "frankfurt": "Europe/Berlin", "gravelines": "Europe/Paris", "hong-kong": "Asia/Hong_Kong",
+	"lille": "Europe/Paris", "london": "Europe/London", "los-angeles": "America/Los_Angeles", "manchester": "Europe/London",
+	"miami": "America/New_York", "montreal": "America/Toronto", "new-york": "America/New_York", "paris": "Europe/Paris",
+	"portland": "America/Los_Angeles", "sao-paulo": "America/Sao_Paulo", "singapore": "Asia/Singapore", "strasbourg": "Europe/Paris",
+	"sydney": "Australia/Sydney", "tashkent": "Asia/Tashkent", "tokyo": "Asia/Tokyo", "washington": "America/New_York",
+}
+
+// Zone is the server's local time zone (nil: unknown).
+func (s Server) Zone() *time.Location {
+	name, ok := metroZones[s.Metro]
+	if !ok {
+		return nil
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil
+	}
+	return loc
+}
+
+// Zone is the region's local time zone: its first server's.
+func (r Region) Zone(c *Catalog) *time.Location {
+	for _, id := range r.Servers {
+		if s, ok := c.Server(id); ok {
+			return s.Zone()
+		}
+	}
+	return nil
+}
