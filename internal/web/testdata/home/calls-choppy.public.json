@@ -71,6 +71,7 @@
       "app": 0,
       "calltraffic": 1,
       "offline": 0,
+      "services": 0,
       "call_patches": 1
     },
     "problems": [
@@ -194,6 +195,7 @@
       "app": 0,
       "calltraffic": 1,
       "offline": 0,
+      "services": 0,
       "call_patches": 1
     },
     "problems": [

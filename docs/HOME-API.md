@@ -249,7 +249,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
     }
   ],
   "summary": "2 rough patches this week, both from your internet provider.",
-  "counts": { "problems": 2, "home": 0, "provider": 2, "beyond": 0, "dns": 0, "app": 0, "calltraffic": 0, "offline": 0, "call_patches": 1 },
+  "counts": { "problems": 2, "home": 0, "provider": 2, "beyond": 0, "dns": 0, "app": 0, "calltraffic": 0, "offline": 0, "services": 0, "call_patches": 1 },
   "problems": [
     { "id": 44, "from": 1760103660000, "ongoing": true, "kind": "isp", "who": "provider",
       "where": "Your provider's network (past your router)", "peak_loss": 0.62,
@@ -275,6 +275,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
   - Older days use the hourly tier: a partly measured hour counts as running.
   - Days, or parts of days, before `first_data` are not in `off`. A whole day before it has `no_record: true`; draw "No record yet", not hatching.
 - **`runs[].text`** is the stretch in a past-tense sentence for its tooltip, with no times: an incident's place ("The problem was most likely your Wi-Fi or router."), or, for a calls-only run, "Calls had some glitches. Nothing on your side looked wrong." / "Calls were choppy. …".
+- **`counts.services`** counts incidents about targets outside the Home tiles (e.g. AWS regions under `--profile aws`). They are worded "online services", never apps or websites: the summary says "with online services", the label and `where` say "Some online services". `counts.app` counts the others.
 - **`counts.call_patches`** counts today's calls-only runs. They are not in `problems`, but the summary mentions them.
 - **`summary`** is one sentence with no times, e.g.:
   - "No problems today." / "No problems in the last 7 days."
