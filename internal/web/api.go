@@ -707,6 +707,9 @@ type targetSummary struct {
 	City          string `json:"city,omitempty"`
 	Country       string `json:"country,omitempty"`
 	Geo           string `json:"geo,omitempty"`
+	// Tags label targets, e.g. "udp-path" or "app:teams" (the Calls view
+	// maps targets to apps by them).
+	Tags []string `json:"tags,omitempty"`
 }
 
 func buildProfile(p *model.Profile) profileJSON {
@@ -740,6 +743,7 @@ func buildProfile(p *model.Profile) profileJSON {
 		for _, k := range t.ProbeKinds() {
 			ts.Kinds = append(ts.Kinds, k.String())
 		}
+		ts.Tags = t.Tags
 		out.Targets = append(out.Targets, ts)
 	}
 	return out

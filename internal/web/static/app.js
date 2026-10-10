@@ -21,9 +21,9 @@ const RANGES = [['5m', 300], ['30m', 1800], ['1h', 3600], ['6h', 21600], ['24h',
 // a TCP connect; HTTPS and ICMP appear only where a profile asks for them
 // (the network path pings, --config files may request either).
 const KINDS = ['tcp', 'https', 'icmp'];
-const KIND_LABEL = { https: 'HTTPS', tcp: 'TCP', icmp: 'ICMP' };
-const KIND_TITLE = { tcp: 'TCP: time to open a connection', https: 'HTTPS: request sent → first response byte', icmp: 'ICMP echo (ping)' };
-const KIND_DASH = { tcp: [], https: [6, 3], icmp: [1.5, 3] };
+const KIND_LABEL = { https: 'HTTPS', tcp: 'TCP', icmp: 'ICMP', udp: 'UDP' };
+const KIND_TITLE = { tcp: 'TCP: time to open a connection', https: 'HTTPS: request sent → first response byte', icmp: 'ICMP echo (ping)', udp: 'UDP (STUN): median time to answer a burst of 5 requests' };
+const KIND_DASH = { tcp: [], https: [6, 3], icmp: [1.5, 3], udp: [] };
 const REASONS = ['timeout', 'refused', 'reset', 'unreachable', 'dns', 'tls', 'http', 'no_network', 'other'];
 const REASON_LABEL = { timeout: 'timeout', refused: 'refused', reset: 'reset', unreachable: 'unreachable', dns: 'DNS', tls: 'TLS', http: 'HTTP error', no_network: 'no network', other: 'other' };
 const REFRESH_MS = 15000;
@@ -410,6 +410,8 @@ class Panel {
    * @returns {Set<string>}
    */
   kinds() {
+    // A panel of UDP (STUN) targets only shows their UDP series.
+    if (this.targets.length && this.targets.every((t) => t.kinds.includes('udp'))) return new Set(['udp']);
     if (!this.isPath) return state.kinds;
     const avail = new Set(this.targets.flatMap((t) => t.kinds));
     const icmpOff = status && status.caps && status.caps.icmp === 'unavailable';
@@ -423,7 +425,7 @@ class Panel {
   mainKind() {
     if (this.isPath) return null;
     const kinds = this.kinds();
-    return KINDS.find((k) => kinds.has(k)) || null;
+    return KINDS.find((k) => kinds.has(k)) || (kinds.has('udp') ? 'udp' : null);
   }
   width() { return Math.max(200, this.chartEl.clientWidth); }
 

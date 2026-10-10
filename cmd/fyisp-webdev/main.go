@@ -52,8 +52,23 @@ var pathTargets = []model.Target{
 	{Name: "Quad9-anycast", Host: "9.9.9.9", Group: "path", Layer: model.LayerAnycast, Kinds: []model.ProbeKind{model.KindICMP, model.KindTCP}},
 }
 
-// devProfile mirrors the default profile's 87 targets and 7 groups, plus
-// the network-path group.
+// udpTargets are the default profile's STUN targets plus the opt-in Teams
+// relay (its region shows in the state hook): fake bursts, see
+// probe.FakeBurst. Base RTTs in ms.
+var udpTargets = []struct {
+	name, tag string
+	iv        time.Duration
+	base      float64
+}{
+	{"Meet-STUN", "app:meet", 5 * time.Second, 9},
+	{"Cloudflare-STUN", "", 5 * time.Second, 6},
+	{"Cloudflare-UDP53", "udp-53", 15 * time.Second, 6},
+	{"Twilio-STUN-global", "", 5 * time.Second, 24},
+	{"Teams-Relay", "app:teams", 5 * time.Second, 31},
+}
+
+// devProfile mirrors the default profile's 91 targets and 8 groups, plus
+// the network-path group and the Teams relay.
 func devProfile() *model.Profile {
 	p := &model.Profile{Name: "dev", Groups: []model.Group{
 		{ID: "path", Title: "Network path", Order: 0},
@@ -64,6 +79,7 @@ func devProfile() *model.Profile {
 		{ID: "aws", Title: "Amazon Web Services", Order: 5},
 		{ID: "hetzner", Title: "Hetzner", Order: 6},
 		{ID: "gcp", Title: "Google Cloud Platform", Order: 7},
+		{ID: "calls", Title: "Call path (UDP)", Order: 8},
 	}}
 	for _, t := range pathTargets {
 		t.Interval = 15 * time.Second
@@ -85,7 +101,24 @@ func devProfile() *model.Profile {
 		case strings.HasPrefix(n, "GCP-"):
 			g = "gcp"
 		}
-		p.Targets = append(p.Targets, model.Target{Name: n, Host: strings.ToLower(n) + ".invalid", Group: g, Interval: 15 * time.Second})
+		t := model.Target{Name: n, Host: strings.ToLower(n) + ".invalid", Group: g, Interval: 15 * time.Second}
+		switch n {
+		case "Google-Meet":
+			t.Tags = []string{"app:meet"}
+		case "Microsoft-Teams":
+			t.Tags = []string{"app:teams"}
+		case "Discord":
+			t.Tags = []string{"app:discord"}
+		}
+		p.Targets = append(p.Targets, t)
+	}
+	for _, u := range udpTargets {
+		t := model.Target{Name: u.name, Host: strings.ToLower(u.name) + ".invalid", Port: 3478, Group: "calls",
+			Kinds: []model.ProbeKind{model.KindUDP}, Interval: u.iv, Tags: []string{"udp-path"}}
+		if u.tag != "" {
+			t.Tags = append(t.Tags, u.tag)
+		}
+		p.Targets = append(p.Targets, t)
 	}
 	return p
 }
@@ -120,6 +153,11 @@ func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time) {
 		case model.LayerAnycast:
 			base = 12 + float64(i%3)*2
 		}
+		for _, u := range udpTargets {
+			if u.name == t.Name {
+				base = u.base
+			}
+		}
 		for _, k := range t.ProbeKinds() {
 			iv := t.Interval
 			if k == model.KindICMP {
@@ -127,6 +165,21 @@ func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time) {
 			}
 			for ts := now.Add(-d).Truncate(iv); ts.Before(now.Add(-2 * time.Second)); ts = ts.Add(iv) {
 				if hole.has(ts) {
+					continue
+				}
+				if k == model.KindUDP {
+					// Bursts: the ISP outage loses most requests, the
+					// LAN blip nearly all; otherwise 0.3% per request.
+					lossP := 0.003
+					switch {
+					case isp.has(ts):
+						lossP = 0.5
+					case lan.has(ts):
+						lossP = 0.8
+					}
+					for _, s := range probe.FakeBurst(r, t.Name, ts, base, lossP) {
+						st.Observe(s)
+					}
 					continue
 				}
 				s := model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: k}, Slot: ts}
@@ -296,6 +349,7 @@ func main() {
 			fmt.Fprintln(w, "# fyisp-webdev: no real metrics")
 		}),
 		Share: share,
+		UDP:   pr,
 		Log:   log,
 	}
 	if !*noTrace {
