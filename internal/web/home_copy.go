@@ -375,10 +375,7 @@ func (c homeCopy) checking() (headline, cause string) {
 }
 
 func (c homeCopy) fine(home bool) string {
-	if !home {
-		return c.v("Your internet is working normally", "This connection is working normally")
-	}
-	return c.v("Your internet is fine for calls and work", "This connection is fine for calls and work")
+	return c.v("Your internet is fine", "This connection is fine")
 }
 
 func (c homeCopy) everything(home bool) string {
@@ -390,10 +387,9 @@ func (c homeCopy) everything(home bool) string {
 
 func (c homeCopy) verdictHead(k model.VerdictKind, quiet bool, affected []string, onlyOther bool) string {
 	switch k {
-	case model.VerdictLAN:
-		return c.v("Your Wi-Fi or router is having trouble", "The home network is having trouble")
-	case model.VerdictISP:
-		return c.v("Your internet provider is having trouble", "The provider's network is having trouble")
+	case model.VerdictLAN, model.VerdictISP:
+		// The cause names the place; the headline says what it means.
+		return c.v("Your internet is having trouble", "This connection is having trouble")
 	case model.VerdictUpstream:
 		return "Many websites and apps are hard to reach"
 	case model.VerdictDNS:
@@ -458,12 +454,9 @@ func (c homeCopy) verdictCause(k model.VerdictKind, conf string, quiet bool, aff
 	case model.VerdictNoNetwork:
 		return c.v("The device running this monitor is offline.", "The device running this monitor has no network connection.")
 	case model.VerdictService:
-		if onlyOther {
-			return c.v("Your connection is fine, but some services aren't answering from here. That's most likely on their side.",
-				"The connection is fine, but some services aren't answering from here. That's most likely on their side.")
-		}
-		return c.v("Your internet is fine. ", "The connection is fine. ") + says(affected, " isn't", " aren't") +
-			" answering from here. That's most likely a problem on their side."
+		// The headline names them; this says whose problem it is.
+		return c.v("Your connection looks fine, so this is most likely a problem on their side.",
+			"The connection looks fine, so this is most likely a problem on the services' side.")
 	case model.VerdictUDPBlocked:
 		return c.v("Calls may still connect, but sound and video can lag or drop. This is common on hotel, office and school Wi-Fi, or with some security software.",
 			"Calls may still connect, but sound and video can lag or drop. This is common on hotel, office and school Wi-Fi, or with security software on the device.")
@@ -506,7 +499,8 @@ func (c homeCopy) tileHead(t HomeTile) string {
 }
 
 func (c homeCopy) tileCause(t HomeTile) string {
-	return c.v("Your connection looks fine. ", "The connection looks fine. ") + t.Note
+	return c.v("Your connection looks fine, so this is most likely a problem on their side.",
+		"The connection looks fine, so this is most likely a problem on the services' side.")
 }
 
 func (c homeCopy) quietHint() string {
@@ -725,6 +719,8 @@ func (c homeCopy) atWords(measured bool, calls string, incident bool, who, kind 
 		}
 	}
 	switch {
+	case incident && calls == callBlocked:
+		cause = "Calls may still have connected, through a slower backup route."
 	case incident:
 		cause = c.wasWhere(who, model.VerdictKind(kind))
 	case calls == string(callq.Good) || calls == callNotAnswering:
@@ -753,7 +749,7 @@ func (c homeCopy) wasWhere(who string, k model.VerdictKind) string {
 	case whoOffline:
 		return c.v("The device running this monitor was offline.", "The monitoring device was offline.")
 	case whoApp:
-		return c.v("Your connection was fine; some online services had trouble.", "The connection was fine; some online services had trouble.")
+		return "Some online services had trouble at the time. That was on their side."
 	case whoCallTraffic:
 		if k == model.VerdictUDPBlocked || k == model.VerdictSTUNBlocked {
 			return "The network was blocking call traffic."

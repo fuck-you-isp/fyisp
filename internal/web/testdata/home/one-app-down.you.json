@@ -12,7 +12,7 @@
     "who": "app",
     "kind": "service",
     "headline": "Your connection was good for calls then",
-    "cause": "Your connection was fine; some online services had trouble."
+    "cause": "Some online services had trouble at the time. That was on their side."
   },
   "history_today": {
     "part": "history",
@@ -41,7 +41,7 @@
             "source": "incident",
             "incident": 41,
             "ongoing": true,
-            "text": "Your connection was fine; some online services had trouble."
+            "text": "Some online services had trouble at the time. That was on their side."
           }
         ],
         "off": []
@@ -154,7 +154,7 @@
             "source": "incident",
             "incident": 41,
             "ongoing": true,
-            "text": "Your connection was fine; some online services had trouble."
+            "text": "Some online services had trouble at the time. That was on their side."
           }
         ],
         "off": []
@@ -199,11 +199,11 @@
       "who": "none",
       "kind": "service",
       "calls": "good",
-      "headline": "Your internet is fine for calls and work",
+      "headline": "Your internet is fine",
       "cause": "Calls, work apps and websites are all working.",
       "hint": "Outlook isn't answering from here. That's most likely a problem on their side.",
       "try": [],
-      "announce": "Your internet is fine for calls and work. Calls, work apps and websites are all working."
+      "announce": "Your internet is fine. Calls, work apps and websites are all working."
     },
     "path": [
       {

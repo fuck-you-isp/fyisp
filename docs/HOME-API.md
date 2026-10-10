@@ -350,6 +350,13 @@ Write the times from `bad_from`/`bad_to` (or `time`) yourself.
 
 ## Banned on Home (in either voice)
 
+**The headline never repeats the cause.**
+- The headline says what the user notices: "Your internet is having trouble", "Calls will break up", "Outlook and Gmail aren't answering".
+- The cause says where the problem is, or whose it is: "The problem is with your internet provider…", "Your connection looks fine, so this is most likely a problem on their side."
+
+TestHomeCopyWords and TestHomeGolden fail when the two share a run of three words.
+
+
 None of these may appear in any copy field: STUN, UDP, TCP, ICMP, anycast, MOS, jitter, p95, probe, target, baseline, verdict, profile, gateway, ISP edge, ms, `×N`, or a CLI flag. `DNS` appears only in parentheses after "name lookups", and only in the public voice. A golden test scans every copy field of every scenario for these words.
 
 ## Development: scenarios and golden files

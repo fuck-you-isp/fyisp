@@ -172,10 +172,10 @@
       "who": "none",
       "kind": "ok",
       "calls": "good",
-      "headline": "This connection is fine for calls and work",
+      "headline": "This connection is fine",
       "cause": "Calls, work apps and websites are all working.",
       "try": [],
-      "announce": "This connection is fine for calls and work. Calls, work apps and websites are all working."
+      "announce": "This connection is fine. Calls, work apps and websites are all working."
     },
     "path": [
       {
