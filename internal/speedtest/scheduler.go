@@ -296,7 +296,7 @@ func New(o Options) *Scheduler {
 	}
 	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff,
 		extra: slices.Clone(o.Extra), seed: o.rand.Uint32(), skip: map[string]bool{}, busyRun: map[string]int{}, rest: map[string]time.Time{}}
-	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Live: s.live, Log: o.Log, Now: o.Now,
+	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Pause: s.pause, Live: s.live, Log: o.Log, Now: o.Now,
 		Public: o.Public, PublicBudget: o.PublicBudget}
 	if o.Store != nil {
 		qo.Settings = o.Store

@@ -93,6 +93,23 @@ func (s *Scheduler) slotJob(t target) Job {
 	return j
 }
 
+// pause runs before each queued job (QueueOptions.Pause, never charged to
+// the share link's time cap: the line is neither tested nor masked then).
+// A sweep's tests would blind the monitoring for minutes back to back: it
+// leaves the probes SweepGap of unmasked time after the last window's
+// tail. False: ctx ended while waiting.
+func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) bool {
+	if trigger != "sweep" && trigger != "public_sweep" {
+		return true
+	}
+	if last := s.o.Windows.LastEnd(); !last.IsZero() {
+		if d := last.Add(MaskTail + SweepGap).Sub(s.o.Now()); d > 0 {
+			return s.o.sleep(ctx, d)
+		}
+	}
+	return true
+}
+
 // execJob runs one queued test (QueueOptions.Exec): the stored test's ID,
 // whether it was saved, and the bytes on the wire, every attempt's.
 func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool, int64) {
@@ -111,15 +128,6 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 	if n := len(steps); n > 0 {
 		if steps = s.filter(steps, trigger == "schedule"); len(steps) == 0 {
 			return 0, false, 0 // every server skipped or resting: no test, not a failure
-		}
-	}
-	if trigger == "sweep" || trigger == "public_sweep" {
-		// Back-to-back tests would blind the monitoring for minutes: leave
-		// the probes SweepGap of unmasked time between a sweep's tests.
-		if last := s.o.Windows.LastEnd(); !last.IsZero() {
-			if d := last.Add(MaskTail + SweepGap).Sub(s.o.Now()); d > 0 && !s.o.sleep(ctx, d) {
-				return 0, false, 0
-			}
 		}
 	}
 	t, saved, bytes := s.runSteps(ctx, region, steps, trigger)
@@ -276,15 +284,12 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	t.End = s.o.Now()
 	// The window ends when the test's traffic has: every direction's Run
 	// returned (its streams closed, SO_LINGER 0 on an abort, and their
-	// goroutines exited), plus what the mask's tail doesn't cover: data in
-	// flight after a cut-short test (AbortTail), and queues that take
-	// longer than MaskTail to drain (2 × the loaded RTT).
+	// goroutines exited), plus, after a cut-short test, the data still in
+	// flight (AbortTail). MaskTail covers the queues draining: it is at
+	// least 2 × the loaded RTT the probes can see (lost at LoadTimeout).
 	end := t.End
 	if sctx.Err() != nil || t.Outcome == model.SpeedFailed {
 		end = end.Add(AbortTail)
-	}
-	if lr != nil {
-		end = end.Add(max(0, 2*lr.loadedRTT()-MaskTail))
 	}
 	win := s.o.Windows.End(end)
 	t.End = end // the stored window covers what was masked
