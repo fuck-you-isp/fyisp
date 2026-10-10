@@ -1300,11 +1300,11 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-sw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin-bottom: 10px; }
 .sp-sw-bars h3 { margin: 4px 0 6px; font-size: 13px; }
 .sp-sw-bars ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.sp-sw-bars li { display: grid; grid-template-columns: 9em minmax(40px, 1fr) 8.5em; gap: 8px; align-items: center; font-size: 12px; }
+.sp-sw-bars li { display: grid; grid-template-columns: minmax(0, 9em) minmax(40px, 1fr) auto; gap: 8px; align-items: center; font-size: 12px; }
 .sp-sw-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-sw-track { display: block; height: 8px; background: var(--surface-2); border-radius: 4px; }
 .sp-sw-bar { display: block; height: 8px; border-radius: 4px; background: var(--hm3); }
-.sp-sw-v { color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; }
+.sp-sw-v { color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .sp-sw-t tr.bad td, .sp-sw-t tr.bad th { color: var(--ink-2); }
 .sp-sw-t tbody th { font-weight: 400; }
 @media (max-width: 767.98px) {
