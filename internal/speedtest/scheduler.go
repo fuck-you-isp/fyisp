@@ -66,7 +66,7 @@ const (
 	MaxMeasure = 8 * time.Second
 	// MaxBytes caps each direction (ramp-up included): one test never
 	// moves more than 2 × MaxBytes.
-	MaxBytes = 100 << 20
+	MaxBytes = 100_000_000 // 100 MB (decimal, as the docs and the owner's 200 MB per test mean it)
 	// SlotMaxBytes caps a whole test, every server and retry included.
 	SlotMaxBytes = 2 * MaxBytes
 	// EstTestTime is a typical test (both directions, adaptive): the
