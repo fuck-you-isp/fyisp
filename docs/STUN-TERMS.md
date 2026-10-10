@@ -22,6 +22,21 @@ Checked on 2026-10-10 before the call-quality release (v0.5.0), as the plan's "B
 
 Also for the owner (not part of the STUN feature): the TCP targets `Teams-Relay-EU` (`euaz.tr.teams.microsoft.com`) and `Teams-Relay-US` (`usaz.tr.teams.microsoft.com`) have been in the catalog since 2026-09-27. Microsoft doesn't name these pools anywhere; the plan already dropped them as UDP targets for that reason. Consider dropping them or relabelling them as undocumented.
 
+## Owner decision (2026-10-10)
+
+After reading this review, the owner decided to **ship every endpoint as it is**:
+- the Twilio regional hosts under their current names;
+- the Teams relay `worldaz` (opt-in, `calls` profile only);
+- the existing TCP targets `Teams-Relay-EU` and `Teams-Relay-US`.
+
+The verdicts above are kept as the record of the review.
+
+If a provider objects, or a hostname stops resolving, drop or rename that target. Possible changes:
+- Twilio regions → the documented edge names;
+- Teams → `world.tr.teams.microsoft.com` probed every few minutes, or removed.
+
+Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.yml`, `twilio.yml`), and the README's STUN server table lists them all.
+
 ## Google: `stun.l.google.com`
 
 **Verdict: OK with caveat.** Google publishes this host as the default STUN server in its own WebRTC getting-started guide and in the official WebRTC samples, and Chrome and Meet use it. No Google page says that third parties may use it, sets a rate limit or offers an SLA. Google's general terms forbid only abuse and disruption, and their "automated means" clause is about content and robots.txt, which doesn't fit STUN.
