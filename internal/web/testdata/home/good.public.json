@@ -37,13 +37,14 @@
             "who": "calltraffic",
             "kind": "fair",
             "label": "Call traffic",
-            "source": "calls"
+            "source": "calls",
+            "text": "Calls had some glitches. Nothing on this side looked wrong."
           }
         ],
         "off": []
       }
     ],
-    "summary": "No problems today.",
+    "summary": "Calls had 1 rough patch today, with nothing wrong on this side.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -52,7 +53,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 1
     },
     "problems": [],
     "work": {
@@ -135,13 +137,14 @@
             "who": "calltraffic",
             "kind": "fair",
             "label": "Call traffic",
-            "source": "calls"
+            "source": "calls",
+            "text": "Calls had some glitches. Nothing on this side looked wrong."
           }
         ],
         "off": []
       }
     ],
-    "summary": "No problems in the last 7 days.",
+    "summary": "No other problems in the last 7 days. Calls had 1 rough patch today.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -150,7 +153,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 1
     },
     "problems": [],
     "work": {

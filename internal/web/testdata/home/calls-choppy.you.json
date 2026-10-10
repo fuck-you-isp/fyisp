@@ -42,7 +42,8 @@
             "who": "calltraffic",
             "kind": "unusable",
             "label": "Call traffic",
-            "source": "calls"
+            "source": "calls",
+            "text": "Calls were choppy. Nothing on your side looked wrong."
           },
           {
             "from": 1791548460000,
@@ -53,13 +54,14 @@
             "label": "Call traffic",
             "source": "incident",
             "incident": 51,
-            "ongoing": true
+            "ongoing": true,
+            "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers."
           }
         ],
         "off": []
       }
     ],
-    "summary": "1 problem today, with the connection calls use.",
+    "summary": "1 problem today, with the connection calls use. Calls also had 1 other rough patch today.",
     "counts": {
       "problems": 1,
       "home": 0,
@@ -68,7 +70,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 1,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 1
     },
     "problems": [
       {
@@ -162,7 +165,8 @@
             "who": "calltraffic",
             "kind": "unusable",
             "label": "Call traffic",
-            "source": "calls"
+            "source": "calls",
+            "text": "Calls were choppy. Nothing on your side looked wrong."
           },
           {
             "from": 1791548460000,
@@ -173,13 +177,14 @@
             "label": "Call traffic",
             "source": "incident",
             "incident": 51,
-            "ongoing": true
+            "ongoing": true,
+            "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers."
           }
         ],
         "off": []
       }
     ],
-    "summary": "1 problem this week, with the connection calls use.",
+    "summary": "1 problem this week, with the connection calls use. Calls also had 1 other rough patch today.",
     "counts": {
       "problems": 1,
       "home": 0,
@@ -188,7 +193,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 1,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 1
     },
     "problems": [
       {

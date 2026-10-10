@@ -44,7 +44,8 @@
             "label": "Home network",
             "source": "incident",
             "incident": 12,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The problem was most likely your Wi-Fi or router."
           }
         ],
         "off": []
@@ -59,7 +60,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {
@@ -136,7 +138,8 @@
             "kind": "lan",
             "label": "Home network",
             "source": "incident",
-            "incident": 11
+            "incident": 11,
+            "text": "The problem was most likely your Wi-Fi or router."
           }
         ],
         "off": []
@@ -166,7 +169,8 @@
             "label": "Home network",
             "source": "incident",
             "incident": 12,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The problem was most likely your Wi-Fi or router."
           }
         ],
         "off": []
@@ -181,7 +185,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0
+      "offline": 0,
+      "call_patches": 0
     },
     "problems": [
       {

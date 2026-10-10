@@ -221,6 +221,43 @@ func verb(n int, one, many string) string {
 	return many
 }
 
+// otherNote is the Other services tile's note: counts only.
+func (c homeCopy) otherNote(state string, affected, failing, dead, total int) string {
+	if affected == 0 {
+		return ""
+	}
+	what := " aren't working well from here."
+	switch {
+	case failing > 0 && dead >= failing:
+		what = " aren't answering from here."
+	case failing > 0:
+		what = " aren't loading reliably from here."
+	case failing == 0:
+		what = " are slower than usual."
+	}
+	if affected == 1 {
+		what = strings.NewReplacer("aren't", "isn't", " are ", " is ").Replace(what)
+	}
+	return thousands(affected) + " of " + thousands(total) + what
+}
+
+// thousands writes n with thousands separators: 1,330.
+func thousands(n int) string {
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
+}
+
+// callPatch is a calls-only rough patch (no incident explains it).
+func (c homeCopy) callPatch(level string) string {
+	if level == levelBad {
+		return c.v("Calls were choppy. Nothing on your side looked wrong.", "Calls were choppy. Nothing on this side looked wrong.")
+	}
+	return c.v("Calls had some glitches. Nothing on your side looked wrong.", "Calls had some glitches. Nothing on this side looked wrong.")
+}
+
 func (c homeCopy) otherLine(n int) string {
 	if n == 1 {
 		return "1 other service isn't working well from here."
@@ -588,13 +625,25 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 	if span == "w" {
 		period = "this week"
 	}
+	patches := ""
+	if n.CallPatches > 0 {
+		patches = "Calls had " + strings.Replace(plural(n.CallPatches, "rough patch"), "patchs", "patches", 1) + " today"
+	}
 	switch {
-	case fresh && n.Problems == 0:
+	case fresh && n.Problems == 0 && patches == "":
 		return c.v("We just started, so the history begins now.", "Monitoring just started, so the history begins now.")
+	case n.Problems == 0 && patches != "" && span == "w":
+		return "No other problems in the last 7 days. " + patches + "."
+	case n.Problems == 0 && patches != "":
+		return patches + c.v(", with nothing wrong on your side.", ", with nothing wrong on this side.")
 	case n.Problems == 0 && span == "w":
 		return "No problems in the last 7 days."
 	case n.Problems == 0:
 		return "No problems today."
+	}
+	also := ""
+	if n.CallPatches > 0 {
+		also = " Calls also had " + strings.Replace(plural(n.CallPatches, "other rough patch"), "patchs", "patches", 1) + " today."
 	}
 	type part struct {
 		n      int
@@ -619,11 +668,11 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 	if len(used) == 1 {
 		switch n.Problems {
 		case 1:
-			return head + ", " + used[0].phrase + "."
+			return head + ", " + used[0].phrase + "." + also
 		case 2:
-			return head + ", both " + used[0].phrase + "."
+			return head + ", both " + used[0].phrase + "." + also
 		}
-		return head + ", all " + used[0].phrase + "."
+		return head + ", all " + used[0].phrase + "." + also
 	}
 	slices.SortStableFunc(used, func(a, b part) int { return b.n - a.n })
 	var bits []string
@@ -638,7 +687,7 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 	if rest > 0 {
 		bits = append(bits, strconv.Itoa(rest)+verb(rest, " other", " others"))
 	}
-	return head + ": " + strings.Join(bits[:len(bits)-1], ", ") + " and " + bits[len(bits)-1] + "."
+	return head + ": " + strings.Join(bits[:len(bits)-1], ", ") + " and " + bits[len(bits)-1] + "." + also
 }
 
 func plural(n int, word string) string {

@@ -449,6 +449,9 @@ func webState(a callsApp) string {
 func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]string, cp homeCopy) HomeTile {
 	t := HomeTile{ID: id, Title: cp.tileTitle(id), Names: []string{}, Total: len(ts), Details: "#v=o&ot=" + id}
 	for _, x := range ts {
+		if id == tileOther {
+			break // cloud regions and the like: counts only, never names
+		}
 		if len(t.Names) < homeMaxNames {
 			n, _ := strings.CutPrefix(homeName(x), cdnPrefix) // under the Websites title, the CDN's name alone
 			t.Names = append(t.Names, n)
@@ -476,6 +479,9 @@ func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]
 		measured++
 	}
 	t.Affected = affected
+	if id == tileOther {
+		t.Affected = nil
+	}
 	switch {
 	case 2*measured < len(rows) || measured == 0:
 		t.State = tileChecking
@@ -490,7 +496,11 @@ func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]
 	}
 	t.Level = map[string]string{tileWorking: levelGood, tileMostly: levelWarn, tileSlow: levelWarn, tileDown: levelBad, tileChecking: levelChecking}[t.State]
 	t.Label = cp.tileLabel(t.State, id == tileOther, 2*dead >= measured)
-	t.Note = cp.tileNote(t.State, affected, failing, dead, measured)
+	if id == tileOther {
+		t.Note = cp.otherNote(t.State, len(affected), failing, dead, len(ts))
+	} else {
+		t.Note = cp.tileNote(t.State, affected, failing, dead, measured)
+	}
 	return t
 }
 
@@ -803,7 +813,8 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 		vLevel = levelGood
 		touched := false
 		for _, t := range in.tiles {
-			if !slices.ContainsFunc(t.Affected, func(n string) bool { return slices.Contains(affected, n) }) {
+			// The Other tile names nobody: with onlyOther it is the set the verdict is about.
+			if !(t.ID == tileOther && in.hs.onlyOther()) && !slices.ContainsFunc(t.Affected, func(n string) bool { return slices.Contains(affected, n) }) {
 				continue
 			}
 			touched = true
@@ -880,7 +891,7 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 		affected = worstTile.Affected
 	}
 	a.Who = who
-	if who == whoApp && a.App == "" && len(affected) > 0 {
+	if who == whoApp && a.App == "" && len(affected) > 0 && !in.hs.onlyOther() {
 		a.App = affected[0]
 	}
 
@@ -1056,9 +1067,8 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 				if len(rel) == 0 {
 					continue // a cloud region the user doesn't use
 				}
-				x.label = homeNameOf(prof, rel[0])
-				if len(rel) > 1 {
-					x.label = ""
+				if len(rel) == 1 && hs.cat[rel[0]] != tileOther {
+					x.label = homeNameOf(prof, rel[0])
 				}
 			}
 			incs = append(incs, x)
@@ -1102,6 +1112,7 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 			}
 			day.Runs = append(day.Runs, HomeRun{From: max(in.Start.UnixMilli(), day.From), To: min(end.UnixMilli(), day.To),
 				Level: in.level, Who: in.who, Kind: string(in.Kind), Label: cp.runLabel(in.who, in.label), Source: "incident",
+				Text:     cp.wasWhere(in.who, in.Kind),
 				Incident: in.ID, Ongoing: in.End.IsZero()})
 		}
 		if d == 0 {
@@ -1127,6 +1138,7 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 			"&to=" + strconv.FormatInt(min(end.Add(30*time.Minute).UnixMilli(), now.UnixMilli()), 10) + "&o=1"
 		out.Problems = append(out.Problems, pr)
 	}
+	out.Counts.CallPatches = len(callRuns)
 	out.Summary = cp.summary(out.Counts, p.span, first.IsZero() || (first.After(now.Add(-10*time.Minute)) && out.Counts.Problems == 0))
 	if work != nil && work.Measured > 0 {
 		out.Work = work
@@ -1299,12 +1311,12 @@ func callMinuteRuns(c *callsJSON, incs []homeIncident, cp homeCopy) []HomeRun {
 		if n := len(out); n > 0 && out[n-1].To == t {
 			out[n-1].To = t + c.Step
 			if levelRank(lv) < levelRank(out[n-1].Level) {
-				out[n-1].Level, out[n-1].Kind = lv, st
+				out[n-1].Level, out[n-1].Kind, out[n-1].Text = lv, st, cp.callPatch(lv)
 			}
 			continue
 		}
 		out = append(out, HomeRun{From: t, To: t + c.Step, Level: lv, Who: whoCallTraffic, Kind: st,
-			Label: cp.runLabel(whoCallTraffic, ""), Source: "calls"})
+			Label: cp.runLabel(whoCallTraffic, ""), Source: "calls", Text: cp.callPatch(lv)})
 	}
 	return out
 }

@@ -201,6 +201,10 @@ type HomeRun struct {
 	Source   string `json:"source"`
 	Incident int64  `json:"incident,omitempty"`
 	Ongoing  bool   `json:"ongoing,omitempty"`
+	// Text is the stretch in one past-tense sentence, for its tooltip and
+	// "what happened": "Calls had some glitches. Nothing on your side
+	// looked wrong." No times.
+	Text string `json:"text"`
 }
 
 type HomeSpan struct {
@@ -218,6 +222,9 @@ type HomeCounts struct {
 	App         int `json:"app"`
 	CallTraffic int `json:"calltraffic"`
 	Offline     int `json:"offline"`
+	// CallPatches counts today's rough patches for calls that no incident
+	// explains (runs with source "calls"); not part of Problems.
+	CallPatches int `json:"call_patches"`
 }
 
 // HomeProblem is a row of the problem table (the outage log in Home's

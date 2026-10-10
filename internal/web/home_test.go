@@ -208,7 +208,8 @@ func TestHomeLiveOnlyOther(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(l.Tiles) != 1 || l.Tiles[0].ID != tileOther || l.Tiles[0].State != tileDown {
+	if len(l.Tiles) != 1 || l.Tiles[0].ID != tileOther || l.Tiles[0].State != tileDown || len(l.Tiles[0].Names) != 0 ||
+		len(l.Tiles[0].Affected) != 0 || l.Tiles[0].Note != "2 of 4 aren't answering from here." || l.Answer.App != "" {
 		t.Errorf("tiles %+v", l.Tiles)
 	}
 	if a := l.Answer; a.Level != levelBad || a.Who != whoApp || a.Headline != "Some services aren't answering" {
@@ -521,6 +522,24 @@ func TestHomeCopyWords(t *testing.T) {
 		if got := cp.summary(HomeCounts{Problems: 7, Provider: 3, Home: 1, DNS: 1, App: 1, CallTraffic: 1}, "w", false); voice == voiceYou &&
 			got != "7 problems this week: 3 from your internet provider, 1 in your home network and 3 others." {
 			t.Errorf("summary %q", got)
+		}
+		for _, tc := range []struct {
+			n    HomeCounts
+			span string
+			want string
+		}{
+			{HomeCounts{CallPatches: 1}, "d", "Calls had 1 rough patch today, with nothing wrong on your side."},
+			{HomeCounts{CallPatches: 2}, "w", "No other problems in the last 7 days. Calls had 2 rough patches today."},
+			{HomeCounts{Problems: 1, Provider: 1, CallPatches: 2}, "d", "1 problem today, from your internet provider. Calls also had 2 other rough patches today."},
+		} {
+			if got := cp.summary(tc.n, tc.span, false); voice == voiceYou && got != tc.want {
+				t.Errorf("summary %+v: %q", tc.n, got)
+			}
+			texts = append(texts, cp.summary(tc.n, tc.span, false))
+		}
+		texts = append(texts, cp.callPatch(levelWarn), cp.callPatch(levelBad), cp.otherNote(tileDown, 3, 3, 3, 1330), cp.otherNote(tileMostly, 1, 0, 0, 84))
+		if got := cp.otherNote(tileDown, 3, 3, 3, 1330); got != "3 of 1,330 aren't answering from here." {
+			t.Errorf("other note %q", got)
 		}
 		for _, n := range []HomeCounts{{}, {Problems: 1, Provider: 1}, {Problems: 3, Provider: 2, Home: 1}, {Problems: 4, App: 1, DNS: 1, Offline: 1, CallTraffic: 1}} {
 			texts = append(texts, cp.summary(n, "d", false), cp.summary(n, "w", false), cp.summary(n, "w", true))

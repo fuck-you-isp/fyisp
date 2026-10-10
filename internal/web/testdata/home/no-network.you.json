@@ -44,7 +44,8 @@
             "label": "Offline",
             "source": "incident",
             "incident": 71,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The device running this monitor was offline."
           }
         ],
         "off": []
@@ -59,7 +60,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 1
+      "offline": 1,
+      "call_patches": 0
     },
     "problems": [
       {
@@ -155,7 +157,8 @@
             "label": "Offline",
             "source": "incident",
             "incident": 71,
-            "ongoing": true
+            "ongoing": true,
+            "text": "The device running this monitor was offline."
           }
         ],
         "off": []
@@ -170,7 +173,8 @@
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 1
+      "offline": 1,
+      "call_patches": 0
     },
     "problems": [
       {
