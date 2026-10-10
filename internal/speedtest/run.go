@@ -1,12 +1,14 @@
 package speedtest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net"
+	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
@@ -73,13 +75,13 @@ func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
 }
 
 // slotJob is a scheduled slot's (or one server's) job: its servers are
-// resolved when it runs (the rotation is the hour's then).
+// resolved when it runs, by the slot's nominal hour (t.at; zero: now).
 func (s *Scheduler) slotJob(t target) Job {
 	j := Job{Region: t.region, steps: func(ctx context.Context) (string, []Step) { return s.resolveSlot(ctx, t) }}
 	if sv, ok := s.server(t.server); ok {
 		j.Chain = []Server{sv}
 	} else if r, ok := s.region(t.region); ok {
-		for _, st := range r.Chain(s.o.Catalog, s.o.Now(), s.seedNow()) {
+		for _, st := range r.Chain(s.o.Catalog, cmp.Or(t.at, s.o.Now()), s.seedNow()) {
 			j.Chain = append(j.Chain, st.Server)
 		}
 	}
@@ -187,12 +189,12 @@ func (s *Scheduler) resolveSlot(ctx context.Context, t target) (string, []Step) 
 		far := s.far
 		s.mu.Unlock()
 		if r, ok := s.region(far); ok {
-			return r.ID, r.Chain(s.o.Catalog, s.o.Now(), s.seedNow())
+			return r.ID, r.Chain(s.o.Catalog, cmp.Or(t.at, s.o.Now()), s.seedNow())
 		}
 		return "", nil
 	case t.region != "":
 		if r, ok := s.region(t.region); ok {
-			return r.ID, r.Chain(s.o.Catalog, s.o.Now(), s.seedNow())
+			return r.ID, r.Chain(s.o.Catalog, cmp.Or(t.at, s.o.Now()), s.seedNow())
 		}
 	case t.server != "":
 		if sv, ok := s.server(t.server); ok {
@@ -236,12 +238,15 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)
 	var used Server
+	var ip netip.Addr // the address the measuring server was dialled at (checked)
+	left := int64(SlotMaxBytes)
 	for i, st := range steps {
 		if i > 0 && s.o.Now().Sub(t.Start) >= SlotBudget {
 			break
 		}
 		t.Server, t.FallbackLevel, t.Fallback, t.Port, used = st.Server.ID, st.Level, st.Level != FallbackNone, 0, st.Server
-		s.testServer(sctx, st.Server, &t, &x, lr)
+		ip = netip.Addr{}
+		s.testServer(sctx, st.Server, &t, &x, lr, &ip, &left)
 		if trigger == "schedule" && sctx.Err() == nil {
 			s.noteBusy(st.Server.ID, t.Outcome == model.SpeedBusy)
 		}
@@ -271,9 +276,11 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 			}
 		}
 	}
-	if s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && used.Host != "" {
+	if s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && ip.IsValid() {
+		// The traceroute goes to the address the test used, already
+		// resolved and checked (never a fresh lookup of the name).
 		hctx, cancel := context.WithTimeout(ctx, handoffBudget)
-		h, err := s.o.Handoff(hctx, used.Host)
+		h, err := s.o.Handoff(hctx, ip.String())
 		cancel()
 		if err != nil {
 			s.o.Log.Debug("speed test: handoff traceroute failed", "server", used.ID, "err", err)
@@ -399,7 +406,9 @@ func (s *Scheduler) score(ctx context.Context, t *model.SpeedTest) {
 
 // testServer runs download then upload against sv.
 // It probes latency under load during each direction (lr nil: none).
-func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest, x *Extra, lr *loadRun) {
+// left is the slot's bytes still allowed (SlotMaxBytes over every server
+// and retry).
+func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest, x *Extra, lr *loadRun, ip *netip.Addr, left *int64) {
 	port := 0
 	for i, dir := range []Direction{Download, Upload} {
 		s.setLive(dir.String(), sv.ID)
@@ -411,7 +420,7 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 		if lr != nil {
 			stop = lr.probe(ctx)
 		}
-		res, p, attempts, outcome, wire := s.direction(ctx, sv, dir, port, t.Start)
+		res, p, attempts, outcome, wire := s.direction(ctx, sv, dir, port, t.Start, left)
 		if stop != nil {
 			if smp := stop(); dir == Download {
 				lr.down = smp
@@ -425,6 +434,9 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 		}
 		t.Outcome = outcome
 		t.Bytes += wire
+		if res.IP.IsValid() {
+			*ip = res.IP
+		}
 		if outcome != model.SpeedOK {
 			return
 		}
@@ -451,7 +463,7 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 // try. A timeout or DNS failure (ErrUnreachable) and protocol errors end
 // it at once.
 // wire is every attempt's bytes on the wire.
-func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time) (res Result, used, attempts int, outcome string, wire int64) {
+func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time, left *int64) (res Result, used, attempts int, outcome string, wire int64) {
 	tried := map[int]bool{}
 	tries := MaxAttempts
 	if sv.SinglePort() {
@@ -462,12 +474,18 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 			port = s.randomPort(sv, tried)
 		}
 		tried[port] = true
+		if *left <= 0 {
+			s.o.Log.Info("speed test: the slot's data cap is used up", "server", sv.ID)
+			return Result{}, port, attempt - 1, model.SpeedFailed, wire
+		}
 		var err error
 		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes, Check: sv.check,
+			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: min(MaxBytes, *left), Check: sv.check,
 		})
-		wire += max(res.WireBytes, res.TotalBytes, res.Bytes)
+		w := max(res.WireBytes, res.TotalBytes, res.Bytes)
+		wire += w
+		*left -= w
 		switch {
 		case err == nil:
 			return res, port, attempt, model.SpeedOK, wire

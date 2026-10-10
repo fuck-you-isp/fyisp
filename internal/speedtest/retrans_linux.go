@@ -25,3 +25,23 @@ func tcpInfo(c net.Conn) (retrans, acked int64) {
 	})
 	return retrans, acked
 }
+
+// tcpReceived is the bytes a TCP connection received so far, read or
+// still in its receive buffer (TCP_INFO), -1 when unknown.
+func tcpReceived(c net.Conn) int64 {
+	tc, ok := c.(*net.TCPConn)
+	if !ok {
+		return -1
+	}
+	rc, err := tc.SyscallConn()
+	if err != nil {
+		return -1
+	}
+	n := int64(-1)
+	_ = rc.Control(func(fd uintptr) {
+		if ti, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO); err == nil {
+			n = int64(ti.Bytes_received)
+		}
+	})
+	return n
+}

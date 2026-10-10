@@ -3,6 +3,7 @@ package speedtest
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"slices"
 	"testing"
 	"time"
@@ -241,5 +242,61 @@ func TestScheduleThroughQueue(t *testing.T) {
 	defer h.st.mu.Unlock()
 	if h.st.tests[0].Trigger != "schedule" || h.st.tests[1].Trigger != "manual" || h.st.tests[1].Region != "away" {
 		t.Errorf("tests %+v", h.st.tests)
+	}
+}
+
+// TestSlotCap: SlotMaxBytes holds over a slot's retries and servers: each
+// attempt gets what is left, and none starts once it is spent.
+func TestSlotCap(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.setRun(func(c Config, n int) (Result, error) {
+		return Result{WireBytes: 150 << 20}, ErrBusy // busy, after moving data
+	})
+	h.slot(t, target{server: "Near"})
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.calls) != 2 || h.calls[0].MaxBytes != MaxBytes || h.calls[1].MaxBytes != 50<<20 {
+		var caps []int64
+		for _, c := range h.calls {
+			caps = append(caps, c.MaxBytes)
+		}
+		t.Errorf("%d attempts, caps %v", len(h.calls), caps)
+	}
+}
+
+// TestHandoffAddress: the handoff traceroute goes to the address the test
+// used (resolved and checked), never a fresh lookup of the name.
+func TestHandoffAddress(t *testing.T) {
+	h := newHarness(t, Options{})
+	ip := netip.MustParseAddr("198.51.100.7")
+	h.setRun(func(c Config, n int) (Result, error) {
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: ip}, nil
+	})
+	var asked []string
+	h.s.o.Handoff = func(_ context.Context, host string) (*model.Handoff, error) {
+		asked = append(asked, host)
+		return &model.Handoff{ASN: 174}, nil
+	}
+	if ts := h.slot(t, target{server: "Near"}); ts.Handoff == nil || len(asked) != 1 || asked[0] != "198.51.100.7" {
+		t.Errorf("asked %v, handoff %+v", asked, ts.Handoff)
+	}
+}
+
+// TestSlotTimeRotation: a slot that waited past its hour still uses its
+// own hour's provider.
+func TestSlotTimeRotation(t *testing.T) {
+	h := newHarness(t, Options{})
+	r, _ := h.s.region("home")
+	at := h.clock().Truncate(time.Hour).Add(50 * time.Minute)
+	want := r.Chain(h.s.o.Catalog, at, h.s.seedNow())[0].Server.ID
+	later := r.Chain(h.s.o.Catalog, at.Add(time.Hour), h.s.seedNow())[0].Server.ID
+	if want == later {
+		t.Fatal("pick an hour where the rotation changes")
+	}
+	h.mu.Lock()
+	h.now = at.Add(15 * time.Minute) // the next hour
+	h.mu.Unlock()
+	if ts := h.slot(t, target{region: "home", at: at}); ts.Server != want {
+		t.Errorf("server %s, want %s (the slot's hour), not %s", ts.Server, want, later)
 	}
 }

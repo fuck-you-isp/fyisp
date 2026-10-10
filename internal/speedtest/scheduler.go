@@ -67,6 +67,8 @@ const (
 	// MaxBytes caps each direction (ramp-up included): one test never
 	// moves more than 2 × MaxBytes.
 	MaxBytes = 100 << 20
+	// SlotMaxBytes caps a whole test, every server and retry included.
+	SlotMaxBytes = 2 * MaxBytes
 	// EstTestTime is a typical test (both directions, adaptive): the
 	// planned share of time under test is slots × EstTestTime / interval.
 	EstTestTime = 15 * time.Second
@@ -170,6 +172,10 @@ type target struct {
 	server string // one server
 	nearby int    // mode nearby: the i-th pick (-1: none)
 	why    string // why this row is scheduled
+	// at is a scheduled slot's nominal time (on the install's grid, without
+	// jitter): its rotation is that hour's, even when it waited in the
+	// queue past the hour. Zero: now.
+	at time.Time
 }
 
 func (t target) row() string {
@@ -540,6 +546,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 				var tg *target
 				if plan := s.planLocked(s.mode); s.slot < len(plan) {
 					t := plan[s.slot]
+					t.at = s.cycleBase.Add(time.Duration(s.slot) * s.IntervalFor(s.mode) / time.Duration(len(plan)))
 					tg = &t
 				}
 				s.advanceLocked()

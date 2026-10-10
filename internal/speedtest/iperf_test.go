@@ -534,6 +534,8 @@ func TestAddressChecks(t *testing.T) {
 	for a, want := range map[string][2]bool{ // public, private
 		"8.8.8.8": {true, false}, "192.168.1.20": {false, true}, "10.1.2.3": {false, true}, "100.64.1.1": {false, true},
 		"127.0.0.1": {false, true}, "169.254.1.1": {false, true}, "224.0.0.1": {false, false}, "0.0.0.0": {false, false},
+		"0.1.2.3": {false, false}, "192.0.0.9": {false, false}, "192.0.2.1": {false, false}, "198.18.0.1": {false, false},
+		"198.51.100.7": {false, false}, "203.0.113.5": {false, false}, "240.0.0.1": {false, false}, "1.1.1.1": {true, false},
 	} {
 		ip := netip.MustParseAddr(a)
 		if PublicIPv4(ip) != want[0] || PrivateIPv4(ip) != want[1] {

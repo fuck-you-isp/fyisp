@@ -262,6 +262,7 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer stop()
 
 	r, err := t.run(ctx, &res)
+	t.noteReceived()
 	if err != nil {
 		t.abort() // nothing more to send: drop what is queued
 	}
@@ -284,7 +285,30 @@ func (t *test) wire() int64 {
 	for i := range counts {
 		n += counts[i].Load()
 	}
-	return n
+	return max(n, t.received.Load())
+}
+
+// noteReceived keeps the streams' TCP_INFO received bytes (what arrived,
+// read or still buffered: a download's data budget must count it) while
+// they are open.
+func (t *test) noteReceived() {
+	if t.c.Direction != Download {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return
+	}
+	var n int64
+	for _, s := range t.streams {
+		if r := tcpReceived(s); r > 0 {
+			n += r
+		}
+	}
+	if n > t.received.Load() {
+		t.received.Store(n)
+	}
 }
 
 type test struct {
@@ -297,9 +321,10 @@ type test struct {
 	closed  bool
 	wg      sync.WaitGroup // the data phase's stream goroutines
 
-	counts []atomic.Int64 // per stream, the whole data phase (mu: the slice)
-	moved  atomic.Int64   // bytes of every stream, against MaxBytes
-	capped atomic.Bool
+	counts   []atomic.Int64 // per stream, the whole data phase (mu: the slice)
+	moved    atomic.Int64   // bytes of every stream, against MaxBytes
+	received atomic.Int64   // downloads: TCP_INFO received bytes, every stream
+	capped   atomic.Bool
 }
 
 func (t *test) close() {
@@ -438,6 +463,7 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 		return *res, err
 	}
 	_ = t.write([]byte{stateIperfDone})
+	t.noteReceived()
 	t.close()
 	t.wg.Wait()
 	return *res, nil
