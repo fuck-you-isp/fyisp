@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -75,9 +76,13 @@ var (
 	// ErrBusy: the server is running another test (ACCESS_DENIED, or it
 	// closed the control connection before the parameter exchange).
 	ErrBusy = errors.New("iperf3 server busy")
-	// ErrUnreachable wraps a failed control connection (refused, timed
-	// out, no route): retrying other ports of the server does not help.
+	// ErrUnreachable wraps a failed control connection (timed out, no
+	// route, DNS): retrying other ports of the server does not help.
 	ErrUnreachable = errors.New("iperf3 server unreachable")
+	// ErrRefused wraps a refused control connection: nothing listens on
+	// that port right now. A stock iperf3 server closes its listener for a
+	// moment after every test, so another port (or a retry) may work.
+	ErrRefused = errors.New("iperf3 connection refused")
 )
 
 // ServerError is an iperf3 SERVER_ERROR or SERVER_TERMINATE.
@@ -97,8 +102,14 @@ type Config struct {
 	Addr      string // host:port (the host already resolved by the caller, or a name)
 	Direction Direction
 	Streams   int           // parallel TCP streams, default 8
-	Duration  time.Duration // measured time, default 9s
+	Duration  time.Duration // measured time, default 9s; with MinDuration, the most
 	Omit      time.Duration // ramp-up excluded from the result, default 1s
+	// MinDuration > 0 makes the length adaptive: the test ends once at
+	// least MinDuration is measured and the last second's bytes are within
+	// Stable (default 5%) of the second before, else after Duration. The
+	// client ends it early with TEST_END, which stock servers accept.
+	MinDuration time.Duration
+	Stable      float64
 	// Timeout bounds the whole run, default Omit+Duration+5s. The caller's
 	// ctx may end it sooner.
 	Timeout time.Duration
@@ -137,6 +148,9 @@ func (c *Config) defaults() {
 	} else if c.Omit == 0 {
 		c.Omit = time.Second
 	}
+	if c.MinDuration > 0 && c.Stable <= 0 {
+		c.Stable = 0.05
+	}
 	if c.Timeout <= 0 {
 		c.Timeout = c.Omit + c.Duration + 5*time.Second
 	}
@@ -150,7 +164,8 @@ func (c *Config) defaults() {
 const stepTimeout = 5 * time.Second
 
 // Run runs one iperf3 test. It returns ErrBusy, an error wrapping
-// ErrUnreachable, a *ServerError, ctx's error, or another protocol error.
+// ErrRefused or ErrUnreachable, a *ServerError, ctx's error, or another
+// protocol error.
 func Run(ctx context.Context, c Config) (Result, error) {
 	c.defaults()
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
@@ -161,6 +176,9 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return res, ctx.Err()
+		}
+		if isRefused(err) {
+			return res, fmt.Errorf("%w: %w", ErrRefused, err)
 		}
 		return res, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
@@ -276,7 +294,7 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	retransStart := make([]int64, len(t.streams))
 	t.snapshot(counts, base, retransStart)
 	winStart := time.Now()
-	if err := t.idle(omitEnd.Add(t.c.Duration)); err != nil {
+	if err := t.measure(counts, winStart); err != nil {
 		return *res, err
 	}
 	final := make([]int64, len(t.streams))
@@ -342,6 +360,40 @@ func (t *test) idle(deadline time.Time) error {
 		return fmt.Errorf("control connection: %w", err)
 	}
 	return nil
+}
+
+// measure waits out the measured window: Duration, or with MinDuration
+// until the per-second throughput settles.
+func (t *test) measure(counts []atomic.Int64, start time.Time) error {
+	end := start.Add(t.c.Duration)
+	if t.c.MinDuration <= 0 {
+		return t.idle(end)
+	}
+	total := func() int64 {
+		var n int64
+		for i := range counts {
+			n += counts[i].Load()
+		}
+		return n
+	}
+	prev, last := int64(-1), total()
+	for k := 1; ; k++ {
+		tick := start.Add(time.Duration(k) * time.Second)
+		if tick.After(end) {
+			return t.idle(end)
+		}
+		if err := t.idle(tick); err != nil {
+			return err
+		}
+		n := total()
+		cur := n - last
+		last = n
+		if time.Duration(k)*time.Second >= t.c.MinDuration && prev > 0 &&
+			math.Abs(float64(cur-prev)) <= t.c.Stable*float64(prev) {
+			return nil
+		}
+		prev = cur
+	}
 }
 
 func (t *test) snapshot(counts []atomic.Int64, into, retrans []int64) {

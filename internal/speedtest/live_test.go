@@ -50,8 +50,37 @@ func TestStockServer(t *testing.T) {
 	if err := <-first; err != nil {
 		t.Errorf("first client: %v", err)
 	}
-	// Nobody listening: unreachable.
-	if _, err := Run(ctx, Config{Addr: "127.0.0.1:1", Direction: Download}); !errors.Is(err, ErrUnreachable) {
+	// Nobody listening: refused (retryable on another port).
+	if _, err := Run(ctx, Config{Addr: "127.0.0.1:1", Direction: Download}); !errors.Is(err, ErrRefused) {
 		t.Errorf("closed port: %v", err)
+	}
+}
+
+// TestStockAdaptive compares the adaptive length (1 s omitted, 3-8 s,
+// ending when a second is within 5% of the one before) with a full 10 s
+// run (1 s omitted, 9 s), both directions; FYISP_IPERF3 as above.
+func TestStockAdaptive(t *testing.T) {
+	addr := os.Getenv("FYISP_IPERF3")
+	if addr == "" {
+		t.Skip("set FYISP_IPERF3=host:port of an iperf3 -s server")
+	}
+	ctx := context.Background()
+	for _, d := range []Direction{Download, Upload} {
+		time.Sleep(time.Second)
+		full, err := Run(ctx, Config{Addr: addr, Direction: d})
+		if err != nil {
+			t.Fatalf("%s full: %v", d, err)
+		}
+		time.Sleep(time.Second)
+		ad, err := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second})
+		if err != nil {
+			t.Fatalf("%s adaptive: %v", d, err)
+		}
+		diff := ad.BitsPerSecond()/full.BitsPerSecond() - 1
+		t.Logf("%s: full %.0f Mbit/s over %v; adaptive %.0f Mbit/s over %v (%+.1f%%)", d,
+			full.BitsPerSecond()/1e6, full.Elapsed.Round(time.Millisecond), ad.BitsPerSecond()/1e6, ad.Elapsed.Round(time.Millisecond), diff*100)
+		if ad.Elapsed < 3*time.Second || ad.Elapsed > 8500*time.Millisecond {
+			t.Errorf("%s adaptive window %v", d, ad.Elapsed)
+		}
 	}
 }

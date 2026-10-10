@@ -12,12 +12,15 @@ import (
 
 // Self-interference: a speed test fills the link, so every probe that runs
 // during it measures the test, not the connection. Windows records when
-// tests run; Mask turns the samples of probes that overlapped one into
-// "not measured" before they reach the store, the verdict engine, metrics
-// and warm-up. Charts then show a gap (shade it with the windows), the
-// verdict and call minutes never count it, and no incident can start from
-// it. LoadTap sits before Mask: it keeps the raw RTTs for latency under
-// load.
+// tests run; Mask turns the samples of probes that ran during one (or
+// within MaskTail after it) into "not measured" before they reach the
+// store, the verdict engine, metrics and warm-up. Charts then show a gap
+// (shade it with the windows), the verdict and call minutes never count it,
+// and no incident can start from it. LoadTap sits before Mask: it keeps the
+// raw RTTs for latency under load.
+
+// MaskTail is masked after every test: queues take a moment to drain.
+const MaskTail = 2 * time.Second
 
 // Window is one test's span.
 type Window struct {
@@ -25,17 +28,25 @@ type Window struct {
 	End   time.Time `json:"end"`
 }
 
-// Windows is the recent test windows plus the running one. Safe for
-// concurrent use.
+// Windows is the test windows of the last keepWindows, plus the running
+// one. Safe for concurrent use.
 type Windows struct {
 	mu     sync.Mutex
-	list   []Window // ended, oldest first, the last keepWindows
+	list   []Window // ended, oldest first
 	active time.Time
 }
 
-// keepWindows bounds the windows kept for masking: samples arrive within
-// seconds, so the last few are enough.
-const keepWindows = 32
+// keepWindows is how long ended windows are kept: samples arrive within
+// seconds, and Share looks back a day.
+const keepWindows = 25 * time.Hour
+
+func (w *Windows) trim(now time.Time) {
+	i := 0
+	for i < len(w.list) && now.Sub(w.list[i].End) > keepWindows {
+		i++
+	}
+	w.list = w.list[i:]
+}
 
 // Begin marks a test running from t.
 func (w *Windows) Begin(t time.Time) {
@@ -52,9 +63,7 @@ func (w *Windows) End(t time.Time) Window {
 	w.active = time.Time{}
 	if !win.Start.IsZero() {
 		w.list = append(w.list, win)
-		if len(w.list) > keepWindows {
-			w.list = slices.Delete(w.list, 0, len(w.list)-keepWindows)
-		}
+		w.trim(t)
 	}
 	return win
 }
@@ -65,13 +74,11 @@ func (w *Windows) Add(win Window) {
 	defer w.mu.Unlock()
 	w.list = append(w.list, win)
 	sort.Slice(w.list, func(i, j int) bool { return w.list[i].Start.Before(w.list[j].Start) })
-	if len(w.list) > keepWindows {
-		w.list = slices.Delete(w.list, 0, len(w.list)-keepWindows)
-	}
+	w.trim(win.End)
 }
 
-// Overlaps reports whether [from, to] overlaps a window (a running test's
-// window is open-ended).
+// Overlaps reports whether [from, to] overlaps a window extended by
+// MaskTail (a running test's window is open-ended).
 func (w *Windows) Overlaps(from, to time.Time) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -80,7 +87,7 @@ func (w *Windows) Overlaps(from, to time.Time) bool {
 	}
 	for i := len(w.list) - 1; i >= 0; i-- {
 		x := w.list[i]
-		if x.End.Before(from) {
+		if x.End.Add(MaskTail).Before(from) {
 			break // older windows end earlier still (tests never overlap)
 		}
 		if !x.Start.After(to) {
@@ -97,27 +104,64 @@ func (w *Windows) Running() bool {
 	return !w.active.IsZero()
 }
 
-// maskMargin covers a probe's timeout after its fire time (at most 5s,
-// HTTPS) plus scheduling slack.
+// Share is the fraction of [now-d, now] masked: windows plus their tails.
+func (w *Windows) Share(now time.Time, d time.Duration) float64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	from := now.Add(-d)
+	spans := slices.Clone(w.list)
+	if !w.active.IsZero() {
+		spans = append(spans, Window{Start: w.active, End: now})
+	}
+	var sum time.Duration
+	for _, x := range spans {
+		a, b := x.Start, x.End.Add(MaskTail)
+		if a.Before(from) {
+			a = from
+		}
+		if b.After(now) {
+			b = now
+		}
+		if b.After(a) {
+			sum += b.Sub(a)
+		}
+	}
+	return float64(sum) / float64(d)
+}
+
+// maskMargin covers, for a sample without At, a probe's timeout after its
+// fire time (at most 5s, HTTPS) plus scheduling slack.
 const maskMargin = 6 * time.Second
 
-// Mask is a model.Sink that blanks samples of probes that may have run
-// during a speed test. Interval returns a series' slot interval: a probe
-// with slot s fires within [s, s+interval) and ends within maskMargin.
+// Mask is a model.Sink that blanks samples of probes that ran during a
+// speed test: exactly, from the probe's start (Sample.At) to its arrival,
+// against the windows plus MaskTail. Samples without At fall back to their
+// slot: a probe with slot s fires within [s, s+Interval) and ends within
+// maskMargin.
 type Mask struct {
 	Inner    model.Sink
 	Windows  *Windows
 	Interval func(model.SeriesKey) time.Duration
+	Now      func() time.Time // default time.Now
 }
 
 // Observe implements model.Sink.
 func (m Mask) Observe(s model.Sample) {
 	if !(s.Lost && s.Reason == model.ReasonGap) {
-		iv := 15 * time.Second
-		if m.Interval != nil {
-			iv = m.Interval(s.Key)
+		var from, to time.Time
+		if !s.At.IsZero() {
+			from, to = s.At, time.Now()
+			if m.Now != nil {
+				to = m.Now()
+			}
+		} else {
+			iv := 15 * time.Second
+			if m.Interval != nil {
+				iv = m.Interval(s.Key)
+			}
+			from, to = s.Slot, s.Slot.Add(iv+maskMargin)
 		}
-		if m.Windows.Overlaps(s.Slot, s.Slot.Add(iv+maskMargin)) {
+		if m.Windows.Overlaps(from, to) {
 			s.Lost, s.Reason, s.RTT, s.Err, s.Reused = true, model.ReasonGap, 0, "", false
 		}
 	}

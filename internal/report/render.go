@@ -385,8 +385,8 @@ const pageTmpl = `<!doctype html>
 <h2>Speed tests</h2>
 <p>{{.Summary}}{{if .Pattern}} {{.Pattern}}{{end}}</p>
 <div class="tw"><table class="speed">
-<thead><tr><th>Part of day</th><th>Hours (UTC)</th><th class="n">Tests</th><th class="n">Download (median)</th><th class="n">Download (slowest 10%)</th><th class="n">Upload (median)</th></tr></thead>
-<tbody>{{range .Rows}}<tr><td>{{.Part}}</td><td class="t">{{.Hours}}</td><td class="n">{{.Tests}}</td><td class="n">{{.Down}}</td><td class="n">{{.DownP10}}</td><td class="n">{{.Up}}</td></tr>
+<thead><tr><th>Region</th><th>Server</th><th class="n">Tests</th><th class="n">Download (median)</th><th class="n">Download (slowest 10%)</th><th class="n">Upload (median)</th><th>Slowest hours</th><th>Busy or failed</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td>{{.Name}}</td><td>{{.Server}}</td><td class="n">{{.Tests}}</td><td class="n">{{.Down}}</td><td class="n">{{.DownP10}}</td><td class="n">{{.Up}}</td><td class="t">{{.Dip}}</td><td>{{.Trouble}}</td></tr>
 {{end}}</tbody>
 </table></div>
 <p class="note">Probes that ran during a speed test measure the test, not your connection: they are left out everywhere in this report.</p>

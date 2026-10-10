@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
-	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
-// speedView is the report's speed test section: one summary paragraph and
-// speed by part of day (UTC, like the rest of the report).
+// speedView is the report's speed test section: a summary paragraph and
+// one row per region (or server, for tests outside mode regions), hours in
+// UTC like the rest of the report.
 type speedView struct {
 	Summary string
 	Pattern string
@@ -19,7 +20,7 @@ type speedView struct {
 }
 
 type speedRow struct {
-	Part, Hours, Tests, Down, DownP10, Up string
+	Name, Server, Tests, Down, DownP10, Up, Dip, Trouble string
 }
 
 func (r *run) collectSpeed(ctx context.Context) error {
@@ -44,13 +45,34 @@ func mbps(bps float64) string {
 	return fmt.Sprintf("%.2f Mbit/s", bps/1e6)
 }
 
+// speedNames gives region titles and public server labels (own servers
+// are "Your server": a report never shows a host).
+func speedNames() (regions map[string]string, label func(string) string) {
+	regions = map[string]string{}
+	cat, err := speedtest.Builtin()
+	if err != nil {
+		return regions, func(string) string { return "Your server" }
+	}
+	for _, x := range cat.Regions {
+		regions[x.ID] = x.Title
+	}
+	return regions, func(id string) string {
+		if s, ok := cat.Server(id); ok {
+			return s.Label
+		}
+		return "Your server"
+	}
+}
+
 // speedSection summarizes r.speed, nil without tests.
 func (r *run) speedSection() *speedView {
 	if len(r.speed) == 0 {
 		return nil
 	}
+	titles, label := speedNames()
 	var ok, busy, other int
-	var down, up []float64
+	groups := map[string][]model.SpeedTest{}
+	var order []string
 	for _, t := range r.speed {
 		switch t.Outcome {
 		case model.SpeedOK:
@@ -60,55 +82,90 @@ func (r *run) speedSection() *speedView {
 		default:
 			other++
 		}
-		if t.Outcome == model.SpeedOK && t.DownBps != nil {
-			down = append(down, *t.DownBps)
+		k := speedtest.GroupKey(t)
+		if _, seen := groups[k]; !seen {
+			order = append(order, k)
 		}
-		if t.Outcome == model.SpeedOK && t.UpBps != nil {
-			up = append(up, *t.UpBps)
-		}
+		groups[k] = append(groups[k], t)
 	}
 	v := &speedView{}
 	v.Summary = fmt.Sprintf("%s ran in this range: %d measured", plural(len(r.speed), "speed test", "speed tests"), ok)
 	if busy > 0 {
-		v.Summary += fmt.Sprintf(", %d found the test server busy (not counted as slow)", busy)
+		v.Summary += fmt.Sprintf(", %d found the test servers busy (not counted as slow)", busy)
 	}
 	if other > 0 {
-		v.Summary += fmt.Sprintf(", %d could not reach it", other)
+		v.Summary += fmt.Sprintf(", %d could not reach them", other)
 	}
-	v.Summary += "."
-	if len(down) > 0 && len(up) > 0 {
-		v.Summary += fmt.Sprintf(" Typical download %s, upload %s (medians; iperf3 with 8 streams, 10 seconds each way).",
-			mbps(callq.Median(down)), mbps(callq.Median(up)))
-	}
-	if p := speedtest.FindPattern(speedtest.ByHour(r.speed, 0)); p != nil {
-		v.Pattern = p.Text[:len(p.Text)-1] + fmt.Sprintf(" (%02d:00–%02d:00 UTC).", p.DipFrom, p.DipTo)
-	} else if len(down) >= 24 {
+	v.Summary += ". Each test is iperf3 with 8 streams, 3 to 8 seconds each way after a 1-second ramp-up."
+	if p := speedtest.PooledPattern(r.speed, 0); p != nil {
+		v.Pattern = strings.TrimSuffix(p.Text, ".") + fmt.Sprintf(" (%02d:00–%02d:00 UTC, every region alike).", p.DipFrom, p.DipTo)
+	} else if ok >= 48 {
 		v.Pattern = "There is no clear time-of-day pattern."
 	}
-	parts := []struct{ name, hours string }{{"Night", "00–06"}, {"Morning", "06–12"}, {"Afternoon", "12–18"}, {"Evening", "18–24"}}
-	for i, p := range parts {
-		var d, u []float64
-		n := 0
-		for _, t := range r.speed {
-			if h := t.Start.UTC().Hour(); t.Outcome != model.SpeedOK || h/6 != i {
-				continue
-			}
-			n++
-			if t.DownBps != nil {
-				d = append(d, *t.DownBps)
-			}
-			if t.UpBps != nil {
-				u = append(u, *t.UpBps)
+	// Regions first, then the other servers.
+	slices.SortStableFunc(order, func(a, b string) int {
+		_, ra := titles[a]
+		_, rb := titles[b]
+		switch {
+		case ra && !rb:
+			return -1
+		case rb && !ra:
+			return 1
+		}
+		return strings.Compare(a, b)
+	})
+	var worst string
+	var worstDrop float64
+	for _, k := range order {
+		ts := groups[k]
+		st := speedtest.Summarize(ts, 0)
+		name, isRegion := titles[k]
+		if !isRegion {
+			name = label(k)
+		}
+		row := speedRow{Name: name, Tests: fmt.Sprint(len(ts)), Down: "–", DownP10: "–", Up: "–", Dip: "–"}
+		used := map[string]int{}
+		for _, t := range ts {
+			if t.Outcome == model.SpeedOK {
+				used[t.Server]++
 			}
 		}
-		row := speedRow{Part: p.name, Hours: p.hours, Tests: fmt.Sprint(n), Down: "–", DownP10: "–", Up: "–"}
-		if len(d) > 0 {
-			row.Down, row.DownP10 = mbps(callq.Median(d)), mbps(callq.Quantile(d, 0.1))
+		if len(used) > 0 {
+			best := ""
+			for s, n := range used {
+				if best == "" || n > used[best] || (n == used[best] && s < best) {
+					best = s
+				}
+			}
+			row.Server = label(best)
+			if n := len(used) - 1; n > 0 {
+				row.Server += fmt.Sprintf(" (%s)", plural(n, "fallback server", "fallback servers"))
+			}
 		}
-		if len(u) > 0 {
-			row.Up = mbps(callq.Median(slices.Clone(u)))
+		if st.DownMedian != nil {
+			row.Down, row.DownP10 = mbps(*st.DownMedian), mbps(*st.DownP10)
 		}
+		if st.UpMedian != nil {
+			row.Up = mbps(*st.UpMedian)
+		}
+		if st.Dip != nil {
+			row.Dip = fmt.Sprintf("%02d–%02d UTC, −%d%%", st.Dip.DipFrom, st.Dip.DipTo, int(st.Dip.Drop*100+0.5))
+			if st.Dip.Drop > worstDrop {
+				worst, worstDrop = name, st.Dip.Drop
+			}
+		}
+		var trouble []string
+		if st.Busy > 0 {
+			trouble = append(trouble, fmt.Sprintf("%d busy", st.Busy))
+		}
+		if n := st.Unreachable + st.Failed; n > 0 {
+			trouble = append(trouble, fmt.Sprintf("%d failed", n))
+		}
+		row.Trouble = strings.Join(trouble, ", ")
 		v.Rows = append(v.Rows, row)
+	}
+	if worst != "" {
+		v.Pattern = strings.TrimSpace(v.Pattern + fmt.Sprintf(" The largest dip: %s, %d%% slower at its worst hours.", worst, int(worstDrop*100+0.5)))
 	}
 	return v
 }

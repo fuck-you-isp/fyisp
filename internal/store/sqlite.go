@@ -177,7 +177,7 @@ CREATE TABLE reports(
 );
 CREATE INDEX reports_created ON reports(created_ms);
 `,
-	// v5 (fyisp v1.1): speed test results (see speedtests.go). Settings
+	// v5 (fyisp v0.7): speed test results (see speedtests.go). Settings
 	// changed in the dashboard live in meta (key 'setting:<name>').
 	`
 CREATE TABLE speedtests(
@@ -186,7 +186,9 @@ CREATE TABLE speedtests(
 	end_ms          INT  NOT NULL,
 	trigger         TEXT NOT NULL,
 	outcome         TEXT NOT NULL,
+	region          TEXT NOT NULL DEFAULT '',
 	server          TEXT NOT NULL,
+	fallback        INT  NOT NULL DEFAULT 0,
 	port            INT  NOT NULL DEFAULT 0,
 	attempts        INT  NOT NULL DEFAULT 0,
 	down_bps        REAL,

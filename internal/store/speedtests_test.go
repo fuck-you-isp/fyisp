@@ -14,9 +14,9 @@ func TestSpeedTests(t *testing.T) {
 	defer s.Close()
 	f, r, ms := 4.12e8, int64(112), 1.5
 	full := model.SpeedTest{Start: now.Add(-time.Hour), End: now.Add(-time.Hour + 33*time.Second), Trigger: "schedule", Outcome: model.SpeedOK,
-		Server: "Clouvider-London", Port: 5203, Attempts: 2, DownBps: &f, UpBps: &f, DownRetrans: &r, IdleGatewayMs: &ms, LoadedGatewayMs: &ms, IdleCallMs: &ms, LoadedCallMs: &ms}
+		Region: "uk", Server: "Clouvider-London", Port: 5203, Attempts: 2, DownBps: &f, UpBps: &f, DownRetrans: &r, IdleGatewayMs: &ms, LoadedGatewayMs: &ms, IdleCallMs: &ms, LoadedCallMs: &ms}
 	busy := model.SpeedTest{Start: now.Add(-30 * time.Minute), End: now.Add(-30*time.Minute + 6*time.Second), Trigger: "manual", Outcome: model.SpeedBusy,
-		Server: "Eranium-Amsterdam", Port: 5207, Attempts: 3}
+		Region: "eu-central", Server: "Eranium-Amsterdam", Fallback: true, Port: 5207, Attempts: 3}
 	old := model.SpeedTest{Start: now.Add(-95 * 24 * time.Hour), End: now.Add(-95 * 24 * time.Hour), Trigger: "schedule", Outcome: model.SpeedUnreachable}
 	for _, x := range []*model.SpeedTest{&old, &full, &busy} {
 		if err := s.SaveSpeedTest(ctx, x); err != nil || x.ID == 0 {

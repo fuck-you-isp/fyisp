@@ -16,18 +16,30 @@ func TestSpeedSection(t *testing.T) {
 	start := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
 	for i := range 7 * 96 {
 		at := start.Add(time.Duration(i) * 15 * time.Minute)
-		x := model.SpeedTest{Start: at, End: at.Add(23 * time.Second), Outcome: model.SpeedOK, Server: "Clouvider-London"}
-		if i%40 == 3 {
-			x.Outcome = model.SpeedBusy
-		} else {
-			down, up := 400e6, 40e6
-			if h := at.Hour(); h >= 19 && h <= 22 {
-				down /= 2
+		for _, reg := range []string{"uk", "us-east"} {
+			x := model.SpeedTest{Start: at, End: at.Add(23 * time.Second), Outcome: model.SpeedOK, Region: reg, Server: "Clouvider-London"}
+			base := 400e6
+			if reg == "us-east" {
+				x.Server, base = "Leaseweb-NewYork", 150e6
+				if i%10 == 0 {
+					x.Server, x.Fallback = "Clouvider-NewYork", true
+				}
 			}
-			x.DownBps, x.UpBps = &down, &up
+			if i%40 == 3 {
+				x.Outcome = model.SpeedBusy
+			} else {
+				down, up := base, base/10
+				if h := at.Hour(); h >= 19 && h <= 22 {
+					down /= 2
+				}
+				x.DownBps, x.UpBps = &down, &up
+			}
+			tests = append(tests, x)
 		}
-		tests = append(tests, x)
 	}
+	own := 900e6
+	tests = append(tests, model.SpeedTest{Start: start.Add(time.Hour), End: start.Add(time.Hour + 20*time.Second), Outcome: model.SpeedOK,
+		Server: "192.168.1.20:5201", DownBps: &own, UpBps: &own, Trigger: "manual"})
 	d.SpeedTests = func(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 		var out []model.SpeedTest
 		for _, x := range tests {
@@ -41,18 +53,22 @@ func TestSpeedSection(t *testing.T) {
 	checkStatic(t, html)
 	for _, want := range []string{
 		`id="speed"`, "<h2>Speed tests</h2>",
-		"672 speed tests ran in this range: 655 measured, 17 found the test server busy (not counted as slow).",
-		"Typical download 400 Mbit/s, upload 40.0 Mbit/s",
-		"Evenings are slower: about 50% below your daytime speed (19:00–23:00 UTC).",
-		"<td>Evening</td><td class=\"t\">18–24</td>",
+		"1345 speed tests ran in this range: 1311 measured, 34 found the test servers busy (not counted as slow).",
+		"Evenings are slower: about 50% below your daytime speed (19:00–23:00 UTC, every region alike).",
+		"The largest dip: UK, 50% slower",
+		"<td>UK</td><td>Clouvider London</td><td class=\"n\">672</td><td class=\"n\">400 Mbit/s</td>",
+		"<td>US East</td><td>Leaseweb New York (1 fallback server)</td>",
+		"<td>Your server</td>",
+		"19–23 UTC, −50%",
+		"17 busy",
 		"left out everywhere in this report",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("report lacks %q", want)
 		}
 	}
-	if strings.Contains(html, "Clouvider") {
-		t.Error("the report names a speed test server")
+	if strings.Contains(html, "192.168.1.20") || strings.Contains(html, "speedtest.") {
+		t.Error("the report shows a speed test host")
 	}
 	if html := f.build(t, f.deps(), Options{}); strings.Contains(html, `id="speed"`) {
 		t.Error("speed section without speed tests")

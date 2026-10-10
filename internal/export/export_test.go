@@ -439,9 +439,9 @@ func TestSpeedTests(t *testing.T) {
 	down, up, ms := 412345678.5, 40e6, 9.8
 	re := int64(12)
 	for _, x := range []model.SpeedTest{
-		{Start: t0, End: t0.Add(23 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, Server: "Clouvider-London", Port: 5203, Attempts: 2,
+		{Start: t0, End: t0.Add(23 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, Region: "uk", Server: "Clouvider-London", Port: 5203, Attempts: 2,
 			DownBps: &down, UpBps: &up, DownRetrans: &re, LoadedGatewayMs: &ms},
-		{Start: t0.Add(15 * time.Minute), End: t0.Add(15*time.Minute + 6*time.Second), Trigger: "manual", Outcome: model.SpeedBusy, Server: "Eranium-Amsterdam", Port: 5209, Attempts: 3},
+		{Start: t0.Add(15 * time.Minute), End: t0.Add(15*time.Minute + 6*time.Second), Trigger: "schedule", Outcome: model.SpeedBusy, Region: "eu-central", Server: "Eranium-Amsterdam", Fallback: true, Port: 5209, Attempts: 3},
 	} {
 		if err := s.SaveSpeedTest(ctx, &x); err != nil {
 			t.Fatal(err)
@@ -459,9 +459,9 @@ func TestSpeedTests(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := strings.Join([]string{
-		"id,start,end,trigger,outcome,server,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms",
-		"1,2026-09-01T00:00:00.000Z,2026-09-01T00:00:23.000Z,schedule,ok,Clouvider-London,5203,2,412345678.5,40000000,12,,,9.8,,",
-		"2,2026-09-01T00:15:00.000Z,2026-09-01T00:15:06.000Z,manual,busy,Eranium-Amsterdam,5209,3,,,,,,,,",
+		"id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms",
+		"1,2026-09-01T00:00:00.000Z,2026-09-01T00:00:23.000Z,schedule,ok,uk,Clouvider-London,0,5203,2,412345678.5,40000000,12,,,9.8,,",
+		"2,2026-09-01T00:15:00.000Z,2026-09-01T00:15:06.000Z,schedule,busy,eu-central,Eranium-Amsterdam,1,5209,3,,,,,,,,",
 	}, "\n") + "\n"
 	if buf.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", buf.String(), want)

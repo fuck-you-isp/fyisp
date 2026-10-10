@@ -196,6 +196,9 @@ type Sample struct {
 	Reason Reason // valid when Lost
 	Reused bool   // HTTPS only: connection was reused
 	Err    string // not persisted; shown as "last error" in the UI
+	// At is when the probe started (not persisted; zero when unknown): the
+	// speed test mask blanks probes that ran during a test.
+	At time.Time
 }
 
 // Sink receives samples. Observe must not block.
@@ -357,16 +360,21 @@ const (
 // its window: probes in it measure a loaded link and are not judged. Bits
 // per second, RTTs in ms; nil when not measured.
 type SpeedTest struct {
-	ID       int64     `json:"id"`
-	Start    time.Time `json:"start"`
-	End      time.Time `json:"end"`
-	Trigger  string    `json:"trigger"` // "schedule" or "manual"
-	Outcome  string    `json:"outcome"`
-	Server   string    `json:"server"` // catalog name, or host:port of a custom server
-	Port     int       `json:"port"`
-	Attempts int       `json:"attempts"`
-	DownBps  *float64  `json:"down_bps"`
-	UpBps    *float64  `json:"up_bps"`
+	ID      int64     `json:"id"`
+	Start   time.Time `json:"start"`
+	End     time.Time `json:"end"`
+	Trigger string    `json:"trigger"` // "schedule" or "manual"
+	Outcome string    `json:"outcome"`
+	// Region is the catalog region the test was for ("" outside mode
+	// regions); Server the server actually used: a catalog ID, or host:port
+	// of the user's own server. Fallback: not the region's first choice.
+	Region   string   `json:"region"`
+	Server   string   `json:"server"`
+	Fallback bool     `json:"fallback"`
+	Port     int      `json:"port"`
+	Attempts int      `json:"attempts"`
+	DownBps  *float64 `json:"down_bps"`
+	UpBps    *float64 `json:"up_bps"`
 	// Retransmits of the sending side, nil when unknown.
 	DownRetrans *int64 `json:"down_retrans"`
 	UpRetrans   *int64 `json:"up_retrans"`

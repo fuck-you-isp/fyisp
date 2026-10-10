@@ -28,7 +28,7 @@
 // Speed tests (--speedtests), one row per test, oldest first; bits per
 // second and milliseconds, empty when not measured or unknown:
 //
-//	id,start,end,trigger,outcome,server,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms
+//	id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms
 //
 // The SQLite format holds the same columns in a table named samples (raw;
 // ts is the column ts_utc, lost is NULL when not measured) or summary_1h;
@@ -97,7 +97,7 @@ var (
 	AnnotationHeader = []string{"id", "at", "end", "public", "text"}
 	// SpeedTestHeader: start and end in TimeFormat; outcome ok, busy (the
 	// server ran another test: not a slow result), unreachable or failed.
-	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "server", "port", "attempts", "down_bps", "up_bps",
+	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "port", "attempts", "down_bps", "up_bps",
 		"down_retrans", "up_retrans", "idle_gateway_ms", "loaded_gateway_ms", "idle_call_ms", "loaded_call_ms"}
 )
 
@@ -229,13 +229,19 @@ func WriteSpeedTests(ctx context.Context, sr SpeedTestReader, w io.Writer, from,
 		}
 		return strconv.FormatInt(*p, 10)
 	}
+	fb := func(b bool) string {
+		if b {
+			return "1"
+		}
+		return "0"
+	}
 	cw := csv.NewWriter(w)
 	if err := cw.Write(SpeedTestHeader); err != nil {
 		return err
 	}
 	for _, t := range ts {
 		if err := cw.Write([]string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
-			t.Trigger, t.Outcome, t.Server, strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
+			t.Trigger, t.Outcome, t.Region, t.Server, fb(t.Fallback), strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
 			i(t.DownRetrans), i(t.UpRetrans), f(t.IdleGatewayMs), f(t.LoadedGatewayMs), f(t.IdleCallMs), f(t.LoadedCallMs)}); err != nil {
 			return err
 		}

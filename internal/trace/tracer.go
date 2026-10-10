@@ -588,6 +588,7 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 	p.full = p.hops == nil || pending || st.gen != gen || turn == 0 || turn == -rv
 	st.gen = gen
 
+	at := time.Now()
 	res := tr.probeAll(ctx, p)
 	if ctx.Err() != nil {
 		return // cancelled mid-round: not measured
@@ -649,7 +650,7 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 		if r.skipped {
 			continue // not measured: no sample
 		}
-		s := model.Sample{Key: model.SeriesKey{Target: st.t.Name, Kind: model.KindTrace, Hop: uint8(ttl)}, Slot: slot}
+		s := model.Sample{Key: model.SeriesKey{Target: st.t.Name, Kind: model.KindTrace, Hop: uint8(ttl)}, Slot: slot, At: at}
 		switch {
 		case r.h.Addr.IsValid():
 			s.RTT = max(r.h.RTT, 0)

@@ -63,10 +63,10 @@ func ByHour(tests []model.SpeedTest, tz time.Duration) []HourStat {
 type Pattern struct {
 	Text    string  `json:"text"`
 	Level   string  `json:"level"`
-	DipFrom int     `json:"dip_from"` // local hour
-	DipTo   int     `json:"dip_to"`   // exclusive; wraps past midnight
-	Drop    float64 `json:"drop"`     // rounded to 0.1
-	Hours   []int   `json:"-"`
+	DipFrom int     `json:"-"`     // local hour
+	DipTo   int     `json:"-"`     // exclusive; wraps past midnight
+	Drop    float64 `json:"drop"`  // rounded to 0.1
+	Hours   []int   `json:"hours"` // the local hours of the dip, in order
 }
 
 // Pattern rule: enough hours, and a run of ≥ 2 consecutive hours whose
@@ -143,4 +143,120 @@ func FindPattern(hs []HourStat) *Pattern {
 	}
 	best.Text = fmt.Sprintf("%s are slower: about %d%% below your %s speed.", part, int(best.Drop*100+0.5), ref2)
 	return best
+}
+
+// HourCell is one hour of day of a region or server: its download median
+// relative to that row's best (p90), for heatmaps.
+type HourCell struct {
+	Hour       int      `json:"hour"`
+	N          int      `json:"n"`
+	DownMedian *float64 `json:"down_median_bps"`
+	UpMedian   *float64 `json:"up_median_bps"`
+	DownNorm   *float64 `json:"down_norm"` // DownMedian / Stats.BestDown, rounded to 0.01
+}
+
+// Stats summarize the tests of one region or server.
+type Stats struct {
+	N           int        `json:"n"` // ok tests
+	Busy        int        `json:"busy"`
+	Unreachable int        `json:"unreachable"`
+	Failed      int        `json:"failed"`
+	Fallback    int        `json:"fallback"` // ok tests on a fallback server (regions)
+	LatestAt    *time.Time `json:"-"`
+	DownMedian  *float64   `json:"down_median_bps"`
+	DownP10     *float64   `json:"down_p10_bps"`
+	UpMedian    *float64   `json:"up_median_bps"`
+	UpP10       *float64   `json:"up_p10_bps"`
+	// BestDown is the p90 of the downloads: the row's "best" for DownNorm.
+	BestDown *float64   `json:"best_down_bps"`
+	Dip      *Pattern   `json:"dip"`
+	Hours    []HourCell `json:"hours"`
+}
+
+func quant(v []float64, p float64) *float64 {
+	if len(v) == 0 {
+		return nil
+	}
+	x := math.Round(callq.Quantile(v, p))
+	return &x
+}
+
+// Summarize computes Stats over tests (all of one region or server), hours
+// local to tz.
+func Summarize(tests []model.SpeedTest, tz time.Duration) Stats {
+	var st Stats
+	var down, up []float64
+	for _, t := range tests {
+		if st.LatestAt == nil || t.Start.After(*st.LatestAt) {
+			at := t.Start
+			st.LatestAt = &at
+		}
+		switch t.Outcome {
+		case model.SpeedOK:
+			st.N++
+			if t.Fallback {
+				st.Fallback++
+			}
+		case model.SpeedBusy:
+			st.Busy++
+		case model.SpeedUnreachable:
+			st.Unreachable++
+		default:
+			st.Failed++
+		}
+		if t.Outcome == model.SpeedOK && t.DownBps != nil {
+			down = append(down, *t.DownBps)
+		}
+		if t.Outcome == model.SpeedOK && t.UpBps != nil {
+			up = append(up, *t.UpBps)
+		}
+	}
+	st.DownMedian, st.DownP10, st.BestDown = quant(down, 0.5), quant(down, 0.1), quant(down, 0.9)
+	st.UpMedian, st.UpP10 = quant(up, 0.5), quant(up, 0.1)
+	hs := ByHour(tests, tz)
+	for _, h := range hs {
+		c := HourCell{Hour: h.Hour, N: h.N, DownMedian: h.DownMedian, UpMedian: h.UpMedian}
+		if h.DownMedian != nil && st.BestDown != nil && *st.BestDown > 0 {
+			x := math.Round(*h.DownMedian / *st.BestDown * 100) / 100
+			c.DownNorm = &x
+		}
+		st.Hours = append(st.Hours, c)
+	}
+	st.Dip = FindPattern(hs)
+	return st
+}
+
+// GroupKey is a test's row: its region, else its server.
+func GroupKey(t model.SpeedTest) string {
+	if t.Region != "" {
+		return t.Region
+	}
+	return t.Server
+}
+
+// PooledPattern is the time-of-day pattern of the user's own line: each ok
+// test as a fraction of its region's (or server's) p90 download, pooled, so
+// far servers that always read lower don't hide or fake a dip. Fallback
+// tests are left out (another server, another baseline).
+func PooledPattern(tests []model.SpeedTest, tz time.Duration) *Pattern {
+	by := map[string][]float64{}
+	for _, t := range tests {
+		if t.Outcome == model.SpeedOK && t.DownBps != nil && !t.Fallback {
+			k := GroupKey(t)
+			by[k] = append(by[k], *t.DownBps)
+		}
+	}
+	best := map[string]float64{}
+	for k, v := range by {
+		best[k] = callq.Quantile(v, 0.9)
+	}
+	var norm []model.SpeedTest
+	for _, t := range tests {
+		if t.Outcome != model.SpeedOK || t.DownBps == nil || t.Fallback || best[GroupKey(t)] <= 0 {
+			continue
+		}
+		r := *t.DownBps / best[GroupKey(t)] * 1e6 // ByHour rounds: keep resolution
+		norm = append(norm, model.SpeedTest{Start: t.Start, Outcome: model.SpeedOK, DownBps: &r})
+	}
+	return FindPattern(ByHour(norm, tz))
 }

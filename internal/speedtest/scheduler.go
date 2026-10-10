@@ -3,6 +3,7 @@ package speedtest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net"
@@ -15,29 +16,57 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// Schedule defaults (see the brief): a test every 15 minutes at most often,
-// ±60 s of jitter so installs don't line up on the quarter-hour, the two
-// nearest servers by RTT re-picked daily, up to 3 attempts 2 s apart on a
-// busy server.
+// Mode is what the schedule tests.
+type Mode string
+
 const (
-	MinInterval = 15 * time.Minute
-	Jitter      = time.Minute
-	RepickEvery = 24 * time.Hour
-	MaxAttempts = 3
+	ModeOff Mode = "off" // the default: no scheduled tests (Test now still works)
+	// ModeRegions tests every region of the catalog once per interval, one
+	// test at a time, spread evenly; each region falls back along its chain.
+	ModeRegions Mode = "regions"
+	// ModeNearest tests the two servers nearest by RTT, alternating, one
+	// test per interval.
+	ModeNearest Mode = "nearest"
+	// ModeCustom tests the --speedtest-server list, each once per interval.
+	ModeCustom Mode = "custom"
+)
+
+// Schedule and test limits (see docs/SPEEDTEST-API.md).
+const (
+	MinInterval = 15 * time.Minute // per region or server; none when every server is the user's own
+	Jitter      = time.Minute      // on each cycle's start only: the spacing stays regular
+	RepickEvery = 24 * time.Hour   // nearest servers by RTT
+	MaxAttempts = 3                // per server: busy or refused tries another port
 	AttemptGap  = 2 * time.Second
+	DirTimeout  = 15 * time.Second // one direction, connect to results
+	// SlotBudget: no new attempt or fallback server after this much of a
+	// slot; SlotCap is the hard limit of one slot.
+	SlotBudget = 25 * time.Second
+	SlotCap    = 45 * time.Second
+	// MinMeasure..MaxMeasure is the adaptive measured time per direction,
+	// after a 1 s ramp-up.
+	MinMeasure = 3 * time.Second
+	MaxMeasure = 8 * time.Second
+	// EstTestTime is a typical test (both directions, adaptive): the
+	// planned share of time under test is slots × EstTestTime / interval.
+	EstTestTime = 15 * time.Second
+	ShareWarn   = 0.25
 	// relisten is the pause before the upload: a stock iperf3 server
 	// closes and reopens its listener after every test, and refuses
 	// connections in between.
 	relisten     = time.Second
-	DirTimeout   = 15 * time.Second // one direction, connect to results
-	MaxTestTime  = 60 * time.Second // the whole test, retries included
-	firstDelay   = 2 * time.Minute  // after start or enabling: idle RTTs first
-	pickTimeout  = 2 * time.Second  // one RTT check connect
+	cycleGap     = 40 * time.Second // between a cycle's last slot and the next cycle
+	firstDelay   = 2 * time.Minute  // after start or a mode change: idle RTTs first
+	pickTimeout  = 2 * time.Second  // one RTT check
 	pickConnects = 3
+	pickParallel = 8
 )
 
 // ErrRunning: one test at a time, process-wide.
 var ErrRunning = errors.New("a speed test is already running")
+
+// ErrMode is a mode this install does not offer.
+var ErrMode = errors.New("unknown speed test mode")
 
 // running is process-wide: two schedulers (tests) never run tests at once.
 var running atomic.Bool
@@ -50,22 +79,21 @@ type Store interface {
 	SetSetting(ctx context.Context, key, value string) error
 }
 
-// SettingKey is the store setting that remembers the Details toggle.
-const SettingKey = "speedtest_enabled"
+// SettingKey is the store setting that remembers the Details choice.
+const SettingKey = "speedtest_mode"
 
 // Options configure a Scheduler.
 type Options struct {
-	Servers []Server // the catalog list; ignored when Custom is set
-	Custom  *Server  // --speedtest-server
-	// Interval between scheduled tests (default and minimum MinInterval;
-	// any positive value with Custom).
+	Catalog *Catalog
+	Custom  []Server // --speedtest-server
+	// Mode at start (--speedtest); "" uses the saved Details choice, else off.
+	Mode Mode
+	// Interval per region or server (default and minimum MinInterval, any
+	// positive value when every Custom server is the user's own).
 	Interval time.Duration
-	// Enabled switches the schedule on at start (--speedtest). Otherwise the
-	// saved Details toggle decides; without one it is off.
-	Enabled bool
-	Store   Store
-	Windows *Windows // marked for every test (masking); required
-	Load    *LoadTap // nil: no latency under load
+	Store    Store
+	Windows  *Windows // marked for every test (masking)
+	Load     *LoadTap // nil: no latency under load
 	// Ping returns the ICMP RTT to a host (probe.PingOnce); nil or failing:
 	// TCP connect time to port 80, 443, then the server's first iperf3 port.
 	Ping func(ctx context.Context, host string) (time.Duration, error)
@@ -81,46 +109,62 @@ type Options struct {
 	rand  *rand.Rand
 }
 
+// target is one slot's test: a region (or none) and the servers to try.
+type target struct {
+	region string
+	chain  []Server
+}
+
 // Scheduler runs speed tests on a schedule and on demand.
 type Scheduler struct {
 	o    Options
 	wake chan struct{}
 
-	mu       sync.Mutex
-	enabled  bool
-	next     time.Time
-	manual   bool // a "Test now" is queued
-	cur      *RunState
-	picked   []string // the nearest servers, by name
-	pickedAt time.Time
-	rtts     map[string]time.Duration // last RTT check; absent: unreachable
-	turn     int
+	mu         sync.Mutex
+	mode       Mode
+	cycleBase  time.Time // the cycle's start without jitter
+	cycleStart time.Time
+	slot       int
+	next       time.Time // the next slot; zero when off
+	manual     *target   // a queued Test now
+	cur        *RunState
+	picked     []string // the nearest servers, by ID
+	pickedAt   time.Time
+	rtts       map[string]time.Duration
+	turn       int
 }
 
 // RunState is a running test.
 type RunState struct {
-	Started   time.Time `json:"started"`
-	Direction string    `json:"direction"` // picking, download, upload
-	Server    string    `json:"server,omitempty"`
+	Started     time.Time
+	ExpectedEnd time.Time
+	Direction   string // picking, download, upload
+	Server      string // ID
+	Region      string
 }
 
-// ServerState is one server with its last RTT check.
+// ServerState is one server for the API.
 type ServerState struct {
-	Name    string   `json:"name"`
-	City    string   `json:"city"`
-	Country string   `json:"country"`
-	RTTms   *float64 `json:"rtt_ms"`
-	Picked  bool     `json:"picked"`
+	Server
+	RTTms  *float64
+	Picked bool
 }
 
 // State is the scheduler's state for the API.
 type State struct {
-	Enabled  bool          `json:"enabled"`
-	Interval time.Duration `json:"-"`
-	Next     time.Time     `json:"-"`
-	Running  *RunState     `json:"running"`
-	Custom   string        `json:"custom_server,omitempty"`
-	Servers  []ServerState `json:"servers"`
+	Mode         Mode
+	Modes        []Mode // the modes this install offers
+	Interval     time.Duration
+	Spacing      time.Duration // between slots
+	PlannedShare float64       // of time under test, planned
+	Warning      string        // when PlannedShare is over ShareWarn
+	Next         time.Time
+	NextRegion   string
+	NextServer   string
+	Running      *RunState
+	Servers      []ServerState // the catalog, then the custom servers
+	Regions      []Region
+	Custom       []string // custom server IDs
 }
 
 // New returns a Scheduler; Run drives it.
@@ -135,8 +179,9 @@ func New(o Options) *Scheduler {
 		o.run = Run
 	}
 	if o.rtt == nil {
+		ping := o.Ping
 		o.rtt = func(ctx context.Context, host string, port int) (time.Duration, error) {
-			return serverRTT(ctx, o.Ping, host, port)
+			return serverRTT(ctx, ping, host, port)
 		}
 	}
 	if o.sleep == nil {
@@ -148,26 +193,125 @@ func New(o Options) *Scheduler {
 	if o.Windows == nil {
 		o.Windows = &Windows{}
 	}
-	if o.Custom != nil {
-		o.Servers = []Server{*o.Custom}
-		if o.Interval <= 0 {
-			o.Interval = MinInterval
-		}
-	} else {
+	if o.Catalog == nil {
+		o.Catalog = &Catalog{byID: map[string]int{}}
+	}
+	if o.Interval <= 0 {
+		o.Interval = MinInterval
+	}
+	if !OwnOnly(o.Custom) {
 		o.Interval = max(o.Interval, MinInterval)
 	}
-	return &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}}
+	return &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff}
 }
 
-// Interval is the schedule's interval.
+// OwnOnly reports a non-empty custom list of the user's own servers only:
+// the 15-minute floor does not apply to it.
+func OwnOnly(ss []Server) bool {
+	return len(ss) > 0 && !slices.ContainsFunc(ss, func(s Server) bool { return !s.Custom })
+}
+
+// Interval is the schedule's interval per region or server.
 func (s *Scheduler) Interval() time.Duration { return s.o.Interval }
 
-// jittered is iv ± Jitter (never below a minute).
-func (s *Scheduler) jittered(iv time.Duration) time.Duration {
+// Modes are the modes this install offers: custom only with servers.
+func (s *Scheduler) Modes() []Mode {
+	m := []Mode{ModeOff, ModeRegions, ModeNearest}
+	if len(s.o.Custom) > 0 {
+		m = append(m, ModeCustom)
+	}
+	return m
+}
+
+func (s *Scheduler) valid(m Mode) bool { return slices.Contains(s.Modes(), m) }
+
+// planLocked is a cycle's targets for mode m (nearest: one, filled in at
+// run time).
+func (s *Scheduler) planLocked(m Mode) []target {
+	switch m {
+	case ModeRegions:
+		var out []target
+		for _, r := range s.o.Catalog.Regions {
+			t := target{region: r.ID}
+			for _, id := range r.Chain {
+				if sv, ok := s.o.Catalog.Server(id); ok {
+					t.chain = append(t.chain, sv)
+				}
+			}
+			out = append(out, t)
+		}
+		return out
+	case ModeCustom:
+		var out []target
+		for _, sv := range s.o.Custom {
+			out = append(out, target{chain: []Server{sv}})
+		}
+		return out
+	case ModeNearest:
+		return []target{{}}
+	}
+	return nil
+}
+
+// spacingLocked is the time between slots of mode m.
+func (s *Scheduler) spacingLocked(m Mode) time.Duration {
+	n := len(s.planLocked(m))
+	if n == 0 {
+		return 0
+	}
+	return s.o.Interval / time.Duration(n)
+}
+
+// plannedShareLocked is the share of time mode m keeps the line under test.
+func (s *Scheduler) plannedShareLocked(m Mode) float64 {
+	return float64(len(s.planLocked(m))) * float64(EstTestTime) / float64(s.o.Interval)
+}
+
+// PlannedShare is the share of time mode m would keep the line under test.
+func (s *Scheduler) PlannedShare(m Mode) float64 {
 	s.mu.Lock()
-	j := time.Duration(s.o.rand.Int64N(int64(2*Jitter)+1)) - Jitter
-	s.mu.Unlock()
-	return max(iv+j, time.Minute)
+	defer s.mu.Unlock()
+	return s.plannedShareLocked(m)
+}
+
+func (s *Scheduler) jitter() time.Duration {
+	return time.Duration(s.o.rand.Int64N(int64(2*Jitter)+1)) - Jitter
+}
+
+// restartLocked schedules the mode from now: the first slot after
+// firstDelay (+0..Jitter), so idle RTTs exist before the first test.
+func (s *Scheduler) restartLocked(now time.Time) {
+	s.slot = 0
+	s.next = time.Time{}
+	if len(s.planLocked(s.mode)) == 0 {
+		return
+	}
+	s.cycleBase = now.Add(firstDelay)
+	s.cycleStart = s.cycleBase.Add(time.Duration(s.o.rand.Int64N(int64(Jitter) + 1)))
+	s.next = s.cycleStart
+}
+
+// advanceLocked moves to the next slot. A new cycle starts at its base plus
+// fresh jitter (the spacing within a cycle stays regular), never sooner
+// than cycleGap after the previous cycle's last slot.
+func (s *Scheduler) advanceLocked() {
+	n := len(s.planLocked(s.mode))
+	if n == 0 {
+		s.next = time.Time{}
+		return
+	}
+	sp := s.o.Interval / time.Duration(n)
+	s.slot++
+	if s.slot >= n {
+		last := s.cycleStart.Add(time.Duration(n-1) * sp)
+		s.cycleBase = s.cycleBase.Add(s.o.Interval)
+		start := s.cycleBase.Add(s.jitter())
+		if earliest := last.Add(min(cycleGap, sp/2)); start.Before(earliest) {
+			start = earliest
+		}
+		s.cycleStart, s.slot = start, 0
+	}
+	s.next = s.cycleStart.Add(time.Duration(s.slot) * sp)
 }
 
 func (s *Scheduler) poke() {
@@ -177,52 +321,65 @@ func (s *Scheduler) poke() {
 	}
 }
 
-// Run loads the saved toggle and the past windows, then runs tests until
-// ctx ends.
+func (s *Scheduler) warn(m Mode) {
+	if share := s.PlannedShare(m); share > ShareWarn {
+		s.o.Log.Warn("speed tests: the line will be under test a large share of the time", "mode", m,
+			"planned_share", round1(share*100)/100, "interval", s.o.Interval.String())
+	}
+}
+
+// Run loads the saved mode and the past windows, then runs tests until ctx
+// ends.
 func (s *Scheduler) Run(ctx context.Context) error {
-	enabled := s.o.Enabled
-	if !enabled && s.o.Store != nil {
+	mode := s.o.Mode
+	if mode == "" && s.o.Store != nil {
 		if v, ok, err := s.o.Store.Setting(ctx, SettingKey); err == nil && ok {
-			enabled = v == "on"
+			mode = Mode(v)
 		}
+	}
+	if !s.valid(mode) {
+		mode = ModeOff
 	}
 	if s.o.Store != nil {
 		now := s.o.Now()
-		if ts, err := s.o.Store.SpeedTests(ctx, now.Add(-time.Hour), now); err == nil {
+		if ts, err := s.o.Store.SpeedTests(ctx, now.Add(-keepWindows), now); err == nil {
 			for _, t := range ts {
 				s.o.Windows.Add(Window{Start: t.Start, End: t.End})
 			}
 		}
 	}
 	s.mu.Lock()
-	s.enabled = enabled
-	if enabled {
-		s.next = s.o.Now().Add(firstDelay + s.jitterUp())
-	}
+	s.mode = mode
+	s.restartLocked(s.o.Now())
 	s.mu.Unlock()
+	s.warn(mode)
 	for {
 		s.mu.Lock()
-		var wait time.Duration = time.Hour
-		due, manual := false, s.manual
-		if s.enabled && !s.next.IsZero() {
-			wait = s.next.Sub(s.o.Now())
-			due = wait <= 0
+		now := s.o.Now()
+		m := s.manual
+		s.manual = nil
+		var tg *target
+		wait := time.Hour
+		if m == nil && !s.next.IsZero() {
+			if wait = s.next.Sub(now); wait <= 0 {
+				plan := s.planLocked(s.mode)
+				late := now.Sub(s.next) > s.spacingLocked(s.mode)/2
+				if s.slot < len(plan) && !late {
+					t := plan[s.slot]
+					tg = &t
+				}
+				s.advanceLocked() // a late slot is skipped: later ones never move
+			}
 		}
 		s.mu.Unlock()
-		if manual || due {
-			trigger := "schedule"
-			if manual {
-				trigger = "manual"
-			}
-			s.runOne(ctx, trigger)
-			s.mu.Lock()
-			if manual {
-				s.manual = false
-			}
-			if due && s.enabled {
-				s.next = s.o.Now().Add(s.jitteredLocked(s.o.Interval))
-			}
-			s.mu.Unlock()
+		switch {
+		case m != nil:
+			s.runTarget(ctx, *m, "manual")
+			continue
+		case tg != nil:
+			s.runTarget(ctx, *tg, "schedule")
+			continue
+		case wait <= 0:
 			continue
 		}
 		t := time.NewTimer(min(wait, time.Hour))
@@ -237,51 +394,79 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
-func (s *Scheduler) jitterUp() time.Duration {
-	return time.Duration(s.o.rand.Int64N(int64(Jitter) + 1))
-}
-
-func (s *Scheduler) jitteredLocked(iv time.Duration) time.Duration {
-	j := time.Duration(s.o.rand.Int64N(int64(2*Jitter)+1)) - Jitter
-	return max(iv+j, time.Minute)
-}
-
-// TestNow queues a test to run immediately. It fails with ErrRunning while
-// one runs or is queued.
-func (s *Scheduler) TestNow() (time.Time, error) {
+// TestNow queues a test to run immediately: of the server or region with
+// this ID, else of the nearest servers. It fails with ErrRunning while one
+// runs or is queued, and with an error for an unknown ID.
+func (s *Scheduler) TestNow(id string) (time.Time, error) {
+	tg := target{}
+	if id != "" {
+		if sv, ok := s.server(id); ok {
+			tg.chain = []Server{sv}
+		} else if r, ok := s.region(id); ok {
+			tg.region = r.ID
+			for _, x := range r.Chain {
+				if sv, ok := s.o.Catalog.Server(x); ok {
+					tg.chain = append(tg.chain, sv)
+				}
+			}
+		} else {
+			return time.Time{}, fmt.Errorf("no server or region %q", id)
+		}
+	}
 	s.mu.Lock()
-	if s.manual || s.cur != nil || running.Load() {
+	if s.manual != nil || s.cur != nil || running.Load() {
 		s.mu.Unlock()
 		return time.Time{}, ErrRunning
 	}
-	s.manual = true
+	s.manual = &tg
 	s.mu.Unlock()
 	s.poke()
 	return s.o.Now(), nil
 }
 
-// SetEnabled switches the schedule and saves the choice. It returns the
-// next scheduled test (zero when off).
-func (s *Scheduler) SetEnabled(ctx context.Context, on bool) (time.Time, error) {
-	if s.o.Store != nil {
-		v := "off"
-		if on {
-			v = "on"
+func (s *Scheduler) server(id string) (Server, bool) {
+	if sv, ok := s.o.Catalog.Server(id); ok {
+		return sv, true
+	}
+	for _, sv := range s.o.Custom {
+		if sv.ID == id {
+			return sv, true
 		}
-		if err := s.o.Store.SetSetting(ctx, SettingKey, v); err != nil {
+	}
+	return Server{}, false
+}
+
+func (s *Scheduler) region(id string) (Region, bool) {
+	for _, r := range s.o.Catalog.Regions {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return Region{}, false
+}
+
+// SetMode switches the schedule and saves the choice. It returns the next
+// scheduled test (zero when off).
+func (s *Scheduler) SetMode(ctx context.Context, m Mode) (time.Time, error) {
+	if !s.valid(m) {
+		return time.Time{}, ErrMode
+	}
+	if s.o.Store != nil {
+		if err := s.o.Store.SetSetting(ctx, SettingKey, string(m)); err != nil {
 			return time.Time{}, err
 		}
 	}
 	s.mu.Lock()
-	switch {
-	case on && !s.enabled:
-		s.next = s.o.Now().Add(firstDelay + s.jitterUp())
-	case !on:
-		s.next = time.Time{}
+	changed := s.mode != m
+	s.mode = m
+	if changed {
+		s.restartLocked(s.o.Now())
 	}
-	s.enabled = on
 	next := s.next
 	s.mu.Unlock()
+	if changed {
+		s.warn(m)
+	}
 	s.poke()
 	return next, nil
 }
@@ -290,27 +475,46 @@ func (s *Scheduler) SetEnabled(ctx context.Context, on bool) (time.Time, error) 
 func (s *Scheduler) State() State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := State{Enabled: s.enabled, Interval: s.o.Interval}
-	if s.enabled && s.cur == nil {
+	st := State{Mode: s.mode, Modes: s.Modes(), Interval: s.o.Interval, Spacing: s.spacingLocked(s.mode),
+		PlannedShare: s.plannedShareLocked(s.mode), Regions: s.o.Catalog.Regions}
+	if st.PlannedShare > ShareWarn {
+		st.Warning = fmt.Sprintf("About %d%% of the time is spent testing, which slows down everything else on this line while it runs. Consider a longer interval.", int(st.PlannedShare*100+0.5))
+	}
+	if s.cur == nil && !s.next.IsZero() {
 		st.Next = s.next
+		if plan := s.planLocked(s.mode); s.slot < len(plan) {
+			st.NextRegion = plan[s.slot].region
+			if len(plan[s.slot].chain) > 0 {
+				st.NextServer = plan[s.slot].chain[0].ID
+			}
+		}
 	}
 	if s.cur != nil {
 		c := *s.cur
 		st.Running = &c
 	}
-	if s.o.Custom != nil {
-		st.Custom = s.o.Custom.Name
-	}
-	for _, sv := range s.o.Servers {
-		ss := ServerState{Name: sv.Name, City: sv.City, Country: sv.Country, Picked: slices.Contains(s.picked, sv.Name)}
-		if d, ok := s.rtts[sv.Name]; ok {
+	add := func(sv Server) {
+		ss := ServerState{Server: sv, Picked: slices.Contains(s.picked, sv.ID)}
+		if d, ok := s.rtts[sv.ID]; ok {
 			ms := float64(d) / float64(time.Millisecond)
 			ss.RTTms = &ms
 		}
 		st.Servers = append(st.Servers, ss)
 	}
+	for _, sv := range s.o.Catalog.Servers {
+		add(sv)
+	}
+	for _, sv := range s.o.Custom {
+		if _, ok := s.o.Catalog.Server(sv.ID); !ok {
+			add(sv)
+		}
+		st.Custom = append(st.Custom, sv.ID)
+	}
 	return st
 }
+
+// MaskedShare is the share of the last d spent under test (masked).
+func (s *Scheduler) MaskedShare(d time.Duration) float64 { return s.o.Windows.Share(s.o.Now(), d) }
 
 // SpeedTests reads stored tests (oldest first).
 func (s *Scheduler) SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
@@ -328,38 +532,49 @@ func (s *Scheduler) setRun(dir, server string) {
 	s.mu.Unlock()
 }
 
-// runOne runs one test (picking servers first when due), saves it and
-// reports it.
-func (s *Scheduler) runOne(ctx context.Context, trigger string) {
+// runTarget runs one slot: the chain's servers in order until one
+// measures, within SlotBudget; then saves and reports the result.
+func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
 	if !running.CompareAndSwap(false, true) {
 		return
 	}
 	defer running.Store(false)
+	now := s.o.Now()
 	s.mu.Lock()
-	s.cur = &RunState{Started: s.o.Now(), Direction: "picking"}
+	s.cur = &RunState{Started: now, ExpectedEnd: now.Add(EstTestTime + 5*time.Second), Direction: "picking", Region: tg.region}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		s.cur = nil
 		s.mu.Unlock()
 	}()
-	sv, ok := s.server(ctx)
+	if len(tg.chain) == 0 { // nearest
+		tg.chain = s.nearest(ctx)
+	}
 	if ctx.Err() != nil {
 		return
 	}
-	t := model.SpeedTest{Trigger: trigger, Outcome: model.SpeedUnreachable}
-	if !ok {
+	t := model.SpeedTest{Trigger: trigger, Region: tg.region, Outcome: model.SpeedUnreachable}
+	if len(tg.chain) == 0 {
 		now := s.o.Now()
 		t.Start, t.End = now, now
 		s.save(ctx, &t)
 		return
 	}
-	t.Server = sv.Name
-	tctx, cancel := context.WithTimeout(ctx, MaxTestTime)
+	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)
-	s.measure(tctx, sv, &t)
+	for i, sv := range tg.chain {
+		if i > 0 && s.o.Now().Sub(t.Start) >= SlotBudget {
+			break
+		}
+		t.Server, t.Fallback, t.Port = sv.ID, i > 0, 0
+		s.testServer(sctx, sv, &t)
+		if t.Outcome == model.SpeedOK || t.DownBps != nil || sctx.Err() != nil {
+			break // measured (a failed upload keeps the download), or out of time
+		}
+	}
 	t.End = s.o.Now()
 	win := s.o.Windows.End(t.End)
 	if ctx.Err() != nil {
@@ -385,7 +600,7 @@ func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) {
 			s.o.Log.Warn("speed test: saving the result failed", "err", err)
 		}
 	}
-	args := []any{"server", t.Server, "outcome", t.Outcome, "attempts", t.Attempts, "trigger", t.Trigger}
+	args := []any{"region", t.Region, "server", t.Server, "fallback", t.Fallback, "outcome", t.Outcome, "attempts", t.Attempts, "trigger", t.Trigger}
 	if t.DownBps != nil {
 		args = append(args, "down_mbps", round1(*t.DownBps/1e6))
 	}
@@ -400,16 +615,16 @@ func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) {
 
 func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
 
-// measure runs download then upload, with busy retries.
-func (s *Scheduler) measure(ctx context.Context, sv Server, t *model.SpeedTest) {
+// testServer runs download then upload against sv.
+func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest) {
 	port := 0
 	for _, dir := range []Direction{Download, Upload} {
-		s.setRun(dir.String(), sv.Name)
+		s.setRun(dir.String(), sv.ID)
 		if port != 0 && !s.o.sleep(ctx, relisten) {
 			t.Outcome = model.SpeedFailed
 			return
 		}
-		res, p, attempts, outcome := s.direction(ctx, sv, dir, port)
+		res, p, attempts, outcome := s.direction(ctx, sv, dir, port, t.Start)
 		t.Attempts += attempts
 		if p != 0 {
 			t.Port, port = p, p
@@ -432,42 +647,40 @@ func (s *Scheduler) measure(ctx context.Context, sv Server, t *model.SpeedTest) 
 	}
 }
 
-// direction runs one direction: first on port (0: a random one), then on
-// other random ports while the server is busy, up to MaxAttempts. After a
-// download on port (the server answered moments ago), a refused connection
-// is the server re-listening, so it is retried like a busy one.
-func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int) (Result, int, int, string) {
-	reachable := port != 0
-	refused := false
+// direction runs one direction: first on port (0: a random one), then,
+// while the server is busy or refuses (a stock iperf3 server re-listens
+// for a moment after every test), on other random ports 2 s apart, up to
+// MaxAttempts and within the slot's budget. A timeout or DNS failure
+// (ErrUnreachable) and protocol errors end it at once.
+func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time) (Result, int, int, string) {
 	tried := map[int]bool{}
-	for attempt := 1; attempt <= MaxAttempts; attempt++ {
+	for attempt := 1; ; attempt++ {
 		if attempt > 1 || port == 0 {
 			port = s.randomPort(sv, tried)
 		}
 		tried[port] = true
 		res, err := s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
+			Duration: MaxMeasure, MinDuration: MinMeasure,
 		})
 		switch {
 		case err == nil:
 			return res, port, attempt, model.SpeedOK
 		case ctx.Err() != nil:
 			return res, port, attempt, model.SpeedFailed
-		case errors.Is(err, ErrUnreachable) && !reachable:
-			return res, port, attempt, model.SpeedUnreachable // retrying other ports does not help
-		case !errors.Is(err, ErrBusy) && !errors.Is(err, ErrUnreachable):
-			s.o.Log.Debug("speed test failed", "server", sv.Name, "port", port, "direction", dir.String(), "err", err)
+		case errors.Is(err, ErrUnreachable):
+			return res, port, attempt, model.SpeedUnreachable
+		case !errors.Is(err, ErrBusy) && !errors.Is(err, ErrRefused):
+			s.o.Log.Debug("speed test failed", "server", sv.ID, "port", port, "direction", dir.String(), "err", err)
 			return res, port, attempt, model.SpeedFailed
 		}
-		refused = errors.Is(err, ErrUnreachable)
-		if attempt < MaxAttempts && !s.o.sleep(ctx, AttemptGap) {
-			return res, port, attempt, model.SpeedFailed
+		if attempt == MaxAttempts || s.o.Now().Sub(slotStart)+AttemptGap >= SlotBudget || !s.o.sleep(ctx, AttemptGap) {
+			if errors.Is(err, ErrRefused) {
+				return Result{}, port, attempt, model.SpeedUnreachable
+			}
+			return Result{}, port, attempt, model.SpeedBusy
 		}
 	}
-	if refused {
-		return Result{}, port, MaxAttempts, model.SpeedUnreachable
-	}
-	return Result{}, port, MaxAttempts, model.SpeedBusy
 }
 
 // randomPort picks an untried port of sv (any, once all were tried).
@@ -484,13 +697,9 @@ func (s *Scheduler) randomPort(sv Server, tried map[int]bool) int {
 	return sv.PortMin + s.o.rand.IntN(n)
 }
 
-// server picks the server for this test: the custom one, else the nearer
-// two of the catalog by RTT (re-checked every RepickEvery), alternating.
-// ok is false when none answered.
-func (s *Scheduler) server(ctx context.Context) (Server, bool) {
-	if s.o.Custom != nil {
-		return *s.o.Custom, true
-	}
+// nearest returns the two catalog servers nearest by RTT (re-checked every
+// RepickEvery), in alternating order, for mode nearest and Test now.
+func (s *Scheduler) nearest(ctx context.Context) []Server {
 	s.mu.Lock()
 	due := len(s.picked) == 0 || s.o.Now().Sub(s.pickedAt) >= RepickEvery
 	s.mu.Unlock()
@@ -499,34 +708,34 @@ func (s *Scheduler) server(ctx context.Context) (Server, bool) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.picked) == 0 {
-		return Server{}, false
-	}
-	name := s.picked[s.turn%len(s.picked)]
-	s.turn++
-	for _, sv := range s.o.Servers {
-		if sv.Name == name {
-			return sv, true
+	var out []Server
+	for i := range s.picked {
+		if sv, ok := s.o.Catalog.Server(s.picked[(s.turn+i)%len(s.picked)]); ok {
+			out = append(out, sv)
 		}
 	}
-	return Server{}, false
+	s.turn++
+	return out
 }
 
-// pick measures the RTT to every server (the minimum of pickConnects
-// checks) and keeps the two nearest. A failed check keeps
-// the previous pick and retries at the next test.
+// pick measures the RTT to every catalog server (the minimum of
+// pickConnects checks, pickParallel servers at a time) and keeps the two
+// nearest. A failed check keeps the previous pick.
 func (s *Scheduler) pick(ctx context.Context) {
 	type r struct {
-		name string
-		d    time.Duration
+		id string
+		d  time.Duration
 	}
 	var mu sync.Mutex
 	var got []r
 	var wg sync.WaitGroup
-	for _, sv := range s.o.Servers {
+	sem := make(chan struct{}, pickParallel)
+	for _, sv := range s.o.Catalog.Servers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			best := time.Duration(-1)
 			for range pickConnects {
 				d, err := s.o.rtt(ctx, sv.Host, sv.PortMin)
@@ -536,7 +745,7 @@ func (s *Scheduler) pick(ctx context.Context) {
 			}
 			if best >= 0 {
 				mu.Lock()
-				got = append(got, r{sv.Name, best})
+				got = append(got, r{sv.ID, best})
 				mu.Unlock()
 			}
 		}()
@@ -547,14 +756,14 @@ func (s *Scheduler) pick(ctx context.Context) {
 	defer s.mu.Unlock()
 	s.rtts = map[string]time.Duration{}
 	for _, x := range got {
-		s.rtts[x.name] = x.d
+		s.rtts[x.id] = x.d
 	}
 	if len(got) == 0 {
 		return
 	}
 	s.picked = nil
 	for _, x := range got[:min(2, len(got))] {
-		s.picked = append(s.picked, x.name)
+		s.picked = append(s.picked, x.id)
 	}
 	s.pickedAt = s.o.Now()
 }

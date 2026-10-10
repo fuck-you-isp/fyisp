@@ -1,0 +1,7 @@
+# Scaleway (online.net) public test server: iperf3 on ports 5200-5209.
+provider: scaleway
+display: Scaleway
+sources:
+  - http://ping.online.net/
+servers:
+  - {id: Scaleway-Paris, host: ping.online.net, ports: 5200-5209, city: Paris, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
