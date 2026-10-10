@@ -710,6 +710,10 @@ func TestStartLimiter(t *testing.T) {
 	if len(full.m) != 2 {
 		t.Errorf("full limiter grew or forgot: %d", len(full.m))
 	}
+	// The overflow didn't reset the existing clients' limits.
+	if ok("192.0.2.1", now.Add(10*time.Second)) || ok("192.0.2.2", now.Add(10*time.Second)) {
+		t.Error("an existing client's 30 s limit was reset by the overflow")
+	}
 	if !ok("192.0.2.3", now.Add(time.Hour+time.Minute)) || len(full.m) != 1 {
 		t.Errorf("after an hour the expired clients are pruned and a new one fits: %d", len(full.m))
 	}
