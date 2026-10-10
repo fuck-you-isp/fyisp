@@ -46,6 +46,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [],
     "work": {
       "measured": 330,
@@ -183,6 +188,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 1,
+      "provider": 2,
+      "other": 0
+    },
     "problems": [
       {
         "id": 83,
@@ -191,6 +201,10 @@
         "kind": "lan",
         "who": "home",
         "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
         "peak_loss": 0.35,
         "details": "#v=calls\u0026from=1791466320000\u0026to=1791470160000\u0026o=1"
       },
@@ -201,6 +215,10 @@
         "kind": "isp",
         "who": "provider",
         "where": "Most likely your provider's network (past your router)",
+        "side": "provider",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
         "peak_loss": 0.7,
         "details": "#v=calls\u0026from=1791443400000\u0026to=1791447720000\u0026o=1"
       },
@@ -211,6 +229,10 @@
         "kind": "isp",
         "who": "provider",
         "where": "Most likely your provider's network (past your router)",
+        "side": "provider",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791286500000\u0026to=1791291000000\u0026o=1"
       }

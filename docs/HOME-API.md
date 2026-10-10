@@ -330,6 +330,28 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 
 Write the times from `bad_from`/`bad_to` (or `time`) yourself.
 
+## The public report
+
+The share link's report is `part=history&span=w` in the public voice; the route forces the voice. Everything it needs is in fields; the client formats every time:
+
+- **Period and timezone:**
+  - `from` (local midnight 6 days ago) and `to` (now), in Unix ms;
+  - `tz`, minutes east of UTC as used: write the offset next to every time ("UTC+2").
+- **`sides`** `{home, provider, other}`: the week's problems by side.
+  - `home` is the home network and the device offline; `provider` is the provider's network; `other` is everything else (further out, name lookups, apps and services, call traffic).
+  - Known issues are excluded. The three sum to `counts.problems`.
+- **`problems[]`** is the 7-day table, newest first, at most 50, home-side incidents included. Each row has:
+  - `from` and `to` (0 and `ongoing` while it lasts);
+  - `where` ("Most likely the provider network (past the router)");
+  - `side`;
+  - `level` (`bad`, `warn`, `info` for a known issue);
+  - `confidence` (`likely` for home and provider; history never claims more);
+  - `text`, a short past-tense sentence, the same as its runs';
+  - `peak_loss` and `details`.
+- **`summary`, `counts`, `known` and `days`,** as for the owner, in the third person.
+
+`internal/web/testdata/home/report.<scenario>.json` pins it through the public route (TestHomePublicReportGolden), which also checks that no host, address, region or evidence appears.
+
 ## Voice and redaction (`voice=public` and the share link)
 
 **Third-person voice:** every copy field uses the third person: "this connection", "the home network (Wi-Fi or router)", "the provider's network". Examples:

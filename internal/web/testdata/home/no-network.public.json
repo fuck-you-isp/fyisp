@@ -64,6 +64,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 1,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [
       {
         "id": 71,
@@ -72,6 +77,9 @@
         "kind": "no_network",
         "who": "offline",
         "where": "The monitoring device was offline",
+        "side": "home",
+        "level": "bad",
+        "text": "The monitoring device was offline.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791546720000\u0026to=1791549000000\u0026o=1"
       }
@@ -178,6 +186,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 1,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [
       {
         "id": 71,
@@ -186,6 +199,9 @@
         "kind": "no_network",
         "who": "offline",
         "where": "The monitoring device was offline",
+        "side": "home",
+        "level": "bad",
+        "text": "The monitoring device was offline.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791546720000\u0026to=1791549000000\u0026o=1"
       }

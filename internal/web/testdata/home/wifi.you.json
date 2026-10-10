@@ -64,6 +64,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 1,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [
       {
         "id": 12,
@@ -72,6 +77,10 @@
         "kind": "lan",
         "who": "home",
         "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
         "peak_loss": 0.35,
         "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
       }
@@ -190,6 +199,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 2,
+      "provider": 0,
+      "other": 0
+    },
     "problems": [
       {
         "id": 12,
@@ -198,6 +212,10 @@
         "kind": "lan",
         "who": "home",
         "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
         "peak_loss": 0.35,
         "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
       },
@@ -208,6 +226,10 @@
         "kind": "lan",
         "who": "home",
         "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
         "peak_loss": 0.4,
         "details": "#v=calls\u0026from=1791358500000\u0026to=1791362460000\u0026o=1"
       }

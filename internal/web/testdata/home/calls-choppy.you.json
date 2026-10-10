@@ -74,6 +74,11 @@
       "services": 0,
       "call_patches": 1
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 1
+    },
     "problems": [
       {
         "id": 51,
@@ -82,6 +87,9 @@
         "kind": "udp_degraded",
         "who": "calltraffic",
         "where": "The connection calls use",
+        "side": "other",
+        "level": "warn",
+        "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers.",
         "peak_loss": 0.2,
         "details": "#v=calls\u0026from=1791546660000\u0026to=1791549000000\u0026o=1"
       }
@@ -198,6 +206,11 @@
       "services": 0,
       "call_patches": 1
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 1
+    },
     "problems": [
       {
         "id": 51,
@@ -206,6 +219,9 @@
         "kind": "udp_degraded",
         "who": "calltraffic",
         "where": "The connection calls use",
+        "side": "other",
+        "level": "warn",
+        "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers.",
         "peak_loss": 0.2,
         "details": "#v=calls\u0026from=1791546660000\u0026to=1791549000000\u0026o=1"
       }

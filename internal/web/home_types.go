@@ -178,6 +178,7 @@ type HomeHistory struct {
 	Days      []HomeDay      `json:"days"`
 	Summary   string         `json:"summary"`
 	Counts    HomeCounts     `json:"counts"`
+	Sides     HomeSides      `json:"sides"`
 	Problems  []HomeProblem  `json:"problems"`
 	Work      *HomeWorkCalls `json:"work,omitempty"`
 	// Known is an ongoing known issue (a long-standing call block), shown
@@ -243,15 +244,34 @@ type HomeCounts struct {
 // HomeProblem is a row of the problem table (the outage log in Home's
 // words), newest first.
 type HomeProblem struct {
-	ID       int64   `json:"id"`
-	From     int64   `json:"from"`
-	To       int64   `json:"to,omitempty"` // 0 while ongoing
-	Ongoing  bool    `json:"ongoing,omitempty"`
-	Kind     string  `json:"kind"`
-	Who      string  `json:"who"`
-	Where    string  `json:"where"` // "Provider network (past the router)", ...
-	PeakLoss float64 `json:"peak_loss"`
-	Details  string  `json:"details"` // Details view hash zoomed to it
+	ID      int64  `json:"id"`
+	From    int64  `json:"from"`
+	To      int64  `json:"to,omitempty"` // 0 while ongoing
+	Ongoing bool   `json:"ongoing,omitempty"`
+	Kind    string `json:"kind"`
+	Who     string `json:"who"`
+	Where   string `json:"where"` // "Most likely the provider network (past the router)", ...
+	// Side groups who for the report: "home" (home network, the device
+	// offline), "provider" (the provider's network) or "other" (further
+	// out, name lookups, apps and services, call traffic).
+	Side string `json:"side"`
+	// Level: bad, warn, or info for a known issue (a long-standing call
+	// block), which is listed but not counted.
+	Level string `json:"level"`
+	// Confidence is "likely" for a place (incidents keep no tier; history
+	// never says more than "most likely"), "" otherwise.
+	Confidence string  `json:"confidence,omitempty"`
+	Text       string  `json:"text"` // the same sentence as its runs' text
+	PeakLoss   float64 `json:"peak_loss"`
+	Details    string  `json:"details"` // Details view hash zoomed to it
+}
+
+// HomeSides counts the span's problems (known issues excluded) by side,
+// for the report: "3 on the provider's side, 1 in the home".
+type HomeSides struct {
+	Home     int `json:"home"`
+	Provider int `json:"provider"`
+	Other    int `json:"other"`
 }
 
 // HomeWorkCalls is today's call quality in working hours (span d only).

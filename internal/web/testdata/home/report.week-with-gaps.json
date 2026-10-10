@@ -1,0 +1,185 @@
+{
+  "at": 1791549000000,
+  "counts": {
+    "app": 0,
+    "beyond": 0,
+    "call_patches": 0,
+    "calltraffic": 0,
+    "dns": 0,
+    "home": 1,
+    "offline": 0,
+    "problems": 3,
+    "provider": 2,
+    "services": 0
+  },
+  "days": [
+    {
+      "date": "2026-10-03",
+      "from": 1790978400000,
+      "no_record": true,
+      "off": [],
+      "runs": [],
+      "to": 1791064800000
+    },
+    {
+      "date": "2026-10-04",
+      "from": 1791064800000,
+      "no_record": true,
+      "off": [],
+      "runs": [],
+      "to": 1791151200000
+    },
+    {
+      "date": "2026-10-05",
+      "from": 1791151200000,
+      "off": [],
+      "runs": [],
+      "to": 1791237600000,
+      "work_from": 1791183600000,
+      "work_to": 1791212400000
+    },
+    {
+      "date": "2026-10-06",
+      "from": 1791237600000,
+      "off": [
+        {
+          "from": 1791306000000,
+          "to": 1791324000000
+        }
+      ],
+      "runs": [
+        {
+          "from": 1791288300000,
+          "incident": 81,
+          "kind": "isp",
+          "label": "Most likely the provider's network",
+          "level": "bad",
+          "source": "incident",
+          "text": "The problem was most likely in the provider's network. The home network looked fine.",
+          "to": 1791289200000,
+          "who": "provider"
+        }
+      ],
+      "to": 1791324000000,
+      "work_from": 1791270000000,
+      "work_to": 1791298800000
+    },
+    {
+      "date": "2026-10-07",
+      "from": 1791324000000,
+      "off": [
+        {
+          "from": 1791324000000,
+          "to": 1791356400000
+        }
+      ],
+      "runs": [],
+      "to": 1791410400000,
+      "work_from": 1791356400000,
+      "work_to": 1791385200000
+    },
+    {
+      "date": "2026-10-08",
+      "from": 1791410400000,
+      "off": [],
+      "runs": [
+        {
+          "from": 1791445200000,
+          "incident": 82,
+          "kind": "isp",
+          "label": "Most likely the provider's network",
+          "level": "bad",
+          "source": "incident",
+          "text": "The problem was most likely in the provider's network. The home network looked fine.",
+          "to": 1791445920000,
+          "who": "provider"
+        },
+        {
+          "from": 1791468120000,
+          "incident": 83,
+          "kind": "lan",
+          "label": "Most likely the home network",
+          "level": "bad",
+          "source": "incident",
+          "text": "The problem was most likely in the home network (Wi-Fi or router).",
+          "to": 1791468360000,
+          "who": "home"
+        }
+      ],
+      "to": 1791496800000,
+      "work_from": 1791442800000,
+      "work_to": 1791471600000
+    },
+    {
+      "date": "2026-10-09",
+      "from": 1791496800000,
+      "off": [],
+      "runs": [],
+      "to": 1791549000000,
+      "work_from": 1791529200000,
+      "work_to": 1791558000000
+    }
+  ],
+  "first_data": 1791187200000,
+  "from": 1790978400000,
+  "part": "history",
+  "problems": [
+    {
+      "confidence": "likely",
+      "details": "#v=calls\u0026from=1791466320000\u0026to=1791470160000\u0026o=1",
+      "from": 1791468120000,
+      "id": 83,
+      "kind": "lan",
+      "level": "bad",
+      "peak_loss": 0.35,
+      "side": "home",
+      "text": "The problem was most likely in the home network (Wi-Fi or router).",
+      "to": 1791468360000,
+      "where": "Most likely the home network (Wi-Fi or router)",
+      "who": "home"
+    },
+    {
+      "confidence": "likely",
+      "details": "#v=calls\u0026from=1791443400000\u0026to=1791447720000\u0026o=1",
+      "from": 1791445200000,
+      "id": 82,
+      "kind": "isp",
+      "level": "bad",
+      "peak_loss": 0.7,
+      "side": "provider",
+      "text": "The problem was most likely in the provider's network. The home network looked fine.",
+      "to": 1791445920000,
+      "where": "Most likely the provider network (past the router)",
+      "who": "provider"
+    },
+    {
+      "confidence": "likely",
+      "details": "#v=calls\u0026from=1791286500000\u0026to=1791291000000\u0026o=1",
+      "from": 1791288300000,
+      "id": 81,
+      "kind": "isp",
+      "level": "bad",
+      "peak_loss": 1,
+      "side": "provider",
+      "text": "The problem was most likely in the provider's network. The home network looked fine.",
+      "to": 1791289200000,
+      "where": "Most likely the provider network (past the router)",
+      "who": "provider"
+    }
+  ],
+  "sides": {
+    "home": 1,
+    "other": 0,
+    "provider": 2
+  },
+  "span": "w",
+  "summary": "3 problems this week: 2 most likely in the provider's network and 1 most likely in the home network.",
+  "to": 1791549000000,
+  "tz": 120,
+  "voice": "public",
+  "work": {
+    "bad": 0,
+    "good": 1,
+    "measured": 330
+  }
+}

@@ -60,6 +60,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 1
+    },
     "problems": [
       {
         "id": 41,
@@ -68,6 +73,9 @@
         "kind": "service",
         "who": "app",
         "where": "Outlook",
+        "side": "other",
+        "level": "warn",
+        "text": "Some online services had trouble at the time. That was on their side.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
       }
@@ -174,6 +182,11 @@
       "services": 0,
       "call_patches": 0
     },
+    "sides": {
+      "home": 0,
+      "provider": 0,
+      "other": 1
+    },
     "problems": [
       {
         "id": 41,
@@ -182,6 +195,9 @@
         "kind": "service",
         "who": "app",
         "where": "Outlook",
+        "side": "other",
+        "level": "warn",
+        "text": "Some online services had trouble at the time. That was on their side.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
       }
