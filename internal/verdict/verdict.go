@@ -1,6 +1,6 @@
 // Package verdict turns recent samples into a plain-English judgement of
-// whose fault a problem is (LAN, ISP, upstream, DNS, one service), and keeps
-// a log of incidents.
+// whose fault a problem is (LAN, ISP, upstream, DNS, one service, or the
+// call path's UDP), and keeps a log of incidents.
 package verdict
 
 import (

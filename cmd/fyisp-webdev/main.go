@@ -259,7 +259,7 @@ func main() {
 	admin := flag.String("admin-token", "", "admin token for share controls")
 	secret := flag.String("secret", "", "public path secret (random if empty)")
 	vCycle := flag.Duration("verdict-cycle", 20*time.Second, "how long each fake verdict kind lasts")
-	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, warming_up)")
+	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, udp_blocked, stun_blocked (quiet), udp_degraded, warming_up)")
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
 	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP-edge samples (shows \"discovering…\")")
 	noTrace := flag.Bool("no-trace", false, "run without a trace source (Investigate view hidden)")

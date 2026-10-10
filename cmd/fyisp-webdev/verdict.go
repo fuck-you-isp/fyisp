@@ -46,6 +46,15 @@ var script = []scripted{
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0.6}},
 	{model.VerdictNoNetwork, "This computer has no network connection (no route to the internet).", nil,
 		map[string]float64{"gateway_loss": 1, "edge_loss": 1, "anycast_loss": 1, "services_loss": 1}},
+	{model.VerdictUDPBlocked, "UDP is blocked or failing on this network (or a firewall on this computer is blocking fyisp): calls will fall back to slower TCP relays.",
+		[]string{"Cloudflare-STUN", "Meet-STUN", "Twilio-STUN-global"},
+		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0, "udp_providers": 3, "udp_blocked_providers": 3, "udp53_ok": 0}},
+	{model.VerdictSTUNBlocked, "Call ports (STUN) are blocked on this network, but other UDP works: some call apps may fall back to slower relays.",
+		[]string{"Cloudflare-STUN", "Meet-STUN", "Twilio-STUN-global"},
+		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0, "udp_providers": 3, "udp_blocked_providers": 3, "udp53_ok": 1}},
+	{model.VerdictUDPDegraded, "Calls may sound choppy: the UDP path to 2 call services shows up to 12% packet loss and up to 41 ms of jitter, while the rest of your connection looks fine.",
+		[]string{"Cloudflare-STUN", "Twilio-STUN-global"},
+		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0, "udp_providers": 3, "udp_poor_providers": 2, "udp_loss": 0.12, "udp_jitter_ms": 41}},
 	{model.VerdictWarmingUp, "Collecting data: a verdict needs about two minutes of measurements.", nil, nil},
 }
 
@@ -106,7 +115,8 @@ func (f *fakeVerdict) Current() model.Verdict {
 		}
 		ev[k] = v
 	}
-	return model.Verdict{Kind: s.kind, Since: since, Summary: s.summary, Targets: s.targets, Evidence: ev}
+	return model.Verdict{Kind: s.kind, Since: since, Summary: s.summary, Targets: s.targets, Evidence: ev,
+		Quiet: s.kind == model.VerdictSTUNBlocked} // shows the demoted (6 h) state
 }
 
 func (f *fakeVerdict) Incidents(_ context.Context, from, to time.Time) ([]model.Incident, error) {

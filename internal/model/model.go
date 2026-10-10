@@ -241,6 +241,11 @@ const (
 	VerdictDNS       VerdictKind = "dns"        // path fine, name resolution failing widely
 	VerdictService   VerdictKind = "service"    // path fine, only some targets/groups unhealthy
 	VerdictNoNetwork VerdictKind = "no_network" // no default route / all layers down
+	// The call path (UDP) kinds rank below every other problem: they are
+	// only given while TCP and the network path look fine.
+	VerdictUDPBlocked  VerdictKind = "udp_blocked"  // UDP to ≥ 2 STUN providers failing, UDP 53 too
+	VerdictSTUNBlocked VerdictKind = "stun_blocked" // STUN ports failing on ≥ 2 providers, UDP 53 answers
+	VerdictUDPDegraded VerdictKind = "udp_degraded" // ≥ 2 STUN providers lossy or jittery for minutes
 )
 
 // Verdict is the current assessment. Summary is one plain-English sentence
@@ -254,6 +259,10 @@ type Verdict struct {
 	Targets []string `json:"targets,omitempty"`
 	// Evidence are the numbers behind the verdict, e.g. "gateway_loss": 0.2.
 	Evidence map[string]float64 `json:"evidence,omitempty"`
+	// Quiet marks a long-standing udp_blocked or stun_blocked verdict
+	// (blocked for hours: a hotel or office network that never allows
+	// UDP) that the UI shows as information rather than as a problem.
+	Quiet bool `json:"quiet,omitempty"`
 }
 
 // Incident is one period with a non-OK verdict. End is zero while ongoing.

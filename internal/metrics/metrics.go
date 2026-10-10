@@ -26,7 +26,12 @@
 //
 // TCP and HTTPS results are exported as fyisp_tcp_rtt_seconds and
 // fyisp_https_rtt_seconds, with loss and sample counters for every kind except
-// trace hops. With SetVsNormalSource, fyisp_rtt_vs_normal{name,kind} is the
+// trace hops and the UDP siblings. A UDP (STUN) burst is counted once, under
+// kind "udp" (lost when no request was answered, or on a socket error), and
+// its latest values are fyisp_udp_rtt_seconds (median RTT),
+// fyisp_udp_jitter_seconds and fyisp_udp_loss_ratio (the share of the
+// burst's requests that timed out); each is absent while the latest burst
+// did not measure it. UDP results never feed ping_*. With SetVsNormalSource, fyisp_rtt_vs_normal{name,kind} is the
 // last minute's median RTT over the series' long-term normal.
 //
 // The Collector is also a trace.Sink: the current route of every traced
@@ -88,6 +93,19 @@ var (
 		[]string{"name", "kind", "reason"}, nil)
 )
 
+// UDP (STUN burst) series.
+var (
+	udpRTTDesc = prometheus.NewDesc("fyisp_udp_rtt_seconds",
+		"Median round trip of the latest STUN burst in seconds; absent while the latest burst got no answer.",
+		[]string{"name", "target"}, nil)
+	udpJitterDesc = prometheus.NewDesc("fyisp_udp_jitter_seconds",
+		"Jitter of the latest STUN burst (mean difference of consecutive round trips) in seconds; absent while the latest burst got fewer than 2 answers.",
+		[]string{"name", "target"}, nil)
+	udpLossDesc = prometheus.NewDesc("fyisp_udp_loss_ratio",
+		"Share of the latest STUN burst's requests that timed out (0 to 1); absent after a socket error.",
+		[]string{"name", "target"}, nil)
+)
+
 // Traceroute series (Collector as trace.Sink).
 var (
 	traceHopsDesc = prometheus.NewDesc("fyisp_trace_hops",
@@ -128,6 +146,7 @@ type VsNormalSource func(yield func(name string, kind model.ProbeKind, ratio flo
 var verdictKinds = []model.VerdictKind{
 	model.VerdictOK, model.VerdictWarmingUp, model.VerdictLAN, model.VerdictISP,
 	model.VerdictUpstream, model.VerdictDNS, model.VerdictService, model.VerdictNoNetwork,
+	model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded,
 }
 
 // VerdictSource returns the current verdict and the health of each path
@@ -158,6 +177,7 @@ type Collector struct {
 	hops    map[netip.Addr]model.HopInfo
 	changes map[string]uint64
 
+	reg     *prometheus.Registry
 	handler http.Handler
 }
 
@@ -169,6 +189,7 @@ func New(p func() *model.Profile) *Collector {
 	c := &Collector{profile: p, series: map[model.SeriesKey]*series{},
 		routes: map[string]model.Route{}, hops: map[netip.Addr]model.HopInfo{}, changes: map[string]uint64{}}
 	reg := prometheus.NewRegistry()
+	c.reg = reg
 	reg.MustRegister(
 		(*promCollector)(c),
 		collectors.NewGoCollector(),
@@ -184,6 +205,10 @@ func New(p func() *model.Profile) *Collector {
 
 // Handler serves the metrics in the Prometheus exposition format.
 func (c *Collector) Handler() http.Handler { return c.handler }
+
+// Register adds collectors to the /metrics registry (e.g. the call-quality
+// MOS gauges). It panics on a duplicate or invalid collector.
+func (c *Collector) Register(cs ...prometheus.Collector) { c.reg.MustRegister(cs...) }
 
 // SetVerdictSource makes scrapes export fyisp_verdict and
 // fyisp_layer_healthy from f (called once per scrape; nil disables them).
@@ -201,9 +226,12 @@ func (c *Collector) SetVsNormalSource(f VsNormalSource) {
 	c.mu.Unlock()
 }
 
-// Observe records a sample. "Not measured" gaps and trace hops are ignored.
+// Observe records a sample. "Not measured" gaps and trace hops are ignored,
+// except that a UDP sibling's gap replaces its latest value (the burst did
+// not measure it). The UDP siblings are not counted.
 func (c *Collector) Observe(s model.Sample) {
-	if (s.Lost && s.Reason == model.ReasonGap) || s.Key.Kind == model.KindTrace {
+	sibling := s.Key.Kind == model.KindUDPJitter || s.Key.Kind == model.KindUDPLoss
+	if (s.Lost && s.Reason == model.ReasonGap && !sibling) || s.Key.Kind == model.KindTrace {
 		return
 	}
 	c.mu.Lock()
@@ -214,6 +242,9 @@ func (c *Collector) Observe(s model.Sample) {
 		c.series[s.Key] = st
 	}
 	st.last = s
+	if sibling {
+		return
+	}
 	st.sent++
 	if s.Lost {
 		st.failed++
@@ -281,7 +312,7 @@ func (pc *promCollector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{
 		pingUpDesc, pingTargetsDesc, pingStatusDesc, pingRTTDesc, pingSntDesc,
 		pingSntFailDesc, pingSntTimeDesc, pingLossDesc,
-		httpsRTTDesc, tcpRTTDesc, samplesDesc, lostDesc, verdictDesc, layerDesc, vsNormalDesc,
+		httpsRTTDesc, tcpRTTDesc, udpRTTDesc, udpJitterDesc, udpLossDesc, samplesDesc, lostDesc, verdictDesc, layerDesc, vsNormalDesc,
 		traceHopsDesc, hopInfoDesc, routeChangesDesc,
 	} {
 		ch <- d
@@ -437,6 +468,19 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 
 	for _, s := range snaps {
 		name, kind := s.key.Target, s.key.Kind.String()
+		switch s.key.Kind {
+		case model.KindUDPJitter:
+			if !s.last.Lost {
+				gauge(udpJitterDesc, s.last.RTT.Seconds(), name, s.host)
+			}
+			continue
+		case model.KindUDPLoss:
+			if !s.last.Lost {
+				// 1 ms = 1% (model.KindUDPLoss)
+				gauge(udpLossDesc, float64(s.last.RTT.Microseconds())/100_000, name, s.host)
+			}
+			continue
+		}
 		counter(samplesDesc, float64(s.sent), name, kind)
 		reasons := make([]model.Reason, 0, len(s.lost))
 		for r := range s.lost {
@@ -455,6 +499,10 @@ func (pc *promCollector) Collect(ch chan<- prometheus.Metric) {
 		case model.KindTCP:
 			if !s.last.Lost {
 				gauge(tcpRTTDesc, s.last.RTT.Seconds(), name, s.host)
+			}
+		case model.KindUDP:
+			if !s.last.Lost {
+				gauge(udpRTTDesc, s.last.RTT.Seconds(), name, s.host)
 			}
 		case model.KindICMP:
 			ls := []string{name, s.host, ""} // target_ip unknown, see package doc

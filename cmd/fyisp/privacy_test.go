@@ -150,7 +150,7 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 	local := web.Local(deps, web.LocalOptions{Addr: "127.0.0.1:3000"})
 	public := web.Public(deps, "0123456789abcdef0123456789abcdef")
 	m := get(local, "/metrics")
-	if !strings.Contains(m, `kind="udp_jitter"`) || !strings.Contains(m, `kind="udp_loss"`) {
+	if !strings.Contains(m, "fyisp_udp_jitter_seconds{") || !strings.Contains(m, "fyisp_udp_loss_ratio{") {
 		t.Errorf("/metrics has no UDP series:\n%s", m)
 	}
 	outputs = append(outputs, m,
