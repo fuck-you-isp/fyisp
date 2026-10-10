@@ -158,6 +158,7 @@ type Collector struct {
 	hops    map[netip.Addr]model.HopInfo
 	changes map[string]uint64
 
+	reg     *prometheus.Registry
 	handler http.Handler
 }
 
@@ -169,6 +170,7 @@ func New(p func() *model.Profile) *Collector {
 	c := &Collector{profile: p, series: map[model.SeriesKey]*series{},
 		routes: map[string]model.Route{}, hops: map[netip.Addr]model.HopInfo{}, changes: map[string]uint64{}}
 	reg := prometheus.NewRegistry()
+	c.reg = reg
 	reg.MustRegister(
 		(*promCollector)(c),
 		collectors.NewGoCollector(),
@@ -184,6 +186,10 @@ func New(p func() *model.Profile) *Collector {
 
 // Handler serves the metrics in the Prometheus exposition format.
 func (c *Collector) Handler() http.Handler { return c.handler }
+
+// Register adds collectors to the /metrics registry (e.g. the call-quality
+// MOS gauges). It panics on a duplicate or invalid collector.
+func (c *Collector) Register(cs ...prometheus.Collector) { c.reg.MustRegister(cs...) }
 
 // SetVerdictSource makes scrapes export fyisp_verdict and
 // fyisp_layer_healthy from f (called once per scrape; nil disables them).
