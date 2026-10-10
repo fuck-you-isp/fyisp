@@ -11,7 +11,7 @@ import { clock, when } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
-/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[],wait_reason?:string|null}} QueueEntry */
+/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[],wait_reason?:string|null,stopped_reason?:string|null}} QueueEntry */
 /** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
 /** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
@@ -34,6 +34,16 @@ function pausedUntil(at, time = false) {
 function nextSweep(at) { return at ? `The next full test from this link can start at ${when(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
 /** "12 GB". @param {number} b */
 function gb(b) { return b >= 1e9 ? `${Math.round(b / 1e9)} GB` : `${Math.max(0, Math.round(b / 1e6))} MB`; }
+
+/** Why a full test ended early, or ''. @param {QueueEntry} e */
+function stoppedWhy(e) {
+  switch (e.stopped_reason) {
+    case 'unreachable': return 'It stopped after 3 servers in a row didn’t answer: the connection may be down.';
+    case 'limit': return MODE === 'public' ? 'It stopped when tests from this link reached their limit.' : 'It stopped when the share link’s tests reached their limit, or were turned off.';
+    case 'cancelled': return 'It was stopped before the end.';
+  }
+  return '';
+}
 
 /** What an entry is, in words. @param {QueueEntry} e */
 function what(e) {
@@ -125,7 +135,10 @@ export class SpeedQueue {
       try {
         const e = /** @type {QueueEntry} */ (await fetchJSON('api/speed?part=entry&id=' + id));
         this.lastStep = '';
-        if (e.kind === 'sweep') { await this.loadSweep(); this.host.say(e.state === 'done' ? `The test of every server is done: ${e.tests.length} tests.` : 'The test of every server was cancelled.'); }
+        if (e.kind === 'sweep') {
+          await this.loadSweep();
+          this.host.say(e.state === 'done' ? `The test of every server is done: ${e.tests.length} tests.${stoppedWhy(e) ? ' ' + stoppedWhy(e) : ''}` : 'The test of every server was cancelled.');
+        }
         this.host.done(e, tag);
       } catch { /* gone: nothing to say */ }
     }
@@ -365,7 +378,7 @@ export class SpeedQueue {
         case 'busy': return 'server busy';
         case 'unreachable': return 'didn’t answer';
         case 'failed': return 'didn’t finish';
-        case 'skipped': return 'skipped';
+        case 'skipped': return 'not tested';
         default: return 'waiting';
       }
     };
@@ -425,7 +438,7 @@ export class SpeedQueue {
       return this.sort.asc ? c : -c;
     });
     return h('div', { class: 'sp-sw-res' },
-      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)}${zoneSuffix()} · ${gave ? `${gave} of ${rows.length} servers gave a result${noUp ? `; ${noUp} upload${noUp === 1 ? '' : 's'} didn’t finish` : ''}` : rows.length === 2 ? 'Neither server answered, so this run has no results' : `None of the ${rows.length} servers answered, so this run has no results`}. Not part of the hourly pattern.`),
+      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)}${zoneSuffix()} · ${gave ? `${gave} of ${rows.length} servers gave a result${noUp ? `; ${noUp} upload${noUp === 1 ? '' : 's'} didn’t finish` : ''}` : rows.length === 2 ? 'Neither server answered, so this run has no results' : `None of the ${rows.length} servers answered, so this run has no results`}. Not part of the hourly pattern.${stoppedWhy(e) ? ' ' + stoppedWhy(e) : ''}`),
       bars.length ? h('div', { class: 'sp-sw-grid' }, ...bars) : null,
       h('div', { class: 'sp-sum-wrap' }, h('table', { class: 'sp-st sp-sw-t' },
         h('caption', { class: 'sr-only', text: 'Every server in the last full test' }),
