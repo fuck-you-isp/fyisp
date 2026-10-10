@@ -7,7 +7,7 @@
 // @ts-check
 
 import { h, fetchJSON, apiWrite, canWrite, MODE } from './core.js';
-import { clock } from './home.js';
+import { clock, when } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
@@ -28,10 +28,10 @@ function inAbout(/** @type {number} */ ms) {
 /** "Tests from this link are paused until 3:12 PM", and why: the data allowance, or time (tests slow the line). @param {number} at @param {boolean} [time] */
 function pausedUntil(at, time = false) {
   const why = time ? 'they slow the line while they run' : 'the day’s data allowance is used up';
-  return at ? `Tests from this link are paused until ${clock(at)} (${why}).` : `Tests from this link are paused for now (${why}).`;
+  return at ? `Tests from this link are paused until ${when(at)} (${why}).` : `Tests from this link are paused for now (${why}).`;
 }
 /** A full test from the link waits 30 minutes after the last one. @param {number} at */
-function nextSweep(at) { return at ? `The next full test from this link can start at ${clock(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
+function nextSweep(at) { return at ? `The next full test from this link can start at ${when(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
 /** "12 GB". @param {number} b */
 function gb(b) { return b >= 1e9 ? `${Math.round(b / 1e9)} GB` : `${Math.max(0, Math.round(b / 1e6))} MB`; }
 
@@ -209,9 +209,10 @@ export class SpeedQueue {
     const q = this.q;
     if (!q || !q.budget || !q.public_enabled) return null;
     const b = q.budget;
-    const min = (/** @type {number|undefined} */ x) => Math.round((x || 0) / 60);
-    const time = b.time_hour_max_s ? ` Testing time: ${min(b.time_hour_s)} of ${min(b.time_hour_max_s)} minutes this hour, ${min(b.time_day_s)} of ${min(b.time_day_max_s)} today.` : '';
-    return h('p', { class: 'muted small', text: `Tests from the share link: ${gb(b.used_bytes)} of ${gb(b.limit_bytes)} used in the last 24 hours.${b.resets_at && b.remaining_bytes <= 0 ? ` More from ${clock(b.resets_at)}.` : ''}${time}` });
+    // "8 s", "4 min": a single test is seconds, so minutes alone would read 0.
+    const dur = (/** @type {number|undefined} */ x) => ((x || 0) < 60 ? `${Math.round(x || 0)} s` : `${Math.round((x || 0) / 60)} min`);
+    const time = b.time_hour_max_s ? ` Testing time: ${dur(b.time_hour_s)} of ${dur(b.time_hour_max_s)} this hour, ${dur(b.time_day_s)} of ${dur(b.time_day_max_s)} today.` : '';
+    return h('p', { class: 'muted small', text: `Tests from the share link: ${gb(b.used_bytes)} of ${gb(b.limit_bytes)} used in the last 24 hours.${b.resets_at && b.remaining_bytes <= 0 ? ` More from ${when(b.resets_at)}.` : ''}${time}` });
   }
 
   /**
