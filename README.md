@@ -227,7 +227,7 @@ Home's *Calls* tile and *Mark a bad call* are built on these measurements. **Det
 - **By app**, over the last 5 minutes: Meet (and Teams with the opt-in relay) gets a state, round trip and loss; expanding a row shows the MOS, jitter, p95 round trip and the last hour. Without the relay, Teams gets its own row: its calls take your call path, plus whether its website answers. Zoom, Slack, Discord, WhatsApp and Webex share one row (see below) that says whether their websites are reachable over TCP.
 - **Mark a bad call** (the same button as on Home): one click saves a **private** note at 2 minutes ago with the call stats of that moment (state, MOS, round trip, jitter, loss; no addresses). *When?* moves it to 15 or 30 minutes ago. The note can be edited, and *Create evidence report* builds a report around it. On a phone the button sticks to the bottom of the screen.
 
-A STUN server that stops answering while the others still answer is shown as *This test server isn't answering, not your connection*. After a start the view says *Not enough data yet* until 10 bursts have been measured.
+A STUN server that stops answering while the others still answer is shown as *This test server isn't answering; your other call checks look normal*. After a start the view says *Not enough data yet* until 10 bursts have been measured.
 
 On the public link, Details' Calls view shows only the top card, the working-hours strip and public notes: no app rows, no Teams relay region, no target names, and no Mark button.
 
@@ -303,7 +303,7 @@ The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch r
 
 ## Speed tests
 
-fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" queues one test, and "Test all servers" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
+fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" queues one test, and "Test every server" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
 
 ```sh
 fyisp --speedtest                                  # mode regions: 9 regions, each once an hour
@@ -341,7 +341,7 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
   | 25 Mbit/s | about 150 GB |
   | 100 Mbit/s | about 600 GB |
   | fast lines (several hundred Mbit/s and up) | about 1.3 TB (the 200 MB cap) |
-  | one "Test all servers" sweep | about 8 GB |
+  | one "Test every server" sweep | about 8 GB |
 
   Mode `nearby` uses about 1.8 times as much. Details shows the data used in the last 24 hours and this month, and an estimate for each mode.
 - **Fast lines:** the 200 MB cap ends a test early, after half a second to a couple of seconds of measuring, so results show *changes over the day* better than your top speed; Details marks them "≥". Speed tests show when your speed drops, not whether you get your plan's advertised speed.
@@ -356,7 +356,7 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 
 **One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones, then the share link's. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
-**Share link.** Only if you turn it on (`--speedtest-public` or the toggle in Details → Speed; off by default), visitors to the share link can queue Test now or Test all servers too, within a data budget and time caps: see [Sharing a public link](#sharing-a-public-link---share) below.
+**Share link.** Only if you turn it on (`--speedtest-public` or the toggle in Details → Speed; off by default), visitors to the share link can queue Test now or Test every server too, within a data budget and time caps: see [Sharing a public link](#sharing-a-public-link---share) below.
 
 Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
 

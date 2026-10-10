@@ -173,7 +173,7 @@ export class SpeedMap {
     const failing = ok + bad >= 20 && bad / (ok + bad) >= 0.3;
     const unreachable = rows.reduce((s, r) => s + r.unreachable, 0);
     this.foundEl.replaceChildren(
-      h('h2', { id: 'sp-found-h', text: 'What we found' }),
+      h('h2', { id: 'sp-found-h', text: MODE === 'public' ? 'What the tests show' : 'What we found' }),
       kick ? h('p', { class: 'sp-kicker', text: kick }) : '',
       h('p', { class: 'sp-found-text', text }),
       f ? findingExtras(d, f, false) : '',
@@ -533,7 +533,7 @@ export class SpeedMap {
     const regionTitle = (/** @type {string|null} */ id) => (id ? d.regions.find((r) => r.id === id)?.title || id : '');
     const rows = shown.map((t) => {
       const bad = t.outcome !== 'ok';
-      const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More' }),
+      const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More', 'aria-label': `More about the ${clock(t.start)} test (${t.label})` }),
         h('dl', {},
           ...[['Attempts', String(t.attempts)],
             MODE === 'local' && /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,

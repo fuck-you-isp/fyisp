@@ -140,6 +140,12 @@ export function tzParam() {
   } catch { /* old browser */ }
   return String(-new Date().getTimezoneOffset());
 }
+/** " (UTC+2)" on the share link, where a stranger reads the times; "" on the owner's own dashboard. */
+export function zoneSuffix() {
+  if (MODE !== 'public') return '';
+  const tz = -new Date().getTimezoneOffset(), a = Math.abs(tz), hh = Math.floor(a / 60), mm = a % 60;
+  return tz === 0 ? ' (UTC)' : ` (UTC${tz < 0 ? '−' : '+'}${hh}${mm ? ':' + String(mm).padStart(2, '0') : ''})`;
+}
 export function fmtInt(/** @type {number} */ n) { return n.toLocaleString('en-US'); }
 
 export function median(/** @type {number[]} */ v) {

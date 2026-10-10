@@ -6,7 +6,7 @@
 // cancel any entry and clear the share link's. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, MODE } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, MODE, zoneSuffix } from './core.js';
 import { clock, when } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -264,9 +264,9 @@ export class SpeedQueue {
       const e2 = /** @type {QueueEntry} */ (e);
       const when = e2.state === 'running'
         ? (e2.kind === 'sweep' ? `now, server ${e2.step} of ${e2.steps}` : 'now')
-        : e2.kind === 'sweep' && e2.step > 0 ? `paused at server ${e2.step} of ${e2.steps}, carries on about ${clock(e2.est_start)}`
-          : e2.wait_reason === 'cooldown' ? `waits for the 30-minute gap after the last full test, starts about ${clock(e2.est_start)}`
-          : `#${e2.position}, starts about ${clock(e2.est_start)}`;
+        : e2.kind === 'sweep' && e2.step > 0 ? `paused at server ${e2.step} of ${e2.steps}, carries on about ${clock(e2.est_start)}${zoneSuffix()}`
+          : e2.wait_reason === 'cooldown' ? `waits for the 30-minute gap after the last full test, starts about ${clock(e2.est_start)}${zoneSuffix()}`
+          : `#${e2.position}, starts about ${clock(e2.est_start)}${zoneSuffix()}`;
       return h('li', { class: (e2.state === 'running' ? 'run' : '') + (e2.who === 'you' ? ' you' : '') },
         h('span', { class: 'sp-q-what', text: what(e2) }),
         h('span', { class: 'sp-q-who', text: `asked by ${whoWord(e2)}` }),
@@ -330,7 +330,7 @@ export class SpeedQueue {
     const mineSweep = q && [q.running, ...q.waiting].some((e) => e && e.kind === 'sweep' && e.who === 'you');
     const can = this.canStart();
     const start = can
-      ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test all servers', disabled: !!mineSweep || (MODE === 'public' && (!!q?.sweeps_full || (q?.budget?.sweep_available_at || 0) > Date.now())),
+      ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test every server', disabled: !!mineSweep || (MODE === 'public' && (!!q?.sweeps_full || (q?.budget?.sweep_available_at || 0) > Date.now())),
         onclick: () => this.start('sweep', '', 'sweep') })
       : null;
     const why = mineSweep ? 'Your full test is in the queue above.' : MODE === 'public' ? this.publicWhy() : !can ? 'Speed tests can only be started from the device running fyisp.' : '';
@@ -425,7 +425,7 @@ export class SpeedQueue {
       return this.sort.asc ? c : -c;
     });
     return h('div', { class: 'sp-sw-res' },
-      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)} · ${gave} of ${rows.length} servers gave a result${noUp ? `; ${noUp} upload${noUp === 1 ? '' : 's'} didn’t finish` : ''}. Not part of the hourly pattern.`),
+      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)}${zoneSuffix()} · ${gave ? `${gave} of ${rows.length} servers gave a result${noUp ? `; ${noUp} upload${noUp === 1 ? '' : 's'} didn’t finish` : ''}` : rows.length === 2 ? 'Neither server answered, so this run has no results' : `None of the ${rows.length} servers answered, so this run has no results`}. Not part of the hourly pattern.`),
       bars.length ? h('div', { class: 'sp-sw-grid' }, ...bars) : null,
       h('div', { class: 'sp-sum-wrap' }, h('table', { class: 'sp-st sp-sw-t' },
         h('caption', { class: 'sr-only', text: 'Every server in the last full test' }),

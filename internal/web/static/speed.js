@@ -8,7 +8,7 @@
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, dialog, MODE, tzParam } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, dialog, MODE, tzParam, zoneSuffix } from './core.js';
 import { clock } from './home.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
@@ -146,7 +146,7 @@ export class Speed {
         ? `Your test used about ${bytes(this.perTest)}.`
         : `Done: ${t.label}, ${mbps(t.down_bps)} down${up}${pct}.${t.up_bps == null ? ' The upload didn’t finish.' : ''}${fb ? ' ' + fb : ''}`;
     } else {
-      this.result = t.outcome === 'busy' ? 'That server is busy with someone else’s test. We tried 3 ports.'
+      this.result = t.outcome === 'busy' ? 'That server is busy with someone else’s test. We tried 3 times.'
         : t.outcome === 'unreachable' ? 'That server didn’t answer.' : 'The test didn’t finish.';
     }
     this.say.textContent = this.result;
@@ -175,7 +175,13 @@ export class Speed {
         : 'Speed tests are off on this connection.'));
       return;
     }
-    if (!d.enabled || this.panel === 'setup') { fill(this.headEl, this.setupNodes()); return; }
+    if (!d.enabled || this.panel === 'setup') {
+      fill(this.headEl, this.setupNodes());
+      // Escape leaves Change… (not the switch-on page), back to the button that opened it.
+      this.headEl.onkeydown = d.enabled ? (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Escape') { e.preventDefault(); this.closeSetup(); } } : null;
+      return;
+    }
+    this.headEl.onkeydown = null;
     const flag = d.set_by_flag ? h('p', { class: 'muted small', text: 'Turned on by a start-up setting. If you turn it off here, it comes back on the next restart.' }) : null;
     const next = this.queue.q?.running || d.running ? 'testing now' : d.next_at ? `next test ${clock(d.next_at)}` : '';
     const can = canWrite();
@@ -240,12 +246,19 @@ export class Speed {
       h('fieldset', { class: 'sp-modes' }, h('legend', { text: 'How to test' }), ...radios),
       d.set_by_flag ? h('p', { class: 'muted small', text: 'Set by a start-up setting: change it where fyisp is started.' }) : null,
       h('div', { class: 'sp-go-row' }, go,
-        on ? h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => { this.panel = 'idle'; this.renderAll(); } })
+        on ? h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => this.closeSetup() })
           : h('span', { class: 'muted small', text: 'Nothing is tested until you turn this on.' })),
       can ? null : h('p', { class: 'muted small', text: 'Speed tests can only be changed from the device running fyisp.' }),
       this.note ? h('p', { class: 'sp-note', text: this.note }) : null,
       this.result ? h('p', { class: 'sp-result', text: this.result }) : null,
     ];
+  }
+
+  /** Leaves Change… without saving; the keyboard goes back to Change…. */
+  closeSetup() {
+    this.panel = 'idle';
+    this.renderAll();
+    /** @type {HTMLElement|null} */ ([...this.headEl.querySelectorAll('button')].find((b) => b.textContent === 'Change…') || null)?.focus();
   }
 
   /** @param {string} mode */
@@ -279,9 +292,16 @@ export class Speed {
     this.result = '';
     this.note = '';
     if (estimate) { this.estimating = true; this.renderHead(); }
+    const opener = document.activeElement && document.activeElement.textContent;
     await this.queue.start('single', id, estimate ? 'estimate' : 'test');
     if (estimate && this.queue.note) { this.estimating = false; this.renderHead(); }
     this.renderAll();
+    // The re-render replaced the button that was pressed: keep the keyboard on the request's status, else on that button again.
+    if (!this.el.contains(document.activeElement) || document.activeElement === document.body) {
+      const to = /** @type {HTMLElement|null} */ (this.queue.el.querySelector('.sp-mine-t'))
+        || [...this.headEl.querySelectorAll('button')].find((b) => b.textContent === opener) || null;
+      to?.focus();
+    }
   }
 
   estimate() { this.run('', true); }
@@ -372,7 +392,7 @@ export class Speed {
       const region = t.region ? d.regions.find((r) => r.id === t.region)?.title : '';
       const res = t.outcome === 'ok' ? `${mbps(t.down_bps)} down, ${mbps(t.up_bps)} up`
         : t.outcome === 'busy' ? 'server busy' : t.outcome === 'unreachable' ? 'didn’t answer' : 'didn’t finish';
-      lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
+      lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)}${zoneSuffix()} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
     }
     if (d.enabled && d.masked_share_24h > 0) {
       lines.push(h('p', { class: 'muted small', text: `Tests filled the line ${Math.max(1, Math.round(d.masked_share_24h * 100))}% of the last 24 hours. Those seconds aren’t counted on the other charts.` }));
