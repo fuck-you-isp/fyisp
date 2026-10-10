@@ -344,3 +344,36 @@ type ReportMeta struct {
 	Public  bool      `json:"public"` // served on the public link (redacted snapshot)
 	Bytes   int       `json:"bytes"`
 }
+
+// Speed test outcomes (SpeedTest.Outcome).
+const (
+	SpeedOK          = "ok"
+	SpeedBusy        = "busy"        // every attempt found the server running another test: never a slow result
+	SpeedUnreachable = "unreachable" // the server did not accept a connection
+	SpeedFailed      = "failed"      // anything else (timeout, protocol error)
+)
+
+// SpeedTest is one iperf3 speed test (download then upload). Start..End is
+// its window: probes in it measure a loaded link and are not judged. Bits
+// per second, RTTs in ms; nil when not measured.
+type SpeedTest struct {
+	ID       int64     `json:"id"`
+	Start    time.Time `json:"start"`
+	End      time.Time `json:"end"`
+	Trigger  string    `json:"trigger"` // "schedule" or "manual"
+	Outcome  string    `json:"outcome"`
+	Server   string    `json:"server"` // catalog name, or host:port of a custom server
+	Port     int       `json:"port"`
+	Attempts int       `json:"attempts"`
+	DownBps  *float64  `json:"down_bps"`
+	UpBps    *float64  `json:"up_bps"`
+	// Retransmits of the sending side, nil when unknown.
+	DownRetrans *int64 `json:"down_retrans"`
+	UpRetrans   *int64 `json:"up_retrans"`
+	// Latency under load: median RTT to the gateway and the call path in
+	// the 2 minutes before the test (idle) and during it (loaded).
+	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
+	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
+	IdleCallMs      *float64 `json:"idle_call_ms"`
+	LoadedCallMs    *float64 `json:"loaded_call_ms"`
+}

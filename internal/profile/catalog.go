@@ -338,3 +338,19 @@ func Builtin() (*Registry, error) {
 	})
 	return builtinReg, builtinErr
 }
+
+// IperfServersYAML is catalog/iperf3/yabs.yml, the public iperf3 servers
+// for speed tests (parsed by package speedtest).
+func IperfServersYAML() []byte {
+	b, _ := catalogFS.ReadFile("catalog/iperf3/yabs.yml")
+	return b
+}
+
+// CheckPublicHost reports whether h is a hostname or a public IPv4
+// address (private and loopback addresses are refused).
+func CheckPublicHost(h string) error {
+	if isSpecial(h) {
+		return fmt.Errorf("%s is not a host", h)
+	}
+	return checkHost(h, false)
+}

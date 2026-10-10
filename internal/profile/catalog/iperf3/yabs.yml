@@ -1,0 +1,17 @@
+# Public iperf3 servers for scheduled speed tests (fyisp --speedtest), as
+# used by YABS (yet-another-bench-script). They are volunteer-run: one test
+# at a time each, so fyisp tests every 15 minutes at most, against the two
+# nearest by RTT, and treats "busy" as busy, never as slow.
+#
+# Fields: name (identity of the stored results; never rename), host, ports
+# (first-last: one iperf3 server per port), city, country (ISO 3166-1), geo.
+sources:
+  - https://github.com/masonr/yet-another-bench-script/blob/master/yabs.sh  # IPERF_LOCS
+servers:
+  - {name: Clouvider-London, host: lon.speedtest.clouvider.net, ports: 5200-5209, city: London, country: GB, geo: eu}
+  - {name: Eranium-Amsterdam, host: iperf-ams-nl.eranium.net, ports: 5201-5210, city: Amsterdam, country: NL, geo: eu}
+  - {name: Uztelecom-Tashkent, host: speedtest.uztelecom.uz, ports: 5200-5209, city: Tashkent, country: UZ, geo: as}
+  - {name: Leaseweb-Singapore, host: speedtest.sin1.sg.leaseweb.net, ports: 5201-5210, city: Singapore, country: SG, geo: as}
+  - {name: Clouvider-LosAngeles, host: la.speedtest.clouvider.net, ports: 5200-5209, city: Los Angeles, country: US, geo: na}
+  - {name: Leaseweb-NewYork, host: speedtest.nyc1.us.leaseweb.net, ports: 5201-5210, city: New York, country: US, geo: na}
+  - {name: Edgoo-SaoPaulo, host: speedtest.sao1.edgoo.net, ports: 9204-9240, city: Sao Paulo, country: BR, geo: sa}
