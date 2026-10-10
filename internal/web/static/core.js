@@ -156,7 +156,7 @@ export async function fetchJSON(url, init, tries = 3) {
       continue;
     }
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, body });
+    if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, body, retryAfter: Number(res.headers.get('Retry-After')) || 0 });
     return body;
   }
 }
@@ -239,15 +239,15 @@ export async function alertDialog(title, text) {
 
 // ---------- writes ----------
 
-/** The admin token for writes: remembered for this tab, else asked for in a password field. */
-export async function adminHeader() {
+/** The admin token for writes: remembered for this tab, else asked for in a password field. @param {string} [why] */
+export async function adminHeader(why = '') {
   let t = null;
   try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
   if (!t) {
     const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
     const v = await dialog({
       title: 'Admin token',
-      text: 'Sharing, notes and reports on this dashboard need the admin token. You can also open the link fyisp printed when it started.',
+      text: why || 'Sharing, notes and reports on this dashboard need the admin token. You can also open the link fyisp printed when it started.',
       fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
       buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Continue', value: 'ok', primary: true }],
       focus: input,
@@ -262,24 +262,24 @@ export async function adminHeader() {
  * Adds X-FYISP-Admin when controls need the admin token and no session
  * cookie carries it. Resolves false when the token is needed but none was
  * given (the dialog was cancelled): the caller must not send the request.
- * @param {Record<string,string>} headers
+ * @param {Record<string,string>} headers @param {string} [why] the dialog's first line, for this action
  */
-export async function addAdmin(headers) {
+export async function addAdmin(headers, why = '') {
   const status = statusOf();
   if (!(status && status.controls === 'admin' && !status.admin)) return true;
-  const t = await adminHeader();
+  const t = await adminHeader(why);
   if (!t) return false;
   headers['X-FYISP-Admin'] = t;
   return true;
 }
 
-/** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] */
-export async function apiWrite(method, url, body) {
+/** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] @param {string} [why] the admin dialog's first line */
+export async function apiWrite(method, url, body, why = '') {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const status = statusOf();
-  if (!await addAdmin(headers)) throw Object.assign(new Error('the admin token is needed'), { status: 0 });
+  if (!await addAdmin(headers, why)) throw Object.assign(new Error('the admin token is needed'), { status: 0 });
   try {
     return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
   } catch (e) {
