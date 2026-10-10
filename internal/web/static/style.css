@@ -1291,6 +1291,7 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-q li.you .sp-q-who { font-weight: 600; color: var(--ink); }
 .sp-q-who, .sp-q-when { color: var(--ink-2); }
 .sp-sweep .sp-go-row { margin-top: 10px; }
+.sp-pub { margin-top: 8px; }
 .sp-flag { margin: 14px 0 8px !important; font-size: 13px; color: var(--ink-2); }
 .sp-flag b { color: var(--ink); }
 .sp-sw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin-bottom: 10px; }

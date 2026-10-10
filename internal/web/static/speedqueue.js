@@ -11,8 +11,8 @@ import { clock } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
-/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[]}} QueueEntry */
-/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_tests?:{enabled:boolean}}} QueueState */
+/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string}} QueueEntry */
+/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean}} QueueHost */
 
@@ -24,14 +24,22 @@ function inAbout(/** @type {number} */ ms) {
   const m = Math.round(ms / 60e3);
   return m < 1 ? 'in under a minute' : `in about ${m} minute${m === 1 ? '' : 's'}`;
 }
+/** "Tests from this link are paused until 3:12 PM." @param {number} at */
+function pausedUntil(at) {
+  return at ? `Tests from this link are paused until ${clock(at)}: the day’s data allowance is used up.` : 'Tests from this link are paused: the day’s data allowance is used up.';
+}
+/** "12 GB". @param {number} b */
+function gb(b) { return b >= 1e9 ? `${Math.round(b / 1e9)} GB` : `${Math.max(0, Math.round(b / 1e6))} MB`; }
+
 /** What an entry is, in words. @param {QueueEntry} e */
 function what(e) {
   if (e.kind === 'sweep') return 'Test of every server';
   if (e.kind === 'scheduled') return e.target ? `Scheduled test: ${e.target.label}` : 'Scheduled test';
   return e.target ? `Test of ${e.target.label}` : 'Test of the nearest servers';
 }
-/** Who asked, relative to this viewer; never an address. @param {QueueEntry} e */
+/** Who asked, relative to this viewer; never an address. Locally, origin says where it came from. @param {QueueEntry} e */
 function whoWord(e) {
+  if (e.origin === 'public') return 'someone on your share link';
   if (e.who === 'you') return 'you';
   if (e.who === 'scheduled') return 'the schedule';
   return MODE === 'public' ? 'someone else' : 'someone on your share link';
@@ -43,7 +51,8 @@ function queueError(e) {
   switch (b.code) {
     case 'queue_full': return 'The test queue is full right now. Try again later.';
     case 'rate_limited': return `You’ve asked for several tests recently. Try again ${s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while'}.`;
-    case 'budget_exhausted': return 'Today’s public test allowance is used up. Try again tomorrow.';
+    case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0));
+    case 'disabled': return 'The owner of this connection hasn’t turned on tests from this link.';
     case 'not_found': return 'That test isn’t in the queue any more.';
     case 'forbidden': return MODE === 'public' ? 'Tests can’t be started from this link.' : 'Speed tests can only be changed from the device running fyisp.';
   }
@@ -123,7 +132,7 @@ export class SpeedQueue {
 
   /** Whether this viewer may start tests: the owner with controls, or the share link when the owner allows it. */
   canStart() {
-    if (MODE === 'public') return !!this.q?.public_tests?.enabled;
+    if (MODE === 'public') return !!this.q?.public_start;
     return canWrite();
   }
 
@@ -169,6 +178,37 @@ export class SpeedQueue {
       this.host.say(`Cleared ${r.cancelled} request${r.cancelled === 1 ? '' : 's'} from your share link.`);
     } catch (e) { this.note = queueError(e); if (this.note) this.host.say(this.note); }
     await this.load();
+  }
+
+  /** Why the share link can't start a test now, or ''. */
+  publicWhy() {
+    const q = this.q;
+    if (!q || q.public_start) return q?.sweeps_full ? 'Three full tests are already waiting. Try again later.' : '';
+    if (!q.public_enabled) return 'Only the owner of this connection can start tests here.';
+    if (q.budget && q.budget.remaining_bytes <= 0) return pausedUntil(q.budget.resets_at || 0);
+    return 'The test queue is full right now. Try again later.';
+  }
+
+  /** The share link's data allowance: for the owner always, for visitors while tests are allowed. */
+  budgetLine() {
+    const q = this.q;
+    if (!q || !q.budget || !q.public_enabled) return null;
+    const b = q.budget;
+    return h('p', { class: 'muted small', text: `Tests from the share link: ${gb(b.used_bytes)} of ${gb(b.limit_bytes)} used in the last 24 hours.${b.resets_at && b.remaining_bytes <= 0 ? ` More from ${clock(b.resets_at)}.` : ''}` });
+  }
+
+  /**
+   * The owner's switch: let people with the share link queue tests (off by default).
+   * Turning it off drops their waiting requests.
+   * @param {boolean} on
+   */
+  async setPublic(on) {
+    try {
+      await apiWrite('POST', 'api/speed/config', { public: on }, 'Changing who can start tests needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
+      this.host.say(on ? 'People with your share link can now start tests.' : 'Tests from the share link are off. Their waiting requests were removed.');
+    } catch (e) { this.note = queueError(e); if (this.note) this.host.say(this.note); }
+    await this.load();
+    /** @type {HTMLElement|null} */ (this.sweepEl.querySelector('#sp-pub'))?.focus();
   }
 
   /** This viewer's own entry, waiting or running. */
@@ -258,15 +298,16 @@ export class SpeedQueue {
       ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test all servers', disabled: !!mineSweep || (MODE === 'public' && !!q?.sweeps_full),
         onclick: () => this.start('sweep', '', 'sweep') })
       : null;
-    const why = mineSweep ? 'Your full test is in the queue above.'
-      : MODE === 'public' && !can ? 'Only the owner of this connection can start tests here.'
-        : MODE === 'public' && q?.sweeps_full ? 'Three full tests are already waiting. Try again later.'
-          : !can ? 'Speed tests can only be started from the device running fyisp.' : '';
+    const why = mineSweep ? 'Your full test is in the queue above.' : MODE === 'public' ? this.publicWhy() : !can ? 'Speed tests can only be started from the device running fyisp.' : '';
     const s = this.sweep;
     this.sweepEl.replaceChildren(...[
       h('h2', { id: 'sp-sw-h', text: 'Test every server now' }),
+      MODE === 'local' && q && q.public_enabled != null ? h('label', { class: 'sp-check sp-pub' },
+        h('input', { type: 'checkbox', id: 'sp-pub', checked: !!q.public_enabled, disabled: !canWrite(), onchange: (/** @type {Event} */ ev) => this.setPublic(/** @type {HTMLInputElement} */ (ev.target).checked) }),
+        'Let people with your share link start tests (they share a data allowance; off by default)') : null,
       h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${Math.round(n * 20 / 60)} minutes and about 8 GB of data. The results are a snapshot, kept apart from the hourly pattern.` }),
       h('div', { class: 'sp-go-row' }, start, why ? h('span', { class: 'muted small', text: why }) : null),
+      this.budgetLine(),
       s && s.entry && s.tests.length ? this.resultNodes(s.entry, s.tests) : null,
     ].filter((x) => !!x));
   }
