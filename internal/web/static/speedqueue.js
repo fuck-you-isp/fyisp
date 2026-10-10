@@ -12,7 +12,7 @@ import { clock } from './home.js';
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
 /** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string}} QueueEntry */
-/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null}}} QueueState */
+/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean}} QueueHost */
 
@@ -24,10 +24,13 @@ function inAbout(/** @type {number} */ ms) {
   const m = Math.round(ms / 60e3);
   return m < 1 ? 'in under a minute' : `in about ${m} minute${m === 1 ? '' : 's'}`;
 }
-/** "Tests from this link are paused until 3:12 PM." @param {number} at */
-function pausedUntil(at) {
-  return at ? `Tests from this link are paused until ${clock(at)}: the day’s data allowance is used up.` : 'Tests from this link are paused: the day’s data allowance is used up.';
+/** "Tests from this link are paused until 3:12 PM", and why: the data allowance, or time (tests slow the line). @param {number} at @param {boolean} [time] */
+function pausedUntil(at, time = false) {
+  const why = time ? 'they slow the line while they run' : 'the day’s data allowance is used up';
+  return at ? `Tests from this link are paused until ${clock(at)} (${why}).` : `Tests from this link are paused for now (${why}).`;
 }
+/** A full test from the link waits 30 minutes after the last one. @param {number} at */
+function nextSweep(at) { return at ? `The next full test from this link can start at ${clock(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
 /** "12 GB". @param {number} b */
 function gb(b) { return b >= 1e9 ? `${Math.round(b / 1e9)} GB` : `${Math.max(0, Math.round(b / 1e6))} MB`; }
 
@@ -51,7 +54,8 @@ function queueError(e) {
   switch (b.code) {
     case 'queue_full': return 'The test queue is full right now. Try again later.';
     case 'rate_limited': return `You’ve asked for several tests recently. Try again ${s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while'}.`;
-    case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0));
+    case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), b.budget === 'time');
+    case 'sweep_cooldown': return nextSweep(Number(b.available_at) || (s ? Date.now() + s * 1000 : 0));
     case 'disabled': return 'The owner of this connection hasn’t turned on tests from this link.';
     case 'not_found': return 'That test isn’t in the queue any more.';
     case 'forbidden': return MODE === 'public' ? 'Tests can’t be started from this link.' : 'Speed tests can only be changed from the device running fyisp.';
@@ -183,9 +187,14 @@ export class SpeedQueue {
   /** Why the share link can't start a test now, or ''. */
   publicWhy() {
     const q = this.q;
-    if (!q || q.public_start) return q?.sweeps_full ? 'Three full tests are already waiting. Try again later.' : '';
+    if (!q || q.public_start) {
+      if (q?.budget?.sweep_available_at && q.budget.sweep_available_at > Date.now()) return nextSweep(q.budget.sweep_available_at);
+      return q?.sweeps_full ? 'Three full tests are already waiting. Try again later.' : '';
+    }
     if (!q.public_enabled) return 'Only the owner of this connection can start tests here.';
-    if (q.budget && q.budget.remaining_bytes <= 0) return pausedUntil(q.budget.resets_at || 0);
+    const b = q.budget;
+    if (b && b.remaining_bytes <= 0) return pausedUntil(b.resets_at || 0);
+    if (b && b.time_resets_at && ((b.time_hour_s || 0) >= (b.time_hour_max_s || Infinity) || (b.time_day_s || 0) >= (b.time_day_max_s || Infinity))) return pausedUntil(b.time_resets_at, true);
     return 'The test queue is full right now. Try again later.';
   }
 
@@ -194,7 +203,9 @@ export class SpeedQueue {
     const q = this.q;
     if (!q || !q.budget || !q.public_enabled) return null;
     const b = q.budget;
-    return h('p', { class: 'muted small', text: `Tests from the share link: ${gb(b.used_bytes)} of ${gb(b.limit_bytes)} used in the last 24 hours.${b.resets_at && b.remaining_bytes <= 0 ? ` More from ${clock(b.resets_at)}.` : ''}` });
+    const min = (/** @type {number|undefined} */ x) => Math.round((x || 0) / 60);
+    const time = b.time_hour_max_s ? ` Testing time: ${min(b.time_hour_s)} of ${min(b.time_hour_max_s)} minutes this hour, ${min(b.time_day_s)} of ${min(b.time_day_max_s)} today.` : '';
+    return h('p', { class: 'muted small', text: `Tests from the share link: ${gb(b.used_bytes)} of ${gb(b.limit_bytes)} used in the last 24 hours.${b.resets_at && b.remaining_bytes <= 0 ? ` More from ${clock(b.resets_at)}.` : ''}${time}` });
   }
 
   /**
@@ -239,7 +250,8 @@ export class SpeedQueue {
       const e2 = /** @type {QueueEntry} */ (e);
       const when = e2.state === 'running'
         ? (e2.kind === 'sweep' ? `now, server ${e2.step} of ${e2.steps}` : 'now')
-        : `#${e2.position}, starts about ${clock(e2.est_start)}`;
+        : e2.kind === 'sweep' && e2.step > 0 ? `paused at server ${e2.step} of ${e2.steps}, carries on about ${clock(e2.est_start)}`
+          : `#${e2.position}, starts about ${clock(e2.est_start)}`;
       return h('li', { class: (e2.state === 'running' ? 'run' : '') + (e2.who === 'you' ? ' you' : '') },
         h('span', { class: 'sp-q-what', text: what(e2) }),
         h('span', { class: 'sp-q-who', text: `asked by ${whoWord(e2)}` }),
@@ -260,6 +272,10 @@ export class SpeedQueue {
 
   /** Your request: its place in the queue, then its steps. @param {QueueEntry} e */
   mineNodes(e) {
+    if (e.state === 'waiting' && e.kind === 'sweep' && e.step > 0) {
+      return h('div', { class: 'sp-mine' },
+        h('p', { class: 'sp-mine-t', tabindex: '-1', text: `Testing every server: paused after server ${e.step} of ${e.steps} while another test runs. It carries on next.` }));
+    }
     if (e.state === 'waiting') {
       return h('div', { class: 'sp-mine' },
         h('p', { class: 'sp-mine-t', tabindex: '-1', text: `${what(e)}: you’re #${e.position}, it starts ${inAbout(e.est_start - Date.now())}.` }));
@@ -295,7 +311,7 @@ export class SpeedQueue {
     const mineSweep = q && [q.running, ...q.waiting].some((e) => e && e.kind === 'sweep' && e.who === 'you');
     const can = this.canStart();
     const start = can
-      ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test all servers', disabled: !!mineSweep || (MODE === 'public' && !!q?.sweeps_full),
+      ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test all servers', disabled: !!mineSweep || (MODE === 'public' && (!!q?.sweeps_full || (q?.budget?.sweep_available_at || 0) > Date.now())),
         onclick: () => this.start('sweep', '', 'sweep') })
       : null;
     const why = mineSweep ? 'Your full test is in the queue above.' : MODE === 'public' ? this.publicWhy() : !can ? 'Speed tests can only be started from the device running fyisp.' : '';
