@@ -4,7 +4,7 @@ iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs downlo
 
 Modes:
 - **`off`**, the default.
-- **`regions`**, the default once speed tests are on (`speedtest.DefaultMode`; **TBD**, the owner may still change it): the 9 default regions, each **once an hour**, one test at a time about 400 s apart. The order and the minute differ per install (a saved seed), and each hour's start has ±60 s of jitter. Each region lists same-metro servers from several providers. The first choice rotates per (region, hour of day) by day, so each hour is measured with every provider within N days. `extra` adds opt-in regions.
+- **`regions`**, the default once speed tests are on (`speedtest.DefaultMode`): the 9 default regions, each **once an hour**, one test at a time about 400 s apart. The order and the minute differ per install (a saved seed), and each hour's start has ±60 s of jitter. Each region lists same-metro servers from several providers. The first choice rotates per (region, hour of day) by day, so each hour is measured with every provider within N days. `extra` adds opt-in regions.
 - **`nearby`**: the nearest server of 3 different providers (same metro preferred), plus 1 automatic far region on a major route (Europe and South America → US East; North America, Africa and the Middle East → UK; Asia and Oceania → US West) and any `extra` far regions, each every 15 minutes. The picks are redone daily.
 - **`custom`**: the `--speedtest-server` list, each every 15 minutes. It is offered only with that flag.
 
@@ -338,7 +338,7 @@ Every test goes through one process-wide queue, and exactly one runs at a time:
 
 The order is by class, FIFO within each: the owner's entries (the local dashboard) first, then schedule slots, then the share link's. Nothing interrupts the running test. A public sweep **yields** between its tests whenever an owner entry or a schedule slot is waiting, and then resumes at the head of the share link's entries. Schedule slots therefore never starve behind public sweeps.
 
-There is no cooldown. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
+There is no cooldown on the owner's requests or on scheduled tests; the share link's sweeps are 30 minutes apart (see below). Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
 
 **The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
 
