@@ -1083,3 +1083,7 @@ abbr.gl { text-decoration: underline dotted; text-underline-offset: 2px; cursor:
   .foot-help dl { grid-template-columns: minmax(0, 1fr); }
   .foot-help dd { margin-bottom: 6px; }
 }
+
+/* The report's day rows carry the date ("Wed 7 Oct"). */
+.report .ho-row { grid-template-columns: 6.6em minmax(0, 1fr); }
+@media (max-width: 767.98px) { .report .ho-row { grid-template-columns: 5.4em minmax(0, 1fr); } .report .ho-day { font-size: 12px; } }
