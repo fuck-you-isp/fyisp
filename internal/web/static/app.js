@@ -10,11 +10,15 @@
 /** @typedef {{target:string,kind:string,interval:number,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
 
-const uPlot = /** @type {any} */ (window).uPlot;
+import {
+  meta, MODE, TOKEN, $, h, storageGet, storageSet, mqLight,
+  effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
+  fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
+  hideTip, whyButton, addAdmin, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText,
+  useStatus,
+} from './core.js';
 
-const meta = (/** @type {string} */ n) => document.querySelector(`meta[name="${n}"]`)?.getAttribute('content') || '';
-const MODE = meta('fyisp-mode') === 'public' ? 'public' : 'local';
-const TOKEN = meta('fyisp-token');
+const uPlot = /** @type {any} */ (window).uPlot;
 
 const RANGES = [['5m', 300], ['30m', 1800], ['1h', 3600], ['6h', 21600], ['24h', 86400], ['48h', 172800], ['7d', 604800], ['30d', 2592000], ['90d', 7776000]];
 // Probe kinds, main kind first: shipped profiles measure every service with
@@ -113,53 +117,14 @@ let lastVerdict = 0;
 let incidents = [];
 let incidentsLoaded = false;
 
-const $ = (/** @type {string} */ s) => /** @type {HTMLElement} */ (document.querySelector(s));
-
-/**
- * @param {string} tag
- * @param {Object<string, any>} [props]
- * @param {...(Node|string|null|undefined|false)} kids
- */
-function h(tag, props, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k === 'text') el.textContent = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? '' : String(v));
-  }
-  for (const c of kids) if (c != null && c !== false) el.append(c);
-  return el;
-}
-
 // ---------- theme ----------
 
-function storageGet(/** @type {string} */ k) { try { return localStorage.getItem(k); } catch { return null; } }
-function storageSet(/** @type {string} */ k, /** @type {string} */ v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
-
-const mqLight = window.matchMedia('(prefers-color-scheme: light)');
-function effectiveTheme() {
-  const t = document.documentElement.dataset.theme;
-  if (t === 'light' || t === 'dark') return t;
-  return mqLight.matches ? 'light' : 'dark';
-}
 function applyTheme(/** @type {string|null} */ t) {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
   const b = $('#theme');
   b.textContent = effectiveTheme() === 'dark' ? 'Light' : 'Dark';
   b.setAttribute('aria-label', `Switch to ${b.textContent.toLowerCase()} theme`);
-}
-/** @type {Map<string,string>} */
-const cssCache = new Map();
-function css(/** @type {string} */ name) {
-  let v = cssCache.get(name);
-  if (v == null) {
-    v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    cssCache.set(name, v);
-  }
-  return v;
 }
 function themeChanged() {
   cssCache.clear();
@@ -172,22 +137,6 @@ function themeChanged() {
 
 // ---------- colours ----------
 
-/** @param {string} hex @param {number} a */
-function rgba(hex, a) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
-}
-/** Mix a colour towards white (t>0) or black (t<0). */
-function shade(/** @type {string} */ hex, /** @type {number} */ t) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
-  const f = (/** @type {number} */ c) => Math.round(t > 0 ? c + (255 - c) * t : c * (1 + t));
-  const r = f(n >> 16), g = f((n >> 8) & 255), b = f(n & 255);
-  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
-}
 // Colour follows the target's position in its group (never its rank on
 // screen). Beyond 8 targets the same 8 hues repeat at other lightness steps;
 // the legend, the tooltip and click-to-isolate carry identity.
@@ -198,51 +147,7 @@ function seriesColor(/** @type {number} */ i) {
 }
 function reasonColor(/** @type {string} */ r) { return css(`--r-${r}`) || '#999999'; }
 
-// ---------- formatting ----------
-
-function fmtMs(/** @type {number|null|undefined} */ v) {
-  if (v == null || !isFinite(v)) return '—';
-  if (v < 10) return v.toFixed(2);
-  if (v < 100) return v.toFixed(1);
-  return v.toFixed(0);
-}
-function fmtPct(/** @type {number} */ f) {
-  if (!isFinite(f)) return '—';
-  if (f === 0) return '0%';
-  if (f < 0.001) return '<0.1%';
-  return (f * 100).toFixed(f < 0.1 ? 1 : 0) + '%';
-}
-function fmtTime(/** @type {number} */ ms, /** @type {number} */ spanMs) {
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: spanMs <= 6 * 3600e3 ? '2-digit' : undefined });
-  if (spanMs <= 24 * 3600e3) return time;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
-}
-/** Clock time; with the date when not today. */
-function fmtWhen(/** @type {number} */ ms) {
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (d.toDateString() === new Date().toDateString()) return time;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
-}
-/** A duration in words: "45 s", "13 min", "2 h 5 min", "3 d 4 h". */
-function fmtDur(/** @type {number} */ ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s} s`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m} min`;
-  const hh = Math.floor(m / 60), mm = m % 60;
-  if (hh < 48) return mm ? `${hh} h ${mm} min` : `${hh} h`;
-  const dd = Math.floor(hh / 24), rh = hh % 24;
-  return rh ? `${dd} d ${rh} h` : `${dd} d`;
-}
 function verdictColor(/** @type {string} */ kind) { return css(`--v-${kind}`) || css('--muted') || '#898781'; }
-function fmtStep(/** @type {number} */ ms) {
-  if (ms < 60e3) return `${Math.round(ms / 1e3)}s`;
-  if (ms < 3600e3) return `${Math.round(ms / 60e3)}m`;
-  if (ms < 86400e3) return `${Math.round(ms / 3600e3)}h`;
-  return `${Math.round(ms / 86400e3)}d`;
-}
 
 // ---------- URL hash state ----------
 
@@ -307,42 +212,6 @@ function queryRange() {
   if (state.from != null && state.to != null) return { from: String(state.from), to: String(state.to) };
   return { from: 'now-' + state.range, to: 'now' };
 }
-
-// ---------- fetch ----------
-
-/**
- * GET/POST JSON with a small retry on 429/503 (the public link is rate limited).
- * @param {string} url @param {RequestInit} [init] @param {number} [tries]
- */
-async function fetchJSON(url, init, tries = 3) {
-  for (let i = 0; ; i++) {
-    const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init });
-    if ((res.status === 429 || res.status === 503) && i < tries - 1) {
-      const wait = Math.min(5, Number(res.headers.get('Retry-After')) || 1) * 1000 * (1 + Math.random());
-      await new Promise((r) => setTimeout(r, wait));
-      if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
-      continue;
-    }
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, body });
-    return body;
-  }
-}
-
-// ---------- tooltip ----------
-
-const tip = $('#tip');
-function showTip(/** @type {Node[]} */ nodes, /** @type {number} */ x, /** @type {number} */ y) {
-  tip.replaceChildren(...nodes);
-  tip.hidden = false;
-  const r = tip.getBoundingClientRect();
-  let left = x + 14, top = y + 14;
-  if (left + r.width > window.innerWidth - 8) left = x - r.width - 14;
-  if (top + r.height > window.innerHeight - 8) top = y - r.height - 14;
-  tip.style.left = Math.max(8, left) + 'px';
-  tip.style.top = Math.max(8, top) + 'px';
-}
-function hideTip() { tip.hidden = true; }
 
 // ---------- panels ----------
 
@@ -1672,43 +1541,11 @@ class Investigate {
 
 // ---------- write helper ----------
 
-/** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] */
-async function apiWrite(method, url, body) {
-  /** @type {Record<string,string>} */
-  const headers = { 'X-FYISP-Token': TOKEN };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  addAdmin(headers);
-  try {
-    return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
-  } catch (e) {
-    const err = /** @type {any} */ (e);
-    if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
-    throw e;
-  }
-}
-
-/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind with --admin-token=off. */
-function canWrite() { return MODE === 'local' && !!status && status.controls !== 'disabled'; }
-
 /** The current view as absolute milliseconds. */
 function viewRange() {
   if (state.from != null && state.to != null) return { from: state.from, to: state.to };
   const to = Date.now();
   return { from: to - rangeSecs() * 1000, to };
-}
-
-/** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */
-function toLocalInput(/** @type {number} */ ms) {
-  const d = new Date(ms);
-  const p = (/** @type {number} */ n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-function fromLocalInput(/** @type {string} */ s) { const t = s ? new Date(s).getTime() : NaN; return isFinite(t) ? t : NaN; }
-
-async function copyText(/** @type {string} */ text, /** @type {HTMLElement} */ btn) {
-  const label = btn.textContent;
-  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch { window.prompt('Copy this link:', text); }
-  setTimeout(() => { btn.textContent = label; }, 1500);
 }
 
 // ---------- notes (annotations) ----------
@@ -2061,12 +1898,6 @@ function panelShown(/** @type {Panel} */ p) {
   return !fp || fp === p;
 }
 function loadStale() { for (const p of panels) if (p.visible && p.stale && panelShown(p)) p.load(); }
-function fmtInt(/** @type {number} */ n) { return n.toLocaleString('en-US'); }
-function median(/** @type {number[]} */ v) {
-  if (!v.length) return NaN;
-  const s = [...v].sort((a, b) => a - b), m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
 /** Worst first: state, then loss, then ratio. */
 function bySeverity(/** @type {OvRow} */ a, /** @type {OvRow} */ b) {
   return (OV_STATES[a.state]?.rank ?? 9) - (OV_STATES[b.state]?.rank ?? 9) || b.loss - a.loss || (b.ratio ?? 0) - (a.ratio ?? 0) || a.target.localeCompare(b.target);
@@ -3636,21 +3467,6 @@ function focusTarget(/** @type {string} */ name) {
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 }
 
-/** A small "?" button that explains a verdict kind (hover, focus or tap). */
-function whyButton(/** @type {string} */ title, /** @type {string} */ text) {
-  const b = h('button', { class: 'why', type: 'button', 'aria-label': `What this means: ${text}`, text: '?' });
-  const show = () => {
-    const r = b.getBoundingClientRect();
-    showTip([h('div', { class: 't', text: 'What this means' }), h('div', { class: 'why-title', text: title }), h('div', { text })], r.left, r.bottom - 6);
-  };
-  b.addEventListener('mouseenter', show);
-  b.addEventListener('focus', show);
-  b.addEventListener('click', (e) => { e.stopPropagation(); if (tip.hidden) show(); else hideTip(); });
-  b.addEventListener('mouseleave', hideTip);
-  b.addEventListener('blur', hideTip);
-  return b;
-}
-
 // The banner shows at most this many target chips, then "+N more".
 const VERDICT_CHIPS = 8;
 let verdictChipsOpen = false;
@@ -3872,21 +3688,6 @@ function renderTools() {
   el.hidden = !kids.length;
 }
 
-function adminHeader() {
-  let t = null;
-  try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
-  if (!t) {
-    t = window.prompt('Admin token for sharing, notes and reports (or open the link from fyisp\'s log):') || '';
-    try { if (t) sessionStorage.setItem('fyisp-admin', t); } catch { /* ignore */ }
-  }
-  return t;
-}
-
-/** Adds X-FYISP-Admin when controls need the admin token and no session cookie carries it. @param {Record<string,string>} headers */
-function addAdmin(headers) {
-  if (status && status.controls === 'admin' && !status.admin) headers['X-FYISP-Admin'] = adminHeader();
-}
-
 /** Takes the token of an "open this link" URL (#admin=…) out of the address bar and history entry. */
 function takeAdminFragment() {
   const p = new URLSearchParams(location.hash.slice(1));
@@ -4016,6 +3817,7 @@ async function loadStatus() {
 // ---------- boot ----------
 
 async function main() {
+  useStatus(() => status);
   applyTheme(storageGet('fyisp-theme'));
   $('#theme').addEventListener('click', () => {
     const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
