@@ -12,6 +12,7 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
@@ -34,16 +35,15 @@ const (
 	homeHeartbeat = 8
 )
 
-// Home tile ids, in display order.
+// Home tile ids, in display order: profile's Home categories.
 const (
-	tileCalls     = "calls"
-	tileWork      = "work"
-	tileStreaming = "streaming"
-	tileWeb       = "web"
-	tileOther     = "other"
+	tileCalls = profile.HomeCalls
+	tileWork  = profile.HomeWork
+	tileWeb   = profile.HomeWeb
+	tileOther = profile.HomeOther
 )
 
-var homeTiles = []string{tileCalls, tileWork, tileStreaming, tileWeb, tileOther}
+var homeTiles = []string{tileCalls, tileWork, tileWeb, tileOther}
 
 // TCP tile states.
 const (
@@ -54,31 +54,9 @@ const (
 	tileChecking = "checking"
 )
 
-// homeCategory returns a target's Home tile: calls, work, streaming, web,
-// or "" (Other services). The path group is never asked.
-var homeCategory = stubHomeCategory
-
-// stubHomeCategory stands in for profile.HomeCategory until the profile
-// work lands: home:* tags, then call apps and STUN targets, then the
-// catalog provider.
-func stubHomeCategory(t model.Target) string {
-	for _, tag := range t.Tags {
-		if c, ok := strings.CutPrefix(tag, "home:"); ok {
-			return c
-		}
-	}
-	switch {
-	case slices.Contains(t.Tags, callq.TagUDPPath) || callq.IsApp(t):
-		return tileCalls
-	case t.Provider == "services-productivity":
-		return tileWork
-	case t.Provider == "services-streaming":
-		return tileStreaming
-	case t.ProviderKind == "cdn":
-		return tileWeb
-	}
-	return ""
-}
+// homeCategory returns a target's Home tile (profile.HomeCategory: calls,
+// work, web or other). A variable for tests.
+var homeCategory = profile.HomeCategory
 
 // homeName is a target's display name: never a host.
 func homeName(t model.Target) string { return strings.ReplaceAll(t.Name, "-", " ") }
@@ -177,7 +155,7 @@ type homeSet struct {
 	byTile map[string][]model.Target // TCP/HTTPS targets of each tile (calls: the apps' websites)
 	cat    map[string]string         // target name -> tile (calls includes STUN targets)
 	path   []model.Target
-	home   int // targets in the calls, work, streaming and web tiles
+	home   int // targets in the calls, work and web tiles
 }
 
 func newHomeSet(p *model.Profile) homeSet {
@@ -204,7 +182,7 @@ func newHomeSet(p *model.Profile) homeSet {
 	return hs
 }
 
-// onlyOther reports a profile with nothing in the four Home tiles (e.g.
+// onlyOther reports a profile with nothing in the Home tiles (e.g.
 // --profile clouds): its Other tile is then the user's set and may raise
 // the answer.
 func (hs homeSet) onlyOther() bool { return hs.home == 0 && len(hs.cat) > 0 }
@@ -775,12 +753,33 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 			who = whoNone // a cloud region: Details only (and the muted line)
 			break
 		}
-		// As bad as the worst tile it touches, at least warn.
-		vLevel = levelWarn
+		// As bad as the worst tile it touches: a call app always warns;
+		// one target out of a tile that is "mostly working" is a note,
+		// not an alarm.
+		vLevel = levelGood
+		touched := false
 		for _, t := range in.tiles {
-			if t.ID != tileCalls && levelRank(t.Level) < levelRank(vLevel) && slices.ContainsFunc(t.Affected, func(n string) bool { return slices.Contains(affected, n) }) {
-				vLevel = t.Level
+			if !slices.ContainsFunc(t.Affected, func(n string) bool { return slices.Contains(affected, n) }) {
+				continue
 			}
+			touched = true
+			l := t.Level
+			switch {
+			case t.ID == tileCalls:
+				l = levelWarn
+			case t.State == tileMostly:
+				l = levelGood
+			}
+			if levelRank(l) < levelRank(vLevel) {
+				vLevel = l
+			}
+		}
+		if !touched {
+			vLevel = levelWarn
+		}
+		if vLevel == levelGood {
+			a.Hint = cp.serviceNote(affected)
+			who = whoNone
 		}
 	case whoCallTraffic:
 		vLevel = levelWarn

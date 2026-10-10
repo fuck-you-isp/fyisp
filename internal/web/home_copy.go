@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -29,7 +30,7 @@ func (c homeCopy) v(you, public string) string {
 }
 
 func (c homeCopy) tileTitle(id string) string {
-	return map[string]string{tileCalls: "Calls", tileWork: "Work apps", tileStreaming: "Streaming", tileWeb: "Websites", tileOther: "Other services"}[id]
+	return map[string]string{tileCalls: "Calls", tileWork: "Work apps", tileWeb: "Websites", tileOther: "Other services"}[id]
 }
 
 // callHead is a call state as a headline.
@@ -307,6 +308,10 @@ func (c homeCopy) verdictHead(k model.VerdictKind, quiet bool, affected []string
 	return c.fine(true)
 }
 
+func (c homeCopy) serviceNote(affected []string) string {
+	return joinNames(affected) + verb(len(affected), " isn't", " aren't") + " answering from here. That's most likely a problem on their side."
+}
+
 func (c homeCopy) verdictCause(k model.VerdictKind, conf string, quiet bool, affected []string, onlyOther bool) string {
 	switch k {
 	case model.VerdictLAN:
@@ -378,7 +383,7 @@ func (c homeCopy) appWorse(app string) string {
 }
 
 // tileWhat names a tile's things in a sentence.
-var tileWhat = map[string]string{tileWork: "work apps", tileStreaming: "streaming services", tileWeb: "websites", tileOther: "services"}
+var tileWhat = map[string]string{tileWork: "work apps", tileWeb: "websites", tileOther: "services"}
 
 func (c homeCopy) tileHead(t HomeTile) string {
 	if t.State == tileDown {
@@ -542,9 +547,18 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 		}
 		return head + ", all " + used[0].phrase + "."
 	}
+	slices.SortStableFunc(used, func(a, b part) int { return b.n - a.n })
 	var bits []string
-	for _, p := range used {
+	rest := 0
+	for i, p := range used {
+		if i >= 2 && len(used) > 3 {
+			rest += p.n
+			continue
+		}
 		bits = append(bits, strconv.Itoa(p.n)+" "+p.phrase)
+	}
+	if rest > 0 {
+		bits = append(bits, strconv.Itoa(rest)+verb(rest, " other", " others"))
 	}
 	return head + ": " + strings.Join(bits[:len(bits)-1], ", ") + " and " + bits[len(bits)-1] + "."
 }

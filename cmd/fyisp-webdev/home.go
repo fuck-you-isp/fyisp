@@ -121,13 +121,12 @@ func tile(id, title, level, state, label string, names []string, ok, total int) 
 }
 
 var (
-	callNames   = []string{"Meet", "Teams", "Zoom", "Slack", "Webex", "Discord", "WhatsApp"}
-	workNames   = []string{"Outlook", "Microsoft 365", "Microsoft sign-in", "Gmail", "Google Docs", "Google Drive"}
-	streamNames = []string{"YouTube", "Netflix", "Spotify", "Disney+", "Prime Video"}
-	webNames    = []string{"Cloudflare", "Akamai", "Fastly", "CloudFront", "Google"}
+	callNames = []string{"Teams", "Google Meet", "Zoom", "Slack", "Discord", "WhatsApp", "Webex"}
+	workNames = []string{"M365 Outlook", "M365 Portal", "M365 Login", "Google Gmail", "Google Docs", "Google Drive"}
+	webNames  = []string{"CDN Cloudflare", "CDN Akamai", "CDN Fastly", "CDN CloudFront", "CDN Google"}
 )
 
-// cannedTiles are the default profile's four tiles with the given call
+// cannedTiles are the default profile's three tiles with the given call
 // state and the same level everywhere else (good: working).
 func cannedTiles(callLevel, callState, callLabel, rest string) []web.HomeTile {
 	label := map[string]string{"working": "Working", "mostly": "Mostly working", "slow": "Slow", "down": "Not working", "checking": "Checking…"}
@@ -141,7 +140,6 @@ func cannedTiles(callLevel, callState, callLabel, rest string) []web.HomeTile {
 	return []web.HomeTile{
 		tile("calls", "Calls", callLevel, callState, callLabel, callNames, 7, 7),
 		tile("work", "Work apps", level[rest], rest, label[rest], workNames, ok(6), 6),
-		tile("streaming", "Streaming", level[rest], rest, label[rest], streamNames, ok(5), 5),
 		tile("web", "Websites", level[rest], rest, label[rest], webNames, ok(5), 5),
 	}
 }
@@ -233,11 +231,11 @@ func cannedLive(scenario, voice string, now time.Time) web.HomeLive {
 	case "one-app-down":
 		l.Tiles = cannedTiles("good", "good", "Good for calls", "working")
 		w := &l.Tiles[1]
-		w.Level, w.State, w.Label, w.OK, w.Affected = "warn", "mostly", "Mostly working", 5, []string{"Outlook"}
-		w.Note = "Outlook isn't answering from here. That's usually a problem on their side."
+		w.Level, w.State, w.Label, w.OK, w.Affected = "warn", "mostly", "Mostly working", 5, []string{"M365 Outlook"}
+		w.Note = "M365 Outlook isn't answering from here. That's usually a problem on their side."
 		*a = web.HomeAnswer{Level: "good", Who: "none", Kind: "service", Calls: "good", Try: []string{},
 			Headline: pv(voice, "Your internet is fine for calls and work", "This connection is fine for calls and work"),
-			Cause:    "Outlook isn't answering from here. That's a problem on their side."}
+			Cause:    "Calls, work apps and websites are all working."}
 		l.Path = cannedPath(voice, "ok", "ok", "ok", "warn", "", "1 app has problems")
 	case "calls-choppy":
 		choppy()

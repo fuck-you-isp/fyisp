@@ -15,7 +15,7 @@ import (
 )
 
 // homeProfile is a small Home profile: the path, two STUN targets, three
-// call apps' websites, and work, streaming, web and one "other" target.
+// call apps' websites, and work, web and one "other" target.
 func homeProfile() *model.Profile {
 	icmp := []model.ProbeKind{model.KindICMP}
 	path := func(name, layer string) model.Target {
@@ -33,8 +33,7 @@ func homeProfile() *model.Profile {
 		udp("Meet-STUN", "app:meet"), udp("Cloudflare-STUN"),
 		tcp("Google-Meet", "apps", "app:meet"), tcp("Microsoft-Teams", "apps", "app:teams"), tcp("Zoom", "apps", "app:zoom"),
 		tcp("M365-Outlook", "work", "home:work"), tcp("Google-Gmail", "work", "home:work"), tcp("Google-Docs", "work", "home:work"),
-		tcp("YouTube", "streaming", "home:streaming"), tcp("Netflix", "streaming", "home:streaming"),
-		tcp("CDN-Cloudflare", "web", "home:web"),
+		tcp("YouTube", "web", "home:web"), tcp("Netflix", "web", "home:web"), tcp("CDN-Cloudflare", "web", "home:web"),
 		tcp("AWS-me-south-1", "aws"),
 	}}
 }
@@ -124,7 +123,7 @@ func TestHomeLiveGood(t *testing.T) {
 	for _, x := range l.Tiles {
 		ids = append(ids, x.ID+":"+x.State)
 	}
-	if !slices.Equal(ids, []string{"calls:good", "work:working", "streaming:working", "web:working", "other:working"}) {
+	if !slices.Equal(ids, []string{"calls:good", "work:working", "web:working", "other:working"}) {
 		t.Errorf("tiles %v", ids)
 	}
 	var path []string
@@ -170,10 +169,18 @@ func TestHomeLiveRelevance(t *testing.T) {
 		t.Errorf("work %+v", w)
 	}
 
-	// The same verdict about a work app raises the answer.
+	// The same verdict about one work app out of three is a hint.
 	fv.v.Targets = []string{"M365-Outlook"}
 	l, _ = s.homeLive(context.Background(), voiceYou, now)
-	if a := l.Answer; a.Level != levelWarn || a.Who != whoApp || a.App != "M365 Outlook" || a.Headline != "M365 Outlook isn't answering" || a.Since == 0 {
+	if a := l.Answer; a.Level != levelGood || a.Who != whoNone || a.Hint != "M365 Outlook isn't answering from here. That's most likely a problem on their side." {
+		t.Errorf("answer %+v", a)
+	}
+
+	// Two of three raise it.
+	s, _, fv = homeFixture(t, homeProfile(), now, []string{"M365-Outlook", "Google-Gmail"}, false)
+	fv.v = model.Verdict{Kind: model.VerdictService, Since: now.Add(-10 * time.Minute), Targets: []string{"M365-Outlook", "Google-Gmail"}}
+	l, _ = s.homeLive(context.Background(), voiceYou, now)
+	if a := l.Answer; a.Level != levelBad || a.Who != whoApp || a.App != "M365 Outlook" || a.Headline != "M365 Outlook and Google Gmail aren't answering" || a.Since == 0 {
 		t.Errorf("answer %+v", a)
 	}
 }
@@ -266,7 +273,7 @@ func TestHomeAnswer(t *testing.T) {
 		}
 		return m
 	}
-	down := HomeTile{ID: tileStreaming, Title: "Streaming", State: tileDown, Level: levelBad, Affected: []string{"YouTube", "Netflix"},
+	down := HomeTile{ID: tileWeb, Title: "Websites", State: tileDown, Level: levelBad, Affected: []string{"YouTube", "Netflix"},
 		Note: "YouTube and Netflix aren't answering from here."}
 	for _, tc := range []struct {
 		name                  string
@@ -299,7 +306,7 @@ func TestHomeAnswer(t *testing.T) {
 			levelGood, whoNone, "", "Your internet is fine for calls and work"},
 		{"service, two apps", model.Verdict{Kind: model.VerdictService, Targets: []string{"YouTube", "Netflix", "AWS-me-south-1"}}, "good",
 			[]HomeTile{down}, levelBad, whoApp, "", "YouTube and Netflix aren't answering"},
-		{"tile down, no verdict", model.Verdict{Kind: model.VerdictOK}, "good", []HomeTile{down}, levelBad, whoApp, "", "Some streaming services aren't loading"},
+		{"tile down, no verdict", model.Verdict{Kind: model.VerdictOK}, "good", []HomeTile{down}, levelBad, whoApp, "", "Some websites aren't loading"},
 	} {
 		a := homeAnswerOf(homeIn(p, tc.v, tc.own, tc.tiles...), copyFor(voiceYou))
 		if a.Level != tc.level || a.Who != tc.who || a.Confidence != tc.conf || a.Headline != tc.hdl {
@@ -338,7 +345,7 @@ func TestHomeTCPTile(t *testing.T) {
 		}
 	}
 	// A set of two: one failing out of two is down, not "mostly".
-	got := tcpTile(tileStreaming, ts[:2], []overviewRow{row("A", "ok"), row("B", "failing")}, names, copyFor(voiceYou))
+	got := tcpTile(tileWeb, ts[:2], []overviewRow{row("A", "ok"), row("B", "failing")}, names, copyFor(voiceYou))
 	if got.State != tileSlow && got.State != tileDown {
 		t.Errorf("two: %+v", got)
 	}
@@ -499,6 +506,10 @@ func TestHomeCopyWords(t *testing.T) {
 		}
 		for _, who := range []string{whoHome, whoProvider, whoBeyond, whoDNS, whoApp, whoCallTraffic, whoOffline} {
 			texts = append(texts, cp.where(who, ""), cp.runLabel(who, ""))
+		}
+		if got := cp.summary(HomeCounts{Problems: 7, Provider: 3, Home: 1, DNS: 1, App: 1, CallTraffic: 1}, "w", false); voice == voiceYou &&
+			got != "7 problems this week: 3 from your internet provider, 1 in your home network and 3 others." {
+			t.Errorf("summary %q", got)
 		}
 		for _, n := range []HomeCounts{{}, {Problems: 1, Provider: 1}, {Problems: 3, Provider: 2, Home: 1}, {Problems: 4, App: 1, DNS: 1, Offline: 1, CallTraffic: 1}} {
 			texts = append(texts, cp.summary(n, "d", false), cp.summary(n, "w", false), cp.summary(n, "w", true))
