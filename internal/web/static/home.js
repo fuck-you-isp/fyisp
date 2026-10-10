@@ -10,17 +10,17 @@
 import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText } from './core.js';
 
 /** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string}} HomeAnswer */
-/** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,tooltip?:string}} HomeNode */
+/** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
 /** @typedef {{id:string,title:string,level:string,state:string,label:string,note?:string,names:string[],more?:number,affected?:string[],ok:number,total:number,details:string}} HomeTile */
 /** @typedef {{state:string,delay?:string,dropouts?:string,smoothness?:string,words?:string,worst_at?:number}} HomeCalls */
 /** @typedef {{app:string,title:string,level:string,state:string,label:string,note?:string}} HomeApp */
 /** @typedef {{id:string,label:string,done:boolean}} HomeStep */
-/** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],steps?:HomeStep[]}} HomeLive */
+/** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[]}} HomeLive */
 /** @typedef {{from:number,to:number,level:string,who:string,kind?:string,label:string,text?:string,source:string,incident?:number,ongoing?:boolean}} HomeRun */
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
-/** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,peak_loss:number,details:string}} HomeProblem */
-/** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number}}} HomeHistory */
+/** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,side?:string,level?:string,confidence?:string,text?:string,peak_loss:number,details:string}} HomeProblem */
+/** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number}}} HomeHistory */
 /** @typedef {{part:string,voice:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number}} HomeAt */
 /** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
 /**
@@ -50,9 +50,10 @@ const LEVELS = {
   bad: { icon: '✕', word: 'Problem' },
   info: { icon: 'i', word: 'Known issue' },
   checking: { icon: '…', word: 'Checking' },
+  affected: { icon: '–', word: 'Affected' },
 };
 /** @type {Object<string,string>} path node states */
-const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '…' };
+const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '…', affected: '–' };
 // The tab title: the state first, so a background tab says it.
 /** @type {Object<string,string>} */
 const TITLE_WORD = { good: 'Fine', info: 'Fine', warn: 'Trouble', bad: 'Trouble', checking: 'Checking' };
@@ -67,11 +68,14 @@ function when(/** @type {number} */ ms) {
 }
 /** "2:10 to 2:16 pm"-ish: both ends in the viewer's clock. */
 function range(/** @type {number} */ a, /** @type {number} */ b) { return b - a <= 60e3 ? when(a) : `${when(a)} to ${clock(b)}`; }
-/** A duration in words: "6 minutes", "1 hour 5 minutes". */
+/** A duration in words: "6 minutes", "1 hour 5 minutes", "26 hours", "3 days". */
 function minutes(/** @type {number} */ ms) {
   const m = Math.max(1, Math.round(ms / 60e3));
   if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
   const hh = Math.floor(m / 60), mm = m % 60;
+  // Past 2 hours the minutes are noise; past 2 days, so are the hours.
+  if (hh >= 48) { const dd = Math.round(hh / 24); return `${dd} days`; }
+  if (hh >= 2) return `${hh} hours`;
   return `${hh} hour${hh === 1 ? '' : 's'}${mm ? ` ${mm} minute${mm === 1 ? '' : 's'}` : ''}`;
 }
 /** "a few seconds ago", "2 minutes ago". */
@@ -317,7 +321,7 @@ export class Home {
         h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: NODE_ICON[n.state] || '?' }),
         h('span', { class: 'ho-node-l', text: n.label }),
         n.state !== 'ok' ? h('span', { class: 'ho-node-w', text: n.words }) : h('span', { class: 'sr-only', text: `: ${n.words}` }),
-        n.blamed ? h('span', { class: 'ho-node-b', text: n.id === 'device' ? 'Problem is here' : 'Problem is probably here' }) : null));
+        n.blamed ? h('span', { class: 'ho-node-b', text: n.culprit || 'Problem is probably here' }) : null));
     });
     this.pathEl.replaceChildren(...items);
 
@@ -365,10 +369,13 @@ export class Home {
     if (dl.childElementCount) kids.push(dl);
     const apps = d.apps || [];
     if (apps.length) {
-      kids.push(h('p', { class: 'ho-apps-h', text: 'Your call apps' }),
+      kids.push(h('p', { class: 'ho-apps-h', text: d.voice === 'public' ? 'Call apps' : 'Your call apps' }),
         h('ul', { class: 'ho-apps' }, ...apps.map((x) => h('li', {}, badge(x.level, x.label), ' ', h('b', { text: x.title }), x.note ? h('span', { class: 'ho-muted', text: ` ${x.note}` }) : null))));
     }
-    kids.push(h('p', { class: 'ho-muted', text: 'Every few seconds we send small test messages to your router, your provider and the apps and websites you use, from this device. We can’t see the other people on a call.' }));
+    if (d.apps_note) kids.push(h('p', { class: 'ho-muted', text: d.apps_note }));
+    kids.push(h('p', { class: 'ho-muted', text: d.voice === 'public'
+      ? 'Every few seconds, a device in this home sends small test messages to its router, its internet provider and common apps and websites. The other people on a call aren’t measured.'
+      : 'Every few seconds we send small test messages to your router, your provider and the apps and websites you use, from this device. We can’t see the other people on a call.' }));
     this.moreEl.replaceChildren(...kids);
   }
 
@@ -429,9 +436,12 @@ export class Home {
       return;
     }
     // The summary sentence, with the times of the first few problems.
-    const times = d.problems.slice(0, 3).map((p) => (p.ongoing ? `since ${when(p.from)}` : range(p.from, /** @type {number} */ (p.to))));
+    // The server's sentence; a known issue with its start; then the problems' times (known issues aren't problems).
+    const probs = d.problems.filter((p) => p.level !== 'info');
+    const times = probs.slice(0, 3).map((p) => (p.ongoing ? `${when(p.from)} until now` : range(p.from, /** @type {number} */ (p.to))));
     this.sumEl.replaceChildren(h('span', { text: d.summary }));
-    if (times.length) this.sumEl.append(h('span', { class: 'ho-times', text: `When: ${times.join(', ')}${d.problems.length > 3 ? ', …' : ''}.` }));
+    if (d.known && d.known.text) this.sumEl.append(' ', h('span', { text: `${d.known.text} ${when(d.known.since)}.` }));
+    if (times.length) this.sumEl.append(h('span', { class: 'ho-times', text: `When: ${times.join('; ')}${probs.length > 3 ? '; …' : ''}.` }));
     const phone = window.matchMedia('(max-width: 767.98px)').matches;
     const per = phone ? 3 : 1; // hours per block: blocks stay ≥ 24 px wide on a phone
     const rows = [];
@@ -499,6 +509,7 @@ export class Home {
       h('span', {}, h('span', { class: 'ho-key b-fine', 'aria-hidden': 'true' }), 'No problems'),
       h('span', {}, h('span', { class: 'ho-key b-run lvl-warn', 'aria-hidden': 'true' }), LEVELS.warn.word),
       h('span', {}, h('span', { class: 'ho-key b-run lvl-bad', 'aria-hidden': 'true' }), LEVELS.bad.word),
+      d.days.some((x) => x.runs.some((r) => r.level === 'info')) ? h('span', {}, h('span', { class: 'ho-key b-run lvl-info', 'aria-hidden': 'true' }), LEVELS.info.word) : null,
       h('span', {}, h('span', { class: 'ho-key b-off', 'aria-hidden': 'true' }), 'fyisp wasn’t running'),
       d.days.some((x) => x.no_record) || (d.first_data && d.first_data > d.from) ? h('span', {}, h('span', { class: 'ho-key b-none', 'aria-hidden': 'true' }), 'No record yet') : null,
       anyOff ? h('a', { class: 'ho-keep', href: KEEP_RUNNING, target: '_blank', rel: 'noopener', text: 'How to keep it running' }) : null,
@@ -719,13 +730,15 @@ export class Home {
 /** A tile's Details link, as the server picks it (#v=calls, or the Overview filtered with ot=). */
 function tileHash(/** @type {HomeTile} */ t) { return t.details; }
 
-/** The worst run overlapping [a, b): bad over warn, then the longest. */
+/** @type {Object<string,number>} run levels: a known issue (info) ranks below every problem */
+const RUN_RANK = { bad: 3, warn: 2, info: 1 };
+/** The worst run overlapping [a, b): bad over warn over info, then the longest. */
 function worstRun(/** @type {HomeRun[]} */ runs, /** @type {number} */ a, /** @type {number} */ b) {
   let best = null;
   for (const r of runs) {
     if (!(r.from < b && r.to > a)) continue;
-    const rank = r.level === 'bad' ? 2 : 1;
-    const bestRank = best ? (best.level === 'bad' ? 2 : 1) : 0;
+    const rank = RUN_RANK[r.level] || 1;
+    const bestRank = best ? RUN_RANK[best.level] || 1 : 0;
     if (!best || rank > bestRank || (rank === bestRank && r.to - r.from > best.to - best.from)) best = r;
   }
   return best;
