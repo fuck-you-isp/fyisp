@@ -2,6 +2,7 @@
  "at": 1791655200000,
  "configurable": false,
  "days": 7,
+ "edge_hours": null,
  "enabled": true,
  "exclude_fallback": false,
  "interval_s": 900,

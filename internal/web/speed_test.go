@@ -14,6 +14,7 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
+	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
 var speedNow = time.Date(2026, 10, 10, 18, 0, 0, 0, time.UTC)
@@ -387,5 +388,56 @@ func TestHomeSpeedLine(t *testing.T) {
 	json.Unmarshal(do(loc, "GET", "/api/home?part=live", speedHost).Body.Bytes(), &l)
 	if l.Speed != nil {
 		t.Errorf("speed line without a pattern: %+v", l.Speed)
+	}
+}
+
+// TestSpeedEdgeHours: api/speed's edge_hours folds the ISP edge's stored
+// RTT and loss into local hours of day (the access network's control).
+func TestSpeedEdgeHours(t *testing.T) {
+	loc, pub, d := speedHandlers(t, newFakeSpeedEvery(5*time.Hour), LocalOptions{})
+	f := store.NewFake()
+	p := testProfile()
+	p.Targets = append(p.Targets, model.Target{Name: "ISP edge", Host: model.HostEdge, Group: p.Targets[0].Group, Layer: model.LayerEdge,
+		Kinds: []model.ProbeKind{model.KindICMP}, Interval: 3 * time.Second})
+	edge := model.SeriesKey{Target: "ISP edge", Kind: model.KindICMP}
+	for ts := speedNow.Add(-3 * 24 * time.Hour).Truncate(time.Hour); ts.Before(speedNow); ts = ts.Add(time.Minute) {
+		s := model.Sample{Key: edge, Slot: ts, RTT: 8 * time.Millisecond}
+		if h := ts.UTC().Hour(); h == 19 {
+			s.RTT = 30 * time.Millisecond // the evening: the access network is busy
+			if ts.Minute()%10 == 0 {
+				s.Lost, s.Reason, s.RTT = true, model.ReasonTimeout, 0
+			}
+		}
+		f.Observe(s)
+	}
+	d.Store, d.Profile = f, func() *model.Profile { return p }
+	loc, pub = Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler), Public(d, "0123456789abcdef0123456789abcdef").(*publicHandler)
+	loc.now, pub.now = func() time.Time { return speedNow }, func() time.Time { return speedNow }
+	for name, raw := range map[string][]byte{
+		"local":  do(loc, "GET", "/api/speed?tz=120", speedHost).Body.Bytes(),
+		"public": do(pub, "GET", speedPub+"/api/speed?tz=120", nil).Body.Bytes(),
+	} {
+		var s speedJSON
+		if err := json.Unmarshal(raw, &s); err != nil {
+			t.Fatal(err)
+		}
+		if len(s.EdgeHours) != 24 {
+			t.Fatalf("%s: edge_hours %+v", name, s.EdgeHours)
+		}
+		ev, day := s.EdgeHours[21], s.EdgeHours[10] // 19 UTC is 21 at UTC+2
+		if ev.N != 3 || ev.RTTms == nil || *ev.RTTms != 30 || ev.Loss == nil || *ev.Loss != 0.1 {
+			t.Errorf("%s: evening %+v (rtt %v loss %v), want 3 days, 30 ms, 10%% loss", name, ev, ev.RTTms, ev.Loss)
+		}
+		if day.N < 2 || day.RTTms == nil || *day.RTTms != 8 || *day.Loss != 0 {
+			t.Errorf("%s: daytime %+v", name, day)
+		}
+	}
+	// Without an ISP edge target: null.
+	var s map[string]json.RawMessage
+	_, _, d2 := speedHandlers(t, newFakeSpeedEvery(5*time.Hour), LocalOptions{})
+	l2 := Local(d2, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
+	l2.now = func() time.Time { return speedNow }
+	if err := json.Unmarshal(do(l2, "GET", "/api/speed", speedHost).Body.Bytes(), &s); err != nil || string(s["edge_hours"]) != "null" {
+		t.Errorf("edge_hours without an edge target: %s %v", s["edge_hours"], err)
 	}
 }

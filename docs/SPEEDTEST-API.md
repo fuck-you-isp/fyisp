@@ -76,6 +76,9 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
   "per_region": [ ...Row ],       // the heatmap rows: every region, in catalog order
   "per_server": [ ...Row ],       // servers with tests in the span, catalog order then own servers
   "latest": { ...Test },          // |null: the newest test of any kind
+  "edge_hours": [                 // |null without an ISP edge target: the access network's control
+    {"hour": 21, "n": 28, "rtt_ms": 30.2, "loss": 0.01}   // 24 local hours: idle RTT to the ISP edge (median over days of the hour's mean; tests are masked out) and loss over the pattern's 30 days; rtt_ms and loss |null when n is 0
+  ],
   "pattern": {                    // |null: a clear time-of-day dip of your own line (same rule as Home)
     "text": "Evenings are slower: about 40% below your daytime speed.",
     "level": "info",

@@ -14,9 +14,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
+	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
 // SpeedSource runs and keeps the speed tests (speedtest.Scheduler). See
@@ -60,6 +62,20 @@ type speedJSON struct {
 	PerServer       []speedRowJSON     `json:"per_server"`
 	Latest          *speedTestJSON     `json:"latest"`
 	Pattern         *speedtest.Pattern `json:"pattern"`
+	// EdgeHours is the access network's control: the idle RTT and loss to
+	// the ISP edge by local hour of day over the pattern's 30 days (tests
+	// are masked out of the series, so it is idle by construction); null
+	// without an ISP edge target.
+	EdgeHours []speedEdgeHour `json:"edge_hours"`
+}
+
+// speedEdgeHour is one local hour of day of the ISP edge's idle RTT: the
+// median over days of that hour's mean RTT, and the loss over them.
+type speedEdgeHour struct {
+	Hour  int  `json:"hour"`
+	N     int  `json:"n"`      // days with samples in that hour
+	RTTms *num `json:"rtt_ms"` // |null when n is 0
+	Loss  *num `json:"loss"`   // |null when n is 0
 }
 
 type speedNext struct {
@@ -490,6 +506,61 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		out.Latest = &l
 	}
 	out.Pattern = speedtest.PooledPattern(all, tz)
+	if out.EdgeHours, err = s.edgeHours(ctx, now, tz); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// edgeHours reads the ISP edge's hourly RTT over speedtest.PatternSpan and
+// folds it into 24 local hours of day (see speedEdgeHour); nil without an
+// ISP edge target.
+func (s *server) edgeHours(ctx context.Context, now time.Time, tz time.Duration) ([]speedEdgeHour, error) {
+	var key model.SeriesKey
+	if p := s.d.Profile(); p != nil {
+		for _, t := range p.Targets {
+			if t.Layer == model.LayerEdge {
+				key = model.SeriesKey{Target: t.Name, Kind: model.KindICMP}
+			}
+		}
+	}
+	if key.Target == "" || s.d.Store == nil {
+		return nil, nil
+	}
+	to := now.Truncate(time.Hour)
+	from := to.Add(-speedtest.PatternSpan)
+	res, err := s.d.Store.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{key}, From: from, To: to, MaxPoints: int(speedtest.PatternSpan / time.Hour)})
+	if err != nil {
+		return nil, err
+	}
+	rtts := make([][]float64, 24)
+	var ok, lost [24]float64
+	for _, c := range res.Series {
+		for i := range c.N {
+			n, l := float64(c.N[i]), float64(at(c.Lost, i))
+			if n+l == 0 {
+				continue
+			}
+			h := res.Start.Add(time.Duration(i) * res.Step).Add(tz).UTC().Hour()
+			ok[h] += n
+			lost[h] += l
+			if n > 0 && i < len(c.Mean) && !math.IsNaN(float64(c.Mean[i])) {
+				rtts[h] = append(rtts[h], float64(c.Mean[i]))
+			}
+		}
+	}
+	out := make([]speedEdgeHour, 24)
+	for h := range out {
+		out[h] = speedEdgeHour{Hour: h, N: len(rtts[h])}
+		if ok[h]+lost[h] > 0 {
+			l := num(lost[h] / (ok[h] + lost[h]))
+			out[h].Loss = &l
+		}
+		if len(rtts[h]) > 0 {
+			r := num(callq.Median(rtts[h]))
+			out[h].RTTms = &r
+		}
+	}
 	return out, nil
 }
 
