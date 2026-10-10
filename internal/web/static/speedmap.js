@@ -29,7 +29,8 @@ const KICKER = /** @type {Object<string,string>} */ ({ early_sign: 'Early sign',
  */
 export function findingExtras(d, f, publicVoice) {
   const lines = [];
-  const said = `${publicVoice ? f.text_public : f.text} ${f.evidence || ''} ${f.caveat || ''}`;
+  const caveat = publicVoice ? f.caveat_public || f.caveat : f.caveat;
+  const said = `${publicVoice ? f.text_public : f.text} ${f.evidence || ''} ${caveat || ''}`;
   const evening = f.hours && f.hours.length && f.hours.every((x) => x >= 17 || x <= 1);
   if (f.slow_days && f.day_count && !/Slower on \d/.test(said)) lines.push(`Slower at those hours on ${f.slow_days} of ${f.day_count} ${evening ? 'evenings' : 'days'} with tests.`);
   if (f.far_regions && f.far_regions.length && !/too far away/.test(said)) {
@@ -38,7 +39,7 @@ export function findingExtras(d, f, publicVoice) {
     lines.push(`${list} ${names.length > 1 ? 'are' : 'is'} too far away to show it.`);
   }
   if (f.far_evening && !/evening there/.test(said)) lines.push('It’s evening at the far end too, so busy time there could explain it as well.');
-  if (f.caveat) lines.push(f.caveat);
+  if (caveat) lines.push(caveat);
   if (f.bridged && !/container|second router/.test(said)) lines.push('Tests ran from inside a container or VM (or behind a second router), so Wi-Fi and the home router can’t be ruled out.');
   return lines.length ? h('ul', { class: 'sp-found-x' }, ...lines.map((t) => h('li', { text: t }))) : '';
 }
