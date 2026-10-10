@@ -127,6 +127,7 @@ func (r *run) speedSection() *speedView {
 		switch f.Case {
 		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed:
 			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (hours in UTC)."
+			f.Caveat = f.CaveatPublic
 			if f.Network != "" {
 				f.Evidence += " The slow tests left the provider's network through " + f.Network + "."
 			}

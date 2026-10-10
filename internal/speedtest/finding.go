@@ -53,16 +53,18 @@ const (
 
 // Finding is the localisation of a time-of-day slowdown.
 type Finding struct {
-	Case       string   `json:"case"`
-	Tier       string   `json:"tier,omitempty"`
-	Text       string   `json:"text"`        // the owner's wording
-	TextPublic string   `json:"text_public"` // the share link's and report's wording
-	Evidence   string   `json:"evidence"`
-	Caveat     string   `json:"caveat,omitempty"`
-	Hours      []int    `json:"hours"`
-	Regions    []string `json:"regions"`   // region IDs involved
-	Providers  []string `json:"providers"` // provider names involved
-	Servers    []string `json:"servers"`   // server IDs involved (case server)
+	Case       string `json:"case"`
+	Tier       string `json:"tier,omitempty"`
+	Text       string `json:"text"`        // the owner's wording
+	TextPublic string `json:"text_public"` // the share link's and report's wording
+	Evidence   string `json:"evidence"`
+	Caveat     string `json:"caveat,omitempty"`
+	// CaveatPublic is the caveat in the share link's and report's voice.
+	CaveatPublic string   `json:"caveat_public,omitempty"`
+	Hours        []int    `json:"hours"`
+	Regions      []string `json:"regions"`   // region IDs involved
+	Providers    []string `json:"providers"` // provider names involved
+	Servers      []string `json:"servers"`   // server IDs involved (case server)
 	// Network is the first network past the ISP that the slow tests share
 	// (case provider: e.g. "AS3356 LEVEL3"), from the tests' handoff
 	// traceroutes; "" when unknown or not shared. Local wording only.
@@ -748,6 +750,7 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		caveats = append(caveats, "fyisp measured from inside a container or VM (or behind a second router), so Wi-Fi and your own router can't be ruled out.")
 	}
 	f.Caveat = strings.Join(caveats, " ")
+	f.CaveatPublic = strings.NewReplacer("other people at home", "people in the home", "your own router", "the home router").Replace(f.Caveat)
 	var claim, who, whoPublic string
 	switch f.Case {
 	case CaseISP:

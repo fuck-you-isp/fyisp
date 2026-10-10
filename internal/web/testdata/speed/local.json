@@ -137,6 +137,7 @@
  "finding": {
   "case": "isp",
   "caveat": "Wi-Fi, or other people at home using the internet heavily at those hours, can look the same.",
+  "caveat_public": "Wi-Fi, or people in the home using the internet heavily at those hours, can look the same.",
   "day_count": 24,
   "days": 30,
   "drop": 0.4,
