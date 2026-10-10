@@ -8,6 +8,7 @@
 
 import { h, fetchJSON } from './core.js';
 import { LEVELS, NODE_ICON, badge, cls, minutes, buildTimeline } from './home.js';
+import { SpeedReport } from './speedreport.js';
 
 /** @typedef {import('./home.js').HomeLive} HomeLive */
 /** @typedef {import('./home.js').HomeHistory} HomeHistory */
@@ -85,11 +86,12 @@ export class Report {
         h('thead', {}, h('tr', {}, ...['When', 'How long', 'Side', 'What happened', 'Worst minute', ''].map((t) => h('th', { scope: 'col', text: t })))),
         this.tbody));
 
+    this.speed = new SpeedReport();
     this.el = h('main', { id: 'home', class: 'home report', hidden: true },
       h('header', { class: 'rp-head' },
         h('p', { class: 'ho-muted', text: 'A record of this internet connection’s quality, measured from a device in this home and shared read-only by its owner.' }),
         this.zoneEl),
-      this.now, this.week, this.table,
+      this.now, this.week, this.speed.el, this.table,
       h('p', { class: 'ho-muted rp-foot', text: 'Every few seconds, a device in this home sends small test messages to its router, its internet provider and common apps and websites. The other people on a call aren’t measured. “Details” has the charts behind this report.' }));
   }
 
@@ -134,6 +136,7 @@ export class Report {
       this.historyBusy = false;
     }
     this.renderWeek();
+    this.speed.load();
   }
 
   render() { this.renderNow(); this.renderWeek(); }

@@ -2,14 +2,16 @@
 // Turning them on is a two-step page, not a wizard: what it costs (data, a
 // busy line, calls that may stutter, who sees the address), then how to
 // test. Once on, a header with the mode, the next test, Test now (with a
-// server picker) and Turn off. Every write goes through the same gate as
-// notes and share; the share link is read-only. Plain ES module, no build
-// step.
+// server picker) and Turn off; tests wait their turn in one queue
+// (speedqueue.js). Every write goes through the same gate as notes and
+// share; the share link is read-only unless the owner lets it start tests.
+// Plain ES module, no build step.
 // @ts-check
 
 import { h, fetchJSON, apiWrite, canWrite, dialog, MODE } from './core.js';
 import { clock } from './home.js';
 import { SpeedMap } from './speedmap.js';
+import { SpeedQueue } from './speedqueue.js';
 
 /** @typedef {{id:string,label:string,provider:string,city:string,country:string,geo:string,region:string,rtt_ms:number|null,picked:boolean,custom:boolean}} SpeedServer */
 /** @typedef {{hour:number,n:number,down_median_bps:number|null,up_median_bps:number|null,down_norm:number|null}} SpeedHour */
@@ -54,7 +56,6 @@ function every(/** @type {number} */ s) {
 /** Why a speed-test write failed, from the API's stable code (never its wording). @param {any} e */
 function speedError(e) {
   switch (e.body?.code) {
-    case 'running': return 'A test is already running. Its result will appear here in a few seconds.';
     case 'forbidden': return 'Speed tests can only be changed from the device running fyisp.';
     case 'not_found': return 'That server isn’t in the list any more.';
     case 'bad_request': return 'fyisp didn’t accept that setting.';
@@ -77,23 +78,22 @@ export class Speed {
     /** Bytes one test moved, from the estimate test or the latest ok test. @type {number|null} */
     this.perTest = null;
     this.estimating = false;
-    /** The test this page started (Test now, Estimate): its start, the target's label, and what to say when it ends. */
-    /** @type {{at:number,what:string,estimate:boolean}|null} */
-    this.mine = null;
     this.result = '';
-    this.resultLink = /** @type {Node|null} */ (null);
     this.note = '';
-    this.lastStep = '';
-    /** @type {number|undefined} */
-    this.pollTimer = undefined;
 
     this.say = h('p', { class: 'sr-only', role: 'status' });
     this.headEl = h('div', { class: 'sp-head' });
+    this.queue = new SpeedQueue({
+      summary: () => this.d,
+      done: (e, tag) => this.finish(e, tag),
+      say: (t) => { this.say.textContent = t; },
+      sweepHash: () => host.sweep(),
+    });
     this.progEl = h('div', { class: 'sp-prog', hidden: true });
     this.bodyEl = h('div', { class: 'sp-body' });
     this.map = new SpeedMap(host);
     this.el = h('section', { id: 'speed', class: 'speed', 'aria-label': 'Speed tests', hidden: true },
-      this.say, this.headEl, this.progEl, this.bodyEl, this.map.el);
+      this.say, this.headEl, this.progEl, this.queue.el, this.bodyEl, this.map.el, this.queue.sweepEl);
   }
 
   /** Re-reads the summary (Details' refresh, every 30 s at most when idle). */
@@ -110,46 +110,34 @@ export class Speed {
       if (seq !== this.seq) return;
       this.err = 'Couldn’t load the speed tests. They’ll show again when fyisp answers.';
     }
-    if (this.d && this.d.running) this.poll();
     this.render();
+    this.queue.load();
   }
 
-  /** While a test runs: the light part=running every 2 s, then the summary for the result. */
-  poll() {
-    if (this.pollTimer) return;
-    const tick = async () => {
-      this.pollTimer = undefined;
-      if (this.el.hidden || !this.d) return;
-      /** @type {SpeedRunning|null} */
-      let r = null;
-      try { r = (await fetchJSON('api/speed?part=running')).running; } catch { r = this.d.running; }
-      this.d.running = r;
-      if (r) {
-        this.renderProgress();
-        this.pollTimer = window.setTimeout(tick, 2000);
-      } else {
-        await this.refresh();
-        this.finish();
-      }
-    };
-    this.pollTimer = window.setTimeout(tick, 2000);
-  }
-
-  /** The test this page asked for has ended: say how it went. */
-  finish() {
-    const d = this.d, m = this.mine;
-    if (!d || !m) { this.renderProgress(); return; }
-    const t = d.latest;
-    this.mine = null;
-    this.lastStep = '';
-    this.estimating = false;
-    if (!t || t.start < m.at - 5000) { this.result = 'The test ended without a result. Try again.'; this.renderAll(); return; }
+  /**
+   * A test this page queued has ended: say how it went. tag 'estimate' feeds the
+   * data estimate; a sweep's results show in its own section.
+   * @param {import('./speedqueue.js').QueueEntry} e @param {string} tag
+   */
+  async finish(e, tag) {
+    if (tag === 'estimate') this.estimating = false;
+    if (e.kind === 'sweep') return;
+    if (e.state !== 'done') {
+      this.result = e.state === 'dropped' ? 'The test waited too long in the queue and was dropped. Try again.' : 'The test was cancelled.';
+      this.say.textContent = this.result;
+      this.renderAll();
+      return;
+    }
+    await this.refresh();
+    const d = this.d;
+    const t = d && d.latest && e.tests.includes(d.latest.id) ? d.latest : null;
+    if (!d || !t) { this.result = 'Done. The result is in the tests below.'; this.say.textContent = this.result; this.renderAll(); return; }
     if (t.outcome === 'ok' || t.down_bps != null) {
       this.perTest = testBytes(t);
       const row = d.per_server.find((x) => x.id === t.server);
       const pct = row && row.best_down_bps && t.down_bps != null ? ` ${Math.round(t.down_bps / row.best_down_bps * 100)}% of this server’s normal.` : '';
       const fb = t.fallback && t.region ? fallbackLine(d, t) : '';
-      this.result = m.estimate
+      this.result = tag === 'estimate'
         ? `Your test used about ${bytes(this.perTest)}.`
         : `Done: ${mbps(t.down_bps)} down, ${t.up_bps != null ? mbps(t.up_bps).replace(' Mbit/s', '') : '—'} up.${pct}${fb ? ' ' + fb : ''}`;
     } else {
@@ -184,15 +172,15 @@ export class Speed {
     }
     if (!d.enabled || this.panel === 'setup') { fill(this.headEl, this.setupNodes()); return; }
     const flag = d.set_by_flag ? h('p', { class: 'muted small', text: 'Turned on by a start-up setting. If you turn it off here, it comes back on the next restart.' }) : null;
-    const next = d.running ? 'testing now' : d.next_at ? `next test ${clock(d.next_at)}` : '';
+    const next = this.queue.q?.running || d.running ? 'testing now' : d.next_at ? `next test ${clock(d.next_at)}` : '';
     const can = canWrite();
     fill(this.headEl, [
       h('div', { class: 'sp-on' },
         h('p', { class: 'sp-state' }, h('b', { text: 'Speed tests: On' }), ` · ${modeName(d.mode)}${next ? ' · ' + next : ''}`),
         h('div', { class: 'sp-acts' },
           h('span', { class: 'sp-split' },
-            h('button', { class: 'btn primary', type: 'button', text: 'Test now', disabled: !can || !!d.running, onclick: () => this.run('') }),
-            h('button', { class: 'btn primary sp-more', type: 'button', 'aria-label': 'Choose a server to test', title: 'Choose a server', 'aria-haspopup': 'dialog', disabled: !can || !!d.running, text: '▾', onclick: () => this.pick() })),
+            h('button', { class: 'btn primary', type: 'button', text: 'Test now', disabled: !can, onclick: () => this.run('') }),
+            h('button', { class: 'btn primary sp-more', type: 'button', 'aria-label': 'Choose a server to test', title: 'Choose a server', 'aria-haspopup': 'dialog', disabled: !can, text: '▾', onclick: () => this.pick() })),
           h('button', { class: 'btn', type: 'button', text: 'Change…', disabled: !can || !!d.set_by_flag, onclick: () => { this.panel = 'setup'; this.pickMode = d.mode; this.note = this.result = ''; this.renderAll(); /** @type {HTMLElement|null} */ (this.headEl.querySelector('h2'))?.focus(); } }),
           h('button', { class: 'btn ghost', type: 'button', text: 'Turn off', disabled: !can, onclick: () => this.setMode('off') }))),
       can ? null : h('p', { class: 'muted small', text: 'Speed tests can only be changed from the device running fyisp.' }),
@@ -247,7 +235,7 @@ export class Speed {
           : h('span', { class: 'muted small', text: 'Nothing is tested until you turn this on.' })),
       can ? null : h('p', { class: 'muted small', text: 'Speed tests can only be changed from the device running fyisp.' }),
       this.note ? h('p', { class: 'sp-note', text: this.note }) : null,
-      this.result && !this.mine ? h('p', { class: 'sp-result', text: this.result }) : null,
+      this.result ? h('p', { class: 'sp-result', text: this.result }) : null,
     ];
   }
 
@@ -277,28 +265,17 @@ export class Speed {
 
   // ---------- Test now, the picker, progress ----------
 
-  /** Starts a test: '' the nearest servers, else a server or region id. @param {string} id @param {string} [what] */
-  async run(id, what = '', estimate = false) {
-    const why = 'Running a speed test needs the admin token. Open the link fyisp printed when it started, or paste the token here.';
+  /** Queues a test: '' the nearest servers, else a server or region id. @param {string} id */
+  async run(id, estimate = false) {
     this.result = '';
     this.note = '';
-    try {
-      await apiWrite('POST', 'api/speed/run' + (id ? '?' + new URLSearchParams({ id }) : ''), undefined, why);
-      this.mine = { at: Date.now(), what, estimate };
-      if (estimate) this.estimating = true;
-    } catch (e) {
-      const err = /** @type {any} */ (e);
-      if (err.body?.code === 'running') this.note = speedError(e);
-      else { this.note = speedError(e); this.estimating = false; this.say.textContent = this.note; this.renderAll(); return; }
-    }
-    // Show the progress at once; the poll fills it in.
-    if (this.d && !this.d.running) this.d.running = { started: Date.now(), expected_end: Date.now() + 20e3, direction: 'picking', server: null, region: null };
+    if (estimate) { this.estimating = true; this.renderHead(); }
+    await this.queue.start('single', id, estimate ? 'estimate' : 'test');
+    if (estimate && this.queue.note) { this.estimating = false; this.renderHead(); }
     this.renderAll();
-    this.poll();
-    /** @type {HTMLElement|null} */ (this.progEl.querySelector('.sp-prog-title'))?.focus();
   }
 
-  estimate() { this.run('', '', true); }
+  estimate() { this.run('', true); }
 
   /** The server picker: every catalog server by test region, plus "any server" per region; never hostnames or ports. */
   async pick() {
@@ -358,48 +335,18 @@ export class Speed {
     if (v !== 'ok') return;
     const sel = /** @type {HTMLInputElement|null} */ (list.querySelector('input:checked'));
     if (!sel) return;
-    const name = byId.get(sel.value)?.label || d.regions.find((r) => r.id === sel.value)?.title || sel.value;
-    this.run(sel.value, name);
+    this.run(sel.value);
   }
 
+  /** The last result of a test this page asked for. */
   renderProgress() {
-    const d = this.d;
-    const r = d && d.running;
-    if (!r) {
-      this.progEl.hidden = !(this.result && this.d?.enabled && this.panel !== 'setup');
-      if (!this.progEl.hidden) {
-        this.progEl.replaceChildren(h('p', { class: 'sp-result' }, this.result, ' ',
-          /^That server/.test(this.result) && canWrite() ? h('button', { class: 'btn sm', type: 'button', text: 'Try another server', onclick: () => this.pick() }) : null));
-      }
-      return;
-    }
-    this.progEl.hidden = false;
-    const step = r.direction === 'picking' || !r.server ? 'find' : r.direction === 'download' ? 'down' : 'up';
-    const who = r.server ? r.server.label : this.mine?.what || '';
-    const title = !this.mine ? `A test is running${who ? ` with ${who}` : ''}. Its result will appear here.`
-      : who ? `Testing with ${who}…` : 'Testing…';
-    const order = ['find', 'down', 'up'];
-    const names = { find: 'Finding a free server', down: 'Download', up: 'Upload' };
-    const at = order.indexOf(step);
-    const total = Math.max(1, r.expected_end - r.started);
-    const pct = Math.min(99, Math.max(2, Math.round((Date.now() - r.started) / total * 100)));
-    fill(this.progEl, [
-      h('p', { class: 'sp-prog-title', tabindex: '-1', text: title }),
-      h('ol', { class: 'sp-steps' }, ...order.map((s, i) => h('li', { class: i < at ? 'done' : i === at ? 'now' : '' },
-        h('span', { class: 'sp-step-mark', 'aria-hidden': 'true', text: i < at ? '✓' : i === at ? '●' : '○' }),
-        names[/** @type {'find'} */ (s)],
-        h('span', { class: 'sr-only', text: i < at ? ' (done)' : i === at ? ' (now)' : '' })))),
-      h('progress', { class: 'sp-bar', max: '100', value: String(pct), 'aria-label': 'Test progress' }),
-      h('p', { class: 'muted small', text: `About ${Math.max(5, Math.round((r.expected_end - Date.now()) / 1000))} seconds left. Calls may stutter briefly.` }),
-      this.note ? h('p', { class: 'sp-note', text: this.note }) : null]);
-    // Announce step changes only, for a test this page started.
-    if (this.mine && step !== this.lastStep) {
-      this.lastStep = step;
-      this.say.textContent = step === 'find' ? title : `${names[step]}…`;
-    }
+    this.progEl.hidden = !(this.result && this.d?.enabled && this.panel !== 'setup');
+    if (this.progEl.hidden) return;
+    this.progEl.replaceChildren(h('p', { class: 'sp-result' }, this.result, ' ',
+      /^That server/.test(this.result) && canWrite() ? h('button', { class: 'btn sm', type: 'button', text: 'Try another server', onclick: () => this.pick() }) : null));
   }
 
-  // ---------- body (phase b fills in the heatmap and the rest) ----------
+  // ---------- body: the latest test, then the evidence ----------
 
   renderBody() {
     const d = this.d;
@@ -414,7 +361,7 @@ export class Speed {
       const region = t.region ? d.regions.find((r) => r.id === t.region)?.title : '';
       const res = t.outcome === 'ok' ? `${mbps(t.down_bps)} down, ${mbps(t.up_bps)} up`
         : t.outcome === 'busy' ? 'server busy' : t.outcome === 'unreachable' ? 'didn’t answer' : 'didn’t finish';
-      lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger === 'manual' ? ' (manual)' : ''}`));
+      lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
     }
     if (d.enabled && d.masked_share_24h > 0) {
       lines.push(h('p', { class: 'muted small', text: `Tests filled the line ${Math.max(1, Math.round(d.masked_share_24h * 100))}% of the last 24 hours. Those seconds aren’t counted on the other charts.` }));

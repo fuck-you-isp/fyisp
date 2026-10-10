@@ -283,7 +283,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .v-kind { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
 .v-summary { margin: 4px 0 0; font-size: 20px; line-height: 1.3; font-weight: 600; color: var(--ink); text-wrap: pretty; }
 .v-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.v-aff { margin-left: 8px; color: var(--muted); }
+.v-aff { margin-left: 8px; color: var(--ink-2); } /* --muted fails 4.5:1 on the tinted verdict card in dark */
 .tchip {
   border: 1px solid color-mix(in srgb, var(--vc) 55%, var(--border)); background: var(--surface);
   color: var(--ink); border-radius: 999px; padding: 2px 10px; font-size: 12px; cursor: pointer;
@@ -987,7 +987,10 @@ body.speed-on #ranges, body.speed-on #kinds { display: none; }
 .ho-blk.b-later { cursor: default; }
 .ho-blk.b-later::before { height: 4px; background: var(--grid); }
 .ho-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
-.ho-speed { margin: 10px 0 0; color: var(--ink-2); }
+.ho-speed { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--grid); color: var(--ink); }
+.ho-speed-i { color: var(--ink-2); margin-right: 6px; }
+.ho-speed .ho-link { margin-left: 6px; white-space: nowrap; }
+@media (max-width: 767.98px) { .ho-speed .ho-link { display: block; width: fit-content; margin: 4px 0 0; min-height: 44px; line-height: 44px; } }
 .ho-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .ho-key { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
 .ho-key.b-fine { height: 6px; background: color-mix(in srgb, var(--v-ok) 55%, var(--surface)); }
@@ -1274,3 +1277,44 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
   .sp-st th, .sp-st td { white-space: nowrap; }
   .sp-tt td.num::before, .sp-tt td[data-k="Result"]::before { content: attr(data-k) " "; color: var(--ink-2); font-size: 11px; display: block; }
 }
+/* Speed queue and the full test of every server (speedqueue.js) */
+.sp-queue, .sp-sweep { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.sp-queue h2, .sp-sweep h2 { margin: 0; font-size: 16px; }
+.sp-queue h2:focus, .sp-mine-t:focus { outline: none; }
+.sp-queue > p, .sp-sweep > p { margin: 6px 0 0; }
+.sp-mine { border-left: 4px solid var(--accent); padding: 4px 0 4px 12px; margin-bottom: 12px; }
+.sp-mine p { margin: 0; }
+.sp-mine-t { font-weight: 600; }
+.sp-q { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
+.sp-q li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1.6fr) auto; gap: 4px 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
+.sp-q li.run .sp-q-what::before { content: "● "; color: var(--accent); }
+.sp-q li.you .sp-q-who { font-weight: 600; color: var(--ink); }
+.sp-q-who, .sp-q-when { color: var(--ink-2); }
+.sp-sweep .sp-go-row { margin-top: 10px; }
+.sp-flag { margin: 14px 0 8px !important; font-size: 13px; color: var(--ink-2); }
+.sp-flag b { color: var(--ink); }
+.sp-sw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin-bottom: 10px; }
+.sp-sw-bars h3 { margin: 4px 0 6px; font-size: 13px; }
+.sp-sw-bars ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sp-sw-bars li { display: grid; grid-template-columns: 9em minmax(40px, 1fr) 8.5em; gap: 8px; align-items: center; font-size: 12px; }
+.sp-sw-k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-sw-track { display: block; height: 8px; background: var(--surface-2); border-radius: 4px; }
+.sp-sw-bar { display: block; height: 8px; border-radius: 4px; background: var(--hm3); }
+.sp-sw-v { color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; }
+.sp-sw-t tr.bad td, .sp-sw-t tr.bad th { color: var(--ink-2); }
+.sp-sw-t tbody th { font-weight: 400; }
+@media (max-width: 767.98px) {
+  .sp-queue, .sp-sweep { padding: 12px; }
+  .sp-q li { grid-template-columns: minmax(0, 1fr) auto; }
+  .sp-q-who, .sp-q-when { grid-column: 1; }
+  .sp-q li .btn { grid-column: 2; grid-row: 1 / span 3; }
+  .sp-sw-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The report's "Speed through the day" (speedreport.js) */
+.rp-speed h3 { margin: 14px 0 6px; font-size: 14px; }
+.rp-speed-t { width: 100%; }
+.rp-speed-t .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rp-speed-t tr.sub th { font-weight: 400; padding-left: 14px; }
+.rp-speed-worst, .rp-speed-ev { margin: 0; padding-left: 20px; }
+.rp-speed-ev { color: var(--ink-2); font-size: 13px; }

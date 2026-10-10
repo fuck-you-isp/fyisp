@@ -74,12 +74,12 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
  * 'calls' (Calls), 'o' (Overview), 'c' (charts) or 'speed' (Speed), null for Home; focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
  * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter;
- * sr/sd/snf: Speed's selected row, span in days and "leave out backup servers".
+ * sr/sd/snf/ssw: Speed's selected row, span in days, "leave out backup servers" and the full test (sweep=1).
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string, sr:string, sd:number, snf:boolean}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '', sr: '', sd: 7, snf: false };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '', sr: '', sd: 7, snf: false, ssw: false };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -216,6 +216,7 @@ function readHash() {
   state.sr = sr && /^[rs]:[A-Za-z0-9._:-]{1,80}$/.test(sr) ? sr : '';
   state.sd = p.get('sd') === '30' ? 30 : 7;
   state.snf = p.get('snf') === '1';
+  state.ssw = p.get('sweep') === '1';
 }
 /** The last hash the page applied (hashchange and popstate both fire on Back). */
 let lastHash = '';
@@ -245,6 +246,7 @@ function hashString() {
   if (state.sr) p.set('sr', state.sr);
   if (state.sd === 30) p.set('sd', '30');
   if (state.snf) p.set('snf', '1');
+  if (state.ssw) p.set('sweep', '1');
   return '#' + p.toString();
 }
 function writeHash() {
@@ -4207,6 +4209,7 @@ async function main() {
     nofb: () => state.snf,
     setNofb: (b) => { state.snf = b; writeHash(); speed?.refresh(); },
     refresh: () => speed?.refresh(),
+    sweep: () => state.ssw,
   }) : null;
   // The view switch, then Calls, the network path, the Overview or the charts: DOM order is visual order.
   const path = panels.filter((p) => p.isPath).map((p) => p.el);

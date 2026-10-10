@@ -14,7 +14,7 @@ import { clock } from './home.js';
 /** @typedef {import('./speed.js').SpeedRow} SpeedRow */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
 /** @typedef {{at:number,kind:string,row:SpeedRow,tests:SpeedTest[],windows:{start:number,end:number}[]}} SpeedView */
-/** @typedef {{sel:()=>string, setSel:(v:string)=>void, days:()=>number, setDays:(d:number)=>void, nofb:()=>boolean, setNofb:(b:boolean)=>void, refresh:()=>void}} SpeedHost */
+/** @typedef {{sel:()=>string, setSel:(v:string)=>void, days:()=>number, setDays:(d:number)=>void, nofb:()=>boolean, setNofb:(b:boolean)=>void, refresh:()=>void, sweep:()=>boolean}} SpeedHost */
 
 /** Bins of "% of normal": lower bound, class, the word a screen reader hears. The 75% edge is the dip rule's. */
 const BINS = /** @type {[number, string, string][]} */ ([
@@ -352,7 +352,7 @@ export class SpeedMap {
       });
     const tipFor = (/** @type {{t:SpeedTest,y:number}} */ p) => [
       h('div', { class: 't', text: `${new Date(p.t.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(p.t.start)}` }),
-      h('div', { text: `${p.t.label}${p.t.fallback ? ' (backup server)' : ''}${p.t.trigger === 'manual' ? ' · manual' : ''}` }),
+      h('div', { text: `${p.t.label}${p.t.fallback ? ' (backup server)' : ''}${p.t.trigger !== 'schedule' ? ' · on demand' : ''}` }),
       h('div', { text: `${mb(p.t.down_bps)} down · ${mb(p.t.up_bps)} up${this.unit === 'pct' ? ` · ${fmtY(p.y)} of normal` : ''}` })];
     const dipHours = r.dip?.hours || d.pattern?.hours || [];
     const byHour = scatter({
@@ -488,7 +488,7 @@ export class SpeedMap {
         h('td', { class: 'num', 'data-k': 'Down', text: t.down_bps != null ? mb(t.down_bps).replace(' Mbit/s', '') : '—' }),
         h('td', { class: 'num', 'data-k': 'Up', text: t.up_bps != null ? mb(t.up_bps).replace(' Mbit/s', '') : '—' }),
         h('td', { class: 'num', 'data-k': '% of normal', text: best && t.down_bps != null && !bad ? pct(t.down_bps / best) : '—' }),
-        h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger === 'manual' ? ' · manual' : '') }),
+        h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));
     });
     return h('div', { class: 'sp-tests' },

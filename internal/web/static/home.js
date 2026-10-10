@@ -287,8 +287,15 @@ export class Home {
       this.renderMeta();
       return;
     }
-    this.speedEl.hidden = !d.speed;
-    this.speedEl.textContent = d.speed ? d.speed.text : '';
+    // One plain line, never during a Problem: the card owns "now". "Speed:" says it isn't a problem count.
+    const sp = d.speed && d.answer.level !== 'bad' ? d.speed : null;
+    this.speedEl.hidden = !sp;
+    if (sp) {
+      this.speedEl.replaceChildren(
+        h('span', { class: 'ho-speed-i', 'aria-hidden': 'true', text: sp.level === 'warn' ? '!' : '↘' }),
+        h('span', {}, h('b', { text: 'Speed: ' }), sp.text.charAt(0).toLowerCase() + sp.text.slice(1)), ' ',
+        h('a', { class: 'ho-link', href: '#v=speed', text: 'See speed by hour', onclick: (/** @type {Event} */ e) => { e.preventDefault(); this.host.openDetails('#v=speed'); } }));
+    }
     const a = d.answer;
     // Can't reach fyisp: grey, never red, and the last answer "as of".
     const level = lost ? 'checking' : a.level;
