@@ -152,6 +152,26 @@ function seriesColor(/** @type {number} */ i) {
 }
 function reasonColor(/** @type {string} */ r) { return css(`--r-${r}`) || '#999999'; }
 
+// Glossary for Details: the short explanation of each technical term (ux-content §4).
+// The same text is in the footer's Glossary; term() marks a word with it as a hover hint.
+/** @type {Object<string,string>} */
+const GLOSSARY = {
+  mos: 'Call quality score from 1 (unusable) to 4.5 (excellent), estimated from delay, dropouts and jitter. Good ≥ 4.0, Fair ≥ 3.6, Poor ≥ 3.1.',
+  jitter: 'How unevenly packets arrive. Steady below 10 ms; noticeable from 30 ms, when call apps add delay to smooth it out.',
+  loss: 'Share of test messages that never came back. Above about 5%, people on a call start to hear gaps.',
+  rtt: 'Time for a message to reach a server and come back, in milliseconds. Under 150 ms feels instant on a call.',
+  stun: 'A tiny “what’s my address?” request that call apps send before a call. fyisp uses it to test the path call audio takes.',
+  udp: 'The fast, no-retry way call audio and video travel. If it’s blocked, calls fall back to slower routes.',
+  anycast: 'Big services (Cloudflare, Google, Quad9 DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.',
+  'isp edge': 'The first piece of your internet provider’s equipment past your router.',
+  p95: '95 out of 100 measurements were faster than this. Shows the slow moments the median hides.',
+  bursts: '5 STUN requests sent quickly, 20 ms apart, like call audio packets. Loss and jitter are measured per burst.',
+};
+/** A technical word with its glossary text as a hint (the footer's Glossary has it for everyone). */
+function term(/** @type {string} */ key, /** @type {string} */ text = key) {
+  const tip = GLOSSARY[key.toLowerCase()];
+  return tip ? h('abbr', { class: 'gl', title: tip, text }) : text;
+}
 function verdictColor(/** @type {string} */ kind) { return css(`--v-${kind}`) || css('--muted') || '#898781'; }
 
 // ---------- URL hash state ----------
@@ -2178,8 +2198,12 @@ class Overview {
       const kind = KIND_LABEL[/** @type {'https'} */ (d.kind)];
       kids.push(h('span', { class: 'muted', text: ` This line covers ${kind} over the whole range and counts ${what}; the verdict above judges every kind over the last minute.` }));
     }
-    const un = d.summary.targets - d.summary.measured;
-    if (un) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
+    // Rows still too new to judge can already show heavy loss in the table:
+    // say so, so "none are losing packets" never sits next to a 100% row.
+    const early = d.rows.filter((r) => r.state === 'unmeasured' && r.lost > 0).length;
+    if (early) kids.push(h('span', { text: ` ${fmtInt(early)} more ${early === 1 ? 'is' : 'are'} losing packets, but ${early === 1 ? 'it has' : 'they have'} too few checks yet to judge (Status “Not measured”).` }));
+    const un = d.summary.targets - d.summary.measured - early;
+    if (un > 0) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
     if (d.capped) kids.push(h('span', { class: 'muted', text: ` The Overview covers at most the last 30 days of the range.` }));
     this.breadth.replaceChildren(...kids);
   }
@@ -3061,12 +3085,15 @@ class Calls {
 
   /** An app row's expanded part: MOS, jitter, p95 and the last hour's sparkline. */
   appDetail(/** @type {CallsApp} */ app) {
+    /** @type {(string|Node)[]} */
     const facts = [];
-    if (app.mos != null) facts.push(`MOS ${app.mos.toFixed(2)} (worst minute)`);
-    if (app.jitter_ms != null) facts.push(`jitter ${fmtMs(app.jitter_ms)} ms`);
-    if (app.rtt_p95_ms != null) facts.push(`p95 ${fmtMs(app.rtt_p95_ms)} ms`);
-    facts.push(`${app.samples || 0} bursts${app.unknown ? `, ${app.unknown} failed otherwise (not counted as loss)` : ''}`);
-    const box = h('div', { class: 'cq-app-more' }, h('p', { class: 'small', text: facts.join(' · ') }));
+    const sep = () => { if (facts.length) facts.push(' · '); };
+    if (app.mos != null) { sep(); facts.push(term('MOS'), ` ${app.mos.toFixed(2)} (worst minute)`); }
+    if (app.jitter_ms != null) { sep(); facts.push(term('jitter'), ` ${fmtMs(app.jitter_ms)} ms`); }
+    if (app.rtt_p95_ms != null) { sep(); facts.push(term('p95'), ` ${fmtMs(app.rtt_p95_ms)} ms`); }
+    sep();
+    facts.push(term('bursts', `${app.samples || 0} bursts`), app.unknown ? `, ${app.unknown} failed otherwise (not counted as loss)` : '');
+    const box = h('div', { class: 'cq-app-more' }, h('p', { class: 'small' }, ...facts));
     const d = this.day;
     const g = d && d.apps.find((x) => x.app === app.app);
     if (d && g && g.minutes) {
