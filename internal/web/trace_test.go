@@ -566,7 +566,7 @@ func TestPublicInvestigate(t *testing.T) {
 		"a big body":      {"POST", base + "?target=Alpha", hdr("1.1.1.1"), strings.Repeat("x", 4<<10), 400, "bad_request"},
 		"chunked":         {"POST", base + "?target=Alpha", hdr("1.1.1.1"), "chunked", 400, "bad_request"},
 		"GET":             {"GET", base + "?target=Alpha", hdr("1.1.1.1"), "", 405, "method_not_allowed"},
-		"bad secret":      {"POST", "/s/" + strings.Repeat("0", len(testSecret)) + "/api/investigate?target=Alpha", hdr("1.1.1.1"), "", 404, ""},
+		"bad secret":      {"POST", "/s/" + strings.Repeat("0", len(testSecret)) + "/api/investigate?target=Alpha", hdr("1.1.1.1"), "", 404, "not_found"},
 	} {
 		r := httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))
 		if c.body == "chunked" { // no declared length: Transfer-Encoding: chunked
@@ -585,7 +585,7 @@ func TestPublicInvestigate(t *testing.T) {
 		if w.Code != c.status || code(w) != c.code {
 			t.Errorf("%s: %d %q, want %d %q (%s)", name, w.Code, code(w), c.status, c.code, w.Body.String())
 		}
-		if c.status != 404 || c.code != "" {
+		if c.code != "not_found" { // the share link's plain 404 sets no Cache-Control
 			if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
 				t.Errorf("%s: Cache-Control %q", name, cc)
 			}
