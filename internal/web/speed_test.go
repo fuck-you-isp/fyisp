@@ -642,7 +642,9 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 		if w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", speedVisitor(ip)); w.Code != 202 {
 			t.Fatalf("start %d: %d %s", i, w.Code, w.Body.String())
 		}
-		waitUntil(t, func() bool { return queue(loc, "/api/speed?part=queue", speedHost).Budget.UsedBytes >= int64(i+1)*180e6 })
+		waitUntil(t, func() bool {
+			return queue(loc, "/api/speed?part=queue", speedHost).Budget.UsedBytes >= int64(i+1)*180e6
+		})
 	}
 	q := queue(pub, speedPub+"/api/speed?part=queue", speedVisitor("3.3.3.3"))
 	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 300e6 || q.Budget.UsedBytes != 360e6 || q.Budget.RemainingBytes != 0 || q.Budget.ResetsAt == nil {
