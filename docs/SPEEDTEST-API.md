@@ -24,7 +24,8 @@ Every API error (not only these routes) is `{"error": "<sentence>", "code": "<wo
 | 405 | `method_not_allowed` |
 | 409 | `conflict` |
 | 421 | `unknown_host` |
-| 429 | `rate_limited` (with `retry_after`, seconds, and `Retry-After`); `queue_full` (share link: see Queue) |
+| 403 | `disabled` (share link: the owner hasn't turned on its tests) |
+| 429 | `rate_limited` (with `retry_after`, seconds, and `Retry-After`); `queue_full`, `budget_exhausted` (with `resets_at`) (share link: see Queue) |
 | 503 | `unavailable` (retry after `Retry-After`) |
 
 ## Nullables
@@ -206,9 +207,20 @@ Every test goes through one process-wide queue, and exactly one runs at a time:
 - **Sweep:** every catalog server and the user's own servers, one test each, about 45.
 - **Scheduled slots:** a slot is enqueued when it falls due. It is **dropped** if it is still waiting 10 minutes later, and a slot already waiting is never stacked.
 
-The order is FIFO, with the owner's entries (the local dashboard) ahead of the share link's and the schedule's. They never interrupt the running test.
+The order is by class, FIFO within each: the owner's entries (the local dashboard) first, then schedule slots, then the share link's. Schedule slots therefore never starve behind public sweeps. Nothing interrupts the running test.
 
-There is no cooldown and no daily budget; the queue's limits replace them. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
+There is no cooldown. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
+
+**The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
+
+**The share link has a data budget:** at most `--speedtest-public-budget` (default 50 GB) over a rolling 24 hours.
+- It counts the bytes the share link's tests actually transferred.
+- It is saved across restarts.
+- Once spent:
+  - new share-link requests get 429 `budget_exhausted` with `resets_at`, the moment enough use ages out;
+  - waiting share-link entries are dropped when their turn comes;
+  - a running share-link sweep stops after its current test.
+- The owner and the schedule are never limited by it.
 
 ### `GET api/speed?part=queue`
 
@@ -223,7 +235,13 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "mine": 17,                   // |null: the viewer's newest waiting or running entry (share link: this visitor; local: the owner)
   "running": { ...Entry },      // |null
   "waiting": [ { ...Entry } ],  // in run order
-  "last_sweep": { ...Entry }    // |null: the last finished sweep
+  "last_sweep": { ...Entry },   // |null: the last finished sweep
+  "public_enabled": true,       // the owner lets the share link queue tests
+  "public_start": true,         // the share link may start one now: enabled, budget left, room in the queue (show its button only then)
+  "budget": {                   // the share link's rolling 24-hour data budget
+    "limit_bytes": 50000000000, "used_bytes": 1200000000, "remaining_bytes": 48800000000,
+    "resets_at": null           // |null: when spent, when enough use ages out
+  }
 }
 ```
 
@@ -234,6 +252,7 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "id": 17,
   "kind": "sweep",              // "single" | "sweep" | "scheduled"
   "who": "you",                 // "you" | "someone" | "scheduled": relative to the viewer; never an address
+  "origin": "owner",            // local only: "owner" | "public" | "scheduled"
   "state": "running",           // "waiting" | "running" | "done" | "cancelled" | "dropped"
   "target": {"id": "us-east", "label": "US East"},   // |null: the nearest servers, a sweep, or a slot
   "position": 0,                // waiting: 1 is next; otherwise 0
@@ -273,6 +292,8 @@ The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: t
 It works in every mode, `off` included.
 
 **Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
+- **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
+- **Budget:** 429 `budget_exhausted` with `resets_at` (ms) and `retry_after` once the 24-hour budget is spent.
 - **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
 - **Queue limits (429 `queue_full`, its `error` says which):**
   - one waiting entry per visitor;
@@ -284,17 +305,18 @@ It works in every mode, `off` included.
 
 These use the same protections as notes (admin-gated):
 - `id`: cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
-- `public=1`: cancels every waiting share-link entry. It returns `200 {"cancelled": 3}`.
+- `public=1` (the owner's "cancel queue"): cancels every waiting share-link entry. It returns `200 {"cancelled": 3}`.
 
 ## `POST api/speed/config` (local only)
 
 ```
 POST api/speed/config
-{"mode": "regions"}
+{"mode": "regions"}            // and/or
+{"public": true}               // let the share link queue tests (saved; --speedtest-public sets it at start)
 ```
 
-- `200 {"mode": "regions", "next_at": 1760104920000}`, with `next_at` null for `off`.
-- `400` for a mode not in `modes`, or for a body with any other field.
+- `200 {"mode": "regions", "next_at": 1760104920000, "public": true}`, with the fields it changed; `next_at` is null for `off`.
+- `400` for a mode not in `modes`, for neither field, or for any other field.
 
 The choice is saved and survives restarts. A `--speedtest…` flag on the command line overrides it at start. Switching to a mode schedules the first test about 2 minutes later.
 

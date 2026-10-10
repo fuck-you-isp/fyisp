@@ -20,14 +20,17 @@ type fakeExec struct {
 	maxRun  atomic.Int32
 	release chan struct{}
 	started chan struct{}
+	bytes   atomic.Int64 // per finished test
 }
 
-func newQueueHarness(t *testing.T) (*Queue, *fakeExec) {
+func newQueueHarness(t *testing.T, opts ...func(*QueueOptions)) (*Queue, *fakeExec) {
 	t.Helper()
 	f := &fakeExec{release: make(chan struct{}), started: make(chan struct{}, 100)}
+	f.bytes.Store(1e6)
 	f.now.Store(time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC).UnixNano())
 	servers := []Server{{ID: "A"}, {ID: "B"}, {ID: "C"}}
-	q := NewQueue(QueueOptions{
+	on := true // the share link's tests are on unless a test says otherwise
+	o := QueueOptions{Public: &on,
 		Now: func() time.Time { return time.Unix(0, f.now.Load()) },
 		Resolve: func(kind Kind, id string) ([]Job, error) {
 			switch {
@@ -46,7 +49,7 @@ func newQueueHarness(t *testing.T) (*Queue, *fakeExec) {
 			}
 			return nil, ErrUnknownID
 		},
-		Exec: func(ctx context.Context, j Job, trigger string) (int64, bool) {
+		Exec: func(ctx context.Context, j Job, trigger string) (int64, bool, int64) {
 			n := f.running.Add(1)
 			defer f.running.Add(-1)
 			for {
@@ -66,13 +69,16 @@ func newQueueHarness(t *testing.T) (*Queue, *fakeExec) {
 			f.started <- struct{}{}
 			select {
 			case <-ctx.Done():
-				return 0, false
+				return 0, false, 1e6
 			case <-f.release:
-				return id, true
+				return id, true, f.bytes.Load()
 			}
 		},
-	})
-	return q, f
+	}
+	for _, fn := range opts {
+		fn(&o)
+	}
+	return NewQueue(o), f
 }
 
 func (f *fakeExec) advance(d time.Duration) { f.now.Add(int64(d)) }
@@ -111,7 +117,7 @@ func TestQueueOrder(t *testing.T) {
 	enq(Request{Kind: KindSingle, Target: "B", Who: WhoOwner})
 	enq(Request{Kind: KindSingle, Who: WhoOwner})
 	got := ids(q.State().Waiting)
-	want := []string{"owner:single:B", "owner:single:", "public:single:A", "schedule:scheduled:", "public:sweep:"}
+	want := []string{"owner:single:B", "owner:single:", "schedule:scheduled:", "public:single:A", "public:sweep:"}
 	if !eq(got, want) {
 		t.Fatalf("order %v, want %v", got, want)
 	}
@@ -317,4 +323,182 @@ func waitFor(t *testing.T, cond func() bool) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
+}
+
+// memSettings is an in-memory Settings.
+type memSettings struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+func (s *memSettings) Setting(_ context.Context, k string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.m[k]
+	return v, ok, nil
+}
+
+func (s *memSettings) SetSetting(_ context.Context, k, v string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = map[string]string{}
+	}
+	s.m[k] = v
+	return nil
+}
+
+// TestQueuePublicOptIn: off by default; the Details toggle is saved; the
+// flag wins at start; turning it off drops the share link's entries.
+func TestQueuePublicOptIn(t *testing.T) {
+	set := &memSettings{}
+	off := func(o *QueueOptions) { o.Public, o.Settings = nil, set }
+	q, _ := newQueueHarness(t, off)
+	q.load(context.Background())
+	pub := Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v"}
+	if _, _, err := q.Enqueue(pub); !errors.Is(err, ErrPublicDisabled) {
+		t.Errorf("off by default: %v", err)
+	}
+	if _, err := q.Admit(pub); !errors.Is(err, ErrPublicDisabled) {
+		t.Errorf("Admit while off: %v", err)
+	}
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner}); err != nil {
+		t.Errorf("the owner: %v", err)
+	}
+	if err := q.SetPublic(context.Background(), true); err != nil || set.m[SettingPublic] != "1" {
+		t.Fatalf("toggle: %v %v", err, set.m)
+	}
+	if _, _, err := q.Enqueue(pub); err != nil {
+		t.Errorf("on: %v", err)
+	}
+	// Saved: a restart keeps it on; a --speedtest-public=false flag wins.
+	q2, _ := newQueueHarness(t, off)
+	q2.load(context.Background())
+	if !q2.PublicEnabled() {
+		t.Error("not restored")
+	}
+	no := false
+	q3, _ := newQueueHarness(t, func(o *QueueOptions) { o.Public, o.Settings = &no, set })
+	q3.load(context.Background())
+	if q3.PublicEnabled() {
+		t.Error("the flag didn't win")
+	}
+	// Off again: the share link's waiting entries go.
+	if err := q.SetPublic(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if st := q.State(); st.PublicWaiting != 0 || len(st.Waiting) != 1 || st.Public {
+		t.Errorf("after off: %+v", st)
+	}
+}
+
+// TestQueueBudget: the share link's tests spend a rolling 24-hour budget
+// of bytes actually transferred, kept across restarts; past it, requests
+// are refused until enough use ages out, waiting entries are dropped, and
+// a sweep stops. The owner is never limited by it.
+func TestQueueBudget(t *testing.T) {
+	set := &memSettings{}
+	withBudget := func(o *QueueOptions) { o.Settings, o.PublicBudget = set, 5e6 }
+	q, f := newQueueHarness(t, withBudget)
+	f.bytes.Store(3e6)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { q.Run(ctx); close(done) }()
+	run := func(r Request) Entry {
+		t.Helper()
+		e, _, err := q.Enqueue(r)
+		if err != nil {
+			t.Fatalf("%+v: %v", r, err)
+		}
+		<-f.started
+		f.release <- struct{}{}
+		waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateDone })
+		return e
+	}
+	start := time.Unix(0, f.now.Load())
+	run(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v1"})
+	f.advance(time.Hour)
+	if _, used, resets := q.Budget(); used != 3e6 || !resets.IsZero() {
+		t.Errorf("after one: %d %v", used, resets)
+	}
+	// A sweep stops once the budget is spent (3 + 3 > 5): one test, not three.
+	sw, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	f.release <- struct{}{}
+	waitFor(t, func() bool { x, _ := q.Get(sw.ID); return x.State == StateDone })
+	if x, _ := q.Get(sw.ID); len(x.Tests) != 1 {
+		t.Errorf("sweep ran %d tests past the budget", len(x.Tests))
+	}
+	limit, used, resets := q.Budget()
+	if limit != 5e6 || used != 6e6 || !resets.Equal(start.Add(24*time.Hour)) {
+		t.Errorf("spent: %d %d %v (start %v)", limit, used, resets, start)
+	}
+	var be *BudgetError
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v3"}); !errors.As(err, &be) || !be.ResetsAt.Equal(resets) {
+		t.Errorf("refused: %v", err)
+	}
+	if _, err := q.Admit(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v3"}); !errors.As(err, &be) {
+		t.Errorf("Admit: %v", err)
+	}
+	run(Request{Kind: KindSingle, Target: "C", Who: WhoOwner}) // the owner is not limited
+	cancel()
+	<-done
+	// Kept across a restart.
+	q2, f2 := newQueueHarness(t, withBudget)
+	f2.now.Store(f.now.Load())
+	q2.load(context.Background())
+	if _, used, resets := q2.Budget(); used != 6e6 || resets.IsZero() {
+		t.Errorf("restored: %d %v", used, resets)
+	}
+	// A waiting share-link entry is dropped when its turn comes past the
+	// budget (it got in before).
+	q2.mu.Lock()
+	q2.nextID++
+	q2.waiting = append(q2.waiting, &qentry{Entry: Entry{ID: q2.nextID, Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v9", State: StateWaiting}, jobs: []Job{{}}})
+	q2.mu.Unlock()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	done2 := make(chan struct{})
+	go func() { q2.Run(ctx2); close(done2) }()
+	waitFor(t, func() bool { x, ok := q2.Get(1); return ok && x.State == StateDropped })
+	cancel2()
+	<-done2
+	// 24 hours after the first test (the sweep's ran an hour later), it
+	// ages out: room again.
+	f2.advance(23*time.Hour + 30*time.Minute)
+	if _, used, resets := q2.Budget(); used != 3e6 || !resets.IsZero() {
+		t.Errorf("aged: %d %v", used, resets)
+	}
+}
+
+// TestQueueScheduledAheadOfPublic: a schedule slot queued behind public
+// sweeps runs next (after the running entry), not after them.
+func TestQueueScheduledAheadOfPublic(t *testing.T) {
+	q, f := newQueueHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	for i := range MaxPublicSweeps {
+		if _, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: fmt.Sprint("v", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-f.started // the first sweep's first test runs
+	q.EnqueueScheduled(Job{Region: "uk"})
+	if st := q.State(); st.Waiting[0].Kind != KindScheduled || st.Waiting[0].Position != 1 {
+		t.Fatalf("slot not next: %v", ids(st.Waiting))
+	}
+	// The running sweep isn't pre-empted: its tests go on until it's done.
+	for range 3 {
+		f.release <- struct{}{}
+		<-f.started
+	}
+	f.release <- struct{}{}
+	waitFor(t, func() bool { return len(f.log()) >= 5 })
+	if got := f.log(); !eq(got[:5], []string{"sweep:A", "sweep:B", "sweep:C", "schedule:uk", "sweep:A"}) {
+		t.Errorf("ran %v", got)
+	}
+	cancel()
 }

@@ -584,3 +584,54 @@ func TestCatalogErrors(t *testing.T) {
 		}
 	}
 }
+
+// TestScheduleThroughQueue: a late slot is queued, not skipped (it is only
+// dropped after waiting ScheduledStale in the queue); and a Test now asked
+// for while a test runs is never lost: it runs next.
+func TestScheduleThroughQueue(t *testing.T) {
+	h := newHarness(t, Options{Mode: ModeRegions})
+	release := make(chan struct{})
+	h.mu.Lock()
+	h.run = func(c Config, n int) (Result, error) {
+		<-release
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second}, nil
+	}
+	h.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { h.s.Run(ctx); close(done) }()
+	for h.s.State().Next.IsZero() { // Run has set the mode up
+		time.Sleep(2 * time.Millisecond)
+	}
+	next := h.s.State().Next
+	// Late by more than half the spacing: the old scheduler skipped it.
+	h.mu.Lock()
+	h.now = next.Add(h.s.State().Spacing/2 + time.Minute)
+	h.mu.Unlock()
+	h.s.poke()
+	for h.s.State().Running == nil {
+		time.Sleep(2 * time.Millisecond)
+	}
+	// While it runs, a Test now: queued behind it, never dropped.
+	e, _, err := h.s.Queue().Enqueue(Request{Kind: KindSingle, Target: "away", Who: WhoOwner})
+	if err != nil || e.State != StateWaiting {
+		t.Fatalf("test now: %+v %v", e, err)
+	}
+	close(release)
+	for {
+		h.st.mu.Lock()
+		n := len(h.st.tests)
+		h.st.mu.Unlock()
+		if n >= 2 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	h.st.mu.Lock()
+	if h.st.tests[0].Trigger != "schedule" || h.st.tests[1].Trigger != "manual" || h.st.tests[1].Region != "away" {
+		t.Errorf("tests %+v", h.st.tests)
+	}
+	h.st.mu.Unlock()
+	cancel()
+	<-done
+}

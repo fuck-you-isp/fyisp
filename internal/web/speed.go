@@ -599,28 +599,39 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		Mode *string `json:"mode"`
+		Mode   *string `json:"mode"`
+		Public *bool   `json:"public"` // the share link may queue tests
 	}
 	d := json.NewDecoder(io.LimitReader(r.Body, 1<<10))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&body); err != nil || body.Mode == nil {
-		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearest" or "custom"}`)
+	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Public == nil) {
+		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearest" or "custom"} and/or {"public": true or false}`)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
 	defer cancel()
-	next, err := h.d.Speed.SetMode(ctx, speedtest.Mode(*body.Mode))
-	if errors.Is(err, speedtest.ErrMode) {
-		writeErr(w, r, http.StatusBadRequest, fmt.Sprintf("mode %q is not offered here", *body.Mode))
-		return
+	out := map[string]any{}
+	if body.Mode != nil {
+		next, err := h.d.Speed.SetMode(ctx, speedtest.Mode(*body.Mode))
+		if errors.Is(err, speedtest.ErrMode) {
+			writeErr(w, r, http.StatusBadRequest, fmt.Sprintf("mode %q is not offered here", *body.Mode))
+			return
+		}
+		if err != nil {
+			h.storeErr(w, r, "save the speed test setting", err)
+			return
+		}
+		out["mode"], out["next_at"] = *body.Mode, nil
+		if !next.IsZero() {
+			out["next_at"] = next.UnixMilli()
+		}
 	}
-	if err != nil {
-		h.storeErr(w, r, "save the speed test setting", err)
-		return
-	}
-	out := map[string]any{"mode": *body.Mode, "next_at": nil}
-	if !next.IsZero() {
-		out["next_at"] = next.UnixMilli()
+	if body.Public != nil {
+		if err := h.d.Speed.Queue().SetPublic(ctx, *body.Public); err != nil {
+			h.storeErr(w, r, "save the speed test setting", err)
+			return
+		}
+		out["public"] = *body.Public
 	}
 	writeJSON(w, r, http.StatusOK, out)
 }

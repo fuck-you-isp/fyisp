@@ -2,6 +2,7 @@ package speedtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,8 +13,8 @@ import (
 
 // The speed-test queue: every test (Test now, a sweep of every server,
 // scheduled slots) waits in one process-wide FIFO and exactly one runs at a
-// time. The owner's requests go ahead of the share link's (never pre-empting
-// the running test); the share link's are capped. See docs/SPEEDTEST-API.md.
+// time. The owner's requests go first, then schedule slots, then the share
+// link's (never pre-empting the running test); the share link's are capped. See docs/SPEEDTEST-API.md.
 
 // Kind is what an entry tests.
 type Kind string
@@ -56,6 +57,14 @@ const (
 	KeepFinished = time.Hour
 	// EstJob is a typical test, for the queue's estimates.
 	EstJob = EstTestTime + 5*time.Second
+	// DefaultPublicBudget is the share link's data budget per rolling 24
+	// hours: bytes its tests actually transferred.
+	DefaultPublicBudget int64 = 50e9
+	budgetSpan                = 24 * time.Hour
+	// Settings keys (Store.Setting): the owner's opt-in and the budget's
+	// ledger, so both survive restarts.
+	SettingPublic       = "speedtest_public"
+	SettingPublicLedger = "speedtest_public_bytes"
 )
 
 // Job is one test: a region's chain, one server, or (no chain) the nearest
@@ -98,10 +107,23 @@ type Entry struct {
 
 // Refusals.
 var (
-	ErrQueueFull = errors.New("the queue is full")
-	ErrUnknownID = errors.New("no such server or region")
-	ErrNoEntry   = errors.New("no such queue entry")
+	ErrQueueFull      = errors.New("the queue is full")
+	ErrUnknownID      = errors.New("no such server or region")
+	ErrNoEntry        = errors.New("no such queue entry")
+	ErrPublicDisabled = errors.New("tests from the share link are turned off")
 )
+
+// BudgetError: the share link's 24-hour data budget is spent until
+// ResetsAt.
+type BudgetError struct{ ResetsAt time.Time }
+
+func (e *BudgetError) Error() string { return "the share link's daily test budget is used up" }
+
+// Settings persists the owner's choices (Store).
+type Settings interface {
+	Setting(ctx context.Context, key string) (string, bool, error)
+	SetSetting(ctx context.Context, key, value string) error
+}
 
 // QueueFullError says why the share link may not add an entry.
 type QueueFullError struct{ Reason string }
@@ -116,9 +138,17 @@ type QueueOptions struct {
 	// in by EnqueueScheduled). An unknown ID is ErrUnknownID.
 	Resolve func(kind Kind, id string) ([]Job, error)
 	// Exec runs one test with trigger ("manual", "sweep" or "schedule")
-	// and returns the stored test's ID, if one was saved. It must return
-	// promptly once ctx ends.
-	Exec func(ctx context.Context, j Job, trigger string) (id int64, saved bool)
+	// and returns the stored test's ID, if one was saved, and the bytes it
+	// transferred. It must return promptly once ctx ends.
+	Exec func(ctx context.Context, j Job, trigger string) (id int64, saved bool, bytes int64)
+	// Settings keeps the share link's opt-in and budget ledger (optional).
+	Settings Settings
+	// Public, when set (--speedtest-public), is the opt-in at start;
+	// otherwise the saved choice, else off.
+	Public *bool
+	// PublicBudget is the share link's bytes per rolling 24 hours
+	// (default DefaultPublicBudget).
+	PublicBudget int64
 	// Live reports the running test's direction and server (optional).
 	Live func() (direction, server string, expectedEnd time.Time)
 	Log  *slog.Logger
@@ -142,6 +172,14 @@ type Queue struct {
 	running   *qentry
 	finished  map[uint64]*qentry
 	lastSweep *qentry
+	public    bool    // the owner lets the share link queue tests
+	ledger    []usage // the share link's tests' bytes, last 24 h, oldest first
+}
+
+// usage is the bytes one share-link test transferred.
+type usage struct {
+	At    time.Time
+	Bytes int64
 }
 
 // NewQueue returns a Queue; Run drives it.
@@ -152,7 +190,121 @@ func NewQueue(o QueueOptions) *Queue {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Queue{o: o, wake: make(chan struct{}, 1), finished: map[uint64]*qentry{}}
+	if o.PublicBudget <= 0 {
+		o.PublicBudget = DefaultPublicBudget
+	}
+	q := &Queue{o: o, wake: make(chan struct{}, 1), finished: map[uint64]*qentry{}}
+	if o.Public != nil {
+		q.public = *o.Public
+	}
+	return q
+}
+
+// load restores the opt-in (unless the flag set it) and the ledger.
+func (q *Queue) load(ctx context.Context) {
+	if q.o.Settings == nil {
+		return
+	}
+	pub, okPub, _ := q.o.Settings.Setting(ctx, SettingPublic)
+	led, okLed, _ := q.o.Settings.Setting(ctx, SettingPublicLedger)
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if okPub && q.o.Public == nil {
+		q.public = pub == "1"
+	}
+	if okLed {
+		var l []usage
+		if json.Unmarshal([]byte(led), &l) == nil {
+			q.ledger = l
+		}
+	}
+	q.pruneLedgerLocked(q.o.Now())
+}
+
+// PublicEnabled reports whether the share link may queue tests.
+func (q *Queue) PublicEnabled() bool { q.mu.Lock(); defer q.mu.Unlock(); return q.public }
+
+// SetPublic turns the share link's tests on or off (the Details toggle) and
+// saves the choice. Turning it off drops the share link's waiting entries.
+func (q *Queue) SetPublic(ctx context.Context, on bool) error {
+	if q.o.Settings != nil {
+		v := "0"
+		if on {
+			v = "1"
+		}
+		if err := q.o.Settings.SetSetting(ctx, SettingPublic, v); err != nil {
+			return err
+		}
+	}
+	q.mu.Lock()
+	q.public = on
+	q.mu.Unlock()
+	if !on {
+		q.ClearPublic()
+	}
+	return nil
+}
+
+func (q *Queue) pruneLedgerLocked(now time.Time) {
+	q.ledger = slices.DeleteFunc(q.ledger, func(u usage) bool { return now.Sub(u.At) >= budgetSpan })
+}
+
+// Budget reports the share link's budget: its limit, the bytes used in the
+// last 24 hours, and when it is spent, when enough of that use ages out.
+func (q *Queue) Budget() (limit, used int64, resetsAt time.Time) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.budgetLocked(q.o.Now())
+}
+
+func (q *Queue) budgetLocked(now time.Time) (limit, used int64, resetsAt time.Time) {
+	q.pruneLedgerLocked(now)
+	limit = q.o.PublicBudget
+	for _, u := range q.ledger {
+		used += u.Bytes
+	}
+	if used >= limit {
+		left := used
+		for _, u := range q.ledger { // oldest first: the first age-out that brings it under
+			left -= u.Bytes
+			if left < limit {
+				resetsAt = u.At.Add(budgetSpan)
+				break
+			}
+		}
+	}
+	return limit, used, resetsAt
+}
+
+// spend adds a share-link test's bytes to the ledger and saves it.
+func (q *Queue) spend(bytes int64) {
+	if bytes <= 0 {
+		return
+	}
+	q.mu.Lock()
+	now := q.o.Now()
+	q.pruneLedgerLocked(now)
+	q.ledger = append(q.ledger, usage{At: now, Bytes: bytes})
+	b, _ := json.Marshal(q.ledger)
+	q.mu.Unlock()
+	if q.o.Settings != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := q.o.Settings.SetSetting(ctx, SettingPublicLedger, string(b)); err != nil {
+			q.o.Log.Warn("speed test: saving the share link's budget failed", "err", err)
+		}
+	}
+}
+
+// publicLocked refuses a share-link request: off, or the budget spent.
+func (q *Queue) publicLocked(now time.Time) error {
+	if !q.public {
+		return ErrPublicDisabled
+	}
+	if _, _, resets := q.budgetLocked(now); !resets.IsZero() {
+		return &BudgetError{ResetsAt: resets}
+	}
+	return nil
 }
 
 func (q *Queue) poke() {
@@ -202,6 +354,9 @@ func (q *Queue) Enqueue(r Request) (Entry, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	now := q.o.Now()
+	if r.Who == WhoPublic && !q.public {
+		return Entry{}, false, ErrPublicDisabled
+	}
 	if e := q.running; e != nil && e.same(r) {
 		return q.snapshotLocked(e, now), true, nil
 	}
@@ -228,6 +383,9 @@ func (q *Queue) Enqueue(r Request) (Entry, bool, error) {
 func (q *Queue) capsLocked(r Request) error {
 	if r.Who != WhoPublic {
 		return nil
+	}
+	if err := q.publicLocked(q.o.Now()); err != nil {
+		return err
 	}
 	pub, sweeps := 0, 0
 	for _, e := range q.waiting {
@@ -261,6 +419,9 @@ func (q *Queue) Admit(r Request) (dup bool, err error) {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if r.Who == WhoPublic && !q.public {
+		return false, ErrPublicDisabled
+	}
 	if (q.running != nil && q.running.same(r)) || slices.ContainsFunc(q.waiting, func(e *qentry) bool { return e.same(r) }) {
 		return true, nil
 	}
@@ -284,15 +445,22 @@ func (q *Queue) EnqueueScheduled(j Job) bool {
 	return true
 }
 
-// insertLocked places e: the owner's after the owner's waiting entries,
-// everyone else's at the end.
+// insertLocked places e by class: the owner's, then schedule slots, then
+// the share link's; FIFO within a class. A schedule slot thus never
+// starves behind public sweeps, and the owner always goes first. Nothing
+// pre-empts the running entry.
 func (q *Queue) insertLocked(e *qentry) {
-	if e.Who != WhoOwner {
-		q.waiting = append(q.waiting, e)
-		return
+	rank := func(w Who) int {
+		switch w {
+		case WhoOwner:
+			return 0
+		case WhoSchedule:
+			return 1
+		}
+		return 2
 	}
 	i := 0
-	for i < len(q.waiting) && q.waiting[i].Who == WhoOwner {
+	for i < len(q.waiting) && rank(q.waiting[i].Who) <= rank(e.Who) {
 		i++
 	}
 	q.waiting = slices.Insert(q.waiting, i, e)
@@ -365,14 +533,20 @@ func (q *Queue) dropStaleLocked(now time.Time) {
 
 // Run executes entries one at a time until ctx ends.
 func (q *Queue) Run(ctx context.Context) {
+	q.load(ctx)
 	for {
 		q.mu.Lock()
 		now := q.o.Now()
 		q.dropStaleLocked(now)
 		var e *qentry
-		if len(q.waiting) > 0 {
+		for len(q.waiting) > 0 && e == nil {
 			e = q.waiting[0]
 			q.waiting = q.waiting[1:]
+			if e.Who == WhoPublic && q.publicLocked(now) != nil {
+				q.finishLocked(e, StateDropped, now) // turned off, or the budget ran out while it waited
+				e = nil
+				continue
+			}
 			e.State, e.Started = StateRunning, now
 			q.running = e
 		}
@@ -402,11 +576,20 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		q.mu.Lock()
 		e.Step = i + 1
 		q.mu.Unlock()
-		id, saved := q.o.Exec(ctx, j, trigger(e.Kind))
+		id, saved, bytes := q.o.Exec(ctx, j, trigger(e.Kind))
 		if saved {
 			q.mu.Lock()
 			e.Tests = append(e.Tests, id)
 			q.mu.Unlock()
+		}
+		if e.Who == WhoPublic {
+			q.spend(bytes)
+			q.mu.Lock()
+			stop := q.publicLocked(q.o.Now()) != nil
+			q.mu.Unlock()
+			if stop {
+				break // a sweep stops when the budget runs out (or the owner turned it off)
+			}
 		}
 	}
 	q.mu.Lock()
@@ -435,6 +618,11 @@ type QueueState struct {
 	// entries; Full and SweepsFull say whether it may add more.
 	PublicWaiting, PublicSweeps int
 	Full, SweepsFull            bool
+	// Public: the owner lets the share link queue tests; the budget's
+	// limit, use in the last 24 hours, and (when spent) when it resets.
+	Public                  bool
+	BudgetLimit, BudgetUsed int64
+	BudgetResets            time.Time
 }
 
 // State reports the running entry, the waiting ones in order with their
@@ -459,6 +647,8 @@ func (q *Queue) State() QueueState {
 	}
 	st.Full = st.PublicWaiting >= MaxPublicWaiting
 	st.SweepsFull = st.PublicSweeps >= MaxPublicSweeps
+	st.Public = q.public
+	st.BudgetLimit, st.BudgetUsed, st.BudgetResets = q.budgetLocked(now)
 	if q.lastSweep != nil {
 		e := q.snapshotLocked(q.lastSweep, now)
 		st.LastSweep = &e
