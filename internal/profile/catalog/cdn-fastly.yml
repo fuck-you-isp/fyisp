@@ -24,7 +24,7 @@ targets:
     host: fastly-insights.com
     kinds: [tcp]
     anycast: true
-    tags: [measurement]
+    tags: [measurement, home:web]
     notes: >-
       Fastly Insights measurement host; 204 No Content from the edge.
     verified:

@@ -61,7 +61,7 @@ func TestStructure(t *testing.T) {
 		"Individual services",
 		"The longest incident (ISP problem) started Sat 19 Sep 2026 19:00 UTC and lasted 45m",
 		"Network path",
-		"Common Services", // Discord's group: named by an incident
+		"Call &amp; chat apps", // Discord's group: named by an incident
 		"real loss: continues to the destination",
 		"not real: router limits its replies",
 		"Route changes",
@@ -78,7 +78,7 @@ func TestStructure(t *testing.T) {
 	}
 	// The default profile: TCP connects to the services, pings on the path.
 	for _, want := range []string{
-		"fyisp measured 91 targets in 9 groups from this connection: TCP connects (time to open a connection) every 15",
+		"fyisp measured 22 targets in 5 groups from this connection: TCP connects (time to open a connection) every 15",
 		"and UDP STUN bursts (5 requests 20 ms apart, the path call audio and video use) every 5",
 		"are pinged every 1",
 		"3 public resolvers (big anycast DNS resolvers) are pinged every 5",

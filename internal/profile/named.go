@@ -46,7 +46,8 @@ import (
 // Every catalog provider is also a profile of its own, named by its ID,
 // unless profiles.yml defines that name: grouped by provider, or by
 // provider and geo when it spans several geos and has more than
-// providerSplitAt targets. "default" is the embedded default.yml.
+// providerSplitAt targets. "default" is the embedded default.yml, itself a
+// selection of catalog targets.
 //
 // Combining profiles (Resolve) is a union: targets keep the group of the
 // first profile that has them, groups with the same ID merge, and empty
@@ -154,7 +155,7 @@ type Registry struct {
 }
 
 // DefaultDescription describes the built-in default profile.
-const DefaultDescription = "The original 87 targets (common services, DNS, dev tunnels, dev services, AWS, Hetzner, GCP) plus 4 STUN targets for the call path"
+const DefaultDescription = "What a home and a remote worker rely on: the call path (STUN), call and chat apps, Microsoft 365 and Google Workspace, and websites (CDNs)"
 
 var (
 	profileNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -299,11 +300,10 @@ func (r *Registry) Resolve(names []string, o ResolveOptions) (*model.Profile, er
 			return nil, fmt.Errorf("unknown geo %q, want one of %s", g, strings.Join(Geos, ", "))
 		}
 	}
-	b, err := r.base(names, nil)
+	p, err := r.base(names, nil)
 	if err != nil {
 		return nil, err
 	}
-	p := b.Profile
 	p.Name = strings.Join(names, ",")
 	if len(o.Geos) > 0 {
 		p.Name += "@" + strings.Join(o.Geos, ",")
@@ -360,35 +360,23 @@ func dropEmptyGroups(p *model.Profile) {
 	}
 }
 
-// sel is a profile being built, with the names of the targets that come
-// from default.yml (legacy): a catalog target of the same name replaces
-// them when merged.
-type sel struct {
-	*model.Profile
-	legacy map[string]bool
-}
-
-func newSel(name string) *sel {
-	return &sel{Profile: &model.Profile{Name: name, Version: "1"}, legacy: map[string]bool{}}
+func newProfile(name string) *model.Profile {
+	return &model.Profile{Name: name, Version: "1"}
 }
 
 // base is the union of the named profiles without the path group.
-func (r *Registry) base(names []string, stack []string) (*sel, error) {
-	out := newSel(strings.Join(names, ","))
+func (r *Registry) base(names []string, stack []string) (*model.Profile, error) {
+	out := newProfile(strings.Join(names, ","))
 	for _, n := range names {
 		n = strings.TrimSpace(n)
 		if slices.Contains(stack, n) {
 			return nil, fmt.Errorf("profile %q extends itself (%s)", n, strings.Join(append(stack, n), " -> "))
 		}
-		var part *sel
+		var part *model.Profile
 		if n == "default" {
-			p, err := defaultBase()
-			if err != nil {
+			var err error
+			if part, err = defaultBase(r.Catalog); err != nil {
 				return nil, err
-			}
-			part = &sel{Profile: p, legacy: map[string]bool{}}
-			for _, t := range p.Targets {
-				part.legacy[t.Name] = true
 			}
 		} else {
 			def := r.byName[n]
@@ -406,8 +394,8 @@ func (r *Registry) base(names []string, stack []string) (*sel, error) {
 }
 
 // build resolves one definition: its extends, then its own selection.
-func (r *Registry) build(def *Definition, stack []string) (*sel, error) {
-	out := newSel(def.Name)
+func (r *Registry) build(def *Definition, stack []string) (*model.Profile, error) {
+	out := newProfile(def.Name)
 	if len(def.Extends) > 0 {
 		ext, err := r.base(def.Extends, stack)
 		if err != nil {
@@ -422,7 +410,7 @@ func (r *Registry) build(def *Definition, stack []string) (*sel, error) {
 	for i, p := range r.Catalog.Providers {
 		provRank[p.ID] = i
 	}
-	own := newSel(def.Name)
+	own := newProfile(def.Name)
 	keys := map[string]key{}
 	for _, ct := range r.Select(def) {
 		prov := r.Catalog.Provider(ct.Provider)
@@ -593,36 +581,27 @@ func (r *Registry) groupOf(def *Definition, p *Provider, t CatalogTarget) (id, t
 }
 
 // merge adds src's groups and targets to dst. A target already in dst (by
-// name) keeps its place and group, except that a catalog target replaces
-// a default.yml target of the same name (the catalog definition wins; an
-// always-on trace carries over). Groups with the same ID merge (dst's
-// title wins), new groups are ordered after dst's, and groups left empty
-// are dropped.
-func merge(dst, src *sel) {
+// name) keeps its place and group: every shipped profile takes its targets
+// from the catalog, so both are the same target, except that an always-on
+// trace (default.yml's) carries over. Groups with the same ID merge (dst's
+// title wins), and new groups are ordered after dst's.
+func merge(dst, src *model.Profile) {
 	have := map[string]int{}
 	for i, t := range dst.Targets {
 		have[t.Name] = i
 	}
-	take := map[string]bool{}
-	replaced := map[string]model.Target{}
+	var take []model.Target
+	used := map[string]bool{}
 	for _, t := range src.Targets {
-		i, ok := have[t.Name]
-		switch {
-		case !ok:
-			take[t.Name] = true
-		case dst.legacy[t.Name] && !src.legacy[t.Name]:
-			take[t.Name] = true
-			replaced[t.Name] = dst.Targets[i]
+		if i, ok := have[t.Name]; ok {
+			if i < len(dst.Targets) {
+				dst.Targets[i].Trace = dst.Targets[i].Trace || t.Trace
+			}
+			continue
 		}
-	}
-	if len(replaced) > 0 {
-		dst.Targets = slices.DeleteFunc(dst.Targets, func(t model.Target) bool {
-			_, ok := replaced[t.Name]
-			return ok
-		})
-		for n := range replaced {
-			delete(dst.legacy, n)
-		}
+		have[t.Name] = len(dst.Targets) + len(take) // first occurrence only
+		take = append(take, t)
+		used[t.Group] = true
 	}
 	maxOrder := 0
 	for _, g := range dst.Groups {
@@ -630,12 +609,6 @@ func merge(dst, src *sel) {
 	}
 	groups := slices.Clone(src.Groups)
 	slices.SortStableFunc(groups, func(a, b model.Group) int { return a.Order - b.Order })
-	used := map[string]bool{}
-	for _, t := range src.Targets {
-		if take[t.Name] {
-			used[t.Group] = true
-		}
-	}
 	for _, g := range groups {
 		if !used[g.ID] || indexGroup(dst.Groups, g.ID) >= 0 {
 			continue
@@ -644,20 +617,5 @@ func merge(dst, src *sel) {
 		g.Order = maxOrder
 		dst.Groups = append(dst.Groups, g)
 	}
-	for _, t := range src.Targets {
-		if !take[t.Name] {
-			continue
-		}
-		take[t.Name] = false // first occurrence only
-		if old, ok := replaced[t.Name]; ok {
-			t.Trace = t.Trace || old.Trace
-		}
-		if src.legacy[t.Name] {
-			dst.legacy[t.Name] = true
-		}
-		dst.Targets = append(dst.Targets, t)
-	}
-	if len(replaced) > 0 {
-		dropEmptyGroups(dst.Profile)
-	}
+	dst.Targets = append(dst.Targets, take...)
 }
