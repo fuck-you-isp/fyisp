@@ -691,8 +691,8 @@ export class Home {
   }
 }
 
-/** A tile's Details link (the server picks it: #v=calls, or the Overview filtered with ot=). */
-function tileHash(/** @type {HomeTile} */ t) { return /^#[\w=&%.-]*$/.test(t.details || '') ? t.details : t.id === 'calls' ? '#v=calls' : `#v=o&ot=${encodeURIComponent(t.id)}`; }
+/** A tile's Details link, as the server picks it (#v=calls, or the Overview filtered with ot=). */
+function tileHash(/** @type {HomeTile} */ t) { return t.details; }
 
 /** The worst run overlapping [a, b): bad over warn, then the longest. */
 function worstRun(/** @type {HomeRun[]} */ runs, /** @type {number} */ a, /** @type {number} */ b) {
