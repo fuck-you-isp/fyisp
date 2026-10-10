@@ -2698,10 +2698,19 @@ function callRuns(d, g, from, to, want) {
     const last = runs[runs.length - 1];
     if (last && m.at - last.b <= 2 * d.step) {
       last.b = m.at + d.step;
-      if ((m.mos ?? 9) < (last.worst.mos ?? 9)) last.worst = m;
+      if (worseMinute(m, last.worst)) last.worst = m;
     } else runs.push({ a: m.at, b: m.at + d.step, worst: m });
   }
   return runs;
+}
+/** Call bands worst first, as callq.Rank. */
+const CALL_BAND_RANK = /** @type {Record<string, number>} */ ({ unusable: 0, poor: 1, fair: 2, good: 3 });
+/** The band of a MOS alone, before the jitter caps (callq.BandOf). */
+function mosBand(/** @type {number} */ mos) { return mos >= 4 ? 'good' : mos >= 3.6 ? 'fair' : mos >= 3.1 ? 'poor' : 'unusable'; }
+/** Whether minute a is worse than b, as callq.Summarize: the worse band (jitter caps included), then the lower MOS. */
+function worseMinute(/** @type {CallsMinute} */ a, /** @type {CallsMinute} */ b) {
+  const ra = CALL_BAND_RANK[a.state] ?? 4, rb = CALL_BAND_RANK[b.state] ?? 4;
+  return ra !== rb ? ra < rb : (a.mos ?? 9) < (b.mos ?? 9);
 }
 function runText(/** @type {{a:number,b:number}} */ r) { return r.b - r.a <= 60e3 ? hhmm(r.a) : `${hhmm(r.a)}–${hhmm(r.b)}`; }
 /** What made a minute bad, in words: "8% packet loss", "jitter up to 45 ms" or "a slow round trip (310 ms)". */
@@ -2712,8 +2721,9 @@ function minuteWhat(/** @type {CallsMinute} */ m, /** @type {string} */ factor) 
   if (m.jitter_ms != null && m.jitter_ms >= 30) return `jitter up to ${fmtMs(m.jitter_ms)} ms`;
   return m.rtt_ms != null ? `a slow round trip (${fmtMs(m.rtt_ms)} ms)` : 'no answers';
 }
-/** The factor (loss, jitter, latency) that costs a minute the most, as callq.Factor. */
+/** The factor (loss, jitter, latency) that costs a minute its band, as callq.Minute.Factor: "jitter" when a jitter cap set the band. */
 function minuteFactor(/** @type {CallsMinute} */ m) {
+  if (m.mos != null && (m.jitter_ms ?? 0) >= 30 && (CALL_BAND_RANK[m.state] ?? 4) < CALL_BAND_RANK[mosBand(m.mos)]) return 'jitter';
   const rtt = m.rtt_ms ?? 0, jit = m.jitter_ms ?? 0, loss = (m.loss ?? 0) * 100;
   const eff = rtt / 2 + 2 * jit + 10;
   const delay = eff < 160 ? eff / 40 : (eff - 120) / 10;

@@ -359,7 +359,7 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 			g.Minutes.MOS[i], g.Minutes.RTT[i], g.Minutes.Jitter[i], g.Minutes.Loss[i] = nan, nan, nan, nan
 			if c.Scored() {
 				mos := c.MOS()
-				g.Minutes.State[i] = string(callq.BandOf(mos))
+				g.Minutes.State[i] = string(c.Band())
 				g.Minutes.MOS[i], g.Minutes.RTT[i], g.Minutes.Jitter[i], g.Minutes.Loss[i] = num(mos), num(c.RTT), num(c.Jitter), num(c.Loss/100)
 			}
 		}

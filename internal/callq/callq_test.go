@@ -81,6 +81,54 @@ func TestBandEdges(t *testing.T) {
 	}
 }
 
+func TestJitterCaps(t *testing.T) {
+	for _, c := range []struct {
+		jitter float64
+		want   Band
+	}{
+		{math.NaN(), Good}, {0, Good}, {29.9, Good}, {30, Fair}, {49.9, Fair},
+		{50, Poor}, {99.9, Poor}, {100, Unusable}, {400, Unusable},
+	} {
+		if got := JitterCap(c.jitter); got != c.want {
+			t.Errorf("JitterCap(%v) = %s, want %s", c.jitter, got, c.want)
+		}
+		// A short, clean path: the MOS alone says Good, so the cap decides.
+		m := Minute{RTT: 20, Jitter: c.jitter, Loss: 0, Bursts: 12}
+		if c.jitter <= JitterUnusableMs && BandOf(m.MOS()) != Good {
+			t.Fatalf("jitter %v: MOS %.2f is not Good before the cap", c.jitter, m.MOS())
+		}
+		if got := m.Band(); got != c.want {
+			t.Errorf("jitter %v: band %s, want %s", c.jitter, got, c.want)
+		}
+		if c.want != Good && m.Factor() != "jitter" {
+			t.Errorf("jitter %v: factor %s, want jitter (the cap decided the band)", c.jitter, m.Factor())
+		}
+	}
+	// A cap never improves a band.
+	for _, b := range []Band{Good, Fair, Poor, Unusable} {
+		for _, j := range []float64{math.NaN(), 0, 29.9, 30, 49.9, 50, 99.9, 100} {
+			if got := Capped(b, j); Rank(got) > Rank(b) || Rank(got) > Rank(JitterCap(j)) {
+				t.Errorf("Capped(%s, %v) = %s", b, j, got)
+			}
+		}
+	}
+	// Lossy and jittery: the MOS band is already worse than the cap, so
+	// the loss decides.
+	if m := (Minute{RTT: 20, Jitter: 35, Loss: 20, Bursts: 12}); m.Band() != Unusable || m.Factor() != "loss" {
+		t.Errorf("20%% loss, 35 ms jitter: band %s factor %s, want unusable by loss", m.Band(), m.Factor())
+	}
+	// The worst minute is the worst band, then the lowest MOS: a capped
+	// minute with a high MOS beats a Fair one with a lower MOS.
+	s := Summarize([]Minute{
+		{RTT: 30, Jitter: 3, Loss: 7, Bursts: 12},  // Fair by MOS
+		{RTT: 20, Jitter: 60, Loss: 0, Bursts: 12}, // Good by MOS, Poor by jitter
+		{RTT: 20, Jitter: 2, Loss: 0, Bursts: 12},
+	})
+	if s.Worst != 1 || s.Band != Poor || s.Factor != "jitter" || BandOf(s.MOS) != Good {
+		t.Errorf("worst minute %d band %s factor %s (MOS %.2f), want 1 poor by jitter", s.Worst, s.Band, s.Factor, s.MOS)
+	}
+}
+
 func TestFactor(t *testing.T) {
 	for _, c := range []struct {
 		rtt, jitter, pct float64

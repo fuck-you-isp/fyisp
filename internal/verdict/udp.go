@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
@@ -32,8 +33,9 @@ import (
 //     been for ≥ 3 minutes. A target is poor over the last minute when it
 //     has ≥ 2 measured bursts, at least one answered, and either loses
 //     ≥ 5% of its requests (the mean of its bursts' loss) or has a median
-//     burst jitter ≥ 30 ms; a provider is poor when at least half of its
-//     judged targets are. These are plain thresholds on the network, not a
+//     burst jitter ≥ 30 ms (callq.JitterFairMs, the jitter at which the
+//     Calls band is capped to Fair); a provider is poor when at least half
+//     of its judged targets are. These are plain thresholds on the network, not a
 //     call-quality score: 5% loss is where audio codecs' concealment starts
 //     to be heard, 30 ms of jitter is where jitter buffers grow enough to
 //     add noticeable delay. A target that answers nothing is dead, not
@@ -52,18 +54,18 @@ import (
 // for udp_degraded. The headline loss (PeakLoss) is 0 for the blocked kinds
 // and udp_loss for udp_degraded. Targets are the blocked or poor targets.
 const (
-	udpBlockedRun   = 10              // timed-out bursts in a row before a target counts as blocked
-	udpMinProviders = 2               // independent providers that must agree
-	udpWarmUp       = 2 * time.Minute // blocked verdicts wait this long after start without any answer
-	udpAnsweredIn   = keepRaw         // udp-53 answering this recently means UDP itself works ...
-	udp53Failing    = 2               // ... unless its latest bursts timed out this many times in a row
-	udpQuietAfter   = 6 * time.Hour   // a blocked verdict this old is Quiet
-	udpLossPoor     = 0.05            // mean burst loss that makes a target poor
-	udpJitterPoorMs = 30.0            // median burst jitter (ms) that makes a target poor
-	udpMinBursts    = 2               // measured bursts a target needs in the window to be judged poor
-	udpDegradedFor  = 3 * time.Minute // poor providers must stay poor this long
-	tagUDPPath      = "udp-path"      // targets on the call path
-	tagUDP53        = "udp-53"        // STUN on UDP port 53
+	udpBlockedRun   = 10                 // timed-out bursts in a row before a target counts as blocked
+	udpMinProviders = 2                  // independent providers that must agree
+	udpWarmUp       = 2 * time.Minute    // blocked verdicts wait this long after start without any answer
+	udpAnsweredIn   = keepRaw            // udp-53 answering this recently means UDP itself works ...
+	udp53Failing    = 2                  // ... unless its latest bursts timed out this many times in a row
+	udpQuietAfter   = 6 * time.Hour      // a blocked verdict this old is Quiet
+	udpLossPoor     = 0.05               // mean burst loss that makes a target poor
+	udpJitterPoorMs = callq.JitterFairMs // median burst jitter (ms) that makes a target poor (the Calls Fair cap)
+	udpMinBursts    = 2                  // measured bursts a target needs in the window to be judged poor
+	udpDegradedFor  = 3 * time.Minute    // poor providers must stay poor this long
+	tagUDPPath      = "udp-path"         // targets on the call path
+	tagUDP53        = "udp-53"           // STUN on UDP port 53
 )
 
 // ustat is one UDP target's recent bursts.

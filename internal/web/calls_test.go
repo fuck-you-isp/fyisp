@@ -393,9 +393,20 @@ func TestCallsStates(t *testing.T) {
 			top: "unusable", cause: "app:teams:loss", path: "good", apps: map[string]string{"teams": "unusable", "meet": "good"},
 		},
 		{
+			// The MOS alone is Good here: the jitter caps decide.
 			name: "jittery path",
-			fill: func(string, time.Time) burst { return burst{rtt: 30, jitter: 130, answered: 5} },
+			fill: func(string, time.Time) burst { return burst{rtt: 30, jitter: 35, answered: 5} },
 			top:  "fair", cause: "path:jitter", path: "fair",
+		},
+		{
+			name: "very jittery path",
+			fill: func(string, time.Time) burst { return burst{rtt: 30, jitter: 60, answered: 5} },
+			top:  "poor", cause: "path:jitter", path: "poor",
+		},
+		{
+			name: "unusable jitter",
+			fill: func(string, time.Time) burst { return burst{rtt: 30, jitter: 130, answered: 5} },
+			top:  "unusable", cause: "path:jitter", path: "unusable",
 		},
 	}
 	for _, tc := range cases {
