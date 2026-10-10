@@ -117,13 +117,13 @@ func (lr *loadRun) probe(ctx context.Context) (stop func() [2][]loadSample) {
 }
 
 // latency builds a test's latency under load: idle from the tap over the
-// idleWindow before start, loaded from the run (nil: none); nil when no
-// phase has stats.
-func latency(tap *LoadTap, lr *loadRun, start time.Time) *model.SpeedLatency {
+// idleWindow before start, without earlier tests' windows (w), loaded from
+// the run (nil: none); nil when no phase has stats.
+func latency(tap *LoadTap, w *Windows, lr *loadRun, start time.Time) *model.SpeedLatency {
 	var l model.SpeedLatency
 	for i, ph := range []*model.LoadPhases{&l.Gateway, &l.Edge} {
 		if tap != nil {
-			ph.Idle = tap.Stats([]string{LayerGateway, LayerEdge}[i], start.Add(-idleWindow), start)
+			ph.Idle = tap.Stats([]string{LayerGateway, LayerEdge}[i], start.Add(-idleWindow), start, w)
 		}
 		if lr != nil {
 			ph.Down, ph.Up = statsOf(lr.down[i]), statsOf(lr.up[i])

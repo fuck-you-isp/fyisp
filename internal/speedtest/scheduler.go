@@ -605,7 +605,7 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
 	if ctx.Err() != nil {
 		return // shutting down: not a result
 	}
-	if t.Latency = latency(s.o.Load, lr, win.Start); t.Latency != nil {
+	if t.Latency = latency(s.o.Load, s.o.Windows, lr, win.Start); t.Latency != nil {
 		g := t.Latency.Gateway
 		if g.Idle != nil {
 			t.IdleGatewayMs = &g.Idle.P50Ms

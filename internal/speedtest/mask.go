@@ -174,7 +174,8 @@ const (
 )
 
 // LoadTap keeps the recent ICMP samples of the gateway and the ISP edge,
-// lost ones included, by arrival time: the idle side of latency under load
+// lost ones included, by the probe's start (Sample.At; its arrival when
+// unset): the idle side of latency under load
 // (the loaded side comes from the test's own prober, see load.go). Put it
 // in the fan-out before Mask. Safe for concurrent use.
 type LoadTap struct {
@@ -226,25 +227,41 @@ func (t *LoadTap) Observe(s model.Sample) {
 		return
 	}
 	now := t.now()
+	at := s.At
+	if at.IsZero() {
+		at = now
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cut := 0
 	for cut < len(t.buf) && now.Sub(t.buf[cut].at) > tapKeep {
 		cut++
 	}
-	t.buf = append(t.buf[cut:], tapSample{at: now, layer: layer, s: loadSample{ms: float64(s.RTT) / float64(time.Millisecond), lost: s.Lost}})
+	t.buf = append(t.buf[cut:], tapSample{at: at, layer: layer, s: loadSample{ms: float64(s.RTT) / float64(time.Millisecond), lost: s.Lost}})
 }
 
-// Stats summarises layer's samples that arrived in [from, to) (see
-// statsOf); nil with fewer than 3.
-func (t *LoadTap) Stats(layer string, from, to time.Time) *model.LoadStats {
+// Stats summarises layer's samples taken in [from, to) (see statsOf),
+// leaving out those during a test window or its MaskTail (w, may be nil):
+// a test just before is not idle. nil with fewer than 3.
+func (t *LoadTap) Stats(layer string, from, to time.Time, w *Windows) *model.LoadStats {
 	t.mu.Lock()
 	var v []loadSample
+	var at []time.Time
 	for _, x := range t.buf {
 		if x.layer == layer && !x.at.Before(from) && x.at.Before(to) {
-			v = append(v, x.s)
+			v, at = append(v, x.s), append(at, x.at)
 		}
 	}
 	t.mu.Unlock()
+	if w != nil {
+		k := 0
+		for i := range v {
+			if !w.Overlaps(at[i], at[i]) {
+				v[k] = v[i]
+				k++
+			}
+		}
+		v = v[:k]
+	}
 	return statsOf(v)
 }

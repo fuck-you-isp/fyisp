@@ -672,3 +672,36 @@ func TestCatalogErrors(t *testing.T) {
 		}
 	}
 }
+
+// The idle side: samples are timed by the probe's start (Sample.At), and a
+// test earlier in the idle window (back-to-back runs) is not idle.
+func TestLoadTapIdle(t *testing.T) {
+	p := &model.Profile{Targets: []model.Target{{Name: "ISP edge", Layer: model.LayerEdge, Kinds: []model.ProbeKind{model.KindICMP}}}}
+	t0 := time.Date(2026, 10, 10, 21, 0, 0, 0, time.UTC)
+	now := t0
+	tap := NewLoadTap(p, func() time.Time { return now })
+	edge := model.SeriesKey{Target: "ISP edge", Kind: model.KindICMP}
+	obs := func(at time.Time, ms float64) {
+		tap.Observe(model.Sample{Key: edge, At: at, RTT: time.Duration(ms * float64(time.Millisecond))})
+	}
+	w := &Windows{}
+	// An earlier test 60-50 s before: its loaded probes must not count.
+	w.Add(Window{Start: t0.Add(-60 * time.Second), End: t0.Add(-50 * time.Second)})
+	for i := range 10 {
+		now = t0.Add(-90*time.Second + time.Duration(i)*time.Second)
+		obs(now, 8) // idle
+		now = t0.Add(-59*time.Second + time.Duration(i)*time.Second)
+		obs(now, 900) // during the earlier test
+	}
+	// A probe sent just before this test (t0) that arrives during it is idle
+	// by its start.
+	now = t0.Add(time.Second)
+	obs(t0.Add(-500*time.Millisecond), 9)
+	st := tap.Stats(LayerEdge, t0.Add(-idleWindow), t0, w)
+	if st == nil || st.N != 11 || st.P95Ms > 9 {
+		t.Errorf("idle %+v, want the 11 idle probes only", st)
+	}
+	if all := tap.Stats(LayerEdge, t0.Add(-idleWindow), t0, nil); all == nil || all.N != 21 || all.P95Ms != 900 {
+		t.Errorf("without windows %+v, want 21 probes", all)
+	}
+}
