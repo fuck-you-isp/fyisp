@@ -360,5 +360,7 @@ func (r *runner) resolveCNAME(ctx context.Context, hs *hostState) {
 		return
 	}
 	reg := cnameRegion(cname)
-	hs.region.Store(&reg)
+	if prev := hs.region.Swap(&reg); reg != "" && (prev == nil || *prev != reg) {
+		r.o.Log.Debug("relay region", "host", hs.name, "region", reg)
+	}
 }
