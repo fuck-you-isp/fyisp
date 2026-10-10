@@ -38,9 +38,9 @@ function gb(b) { return b >= 1e9 ? `${Math.round(b / 1e9)} GB` : `${Math.max(0, 
 /** Why a full test ended early, or ''. @param {QueueEntry} e */
 function stoppedWhy(e) {
   switch (e.stopped_reason) {
-    case 'unreachable': return 'It stopped after 3 servers in a row didn’t answer: the connection may be down.';
-    case 'limit': return MODE === 'public' ? 'It stopped when tests from this link reached their limit.' : 'It stopped when the share link’s tests reached their limit, or were turned off.';
-    case 'cancelled': return 'It was stopped before the end.';
+    case 'unreachable': return 'Stopped after 3 servers in a row didn’t answer. Check your connection.';
+    case 'limit': return MODE === 'public' ? 'Stopped: today’s allowance for tests from this link ran out.' : 'Stopped: today’s share-link allowance ran out.';
+    case 'cancelled': return 'Cancelled.';
   }
   return '';
 }
@@ -438,7 +438,7 @@ export class SpeedQueue {
       return this.sort.asc ? c : -c;
     });
     return h('div', { class: 'sp-sw-res' },
-      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)}${zoneSuffix()} · ${gave ? `${gave} of ${rows.length} servers gave a result${noUp ? `; ${noUp} upload${noUp === 1 ? '' : 's'} didn’t finish` : ''}` : rows.length === 2 ? 'Neither server answered, so this run has no results' : `None of the ${rows.length} servers answered, so this run has no results`}. Not part of the hourly pattern.${stoppedWhy(e) ? ' ' + stoppedWhy(e) : ''}`),
+      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)}${zoneSuffix()} · ${gave ? `${gave} of ${rows.length} servers gave a result${noUp ? `; ${noUp} upload${noUp === 1 ? '' : 's'} didn’t finish` : ''}` : rows.length === 2 ? 'Neither server answered, so this run has no results' : `None of the ${rows.length} servers answered, so this run has no results`}.${stoppedWhy(e) ? ' ' + stoppedWhy(e) : ''} Not part of the hourly pattern.`),
       bars.length ? h('div', { class: 'sp-sw-grid' }, ...bars) : null,
       h('div', { class: 'sp-sum-wrap' }, h('table', { class: 'sp-st sp-sw-t' },
         h('caption', { class: 'sr-only', text: 'Every server in the last full test' }),
