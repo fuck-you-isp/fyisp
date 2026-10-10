@@ -26,7 +26,7 @@ Good pull requests:
    3. a health path.
 
    Don't use login or account pages. Don't use anything whose terms forbid automated checks.
-2. **It must accept TCP connections.** fyisp measures catalog targets with a TCP connect only: every running fyisp opens one connection per target every 15 s (handshake, then an immediate close, no data sent). The endpoint needs a TCP listener on `port` (default 443). Replies to ping or HTTP requests are not used.
+2. **It must accept TCP connections.** fyisp measures catalog targets with a TCP connect: every running fyisp opens one connection per target every 15 s (handshake, then an immediate close, no data sent). The endpoint needs a TCP listener on `port` (default 443). Replies to ping or HTTP requests are not used. (STUN servers are the exception: see [UDP (STUN) targets](#udp-stun-targets).)
 3. **No authentication.** Don't use API keys, account IDs or requests that create or change anything.
 4. **Check the location.** A regional target must really be in that city. Checks include:
    - it resolves to a unicast address;
@@ -46,13 +46,24 @@ When checking an endpoint, keep it light: a few TCP connects per endpoint. For e
 nc -vz -w 3 host.example 443
 ```
 
+### UDP (STUN) targets
+
+Targets with `kinds: [udp]` measure the UDP path of calls with STUN (format in [`SCHEMA.md`](internal/profile/catalog/SCHEMA.md#udp-stun-targets)). They follow the rules above, plus:
+
+- **STUN Binding only.** fyisp sends 20-byte Binding Requests, a burst of 5 every 5 s (or the target's `interval`, e.g. 30 s for regional servers). Never TURN, never an allocation, no credentials.
+- **Documented public STUN only.** The vendor publishes the server for clients to use without credentials, or its own clients and network test tools use it unauthenticated. No community STUN lists, no media ports that only work inside a call.
+- **Check it with a couple of Binding Requests** and record the result in `verified`, e.g. `{date: 2026-10-10, stun: 2/2, rtt_ms: 26.4}`.
+- **Tags:** `udp-path` on every STUN target, plus `app:<name>` (e.g. `app:teams`) when it stands for one app's media path.
+
+A STUN server sees your public IP address, as every TCP target does.
+
 ### Before opening the pull request
 
 ```sh
 docker build --target test .
 ```
 
-`TestEmbeddedCatalog` rejects malformed files: unknown fields, duplicate names, bad `geo`, `kinds` (anything but `[tcp]` or `[]`) or `country` values, and private addresses. `TestBuiltinProfiles` checks that every profile still resolves.
+`TestEmbeddedCatalog` rejects malformed files: unknown fields, duplicate names, bad `geo`, `kinds` (anything but `[tcp]`, `[udp]` or `[]`) or `country` values, udp targets without a `port`, and private addresses. `TestBuiltinProfiles` checks that every profile still resolves.
 
 To see what a profile selects:
 

@@ -117,7 +117,7 @@ The layers come from the built-in **Network path** group, shown first: the *Gate
 
 ## What to measure (profiles)
 
-By default fyisp measures 87 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
+By default fyisp measures 91 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud, plus four public STUN servers (Google Meet, Cloudflare on ports 3478 and 53, Twilio) that measure the UDP path call audio and video use: a burst of 5 tiny STUN Binding Requests every 5 seconds each (15 s on port 53), with round-trip time, jitter and loss. `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does; fyisp never stores the address the server reports back. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
 
 ```sh
 fyisp profiles                       # list the profiles, with target and panel counts
@@ -129,7 +129,8 @@ fyisp --profile default,dns          # the default targets plus every public res
 
 | Profiles | What |
 |---|---|
-| `default` | the 87 original targets (used without `--profile`) |
+| `default` | the 87 original targets plus 4 STUN targets (used without `--profile`) |
+| `calls` | call quality: every STUN target (Google Meet, Cloudflare, Twilio global and 9 regions, and the Microsoft Teams relay, which is only in this profile) plus Teams, Meet, Zoom, Slack, Discord, WhatsApp and Webex over TCP; `--profile default,calls` adds it to the default |
 | `all` | every target in the catalog |
 | `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / VPS, bare-metal, regional and object-storage clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, ...) / both; one panel per provider and region |
 | `storage` | object storage clouds (Backblaze B2, Wasabi, IDrive e2, R2, ...) plus Hetzner, Linode and OVH object storage |
