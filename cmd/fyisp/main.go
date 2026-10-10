@@ -287,6 +287,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	defer st.Close() // last: final save, checkpoint, release the lock
 
 	mc := metrics.New(func() *model.Profile { return prof })
+	mos := metrics.NewCallMOS(func() *model.Profile { return prof })
+	mc.Register(mos)
 	// Warm-up counts ordinary targets only (path targets may never report).
 	warm := web.Warmup{Only: map[string]bool{}}
 	for _, t := range prof.Targets {
@@ -396,7 +398,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	probeDone := make(chan struct{})
 	go func() {
 		defer close(probeDone)
-		if err := runner.Run(ctx, prof, model.Fanout{st, mc, eng, &warm}); err != nil {
+		if err := runner.Run(ctx, prof, model.Fanout{st, mc, mos, eng, &warm}); err != nil {
 			log.Error("probing stopped", "err", err)
 			stop()
 		}
