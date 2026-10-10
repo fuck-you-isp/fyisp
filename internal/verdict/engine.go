@@ -90,6 +90,10 @@ type series struct {
 	// timeouts counts the latest KindUDP bursts that timed out in a row
 	// (another kind's series keeps 0).
 	timeouts int
+	// gaps are the slots (unix ms) of the last keepRaw that were not
+	// measured (model.ReasonGap, e.g. masked by a speed test). They are
+	// never loss; they only tell a window that was mostly not measured.
+	gaps []int64
 }
 
 type engine struct {
@@ -235,10 +239,24 @@ func (e *engine) EachVsNormal(fn func(name string, kind model.ProbeKind, ratio f
 	}
 }
 
-// Observe records a sample. Not-measured gaps are ignored. It never blocks
-// for long (one short mutex).
+// Observe records a sample. Not-measured gaps are never loss: only their
+// slot is noted (see series.gaps). It never blocks for long (one short
+// mutex).
 func (e *engine) Observe(s model.Sample) {
 	if s.Lost && s.Reason == model.ReasonGap {
+		if s.Key.Kind.IsUDP() || s.Key.Kind == model.KindTrace {
+			return
+		}
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		sr := e.series[s.Key]
+		if sr == nil {
+			sr = &series{}
+			e.series[s.Key] = sr
+		}
+		if len(sr.gaps) < maxRaw {
+			sr.gaps = append(sr.gaps, s.Slot.UnixMilli())
+		}
 		return
 	}
 	r := rec{ms: s.Slot.UnixMilli(), lost: s.Lost, reason: s.Reason}
@@ -481,6 +499,14 @@ func (e *engine) apply(ctx context.Context, now time.Time, j judgement) {
 		}
 		return
 	}
+	if j.unknown {
+		// Mostly not measured: nothing is known, so the verdict and the
+		// open incident hold. A new problem or a recovery starts counting
+		// again once the window is measured.
+		e.cand, e.candN, e.okSince = "", 0, time.Time{}
+		e.heartbeat(ctx, now)
+		return
+	}
 	raw := j.v
 	if raw.Kind == model.VerdictOK {
 		if e.okSince.IsZero() {
@@ -625,6 +651,7 @@ func union(a, b []string) []string {
 type tstat struct {
 	t                   model.Target
 	n, lost, dns, nonet int     // samples, lost, lost to DNS, lost to no network / unreachable
+	gap                 int     // slots not measured (not in n)
 	spike               bool    // some kind's median RTT far above its baseline
 	rtt, base           float64 // ms: window median and baseline of the spiking (else some) kind
 	longTerm            bool    // base is a long-term normal (Options.Baseline), not the 30-minute one
@@ -666,7 +693,8 @@ func (e *engine) collect(now time.Time, p *model.Profile) []*tstat {
 		if i > 0 {
 			sr.raw = append(sr.raw[:0], sr.raw[i:]...)
 		}
-		if len(sr.raw) == 0 && sr.curMin < nowMin-baselineMins {
+		sr.gaps = slices.DeleteFunc(sr.gaps, func(ms int64) bool { return ms < keep })
+		if len(sr.raw) == 0 && len(sr.gaps) == 0 && sr.curMin < nowMin-baselineMins {
 			delete(e.series, k)
 		}
 	}
@@ -690,6 +718,11 @@ func (e *engine) collect(now time.Time, p *model.Profile) []*tstat {
 		for ki, sr := range srs {
 			if sr == nil || (anyOK && !sr.everOK) {
 				continue // e.g. ICMP blocked by a target that answers HTTPS
+			}
+			for _, ms := range sr.gaps {
+				if ms > from && ms <= nowMs {
+					ts.gap++
+				}
 			}
 			scratch = scratch[:0]
 			for j := sort.Search(len(sr.raw), func(i int) bool { return sr.raw[i].ms > from }); j < len(sr.raw); j++ {
