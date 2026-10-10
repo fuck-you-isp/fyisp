@@ -21,6 +21,7 @@ import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, c
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
 /** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,peak_loss:number,details:string}} HomeProblem */
 /** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number}}} HomeHistory */
+/** @typedef {{part:string,voice:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number}} HomeAt */
 /** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
 /**
  * What Home needs from the page (app.js owns the hash, the status and sharing).
@@ -38,8 +39,6 @@ const HISTORY_MS = 60000;
 const LIVE_FAILS = 2;
 // Undo for "Mark a bad call".
 const UNDO_MS = 10000;
-// "What happened at…?" looks this far either side of the picked time.
-const AROUND_MS = 15 * 60e3;
 // Keep-it-running guide (README).
 const KEEP_RUNNING = 'https://github.com/fuck-you-isp/fyisp#keep-it-running';
 
@@ -57,30 +56,6 @@ const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '�
 // The tab title: the state first, so a background tab says it.
 /** @type {Object<string,string>} */
 const TITLE_WORD = { good: 'Fine', info: 'Fine', warn: 'Trouble', bad: 'Trouble', checking: 'Checking' };
-
-// "What happened at…?" sentences, composed from the timeline's runs (the API
-// gives each run who and level; these are the same words as its copy).
-/** @type {Object<string,string>} */
-const RUN_WHERE = {
-  home: 'Most likely your Wi-Fi or router.',
-  provider: 'Most likely your internet provider.',
-  beyond: 'The trouble was further out on the internet, past your provider’s nearest equipment.',
-  dns: 'Looking up names was failing; the connection itself worked.',
-  calltraffic: 'The connection calls use had trouble. We didn’t see a cause on your side.',
-  offline: 'This device was offline.',
-};
-// The same in the third person, for the share link (voice "public").
-/** @type {Object<string,string>} */
-const RUN_WHERE_PUBLIC = {
-  home: 'Most likely the home network (Wi-Fi or router).',
-  provider: 'Most likely the provider’s network.',
-  beyond: 'The trouble was further out on the internet, past the provider’s nearest equipment.',
-  dns: 'Name lookups were failing; the connection itself worked.',
-  calltraffic: 'Call traffic had trouble; no cause was seen in the home network or at the provider.',
-  offline: 'The monitoring device was offline.',
-};
-/** @type {Object<string,string>} */
-const CALL_WORDS = { fair: 'calls had some glitches', poor: 'calls would have been choppy', unusable: 'calls would have broken up' };
 
 /** Clock time in the viewer's locale (12 or 24 h). */
 function clock(/** @type {number} */ ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
@@ -113,26 +88,6 @@ function badge(/** @type {string} */ level, /** @type {string} */ word) {
   return h('span', { class: `ho-badge lvl-${cls(level)}` }, h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: L.icon }), h('span', { text: word }));
 }
 
-/** The worst run overlapping [a, b): bad over warn, then the longest. */
-function worstRun(/** @type {HomeRun[]} */ runs, /** @type {number} */ a, /** @type {number} */ b) {
-  let best = null;
-  for (const r of runs) {
-    if (!(r.from < b && r.to > a)) continue;
-    const rank = r.level === 'bad' ? 2 : 1;
-    const bestRank = best ? (best.level === 'bad' ? 2 : 1) : 0;
-    if (!best || rank > bestRank || (rank === bestRank && r.to - r.from > best.to - best.from)) best = r;
-  }
-  return best;
-}
-/** A run in words: "2:10 to 2:16: calls would have been choppy. Most likely your internet provider." */
-function runSentence(/** @type {HomeRun} */ r, /** @type {boolean} */ pub) {
-  const what = r.source === 'calls' && r.kind && CALL_WORDS[r.kind] ? CALL_WORDS[r.kind]
-    : r.level === 'bad' ? `there was trouble with ${pub ? 'this' : 'your'} connection` : 'there was some trouble';
-  const where = r.who === 'app' ? `${r.label} had trouble; ${pub ? 'the' : 'your'} connection was fine.` : (pub ? RUN_WHERE_PUBLIC : RUN_WHERE)[r.who] || '';
-  const end = r.ongoing ? `${when(r.from)} until now` : range(r.from, r.to);
-  return `${end}: ${what}. ${where}`.trim();
-}
-
 export class Home {
   /** @param {HomeHost} host */
   constructor(host) {
@@ -148,13 +103,13 @@ export class Home {
     this.historyBusy = false;
     this.historyErr = false;
     this.lastAnnounce = '';
-    /** @type {{note:HomeNote|null,at:number,undoUntil:number,text:string,err:string}|null} */
+    /** @type {{note:HomeNote|null,at:number,undoUntil:number,answer:HomeAt|null,err:string}|null} */
     this.marked = null;
     this.markOpen = false;
     this.markBusy = false;
     /** @type {number|null} "What happened at…?": the picked time (ms); null before the first pick */
     this.askAt = null;
-    this.askText = '';
+    this.askSeq = 0;
     this.blockIdx = 0; // the timeline's roving focus
 
     // Live regions: one polite announcer (state changes only) and one
@@ -530,7 +485,6 @@ export class Home {
     if (d.work && d.span === 'd' && d.work.measured) {
       this.legendEl.append(h('span', { class: 'ho-muted', text: `Working hours so far: good for calls ${Math.round(d.work.good * 100)}% of the time.` }));
     }
-    if (this.askAt == null) this.ask(null);
   }
 
   /** A block picked on the timeline fills "What happened at…?". */
@@ -552,48 +506,45 @@ export class Home {
     this.askIn.focus();
   }
 
-  /** One sentence for around t (null: the last hour), from the timeline's runs. */
+  /** "What happened at…?" for around t (null: a few minutes ago), in the server's words. */
   async ask(/** @type {number|null} */ t) {
     this.askAt = t;
-    const r = await this.explain(t);
-    this.askOut.className = `ho-answer lvl-${cls(r.level)}`;
-    this.askOut.replaceChildren(badge(r.level, (LEVELS[r.level] || LEVELS.checking).word), ' ', r.text);
+    const seq = ++this.askSeq;
+    const r = await this.at(t == null ? Date.now() - 5 * 60e3 : t);
+    if (seq !== this.askSeq) return;
+    this.askOut.className = `ho-answer lvl-${cls(r ? r.level : 'checking')}`;
+    this.askOut.replaceChildren(...this.atNodes(r));
     const links = [];
-    if (r.details) links.push(h('a', { class: 'ho-link', href: r.details, onclick: (/** @type {MouseEvent} */ e) => { e.preventDefault(); this.host.openDetails(r.details); }, text: 'See details' }));
+    if (r && r.measured) {
+      const a = r.bad_from || r.from, b = r.bad_to || r.to;
+      const hash = `#v=calls&from=${Math.round(a - 10 * 60e3)}&to=${Math.round(Math.min(Date.now(), b + 10 * 60e3))}`;
+      links.push(h('a', { class: 'ho-link', href: hash, onclick: (/** @type {MouseEvent} */ e) => { e.preventDefault(); this.host.openDetails(hash); }, text: 'See details' }));
+    }
     this.askLinks.replaceChildren(...links);
   }
 
   /**
-   * What happened around t, in words.
-   * @param {number|null} t
-   * @returns {Promise<{level:string,text:string,details:string}>}
+   * The server's answer for around t (api/home?part=at), or null.
+   * @param {number} t
+   * @returns {Promise<HomeAt|null>}
    */
-  async explain(t) {
-    const now = Date.now();
-    const a = t == null ? now - 3600e3 : t - AROUND_MS, b = t == null ? now : Math.min(now, t + AROUND_MS);
-    if (t != null && t > now) return { level: 'checking', text: 'Pick a time that has already happened.', details: '' };
-    let d = this.history;
-    // An older time needs the week.
-    if (d && a < d.from && d.span === 'd') {
-      try { d = await fetchJSON('api/home?' + new URLSearchParams({ part: 'history', span: 'w', tz: this.tz() })); } catch { /* use what we have */ }
+  async at(t) {
+    try {
+      return await fetchJSON('api/home?' + new URLSearchParams({ part: 'at', at: String(Math.round(Math.min(t, Date.now()))), tz: this.tz() }));
+    } catch {
+      return null;
     }
-    if (!d) return { level: 'checking', text: 'Loading…', details: '' };
-    const span = t == null ? 'In the last hour' : `Around ${when(t)}`;
-    if (a < d.from) return { level: 'checking', text: `${span}: that’s more than a week ago. Home keeps the last 7 days; Details goes further back.`, details: '#v=calls' };
-    const runs = d.days.flatMap((x) => x.runs);
-    const run = worstRun(runs, a, b);
-    const details = `#v=calls&from=${Math.round(a)}&to=${Math.round(b)}`;
-    const pub = MODE === 'public' || d.voice === 'public';
-    if (run) return { level: run.level, text: runSentence(run, pub), details };
-    const day = d.days.find((x) => x.from <= a && a < x.to) || d.days[d.days.length - 1];
-    const off = d.days.flatMap((x) => x.off).filter((s) => s.from < b && s.to > a).reduce((n, s) => n + Math.min(b, s.to) - Math.max(a, s.from), 0);
-    if ((d.first_data && b <= d.first_data) || (day && day.no_record)) return { level: 'checking', text: `${span}: no record yet. fyisp wasn’t running then.`, details: '' };
-    if (off >= (b - a) * 0.8) return { level: 'checking', text: `${span}: fyisp wasn’t running then, so there’s no record. Leave it running to catch the next one.`, details: '' };
-    const conn = pub ? 'The connection' : 'Your connection';
-    // Only part of the window is on record: say since when.
-    if (d.first_data && d.first_data > a) return { level: 'good', text: `${span}: no problems since we started checking at ${clock(d.first_data)}.`, details };
-    if (off > 0) return { level: 'good', text: `${span}: no problems while fyisp was running. ${conn} looked fine then.`, details };
-    return { level: 'good', text: `${span}: no problems. ${conn} looked fine then.`, details };
+  }
+
+  /** An answer for a time: the time (bold), the headline, then the cause and the fact. */
+  atNodes(/** @type {HomeAt|null} */ r) {
+    if (!r) return [h('span', { text: 'Couldn’t check that time. Try again.' })];
+    const span = r.bad_from && r.bad_to ? `${when(r.bad_from)} to ${clock(r.bad_to)}` : `Around ${when(r.time)}`;
+    const L = LEVELS[r.level] || LEVELS.checking;
+    const kids = [badge(r.level, L.word), ' ', h('b', { text: `${span}: ` }), `${r.headline}.`];
+    if (r.cause) kids.push(' ', r.cause);
+    if (r.fact) kids.push(' ', r.fact_at ? r.fact.replace(/^In the worst minute/, `In the worst minute (${clock(r.fact_at)})`) : r.fact);
+    return kids;
   }
 
   // ---------- mark a bad call ----------
@@ -609,7 +560,7 @@ export class Home {
     const m = this.marked;
     const kids = [];
     if (m) {
-      kids.push(h('p', { class: 'ho-mark-a', text: m.text }));
+      kids.push(h('p', { class: 'ho-mark-a' }, ...(m.answer ? this.atNodes(m.answer) : [this.markBusy ? 'Checking that time…' : ''])));
       if (m.err) kids.push(h('p', { class: 'ho-muted', text: m.err }));
       else if (m.note) {
         kids.push(h('p', { class: 'ho-muted' }, `Saved a private note at ${clock(m.at)}. `,
@@ -628,45 +579,46 @@ export class Home {
     input.focus();
   }
 
-  /** One click: a private note at t (now by default) and the answer for that minute. */
+  /**
+   * Why writes (notes, sharing) can't happen from this page, in plain
+   * words, or '' when they can. Never mentions flags.
+   */
+  writeBlock() {
+    const st = this.host.status();
+    if (MODE !== 'local' || !st || !this.host.notesOn() || st.controls === 'disabled') return 'Not saved: this dashboard is read-only on this device.';
+    if (st.controls === 'admin' && !st.admin) return 'Not saved yet: to save notes or share from this browser, open the link fyisp showed when it started (in its log or terminal window).';
+    return canWrite() ? '' : 'Not saved: this dashboard is read-only on this device.';
+  }
+
+  /** One click: a private note at t (now by default) and, beside it, what happened then. */
   async mark(/** @type {number|undefined} */ t) {
     if (this.markBusy) return;
     const at = t == null ? Date.now() : t;
-    // The answer: now from the live card, earlier from the timeline.
-    let text;
-    const a = this.live && this.live.answer;
-    if (t == null && a && a.level !== 'checking') {
-      text = a.level === 'good' || a.level === 'info'
-        ? 'Your connection looked fine just now. The problem was probably the app or the other person’s connection.'
-        : `${a.headline}. ${a.cause || ''}`.trim();
-    } else {
-      const r = await this.explain(at);
-      text = r.level === 'good' ? `Around ${when(at)} your connection looked fine. The problem was probably the app or the other person’s connection.` : r.text;
-    }
     // "Was it earlier?" moves the note just saved instead of adding a second one.
     const prev = t != null && this.marked ? this.marked.note : null;
-    this.marked = { note: prev, at, undoUntil: 0, text, err: '' };
-    if (!this.host.notesOn() || !canWrite()) {
-      this.marked.note = null;
-      this.marked.err = 'Not saved: this dashboard is read-only on this device.';
-      this.renderMark();
-      return;
-    }
     this.markBusy = true;
+    this.marked = { note: prev, at, undoUntil: 0, answer: null, err: '' };
     this.renderMark();
-    const body = { at: new Date(at).toISOString(), text: `Bad call: ${text}`, public: false };
-    try {
-      const note = prev
-        ? await apiWrite('PUT', `api/annotations/${prev.id}`, body)
-        : await apiWrite('POST', 'api/annotations', body);
-      this.marked.note = note;
-      this.marked.undoUntil = Date.now() + UNDO_MS;
-      this.host.notesChanged();
-    } catch {
-      this.marked.err = 'Couldn’t save the note. Try again.';
-    } finally {
-      this.markBusy = false;
+    const answer = await this.at(at);
+    this.marked.answer = answer;
+    const block = this.writeBlock();
+    if (block) {
+      this.marked.note = null;
+      this.marked.err = block;
+    } else {
+      const body = { at: new Date(at).toISOString(), text: answer ? `Bad call: ${answer.headline}. ${answer.cause || ''}`.trim() : 'Bad call', public: false };
+      try {
+        const note = prev
+          ? await apiWrite('PUT', `api/annotations/${prev.id}`, body)
+          : await apiWrite('POST', 'api/annotations', body);
+        this.marked.note = note;
+        this.marked.undoUntil = Date.now() + UNDO_MS;
+        this.host.notesChanged();
+      } catch {
+        this.marked.err = 'Couldn’t save the note. Try again.';
+      }
     }
+    this.markBusy = false;
     this.renderMark();
   }
 
@@ -695,6 +647,11 @@ export class Home {
     // Honest when the evidence points home.
     if (counts && counts.home > (counts.provider || 0) + (counts.beyond || 0)) {
       kids.push(h('p', { class: 'ho-warn', text: 'Most problems this week were in your home network (Wi-Fi or router). Your provider will likely say the same.' }));
+    }
+    if (st && st.controls === 'admin' && !st.admin) {
+      kids.push(h('p', { class: 'ho-muted', text: 'To share from this browser, first open the link fyisp showed when it started (in its log or terminal window). Then try again.' }));
+      out.replaceChildren(...kids);
+      return;
     }
     if (!canWrite() || (st && st.controls === 'disabled')) {
       kids.push(h('p', { class: 'ho-muted', text: 'Sharing is turned off on this setup, so we can’t make a link here. Details has a report you can download.' }));
@@ -734,10 +691,19 @@ export class Home {
   }
 }
 
-/** A tile's Details link: Calls opens the Calls view, the others the Overview filtered to the tile. */
-function tileHash(/** @type {HomeTile} */ t) {
-  if (t.id === 'calls') return '#v=calls';
-  return `#v=o&ot=${encodeURIComponent(t.id)}`;
+/** A tile's Details link (the server picks it: #v=calls, or the Overview filtered with ot=). */
+function tileHash(/** @type {HomeTile} */ t) { return /^#[\w=&%.-]*$/.test(t.details || '') ? t.details : t.id === 'calls' ? '#v=calls' : `#v=o&ot=${encodeURIComponent(t.id)}`; }
+
+/** The worst run overlapping [a, b): bad over warn, then the longest. */
+function worstRun(/** @type {HomeRun[]} */ runs, /** @type {number} */ a, /** @type {number} */ b) {
+  let best = null;
+  for (const r of runs) {
+    if (!(r.from < b && r.to > a)) continue;
+    const rank = r.level === 'bad' ? 2 : 1;
+    const bestRank = best ? (best.level === 'bad' ? 2 : 1) : 0;
+    if (!best || rank > bestRank || (rank === bestRank && r.to - r.from > best.to - best.from)) best = r;
+  }
+  return best;
 }
 
 /**
@@ -767,8 +733,5 @@ function blockLabel(/** @type {string} */ day, /** @type {number} */ a, /** @typ
     case 'fine': return `${t}, no problems`;
   }
   const r = /** @type {HomeRun} */ (st.run);
-  const what = r.source === 'calls' && r.kind && CALL_WORDS[r.kind] ? CALL_WORDS[r.kind].replace(/^calls (would have been |had )?/, '') : st.level === 'bad' ? 'trouble' : 'some trouble';
-  const where = MODE === 'public' ? RUN_WHERE_PUBLIC : RUN_WHERE;
-  const who = r.who === 'app' ? r.label : (where[r.who] || '').replace(/\.$/, '').toLowerCase();
-  return `${t}, ${what}${who ? ', ' + who : ''}`;
+  return `${t}, ${st.level === 'bad' ? 'trouble' : 'some trouble'}${r.label ? ', ' + r.label : ''}`;
 }

@@ -1915,7 +1915,7 @@ function bySeverity(/** @type {OvRow} */ a, /** @type {OvRow} */ b) {
 function geoOf(/** @type {TargetInfo} */ t) { return t.geo || ''; }
 /** Home's tile names, for the Overview's ot= filter (a Home tile's "See details"). */
 /** @type {Object<string,string>} */
-const HOME_TILE = { calls: 'Calls', work: 'Work apps', streaming: 'Streaming', web: 'Websites', other: 'Other services' };
+const HOME_TILE = { calls: 'Calls', work: 'Work apps', web: 'Websites', other: 'Other services' };
 /** A target's Home tile: the server's category (profile.HomeCategory), else its home:* tag, else calls for call targets, else other. */
 function homeCategory(/** @type {TargetInfo} */ t) {
   if (t.home) return t.home;
