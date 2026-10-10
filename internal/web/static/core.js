@@ -216,7 +216,10 @@ export function dialog(o) {
     dlg.addEventListener('close', () => { resolve(dlg.returnValue || ''); dlg.remove(); });
     document.body.append(dlg);
     dlg.showModal();
-    (o.focus || /** @type {HTMLElement|null} */ (form.querySelector('.btn.primary')) || form)?.focus();
+    // A field, else the safe choice: Cancel when the primary action is destructive, else the primary.
+    const danger = o.buttons.some((b) => b.danger);
+    const pick = o.focus || /** @type {HTMLElement|null} */ (form.querySelector(danger ? 'button[value="cancel"]' : '.btn.primary'));
+    (pick || form).focus();
   });
 }
 

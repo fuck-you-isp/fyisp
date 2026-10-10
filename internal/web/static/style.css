@@ -1092,8 +1092,10 @@ abbr.gl { text-decoration: underline dotted; text-underline-offset: 2px; cursor:
    --c-good … --c-bad step in lightness (light: darker as it gets worse; dark:
    brighter), so states stay apart for deuteranopia and protanopia too:
    neighbours ≥ 1.3:1 and good vs bad ≥ 2.7:1 under Machado 2009 (severity 1),
-   each ≥ 3:1 against the surface. --muted passes 4.5:1 on --surface-2;
-   --nodata passes 1.4.11 as a graphic. */
+   each ≥ 3:1 against the surface. --muted passes 4.5:1 on --surface-2.
+   --nodata is 2.07:1 (dark) and 2.86:1 (light) against the strip: under 3:1,
+   acceptable only because "no data" also has a distinct shape (a short bar at
+   the bottom, never a full-height block), so it never relies on colour. */
 :root { --muted: #959389; --nodata: #55544f; --c-good: #2b8540; --c-fair: #b88c00; --c-poor: #ff9550; --c-bad: #ffc4c4; }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) { --muted: #64635e; --nodata: #8f8e88; --c-good: #3fa452; --c-fair: #9c6b00; --c-poor: #a3330a; --c-bad: #6e0b18; }
@@ -1121,3 +1123,7 @@ abbr.gl { text-decoration: underline dotted; text-underline-offset: 2px; cursor:
   html { scroll-behavior: auto !important; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* The note editor is a modal <dialog>, placed next to where it was opened. */
+dialog.pop { margin: 0; inset: auto; }
+dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
