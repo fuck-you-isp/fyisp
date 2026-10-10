@@ -1251,7 +1251,7 @@ class Investigate {
     const t = targetInfo(this.target);
     if (MODE !== 'local' || !t || t.trace || this.poking || document.hidden) return;
     if (status && status.controls === 'disabled') {
-      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started without --admin-token';
+      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started with --admin-token=off';
       this.renderStatus();
       return;
     }
@@ -1265,7 +1265,7 @@ class Investigate {
     this.lastPoke = Date.now();
     /** @type {Record<string,string>} */
     const headers = { 'X-FYISP-Token': TOKEN };
-    if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+    addAdmin(headers);
     try {
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
       if (target !== this.target) return;
@@ -1677,7 +1677,7 @@ async function apiWrite(method, url, body) {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+  addAdmin(headers);
   try {
     return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
   } catch (e) {
@@ -1687,7 +1687,7 @@ async function apiWrite(method, url, body) {
   }
 }
 
-/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind without --admin-token. */
+/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind with --admin-token=off. */
 function canWrite() { return MODE === 'local' && !!status && status.controls !== 'disabled'; }
 
 /** The current view as absolute milliseconds. */
@@ -3876,16 +3876,46 @@ function adminHeader() {
   let t = null;
   try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
   if (!t) {
-    t = window.prompt('Admin token (--admin-token) for sharing, notes and reports:') || '';
+    t = window.prompt('Admin token for sharing, notes and reports (or open the link from fyisp\'s log):') || '';
     try { if (t) sessionStorage.setItem('fyisp-admin', t); } catch { /* ignore */ }
   }
   return t;
 }
 
+/** Adds X-FYISP-Admin when controls need the admin token and no session cookie carries it. @param {Record<string,string>} headers */
+function addAdmin(headers) {
+  if (status && status.controls === 'admin' && !status.admin) headers['X-FYISP-Admin'] = adminHeader();
+}
+
+/** Takes the token of an "open this link" URL (#admin=…) out of the address bar and history entry. */
+function takeAdminFragment() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const t = p.get('admin');
+  if (t == null) return '';
+  p.delete('admin');
+  const rest = p.toString();
+  history.replaceState(history.state, '', location.pathname + location.search + (rest ? '#' + rest : ''));
+  return t;
+}
+
+/** Exchanges the link's admin token for the HttpOnly session cookie. @param {string} t */
+async function adminLogin(t) {
+  try {
+    await fetchJSON('api/admin/session', { method: 'POST', headers: { 'X-FYISP-Token': TOKEN, 'X-FYISP-Admin': t } }, 1);
+    try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ }
+  } catch (e) {
+    adminLinkErr = /** @type {any} */ (e).status === 403
+      ? 'This link is not valid any more. Open the newest link from fyisp\'s log.'
+      : 'Could not use this link: ' + /** @type {any} */ (e).message;
+  }
+}
+/** Why an "open this link" URL did not work (shown as a notice). */
+let adminLinkErr = '';
+
 async function shareAction(/** @type {'start'|'stop'} */ what) {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
-  if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+  addAdmin(headers);
   try {
     const r = await fetchJSON(`api/share/${what}`, { method: 'POST', headers }, 1);
     status.share = r.share;
@@ -3940,7 +3970,7 @@ function renderShare() {
       kids.push(h('span', { class: 'muted', text: sh.phase === 'starting' ? 'Creating public link…' : sh.phase === 'reconnecting' ? 'Reconnecting public link…' : `Sharing: ${sh.phase}` }));
       if (!disabled) kids.push(h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => shareAction('stop') }));
   }
-  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started without --admin-token' }));
+  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started with --admin-token=off' }));
   el.replaceChildren(...kids);
 }
 
@@ -3948,6 +3978,7 @@ function renderNotices() {
   const el = $('#notices');
   const out = [];
   if (!status) { el.replaceChildren(); return; }
+  if (adminLinkErr) out.push(h('div', { class: 'notice danger' }, adminLinkErr));
   if (status.targets && status.ready < status.targets) {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));
   }
@@ -3995,6 +4026,7 @@ async function main() {
   mqLight.addEventListener('change', () => { applyTheme(storageGet('fyisp-theme')); themeChanged(); });
   // Taps elsewhere close a tooltip opened by tapping (touch screens have no hover).
   document.addEventListener('click', hideTip);
+  const adminTok = takeAdminFragment();
   readHash();
   const log = /** @type {HTMLDetailsElement} */ ($('#outages'));
   log.open = state.log;
@@ -4020,6 +4052,7 @@ async function main() {
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
   renderShare();
+  if (adminTok && MODE === 'local') await adminLogin(adminTok);
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
   traceOn = !!(prof.features && prof.features.trace);
