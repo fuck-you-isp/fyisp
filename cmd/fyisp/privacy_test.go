@@ -93,6 +93,8 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	mc := metrics.New(func() *model.Profile { return prof })
+	mos := metrics.NewCallMOS(func() *model.Profile { return prof })
+	mc.Register(mos)
 	runner := probe.New(probe.Options{
 		Log: log,
 		Lookup: func(context.Context, string) ([]netip.Addr, error) {
@@ -104,7 +106,7 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 	defer cancel()
 	var mu sync.Mutex
 	var samples []model.Sample
-	sink := model.Fanout{st, mc, model.SinkFunc(func(s model.Sample) {
+	sink := model.Fanout{st, mc, mos, model.SinkFunc(func(s model.Sample) {
 		mu.Lock()
 		defer mu.Unlock()
 		samples = append(samples, s)
@@ -156,6 +158,11 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 	outputs = append(outputs, m,
 		get(local, "/api/status"), get(local, "/api/profile"), get(local, "/api/panel?group=calls&from=now-5m"),
 		get(public, "/s/0123456789abcdef0123456789abcdef/api/status"), get(public, "/s/0123456789abcdef0123456789abcdef/api/profile"), get(public, "/s/0123456789abcdef0123456789abcdef/api/panel?group=calls&from=now-5m"))
+	calls := get(local, "/api/calls?from=now-5m")
+	if !strings.Contains(calls, `"app":"meet","udp":"measured"`) {
+		t.Errorf("/api/calls does not measure Meet:\n%s", calls)
+	}
+	outputs = append(outputs, calls, get(public, "/s/0123456789abcdef0123456789abcdef/api/calls?from=now-5m"))
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
