@@ -1103,7 +1103,7 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 	switch {
 	case who == whoNone && a.Cause != "":
 	case who == whoNone:
-		a.Cause = cp.everything(in.hs.home > 0)
+		a.Cause = cp.everything(in.hs.home > 0, in.tiles)
 	case whoOf(in.v.Kind) == who:
 		a.Cause = cp.verdictCause(in.v.Kind, a.Confidence, in.v.Quiet, affected, in.hs.onlyOther())
 	case who == whoCallTraffic:

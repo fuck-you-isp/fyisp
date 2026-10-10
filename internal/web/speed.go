@@ -823,7 +823,7 @@ func (r *speedRow) publicWording() {
 	}
 }
 
-var publicWording = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual", "your provider", "the internet provider",
+var publicWording = strings.NewReplacer("your provider's", "the provider's", "your line", "the line", "your modem", "the modem", "your daytime", "the daytime", "your usual", "the usual", "your provider", "the internet provider",
 	"Your router's", "The router's", "your home", "the home")
 
 func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz *time.Location) speedRow {
@@ -926,8 +926,10 @@ func speedUnderLoadOf(ts []model.SpeedTest) speedUnderLoad {
 	}
 	effect := func(rise float64) string {
 		switch {
-		case rise < 30:
-			return "barely changes"
+		case rise < 5:
+			return "no real change"
+		case rise < 50:
+			return "a small rise, fine for calls"
 		case rise <= 100:
 			return "noticeable on calls"
 		}
@@ -940,8 +942,12 @@ func speedUnderLoadOf(ts []model.SpeedTest) speedUnderLoad {
 		}{{edge.DownMs, "downloading"}, {edge.UpMs, "uploading"}} {
 			if d.v != nil {
 				rise := *d.v - *edge.IdleMs
-				out.Text = append(out.Text, fmt.Sprintf("Delay through your provider rises from %.0f ms to %.0f ms while %s (%+.0f ms): %s.",
-					*edge.IdleMs, *d.v, d.what, rise, effect(rise)))
+				line := fmt.Sprintf("Delay to your provider's first router rises from %.0f to %.0f ms while %s (%+.0f ms): %s.",
+					*edge.IdleMs, *d.v, d.what, rise, effect(rise))
+				if rise >= 50 {
+					line += " This usually builds up in the queue on your line (your modem, or the provider's first router), not further out."
+				}
+				out.Text = append(out.Text, line)
 			}
 		}
 	}

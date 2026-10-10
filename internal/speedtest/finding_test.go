@@ -122,7 +122,7 @@ func TestFinding(t *testing.T) {
 				return 0.4
 			}
 			return 1
-		}, "wired", nan, CaseServer, "", []string{"Only C one slows from about 7 to 11 pm. That's most likely that server's own busy time: the other servers in its city stay normal then."}},
+		}, "wired", nan, CaseServer, "", []string{"Only C one slows from about 7 to 11 pm. That's most likely that server's own busy time rather than your connection."}},
 		{"flat", 9, func(string, int) float64 { return 1 }, "wired", nan, CaseNothing, "", []string{"No slowdown of 25% or more stands out: every hour stays within about 10% of normal."}},
 		{"two days", 2, func(string, int) float64 { return 1 }, "wired", nan, CaseNotEnough, "", []string{"2 of 3 days so far."}},
 	}
@@ -201,8 +201,8 @@ func TestHomeLine(t *testing.T) {
 	ts := synth(c, 9, dip, "wired")
 	f := FindFinding(FindingInput{Tests: ts, Catalog: c})
 	l := HomeLine(f, ts, nil, now)
-	if l == nil || l.Kind != "pattern" || l.Impact != "ok" || l.Text != "Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). Every test server shows it, so it's most likely your internet provider's network."+
-		" That's still plenty for video calls. Wi-Fi, or other people at home using the internet heavily at those hours, can look the same." {
+	if l == nil || l.Kind != "pattern" || l.Impact != "ok" || l.Text != "Speed: evenings are about 40% slower than daytime (around 7 to 11 pm), but still fast enough for video calls."+
+		" Every test server shows it, so it's most likely your internet provider's network, unless it's Wi-Fi or heavy use by others at home." {
 		t.Fatalf("%+v", l)
 	}
 	// A slow evening: may be too slow for video calls.
@@ -342,11 +342,13 @@ func synthDown(c *Catalog, days int, score func(sv string, h int) float64, base 
 
 // TestFindingNetIsp: the re-review's cases (net-isp-review.md).
 // publicVoice: the share link's and report's texts never address the
-// viewer ("your …"): they're about someone else's line.
+// viewer ("your …") or speak as fyisp ("we"): they're about someone
+// else's line.
 func publicVoice(t *testing.T, name string, f Finding) {
 	t.Helper()
 	for what, s := range map[string]string{"text_public": f.TextPublic, "caveat_public": f.CaveatPublic, "evidence": f.Evidence} {
-		if strings.Contains(strings.ToLower(s), "your") || strings.Contains(s, " you ") {
+		l := " " + strings.ToLower(s)
+		if strings.Contains(l, "your") || strings.Contains(l, " you ") || strings.Contains(l, " we ") || strings.Contains(l, " we'") || strings.Contains(l, " we’") {
 			t.Errorf("%s: %s %q", name, what, s)
 		}
 	}

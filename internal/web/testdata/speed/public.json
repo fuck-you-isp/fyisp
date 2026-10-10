@@ -161,8 +161,8 @@
   "servers": [],
   "slow_days": 24,
   "tests": 279,
-  "text": "Every region slows from about 9 pm to 1 am, with every provider we could test: tests read about 40% below the same servers' usual results. That points to the internet provider's own network.",
-  "text_public": "Every region slows from about 9 pm to 1 am, with every provider we could test: tests read about 40% below the same servers' usual results. That points to the internet provider's own network.",
+  "text": "Every region slows from about 9 pm to 1 am, with every provider tested: tests read about 40% below the same servers' usual results. That points to the internet provider's own network.",
+  "text_public": "Every region slows from about 9 pm to 1 am, with every provider tested: tests read about 40% below the same servers' usual results. That points to the internet provider's own network.",
   "tier": "points_to",
   "up": false
  },
@@ -3388,8 +3388,8 @@
    }
   ],
   "text": [
-   "Delay through the internet provider rises from 8 ms to 21 ms while downloading (+13 ms): barely changes.",
-   "Delay through the internet provider rises from 8 ms to 48 ms while uploading (+40 ms): noticeable on calls.",
+   "Delay to the provider's first router rises from 8 to 21 ms while downloading (+13 ms): a small rise, fine for calls.",
+   "Delay to the provider's first router rises from 8 to 48 ms while uploading (+40 ms): a small rise, fine for calls.",
    "The router's delay rises from 1 to 2 ms: the home network keeps up."
   ]
  },

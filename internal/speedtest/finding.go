@@ -119,7 +119,8 @@ func FindFinding(in FindingInput) Finding {
 	if f.Days < MinDays {
 		f.Case = CaseNotEnough
 		f.Text = fmt.Sprintf("We need about %d days of tests to compare times of day. %d of %d days so far.", MinDays, f.Days, MinDays)
-		f.TextPublic, f.Evidence = f.Text, fmt.Sprintf("Based on %s so far.", plural(len(tests), "test", "tests"))
+		f.TextPublic = fmt.Sprintf("About %d days of tests are needed to compare times of day; %d of %d so far.", MinDays, f.Days, MinDays)
+		f.Evidence = fmt.Sprintf("Based on %s so far.", plural(len(tests), "test", "tests"))
 		return f
 	}
 	// From here Days is the span the tests cover, in whole days: 4 days of
@@ -260,7 +261,7 @@ func (f *Finding) thin(in FindingInput, tests []model.SpeedTest) bool {
 	} else {
 		f.Text = fmt.Sprintf("Still learning: %d of 24 hours of the day have enough tests so far. We need %s to compare times of day.", covered, wait)
 	}
-	f.TextPublic = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual").Replace(f.Text)
+	f.TextPublic = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual", "We need "+wait+" to compare times of day.", "More tests are needed: "+wait+".").Replace(f.Text)
 	return true
 }
 
@@ -826,13 +827,19 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 			label = s.Label
 		}
 		claim = fmt.Sprintf("Only %s %s from about %s.", label, slowVerb1(f.Up), when)
-		f.Text = claim + " That's most likely that server's own busy time: the other servers in its city stay normal then."
-		f.TextPublic = f.Text
+		if f.Tier == TierEarly {
+			f.Text = claim + " It may be that server's own busy time rather than your connection. A few more days will tell."
+		} else {
+			f.Text = claim + " That's most likely that server's own busy time rather than your connection."
+		}
+		f.TextPublic = strings.Replace(f.Text, "your connection", "the connection", 1)
 		f.evidence(minTests, minProv)
 		return
 	}
 	f.Text = claim + " " + tierTail(f.Tier, who)
-	f.TextPublic = strings.NewReplacer("your line's", "the line's", "Your provider's", "The provider's").Replace(claim) + " " + tierTail(f.Tier, whoPublic)
+	f.TextPublic = strings.NewReplacer("your line's", "the line's", "Your provider's", "The provider's", "every provider we could test", "every provider tested",
+		"the others we could test stay normal", "the others tested stay normal", "other providers we could test there", "other providers tested there").Replace(claim) +
+		" " + strings.Replace(tierTail(f.Tier, whoPublic), "We'll know more in a few days.", "A few more days of tests will tell.", 1)
 	f.evidence(minTests, minProv)
 }
 
@@ -1031,7 +1038,7 @@ func HomeLine(f Finding, tests []model.SpeedTest, loc *time.Location, now time.T
 	}
 	switch f.Case {
 	case CaseNotEnough:
-		return &HomeSpeed{Text: fmt.Sprintf("Speed: checking at different times of day. We need about %d days to see a pattern.", MinDays), Kind: "warmup", Impact: "ok"}
+		return &HomeSpeed{Text: fmt.Sprintf("Speed: checking at different times of day. About %d days of tests are needed to see a pattern.", MinDays), Kind: "warmup", Impact: "ok"}
 	case CaseNothing:
 		if n == 0 || float64(ok) < 0.7*float64(n) {
 			return nil
@@ -1053,34 +1060,38 @@ func HomeLine(f Finding, tests []model.SpeedTest, loc *time.Location, now time.T
 			}
 		}
 	}
+	// At most two sentences: the dip and what it means for calls; then
+	// where it is, as sure as the finding's tier, with its caveat folded in.
 	part, ref := partOfDay(&Pattern{DipFrom: f.Hours[0], Hours: f.Hours})
-	what := part + " are slower"
+	than := map[string]string{"daytime": "than daytime", "usual": "than usual"}[ref]
+	what := lowerFirst(part) + " are"
 	if f.Up {
-		what = "Uploads are slower in the " + lowerFirst(part)
+		what = "uploads in the " + lowerFirst(part) + " are"
 	}
-	text := fmt.Sprintf("%s: about %d%% below your %s speed (around %s).", what, int(f.Drop*100+0.5), ref, hoursText(f.Hours))
-	// Where it is, as sure as the finding's tier.
+	impact := "ok"
+	calls := "but still fast enough for video calls"
+	if (len(down) > 0 && callq.Quantile(down, 0.1) < videoDownBps) || (len(up) > 0 && callq.Quantile(up, 0.1) < videoUpBps) {
+		impact, calls = "video_risk", "and may be too slow for video calls then"
+	}
+	text := fmt.Sprintf("Speed: %s about %d%% slower %s (around %s), %s.", what, int(f.Drop*100+0.5), than, hoursText(f.Hours), calls)
 	shows := "Every test server shows it"
 	if len(f.Regions) < f.RegionsJudged || len(f.FarRegions) > 0 {
 		shows = "Most test servers show it"
 	}
+	unless := ""
+	switch {
+	case f.Bridged:
+		unless = ", though fyisp runs behind another router here"
+	case f.Caveat != "":
+		unless = ", unless it's Wi-Fi or heavy use by others at home"
+	}
 	switch f.Tier {
 	case TierPointsTo:
-		text += " " + shows + ", which points to your internet provider's network."
+		text += " " + shows + ", which points to your internet provider's network" + unless + "."
 	case TierMostLikely:
-		text += " " + shows + ", so it's most likely your internet provider's network."
+		text += " " + shows + ", so it's most likely your internet provider's network" + unless + "."
 	default:
-		text += " " + shows + " so far, so it may be your internet provider's network."
-	}
-	impact := "ok"
-	if (len(down) > 0 && callq.Quantile(down, 0.1) < videoDownBps) || (len(up) > 0 && callq.Quantile(up, 0.1) < videoUpBps) {
-		impact = "video_risk"
-		text += " At those times it may be too slow for video calls."
-	} else {
-		text += " That's still plenty for video calls."
-	}
-	if f.Caveat != "" {
-		text += " " + f.Caveat
+		text += " " + shows + " so far, so it may be your internet provider's network" + unless + "."
 	}
 	return &HomeSpeed{Text: text, Kind: "pattern", Impact: impact}
 }
