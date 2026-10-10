@@ -942,10 +942,10 @@ function incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
 /** @typedef {{hop:number,ip?:string,no_reply?:boolean,private?:boolean,masked?:boolean,rdns?:string,asn?:number,owner?:string}} HopRef */
 /** @typedef {HopRef & {n:number,lost:number,loss:number,min:number|null,mean:number|null,max:number|null,p95:number|null,jitter:number|null,loss_continues:boolean}} HopRow */
 /** @typedef {{id:number,target:string,at:string,first_diff:number,from:HopRef[],to:HopRef[]}} RouteChange */
-/** @typedef {{target:string,traced:boolean,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigate_until?:number}} TraceData */
+/** @typedef {{target:string,traced:boolean,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigation?:InvState}} TraceData */
+/** @typedef {{target:string,state:string,rounds_done:number,rounds_max:number,interval_ms:number,started_at:number,finished_at?:number}} InvState */
 
 const INV_REFRESH_MS = 5000;
-const KEEPALIVE_MS = 60000;
 const REAL_LOSS = 0.01; // loss below 1% is noise
 const INV_SYNC = 'fyisp-inv';
 
@@ -960,7 +960,7 @@ function targetInfo(/** @type {string} */ name) { return allTargets.find((t) => 
 /** The target the path panel and path-level incidents open: a traced anycast target, else any traced one. */
 function defaultTraceTarget() {
   const tr = allTargets.filter((t) => t.trace);
-  return (tr.find((t) => t.layer === 'anycast') || tr[0] || (MODE === 'local' ? allTargets.find((t) => !t.layer) : null) || { name: '' }).name;
+  return (tr.find((t) => t.layer === 'anycast') || tr[0] || allTargets.find((t) => !t.layer) || { name: '' }).name;
 }
 
 /** The target an outage-log row offers to trace: the first affected one we can trace, else the path. */
@@ -968,7 +968,7 @@ function incidentTraceTarget(/** @type {Incident} */ inc) {
   if (!traceOn) return '';
   for (const n of inc.targets || []) {
     const t = targetInfo(n);
-    if (t && (t.trace || MODE === 'local')) return n;
+    if (t) return n; // anyone can start an on-demand trace (the share link too)
   }
   return defaultTraceTarget();
 }
@@ -999,11 +999,36 @@ function closeInvestigate() {
 function showView() {
   const on = !!(state.inv && inv);
   document.body.classList.toggle('investigating', on);
+  const homeOn = currentView() === 'h' && !on;
+  document.body.classList.toggle('home-on', homeOn);
+  if (home) home.el.hidden = !homeOn;
+  if (home) renderViewNav();
   if (inv) {
     inv.el.hidden = !on;
     if (on) inv.open(/** @type {string} */ (state.inv)); else inv.close();
   }
   updateRefreshLabel();
+}
+
+/**
+ * Why an on-demand trace couldn't start, in plain words, from the API's
+ * stable error code (never its wording): busy (the global cap, shared with
+ * share-link viewers), rate_limited and cooldown (wait retry_after
+ * seconds), unknown_target, forbidden.
+ * @param {any} e
+ */
+function invError(e) {
+  const b = e.body || {};
+  const s = Number(b.retry_after) || Number(e.retryAfter) || 0;
+  const wait = s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while';
+  switch (b.code) {
+    case 'busy': return 'Four traces are already running, which is the most at once. Try again in a few minutes.';
+    case 'rate_limited': return `You’ve started several traces recently. Try again ${wait}.`;
+    case 'cooldown': return `This target was traced moments ago. Try again ${wait}.`;
+    case 'unknown_target': return 'Tracing isn’t available for this target.';
+    case 'forbidden': return 'This page can’t start traces: open the dashboard at its own address.';
+  }
+  return e.status === 429 ? `Too many traces right now. Try again ${wait}.` : 'Couldn’t start the trace. Try again.';
 }
 
 function hopAddr(/** @type {HopRef} */ x) {
@@ -1039,10 +1064,14 @@ class Investigate {
     this.sig = '';
     /** @type {AbortController|null} */
     this.ctl = null;
-    this.lastPoke = 0;
     this.poking = false;
     this.invErr = '';
-    this.invUntil = 0;
+    /** @type {InvState|null} the on-demand trace of this target (running, or finished within the hour) */
+    this.invState = null;
+    // Start one on open, once the first load shows none is running.
+    this.wantStart = false;
+    /** Spoken only when a trace starts or finishes, never per round. */
+    this.invSay = h('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
     this.hover = false;
     /** @type {number[]} */
     this.hops = [];
@@ -1066,6 +1095,7 @@ class Investigate {
     this.chartLegend = h('ul', { class: 'legend inv-legend', 'aria-label': 'Hops on the timeline' });
     this.changesEl = h('div', { class: 'inv-changes' });
     this.el = h('section', { id: 'inv', class: 'inv', 'aria-label': 'Investigate a target hop by hop', hidden: true },
+      this.invSay,
       h('div', { class: 'inv-head' },
         h('button', { class: 'btn', type: 'button', text: '← Dashboard', onclick: closeInvestigate }),
         this.titleEl, this.picker, this.statusEl),
@@ -1104,8 +1134,7 @@ class Investigate {
       this.sel = new Set();
       this.userSel = false;
       this.invErr = '';
-      this.invUntil = 0;
-      this.lastPoke = 0;
+      this.invState = null;
       this.tbody.replaceChildren();
       this.summary.replaceChildren();
       this.changesEl.replaceChildren();
@@ -1118,15 +1147,16 @@ class Investigate {
     }
     this.fillPicker();
     this.titleEl.textContent = 'Investigate';
+    const t = targetInfo(target);
+    this.wantStart = !!t && !t.trace;
     this.renderStatus();
-    this.keepalive();
   }
 
   close() { this.ctl?.abort(); }
 
   fillPicker() {
     const opts = [];
-    const ok = (/** @type {TargetInfo} */ t) => t.trace || MODE === 'local';
+    const ok = (/** @type {TargetInfo} */ t) => !!t; // every target: anyone can start an on-demand trace
     const byGroup = new Map();
     for (const p of panels) byGroup.set(p.group.id, p.group.title);
     const groups = new Map();
@@ -1140,66 +1170,77 @@ class Investigate {
     if (traced.length) {
       opts.push(h('optgroup', { label: 'Always-on traces' }, ...traced.map((t) => h('option', { value: t.name, text: t.name }))));
     }
-    if (MODE === 'local') {
-      for (const [g, ts] of groups) {
-        const rest = ts.filter((/** @type {TargetInfo} */ t) => !t.trace);
-        if (rest.length) opts.push(h('optgroup', { label: `${g} (on demand)` }, ...rest.map((/** @type {TargetInfo} */ t) => h('option', { value: t.name, text: t.name }))));
-      }
+    for (const [g, ts] of groups) {
+      const rest = ts.filter((/** @type {TargetInfo} */ t) => !t.trace);
+      if (rest.length) opts.push(h('optgroup', { label: `${g} (on demand)` }, ...rest.map((/** @type {TargetInfo} */ t) => h('option', { value: t.name, text: t.name }))));
     }
     if (!allTargets.some((t) => t.name === this.target && ok(t))) opts.unshift(h('option', { value: this.target, text: this.target }));
     this.picker.replaceChildren(...opts);
     this.picker.value = this.target;
   }
 
-  /** On-demand trace for a target without an always-on trace: POST now and every 60 s while open. */
-  keepalive() {
-    const t = targetInfo(this.target);
-    if (MODE !== 'local' || !t || t.trace || this.poking || document.hidden) return;
-    if (status && status.controls === 'disabled') {
-      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started with --admin-token=off';
-      this.renderStatus();
-      return;
-    }
-    if (Date.now() - this.lastPoke < KEEPALIVE_MS) return;
-    this.poke();
-  }
-
+  /**
+   * Starts an on-demand trace (POST api/investigate). Anyone can, the share
+   * link too; it runs at most rounds_max rounds and stops by itself, so it
+   * is never re-posted to keep it alive. On a running trace the POST only
+   * returns its state.
+   */
   async poke() {
     const target = this.target;
+    if (this.poking) return;
     this.poking = true;
-    this.lastPoke = Date.now();
     /** @type {Record<string,string>} */
-    const headers = { 'X-FYISP-Token': TOKEN };
-    if (!await addAdmin(headers)) { this.poking = false; return; }
+    const headers = {};
+    if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
     try {
+      /** @type {InvState} */
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
       if (target !== this.target) return;
-      this.invUntil = r.until;
       this.invErr = '';
+      this.setInv(r);
     } catch (e) {
       if (target !== this.target) return;
-      const err = /** @type {any} */ (e);
-      if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
-      this.invErr = err.message;
+      this.invErr = invError(/** @type {any} */ (e));
     } finally {
       this.poking = false;
     }
     this.renderStatus();
+    this.renderSummaryIfEmpty();
+  }
+
+  /** A new trace state; speaks only when a trace starts or finishes. @param {InvState|null|undefined} v */
+  setInv(v) {
+    const prev = this.invState;
+    this.invState = v || null;
+    if (!v) return;
+    if (v.state === 'running' && (!prev || prev.state !== 'running' || prev.started_at !== v.started_at)) {
+      this.invSay.textContent = `Tracing ${v.target}: up to ${v.rounds_max} rounds.`;
+    } else if (v.state === 'finished' && prev && prev.state === 'running') {
+      this.invSay.textContent = `Trace of ${v.target} finished: ${v.rounds_done} rounds.`;
+    }
   }
 
   renderStatus() {
     const t = targetInfo(this.target);
     const d = this.data;
+    const v = this.invState;
     const kids = [];
     if (t && t.trace) kids.push(h('span', { class: 'pill on', text: 'Always-on trace' }));
-    else if (MODE === 'local') {
-      if (this.invErr) kids.push(h('span', { class: 'pill err', text: `On-demand trace failed: ${this.invErr}` }));
-      else if (this.invUntil) kids.push(h('span', { class: 'pill on', title: 'The trace keeps running while this view is open, and stops about 2 minutes after you leave it.', text: 'On-demand trace running' }));
-      else kids.push(h('span', { class: 'pill', text: 'Starting on-demand trace…' }));
-    } else kids.push(h('span', { class: 'pill', text: 'No always-on trace for this target' }));
+    else if (this.invErr) {
+      kids.push(h('span', { class: 'pill err', text: this.invErr }));
+      kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Try again', onclick: () => { this.invErr = ''; this.poke(); } }));
+    } else if (v && v.state === 'running') {
+      kids.push(h('span', { class: 'pill on', title: `About every ${Math.round(v.interval_ms / 100) / 10} s; it stops by itself after ${v.rounds_max} rounds.`, text: `Tracing… ${v.rounds_done} of ${v.rounds_max} rounds` }));
+    } else if (v && v.state === 'finished') {
+      kids.push(h('span', { class: 'pill', text: `Finished: ${v.rounds_done} rounds${v.finished_at ? ` (ended ${fmtWhen(v.finished_at)})` : ''}` }));
+      kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace again', disabled: this.poking || null, onclick: () => this.poke() }));
+    } else kids.push(h('span', { class: 'pill', text: 'Starting a trace…' }));
     if (d && d.route) kids.push(h('span', { class: 'muted small', text: `route unchanged since ${fmtWhen(Date.parse(d.route.since))}` }));
     this.statusEl.replaceChildren(...kids);
   }
+
+  /** The "Tracing…" line in the summary while there are no hops yet. */
+  renderSummaryIfEmpty() { if (this.data && !this.data.hops.length) this.renderSummary(); }
 
   setView(/** @type {number} */ from, /** @type {number} */ to) {
     this.view = [from / 1000, to / 1000];
@@ -1233,7 +1274,13 @@ class Investigate {
       const d = await fetchJSON('api/trace?' + new URLSearchParams({ target, from, to }), { signal: ctl.signal });
       if (ctl.signal.aborted || target !== this.target) return;
       this.data = d;
-      if (d.investigate_until) this.invUntil = d.investigate_until;
+      // A cached response (the share link caches for 10 s) can predate our start: never forget a known trace.
+      if (d.investigation) this.setInv(d.investigation);
+      // Opening a target without an always-on trace starts one, unless one is running or just finished.
+      if (this.wantStart) {
+        this.wantStart = false;
+        if (!d.investigation) this.poke();
+      }
       const dest = this.dest();
       if (!this.userSel) {
         this.sel = new Set();
@@ -1276,7 +1323,7 @@ class Investigate {
     const kids = [];
     if (!d.hops.length) {
       const t = targetInfo(this.target);
-      const pending = MODE === 'local' && t && !t.trace && !this.invErr;
+      const pending = t && !t.trace && !this.invErr && (!this.invState || this.invState.state === 'running');
       this.summary.className = 'inv-summary v-warming_up';
       kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.' : 'No trace data in this range.' }));
       this.summary.replaceChildren(...kids);
@@ -3220,11 +3267,10 @@ function homeShown() { return !!home && currentView() === 'h' && !(state.inv && 
 
 /** The header's Home | Details switch. */
 function renderViewNav() {
-  const v = currentView();
   const nav = $('#viewnav');
   nav.replaceChildren(
-    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
-    h('button', { type: 'button', text: 'Details', 'aria-current': v !== 'h' ? 'page' : null, onclick: () => { if (currentView() === 'h') openDetails(''); } }));
+    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': homeShown() ? 'page' : null, onclick: () => { if (!homeShown()) { state.inv = null; goHome(); } } }),
+    h('button', { type: 'button', text: 'Details', 'aria-current': !homeShown() ? 'page' : null, onclick: () => { if (homeShown()) openDetails(''); } }));
 }
 
 /**
@@ -3283,8 +3329,10 @@ function renderViewBar() {
 /** Applies the view and focus to the page: which panels show, the focus bar, isolation. */
 function applyView() {
   const v = currentView();
-  document.body.classList.toggle('home-on', v === 'h');
-  if (home) home.el.hidden = v !== 'h';
+  // Investigate (#t=) is part of Details: it hides Home, whatever the view.
+  const homeOn = v === 'h' && !(state.inv && inv);
+  document.body.classList.toggle('home-on', homeOn);
+  if (home) home.el.hidden = !homeOn;
   if (v !== 'h') document.title = MODE === 'public' ? 'Details · Internet quality report' : 'Details · fyisp';
   renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
@@ -3771,7 +3819,6 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden || homeShown()) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
-  if (inv && state.inv) inv.keepalive();
 });
 
 // ---------- header controls ----------
