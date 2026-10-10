@@ -56,6 +56,8 @@ type doc struct {
 
 	HasNotes bool
 	Notes    []noteRow
+
+	Speed *speedView
 }
 
 type totalRow struct {
@@ -213,6 +215,7 @@ func (r *run) render() ([]byte, error) {
 		d.Charts = append(d.Charts, gc)
 	}
 	d.Traces = r.traces
+	d.Speed = r.speedSection()
 
 	for _, a := range r.notes {
 		when := fmtTableTime(a.At)
@@ -377,6 +380,18 @@ const pageTmpl = `<!doctype html>
 {{- end}}
 </section>
 {{end}}
+{{- with .Speed}}
+<section id="speed" class="brk">
+<h2>Speed tests</h2>
+<p>{{.Summary}}{{if .Pattern}} {{.Pattern}}{{end}}</p>
+<div class="tw"><table class="speed">
+<thead><tr><th>Region</th><th>Server</th><th class="n">Tests</th><th class="n">Download (median)</th><th class="n">Download (slowest 10%)</th><th class="n">Upload (median)</th><th>Slowest hours</th><th>Busy or failed</th></tr></thead>
+<tbody>{{range .Rows}}<tr><td>{{.Name}}</td><td>{{.Server}}</td><td class="n">{{.Tests}}</td><td class="n">{{.Down}}</td><td class="n">{{.DownP10}}</td><td class="n">{{.Up}}</td><td class="t">{{.Dip}}</td><td>{{.Trouble}}</td></tr>
+{{end}}</tbody>
+</table></div>
+<p class="note">Probes that ran during a speed test measure the test, not your connection: they are left out everywhere in this report.</p>
+</section>
+{{- end}}
 {{- if .HasNotes}}
 <section id="notes">
 <h2>Notes</h2>

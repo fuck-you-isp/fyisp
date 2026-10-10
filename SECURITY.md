@@ -30,6 +30,15 @@ stores, logs or exports the address (a test checks samples, the API, metrics,
 reports and logs for it). Socket errors are stored only as a reason code,
 never as text that could contain an address. `--no-udp` turns STUN off.
 
+Speed tests are off unless you switch them on (`--speedtest` or the Details
+toggle). Then every test sends about 20 seconds of iperf3 traffic to one of
+the public iperf3 servers YABS uses (the README lists them), which see your
+public IP address. fyisp connects only to the servers in its catalog file and
+to a server you name with `--speedtest-server`. "Test now" and the toggle are
+write actions behind the same protections as notes (same origin, CSRF token,
+admin token), and the share link has neither. The share link shows speeds but
+not server names, cities or ports: the nearest servers hint at where you are.
+
 The public share link hides the STUN target names and the Teams relay region
 (the Azure region fyisp's relay lookup landed in, which hints at where you
 are), along with the other redactions listed in the README.

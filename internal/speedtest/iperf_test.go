@@ -309,11 +309,8 @@ func TestFailures(t *testing.T) {
 			t.Errorf("%s: %v", c.mode, err)
 		}
 	}
-	ln, _ := net.Listen("tcp", "127.0.0.1:0")
-	addr := ln.Addr().String()
-	ln.Close()
-	if _, err := Run(ctx, quick(addr, Download)); !errors.Is(err, ErrUnreachable) {
-		t.Errorf("closed port: %v", err)
+	if _, err := Run(ctx, Config{Addr: "192.0.2.1:5201", Timeout: 300 * time.Millisecond, Dial: (&net.Dialer{Timeout: 200 * time.Millisecond}).DialContext}); !errors.Is(err, ErrUnreachable) && !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("no answer: %v", err)
 	}
 }
 
@@ -358,5 +355,31 @@ func TestCookie(t *testing.T) {
 		if !bytes.ContainsRune([]byte("abcdefghijklmnopqrstuvwxyz234567"), rune(ch)) {
 			t.Fatalf("cookie %q", a)
 		}
+	}
+}
+
+// TestAdaptive: a steady rate ends the test once 2 s are measured (2 s
+// minimum here); a refused port is ErrRefused, not ErrUnreachable.
+func TestAdaptive(t *testing.T) {
+	f := newFakeServer(t, "")
+	cfg := quick(f.addr(), Download)
+	cfg.Duration, cfg.MinDuration = 6*time.Second, 2*time.Second
+	t0 := time.Now()
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Elapsed < 2*time.Second || r.Elapsed > 3500*time.Millisecond || time.Since(t0) > 5*time.Second {
+		t.Errorf("steady rate: measured %v in %v, want an early end at ~2-3 s", r.Elapsed, time.Since(t0))
+	}
+	want := 3 * float64(64<<10) * 100 * 8
+	if bps := r.BitsPerSecond(); bps < want*0.7 || bps > want*1.3 {
+		t.Errorf("%.1f Mbit/s, want ~%.1f", bps/1e6, want/1e6)
+	}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	addr := ln.Addr().String()
+	ln.Close()
+	if _, err := Run(context.Background(), quick(addr, Download)); !errors.Is(err, ErrRefused) || errors.Is(err, ErrUnreachable) {
+		t.Errorf("closed port: %v", err)
 	}
 }

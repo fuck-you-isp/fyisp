@@ -121,6 +121,11 @@ func reportDeps(ctx context.Context, st store.Reader, prof *model.Profile) repor
 	if as, ok := st.(store.AnnotationStore); ok {
 		d.Annotations = as
 	}
+	if ss, ok := st.(interface {
+		SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+	}); ok {
+		d.SpeedTests = ss.SpeedTests
+	}
 	if br, ok := st.(store.BaselineReader); ok {
 		var mu sync.Mutex
 		cache := map[model.SeriesKey]model.Baseline{}

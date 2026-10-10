@@ -339,11 +339,11 @@ func Builtin() (*Registry, error) {
 	return builtinReg, builtinErr
 }
 
-// IperfServersYAML is catalog/iperf3/yabs.yml, the public iperf3 servers
+// IperfCatalog is catalog/iperf3: the public iperf3 servers and regions
 // for speed tests (parsed by package speedtest).
-func IperfServersYAML() []byte {
-	b, _ := catalogFS.ReadFile("catalog/iperf3/yabs.yml")
-	return b
+func IperfCatalog() fs.FS {
+	sub, _ := fs.Sub(catalogFS, "catalog/iperf3")
+	return sub
 }
 
 // CheckPublicHost reports whether h is a hostname or a public IPv4

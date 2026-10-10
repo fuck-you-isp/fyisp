@@ -19,10 +19,10 @@ func (s *SQLite) SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error {
 	if s.lock == nil {
 		return errors.New("store: read-only")
 	}
-	err := s.db.w.QueryRowContext(ctx, `INSERT INTO speedtests(start_ms, end_ms, trigger, outcome, server, port, attempts,
+	err := s.db.w.QueryRowContext(ctx, `INSERT INTO speedtests(start_ms, end_ms, trigger, outcome, region, server, fallback, port, attempts,
 		down_bps, up_bps, down_retrans, up_retrans, idle_gw_ms, loaded_gw_ms, idle_call_ms, loaded_call_ms)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		t.Start.UnixMilli(), t.End.UnixMilli(), t.Trigger, t.Outcome, t.Server, t.Port, t.Attempts,
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		t.Start.UnixMilli(), t.End.UnixMilli(), t.Trigger, t.Outcome, t.Region, t.Server, t.Fallback, t.Port, t.Attempts,
 		nullF(t.DownBps), nullF(t.UpBps), nullI(t.DownRetrans), nullI(t.UpRetrans),
 		nullF(t.IdleGatewayMs), nullF(t.LoadedGatewayMs), nullF(t.IdleCallMs), nullF(t.LoadedCallMs)).Scan(&t.ID)
 	if err != nil {
@@ -33,7 +33,7 @@ func (s *SQLite) SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error {
 
 // SpeedTests returns the tests that started in [from, to], oldest first.
 func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
-	rows, err := s.db.r.QueryContext(ctx, `SELECT id, start_ms, end_ms, trigger, outcome, server, port, attempts,
+	rows, err := s.db.r.QueryContext(ctx, `SELECT id, start_ms, end_ms, trigger, outcome, region, server, fallback, port, attempts,
 		down_bps, up_bps, down_retrans, up_retrans, idle_gw_ms, loaded_gw_ms, idle_call_ms, loaded_call_ms
 		FROM speedtests WHERE start_ms >= ? AND start_ms <= ? ORDER BY start_ms, id`, from.UnixMilli(), to.UnixMilli())
 	if err != nil {
@@ -46,7 +46,7 @@ func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.Sp
 		var start, end int64
 		var down, up, igw, lgw, icall, lcall sql.NullFloat64
 		var dr, ur sql.NullInt64
-		if err := rows.Scan(&t.ID, &start, &end, &t.Trigger, &t.Outcome, &t.Server, &t.Port, &t.Attempts,
+		if err := rows.Scan(&t.ID, &start, &end, &t.Trigger, &t.Outcome, &t.Region, &t.Server, &t.Fallback, &t.Port, &t.Attempts,
 			&down, &up, &dr, &ur, &igw, &lgw, &icall, &lcall); err != nil {
 			return nil, err
 		}

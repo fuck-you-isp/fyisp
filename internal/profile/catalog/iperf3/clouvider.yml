@@ -1,0 +1,18 @@
+# Clouvider's public speed-test servers: iperf3 on ports 5200-5209.
+provider: clouvider
+display: Clouvider
+sources:
+  - https://github.com/masonr/yet-another-bench-script/blob/master/yabs.sh
+  - https://www.clouvider.com/looking-glass/
+notes: >-
+  Ports checked open with one TCP connect each (team lead, 2026-10-10).
+servers:
+  - {id: Clouvider-London, host: lon.speedtest.clouvider.net, ports: 5200-5209, city: London, country: GB, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Manchester, host: man.speedtest.clouvider.net, ports: 5200-5209, city: Manchester, country: GB, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Frankfurt, host: fra.speedtest.clouvider.net, ports: 5200-5209, city: Frankfurt, country: DE, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Amsterdam, host: ams.speedtest.clouvider.net, ports: 5200-5209, city: Amsterdam, country: NL, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-NewYork, host: nyc.speedtest.clouvider.net, ports: 5200-5209, city: New York, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Ashburn, host: ash.speedtest.clouvider.net, ports: 5200-5209, city: Ashburn, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Atlanta, host: atl.speedtest.clouvider.net, ports: 5200-5209, city: Atlanta, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Dallas, host: dal.speedtest.clouvider.net, ports: 5200-5209, city: Dallas, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-LosAngeles, host: la.speedtest.clouvider.net, ports: 5200-5209, city: Los Angeles, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}

@@ -1,0 +1,22 @@
+# OVHcloud's official speed-test network: iperf3 on ports 5201-5210.
+# bom1-ynm1 (Mumbai) is left out: its ports were closed on 2026-10-10.
+provider: ovh
+display: OVH
+sources:
+  - http://proof.ovh.net/
+  - https://network.ovh.com/
+notes: >-
+  Ports checked open with one TCP connect each (team lead, 2026-10-10).
+servers:
+  - {id: OVH-London, host: lon1-eri.speedtest.network.ovh.net, ports: 5201-5210, city: London, country: GB, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Gravelines, host: lil2-gra.speedtest.network.ovh.net, ports: 5201-5210, city: Gravelines, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Roubaix, host: lil1-rbx.speedtest.network.ovh.net, ports: 5201-5210, city: Roubaix, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Strasbourg, host: sxb1-sbg.speedtest.network.ovh.net, ports: 5201-5210, city: Strasbourg, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Paris-CCH, label: OVH Paris (CCH), host: par3-cch.speedtest.network.ovh.net, ports: 5201-5210, city: Paris, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Paris-IEB, label: OVH Paris (IEB), host: par3-ieb.speedtest.network.ovh.net, ports: 5201-5210, city: Paris, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Paris-MR9, label: OVH Paris (MR9), host: par3-mr9.speedtest.network.ovh.net, ports: 5201-5210, city: Paris, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Beauharnois, host: ymq1-bhs.speedtest.network.ovh.net, ports: 5201-5210, city: Beauharnois, country: CA, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Hillsboro, host: pdx1-hil.speedtest.network.ovh.net, ports: 5201-5210, city: Hillsboro, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-VintHill, label: OVH Vint Hill, host: was1-vin.speedtest.network.ovh.net, ports: 5201-5210, city: Vint Hill, country: US, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Singapore, host: sin1-sgp.speedtest.network.ovh.net, ports: 5201-5210, city: Singapore, country: SG, geo: as, verified: {date: 2026-10-10, tcp: true}}
+  - {id: OVH-Sydney, host: syd1-sy2.speedtest.network.ovh.net, ports: 5201-5210, city: Sydney, country: AU, geo: oc, verified: {date: 2026-10-10, tcp: true}}

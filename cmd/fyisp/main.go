@@ -162,8 +162,8 @@ func parseFlags(args []string) (config, error) {
 	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
-	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (every 15m), --speedtest=every=30m, or --speedtest=off (the Details toggle can still switch it on); see the README's \"Speed tests\"")
-	fs.StringVar(&c.speedServer, "speedtest-server", "", "test against your own iperf3 server (`host:port`) instead of the public ones; no 15-minute floor")
+	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (9 regions, each every 15m), --speedtest=nearest, --speedtest=regions,every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
+	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor when all are your own")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, sharing) when --listen is not loopback; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
@@ -197,12 +197,8 @@ func parseFlags(args []string) (config, error) {
 	if c.configPath != "" && (len(c.profiles) > 0 || len(c.geos) > 0) {
 		return c, fmt.Errorf("--config and --profile/--geo are mutually exclusive: use `extends: [%s]` in the file", strings.Join(c.profiles, ", "))
 	}
-	if c.speedServer != "" {
-		if _, err := speedtest.ParseCustom(c.speedServer); err != nil {
-			return c, err
-		}
-	} else if c.speed.every > 0 && c.speed.every < speedtest.MinInterval {
-		return c, fmt.Errorf("--speedtest=every=%s: at least %s against the public servers (any interval with --speedtest-server)", c.speed.every, speedtest.MinInterval)
+	if err := checkSpeedFlags(&c); err != nil {
+		return c, err
 	}
 	envProfiles(&c.profiles, c.configPath)
 	return c, nil
@@ -330,7 +326,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	reports := webReports{
 		b: report.New(report.Deps{
 			Profile: func() *model.Profile { return prof }, Store: st, Trace: st,
-			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, Version: version,
+			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, SpeedTests: st.SpeedTests, Version: version,
 		}),
 		ReportStore: st,
 	}
@@ -374,7 +370,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		Profile: func() *model.Profile { return prof },
 		Store:   st,
 		Status: func() web.Status {
-			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready()}
+			ms := speed.MaskedShare(24 * time.Hour)
+			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready(), SpeedMasked: &ms}
 		},
 		Metrics:     mc.Handler(),
 		Verdict:     eng,

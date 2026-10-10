@@ -1,0 +1,15 @@
+# Speed-test regions (fyisp --speedtest, mode "regions"): each region is
+# tested every 15 minutes, one test at a time across regions. A test tries
+# the chain in order: a busy server gets 2 more ports, then the next server;
+# an unreachable one is skipped at once. Ids are identities of the stored
+# results: never rename. Servers are the ids of the other files here.
+regions:
+  - {id: uk, title: UK, chain: [Clouvider-London, Leaseweb-London, OVH-London]}
+  - {id: eu-west, title: Western Europe, chain: [OVH-Roubaix, Scaleway-Paris, Leaseweb-Amsterdam]}
+  - {id: eu-central, title: Central Europe, chain: [Leaseweb-Frankfurt, Clouvider-Frankfurt, Eranium-Amsterdam]}
+  - {id: us-east, title: US East, chain: [Leaseweb-NewYork, Clouvider-NewYork, OVH-VintHill]}
+  - {id: us-central, title: US Central, chain: [Clouvider-Dallas, Leaseweb-Dallas, Leaseweb-Chicago]}
+  - {id: us-west, title: US West, chain: [Clouvider-LosAngeles, Leaseweb-LosAngeles, OVH-Hillsboro]}
+  - {id: asia-east, title: East Asia, chain: [Leaseweb-Tokyo, Leaseweb-HongKong]}
+  - {id: asia-southeast, title: Southeast Asia, chain: [OVH-Singapore, Leaseweb-Singapore]}
+  - {id: oceania, title: Oceania, chain: [Leaseweb-Sydney, OVH-Sydney]}

@@ -32,6 +32,9 @@ type Deps struct {
 	// ISP returns the ISP edge hop's owner (nil or 0: derived from the
 	// traced routes when possible).
 	ISP func() (asn uint32, owner string)
+	// SpeedTests returns the speed tests that started in [from, to] (nil:
+	// no speed section).
+	SpeedTests func(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
 	// Version is shown in reports that are not redacted.
 	Version string
 }
@@ -108,6 +111,7 @@ type run struct {
 	ispASN    uint32
 	ispOwner  string
 	baselines bool // any baseline known
+	speed     []model.SpeedTest
 }
 
 type incident struct {
@@ -234,6 +238,9 @@ func (r *run) collect(ctx context.Context) error {
 	}
 	if d.ISP != nil {
 		r.ispASN, r.ispOwner = d.ISP()
+	}
+	if err := r.collectSpeed(ctx); err != nil {
+		return err
 	}
 	if d.Trace != nil {
 		if err := r.collectTraces(ctx, affected); err != nil {

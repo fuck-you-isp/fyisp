@@ -25,6 +25,11 @@
 //	id,at,end,public,text
 //	3,2026-09-26T12:00:00.000Z,2026-09-26T12:30:00.000Z,1,call dropped
 //
+// Speed tests (--speedtests), one row per test, oldest first; bits per
+// second and milliseconds, empty when not measured or unknown:
+//
+//	id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms
+//
 // The SQLite format holds the same columns in a table named samples (raw;
 // ts is the column ts_utc, lost is NULL when not measured) or summary_1h;
 // hop is NULL for kinds other than trace.
@@ -72,6 +77,15 @@ type Options struct {
 	// when unset) as CSV (AnnotationHeader) instead of samples. The reader
 	// must also be a store.AnnotationStore.
 	Annotations bool
+	// SpeedTests exports the speed tests that started in [From, To] as CSV
+	// (SpeedTestHeader) instead of samples. The reader must also be a
+	// SpeedTestReader.
+	SpeedTests bool
+}
+
+// SpeedTestReader reads stored speed tests (*store.SQLite).
+type SpeedTestReader interface {
+	SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
 }
 
 // RawHeader and HourlyHeader are the CSV headers.
@@ -81,6 +95,10 @@ var (
 	// AnnotationHeader: at and end in TimeFormat (end empty for a point in
 	// time), public 0 or 1, oldest first.
 	AnnotationHeader = []string{"id", "at", "end", "public", "text"}
+	// SpeedTestHeader: start and end in TimeFormat; outcome ok, busy (the
+	// server ran another test: not a slow result), unreachable or failed.
+	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "port", "attempts", "down_bps", "up_bps",
+		"down_retrans", "up_retrans", "idle_gateway_ms", "loaded_gateway_ms", "idle_call_ms", "loaded_call_ms"}
 )
 
 // Run exports to o.Output, or as CSV to stdout when o.Output is "" or "-".
@@ -102,6 +120,13 @@ func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
 			return errors.New("export: this store has no annotations")
 		}
 		return WriteAnnotations(ctx, as, w, o.From, o.To)
+	}
+	if o.SpeedTests {
+		sr, ok := r.(SpeedTestReader)
+		if !ok {
+			return errors.New("export: this store has no speed tests")
+		}
+		return WriteSpeedTests(ctx, sr, w, o.From, o.To)
 	}
 	keys, o, err := selectKeys(ctx, r, o)
 	if err != nil {
@@ -179,11 +204,57 @@ func WriteAnnotations(ctx context.Context, as store.AnnotationStore, w io.Writer
 	return cw.Error()
 }
 
+// WriteSpeedTests writes the tests that started in [from, to] as CSV
+// (SpeedTestHeader); a zero from or to leaves that side open.
+func WriteSpeedTests(ctx context.Context, sr SpeedTestReader, w io.Writer, from, to time.Time) error {
+	if from.IsZero() {
+		from = time.UnixMilli(0)
+	}
+	if to.IsZero() {
+		to = time.UnixMilli(math.MaxInt64 / 2)
+	}
+	ts, err := sr.SpeedTests(ctx, from, to)
+	if err != nil {
+		return err
+	}
+	f := func(p *float64) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatFloat(*p, 'f', -1, 64)
+	}
+	i := func(p *int64) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatInt(*p, 10)
+	}
+	fb := func(b bool) string {
+		if b {
+			return "1"
+		}
+		return "0"
+	}
+	cw := csv.NewWriter(w)
+	if err := cw.Write(SpeedTestHeader); err != nil {
+		return err
+	}
+	for _, t := range ts {
+		if err := cw.Write([]string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
+			t.Trigger, t.Outcome, t.Region, t.Server, fb(t.Fallback), strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
+			i(t.DownRetrans), i(t.UpRetrans), f(t.IdleGatewayMs), f(t.LoadedGatewayMs), f(t.IdleCallMs), f(t.LoadedCallMs)}); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
 // WriteFile creates path (mode 0600; it must not exist) and exports into it
 // in o.Format. On error the partial file is removed.
 func WriteFile(ctx context.Context, r store.Reader, path string, o Options) (err error) {
-	if o.Annotations && o.Format != "" && o.Format != FormatCSV {
-		return fmt.Errorf("export: annotations are exported as CSV only")
+	if (o.Annotations || o.SpeedTests) && o.Format != "" && o.Format != FormatCSV {
+		return fmt.Errorf("export: annotations and speed tests are exported as CSV only")
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {

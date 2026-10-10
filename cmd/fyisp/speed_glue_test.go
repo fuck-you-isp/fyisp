@@ -13,18 +13,23 @@ import (
 func TestSpeedFlags(t *testing.T) {
 	for _, c := range []struct {
 		args  []string
-		on    bool
+		mode  speedtest.Mode
 		every time.Duration
 		err   string
 	}{
-		{nil, false, 0, ""},
-		{[]string{"--speedtest"}, true, 0, ""},
-		{[]string{"--speedtest=every=30m"}, true, 30 * time.Minute, ""},
-		{[]string{"--speedtest=off"}, false, 0, ""},
-		{[]string{"--speedtest=every=5m"}, false, 0, "at least 15m0s"},
-		{[]string{"--speedtest=every=5m", "--speedtest-server", "10.0.0.2:5201"}, true, 5 * time.Minute, ""},
-		{[]string{"--speedtest-server", "nope"}, false, 0, "want host:port"},
-		{[]string{"--speedtest=sometimes"}, false, 0, "want on, off or every="},
+		{nil, "", 0, ""},
+		{[]string{"--speedtest"}, speedtest.ModeRegions, 0, ""},
+		{[]string{"--speedtest=on"}, speedtest.ModeRegions, 0, ""},
+		{[]string{"--speedtest=nearest"}, speedtest.ModeNearest, 0, ""},
+		{[]string{"--speedtest=regions,every=30m"}, speedtest.ModeRegions, 30 * time.Minute, ""},
+		{[]string{"--speedtest=off"}, speedtest.ModeOff, 0, ""},
+		{[]string{"--speedtest=every=5m"}, "", 0, "at least 15m0s"},
+		{[]string{"--speedtest=every=5m", "--speedtest-server", "10.0.0.2:5201"}, speedtest.ModeCustom, 5 * time.Minute, ""},
+		{[]string{"--speedtest=every=5m", "--speedtest-server", "10.0.0.2:5201,Leaseweb-Tokyo"}, "", 0, "at least 15m0s"},
+		{[]string{"--speedtest", "--speedtest-server", "Leaseweb-Tokyo"}, speedtest.ModeCustom, 0, ""},
+		{[]string{"--speedtest=custom"}, "", 0, "needs --speedtest-server"},
+		{[]string{"--speedtest-server", "nope"}, "", 0, "want host:port or a catalog server id"},
+		{[]string{"--speedtest=sometimes"}, "", 0, "want regions, nearest"},
 	} {
 		cfg, err := parseFlags(c.args)
 		switch {
@@ -34,23 +39,23 @@ func TestSpeedFlags(t *testing.T) {
 			}
 		case err != nil:
 			t.Errorf("%v: %v", c.args, err)
-		case cfg.speed.on != c.on || cfg.speed.every != c.every:
+		case cfg.speed.mode != c.mode || cfg.speed.every != c.every:
 			t.Errorf("%v: %+v", c.args, cfg.speed)
 		}
 	}
-	// The scheduler is always there (Details toggle, Test now), off unless asked.
-	cfg, _ := parseFlags([]string{"--speedtest=every=1h"})
+	// The scheduler is always there (Details choice, Test now), off unless asked.
+	cfg, _ := parseFlags([]string{"--speedtest=regions,every=1h"})
 	s, tap, w, err := newSpeed(cfg, nil, nil, newTestCollector(), nil)
 	if err != nil || tap == nil || w == nil {
 		t.Fatal(err)
 	}
-	if st := s.State(); len(st.Servers) != 7 || s.Interval() != time.Hour || st.Custom != "" {
-		t.Errorf("%+v", st)
+	if st := s.State(); len(st.Servers) != 41 || len(st.Regions) != 9 || s.Interval() != time.Hour || len(st.Custom) != 0 {
+		t.Errorf("%d servers, %d regions, %v", len(st.Servers), len(st.Regions), s.Interval())
 	}
 	cfg, _ = parseFlags([]string{"--speedtest-server", "iperf.example.net:5201"})
 	s, _, _, _ = newSpeed(cfg, nil, nil, newTestCollector(), nil)
-	if st := s.State(); st.Custom != "iperf.example.net:5201" || len(st.Servers) != 1 || s.Interval() != speedtest.MinInterval {
-		t.Errorf("custom: %+v", st)
+	if st := s.State(); len(st.Custom) != 1 || len(st.Servers) != 42 || len(s.Modes()) != 4 {
+		t.Errorf("custom: %+v", st.Custom)
 	}
 }
 

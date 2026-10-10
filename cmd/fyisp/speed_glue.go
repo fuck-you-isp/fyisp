@@ -13,65 +13,93 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
-// speedFlag is --speedtest: alone it switches the schedule on (every 15m);
-// =every=30m sets the interval; =off leaves it to the Details toggle.
+// speedFlag is --speedtest[=MODE][,every=DUR]: alone it means regions;
+// MODE is on (regions), regions, nearest, custom or off. Unset, the saved
+// Details choice decides (off by default).
 type speedFlag struct {
-	on    bool
+	set   bool
+	mode  speedtest.Mode
 	every time.Duration
 }
 
 func (f *speedFlag) String() string {
-	switch {
-	case !f.on:
+	if !f.set {
 		return ""
-	case f.every > 0:
-		return "every=" + f.every.String()
 	}
-	return "on"
+	s := string(f.mode)
+	if f.every > 0 {
+		s += ",every=" + f.every.String()
+	}
+	return s
 }
 
 func (f *speedFlag) IsBoolFlag() bool { return true }
 
 func (f *speedFlag) Set(v string) error {
-	switch v = strings.ToLower(strings.TrimSpace(v)); v {
-	case "true", "on", "":
-		f.on = true
-		return nil
-	case "false", "off":
-		f.on, f.every = false, 0
-		return nil
-	}
-	if d, ok := strings.CutPrefix(v, "every="); ok {
-		iv, err := time.ParseDuration(d)
-		if err != nil || iv <= 0 {
-			return fmt.Errorf("bad interval %q", d)
+	*f = speedFlag{set: true}
+	for _, part := range strings.Split(strings.ToLower(strings.TrimSpace(v)), ",") {
+		switch part = strings.TrimSpace(part); part {
+		case "true", "on", "":
+		case "false", "off":
+			f.mode = speedtest.ModeOff
+		case "regions", "nearest", "custom":
+			f.mode = speedtest.Mode(part)
+		default:
+			d, ok := strings.CutPrefix(part, "every=")
+			iv, err := time.ParseDuration(d)
+			if !ok || err != nil || iv <= 0 {
+				return fmt.Errorf("want regions, nearest, custom, off and/or every=<duration> (e.g. regions,every=30m)")
+			}
+			f.every = iv
 		}
-		f.on, f.every = true, iv
-		return nil
 	}
-	return fmt.Errorf("want on, off or every=<duration> (e.g. every=30m)")
+	return nil
+}
+
+// checkSpeedFlags settles the mode (--speedtest alone: regions, or custom
+// with --speedtest-server) and checks the servers and the interval floor.
+func checkSpeedFlags(c *config) error {
+	var custom []speedtest.Server
+	if c.speedServer != "" {
+		cat, err := speedtest.Builtin()
+		if err != nil {
+			return err
+		}
+		if custom, err = speedtest.Custom(c.speedServer, cat); err != nil {
+			return err
+		}
+	}
+	if c.speed.set && c.speed.mode == "" {
+		c.speed.mode = speedtest.ModeRegions
+		if len(custom) > 0 {
+			c.speed.mode = speedtest.ModeCustom
+		}
+	}
+	if c.speed.mode == speedtest.ModeCustom && len(custom) == 0 {
+		return fmt.Errorf("--speedtest=custom needs --speedtest-server")
+	}
+	if c.speed.every > 0 && c.speed.every < speedtest.MinInterval && !(c.speed.mode == speedtest.ModeCustom && speedtest.OwnOnly(custom)) {
+		return fmt.Errorf("--speedtest every=%s: at least %s against public servers (any interval in mode custom with only your own servers)", c.speed.every, speedtest.MinInterval)
+	}
+	return nil
 }
 
 // newSpeed sets up the speed tests: the scheduler (always present, so the
-// Details toggle and Test now work; it only tests when switched on), the
+// Details choice and Test now work; it only tests when a mode is on), the
 // load tap and the windows the mask uses.
 func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, error) {
-	o := speedtest.Options{Enabled: c.speed.on, Interval: c.speed.every, Store: st, Windows: &speedtest.Windows{}, Log: log,
+	cat, err := speedtest.Builtin()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("speed test catalog: %w", err)
+	}
+	o := speedtest.Options{Catalog: cat, Mode: c.speed.mode, Interval: c.speed.every, Store: st, Windows: &speedtest.Windows{}, Log: log,
 		Ping: func(ctx context.Context, host string) (time.Duration, error) {
 			return probe.PingOnce(ctx, host, 2*time.Second)
 		}}
 	if c.speedServer != "" {
-		cs, err := speedtest.ParseCustom(c.speedServer)
-		if err != nil {
+		if o.Custom, err = speedtest.Custom(c.speedServer, cat); err != nil {
 			return nil, nil, nil, err
 		}
-		o.Custom = &cs
-	} else {
-		ss, err := speedtest.Builtin()
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("speed test servers: %w", err)
-		}
-		o.Servers = ss
 	}
 	o.Load = speedtest.NewLoadTap(prof, nil)
 	sm := metrics.NewSpeed()
