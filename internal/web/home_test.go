@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
@@ -125,7 +126,7 @@ func TestHomeLiveGood(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := l.Answer
-	if a.Level != levelGood || a.Who != whoNone || a.Calls != "good" || len(a.Try) != 0 || a.Fact != "" || a.Headline != "Your internet is fine for calls and work" {
+	if a.Level != levelGood || a.Who != whoNone || a.Calls != "good" || len(a.Try) != 0 || a.Fact != "" || a.Headline != "Your internet is fine" {
 		t.Errorf("answer %+v", a)
 	}
 	var ids []string
@@ -292,14 +293,14 @@ func TestHomeAnswer(t *testing.T) {
 		tiles                 []HomeTile
 		level, who, conf, hdl string
 	}{
-		{"ok", model.Verdict{Kind: model.VerdictOK}, "good", nil, levelGood, whoNone, "", "Your internet is fine for calls and work"},
-		{"no verdict", model.Verdict{Kind: VerdictUnknown}, "good", nil, levelGood, whoNone, "", "Your internet is fine for calls and work"},
+		{"ok", model.Verdict{Kind: model.VerdictOK}, "good", nil, levelGood, whoNone, "", "Your internet is fine"},
+		{"no verdict", model.Verdict{Kind: VerdictUnknown}, "good", nil, levelGood, whoNone, "", "Your internet is fine"},
 		{"isp, apps losing", model.Verdict{Kind: model.VerdictISP, Evidence: ev("services_loss", 0.2)}, "good", nil,
-			levelBad, whoProvider, confSure, "Your internet provider is having trouble"},
+			levelBad, whoProvider, confSure, "Your internet is having trouble"},
 		{"isp, only the edge", model.Verdict{Kind: model.VerdictISP, Evidence: ev("edge_loss", 0.3, "services_loss", 0.0)}, "good", nil,
-			levelInfo, whoProvider, confWeak, "Your internet is fine for calls and work"},
+			levelInfo, whoProvider, confWeak, "Your internet is fine"},
 		{"isp, a little loss", model.Verdict{Kind: model.VerdictISP, Evidence: ev("services_loss", 0.02)}, "good", nil,
-			levelWarn, whoProvider, confLikely, "Your internet provider is having trouble"},
+			levelWarn, whoProvider, confLikely, "Your internet is having trouble"},
 		{"lan, calls choppy", model.Verdict{Kind: model.VerdictLAN, Evidence: ev("gateway_loss", 0.3)}, "poor", nil,
 			levelBad, whoHome, confSure, "Calls may be choppy"},
 		{"upstream", model.Verdict{Kind: model.VerdictUpstream, Evidence: ev("services_loss", 0.6)}, "good", nil,
@@ -313,7 +314,7 @@ func TestHomeAnswer(t *testing.T) {
 		{"degraded", model.Verdict{Kind: model.VerdictUDPDegraded}, "fair", nil, levelWarn, whoCallTraffic, "", "Mostly fine for calls"},
 		{"path only", model.Verdict{Kind: model.VerdictOK}, "poor", nil, levelBad, whoCallTraffic, "", "Calls may be choppy"},
 		{"service, other", model.Verdict{Kind: model.VerdictService, Targets: []string{"AWS-me-south-1"}}, "good", nil,
-			levelGood, whoNone, "", "Your internet is fine for calls and work"},
+			levelGood, whoNone, "", "Your internet is fine"},
 		{"service, two apps", model.Verdict{Kind: model.VerdictService, Targets: []string{"YouTube", "Netflix", "AWS-me-south-1"}}, "good",
 			[]HomeTile{down}, levelBad, whoApp, "", "YouTube and Netflix aren't answering"},
 		{"tile down, no verdict", model.Verdict{Kind: model.VerdictOK}, "good", []HomeTile{down}, levelBad, whoApp, "", "Some websites aren't loading"},
@@ -492,6 +493,9 @@ func TestHomeCopyWords(t *testing.T) {
 				for _, own := range []string{"good", "fair", "poor", "unusable", "blocked", "not_enough_data", "server_not_answering"} {
 					for _, quiet := range []bool{false, true} {
 						a := homeAnswerOf(homeIn(p, model.Verdict{Kind: k, Evidence: ev, Quiet: quiet, Targets: []string{"YouTube"}}, own), cp)
+						if r := repeats(a.Headline, a.Cause); r != "" {
+							t.Errorf("%s/%s/%s: headline %q and cause %q both say %q", k, own, voice, a.Headline, a.Cause, r)
+						}
 						texts = append(texts, a.Headline, a.Cause, a.Hint, a.Fact, a.Announce)
 						if voice == voicePublic && len(a.Try) > 0 {
 							t.Errorf("public try: %v", a.Try)
@@ -657,4 +661,25 @@ func TestHomeName(t *testing.T) {
 			t.Errorf("%s: %q", tc.t.Name, got)
 		}
 	}
+}
+
+// repeats returns a run of three words that both texts contain ("" when
+// none): the headline must not say again what the cause says.
+func repeats(a, b string) string {
+	words := func(s string) []string {
+		return strings.Fields(strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == ' ' || r == '\'' {
+				return unicode.ToLower(r)
+			}
+			return ' '
+		}, s))
+	}
+	wb := " " + strings.Join(words(b), " ") + " "
+	wa := words(a)
+	for i := 0; i+3 <= len(wa); i++ {
+		if g := strings.Join(wa[i:i+3], " "); strings.Contains(wb, " "+g+" ") {
+			return g
+		}
+	}
+	return ""
 }

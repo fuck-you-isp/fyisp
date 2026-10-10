@@ -14,7 +14,7 @@
     "who": "calltraffic",
     "kind": "stun_blocked",
     "headline": "This network was blocking call traffic",
-    "cause": "The network was blocking call traffic.",
+    "cause": "Calls may still have connected, through a slower backup route.",
     "fact": "In the worst minute, almost all of the sound was lost.",
     "fact_at": 1791547800000
   },

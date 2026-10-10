@@ -121,4 +121,17 @@ func checkGoldenCopy(t *testing.T, name, voice string, b []byte) {
 		}
 	}
 	walk("", v)
+	// The headline never repeats the cause.
+	var r struct {
+		Live struct{ Answer HomeAnswer } `json:"live"`
+		At   HomeAt                      `json:"at_5_minutes_ago"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range [][2]string{{r.Live.Answer.Headline, r.Live.Answer.Cause}, {r.At.Headline, r.At.Cause}} {
+		if rep := repeats(x[0], x[1]); rep != "" {
+			t.Errorf("%s: headline %q and cause %q both say %q", name, x[0], x[1], rep)
+		}
+	}
 }

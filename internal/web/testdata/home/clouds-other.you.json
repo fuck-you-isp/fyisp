@@ -11,7 +11,7 @@
     "who": "app",
     "kind": "service",
     "headline": "There was a problem then",
-    "cause": "Your connection was fine; some online services had trouble."
+    "cause": "Some online services had trouble at the time. That was on their side."
   },
   "history_today": {
     "part": "history",
@@ -40,7 +40,7 @@
             "source": "incident",
             "incident": 91,
             "ongoing": true,
-            "text": "Your connection was fine; some online services had trouble."
+            "text": "Some online services had trouble at the time. That was on their side."
           }
         ],
         "off": []
@@ -148,7 +148,7 @@
             "source": "incident",
             "incident": 91,
             "ongoing": true,
-            "text": "Your connection was fine; some online services had trouble."
+            "text": "Some online services had trouble at the time. That was on their side."
           }
         ],
         "off": []
@@ -189,9 +189,9 @@
       "kind": "service",
       "since": 1791548280000,
       "headline": "Some services aren't answering",
-      "cause": "Your connection is fine, but some services aren't answering from here. That's most likely on their side.",
+      "cause": "Your connection looks fine, so this is most likely a problem on their side.",
       "try": [],
-      "announce": "Some services aren't answering. Your connection is fine, but some services aren't answering from here."
+      "announce": "Some services aren't answering. Your connection looks fine, so this is most likely a problem on their side."
     },
     "path": [
       {
