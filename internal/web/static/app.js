@@ -1012,9 +1012,10 @@ function showView() {
 
 /**
  * Why an on-demand trace couldn't start, in plain words, from the API's
- * stable error code (never its wording): busy (the global cap, shared with
- * share-link viewers), rate_limited and cooldown (wait retry_after
- * seconds), unknown_target, forbidden.
+ * stable error code (never its wording): busy (no free slot: 4 in all, of
+ * which share-link viewers may use 3), rate_limited (this viewer's starts)
+ * and cooldown (this target finished less than 5 minutes ago, share link
+ * only), each with retry_after; unknown_target, unavailable, forbidden.
  * @param {any} e
  */
 function invError(e) {
@@ -1022,10 +1023,17 @@ function invError(e) {
   const s = Number(b.retry_after) || Number(e.retryAfter) || 0;
   const wait = s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while';
   switch (b.code) {
-    case 'busy': return 'Four traces are already running, which is the most at once. Try again in a few minutes.';
+    // The owner always keeps one of the 4 slots: on the share link, busy can mean 3.
+    case 'busy': return MODE === 'public'
+      ? 'The most traces at once are already running. Try again in a few minutes.'
+      : 'Four traces are already running, which is the most at once. Try again in a few minutes.';
     case 'rate_limited': return `You’ve started several traces recently. Try again ${wait}.`;
-    case 'cooldown': return `This target was traced moments ago. Try again ${wait}.`;
+    case 'cooldown': {
+      const m = Math.max(1, Math.ceil(s / 60));
+      return `This target was traced a few minutes ago. Try again in ${m} minute${m === 1 ? '' : 's'}.`;
+    }
     case 'unknown_target': return 'Tracing isn’t available for this target.';
+    case 'unavailable': return 'Tracing is turned off on this setup.';
     case 'forbidden': return 'This page can’t start traces: open the dashboard at its own address.';
   }
   return e.status === 429 ? `Too many traces right now. Try again ${wait}.` : 'Couldn’t start the trace. Try again.';
