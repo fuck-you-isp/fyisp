@@ -393,9 +393,29 @@ func TestCallsStates(t *testing.T) {
 			top: "unusable", cause: "app:teams:loss", path: "good", apps: map[string]string{"teams": "unusable", "meet": "good"},
 		},
 		{
+			// Moderate jitter and a little loss (two of the four servers
+			// lose a request in every 5th burst: the path's median loss is
+			// 2%, at most 3.3% in a partial minute): the MOS alone is Good,
+			// the jitter cap makes it Fair.
 			name: "jittery path",
+			fill: func(target string, ts time.Time) burst {
+				b := burst{rtt: 30, jitter: 35, answered: 5}
+				if (target == "Meet-STUN" || target == "Cloudflare-STUN") && ts.Unix()%25 == 0 {
+					b.answered = 4
+				}
+				return b
+			},
+			top: "fair", cause: "path:jitter", path: "fair",
+		},
+		{
+			name: "very jittery path",
+			fill: func(string, time.Time) burst { return burst{rtt: 30, jitter: 60, answered: 5} },
+			top:  "poor", cause: "path:jitter", path: "poor",
+		},
+		{
+			name: "unusable jitter",
 			fill: func(string, time.Time) burst { return burst{rtt: 30, jitter: 130, answered: 5} },
-			top:  "fair", cause: "path:jitter", path: "fair",
+			top:  "unusable", cause: "path:jitter", path: "unusable",
 		},
 	}
 	for _, tc := range cases {

@@ -13,6 +13,11 @@
 //	      packet-loss concealment make loss cheaper than in G.711's tables)
 //	R   clamped to 0..100
 //	MOS = 1 + 0.035·R + 7e-6·R·(R−60)·(100−R)
+//
+// The E-model sees jitter only as added delay, so on a short path even 30 ms
+// of jitter still scores Good. Call apps disagree (a jitter buffer that big
+// is heard), so a minute's band is capped by its jitter after the MOS band
+// (see JitterFairMs): Fair from 30 ms, Poor from 50 ms, Unusable from 100 ms.
 package callq
 
 import (
@@ -39,6 +44,59 @@ const (
 	FairMOS = 3.6
 	PoorMOS = 3.1
 )
+
+// Jitter caps on the band (ms of in-burst jitter). They follow Microsoft's
+// network targets for Teams media (jitter < 30 ms; more is a poor call):
+// a minute with jitter ≥ JitterFairMs is at most Fair, ≥ JitterPoorMs at
+// most Poor, ≥ JitterUnusableMs Unusable. A cap never improves a band. The
+// udp_degraded verdict (internal/verdict) uses JitterFairMs as its jitter
+// threshold, so a degraded banner never sits over a Good Calls card.
+//
+// A capped minute's MOS is lowered to CapMargin below the upper edge of the
+// band it is capped to (3.9, 3.5 or 3.0), so that the MOS, the band and
+// fyisp_call_mos always agree.
+const (
+	JitterFairMs     = 30.0
+	JitterPoorMs     = 50.0
+	JitterUnusableMs = 100.0
+	CapMargin        = 0.1
+)
+
+// JitterCapMOS is the highest MOS a jitter (ms) allows: a cap's band edge
+// less CapMargin, or +Inf below JitterFairMs (or when unknown).
+func JitterCapMOS(jitterMs float64) float64 {
+	switch JitterCap(jitterMs) {
+	case Unusable:
+		return PoorMOS - CapMargin
+	case Poor:
+		return FairMOS - CapMargin
+	case Fair:
+		return GoodMOS - CapMargin
+	}
+	return math.Inf(1)
+}
+
+// JitterCap returns the best band a jitter (ms) allows: Good below
+// JitterFairMs or when the jitter is unknown (NaN).
+func JitterCap(jitterMs float64) Band {
+	switch {
+	case jitterMs >= JitterUnusableMs:
+		return Unusable
+	case jitterMs >= JitterPoorMs:
+		return Poor
+	case jitterMs >= JitterFairMs:
+		return Fair
+	}
+	return Good
+}
+
+// Capped returns the worse of b and the band jitterMs allows.
+func Capped(b Band, jitterMs float64) Band {
+	if c := JitterCap(jitterMs); Rank(c) < Rank(b) {
+		return c
+	}
+	return b
+}
 
 // MinBursts is how many bursts (answered or timed out) a minute needs to be
 // scored; fewer leave it unscored.
@@ -133,11 +191,27 @@ var Empty = Minute{RTT: math.NaN(), Jitter: math.NaN(), Loss: math.NaN()}
 // Scored reports whether m has enough data to score.
 func (m Minute) Scored() bool { return m.Bursts >= MinBursts && !math.IsNaN(m.Loss) }
 
-// MOS scores m. A minute whose bursts all timed out has no RTT: it is scored
-// on its loss alone (100 % loss is unusable whatever the delay). Missing
-// jitter (single answers) counts as 0.
-func (m Minute) MOS() float64 {
+// RawMOS scores m with the E-model alone. A minute whose bursts all timed
+// out has no RTT: it is scored on its loss alone (100 % loss is unusable
+// whatever the delay). Missing jitter (single answers) counts as 0.
+func (m Minute) RawMOS() float64 {
 	return Score(nanTo(m.RTT, 0), nanTo(m.Jitter, 0), nanTo(m.Loss, 0))
+}
+
+// MOS is m's score: RawMOS, lowered by the jitter caps (JitterCapMOS).
+func (m Minute) MOS() float64 { return min(m.RawMOS(), JitterCapMOS(m.Jitter)) }
+
+// Band is m's band: the band of its MOS, which the jitter caps have
+// already lowered (always Capped(BandOf(m.RawMOS()), m.Jitter)).
+func (m Minute) Band() Band { return BandOf(m.MOS()) }
+
+// Factor is what costs m its band: "jitter" when a jitter cap decided it,
+// else Factor of its round trip, jitter and loss.
+func (m Minute) Factor() string {
+	if m.Band() != BandOf(m.RawMOS()) {
+		return "jitter"
+	}
+	return Factor(nanTo(m.RTT, 0), nanTo(m.Jitter, 0), nanTo(m.Loss, 0))
 }
 
 func nanTo(v, d float64) float64 {
@@ -263,7 +337,8 @@ func Quantile(v []float64, q float64) float64 {
 	return s[i] + (s[i+1]-s[i])*(pos-float64(i))
 }
 
-// Summary judges a window of minutes by its worst scored minute.
+// Summary judges a window of minutes by its worst scored minute: the one
+// with the lowest MOS (jitter caps included).
 type Summary struct {
 	// MOS and Band are the worst scored minute's; Worst is its index, -1
 	// when no minute is scored.
@@ -276,7 +351,7 @@ type Summary struct {
 	// Bursts and Unknown add up every minute's (scored or not); Scored
 	// counts the scored minutes.
 	Bursts, Unknown, Scored int
-	// Factor is what costs the worst minute the most (see Factor).
+	// Factor is what costs the worst minute its band (see Minute.Factor).
 	Factor string
 }
 
@@ -315,8 +390,7 @@ func Summarize(ms []Minute) Summary {
 		s.Jitter = jSum / jW
 	}
 	s.Loss = lSum / lW
-	w := ms[s.Worst]
-	s.Factor = Factor(nanTo(w.RTT, 0), nanTo(w.Jitter, 0), w.Loss)
+	s.Factor = ms[s.Worst].Factor()
 	return s
 }
 

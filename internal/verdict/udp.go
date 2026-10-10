@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
@@ -29,11 +30,14 @@ import (
 //     verdict is marked Quiet (hotel and office networks block UDP for
 //     good); it stays Quiet until the verdict ends.
 //  2. udp_degraded: ≥ 2 providers of udp-path targets are poor, and have
-//     been for ≥ 3 minutes. A target is poor over the last minute when it
+//     been for ≥ 3 minutes (breaks shorter than a minute do not restart
+//     the 3 minutes: near a threshold, a 1-minute window dips under it now
+//     and then, and the condition would otherwise flap). A target is poor over the last minute when it
 //     has ≥ 2 measured bursts, at least one answered, and either loses
 //     ≥ 5% of its requests (the mean of its bursts' loss) or has a median
-//     burst jitter ≥ 30 ms; a provider is poor when at least half of its
-//     judged targets are. These are plain thresholds on the network, not a
+//     burst jitter ≥ 30 ms (callq.JitterFairMs, the jitter at which the
+//     Calls band is capped to Fair); a provider is poor when at least half
+//     of its judged targets are. These are plain thresholds on the network, not a
 //     call-quality score: 5% loss is where audio codecs' concealment starts
 //     to be heard, 30 ms of jitter is where jitter buffers grow enough to
 //     add noticeable delay. A target that answers nothing is dead, not
@@ -52,18 +56,19 @@ import (
 // for udp_degraded. The headline loss (PeakLoss) is 0 for the blocked kinds
 // and udp_loss for udp_degraded. Targets are the blocked or poor targets.
 const (
-	udpBlockedRun   = 10              // timed-out bursts in a row before a target counts as blocked
-	udpMinProviders = 2               // independent providers that must agree
-	udpWarmUp       = 2 * time.Minute // blocked verdicts wait this long after start without any answer
-	udpAnsweredIn   = keepRaw         // udp-53 answering this recently means UDP itself works ...
-	udp53Failing    = 2               // ... unless its latest bursts timed out this many times in a row
-	udpQuietAfter   = 6 * time.Hour   // a blocked verdict this old is Quiet
-	udpLossPoor     = 0.05            // mean burst loss that makes a target poor
-	udpJitterPoorMs = 30.0            // median burst jitter (ms) that makes a target poor
-	udpMinBursts    = 2               // measured bursts a target needs in the window to be judged poor
-	udpDegradedFor  = 3 * time.Minute // poor providers must stay poor this long
-	tagUDPPath      = "udp-path"      // targets on the call path
-	tagUDP53        = "udp-53"        // STUN on UDP port 53
+	udpBlockedRun   = 10                 // timed-out bursts in a row before a target counts as blocked
+	udpMinProviders = 2                  // independent providers that must agree
+	udpWarmUp       = 2 * time.Minute    // blocked verdicts wait this long after start without any answer
+	udpAnsweredIn   = keepRaw            // udp-53 answering this recently means UDP itself works ...
+	udp53Failing    = 2                  // ... unless its latest bursts timed out this many times in a row
+	udpQuietAfter   = 6 * time.Hour      // a blocked verdict this old is Quiet
+	udpLossPoor     = 0.05               // mean burst loss that makes a target poor
+	udpJitterPoorMs = callq.JitterFairMs // median burst jitter (ms) that makes a target poor (the Calls Fair cap)
+	udpMinBursts    = 2                  // measured bursts a target needs in the window to be judged poor
+	udpDegradedFor  = 3 * time.Minute    // poor providers must stay poor this long ...
+	udpPoorGrace    = time.Minute        // ... where shorter breaks do not restart it
+	tagUDPPath      = "udp-path"         // targets on the call path
+	tagUDP53        = "udp-53"           // STUN on UDP port 53
 )
 
 // ustat is one UDP target's recent bursts.
@@ -184,12 +189,17 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 			nPoor++
 		}
 	}
-	if nPoor >= udpMinProviders {
+	switch {
+	case nPoor >= udpMinProviders:
 		if e.udpPoorSince.IsZero() {
 			e.udpPoorSince = now
 		}
-	} else {
-		e.udpPoorSince = time.Time{}
+		e.udpPoorGap = time.Time{}
+	case e.udpPoorSince.IsZero():
+	case e.udpPoorGap.IsZero():
+		e.udpPoorGap = now
+	case now.Sub(e.udpPoorGap) >= udpPoorGrace:
+		e.udpPoorSince, e.udpPoorGap = time.Time{}, time.Time{}
 	}
 	if j.v.Kind != model.VerdictOK {
 		return

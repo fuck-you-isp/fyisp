@@ -2703,6 +2703,8 @@ function callRuns(d, g, from, to, want) {
   }
   return runs;
 }
+/** The highest MOS a jitter allows (callq.JitterCapMOS): 3.9 from 30 ms, 3.5 from 50 ms, 3.0 from 100 ms. */
+function jitterCapMOS(/** @type {number} */ jit) { return jit >= 100 ? 3.0 : jit >= 50 ? 3.5 : jit >= 30 ? 3.9 : Infinity; }
 function runText(/** @type {{a:number,b:number}} */ r) { return r.b - r.a <= 60e3 ? hhmm(r.a) : `${hhmm(r.a)}–${hhmm(r.b)}`; }
 /** What made a minute bad, in words: "8% packet loss", "jitter up to 45 ms" or "a slow round trip (310 ms)". */
 function minuteWhat(/** @type {CallsMinute} */ m, /** @type {string} */ factor) {
@@ -2712,8 +2714,9 @@ function minuteWhat(/** @type {CallsMinute} */ m, /** @type {string} */ factor) 
   if (m.jitter_ms != null && m.jitter_ms >= 30) return `jitter up to ${fmtMs(m.jitter_ms)} ms`;
   return m.rtt_ms != null ? `a slow round trip (${fmtMs(m.rtt_ms)} ms)` : 'no answers';
 }
-/** The factor (loss, jitter, latency) that costs a minute the most, as callq.Factor. */
+/** The factor (loss, jitter, latency) that costs a minute its band, as callq.Minute.Factor: "jitter" when a jitter cap set the band. */
 function minuteFactor(/** @type {CallsMinute} */ m) {
+  if (m.mos != null && Math.abs(m.mos - jitterCapMOS(m.jitter_ms ?? 0)) < 0.005) return 'jitter';
   const rtt = m.rtt_ms ?? 0, jit = m.jitter_ms ?? 0, loss = (m.loss ?? 0) * 100;
   const eff = rtt / 2 + 2 * jit + 10;
   const delay = eff < 160 ? eff / 40 : (eff - 120) / 10;

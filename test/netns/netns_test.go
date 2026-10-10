@@ -11,7 +11,8 @@
 // unresolvable name, a restart) and checks what fyisp reports through
 // /api/panel, /api/status and /metrics. TestNetworkPath (path_test.go)
 // covers gateway/ISP edge discovery, TestVerdict (verdict_test.go) the
-// verdict and the outage log.
+// verdict and the outage log, TestUDP (udp_test.go) the call path: STUN
+// bursts, the UDP verdicts and /api/calls under UDP-only faults.
 //
 // The topologies share nothing (namespaces, responders, resolver, CA, data
 // directories, fyisp processes), so the scenarios run in parallel: a full
@@ -84,6 +85,7 @@ var (
 	badTLSAddr    = netip.MustParseAddr("203.0.113.13") // untrusted certificate
 	dnsTargetAddr = netip.MustParseAddr("203.0.113.14") // what svc.fyisp.test resolves to
 	addrGolf      = netip.MustParseAddr("203.0.113.15") // route withdrawn
+	stunAddr      = netip.MustParseAddr("203.0.113.30") // the STUN responder (udp_test.go; .20 is trace_test.go's hotel)
 	dnsAddr       = netip.MustParseAddr("203.0.113.53") // the test resolver
 )
 
@@ -639,7 +641,7 @@ func (h *harness) setupTopology(t *testing.T) {
 	}
 	// Targets live on the internet namespace's loopback; every namespace's default route
 	// leads there through the chain.
-	for _, a := range append([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr}, anycastAddrs...) {
+	for _, a := range append([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr, stunAddr}, anycastAddrs...) {
 		h.run(t, "ip", "-n", h.inet, "addr", "add", a.String()+"/32", "dev", "lo")
 	}
 	// Unprivileged ICMP (ping sockets) is off in a new namespace
@@ -1051,10 +1053,17 @@ func (w *window) get(key string) *agg {
 	return &agg{By: map[string]int{}}
 }
 
-// panel queries /api/panel for [from, to] and sums every series.
+// panel queries /api/panel for the lab group over [from, to] and sums every
+// series.
 func (h *harness) panel(t *testing.T, name string, from, to time.Time) *window {
 	t.Helper()
-	q := fmt.Sprintf("/api/panel?group=lab&from=%d&to=%d&points=10", from.UnixMilli(), to.UnixMilli())
+	return h.panelGroup(t, "lab", name, from, to)
+}
+
+// panelGroup is panel for any group.
+func (h *harness) panelGroup(t *testing.T, group, name string, from, to time.Time) *window {
+	t.Helper()
+	q := fmt.Sprintf("/api/panel?group=%s&from=%d&to=%d&points=10", group, from.UnixMilli(), to.UnixMilli())
 	b := h.get(t, q)
 	h.save(t, "panel-"+name+".json", b)
 	var p panelJSON

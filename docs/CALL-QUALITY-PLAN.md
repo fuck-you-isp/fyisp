@@ -51,6 +51,7 @@ The answers come from measuring the UDP path that call media actually uses, with
   - **R is clamped to 0–100.**
   - `MOS = 1 + 0.035R + 7e-6·R(R−60)(100−R)`.
 - **Bands:** Good ≥ 4.0, Fair 3.6–4.0, Poor 3.1–3.6, Unusable < 3.1. These are the G.107 satisfaction bands.
+- **Jitter caps (added after the netns tests):** the E-model sees jitter only as added delay, so 30 ms of in-burst jitter on a short path still scores Good. After the MOS band, a minute's band is capped by its jitter, following Microsoft's Teams network targets (jitter < 30 ms): ≥ 30 ms → at most Fair, ≥ 50 ms → at most Poor, ≥ 100 ms → Unusable. A cap never improves a band, and the factor is then "jitter". `udp_degraded` uses the same 30 ms (`callq.JitterFairMs`).
 - **Validation:** table tests at the G.107 reference points (R 93.2 → 4.41, R 80 → 4.02, R 70 → 3.60, R 60 → 3.10).
 - **Scoring window:** each 1-minute bucket is scored separately. Views show the **worst minute** and p95 RTT, not a 5-minute mean, because a mean hides a 30-second stall.
 

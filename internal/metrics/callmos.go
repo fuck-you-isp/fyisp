@@ -15,7 +15,7 @@ import (
 const CallMOSWindow = 5 * time.Minute
 
 var callMOSDesc = prometheus.NewDesc("fyisp_call_mos",
-	"Call quality (mean opinion score, 1 to 4.5) of the worst minute over the last 5 minutes, as the dashboard's Calls view scores it: app=\"path\" is your call path (the STUN servers tagged udp-path), the others the apps measured over their own STUN servers (meet, teams). 4.0 and up is good, 3.6 fair, 3.1 poor, below unusable. Absent with fewer than 10 bursts.",
+	"Call quality (mean opinion score, 1 to 4.5) of the worst minute over the last 5 minutes, as the dashboard's Calls view scores it: app=\"path\" is your call path (the STUN servers tagged udp-path), the others the apps measured over their own STUN servers (meet, teams). 4.0 and up is good, 3.6 fair, 3.1 poor, below unusable; jitter caps the score (30 ms or more: at most 3.9, 50 ms: 3.5, 100 ms: 3.0). Absent with fewer than 10 bursts.",
 	[]string{"app"}, nil)
 
 // CallMOS exports fyisp_call_mos{app}. It is a model.Sink (feed it every
