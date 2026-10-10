@@ -100,7 +100,7 @@ func Summarize(tests []model.SpeedTest, loc *time.Location) Stats {
 	}
 	var newestOK time.Time
 	for _, t := range tests {
-		if t.OnDemand() {
+		if t.OnDemand() || t.Outcome == model.SpeedCancelled {
 			continue
 		}
 		if st.LatestAt == nil || t.Start.After(*st.LatestAt) {

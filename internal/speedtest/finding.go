@@ -1026,7 +1026,7 @@ const (
 func HomeLine(f Finding, tests []model.SpeedTest, loc *time.Location, now time.Time) *HomeSpeed {
 	var n, ok int
 	for _, t := range tests {
-		if !t.OnDemand() && !t.Start.Before(now.Add(-24*time.Hour)) {
+		if !t.OnDemand() && t.Outcome != model.SpeedCancelled && !t.Start.Before(now.Add(-24*time.Hour)) {
 			n++
 			if t.Outcome == model.SpeedOK {
 				ok++
