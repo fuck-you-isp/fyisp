@@ -105,7 +105,7 @@ Shade these on every time chart. Probe samples inside a window are stored as "no
 
 ## `POST api/speed/run` (local only)
 
-"Test now". Same protections as notes: same origin, `X-FYISP-CSRF`, and the admin token or session cookie when one is set. No body.
+"Test now". Same protections as notes: same origin, `X-FYISP-Token`, and the admin token or session cookie when one is set. No body.
 
 - `202 {"started": 1760104800000}`: started. Poll `summary` until `running` is null.
 - `409 {"error": "a speed test is already running"}`.

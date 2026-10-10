@@ -25,6 +25,10 @@ const (
 	RepickEvery  = 24 * time.Hour
 	MaxAttempts  = 3
 	AttemptGap   = 2 * time.Second
+	// relisten is the pause before the upload: a stock iperf3 server
+	// closes and reopens its listener after every test, and refuses
+	// connections in between.
+	relisten = time.Second
 	DirTimeout   = 15 * time.Second // one direction, connect to results
 	MaxTestTime  = 60 * time.Second // the whole test, retries included
 	firstDelay   = 2 * time.Minute  // after start or enabling: idle RTTs first
@@ -401,6 +405,10 @@ func (s *Scheduler) measure(ctx context.Context, sv Server, t *model.SpeedTest) 
 	port := 0
 	for _, dir := range []Direction{Download, Upload} {
 		s.setRun(dir.String(), sv.Name)
+		if port != 0 && !s.o.sleep(ctx, relisten) {
+			t.Outcome = model.SpeedFailed
+			return
+		}
 		res, p, attempts, outcome := s.direction(ctx, sv, dir, port)
 		t.Attempts += attempts
 		if p != 0 {
@@ -425,8 +433,12 @@ func (s *Scheduler) measure(ctx context.Context, sv Server, t *model.SpeedTest) 
 }
 
 // direction runs one direction: first on port (0: a random one), then on
-// other random ports while the server is busy, up to MaxAttempts.
+// other random ports while the server is busy, up to MaxAttempts. After a
+// download on port (the server answered moments ago), a refused connection
+// is the server re-listening, so it is retried like a busy one.
 func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int) (Result, int, int, string) {
+	reachable := port != 0
+	refused := false
 	tried := map[int]bool{}
 	for attempt := 1; attempt <= MaxAttempts; attempt++ {
 		if attempt > 1 || port == 0 {
@@ -441,15 +453,19 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 			return res, port, attempt, model.SpeedOK
 		case ctx.Err() != nil:
 			return res, port, attempt, model.SpeedFailed
-		case errors.Is(err, ErrUnreachable):
+		case errors.Is(err, ErrUnreachable) && !reachable:
 			return res, port, attempt, model.SpeedUnreachable // retrying other ports does not help
-		case !errors.Is(err, ErrBusy):
+		case !errors.Is(err, ErrBusy) && !errors.Is(err, ErrUnreachable):
 			s.o.Log.Debug("speed test failed", "server", sv.Name, "port", port, "direction", dir.String(), "err", err)
 			return res, port, attempt, model.SpeedFailed
 		}
+		refused = errors.Is(err, ErrUnreachable)
 		if attempt < MaxAttempts && !s.o.sleep(ctx, AttemptGap) {
 			return res, port, attempt, model.SpeedFailed
 		}
+	}
+	if refused {
+		return Result{}, port, MaxAttempts, model.SpeedUnreachable
 	}
 	return Result{}, port, MaxAttempts, model.SpeedBusy
 }

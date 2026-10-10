@@ -206,7 +206,8 @@ func TestResult(t *testing.T) {
 	if host, p := hostOf(h.calls[0]); host != "near.example" || p < 5201 || p > 5210 || p != r.Port {
 		t.Errorf("addr %s, port %d", h.calls[0].Addr, r.Port)
 	}
-	if r.End.Sub(r.Start) != 20*time.Second || r.Trigger != "schedule" {
+	// 10 s per direction (the stub) and the 1 s re-listen pause between.
+	if r.End.Sub(r.Start) != 21*time.Second || r.Trigger != "schedule" || h.slept[0] != relisten {
 		t.Errorf("window %v..%v", r.Start, r.End)
 	}
 }
@@ -222,7 +223,7 @@ func TestBusy(t *testing.T) {
 		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
 	}
 	r := h.test(t)
-	if r.Outcome != model.SpeedOK || r.Attempts != 4 || len(h.slept) != 2 || h.slept[0] != AttemptGap {
+	if r.Outcome != model.SpeedOK || r.Attempts != 4 || len(h.slept) != 3 || h.slept[0] != AttemptGap || h.slept[2] != relisten {
 		t.Fatalf("%+v slept %v", r, h.slept)
 	}
 	_, p1 := hostOf(h.calls[0])
@@ -243,6 +244,30 @@ func TestBusy(t *testing.T) {
 	h.run = func(Config, int) (Result, error) { return Result{}, fmt.Errorf("%w: refused", ErrUnreachable) }
 	if r = h.test(t); r.Outcome != model.SpeedUnreachable || len(h.calls) != 1 {
 		t.Errorf("unreachable: %+v, %d calls", r, len(h.calls))
+	}
+
+	// Download fine, the upload refused once on the same port (a stock
+	// iperf3 server re-listening after the download): retried on another
+	// port, not "unreachable".
+	h.calls = nil
+	h.run = func(c Config, n int) (Result, error) {
+		if c.Direction == Upload && n == 2 {
+			return Result{}, fmt.Errorf("%w: connection refused", ErrUnreachable)
+		}
+		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
+	}
+	if r = h.test(t); r.Outcome != model.SpeedOK || r.Attempts != 3 || r.UpBps == nil || len(h.calls) != 3 || h.calls[1].Addr != h.calls[0].Addr || h.calls[2].Addr == h.calls[1].Addr {
+		t.Errorf("upload refused once: %+v, calls %+v", r, h.calls)
+	}
+	h.calls = nil
+	h.run = func(c Config, n int) (Result, error) {
+		if c.Direction == Upload {
+			return Result{}, fmt.Errorf("%w: connection refused", ErrUnreachable)
+		}
+		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
+	}
+	if r = h.test(t); r.Outcome != model.SpeedUnreachable || r.Attempts != 1+MaxAttempts || r.DownBps == nil {
+		t.Errorf("upload always refused: %+v", r)
 	}
 
 	// Download fine, upload fails: the download is kept, the outcome is the upload's.
