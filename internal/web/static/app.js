@@ -1749,7 +1749,7 @@ function drawNotes(/** @type {any} */ u) {
 /** Tooltip rows for notes under the cursor. */
 // ---------- speed-test windows ----------
 
-/** @typedef {{start:number,end:number}} SpeedWindow */
+/** @typedef {{start:number,end:number,origin?:string}} SpeedWindow */
 
 // false once this fyisp answers 404 (no speed tests): stop asking.
 let speedOn = true;
@@ -1796,26 +1796,28 @@ function drawSpeedWindows(/** @type {any} */ u) {
   const dpr = window.devicePixelRatio || 1;
   const c = css('--muted') || '#898781';
   // Merge windows that touch on screen, each at least 2 px wide.
-  /** @type {[number, number][]} */
+  // Tests a share-link visitor asked for get the accent, so the owner can tell them apart; merged spans keep it if any part was public.
+  /** @type {[number, number, boolean][]} */
   const spans = [];
   for (const w of speedWins) {
     if (w.end / 1000 < vmin || w.start / 1000 > vmax) continue;
     let x0 = u.valToPos(w.start / 1000, 'x', true), x1 = u.valToPos(w.end / 1000, 'x', true);
     if (x1 - x0 < 2 * dpr) { const m = (x0 + x1) / 2; x0 = m - dpr; x1 = m + dpr; }
     const last = spans[spans.length - 1];
-    if (last && x0 <= last[1] + dpr) last[1] = Math.max(last[1], x1);
-    else spans.push([x0, x1]);
+    const pub = w.origin === 'public';
+    if (last && x0 <= last[1] + dpr) { last[1] = Math.max(last[1], x1); last[2] = last[2] || pub; } else spans.push([x0, x1, pub]);
   }
   ctx.save();
   ctx.beginPath();
   ctx.rect(left, top, width, height);
   ctx.clip();
-  for (const [x0, x1] of spans) {
+  const acc = css('--accent') || '#3987e5';
+  for (const [x0, x1, pub] of spans) {
     if (x1 - x0 >= 6 * dpr) {
       ctx.fillStyle = rgba(c, 0.10);
       ctx.fillRect(x0, top, x1 - x0, height);
     }
-    ctx.fillStyle = rgba(c, 0.7);
+    ctx.fillStyle = rgba(pub ? acc : c, 0.7);
     ctx.fillRect(x0, top, x1 - x0, 4 * dpr);
   }
   ctx.restore();
@@ -1823,9 +1825,11 @@ function drawSpeedWindows(/** @type {any} */ u) {
 
 /** Tooltip line for a bucket that overlaps a speed test. */
 function speedTipNodes(/** @type {number} */ a, /** @type {number} */ b) {
-  const n = speedWins.filter((w) => w.start < b && w.end > a).length;
-  if (!n) return [];
-  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: n === 1 ? 'speed test: not measured' : `${n} speed tests: not measured` })];
+  const hit = speedWins.filter((w) => w.start < b && w.end > a);
+  if (!hit.length) return [];
+  const n = hit.length, pub = hit.filter((w) => w.origin === 'public').length;
+  const from = pub ? (pub === n ? ' from the share link' : `, ${pub} from the share link`) : '';
+  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`}${from}: not measured` })];
 }
 
 function noteTipNodes(/** @type {Note[]} */ list) {
