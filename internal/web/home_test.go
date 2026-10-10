@@ -710,9 +710,11 @@ func repeats(a, b string) string {
 // incident explains them: Home must not blame the apps or the calls.
 func TestHomeRecovery(t *testing.T) {
 	now := homeNow
-	out := func(ts time.Time) bool {
-		return ts.After(now.Add(-9*time.Minute)) && ts.Before(now.Add(-2*time.Minute))
-	}
+	// As in netns r4: the fault starts 6 s into a minute (16:47:06) and the
+	// block verdict 68 s later (16:48:14), all inside the 5-minute calls
+	// window; it ended 90 s ago.
+	faultFrom, faultTo := now.Add(-3*time.Minute-54*time.Second), now.Add(-90*time.Second)
+	out := func(ts time.Time) bool { return !ts.Before(faultFrom) && ts.Before(faultTo) }
 	for _, tc := range []struct {
 		name string
 		kind model.VerdictKind
@@ -733,8 +735,14 @@ func TestHomeRecovery(t *testing.T) {
 					}
 					return burst{rtt: 20, jitter: 2, answered: 5}
 				})
-			end := now.Add(-2 * time.Minute)
-			fv.list = []model.Incident{{ID: 1, Start: now.Add(-9 * time.Minute), End: end, Kind: tc.kind}}
+			end := faultTo
+			// The verdict starts after the fault: about 68 s for a block
+			// (netns i-udp-block, r3/r4), up to a minute for the others.
+			start := faultFrom.Add(68 * time.Second)
+			if tc.tcp {
+				start = faultFrom.Add(50 * time.Second)
+			}
+			fv.list = []model.Incident{{ID: 1, Start: start, End: end, Kind: tc.kind}}
 			l, err := s.homeLive(context.Background(), voiceYou, now)
 			if err != nil {
 				t.Fatal(err)
@@ -744,7 +752,9 @@ func TestHomeRecovery(t *testing.T) {
 				t.Errorf("answer %+v", a)
 			}
 			for _, x := range l.Tiles {
-				if x.Level != levelGood {
+				// Calls may still be checking: the outage and its grace
+				// cover most of the 5-minute window. Never bad.
+				if x.Level != levelGood && !(x.ID == tileCalls && x.Level == levelChecking) {
 					t.Errorf("tile %s: %s %q", x.ID, x.State, x.Label)
 				}
 			}

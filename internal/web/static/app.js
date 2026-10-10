@@ -14,10 +14,11 @@ import {
   meta, MODE, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, addAdmin, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText,
+  hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput, copyText,
   useStatus,
 } from './core.js';
 import { Home } from './home.js';
+import { Report } from './report.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
 
@@ -42,17 +43,17 @@ const PATH_GROUP = 'path';
 // Verdict kinds: headline, short badge, and what it means (the "?" tooltip).
 /** @type {Object<string,{label:string,short:string,why:string}>} */
 const VERDICTS = {
-  ok: { label: 'All good', short: 'OK', why: 'Your router, your ISP and the internet are all answering normally.' },
+  ok: { label: 'All good', short: 'OK', why: 'Your router, your internet provider and the internet are all answering normally.' },
   warming_up: { label: 'Warming up', short: 'Warming up', why: 'fyisp has just started and needs a couple of minutes of measurements before it can say whose fault a problem is.' },
-  lan: { label: 'Home network problem', short: 'LAN', why: 'Your router (the gateway) is not answering reliably, so the problem is inside your home: Wi-Fi, cables or the router itself. Your ISP is not to blame for this one.' },
-  isp: { label: 'ISP problem', short: 'ISP', why: 'Your router answers fine, but the first hop on your ISP\'s side does not. The problem is in your ISP\'s network.' },
-  upstream: { label: 'Internet problem beyond your ISP', short: 'Upstream', why: 'Your router and your ISP\'s first hop answer, but most of the internet (including the big anycast resolvers) does not: your ISP\'s upstream links or peering are failing.' },
-  dns: { label: 'DNS problem', short: 'DNS', why: 'The network path works, but name lookups are failing widely. The DNS resolver you use (often your router\'s or your ISP\'s) is the likely culprit.' },
-  service: { label: 'Some services are down', short: 'Service', why: 'Your connection is fine; only some services or regions are unhealthy. That is on their side, not yours or your ISP\'s.' },
-  no_network: { label: 'No network', short: 'No network', why: 'This machine has no route to the internet: Wi-Fi off, cable unplugged, or no network configured.' },
-  udp_blocked: { label: 'UDP blocked', short: 'UDP blocked', why: 'Your connection works, but UDP, which call audio and video use, gets no answers from several independent call services, not even on port 53. A firewall on this network (or on this computer) is blocking it. Calls fall back to slower TCP relays or fail.' },
-  stun_blocked: { label: 'Call ports blocked', short: 'STUN blocked', why: 'Your connection works and UDP gets through on port 53, but the ports calls use (STUN, e.g. 3478 and 19302) get no answers from several call services. A firewall is blocking them; calls may fall back to slower relays.' },
-  udp_degraded: { label: 'Call quality degraded', short: 'Calls', why: 'Your connection looks fine for browsing, but the UDP path call audio and video use is losing packets or jittery towards several call services. Calls may sound choppy.' },
+  lan: { label: 'Home network problem', short: 'Home network', why: 'Your router (the gateway) is not answering reliably, so the problem is most likely inside your home: Wi-Fi, cables or the router itself. Your internet provider looks fine from here.' },
+  isp: { label: 'Internet provider problem', short: 'Provider', why: 'Your router answers fine, but the first hop on your internet provider\'s side (the ISP edge) does not. The problem is most likely in your provider\'s network.' },
+  upstream: { label: 'Problem further out on the internet', short: 'Internet', why: 'Your router and your provider\'s first hop answer, but much of the internet (including the big anycast resolvers) does not. That is either your provider\'s links to the rest of the internet, or a wider outage.' },
+  dns: { label: 'Name lookup (DNS) problem', short: 'Name lookup', why: 'The network path works, but name lookups are failing widely. The DNS resolver you use (often your router\'s or your provider\'s) is the likely culprit.' },
+  service: { label: 'Some services aren\'t answering', short: 'One service', why: 'Your connection looks fine; only some services or regions aren\'t answering from here. That is most likely on their side, though a region can also be unreachable through your provider\'s routes.' },
+  no_network: { label: 'No network', short: 'Offline', why: 'The device running fyisp has no route to the internet: Wi-Fi off, cable unplugged, or no network configured.' },
+  udp_blocked: { label: 'Calls blocked (UDP)', short: 'Calls blocked', why: 'Your connection works, but UDP, which call audio and video use, gets no answers from several independent call services, not even on port 53. A firewall on this network (or on this computer) is blocking it. Calls fall back to slower TCP relays or fail.' },
+  stun_blocked: { label: 'Call ports blocked (STUN)', short: 'Calls blocked', why: 'Your connection works and UDP gets through on port 53, but the ports calls use (STUN, e.g. 3478 and 19302) get no answers from several call services. A firewall is blocking them; calls may fall back to slower relays.' },
+  udp_degraded: { label: 'Call quality degraded', short: 'Calls choppy', why: 'Your connection looks fine for browsing, but the UDP path call audio and video use is losing packets or jittery towards several call services. Calls may sound choppy.' },
 };
 // Shown instead of the label for a long-standing block (the verdict's quiet flag).
 const QUIET_LABEL = { udp_blocked: 'This network blocks UDP', stun_blocked: 'This network blocks call ports' };
@@ -151,6 +152,28 @@ function seriesColor(/** @type {number} */ i) {
 }
 function reasonColor(/** @type {string} */ r) { return css(`--r-${r}`) || '#999999'; }
 
+// Glossary for Details: the short explanation of each technical term (ux-content §4).
+// The same text is in the footer's Glossary; term() marks a word with it as a hover hint.
+/** @type {Object<string,string>} */
+const GLOSSARY = {
+  mos: 'Call quality score from 1 (unusable) to 4.5 (excellent), estimated from delay, dropouts and jitter. Good ≥ 4.0, Fair ≥ 3.6, Poor ≥ 3.1.',
+  jitter: 'How unevenly packets arrive. Steady below 10 ms; noticeable from 30 ms, when call apps add delay to smooth it out.',
+  loss: 'Share of test messages that never came back. Above about 5%, people on a call start to hear gaps.',
+  rtt: 'Time for a message to reach a server and come back, in milliseconds. Under 150 ms feels instant on a call.',
+  stun: 'A tiny “what’s my address?” request that call apps send before a call. fyisp uses it to test the path call audio takes.',
+  udp: 'The fast, no-retry way call audio and video travel. If it’s blocked, calls fall back to slower routes.',
+  anycast: 'Big services (Cloudflare, Google, Quad9 DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.',
+  'isp edge': 'The first piece of your internet provider’s equipment past your router.',
+  p95: '95 out of 100 measurements were faster than this. Shows the slow moments the median hides.',
+  bursts: '5 STUN requests sent quickly, 20 ms apart, like call audio packets. Loss and jitter are measured per burst.',
+};
+/** A technical word with its glossary text as a hint (the footer's Glossary has it for everyone). */
+function term(/** @type {string} */ key, /** @type {string} */ text = key) {
+  const tip = GLOSSARY[key.toLowerCase()];
+  return tip ? h('abbr', { class: 'gl', title: tip, text }) : text;
+}
+/** Smooth scrolling unless the reader asked for reduced motion. @returns {ScrollBehavior} */
+function smooth() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; }
 function verdictColor(/** @type {string} */ kind) { return css(`--v-${kind}`) || css('--muted') || '#898781'; }
 
 // ---------- URL hash state ----------
@@ -1147,7 +1170,7 @@ class Investigate {
     this.lastPoke = Date.now();
     /** @type {Record<string,string>} */
     const headers = { 'X-FYISP-Token': TOKEN };
-    addAdmin(headers);
+    await addAdmin(headers);
     try {
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
       if (target !== this.target) return;
@@ -1677,7 +1700,10 @@ function noteTipNodes(/** @type {Note[]} */ list) {
 function bindNoteGestures(u) {
   const over = /** @type {HTMLElement} */ (u.over);
   const timeAt = (/** @type {number} */ clientX) => Math.round(u.posToVal(clientX - over.getBoundingClientRect().left, 'x') * 1000);
-  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); }, true);
+  // Focusable (not in the tab order), so the note editor can return focus to the chart it was opened from.
+  over.tabIndex = -1;
+  over.setAttribute('aria-label', 'Chart');
+  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); if (notesOn && canWrite()) over.focus({ preventScroll: true }); }, true);
   over.addEventListener('contextmenu', (e) => {
     if (!notesOn || !canWrite()) return;
     e.preventDefault();
@@ -1697,7 +1723,7 @@ function bindNoteGestures(u) {
     if (e.pointerType !== 'touch' || !notesOn || !canWrite()) return;
     sx = e.clientX; sy = e.clientY;
     cancel();
-    timer = window.setTimeout(() => { timer = 0; hideTip(); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
+    timer = window.setTimeout(() => { timer = 0; hideTip(); over.focus({ preventScroll: true }); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
   });
   over.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
   over.addEventListener('pointerup', cancel);
@@ -1718,9 +1744,22 @@ function onChartSelect(/** @type {any} */ u) {
   u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
 }
 
-const notePop = h('div', { id: 'note-pop', class: 'pop', role: 'dialog', 'aria-label': 'Note', hidden: true });
+// The note editor is a modal <dialog> (the browser traps focus in it); when
+// it closes, focus returns to what opened it: the "+ note" button, a note's
+// Edit button, or the chart (whose overlay is focusable for this).
+const notePop = /** @type {HTMLDialogElement} */ (h('dialog', { id: 'note-pop', class: 'pop', 'aria-label': 'Note' }));
+/** @type {HTMLElement|null} */
+let noteOpener = null;
+notePop.addEventListener('close', () => {
+  notePop.replaceChildren();
+  const o = noteOpener;
+  noteOpener = null;
+  if (o && o.isConnected) o.focus({ preventScroll: true });
+});
+// A click on the backdrop (outside the editor's box) closes it.
+notePop.addEventListener('mousedown', (e) => { if (e.target === notePop) closeNoteEditor(); });
 
-function closeNoteEditor() { notePop.hidden = true; notePop.replaceChildren(); }
+function closeNoteEditor() { if (notePop.open) notePop.close(); }
 
 /**
  * The note popover: add (note null) or edit. preset gives the time(s) of a new note.
@@ -1728,6 +1767,8 @@ function closeNoteEditor() { notePop.hidden = true; notePop.replaceChildren(); }
  */
 function openNoteEditor(note, x, y, preset) {
   hideTip();
+  const ae = document.activeElement;
+  noteOpener = ae instanceof HTMLElement && ae !== document.body ? ae : null;
   const at = note ? Date.parse(note.at) : (preset ? preset.at : Date.now());
   const end = note ? (note.end ? Date.parse(note.end) : NaN) : (preset && preset.end ? preset.end : NaN);
   const atIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(at), required: true, 'aria-label': 'When' }));
@@ -1770,9 +1811,8 @@ function openNoteEditor(note, x, y, preset) {
       save.disabled = false;
     }
   });
-  form.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNoteEditor(); });
   notePop.replaceChildren(form);
-  notePop.hidden = false;
+  if (!notePop.open) notePop.showModal();
   const r = notePop.getBoundingClientRect();
   let left = x + 8, top = y + 8;
   if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 8);
@@ -1783,13 +1823,13 @@ function openNoteEditor(note, x, y, preset) {
 }
 
 async function deleteNote(/** @type {Note} */ n) {
-  if (!window.confirm(`Delete this note?\n\n${n.text}`)) return;
+  if (!await confirmDialog('Delete this note?', n.text, 'Delete')) return;
   try {
     await apiWrite('DELETE', `api/annotations/${n.id}`);
     closeNoteEditor();
     await loadNotes();
   } catch (e) {
-    window.alert(`Could not delete: ${/** @type {Error} */ (e).message}`);
+    await alertDialog('Couldn’t delete the note', /** @type {Error} */ (e).message);
   }
 }
 
@@ -2177,8 +2217,12 @@ class Overview {
       const kind = KIND_LABEL[/** @type {'https'} */ (d.kind)];
       kids.push(h('span', { class: 'muted', text: ` This line covers ${kind} over the whole range and counts ${what}; the verdict above judges every kind over the last minute.` }));
     }
-    const un = d.summary.targets - d.summary.measured;
-    if (un) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
+    // Rows still too new to judge can already show heavy loss in the table:
+    // say so, so "none are losing packets" never sits next to a 100% row.
+    const early = d.rows.filter((r) => r.state === 'unmeasured' && r.lost > 0).length;
+    if (early) kids.push(h('span', { text: ` ${fmtInt(early)} more ${early === 1 ? 'is' : 'are'} losing packets, but ${early === 1 ? 'it has' : 'they have'} too few checks yet to judge (Status “Not measured”).` }));
+    const un = d.summary.targets - d.summary.measured - early;
+    if (un > 0) kids.push(h('span', { class: 'muted', text: ` ${fmtInt(un)} not measured.` }));
     if (d.capped) kids.push(h('span', { class: 'muted', text: ` The Overview covers at most the last 30 days of the range.` }));
     this.breadth.replaceChildren(...kids);
   }
@@ -2430,7 +2474,7 @@ class Overview {
     }
     if (state.oc) {
       const r = this.tableBox.getBoundingClientRect();
-      if (r.top > window.innerHeight) this.tableBox.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      if (r.top > window.innerHeight) this.tableBox.scrollIntoView({ block: 'start', behavior: smooth() });
     }
   }
 }
@@ -2524,10 +2568,10 @@ function workHours(/** @type {number} */ now) {
 /** The state colour token of a call state. */
 function callColor(/** @type {string|null} */ st) {
   switch (st) {
-    case 'good': return css('--v-ok');
-    case 'fair': return css('--v-service');
-    case 'poor': return css('--v-lan');
-    case 'unusable': return css('--v-isp');
+    case 'good': return css('--c-good');
+    case 'fair': return css('--c-fair');
+    case 'poor': return css('--c-poor');
+    case 'unusable': return css('--c-bad');
   }
   return '';
 }
@@ -2931,7 +2975,7 @@ class Calls {
     g.fillStyle = css('--surface-2');
     g.fillRect(0, 0, W, H);
     const d = this.day;
-    const none = css('--grid');
+    const none = css('--nodata');
     for (let i = 0; i < total; i++) {
       const t = wh[0] + i * 60e3;
       if (t >= now) break;
@@ -3060,12 +3104,15 @@ class Calls {
 
   /** An app row's expanded part: MOS, jitter, p95 and the last hour's sparkline. */
   appDetail(/** @type {CallsApp} */ app) {
+    /** @type {(string|Node)[]} */
     const facts = [];
-    if (app.mos != null) facts.push(`MOS ${app.mos.toFixed(2)} (worst minute)`);
-    if (app.jitter_ms != null) facts.push(`jitter ${fmtMs(app.jitter_ms)} ms`);
-    if (app.rtt_p95_ms != null) facts.push(`p95 ${fmtMs(app.rtt_p95_ms)} ms`);
-    facts.push(`${app.samples || 0} bursts${app.unknown ? `, ${app.unknown} failed otherwise (not counted as loss)` : ''}`);
-    const box = h('div', { class: 'cq-app-more' }, h('p', { class: 'small', text: facts.join(' · ') }));
+    const sep = () => { if (facts.length) facts.push(' · '); };
+    if (app.mos != null) { sep(); facts.push(term('MOS'), ` ${app.mos.toFixed(2)} (worst minute)`); }
+    if (app.jitter_ms != null) { sep(); facts.push(term('jitter'), ` ${fmtMs(app.jitter_ms)} ms`); }
+    if (app.rtt_p95_ms != null) { sep(); facts.push(term('p95'), ` ${fmtMs(app.rtt_p95_ms)} ms`); }
+    sep();
+    facts.push(term('bursts', `${app.samples || 0} bursts`), app.unknown ? `, ${app.unknown} failed otherwise (not counted as loss)` : '');
+    const box = h('div', { class: 'cq-app-more' }, h('p', { class: 'small' }, ...facts));
     const d = this.day;
     const g = d && d.apps.find((x) => x.app === app.app);
     if (d && g && g.minutes) {
@@ -3165,7 +3212,7 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
 
 // ---------- Home and the Home | Details switch ----------
 
-/** @type {Home|null} */
+/** Home, or on the share link the report. @type {Home|Report|null} */
 let home = null;
 /** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
 let onNav = () => {};
@@ -3176,7 +3223,7 @@ function renderViewNav() {
   const v = currentView();
   const nav = $('#viewnav');
   nav.replaceChildren(
-    h('button', { type: 'button', text: 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
+    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
     h('button', { type: 'button', text: 'Details', 'aria-current': v !== 'h' ? 'page' : null, onclick: () => { if (currentView() === 'h') openDetails(''); } }));
 }
 
@@ -3238,7 +3285,7 @@ function applyView() {
   const v = currentView();
   document.body.classList.toggle('home-on', v === 'h');
   if (home) home.el.hidden = v !== 'h';
-  if (v !== 'h') document.title = 'Details · fyisp';
+  if (v !== 'h') document.title = MODE === 'public' ? 'Details · Internet quality report' : 'Details · fyisp';
   renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
@@ -3344,6 +3391,18 @@ async function loadReports() {
 }
 
 /** Open / Download / Copy public link / Publish / Delete for one report. */
+/**
+ * After an action re-renders the control that started it, focus would fall to
+ * <body>: put it on the replacement (or a fallback) instead.
+ * @param {() => (Element|null)} find
+ */
+function refocus(find) {
+  const ae = document.activeElement;
+  if (ae && ae !== document.body && ae.isConnected) return;
+  const el = /** @type {HTMLElement|null} */ (find());
+  el?.focus({ preventScroll: true });
+}
+
 function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ after, big = false) {
   const cls = big ? 'btn' : 'tbtn';
   const kids = [
@@ -3353,8 +3412,8 @@ function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ af
   const link = reportPublicURL(r);
   if (r.public && r.redacted) {
     const copy = h('button', {
-      class: cls, type: 'button', text: 'Copy public link', disabled: !link,
-      title: link ? link : 'Start your public link (top of the page) to get this report\'s address',
+      class: cls, type: 'button', text: 'Copy link', disabled: !link,
+      title: link ? link : 'Share a live view first (top of the page) to get this report’s link',
       onclick: () => copyText(link, copy),
     });
     kids.push(copy);
@@ -3362,22 +3421,25 @@ function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ af
   if (canWrite()) {
     if (r.redacted) {
       kids.push(h('button', {
-        class: cls, type: 'button', text: r.public ? 'Unpublish' : 'Publish',
-        title: r.public ? 'Stop serving this snapshot on your public link' : 'Serve this redacted snapshot on your public link',
+        class: cls, type: 'button', text: r.public ? 'Remove from shared link' : 'Show on shared link', 'data-rid': r.id, 'data-act': 'pub',
+        title: r.public ? 'Stop showing this report on your shared link' : 'Show this report (safe to share) on your shared link',
         onclick: async () => {
-          try { await apiWrite('PUT', `api/reports/${r.id}`, { public: !r.public }); } catch (e) { window.alert(/** @type {Error} */ (e).message); }
+          try { await apiWrite('PUT', `api/reports/${r.id}`, { public: !r.public }); } catch (e) { await alertDialog('Couldn’t change the report', /** @type {Error} */ (e).message); }
           await loadReports();
           after();
+          refocus(() => document.querySelector(`[data-rid="${r.id}"][data-act="pub"]`) || $('#reports > summary'));
         },
       }));
     }
     kids.push(h('button', {
       class: cls + ' danger', type: 'button', text: 'Delete',
       onclick: async () => {
-        if (!window.confirm(`Delete the report "${r.title}"?`)) return;
-        try { await apiWrite('DELETE', `api/reports/${r.id}`); } catch (e) { window.alert(/** @type {Error} */ (e).message); }
+        if (!await confirmDialog(`Delete “${r.title}”?`, 'This can’t be undone.', 'Delete')) return;
+        try { await apiWrite('DELETE', `api/reports/${r.id}`); } catch (e) { await alertDialog('Couldn’t delete the report', /** @type {Error} */ (e).message); }
         await loadReports();
         after();
+        // The row is gone: the Reports heading (or, in the "ready" dialog, its first control).
+        refocus(() => (reportDlg && reportDlg.open ? reportDlg.querySelector('button, a') : null) || $('#reports > summary'));
       },
     }));
   }
@@ -3391,7 +3453,7 @@ function renderReports() {
   $('#reports-count').textContent = `· ${reports.length} saved`;
   const list = $('#reports-list');
   if (!reports.length) {
-    list.replaceChildren(h('p', { class: 'muted o-empty', text: 'No reports yet. "Create report" builds a self-contained page (prints to PDF) for the current range; "Report" on an outage builds one for that incident.' }));
+    list.replaceChildren(h('p', { class: 'muted o-empty', text: 'Need proof for your provider or IT team? A report is a page you can print or save as a PDF. It shows what went wrong and when. “Create report” makes one for the current range; “Report” on an outage makes one for that problem.' }));
     return;
   }
   list.replaceChildren(...reports.map((r) => h('div', { class: 'r-item' },
@@ -3399,8 +3461,8 @@ function renderReports() {
       h('span', { class: 'r-title', text: r.title }),
       h('span', { class: 'r-meta muted' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · created ${fmtWhen(Date.parse(r.created))} · ${fmtBytes(r.bytes)}`),
       h('span', { class: 'r-badges' },
-        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; public notes only' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'redacted' : 'private details' }),
-        r.public && r.redacted ? h('span', { class: 'nbadge pub', title: 'Served on your public link while sharing is on', text: 'on public link' }) : null)),
+        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; public notes only' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'safe to share' : 'private' }),
+        r.public && r.redacted ? h('span', { class: 'nbadge pub', title: 'Shown on your shared link while sharing is on', text: 'on shared link' }) : null)),
     reportActions(r, renderReports))));
 }
 
@@ -3425,22 +3487,22 @@ function openReportDialog(preset) {
     pub.disabled = priv.checked;
     if (priv.checked) pub.checked = false;
     pubHint.textContent = priv.checked
-      ? 'Reports with private details cannot be published; they stay on this machine.'
-      : shareURL() ? 'Anyone with your public link can open it.' : 'It will be served once you start your public link.';
+      ? 'Reports with private details stay on this device.'
+      : shareURL() ? 'Anyone with your shared link can open it.' : 'It will appear when you share a live view.';
   };
   priv.addEventListener('change', syncPub);
   syncPub();
   const err = h('div', { class: 'perr', role: 'alert' });
-  const go = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: 'Create report' }));
+  const go = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: 'Make the report' }));
   const form = h('form', { class: 'dlg-form', method: 'dialog' },
-    h('h2', { text: 'Create report' }),
-    h('p', { class: 'muted small', text: 'A self-contained page with the verdicts, outage log, charts, statistics and notes for this range. Open it to print or save as PDF.' }),
+    h('h2', { text: 'Make a report' }),
+    h('p', { class: 'muted small', text: 'A page showing your connection’s problems, charts and notes for the time you pick. You can print it or save it as a PDF.' }),
     h('label', { class: 'fld' }, h('span', { text: 'Title' }), title),
     h('div', { class: 'fld-row' },
       h('label', { class: 'fld' }, h('span', { text: 'From' }), fromIn),
       h('label', { class: 'fld' }, h('span', { text: 'To' }), toIn)),
-    h('label', { class: 'chk' }, priv, h('span', {}, ' Include private details', h('span', { class: 'hint', text: 'Addresses, router names and private notes. Leave unchecked for a redacted report you can send to your ISP.' }))),
-    h('label', { class: 'chk' }, pub, h('span', {}, ' Publish on my public link', pubHint)),
+    h('label', { class: 'chk' }, priv, h('span', {}, ' Include private details', h('span', { class: 'hint', text: 'Your network addresses, device names and private notes. Leave this off if you’ll send the report to anyone else.' }))),
+    h('label', { class: 'chk' }, pub, h('span', {}, ' Also show it on my shared link', pubHint)),
     err,
     h('div', { class: 'pop-actions' },
       h('span', { class: 'grow' }),
@@ -3449,9 +3511,9 @@ function openReportDialog(preset) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const a = fromLocalInput(fromIn.value), b = fromLocalInput(toIn.value);
-    if (!(isFinite(a) && isFinite(b) && b > a)) { err.textContent = '"To" must be after "From".'; return; }
+    if (!(isFinite(a) && isFinite(b) && b > a)) { err.textContent = 'The end time must be after the start time.'; return; }
     go.disabled = true;
-    go.textContent = 'Building…';
+    go.textContent = 'Making your report…';
     err.textContent = '';
     try {
       /** @type {ReportMeta} */
@@ -3461,9 +3523,9 @@ function openReportDialog(preset) {
       await loadReports();
       showReportDone(dlg, r);
     } catch (e2) {
-      err.textContent = `Could not build the report: ${/** @type {Error} */ (e2).message}`;
+      err.textContent = `Couldn’t make the report. Try again. (${/** @type {Error} */ (e2).message})`;
       go.disabled = false;
-      go.textContent = 'Create report';
+      go.textContent = 'Make the report';
     }
   });
   dlg.replaceChildren(form);
@@ -3479,11 +3541,11 @@ function showReportDone(/** @type {HTMLDialogElement} */ dlg, /** @type {ReportM
     showReportDone(dlg, cur);
   };
   dlg.replaceChildren(h('div', { class: 'dlg-form' },
-    h('h2', { text: 'Report ready' }),
+    h('h2', { text: 'Your report is ready' }),
     h('p', { class: 'r-title', text: r.title }),
     h('p', { class: 'muted small' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · ${fmtBytes(r.bytes)} · `,
-      r.redacted ? 'redacted' : 'includes private details', r.public && r.redacted ? ' · on your public link' : ''),
-    r.public && r.redacted && !shareURL() ? h('p', { class: 'hint', text: 'Start your public link to share it; the report\'s address is your public link followed by r/<id>.' }) : null,
+      r.redacted ? 'safe to share' : 'private: for you only', r.public && r.redacted ? ' · on your shared link' : ''),
+    r.public && r.redacted && !shareURL() ? h('p', { class: 'hint', text: 'Share a live view first, then you can copy this report’s link.' }) : null,
     reportActions(r, refresh, true),
     h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }), h('button', { class: 'btn', type: 'button', text: 'Close', onclick: () => dlg.close() }))));
 }
@@ -3540,7 +3602,7 @@ function focusTarget(/** @type {string} */ name) {
   p.isolate(name);
   const bar = $('.top');
   const top = p.el.getBoundingClientRect().top + window.scrollY - (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) - 8;
-  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  window.scrollTo({ top: Math.max(0, top), behavior: smooth() });
 }
 
 // The banner shows at most this many target chips, then "+N more".
@@ -3670,7 +3732,7 @@ function renderOutages() {
     h('span', { class: 'o-dur', text: fmtDur(b - a) }),
     h('span', { class: `kbadge v-${kind}`, text: info.short }),
     h('span', { class: 'o-sum', text: inc.summary }),
-    h('span', { class: 'o-peak', title: 'Worst one-minute loss', text: `peak ${fmtPct(inc.peak_loss)} loss` }));
+    h('span', { class: 'o-peak', title: 'Worst one-minute loss', text: inc.peak_loss >= 0.995 ? 'worst minute: nothing got through' : `worst minute: ${fmtPct(inc.peak_loss)} lost` }));
     const tt = incidentTraceTarget(inc);
     const tb = tt ? h('button', {
       class: 'tbtn o-trace', type: 'button', title: `Trace ${tt} hop by hop during this incident`, text: `Trace ${tt}`,
@@ -3793,7 +3855,7 @@ let adminLinkErr = '';
 async function shareAction(/** @type {'start'|'stop'} */ what) {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
-  addAdmin(headers);
+  await addAdmin(headers);
   try {
     const r = await fetchJSON(`api/share/${what}`, { method: 'POST', headers }, 1);
     status.share = r.share;
@@ -3803,6 +3865,8 @@ async function shareAction(/** @type {'start'|'stop'} */ what) {
     status.share = { ...(status.share || {}), phase: 'error', last_err: err.message };
   }
   renderShare();
+  // The button that started this was replaced: focus the new controls.
+  refocus(() => $('#share').querySelector('button, input'));
   loadStatus();
 }
 
@@ -3811,7 +3875,7 @@ function renderShare() {
   const badge = $('#mode-badge');
   if (MODE === 'public') {
     badge.hidden = false;
-    badge.textContent = 'Public view · read-only';
+    badge.textContent = 'Shared view (read-only)';
     el.replaceChildren();
     return;
   }
@@ -3849,7 +3913,14 @@ function renderShare() {
       if (!disabled) kids.push(h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => shareAction('stop') }));
   }
   if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started with --admin-token=off' }));
+  // It re-renders on every status poll: keep keyboard focus on the same control (or the first one).
+  const ae = document.activeElement;
+  const had = ae instanceof HTMLElement && el.contains(ae) ? ae.textContent || ae.tagName : '';
   el.replaceChildren(...kids);
+  if (had) {
+    const ctl = /** @type {HTMLElement[]} */ ([...el.querySelectorAll('button, input')]);
+    (ctl.find((x) => (x.textContent || x.tagName) === had) || ctl[0])?.focus({ preventScroll: true });
+  }
 }
 
 function renderNotices() {
@@ -3921,8 +3992,11 @@ async function main() {
   repBox.addEventListener('toggle', () => { if (state.reports !== repBox.open) { state.reports = repBox.open; writeHash(); } if (repBox.open) loadReports(); });
   document.body.append(notePop);
   // Clicks outside the note popover close it.
-  document.addEventListener('mousedown', (e) => { if (!notePop.hidden && !notePop.contains(/** @type {Node} */ (e.target))) closeNoteEditor(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !notePop.hidden) closeNoteEditor(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    hideTip(); // tooltips close on Escape (WCAG 1.4.13)
+  });
   // Back from focus mode restores the Overview's scroll position itself.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   onNav = () => {
@@ -3989,7 +4063,13 @@ async function main() {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
-  home = new Home({
+  if (MODE === 'public') {
+    const r = new Report();
+    r.openDetails = openDetails;
+    home = r;
+    $('h1').textContent = 'Internet quality report';
+    document.body.classList.add('public');
+  } else home = new Home({
     span: () => state.hw,
     setSpan: (s) => { state.hw = s; writeHash(); },
     openDetails,

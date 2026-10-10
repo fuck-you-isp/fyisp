@@ -9,7 +9,7 @@
 
 import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText } from './core.js';
 
-/** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string}} HomeAnswer */
+/** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string,recovered?:number}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
 /** @typedef {{id:string,title:string,level:string,state:string,label:string,note?:string,names:string[],more?:number,affected?:string[],ok:number,total:number,details:string}} HomeTile */
 /** @typedef {{state:string,delay?:string,dropouts?:string,smoothness?:string,words?:string,worst_at?:number}} HomeCalls */
@@ -20,7 +20,7 @@ import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, c
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
 /** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,side?:string,level?:string,confidence?:string,text?:string,peak_loss:number,details:string}} HomeProblem */
-/** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number}}} HomeHistory */
+/** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number},coverage?:number}} HomeHistory */
 /** @typedef {{part:string,voice:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number}} HomeAt */
 /** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
 /**
@@ -44,7 +44,7 @@ const KEEP_RUNNING = 'https://github.com/fuck-you-isp/fyisp#keep-it-running';
 
 /** Icon and word per level: never colour alone. */
 /** @type {Object<string,{icon:string,word:string}>} */
-const LEVELS = {
+export const LEVELS = {
   good: { icon: '✓', word: 'OK' },
   warn: { icon: '!', word: 'Minor problem' },
   bad: { icon: '✕', word: 'Problem' },
@@ -53,15 +53,15 @@ const LEVELS = {
   affected: { icon: '–', word: 'Affected' },
 };
 /** @type {Object<string,string>} path node states */
-const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '…', affected: '–' };
+export const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '…', affected: '–' };
 // The tab title: the state first, so a background tab says it.
 /** @type {Object<string,string>} */
 const TITLE_WORD = { good: 'Fine', info: 'Fine', warn: 'Trouble', bad: 'Trouble', checking: 'Checking' };
 
 /** Clock time in the viewer's locale (12 or 24 h). */
-function clock(/** @type {number} */ ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+export function clock(/** @type {number} */ ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 /** Weekday and clock, when not today. */
-function when(/** @type {number} */ ms) {
+export function when(/** @type {number} */ ms) {
   const d = new Date(ms);
   if (d.toDateString() === new Date().toDateString()) return clock(ms);
   return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + clock(ms);
@@ -69,7 +69,7 @@ function when(/** @type {number} */ ms) {
 /** "2:10 to 2:16 pm"-ish: both ends in the viewer's clock. */
 function range(/** @type {number} */ a, /** @type {number} */ b) { return b - a <= 60e3 ? when(a) : `${when(a)} to ${clock(b)}`; }
 /** A duration in words: "6 minutes", "1 hour 5 minutes", "26 hours", "3 days". */
-function minutes(/** @type {number} */ ms) {
+export function minutes(/** @type {number} */ ms) {
   const m = Math.max(1, Math.round(ms / 60e3));
   if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
   const hh = Math.floor(m / 60), mm = m % 60;
@@ -85,9 +85,9 @@ function ago(/** @type {number} */ ms) {
   if (m < 60) return `${m} minute${m === 1 ? '' : 's'} ago`;
   return `at ${clock(Date.now() - ms)}`;
 }
-function cls(/** @type {string} */ s) { return /^[a-z_]+$/.test(s) ? s : 'other'; }
+export function cls(/** @type {string} */ s) { return /^[a-z_]+$/.test(s) ? s : 'other'; }
 /** An icon (hidden from screen readers) and its word. */
-function badge(/** @type {string} */ level, /** @type {string} */ word) {
+export function badge(/** @type {string} */ level, /** @type {string} */ word) {
   const L = LEVELS[level] || LEVELS.checking;
   return h('span', { class: `ho-badge lvl-${cls(level)}` }, h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: L.icon }), h('span', { text: word }));
 }
@@ -114,8 +114,8 @@ export class Home {
     /** @type {number|null} "What happened at…?": the picked time (ms); null before the first pick */
     this.askAt = null;
     this.askSeq = 0;
-    this.blockIdx = -1; // the timeline's roving focus (-1: not placed yet)
-    this.historySpan = '';
+    /** the timeline's roving focus (idx -1: not placed yet) */
+    this.focus = { idx: -1, span: '' };
 
     // Live regions: one polite announcer (state changes only) and one
     // assertive one for offline / calls breaking up.
@@ -342,6 +342,8 @@ export class Home {
     if (d && d.answer.since && d.answer.level !== 'good' && d.answer.level !== 'checking') {
       bits.push(`Since ${when(d.answer.since)} (${minutes(Date.now() - d.answer.since)})`);
     }
+    // Just after an outage ended: a calm "back to normal" line.
+    if (d && d.answer.recovered && d.answer.level === 'good') bits.push(`Back to normal since ${when(d.answer.recovered)}`);
     if (d && d.answer.level === 'checking') bits.push('First results in about 2 minutes');
     else if (this.liveAt && d) bits.push(`Checked ${ago(Date.now() - this.liveAt)}`);
     this.metaEl.textContent = bits.join(' · ');
@@ -442,78 +444,9 @@ export class Home {
     this.sumEl.replaceChildren(h('span', { text: d.summary }));
     if (d.known && d.known.text) this.sumEl.append(' ', h('span', { text: `${d.known.text} ${when(d.known.since)}.` }));
     if (times.length) this.sumEl.append(h('span', { class: 'ho-times', text: `When: ${times.join('; ')}${probs.length > 3 ? '; …' : ''}.` }));
-    const phone = window.matchMedia('(max-width: 767.98px)').matches;
-    const per = phone ? 3 : 1; // hours per block: blocks stay ≥ 24 px wide on a phone
-    const rows = [];
-    /** @type {HTMLElement[]} */
-    const blocks = [];
-    for (const day of d.days) {
-      const cells = [];
-      const name = new Date(day.from + 12 * 3600e3).toLocaleDateString([], { weekday: 'short' });
-      for (let hr = 0; hr < 24; hr += per) {
-        const a = day.from + hr * 3600e3, b = Math.min(day.from + (hr + per) * 3600e3, day.from + 86400e3);
-        const st = blockState(day, d, a, b);
-        const label = blockLabel(name, a, b, st);
-        const cell = h('button', {
-          type: 'button', class: `ho-blk b-${st.kind}${st.level ? ' lvl-' + st.level : ''}`, 'aria-label': label, title: label, tabindex: '-1',
-          disabled: st.kind === 'later' || null,
-          onclick: () => this.pickBlock(st, a, b),
-        });
-        if (st.kind !== 'later') blocks.push(cell);
-        cells.push(cell);
-      }
-      const strip = h('div', { class: 'ho-cells' }, ...cells);
-      if (day.to < day.from + 86400e3) {
-        // Today: a "now" marker; the hours after it are faded.
-        // The word "now" only on the one-day strip: on the week it would sit on the row above.
-        const now = h('span', { class: 'ho-now', 'aria-hidden': 'true' }, d.span === 'd' ? h('span', { text: 'now' }) : null);
-        now.style.left = `${((day.to - day.from) / 86400e3) * 100}%`;
-        strip.append(now);
-      }
-      rows.push(h('div', { class: 'ho-row' },
-        h('span', { class: 'ho-day', 'aria-hidden': 'true', text: d.span === 'd' ? 'Today' : name }), strip));
-    }
-    // Hour marks under the strips, each at hour/24 of the strip.
-    const axis = h('div', { class: 'ho-axis' });
-    for (const x of [0, 6, 12, 18]) {
-      const m = h('span', { text: clock(new Date(d.days[0].from).setHours(x, 0, 0, 0)).replace(':00', '') });
-      m.style.left = `${(x / 24) * 100}%`;
-      axis.append(m);
-    }
-    const marks = h('div', { class: 'ho-row ho-marks', 'aria-hidden': 'true' }, h('span', { class: 'ho-day' }), axis);
-    const grid = h('div', { class: 'ho-grid', role: 'group', 'aria-label': `${d.span === 'd' ? 'Today' : 'The last 7 days'}, ${per === 1 ? 'one block per hour' : `one block per ${per} hours`}. Use the arrow keys to move between blocks.` }, ...rows, marks);
-    // Roving focus: one tab stop, arrows move across blocks (and rows).
-    // It starts at the latest problem block, else the current hour (the last block that has happened).
-    if (this.blockIdx < 0 || this.blockIdx >= blocks.length || this.historySpan !== d.span) {
-      const lastRun = blocks.map((b) => b.classList.contains('b-run')).lastIndexOf(true);
-      this.blockIdx = lastRun >= 0 ? lastRun : blocks.length - 1;
-      this.historySpan = d.span;
-    }
-    if (blocks[this.blockIdx]) blocks[this.blockIdx].tabIndex = 0;
-    grid.addEventListener('keydown', (e) => {
-      const i = blocks.indexOf(/** @type {HTMLElement} */ (e.target));
-      if (i < 0) return;
-      const cols = 24 / per;
-      const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols, Home: -i, End: blocks.length - 1 - i }[e.key];
-      if (step == null) return;
-      e.preventDefault();
-      const j = Math.max(0, Math.min(blocks.length - 1, i + step));
-      blocks[i].tabIndex = -1;
-      blocks[j].tabIndex = 0;
-      blocks[j].focus();
-      this.blockIdx = j;
-    });
-    this.stripsEl.replaceChildren(grid);
-    const anyOff = d.days.some((x) => x.off.length);
-    this.legendEl.replaceChildren(...[
-      h('span', {}, h('span', { class: 'ho-key b-fine', 'aria-hidden': 'true' }), 'No problems'),
-      h('span', {}, h('span', { class: 'ho-key b-run lvl-warn', 'aria-hidden': 'true' }), LEVELS.warn.word),
-      h('span', {}, h('span', { class: 'ho-key b-run lvl-bad', 'aria-hidden': 'true' }), LEVELS.bad.word),
-      d.days.some((x) => x.runs.some((r) => r.level === 'info')) ? h('span', {}, h('span', { class: 'ho-key b-run lvl-info', 'aria-hidden': 'true' }), LEVELS.info.word) : null,
-      h('span', {}, h('span', { class: 'ho-key b-off', 'aria-hidden': 'true' }), 'fyisp wasn’t running'),
-      d.days.some((x) => x.no_record) || (d.first_data && d.first_data > d.from) ? h('span', {}, h('span', { class: 'ho-key b-none', 'aria-hidden': 'true' }), 'No record yet') : null,
-      anyOff ? h('a', { class: 'ho-keep', href: KEEP_RUNNING, target: '_blank', rel: 'noopener', text: 'How to keep it running' }) : null,
-    ].filter((x) => x != null));
+    const t = buildTimeline(d, this.focus, (st, a, b) => this.pickBlock(st, a, b), {});
+    this.stripsEl.replaceChildren(t.grid);
+    this.legendEl.replaceChildren(...t.legend);
     if (d.work && d.span === 'd' && d.work.measured) {
       this.legendEl.append(h('span', { class: 'ho-muted', text: `Working hours so far: good for calls ${Math.round(d.work.good * 100)}% of the time.` }));
     }
@@ -729,6 +662,92 @@ export class Home {
 
 /** A tile's Details link, as the server picks it (#v=calls, or the Overview filtered with ot=). */
 function tileHash(/** @type {HomeTile} */ t) { return t.details; }
+
+/**
+ * The Today/Week timeline: one row of blocks per day (an hour each, 3 hours
+ * on a phone) whose height and pattern carry the state, a "now" marker, the
+ * hour axis and the legend. One tab stop; arrow keys move across blocks.
+ * focus keeps the roving position across refreshes. Home and the public
+ * report share it.
+ * @param {HomeHistory} d
+ * @param {{idx:number,span:string}} focus
+ * @param {(st:{kind:string,level?:string,run?:HomeRun|null}, a:number, b:number) => void} onPick
+ * @param {{noKeep?:boolean,offWord?:string,dates?:boolean}} opts (dates: label rows "Wed 7 Oct", for the report read later)
+ */
+export function buildTimeline(d, focus, onPick, opts) {
+  const phone = window.matchMedia('(max-width: 767.98px)').matches;
+  const per = phone ? 3 : 1; // hours per block: blocks stay ≥ 24 px wide on a phone
+  const rows = [];
+  /** @type {HTMLElement[]} */
+  const blocks = [];
+  for (const day of d.days) {
+    const cells = [];
+    const name = new Date(day.from + 12 * 3600e3).toLocaleDateString([], { weekday: 'short' });
+    for (let hr = 0; hr < 24; hr += per) {
+      const a = day.from + hr * 3600e3, b = Math.min(day.from + (hr + per) * 3600e3, day.from + 86400e3);
+      const st = blockState(day, d, a, b);
+      const label = blockLabel(name, a, b, st);
+      const cell = h('button', {
+        type: 'button', class: `ho-blk b-${st.kind}${st.level ? ' lvl-' + st.level : ''}`, 'aria-label': label, title: label, tabindex: '-1',
+        disabled: st.kind === 'later' || null,
+        onclick: () => onPick(st, a, b),
+      });
+      if (st.kind !== 'later') blocks.push(cell);
+      cells.push(cell);
+    }
+    const strip = h('div', { class: 'ho-cells' }, ...cells);
+    if (day.to < day.from + 86400e3) {
+      // Today: a "now" marker; the hours after it are faded.
+      // The word "now" only on the one-day strip: on the week it would sit on the row above.
+      const now = h('span', { class: 'ho-now', 'aria-hidden': 'true' }, d.span === 'd' ? h('span', { text: 'now' }) : null);
+      now.style.left = `${((day.to - day.from) / 86400e3) * 100}%`;
+      strip.append(now);
+    }
+    rows.push(h('div', { class: 'ho-row' },
+      h('span', { class: 'ho-day', 'aria-hidden': 'true', text: opts.dates ? new Date(day.from + 12 * 3600e3).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) : d.span === 'd' ? 'Today' : name }), strip));
+  }
+  // Hour marks under the strips, each at hour/24 of the strip.
+  const axis = h('div', { class: 'ho-axis' });
+  for (const x of [0, 6, 12, 18]) {
+    const m = h('span', { text: clock(new Date(d.days[0].from).setHours(x, 0, 0, 0)).replace(':00', '') });
+    m.style.left = `${(x / 24) * 100}%`;
+    axis.append(m);
+  }
+  const marks = h('div', { class: 'ho-row ho-marks', 'aria-hidden': 'true' }, h('span', { class: 'ho-day' }), axis);
+  const grid = h('div', { class: 'ho-grid', role: 'group', 'aria-label': `${d.span === 'd' ? 'Today' : 'The last 7 days'}, ${per === 1 ? 'one block per hour' : `one block per ${per} hours`}. Use the arrow keys to move between blocks.` }, ...rows, marks);
+  // Roving focus: one tab stop, arrows move across blocks (and rows).
+  // It starts at the latest problem block, else the current hour (the last block that has happened).
+  if (focus.idx < 0 || focus.idx >= blocks.length || focus.span !== d.span) {
+    const lastRun = blocks.map((b) => b.classList.contains('b-run')).lastIndexOf(true);
+    focus.idx = lastRun >= 0 ? lastRun : blocks.length - 1;
+    focus.span = d.span;
+  }
+  if (blocks[focus.idx]) blocks[focus.idx].tabIndex = 0;
+  grid.addEventListener('keydown', (e) => {
+    const i = blocks.indexOf(/** @type {HTMLElement} */ (e.target));
+    if (i < 0) return;
+    const cols = 24 / per;
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols, Home: -i, End: blocks.length - 1 - i }[e.key];
+    if (step == null) return;
+    e.preventDefault();
+    const j = Math.max(0, Math.min(blocks.length - 1, i + step));
+    blocks[i].tabIndex = -1;
+    blocks[j].tabIndex = 0;
+    blocks[j].focus();
+    focus.idx = j;
+  });
+  const anyOff = d.days.some((x) => x.off.length);
+  const legend = [
+    h('span', {}, h('span', { class: 'ho-key b-fine', 'aria-hidden': 'true' }), 'No problems'),
+    h('span', {}, h('span', { class: 'ho-key b-run lvl-warn', 'aria-hidden': 'true' }), LEVELS.warn.word),
+    h('span', {}, h('span', { class: 'ho-key b-run lvl-bad', 'aria-hidden': 'true' }), LEVELS.bad.word),
+    d.days.some((x) => x.runs.some((r) => r.level === 'info')) ? h('span', {}, h('span', { class: 'ho-key b-run lvl-info', 'aria-hidden': 'true' }), LEVELS.info.word) : null,
+    h('span', {}, h('span', { class: 'ho-key b-off', 'aria-hidden': 'true' }), opts.offWord || 'fyisp wasn’t running'),
+    d.days.some((x) => x.no_record) || (d.first_data && d.first_data > d.from) ? h('span', {}, h('span', { class: 'ho-key b-none', 'aria-hidden': 'true' }), 'No record yet') : null,
+    anyOff && !opts.noKeep ? h('a', { class: 'ho-keep', href: KEEP_RUNNING, target: '_blank', rel: 'noopener', text: 'How to keep it running' }) : null,
+  ].filter((x) => x != null);
+  return { grid, legend: /** @type {HTMLElement[]} */ (legend) };
+}
 
 /** @type {Object<string,number>} run levels: a known issue (info) ranks below every problem */
 const RUN_RANK = { bad: 3, warn: 2, info: 1 };
