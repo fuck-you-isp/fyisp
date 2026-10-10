@@ -229,6 +229,7 @@
         "state": "warn",
         "words": "Other services affected",
         "blamed": true,
+        "culprit": "Problem is probably here",
         "tooltip": "The apps and websites checked from this connection."
       }
     ],
@@ -239,7 +240,7 @@
         "level": "warn",
         "state": "slow",
         "label": "Some aren't answering",
-        "note": "13 of 38 aren't loading reliably from here.",
+        "note": "13 of 38 aren't answering reliably from here.",
         "names": [],
         "ok": 25,
         "total": 38,

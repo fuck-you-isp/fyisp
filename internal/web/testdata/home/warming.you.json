@@ -159,7 +159,7 @@
       "kind": "warming_up",
       "calls": "good",
       "headline": "Checking your connection…",
-      "cause": "This takes about a minute the first time.",
+      "cause": "First results in about 2 minutes.",
       "try": [],
       "announce": "Checking your connection…"
     },
@@ -203,9 +203,9 @@
       {
         "id": "calls",
         "title": "Calls",
-        "level": "good",
-        "state": "good",
-        "label": "Good for calls",
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Checking…",
         "names": [
           "Teams",
           "Google Meet",
@@ -253,57 +253,51 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Calls use your call path (Good)."
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Checking…"
       },
       {
         "app": "meet",
         "title": "Google Meet",
         "level": "checking",
         "state": "not_enough_data",
-        "label": "Not checked yet"
+        "label": "Checking…"
       },
       {
         "app": "zoom",
         "title": "Zoom",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Checking…"
       },
       {
         "app": "slack",
         "title": "Slack",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Checking…"
       },
       {
         "app": "discord",
         "title": "Discord",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Checking…"
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Checking…"
       },
       {
         "app": "webex",
         "title": "Webex",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Checking…"
       }
     ],
     "steps": [

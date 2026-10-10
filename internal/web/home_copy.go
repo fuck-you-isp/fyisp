@@ -46,7 +46,7 @@ func (c homeCopy) callHead(st string, quiet bool) string {
 		return "Calls will break up"
 	case callBlocked:
 		if quiet {
-			return "This network always blocks call traffic"
+			return "Some call connections blocked"
 		}
 		return "This network blocks call traffic"
 	case callNotAnswering:
@@ -195,27 +195,32 @@ func joinNames(ns []string) string {
 	return ns[0] + ", " + ns[1] + " and " + strconv.Itoa(len(ns)-2) + " more"
 }
 
-func (c homeCopy) tileNote(state string, affected []string, failing, dead, measured int) string {
+func (c homeCopy) tileNote(id, state string, affected []string, failing, dead, measured int) string {
 	// Failing targets that get nothing through "aren't answering"; the
-	// others lose some of it.
+	// others lose some of it: websites "aren't loading reliably", the
+	// rest "aren't answering reliably".
 	failWords := func() (string, string) {
-		if dead >= failing {
+		switch {
+		case dead >= failing:
 			return " isn't answering", " aren't answering"
+		case id == tileWeb:
+			return " isn't loading reliably", " aren't loading reliably"
 		}
-		return " isn't loading reliably", " aren't loading reliably"
+		return " isn't answering reliably", " aren't answering reliably"
 	}
 	switch state {
 	case tileMostly:
 		if failing > 0 {
 			one, many := failWords()
-			return says(affected[:1], one, many) + " from here. That's usually a problem on their side."
+			return says(affected[:1], one, many) + " from here. That's most likely a problem on their side."
 		}
 		return says(affected[:1], " is", " are") + " slower than usual."
 	case tileSlow:
 		if failing == 0 {
 			return says(affected, " is", " are") + " slower than usual."
 		}
-		return says(affected, " isn't", " aren't") + " working well from here."
+		one, many := failWords()
+		return says(affected, one, many) + " from here."
 	case tileDown:
 		one, many := failWords()
 		if len(affected) > 3 {
@@ -243,7 +248,7 @@ func (c homeCopy) otherNote(state string, affected, failing, dead, total int) st
 	case failing > 0 && dead >= failing:
 		what = " aren't answering from here."
 	case failing > 0:
-		what = " aren't loading reliably from here."
+		what = " aren't answering reliably from here."
 	case failing == 0:
 		what = " are slower than usual."
 	}
@@ -267,10 +272,11 @@ func (c homeCopy) someServices() string { return "Some online services" }
 
 // callPatch is a calls-only rough patch (no incident explains it).
 func (c homeCopy) callPatch(level string) string {
+	no := c.v(" We didn't see a cause on your side.", " No cause was seen on this side.")
 	if level == levelBad {
-		return c.v("Calls were choppy. Nothing on your side looked wrong.", "Calls were choppy. Nothing on this side looked wrong.")
+		return "Calls were choppy." + no
 	}
-	return c.v("Calls had some glitches. Nothing on your side looked wrong.", "Calls had some glitches. Nothing on this side looked wrong.")
+	return "Calls had some glitches." + no
 }
 
 func (c homeCopy) otherLine(n int) string {
@@ -281,12 +287,24 @@ func (c homeCopy) otherLine(n int) string {
 }
 
 func (c homeCopy) sharedPath(label string) string {
-	return c.v("Calls use your call path ("+label+").", "Calls use the same call path ("+label+").")
+	if label == c.callLabel(callBlocked) {
+		return c.v("Some call connections blocked, as for your other apps.", "Some call connections blocked, as for the other apps.")
+	}
+	return c.v("Same call quality as your other apps: "+label+".", "Same call quality as the other apps: "+label+".")
 }
 
-func (c homeCopy) picksServer(app string) string {
-	return c.v(app+" picks a server when each meeting starts, so we can't test it ahead of time.",
-		app+" picks a server when each meeting starts, so it can't be tested ahead of time.")
+// picksServer is one line for the apps that choose a server per call.
+func (c homeCopy) picksServer(apps []string) string {
+	s := apps[len(apps)-1]
+	if len(apps) > 1 {
+		s = strings.Join(apps[:len(apps)-1], ", ") + " and " + s
+	}
+	if len(apps) == 1 {
+		return s + c.v(" chooses a server when each call starts, so we can't test it ahead of time.",
+			" chooses a server when each call starts, so it can't be tested ahead of time.")
+	}
+	return s + c.v(" choose a server when each call starts, so we can't test them ahead of time.",
+		" choose a server when each call starts, so they can't be tested ahead of time.")
 }
 
 var (
@@ -387,8 +405,7 @@ func (c homeCopy) appsWords(state string, hurt []string) string {
 // ---------- the answer ----------
 
 func (c homeCopy) checking() (headline, cause string) {
-	return c.v("Checking your connection…", "Checking this connection…"),
-		c.v("This takes about a minute the first time.", "Results appear after about a minute.")
+	return c.v("Checking your connection…", "Checking this connection…"), "First results in about 2 minutes."
 }
 
 func (c homeCopy) fine(home bool) string {
@@ -416,7 +433,7 @@ func (c homeCopy) verdictHead(k model.VerdictKind, conf string, quiet bool, affe
 	case model.VerdictDNS:
 		return "Websites and apps may not open"
 	case model.VerdictNoNetwork:
-		return c.v("You're offline", "The monitoring device is offline")
+		return c.v("No internet connection", "The monitoring device is offline")
 	case model.VerdictService:
 		if onlyOther || len(affected) > 2 {
 			return "Some services aren't answering"
@@ -438,6 +455,54 @@ func (c homeCopy) verdictHead(k model.VerdictKind, conf string, quiet bool, affe
 	return c.fine(true)
 }
 
+// oneApp is the answer's cause when one app of an otherwise working tile
+// isn't answering: what works, then the tile's own sentence about it.
+func (c homeCopy) oneApp(tiles []HomeTile, affected []string) string {
+	var ok []string
+	note := ""
+	for _, t := range tiles {
+		switch {
+		case t.ID == tileOther:
+		case t.Level == levelGood:
+			ok = append(ok, strings.ToLower(t.Title))
+		case note == "" && slices.ContainsFunc(t.Affected, func(n string) bool { return slices.Contains(affected, n) }):
+			note = t.Note
+		}
+	}
+	if note == "" {
+		note = c.serviceNote(affected)
+	}
+	if len(ok) == 0 {
+		return note
+	}
+	w := ok[len(ok)-1]
+	if len(ok) > 1 {
+		w = strings.Join(ok[:len(ok)-1], ", ") + " and " + w
+	}
+	return strings.ToUpper(w[:1]) + w[1:] + verb(len(ok), " is", " are") + " working. " + note
+}
+
+// affectedBy is a tile's label while a path problem explains its trouble.
+func (c homeCopy) affectedBy(who string) string {
+	if who == whoOffline {
+		return c.cantCheckOffline()
+	}
+	return "Affected by the problem above"
+}
+
+func (c homeCopy) cantCheckOffline() string { return "Can't check while offline" }
+
+// culprit is the blamed path node's sub-label.
+func (c homeCopy) culprit(sure bool) string {
+	if sure {
+		return "Problem is here"
+	}
+	return "Problem is probably here"
+}
+
+// knownBlock introduces the time a long-standing call block started.
+func (c homeCopy) knownBlock() string { return "Some call connections have been blocked since" }
+
 func (c homeCopy) serviceNote(affected []string) string {
 	return says(affected, " isn't", " aren't") + " answering from here. That's most likely a problem on their side."
 }
@@ -458,14 +523,14 @@ func (c homeCopy) verdictCause(k model.VerdictKind, conf string, quiet bool, aff
 	case model.VerdictISP:
 		switch conf {
 		case confSure:
-			return c.v("Your Wi-Fi and router are fine. The trouble starts just past them.",
-				"The home Wi-Fi and router are fine. The trouble starts just past them.")
+			return c.v("Your Wi-Fi and router look fine. The trouble starts just past them.",
+				"The home network (Wi-Fi and router) looks fine. The trouble starts just past it.")
 		case confWeak:
 			return c.v("Your internet provider's equipment is slow to answer our checks. Your calls and apps aren't affected right now.",
 				"The provider's equipment is slow to answer checks. Calls and apps aren't affected right now.")
 		}
 		return c.v("Your Wi-Fi and router look fine. The trouble most likely starts just past them.",
-			"The home Wi-Fi and router look fine. The trouble most likely starts just past them.")
+			"The home network (Wi-Fi and router) looks fine. The trouble most likely starts just past it.")
 	case model.VerdictUpstream:
 		return c.v("Your Wi-Fi and your provider's nearest equipment look fine. The problem is further out: either your provider's links to the rest of the internet, or a wider outage.",
 			"The home network and the provider's nearest equipment look fine. The problem is further out: either the provider's links to the rest of the internet, or a wider outage.")
@@ -473,7 +538,7 @@ func (c homeCopy) verdictCause(k model.VerdictKind, conf string, quiet bool, aff
 		return c.v("Your connection works, but looking up apps and websites by name is failing. That lookup service is usually run by your router or your provider.",
 			"The connection works, but name lookups (DNS) are failing. That service is usually run by the home router or the provider.")
 	case model.VerdictNoNetwork:
-		return c.v("The device running this monitor has no internet connection.", "The device running this monitor has no network connection.")
+		return c.v("The device running this monitor is offline.", "The device running this monitor has no network connection.")
 	case model.VerdictService:
 		// The headline names them; this says whose problem it is.
 		return c.v("Your connection looks fine, so this is most likely a problem on their side.",
@@ -588,9 +653,9 @@ func (c homeCopy) fact(factor string, loss float64) string {
 func (c homeCopy) runLabel(who, name string) string {
 	switch who {
 	case whoHome:
-		return "Home network"
+		return c.v("Most likely your home network", "Most likely the home network")
 	case whoProvider:
-		return c.v("Your provider", "Provider network")
+		return c.v("Most likely your provider", "Most likely the provider's network")
 	case whoBeyond:
 		return "Further out"
 	case whoDNS:
@@ -612,9 +677,9 @@ func (c homeCopy) runLabel(who, name string) string {
 func (c homeCopy) where(who, name string) string {
 	switch who {
 	case whoHome:
-		return c.v("Your home network (Wi-Fi or router)", "Home network (Wi-Fi or router)")
+		return c.v("Most likely your home network (Wi-Fi or router)", "Most likely the home network (Wi-Fi or router)")
 	case whoProvider:
-		return c.v("Your provider's network (past your router)", "Provider network (past the router)")
+		return c.v("Most likely your provider's network (past your router)", "Most likely the provider network (past the router)")
 	case whoBeyond:
 		return c.v("Further out on the internet", "Further out than the provider's first hop")
 	case whoDNS:
@@ -635,7 +700,10 @@ func (c homeCopy) where(who, name string) string {
 
 // summary is the one sentence under the timeline (no times: the client
 // lists them).
-func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
+// summary: app names the one app every app problem was about (""
+// otherwise); known says a known issue (a long-standing block) was going
+// on, so "no problems" becomes "no new problems".
+func (c homeCopy) summary(n HomeCounts, span string, fresh bool, app string, known bool) string {
 	period := "today"
 	if span == "w" {
 		period = "this week"
@@ -650,9 +718,13 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 	case n.Problems == 0 && patches != "" && span == "w":
 		return "No other problems in the last 7 days. " + patches + "."
 	case n.Problems == 0 && patches != "":
-		return patches + c.v(", with nothing wrong on your side.", ", with nothing wrong on this side.")
+		return patches + "." + c.v(" We didn't see a cause on your side.", " No cause was seen on this side.")
+	case n.Problems == 0 && span == "w" && known:
+		return "No new problems in the last 7 days."
 	case n.Problems == 0 && span == "w":
 		return "No problems in the last 7 days."
+	case n.Problems == 0 && known:
+		return "No new problems today."
 	case n.Problems == 0:
 		return "No problems today."
 	}
@@ -665,12 +737,13 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 		phrase string
 	}
 	parts := []part{
-		{n.Provider, c.v("from your internet provider", "in the provider's network")},
-		{n.Home, c.v("in your home network", "in the home network")},
+		// Incidents keep no confidence tier: "most likely" for the places.
+		{n.Provider, c.v("most likely from your internet provider", "most likely in the provider's network")},
+		{n.Home, c.v("most likely in your home network", "most likely in the home network")},
 		{n.Beyond, "further out on the internet"},
 		{n.CallTraffic, c.v("with the connection calls use", "with call traffic")},
 		{n.DNS, "with name lookups"},
-		{n.App, "with apps or websites"},
+		{n.App, appPhrase(app)},
 		{n.Services, "with online services"},
 		{n.Offline, c.v("with no connection", "while the device was offline")},
 	}
@@ -704,6 +777,14 @@ func (c homeCopy) summary(n HomeCounts, span string, fresh bool) string {
 		bits = append(bits, strconv.Itoa(rest)+verb(rest, " other", " others"))
 	}
 	return head + ": " + strings.Join(bits[:len(bits)-1], ", ") + " and " + bits[len(bits)-1] + "." + also
+}
+
+func appPhrase(app string) string {
+	if app != "" {
+		n, _ := subject([]string{app})
+		return "with " + n
+	}
+	return "with apps or websites"
 }
 
 func plural(n int, word string) string {

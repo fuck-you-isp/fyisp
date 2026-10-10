@@ -206,15 +206,15 @@
       "kind": "no_network",
       "calls": "unusable",
       "since": 1791548520000,
-      "headline": "You're offline",
-      "cause": "The device running this monitor has no internet connection.",
+      "headline": "No internet connection",
+      "cause": "The device running this monitor is offline.",
       "try": [
         "Check that Wi-Fi is on or the cable is plugged in.",
         "Restart your router."
       ],
       "fact": "In the worst minute, almost all of the sound was lost.",
       "fact_at": 1791548700000,
-      "announce": "You're offline. The device running this monitor has no internet connection."
+      "announce": "No internet connection. The device running this monitor is offline."
     },
     "path": [
       {
@@ -222,34 +222,35 @@
         "label": "This device",
         "state": "bad",
         "words": "Offline",
-        "blamed": true
+        "blamed": true,
+        "culprit": "Problem is here"
       },
       {
         "id": "router",
         "label": "Your router",
         "state": "affected",
-        "words": "Affected",
+        "words": "Can't check while offline",
         "tooltip": "The box that connects your home to the internet."
       },
       {
         "id": "provider",
         "label": "Your provider",
         "state": "affected",
-        "words": "Affected",
+        "words": "Can't check while offline",
         "tooltip": "The first piece of your internet provider's equipment, just outside your home."
       },
       {
         "id": "internet",
         "label": "The internet",
         "state": "affected",
-        "words": "Affected",
+        "words": "Can't check while offline",
         "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
       },
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
         "state": "affected",
-        "words": "Calls, work apps and websites affected",
+        "words": "Can't check while offline",
         "tooltip": "The apps and websites we check for you."
       }
     ],
@@ -257,9 +258,9 @@
       {
         "id": "calls",
         "title": "Calls",
-        "level": "bad",
+        "level": "affected",
         "state": "unusable",
-        "label": "Calls will break up",
+        "label": "Can't check while offline",
         "names": [
           "Teams",
           "Google Meet",
@@ -282,10 +283,9 @@
       {
         "id": "work",
         "title": "Work apps",
-        "level": "bad",
+        "level": "affected",
         "state": "down",
-        "label": "Unreliable",
-        "note": "6 of 6 aren't loading reliably from here.",
+        "label": "Can't check while offline",
         "names": [
           "Outlook",
           "Microsoft 365",
@@ -307,10 +307,9 @@
       {
         "id": "web",
         "title": "Websites",
-        "level": "bad",
+        "level": "affected",
         "state": "down",
-        "label": "Unreliable",
-        "note": "5 of 5 aren't loading reliably from here.",
+        "label": "Can't check while offline",
         "names": [
           "Cloudflare",
           "Akamai",
@@ -341,56 +340,51 @@
         "title": "Teams",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "We can't check this app while your connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "meet",
         "title": "Google Meet",
-        "level": "bad",
-        "state": "unusable",
-        "label": "Breaking up"
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't check while offline"
       },
       {
         "app": "zoom",
         "title": "Zoom",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "We can't check this app while your connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "slack",
         "title": "Slack",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "We can't check this app while your connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "discord",
         "title": "Discord",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "We can't check this app while your connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "We can't check this app while your connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "webex",
         "title": "Webex",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "We can't check this app while your connection has a problem."
+        "label": "Can't check while offline"
       }
-    ]
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

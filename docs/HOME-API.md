@@ -201,7 +201,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 **Path node `state`:**
 - `ok`, `warn` (dropping some data, or slow), `bad` (not answering, or heavy loss);
 - `unknown` (no recent checks; the ISP edge not discoverable: "Can't see your provider from here");
-- `affected` (a node past the culprit that shows the trouble but isn't to blame: neutral, "Affected");
+- `affected` (a node past the culprit that shows the trouble but isn't to blame: neutral, "Affected"; "Can't check while offline" when offline);
 - `finding` (discovering).
 
 `device` is always `ok`. `apps` sums the tiles: `warn` if any tile is `warn`, and `bad` if most Home targets are failing.
@@ -365,6 +365,26 @@ What it does to calls is the Calls tile's job. During such a problem, call apps 
 **A block lasting `verdict.UDPQuietAfter` (6 h) or more is information:** its runs are `info` and it isn't counted in `counts` or the summary.
 
 **One minute, one figure:** live and `part=at` both use whole-minute windows and the call path's worst minute, and TestHomeGolden checks it.
+
+**ux-content's rules (applied at 527ed09 review):**
+- **Culprit sub-label:** a blamed node carries `culprit`: "Problem is here" when sure (and for the device when offline), else "Problem is probably here".
+- **Offline:** the headline is "No internet connection" and the device node is the culprit. Every other node, every tile and every app row say "Can't check while offline" (state or level `affected`; apps `cant_tell`).
+- **Tiles during a path problem:** a tile whose trouble the path problem explains has level `affected` and label "Affected by the problem above", with no note. The Calls tile keeps its call words, except when offline.
+- **Warming up:** the Calls tile and the app rows say "Checking…"; the cause is "First results in about 2 minutes."
+- **App rows:**
+  - Teams without its relay: "Same call quality as your other apps: Good."
+  - Apps that choose a server per call have no note of their own. `apps_note` covers them in one line: "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
+- **Never absolve as fact:** "look fine", "looks fine from here"; history runs and the problem table say "Most likely your provider", "Most likely your home network (Wi-Fi or router)". Incidents keep no confidence tier, so "most likely" is always used for the places in history.
+- **Summaries:**
+  - "1 problem today, most likely from your internet provider."
+  - "1 problem today, with Outlook." (one app named when every app problem was about it)
+  - "Calls had 1 rough patch today. We didn't see a cause on your side."
+  - "No new problems today." while a known issue lasts.
+- **Known issue:** `history.known` = {since, text: "Some call connections have been blocked since"}. The client appends the formatted `since`. The quiet calls tile says "Some call connections blocked".
+- **Quantities:**
+  - Counts, not "many" ("13 of 38 aren't answering reliably from here."); "Many…" only when a tile is down (at least half).
+  - Websites "aren't loading reliably"; everything else "aren't answering reliably".
+- **One app of a working tile:** the cause reads "Calls and websites are working. Outlook isn't answering from here. That's most likely a problem on their side." That is the tile's own note, so the verb is the same.
 
 **The headline never repeats the cause.**
 - The headline says what the user notices: "Your internet is having trouble", "Calls will break up", "Outlook and Gmail aren't answering".

@@ -101,7 +101,7 @@
             "level": "bad",
             "who": "provider",
             "kind": "isp",
-            "label": "Your provider",
+            "label": "Most likely your provider",
             "source": "incident",
             "incident": 81,
             "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
@@ -141,7 +141,7 @@
             "level": "bad",
             "who": "provider",
             "kind": "isp",
-            "label": "Your provider",
+            "label": "Most likely your provider",
             "source": "incident",
             "incident": 82,
             "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
@@ -152,7 +152,7 @@
             "level": "bad",
             "who": "home",
             "kind": "lan",
-            "label": "Home network",
+            "label": "Most likely your home network",
             "source": "incident",
             "incident": 83,
             "text": "The problem was most likely your Wi-Fi or router."
@@ -170,7 +170,7 @@
         "off": []
       }
     ],
-    "summary": "3 problems this week: 2 from your internet provider and 1 in your home network.",
+    "summary": "3 problems this week: 2 most likely from your internet provider and 1 most likely in your home network.",
     "counts": {
       "problems": 3,
       "home": 1,
@@ -190,7 +190,7 @@
         "to": 1791468360000,
         "kind": "lan",
         "who": "home",
-        "where": "Your home network (Wi-Fi or router)",
+        "where": "Most likely your home network (Wi-Fi or router)",
         "peak_loss": 0.35,
         "details": "#v=calls\u0026from=1791466320000\u0026to=1791470160000\u0026o=1"
       },
@@ -200,7 +200,7 @@
         "to": 1791445920000,
         "kind": "isp",
         "who": "provider",
-        "where": "Your provider's network (past your router)",
+        "where": "Most likely your provider's network (past your router)",
         "peak_loss": 0.7,
         "details": "#v=calls\u0026from=1791443400000\u0026to=1791447720000\u0026o=1"
       },
@@ -210,7 +210,7 @@
         "to": 1791289200000,
         "kind": "isp",
         "who": "provider",
-        "where": "Your provider's network (past your router)",
+        "where": "Most likely your provider's network (past your router)",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791286500000\u0026to=1791291000000\u0026o=1"
       }
@@ -335,7 +335,7 @@
         "level": "good",
         "state": "reachable",
         "label": "Reachable",
-        "note": "Calls use your call path (Good)."
+        "note": "Same call quality as your other apps: Good."
       },
       {
         "app": "meet",
@@ -349,41 +349,37 @@
         "title": "Zoom",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "slack",
         "title": "Slack",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "discord",
         "title": "Discord",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       },
       {
         "app": "webex",
         "title": "Webex",
         "level": "good",
         "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so we can't test it ahead of time."
+        "label": "Reachable"
       }
-    ]
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

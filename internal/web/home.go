@@ -319,7 +319,7 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 	if !hs.onlyOther() {
 		out.Other = otherLine(tileRows[tileOther], cp)
 	}
-	out.Apps = homeApps(c, cp)
+	out.Apps, out.AppsNote = homeApps(c, cp)
 	if c.Path != nil {
 		out.Calls = homeCallsWords(c.Path, own, cp)
 	}
@@ -336,8 +336,21 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 	if a := out.Answer; slices.Contains([]string{whoHome, whoProvider, whoBeyond, whoOffline, whoDNS}, a.Who) &&
 		(a.Level == levelBad || a.Level == levelWarn) {
 		for i := range out.Apps {
-			if x := &out.Apps[i]; x.State == "reachable" || x.State == "not_answering" {
+			switch x := &out.Apps[i]; {
+			case a.Who == whoOffline:
+				x.State, x.Level, x.Label, x.Note = "cant_tell", levelChecking, cp.cantCheckOffline(), ""
+			case x.State == "reachable" || x.State == "not_answering":
 				x.State, x.Level, x.Label, x.Note = "cant_tell", levelChecking, cp.callLabel("cant_tell"), cp.cantTell()
+			}
+		}
+	}
+	// Tiles hit by a path problem say so instead of their own trouble.
+	if a := out.Answer; slices.Contains([]string{whoHome, whoProvider, whoBeyond, whoOffline}, a.Who) &&
+		a.Confidence != confWeak && (a.Level == levelBad || a.Level == levelWarn) {
+		for i := range out.Tiles {
+			t := &out.Tiles[i]
+			if a.Who == whoOffline || (t.ID != tileCalls && (t.Level == levelWarn || t.Level == levelBad)) {
+				t.Level, t.Label, t.Note = nodeAffected, cp.affectedBy(a.Who), ""
 			}
 		}
 	}
@@ -345,6 +358,17 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 		out.Steps = homeSteps(path, out.Tiles, cp)
 		out.Calls = nil
 		out.Answer.Fact, out.Answer.FactAt = "", 0
+		// Warming up: nothing is Good yet.
+		for i := range out.Tiles {
+			if t := &out.Tiles[i]; t.ID == tileCalls {
+				t.Level, t.State, t.Label, t.Note = levelChecking, callNotEnoughData, cp.callHead(callNotEnoughData, false), ""
+			}
+		}
+		for i := range out.Apps {
+			x := &out.Apps[i]
+			x.Level, x.State, x.Label, x.Note = levelChecking, callNotEnoughData, "Checking…", ""
+		}
+		out.AppsNote = ""
 	}
 	return out, nil
 }
@@ -515,7 +539,7 @@ func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]
 	if id == tileOther {
 		t.Note = cp.otherNote(t.State, len(affected), failing, dead, len(ts))
 	} else {
-		t.Note = cp.tileNote(t.State, affected, failing, dead, measured)
+		t.Note = cp.tileNote(id, t.State, affected, failing, dead, measured)
 	}
 	return t
 }
@@ -537,8 +561,9 @@ func otherLine(rows []overviewRow, cp homeCopy) *HomeOther {
 }
 
 // homeApps lists the call apps in callq.Apps order.
-func homeApps(c *callsJSON, cp homeCopy) []HomeApp {
+func homeApps(c *callsJSON, cp homeCopy) ([]HomeApp, string) {
 	out := []HomeApp{}
+	var picks []string
 	pathState := callNotEnoughData
 	if c.Path != nil {
 		pathState = c.Path.State
@@ -563,11 +588,15 @@ func homeApps(c *callsJSON, cp homeCopy) []HomeApp {
 		case "shared":
 			x.Note = cp.sharedPath(cp.callLabel(pathState))
 		case "not_measurable":
-			x.Note = cp.picksServer(x.Title)
+			picks = append(picks, x.Title) // one line for all of them: AppsNote
 		}
 		out = append(out, x)
 	}
-	return out
+	note := ""
+	if len(picks) > 0 {
+		note = cp.picksServer(picks)
+	}
+	return out, note
 }
 
 // homeCallsWords describes the call path in words.
@@ -679,12 +708,18 @@ func homePath(ls map[string]layerStat, a HomeAnswer, tiles []HomeTile, cp homeCo
 			n.State = nodeAffected
 		}
 		n.Words = cp.nodeWords(id, n.State, loss, l.slow)
+		if a.Who == whoOffline {
+			n.State, n.Words = nodeAffected, cp.cantCheckOffline()
+		}
 		n.Blamed = id == blamed
+		if n.Blamed {
+			n.Culprit = cp.culprit(a.Confidence == confSure)
+		}
 		return n
 	}
 	out := []HomeNode{{ID: "device", Label: cp.nodeLabel("device"), State: "ok", Words: cp.nodeWords("device", "ok", 0, false)}}
 	if a.Who == whoOffline {
-		out[0].State, out[0].Words, out[0].Blamed = levelBad, cp.nodeWords("device", levelBad, 1, false), true
+		out[0].State, out[0].Words, out[0].Blamed, out[0].Culprit = levelBad, cp.nodeWords("device", levelBad, 1, false), true, cp.culprit(true)
 	}
 	out = append(out, node("router", ls[model.LayerGateway]), node("provider", ls[model.LayerEdge]), node("internet", ls[model.LayerAnycast]))
 
@@ -718,6 +753,12 @@ func homePath(ls map[string]layerStat, a HomeAnswer, tiles []HomeTile, cp homeCo
 		apps.State = worst
 	}
 	apps.Words = cp.appsWords(apps.State, hurt)
+	if a.Who == whoOffline {
+		apps.State, apps.Words = nodeAffected, cp.cantCheckOffline()
+	}
+	if apps.Blamed {
+		apps.Culprit = cp.culprit(a.Confidence == confSure)
+	}
 	return append(out, apps)
 }
 
@@ -867,7 +908,7 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 			vLevel = levelWarn
 		}
 		if vLevel == levelGood {
-			a.Hint = cp.serviceNote(affected)
+			a.Cause = cp.oneApp(in.tiles, affected)
 			who = whoNone
 		}
 	case whoCallTraffic:
@@ -959,6 +1000,7 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 		a.Headline = cp.callHead(in.own, in.v.Quiet)
 	}
 	switch {
+	case who == whoNone && a.Cause != "":
 	case who == whoNone:
 		a.Cause = cp.everything(in.hs.home > 0)
 	case whoOf(in.v.Kind) == who:
@@ -1204,7 +1246,25 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 		out.Problems = append(out.Problems, pr)
 	}
 	out.Counts.CallPatches = len(callRuns)
-	out.Summary = cp.summary(out.Counts, p.span, first.IsZero() || (first.After(now.Add(-10*time.Minute)) && out.Counts.Problems == 0))
+	// One app named when every app problem was about the same one; a
+	// long-standing block is a known issue, not a problem.
+	app, apps, known := "", map[string]bool{}, false
+	for _, in := range incs {
+		if in.who == whoApp && !in.services {
+			apps[in.label] = true
+			app = in.label
+		}
+		if in.level == levelInfo {
+			known = true
+			if in.End.IsZero() && (out.Known == nil || in.Start.UnixMilli() < out.Known.Since) {
+				out.Known = &HomeKnown{Since: in.Start.UnixMilli(), Text: cp.knownBlock()}
+			}
+		}
+	}
+	if len(apps) != 1 {
+		app = ""
+	}
+	out.Summary = cp.summary(out.Counts, p.span, first.IsZero() || (first.After(now.Add(-10*time.Minute)) && out.Counts.Problems == 0), app, known)
 	if work != nil && work.Measured > 0 {
 		out.Work = work
 	}
