@@ -42,6 +42,13 @@ That's 1.69 GB of images using 7–9% of a CPU core and 187–451 MiB of RAM (me
   - A public, signed `fuck-you-isp/profiles` repo: fetched by the binary, live reload, `--profile`, `--profile-url`, `--profile-pin`.
   - An on-demand bufferbloat test.
   - Alerts.
+- **v1.1: speed tests** (`docs/SPEEDTEST-API.md`):
+  - A pure-Go iperf3 client (`internal/speedtest`) against YABS's public iperf3 servers: opt-in, every 15 minutes with jitter, 8 streams, 10 s each way, the 2 nearest servers by RTT, alternating.
+  - Busy servers are retried and recorded as busy, never slow.
+  - Latency under load is stored: gateway and call path, idle vs loaded.
+  - Probes during a test are masked as "not measured", so a test never starts an incident or a bad call minute.
+  - The results go to a `speedtests` table (store schema v5), `/metrics`, `fyisp export --speedtests` and the report.
+  - Details → Speed, plus one line on Home for a clear time-of-day pattern.
 - **Later:**
   - live CD (rebuilt around the binary)
   - browser quick-check page

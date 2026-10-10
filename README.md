@@ -299,6 +299,37 @@ The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch r
 - **IPv4 only.** STUN is measured over IPv4; a call that goes over IPv6 takes a path fyisp doesn't measure.
 - The score is a model, not the app's own rating: expect it to agree on the band, not the decimal.
 
+## Speed tests
+
+fyisp can measure your download and upload speed every 15 minutes, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams). **It is off by default.** Switch it on with `--speedtest`, or with the toggle in Details → Speed (the setting is saved). "Test now" runs one test right away, even with the schedule off.
+
+```sh
+fyisp --speedtest                     # every 15 minutes (±1 minute, so installs don't line up)
+fyisp --speedtest=every=1h            # less often (15 minutes is the minimum)
+fyisp --speedtest-server 192.168.1.20:5201 --speedtest=every=5m   # your own iperf3 server: no minimum
+```
+
+**What is sent, to whom.** Each test is an iperf3 test, the same as `iperf3 -c SERVER -P 8 -O 1 -t 9` and then the same with `-R`, but built into fyisp, so nothing has to be installed:
+- 10 seconds of download, then 10 seconds of upload;
+- 8 parallel TCP streams, with the first second left out as ramp-up.
+
+At your connection's full speed that is a lot of data: a 500/50 Mbit/s line moves about 690 MB per test, or about 65 GB a day at four tests an hour. Leave it off on metered or capped connections.
+
+The servers are the public iperf3 servers that [YABS](https://github.com/masonr/yet-another-bench-script) uses, listed in [`internal/profile/catalog/iperf3/yabs.yml`](internal/profile/catalog/iperf3/yabs.yml). They are Clouvider (London, Los Angeles), Eranium (Amsterdam), Uztelecom (Tashkent), Leaseweb (Singapore, New York) and Edgoo (São Paulo). fyisp tests against the two nearest by round-trip time, alternating between them, and checks which are nearest once a day: with one ping each, or a TCP connect to port 80 or 443 where ping is blocked. Like every probe target, they see your public IP address.
+
+**Be kind to the servers.** These servers are run by volunteers and hosting companies, and each port runs one test at a time. If a server is busy, fyisp tries up to 3 random ports 2 seconds apart. Then it records **"server busy"**, never a slow result, and tries again at the next slot. If the server doesn't accept a connection at all, fyisp stops for that slot. Please don't lower the interval against them. If you want tests more often, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
+
+**What you get.** For each test:
+- download and upload speed (Mbit/s);
+- TCP retransmits;
+- **latency under load**: your router's and your call path's round-trip time in the 2 minutes before the test and during it. A big jump is bufferbloat, the reason calls break while someone uploads.
+
+Details → Speed shows the latest test, a time series and **speed by hour of day** (median and slowest 10% per hour, over 7 or 30 days), with the slow hours highlighted. When there is a clear pattern, Home shows one line, for example *Evenings are slower: about 40% below your daytime speed.* Reports get a short speed section. `fyisp export --speedtests` writes every test as CSV.
+
+**Tests don't count against your connection.** A test fills the line, so every probe that runs during it measures the test. Those probes are stored as "not measured", like time when fyisp was stopped. The verdict, call scores, Home and history ignore them, charts shade the test windows, and a speed test never starts an incident or a bad call minute.
+
+Limits: one test at a time; at most 15 seconds per direction and 60 seconds per test, retries included; IPv4 only.
+
 ## What to measure (profiles)
 
 By default fyisp measures **22 targets** a home and a remote worker rely on, plus your own [network path](#whose-fault-is-it-verdicts) (router, your provider's first hop, three public DNS resolvers):
@@ -420,6 +451,8 @@ The local listener serves `/metrics` (never on the public link). ICMP results us
 The services are measured with TCP only, so `ping_*` now covers the Network path (`Gateway`, `ISP edge` and the three anycast resolvers) plus any ICMP targets of your own `--config` file. The services' latency is `fyisp_tcp_rtt_seconds{name,target}` (the latest connect time) and their loss is `fyisp_probe_lost_total{kind="tcp"}` over `fyisp_probe_samples_total{kind="tcp"}`; point old-stack panels and alerts that used `ping_*` for services at those. fyisp never fills `ping_*` from TCP results: a connect time is not an echo reply. `fyisp_https_rtt_seconds` exists only for `--config` targets that ask for HTTPS.
 
 UDP (STUN) targets never feed `ping_*`. Each burst counts once in `fyisp_probe_samples_total{kind="udp"}` (and `fyisp_probe_lost_total{kind="udp"}` when nothing answered); the latest burst's values are `fyisp_udp_rtt_seconds{name,target}` (median round trip), `fyisp_udp_jitter_seconds` and `fyisp_udp_loss_ratio` (0 to 1), each absent while the latest burst did not measure it.
+
+Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{server}` and `fyisp_speed_upload_bits_per_second{server}`, both from the latest test against that server that measured them. They also add `fyisp_speed_loaded_rtt_seconds{server,layer,load}`: the median RTT to the gateway (`layer="gateway"`) or the call path (`layer="call"`), before the test (`load="idle"`) and during it (`load="loaded"`). `fyisp_speed_tests_total{server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable` or `failed`.
 
 `fyisp_call_mos{app}` is the call-quality score the Calls view shows (MOS, 1 to 4.5; 4.0 and up is good, 3.6 fair, 3.1 poor, below that unusable): the worst minute of the last 5 minutes. `app="path"` is your call path, and `app="meet"` and `app="teams"` are the measured apps (Teams only with the `calls` profile). Each is absent until its STUN servers have 10 bursts in the window. With `--no-udp` there are no `fyisp_udp_*` or `fyisp_call_mos` series.
 
