@@ -207,7 +207,7 @@ Every test goes through one process-wide queue, and exactly one runs at a time:
 - **Sweep:** every catalog server and the user's own servers, one test each, about 45.
 - **Scheduled slots:** a slot is enqueued when it falls due. It is **dropped** if it is still waiting 10 minutes later, and a slot already waiting is never stacked.
 
-The order is FIFO, with the owner's entries (the local dashboard) ahead of the share link's and the schedule's. They never interrupt the running test.
+The order is by class, FIFO within each: the owner's entries (the local dashboard) first, then schedule slots, then the share link's. Schedule slots therefore never starve behind public sweeps. Nothing interrupts the running test.
 
 There is no cooldown. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
 

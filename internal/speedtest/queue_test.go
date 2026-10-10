@@ -117,7 +117,7 @@ func TestQueueOrder(t *testing.T) {
 	enq(Request{Kind: KindSingle, Target: "B", Who: WhoOwner})
 	enq(Request{Kind: KindSingle, Who: WhoOwner})
 	got := ids(q.State().Waiting)
-	want := []string{"owner:single:B", "owner:single:", "public:single:A", "schedule:scheduled:", "public:sweep:"}
+	want := []string{"owner:single:B", "owner:single:", "schedule:scheduled:", "public:single:A", "public:sweep:"}
 	if !eq(got, want) {
 		t.Fatalf("order %v, want %v", got, want)
 	}
@@ -471,4 +471,34 @@ func TestQueueBudget(t *testing.T) {
 	if _, used, resets := q2.Budget(); used != 3e6 || !resets.IsZero() {
 		t.Errorf("aged: %d %v", used, resets)
 	}
+}
+
+// TestQueueScheduledAheadOfPublic: a schedule slot queued behind public
+// sweeps runs next (after the running entry), not after them.
+func TestQueueScheduledAheadOfPublic(t *testing.T) {
+	q, f := newQueueHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	for i := range MaxPublicSweeps {
+		if _, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: fmt.Sprint("v", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-f.started // the first sweep's first test runs
+	q.EnqueueScheduled(Job{Region: "uk"})
+	if st := q.State(); st.Waiting[0].Kind != KindScheduled || st.Waiting[0].Position != 1 {
+		t.Fatalf("slot not next: %v", ids(st.Waiting))
+	}
+	// The running sweep isn't pre-empted: its tests go on until it's done.
+	for range 3 {
+		f.release <- struct{}{}
+		<-f.started
+	}
+	f.release <- struct{}{}
+	waitFor(t, func() bool { return len(f.log()) >= 5 })
+	if got := f.log(); !eq(got[:5], []string{"sweep:A", "sweep:B", "sweep:C", "schedule:uk", "sweep:A"}) {
+		t.Errorf("ran %v", got)
+	}
+	cancel()
 }

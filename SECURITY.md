@@ -43,7 +43,8 @@ the share link may queue a test or a sweep of every server (`POST
 Their tests may transfer at most `--speedtest-public-budget` (default 50 GB)
 per rolling 24 hours, counted from the bytes actually sent and received and
 kept across restarts. Every test waits in one queue and
-exactly one runs at a time, with the owner's tests first. The share link's
+exactly one runs at a time: the owner's tests first, then scheduled ones, then
+the share link's. The share link's
 entries are capped: one waiting entry per visitor, 3 waiting sweeps and 12
 waiting entries in all. Each visitor (`Cf-Connecting-Ip`, IPv6 per /64)
 may start 1 per 30 s and 10 per hour. That route is same-origin only,

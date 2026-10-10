@@ -13,8 +13,8 @@ import (
 
 // The speed-test queue: every test (Test now, a sweep of every server,
 // scheduled slots) waits in one process-wide FIFO and exactly one runs at a
-// time. The owner's requests go ahead of the share link's (never pre-empting
-// the running test); the share link's are capped. See docs/SPEEDTEST-API.md.
+// time. The owner's requests go first, then schedule slots, then the share
+// link's (never pre-empting the running test); the share link's are capped. See docs/SPEEDTEST-API.md.
 
 // Kind is what an entry tests.
 type Kind string
@@ -445,15 +445,22 @@ func (q *Queue) EnqueueScheduled(j Job) bool {
 	return true
 }
 
-// insertLocked places e: the owner's after the owner's waiting entries,
-// everyone else's at the end.
+// insertLocked places e by class: the owner's, then schedule slots, then
+// the share link's; FIFO within a class. A schedule slot thus never
+// starves behind public sweeps, and the owner always goes first. Nothing
+// pre-empts the running entry.
 func (q *Queue) insertLocked(e *qentry) {
-	if e.Who != WhoOwner {
-		q.waiting = append(q.waiting, e)
-		return
+	rank := func(w Who) int {
+		switch w {
+		case WhoOwner:
+			return 0
+		case WhoSchedule:
+			return 1
+		}
+		return 2
 	}
 	i := 0
-	for i < len(q.waiting) && q.waiting[i].Who == WhoOwner {
+	for i < len(q.waiting) && rank(q.waiting[i].Who) <= rank(e.Who) {
 		i++
 	}
 	q.waiting = slices.Insert(q.waiting, i, e)
