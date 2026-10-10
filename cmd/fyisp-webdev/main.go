@@ -4,6 +4,7 @@
 //
 //	fyisp-webdev -listen 0.0.0.0:3000 -public 0.0.0.0:3001 -backfill 6h
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
+//	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
 package main
 
 import (
@@ -266,6 +267,7 @@ func main() {
 	noNotes := flag.Bool("no-notes", false, "run without an annotation store (notes hidden)")
 	noReports := flag.Bool("no-reports", false, "run without reports")
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
+	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
 	flag.Parse()
 
@@ -309,7 +311,7 @@ func main() {
 	// sink adds the evening slowdown and drops ISP-edge samples with
 	// -edge-undiscovered.
 	sink := func(inner model.Sink) model.Sink {
-		inner = slowSink(inner, now.Add(-slowFor))
+		inner = callsSink(slowSink(inner, now.Add(-slowFor)), *callsMode, now)
 		if !*noEdge {
 			return inner
 		}
@@ -358,7 +360,7 @@ func main() {
 		d.Trace = ft
 	}
 	if !*noVerdict {
-		d.Verdict = newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge)
+		d.Verdict = callsVerdict{newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge), *callsMode, now}
 	}
 	var notes *fakeNotes
 	if !*noNotes {
