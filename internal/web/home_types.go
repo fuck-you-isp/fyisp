@@ -240,3 +240,28 @@ type HomeWorkCalls struct {
 	Bad      int     `json:"bad"`      // of them poor or unusable
 	Good     float64 `json:"good"`     // share of measured minutes that were good or fair
 }
+
+// HomeAt is /api/home?part=at&at=<ms>: what happened around a picked time
+// (at ±15 minutes, up to now).
+type HomeAt struct {
+	Part  string `json:"part"` // "at"
+	Voice string `json:"voice"`
+	At    int64  `json:"at"`   // server time of the answer
+	Time  int64  `json:"time"` // the picked time
+	From  int64  `json:"from"`
+	To    int64  `json:"to"`
+	// Measured: the call path was scored in at least one minute of the
+	// window; Calls is then the worst minute's call state, and BadFrom and
+	// BadTo span its minutes when it was not good.
+	Measured bool   `json:"measured"`
+	Calls    string `json:"calls,omitempty"`
+	BadFrom  int64  `json:"bad_from,omitempty"`
+	BadTo    int64  `json:"bad_to,omitempty"`
+	Level    string `json:"level"`
+	Who      string `json:"who"`
+	Kind     string `json:"kind,omitempty"` // the incident's verdict kind, when one explains it
+	Headline string `json:"headline"`
+	Cause    string `json:"cause"`
+	Fact     string `json:"fact,omitempty"`
+	FactAt   int64  `json:"fact_at,omitempty"`
+}

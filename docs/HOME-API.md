@@ -14,13 +14,15 @@ The Go types are in `internal/web/home_types.go`; keep the two in sync.
 GET api/home?part=live&tz=120
 GET api/home?part=history&span=w&tz=120
 GET api/home?part=live&voice=public        (local only: preview the share wording)
+GET api/home?part=at&at=1760103900000      ("What happened at…?", "I just had a bad call")
 ```
 
 The route is relative, like every other API: `/api/home` locally and `/s/<secret>/api/home` on the share link.
 
 | Param | Values | Default | Notes |
 |---|---|---|---|
-| `part` | `live`, `history` | `live` | Anything else returns 400. |
+| `part` | `live`, `history`, `at` | `live` | Anything else returns 400. |
+| `at` | Unix ms, within the last 90 days and not in the future | – | Required with `part=at`, 400 elsewhere. On the share link it is rounded down to the minute. |
 | `span` | `d` (today), `w` (the last 7 local days, today included) | `d` | `history` only; on `live` it returns 400. |
 | `tz` | minutes **east** of UTC, an integer from -840 to 840 | `0` | Send `-new Date().getTimezoneOffset()`. The server rounds it to the nearest 15 minutes and echoes the result in `tz`. A non-integer or out-of-range value returns 400. One offset is used for the whole span, so across a DST change the day edges of older days are off by an hour; this is accepted. `live` ignores `tz` but accepts it. |
 | `voice` | `you`, `public` | `you` locally; **always** `public` on the share link | On the share link `voice=you` is ignored. |
@@ -148,9 +150,9 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
     { "id": "work", "title": "Work apps", "level": "warn", "state": "mostly", "label": "Mostly working",
       "note": "M365 Outlook isn't answering from here. That's usually a problem on their side.",
       "names": ["M365 Outlook", "M365 Portal", "M365 Login"], "more": 3, "affected": ["M365 Outlook"],
-      "ok": 5, "total": 6, "details": "#v=o&oq=home:work" },
+      "ok": 5, "total": 6, "details": "#v=o&ot=work" },
     { "id": "web", "title": "Websites", "level": "good", "state": "working", "label": "Working",
-      "names": ["CDN Cloudflare", "CDN Akamai", "CDN Fastly"], "more": 2, "ok": 5, "total": 5, "details": "#v=o&oq=home:web" }
+      "names": ["CDN Cloudflare", "CDN Akamai", "CDN Fastly"], "more": 2, "ok": 5, "total": 5, "details": "#v=o&ot=web" }
   ],
   "other": null,                     // or { "affected": 1, "total": 84, "line": "1 other service isn't answering from here." }
   "calls": {
@@ -173,12 +175,12 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 ```
 
 **Notes:**
-- `names` and `affected` are **display names**: the target name with `-` replaced by a space ("M365 Outlook", "CDN Cloudflare"); for the calls tile, the app titles ("Teams", "Google Meet"). They are never hosts.
+- `names` and `affected` are **display names**: the call app's title for a target with an `app:*` tag ("Slack", "WhatsApp"), else the target name with `-` replaced by a space ("M365 Outlook", "CDN Cloudflare"). The calls tile lists app titles. They are never hosts. There is no `label:` field.
+- `details` is `#v=calls` for the calls tile and `#v=o&ot=<tile id>` for the others (the Overview filtered to that Home category). `/api/profile` gives every non-path target its category as `"home": "calls"|"work"|"web"|"other"` (`profile.HomeCategory`), so the client never repeats the rules.
 - `fact` is set only when the call path or an app had a scored bad minute in the last 5 minutes. It never holds a time: show `fact_at` in the viewer's locale.
 - `since` is the verdict's `since`, or the first minute of the current bad call run.
 - `calls` is omitted when the profile has no `udp-path` targets; the Calls tile then has only web-reachable apps, and its state is `reachable` or `not_answering`.
 - `apps` lists every call app that has a target in the profile, in the fixed order teams, meet, zoom, slack, discord, whatsapp, webex. Teams without the opt-in relay is `reachable`/`not_answering`, with a `note` naming the shared call path's state.
-- `details` is a hash for the Details view. The UI may rewrite it, but the server picks the filter.
 - **Warming up** (`answer.level = "checking"`):
   - Every tile is `checking`.
   - `fact`, `calls.words` and every number are omitted.
@@ -277,6 +279,44 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
   - Home-network incidents are listed too.
   - `where` is the `who` in a short phrase. `details` opens the Details Calls view zoomed to the incident ±30 min, with the outage log open.
 - **`work`:** today's working hours (Mon–Fri 09:00–17:00 local) so far. `good` is the share of scored minutes that were good or fair. It is omitted on weekends, before 09:00, and without `udp-path` targets.
+
+## `part=at`
+
+"What happened around this time?": at ± 15 minutes (up to now; at least 5 minutes). It is used by "What happened at…?" and by the result of "I just had a bad call". It is cached like `live`.
+
+```jsonc
+{
+  "part": "at", "voice": "you",
+  "at": 1760104800000,               // server time of the answer
+  "time": 1760103900000,             // the picked time
+  "from": 1760103000000, "to": 1760104800000,
+  "measured": true,                  // the call path was scored in at least one minute of the window
+  "calls": "poor",                   // the worst scored minute's call state
+  "bad_from": 1760103360000,         // the span of the minutes in that state, when it is not good
+  "bad_to": 1760103900000,
+  "level": "bad", "who": "provider",
+  "kind": "isp",                     // the incident that explains it, if any
+  "headline": "Calls would have been choppy",
+  "cause": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
+  "fact": "In the worst minute, about 1 in 7 bits of sound were lost.",
+  "fact_at": 1760103720000
+}
+```
+
+**Headlines:**
+- `good`: "Your connection was good for calls then"
+- `fair`: "Mostly fine for calls, with a few glitches"
+- `poor`: "Calls would have been choppy"
+- `unusable`: "Calls would have broken up"
+- `blocked`: "This network was blocking call traffic"
+- nothing scored: "We weren't checking at that time", or, with an incident, "We weren't checking calls then, but we did see a problem"
+
+**Causes:**
+- **An incident in the window:** the worst relevant incident names the place, in the past tense: "…most likely your Wi-Fi or router", "…most likely with your internet provider", "…further out on the internet" and so on.
+- **Good, and no incident:** the honest "If the call was bad, the problem was probably the app or the other person's connection."
+- **Bad, and no incident:** "We didn't see a cause on your side: your Wi-Fi, router and provider looked fine."
+
+Write the times from `bad_from`/`bad_to` (or `time`) yourself.
 
 ## Voice and redaction (`voice=public` and the share link)
 

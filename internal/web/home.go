@@ -59,7 +59,16 @@ const (
 var homeCategory = profile.HomeCategory
 
 // homeName is a target's display name: never a host.
-func homeName(t model.Target) string { return strings.ReplaceAll(t.Name, "-", " ") }
+// homeName is a target's display name: its call app's title when it has
+// one, else its name with "-" as spaces. Never a host.
+func homeName(t model.Target) string {
+	for _, tag := range t.Tags {
+		if id, ok := strings.CutPrefix(tag, callq.TagApp); ok && appTitles[id] != "" {
+			return appTitles[id]
+		}
+	}
+	return strings.ReplaceAll(t.Name, "-", " ")
+}
 
 // appTitles are the call apps' display names (app.js APP_TITLE).
 var appTitles = map[string]string{"teams": "Teams", "meet": "Google Meet", "zoom": "Zoom", "slack": "Slack",
@@ -75,21 +84,35 @@ func appTitle(id string) string {
 // homeParams is a parsed /api/home query.
 type homeParams struct {
 	part, span, voice string
-	tz                int // minutes east of UTC, rounded to 15
+	tz                int       // minutes east of UTC, rounded to 15
+	at                time.Time // part=at
 	key               string
 }
 
 func parseHome(q url.Values, public bool) (homeParams, error) {
 	p := homeParams{part: q.Get("part"), span: q.Get("span"), voice: q.Get("voice")}
-	if err := checkParams(q, "part", "span", "tz", "voice"); err != nil {
+	if err := checkParams(q, "part", "span", "tz", "voice", "at"); err != nil {
 		return p, err
 	}
 	switch p.part {
 	case "":
 		p.part = "live"
-	case "live", "history":
+	case "live", "history", "at":
 	default:
-		return p, badReq("bad part %q: want live or history", p.part)
+		return p, badReq("bad part %q: want live, history or at", p.part)
+	}
+	switch as := q.Get("at"); {
+	case p.part != "at" && as != "":
+		return p, badReq("at is for part=at")
+	case p.part == "at":
+		ms, err := strconv.ParseInt(as, 10, 64)
+		if err != nil || ms <= 0 {
+			return p, badReq("bad at %q: want Unix milliseconds", as)
+		}
+		p.at = time.UnixMilli(ms)
+		if public {
+			p.at = p.at.Truncate(time.Minute) // viewers share cache entries
+		}
 	}
 	switch {
 	case p.span != "" && p.part != "history":
@@ -116,9 +139,12 @@ func parseHome(q url.Values, public bool) (homeParams, error) {
 		}
 		p.tz = int(math.Round(float64(tz)/15)) * 15
 	}
-	if p.part == "live" {
+	switch p.part {
+	case "live":
 		p.key = "home\x00live\x00" + p.voice
-	} else {
+	case "at":
+		p.key = "home\x00at\x00" + strconv.FormatInt(p.at.UnixMilli(), 10) + "\x00" + p.voice
+	default:
 		p.key = "home\x00history\x00" + p.span + "\x00" + strconv.Itoa(p.tz) + "\x00" + p.voice
 	}
 	return p, nil
@@ -129,6 +155,20 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 	p, err := parseHome(r.URL.Query(), s.public)
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	if p.part == "at" {
+		if now := s.now(); p.at.After(now) || now.Sub(p.at) > MaxRange {
+			writeErr(w, r, http.StatusBadRequest, "at must be within the last 90 days")
+			return
+		}
+		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
+			a, err := s.homeAt(ctx, p.at, p.voice, s.now())
+			if err != nil {
+				return nil, err
+			}
+			return jsonCached(a)
+		})
 		return
 	}
 	if p.part == "live" {
@@ -404,10 +444,7 @@ func webState(a callsApp) string {
 // tcpTile rolls up a TCP tile: one unhealthy target out of 3 or more is
 // "mostly working"; more, or any of a smaller set, is slow or down.
 func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]string, cp homeCopy) HomeTile {
-	t := HomeTile{ID: id, Title: cp.tileTitle(id), Names: []string{}, Total: len(ts), Details: "#v=o&oq=home:" + id}
-	if id == tileOther {
-		t.Details = "#v=o&op=1"
-	}
+	t := HomeTile{ID: id, Title: cp.tileTitle(id), Names: []string{}, Total: len(ts), Details: "#v=o&ot=" + id}
 	for _, x := range ts {
 		if len(t.Names) < homeMaxNames {
 			t.Names = append(t.Names, homeName(x))
@@ -1290,4 +1327,108 @@ func workCalls(c *callsJSON, today, now time.Time) *HomeWorkCalls {
 		w.Good = round2(float64(good) / float64(w.Measured))
 	}
 	return w
+}
+
+// ---------- what happened at ----------
+
+// homeAtWindow is the span around a picked time ("What happened at…?",
+// "I just had a bad call").
+const homeAtWindow = 15 * time.Minute
+
+// homeAt answers "what happened around at?": the worst call minute and the
+// incidents in at±15 min, in one headline and one cause.
+func (s *server) homeAt(ctx context.Context, at time.Time, voice string, now time.Time) (*HomeAt, error) {
+	cp := copyFor(voice)
+	prof := s.d.Profile()
+	hs := newHomeSet(prof)
+	from, to := at.Add(-homeAtWindow), at.Add(homeAtWindow)
+	if to.After(now) {
+		to = now
+	}
+	if to.Sub(from) < CallsMinRange {
+		from = to.Add(-CallsMinRange)
+	}
+	out := &HomeAt{Part: "at", Voice: voice, At: now.UnixMilli(), Time: at.UnixMilli(), From: from.UnixMilli(), To: to.UnixMilli()}
+
+	c, err := s.calls(ctx, callsParams{from: from, to: to})
+	if err != nil {
+		return nil, err
+	}
+	worst, scored := "", 0
+	var bad []int
+	if c.Path != nil {
+		for i, st := range c.Path.Minutes.State {
+			if st == "" {
+				continue
+			}
+			scored++
+			if worst == "" || callRank(st) < callRank(worst) {
+				worst, bad = st, bad[:0]
+			}
+			if st == worst {
+				bad = append(bad, i)
+			}
+		}
+	}
+	out.Measured = scored > 0
+	if scored > 0 {
+		out.Calls = worst
+		if worst != string(callq.Good) && len(bad) > 0 {
+			out.BadFrom = c.Start + int64(bad[0])*c.Step
+			out.BadTo = c.Start + int64(bad[len(bad)-1]+1)*c.Step
+			out.Fact, out.FactAt = worstFact(c, cp)
+		}
+	}
+
+	// The worst relevant incident overlapping the window names the cause.
+	var inc *model.Incident
+	if s.d.Verdict != nil {
+		list, err := s.d.Verdict.Incidents(ctx, from, to)
+		if err != nil {
+			return nil, err
+		}
+		for i := range list {
+			in := &list[i]
+			if !in.Start.Before(to) || (!in.End.IsZero() && !in.End.After(from)) {
+				continue
+			}
+			who := whoOf(in.Kind)
+			if who == whoNone || who == whoUnknown || (who == whoApp && len(hs.relevant(in.Targets)) == 0) {
+				continue
+			}
+			if inc == nil || incidentRank(in.Kind) < incidentRank(inc.Kind) {
+				inc = in
+			}
+		}
+	}
+	out.Level, out.Who = levelGood, whoNone
+	if l := callLevel(worst, false); l != "" && l != levelChecking && l != levelInfo {
+		out.Level = l
+	}
+	if inc != nil {
+		out.Kind, out.Who = string(inc.Kind), whoOf(inc.Kind)
+		l := levelWarn
+		switch inc.Kind {
+		case model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
+			l = levelBad
+		}
+		if levelRank(l) < levelRank(out.Level) {
+			out.Level = l
+		}
+	} else if out.Level != levelGood {
+		out.Who = whoCallTraffic
+	}
+	out.Headline, out.Cause = cp.atWords(out.Measured, worst, inc != nil, out.Who, out.Kind)
+	return out, nil
+}
+
+// incidentRank orders incident kinds by how much they explain, worst first.
+func incidentRank(k model.VerdictKind) int {
+	for i, x := range []model.VerdictKind{model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream,
+		model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded, model.VerdictDNS, model.VerdictService} {
+		if x == k {
+			return i
+		}
+	}
+	return 99
 }

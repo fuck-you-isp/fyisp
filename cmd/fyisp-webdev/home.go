@@ -64,6 +64,13 @@ func homeHandler(scenario string, public bool, next http.Handler) http.Handler {
 		switch q.Get("part") {
 		case "", "live":
 			body = cannedLive(scenario, voice, now)
+		case "at":
+			ms, err := strconv.ParseInt(q.Get("at"), 10, 64)
+			if err != nil {
+				http.Error(w, `{"error":"bad at"}`, http.StatusBadRequest)
+				return
+			}
+			body = cannedAt(scenario, voice, time.UnixMilli(ms), now)
 		case "history":
 			span := q.Get("span")
 			if span == "" {
@@ -113,7 +120,7 @@ func tile(id, title, level, state, label string, names []string, ok, total int) 
 	} else {
 		t.Names = names
 	}
-	t.Details = "#v=o&oq=home:" + id
+	t.Details = "#v=o&ot=" + id
 	if id == "calls" {
 		t.Details = "#v=calls"
 	}
@@ -273,8 +280,8 @@ func cannedLive(scenario, voice string, now time.Time) web.HomeLive {
 		l.Path = cannedPath(voice, "bad", "unknown", "unknown", "bad", "router", "")
 	case "clouds-other":
 		l.Calls, l.Apps = nil, []web.HomeApp{}
-		o := tile("other", "Other services", "warn", "mostly", "Some aren't answering", []string{"AWS us-east-1", "AWS eu-west-1", "Google Cloud europe-west1"}, 54, 84)
-		o.More, o.Affected, o.Details = 81, []string{"AWS me-south-1", "AWS ap-east-1", "AWS il-central-1"}, "#v=o&op=1"
+		o := tile("other", "Other services", "warn", "mostly", "Some aren't answering", []string{"AWS us east 1", "AWS eu west 1", "GCP europe west1"}, 54, 84)
+		o.More, o.Affected = 81, []string{"AWS me south 1", "AWS ap east 1", "AWS il central 1"}
 		o.Note = "30 of 84 services aren't answering from here."
 		l.Tiles = []web.HomeTile{o}
 		*a = web.HomeAnswer{Level: "warn", Who: "app", Kind: "service", Since: since, Try: []string{},
@@ -492,4 +499,39 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return strconv.Itoa(n) + " " + word + "s"
+}
+
+// cannedAt answers "what happened at…?": the scenario's problem for the
+// last 15 minutes, a good answer before that.
+func cannedAt(scenario, voice string, at, now time.Time) web.HomeAt {
+	a := web.HomeAt{Part: "at", Voice: voice, At: now.UnixMilli(), Time: at.UnixMilli(),
+		From: at.Add(-15 * time.Minute).UnixMilli(), To: min(at.Add(15*time.Minute).UnixMilli(), now.UnixMilli()), Measured: true,
+		Calls: "good", Level: "good", Who: "none",
+		Headline: pv(voice, "Your connection was good for calls then", "The connection was good for calls then"),
+		Cause: pv(voice, "If the call was bad, the problem was probably the app or the other person's connection.",
+			"If a call was bad then, the problem was probably the app or the other side's connection.")}
+	recent := now.Sub(at) < 15*time.Minute
+	switch {
+	case scenario == "warming" || now.Sub(at) > 30*24*time.Hour:
+		a.Measured, a.Calls, a.Level = false, "", "good"
+		a.Headline = pv(voice, "We weren't checking at that time", "Nothing was being checked at that time")
+		a.Cause = pv(voice, "The monitor wasn't running, so there's no record. Leave it running to catch the next one.", "The monitor wasn't running, so there's no record.")
+	case recent && (scenario == "isp" || scenario == "public"):
+		a.Calls, a.Level, a.Who, a.Kind = "poor", "bad", "provider", "isp"
+		a.BadFrom, a.BadTo = now.Add(-9*time.Minute).Truncate(time.Minute).UnixMilli(), now.Truncate(time.Minute).UnixMilli()
+		a.Headline = "Calls would have been choppy"
+		a.Cause = pv(voice, "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
+			"The problem was most likely in the provider's network. The home network looked fine.")
+		a.Fact, a.FactAt = "In the worst minute, about 1 in 7 bits of sound were lost.", now.Add(-3*time.Minute).Truncate(time.Minute).UnixMilli()
+	case recent && scenario == "wifi":
+		a.Calls, a.Level, a.Who, a.Kind = "poor", "bad", "home", "lan"
+		a.Headline = "Calls would have been choppy"
+		a.Cause = pv(voice, "The problem was most likely your Wi-Fi or router.", "The problem was most likely in the home network (Wi-Fi or router).")
+	case recent && scenario == "calls-choppy":
+		a.Calls, a.Level, a.Who = "poor", "bad", "calltraffic"
+		a.Headline = "Calls would have been choppy"
+		a.Cause = pv(voice, "We didn't see a cause on your side: your Wi-Fi, router and provider looked fine.",
+			"No cause was seen on this side: the home network and the provider looked fine.")
+	}
+	return a
 }
