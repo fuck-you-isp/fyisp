@@ -15,7 +15,7 @@ import { clock, when } from './home.js';
 /** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
 /** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
-/** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean}} QueueHost */
+/** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean, started:()=>void}} QueueHost */
 
 const POLL_MS = 3000;
 const WHY = 'Running a speed test needs the admin token. Open the link fyisp printed when it started, or paste the token here.';
@@ -161,6 +161,7 @@ export class SpeedQueue {
       /** @type {QueueEntry} */
       const e = r.entry;
       this.watch.set(e.id, tag);
+      this.host.started();
       const where = e.state === 'running' ? 'It’s starting now.' : `You’re #${e.position}, it starts ${inAbout(e.est_start - Date.now())}.`;
       this.host.say(r.duplicate ? `You already asked for this. ${where}` : `${what(e)} added. ${where}`);
     } catch (e) {
@@ -212,7 +213,10 @@ export class SpeedQueue {
     // "8 s", "4 min": a single test is seconds, so minutes alone would read 0.
     const dur = (/** @type {number|undefined} */ x) => ((x || 0) < 60 ? `${Math.round(x || 0)} s` : `${Math.round((x || 0) / 60)} min`);
     const time = b.time_hour_max_s ? ` Testing time: ${dur(b.time_hour_s)} of ${dur(b.time_hour_max_s)} this hour, ${dur(b.time_day_s)} of ${dur(b.time_day_max_s)} today.` : '';
-    return h('p', { class: 'muted small', text: `Tests from the share link: ${gb(b.used_bytes)} of ${gb(b.limit_bytes)} used in the last 24 hours.${b.resets_at && b.remaining_bytes <= 0 ? ` More from ${when(b.resets_at)}.` : ''}${time}` });
+    if (b.remaining_bytes <= 0) {
+      return h('p', { class: 'muted small', text: `Share-link tests: daily limit reached (${gb(b.used_bytes)} of ${gb(b.limit_bytes)}).${b.resets_at ? ` They can start again ${when(b.resets_at)}.` : ''}${MODE === 'local' ? ' Your own tests aren’t limited.' : ''}` });
+    }
+    return h('p', { class: 'muted small', text: `Share-link tests: ${gb(b.used_bytes)} of ${gb(b.limit_bytes)} used in the last 24 hours.${time}` });
   }
 
   /**
@@ -335,7 +339,8 @@ export class SpeedQueue {
       h('h2', { id: 'sp-sw-h', text: 'Test every server now' }),
       MODE === 'local' && q && q.public_enabled != null ? h('label', { class: 'sp-check sp-pub' },
         h('input', { type: 'checkbox', id: 'sp-pub', checked: !!q.public_enabled, disabled: !canWrite(), onchange: (/** @type {Event} */ ev) => this.setPublic(/** @type {HTMLInputElement} */ (ev.target).checked) }),
-        'Let people with your share link start tests (they share a data allowance; off by default)') : null,
+        h('span', {}, 'Let people with your share link start full tests',
+          h('span', { class: 'sp-hint', text: `They share a ${q.budget ? gb(q.budget.limit_bytes) : '10 GB'} daily allowance. Off by default.` }))) : null,
       h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${Math.round(n * 20 / 60)} minutes and about 8 GB of data. The results are a snapshot, kept apart from the hourly pattern.` }),
       h('div', { class: 'sp-go-row' }, start, why ? h('span', { class: 'muted small', text: why }) : null),
       this.budgetLine(),
@@ -377,24 +382,36 @@ export class SpeedQueue {
   resultNodes(e, tests) {
     const d = this.host.summary();
     const servers = new Map((d ? d.servers : []).map((x) => [x.id, x]));
-    const region = new Map();
-    for (const rg of d ? d.regions : []) for (const id of rg.servers) if (!region.has(id)) region.set(id, rg.title);
-    // A server outside the 9 test regions goes under its continent ("North America"), not one big "Other".
-    const rows = tests.map((t) => ({ t, region: region.get(t.server) || servers.get(t.server)?.area || 'Other', provider: servers.get(t.server)?.provider || '' }));
+    // Each server's own test region; the default regions first, the rest under "Other places".
+    const regions = d ? d.regions : [];
+    const title = new Map(regions.map((rg) => [rg.id, rg.title]));
+    const isDefault = new Set(regions.filter((rg) => rg.default).map((rg) => rg.title));
+    const order = regions.map((rg) => rg.title);
+    const regionOf = (/** @type {SpeedTest} */ t) => { const id = servers.get(t.server)?.region || t.region; return (id && title.get(id)) || 'Other places'; };
+    const rows = tests.map((t) => ({ t, region: regionOf(t), provider: servers.get(t.server)?.provider || '' }));
     const med = (/** @type {number[]} */ v) => { const s = [...v].sort((a, b) => a - b); return s.length ? (s.length % 2 ? s[s.length >> 1] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
     const groupBars = (/** @type {'region'|'provider'} */ key, /** @type {string} */ title) => {
       const by = new Map();
       for (const r of rows) if (r.t.outcome === 'ok' && r.t.down_bps != null) (by.get(r[key]) || by.set(r[key], []).get(r[key])).push(r.t.down_bps);
       const list = [...by.entries()].map(([k, v]) => ({ k, m: /** @type {number} */ (med(v)), n: v.length })).sort((a, b) => b.m - a.m);
+      if (!list.length) return null;
       const max = Math.max(1, ...list.map((x) => x.m));
-      return h('div', { class: 'sp-sw-bars' }, h('h3', { text: title }),
-        h('ul', {}, ...list.map((x) => {
-          const bar = h('span', { class: 'sp-sw-bar', 'aria-hidden': 'true' });
-          bar.style.width = `${Math.max(2, Math.round(x.m / max * 100))}%`;
-          return h('li', {}, h('span', { class: 'sp-sw-k', text: x.k }), h('span', { class: 'sp-sw-track' }, bar), h('span', { class: 'sp-sw-v', text: `${mbit(x.m)} (${x.n})` }));
-        })));
+      const item = (/** @type {{k:string,m:number,n:number}} */ x) => {
+        const bar = h('span', { class: 'sp-sw-bar', 'aria-hidden': 'true' });
+        bar.style.width = `${Math.max(2, Math.round(x.m / max * 100))}%`;
+        return h('li', {}, h('span', { class: 'sp-sw-k', text: x.k }), h('span', { class: 'sp-sw-track' }, bar), h('span', { class: 'sp-sw-v', text: `${mbit(x.m)} · ${x.n} server${x.n === 1 ? '' : 's'}` }));
+      };
+      if (key === 'provider') return h('div', { class: 'sp-sw-bars' }, h('h3', { text: title }), h('ul', {}, ...list.map(item)));
+      // Regions: the default ones in catalog order, then the other places.
+      const main = list.filter((x) => isDefault.has(x.k)).sort((a, b) => order.indexOf(a.k) - order.indexOf(b.k));
+      const rest = list.filter((x) => !isDefault.has(x.k));
+      return h('div', { class: 'sp-sw-bars' }, h('h3', { text: title }), h('ul', {}, ...main.map(item)),
+        rest.length ? h('h4', { text: 'Other places' }) : null, rest.length ? h('ul', {}, ...rest.map(item)) : null);
     };
-    const ok = rows.filter((r) => r.t.outcome === 'ok').length;
+    // A server with a download counts as a result, even when its upload didn't finish.
+    const gave = rows.filter((r) => r.t.down_bps != null).length;
+    const noUp = rows.filter((r) => r.t.down_bps != null && r.t.up_bps == null).length;
+    const bars = [groupBars('region', 'Download by region (median)'), groupBars('provider', 'Download by provider (median)')].filter((x) => !!x);
     const cols = /** @type {[string,string,(r:SwRow)=>string|number|null][]} */ ([
       ['region', 'Region', (r) => r.region], ['server', 'Server', (r) => r.t.label],
       ['down', 'Down', (r) => r.t.down_bps], ['up', 'Up', (r) => r.t.up_bps], ['result', 'Result', (r) => resultWord(r.t)]]);
@@ -408,8 +425,8 @@ export class SpeedQueue {
       return this.sort.asc ? c : -c;
     });
     return h('div', { class: 'sp-sw-res' },
-      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)} · ${ok} of ${rows.length} servers answered. Not part of the hourly pattern.`),
-      h('div', { class: 'sp-sw-grid' }, groupBars('region', 'Download by region (median)'), groupBars('provider', 'Download by provider (median)')),
+      h('p', { class: 'sp-flag' }, h('b', { text: 'On-demand run' }), ` · finished ${new Date(e.finished_at || e.est_finish).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(e.finished_at || e.est_finish)} · ${gave} of ${rows.length} servers gave a result${noUp ? `; ${noUp} upload${noUp === 1 ? '' : 's'} didn’t finish` : ''}. Not part of the hourly pattern.`),
+      bars.length ? h('div', { class: 'sp-sw-grid' }, ...bars) : null,
       h('div', { class: 'sp-sum-wrap' }, h('table', { class: 'sp-st sp-sw-t' },
         h('caption', { class: 'sr-only', text: 'Every server in the last full test' }),
         h('thead', {}, h('tr', {}, ...cols.map(([k, l]) => h('th', { scope: 'col', class: k === 'down' || k === 'up' ? 'num' : '', 'aria-sort': this.sort.key === k ? (this.sort.asc ? 'ascending' : 'descending') : null },
@@ -419,11 +436,11 @@ export class SpeedQueue {
             /** @type {HTMLElement|null} */ (this.sweepEl.querySelector('th[aria-sort] .sp-sort'))?.focus();
           } }))))),
         h('tbody', {}, ...sorted.map((r) => h('tr', { class: r.t.outcome === 'ok' ? '' : 'bad' },
-          h('td', { text: r.region }),
+          h('td', { 'data-k': 'Region', text: r.region }),
           h('th', { scope: 'row', text: r.t.label }),
-          h('td', { class: 'num', text: reading(r.t, 'down') }),
-          h('td', { class: 'num', text: reading(r.t, 'up') }),
-          h('td', { text: resultWord(r.t) })))))));
+          h('td', { class: 'num', 'data-k': 'Down', text: reading(r.t, 'down') }),
+          h('td', { class: 'num', 'data-k': 'Up', text: reading(r.t, 'up') }),
+          h('td', { 'data-k': 'Result', text: resultWord(r.t) })))))));
   }
 }
 

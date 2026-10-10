@@ -90,6 +90,8 @@ export class Speed {
       summary: () => this.d,
       done: (e, tag) => this.finish(e, tag),
       say: (t) => { this.say.textContent = t; },
+      // A new test or full test replaces the last result.
+      started: () => { this.result = ''; this.renderProgress(); },
       sweepHash: () => host.sweep(),
     });
     this.progEl = h('div', { class: 'sp-prog', hidden: true });
@@ -137,11 +139,12 @@ export class Speed {
     if (!d || !t) { this.result = 'Done. The result is in the tests below.'; this.say.textContent = this.result; this.renderAll(); return; }
     if (t.outcome === 'ok' || t.down_bps != null) {
       this.perTest = t.bytes || testBytes(t);
-      const pct = t.score != null ? ` ${Math.round(t.score * 100)}% of this server’s normal.` : '';
+      const pct = t.score != null ? ` (${Math.round(t.score * 100)}% of normal)` : '';
       const fb = t.fallback && t.region ? fallbackLine(d, t) : '';
+      const up = t.up_bps != null ? `, ${mbps(t.up_bps).replace(' Mbit/s', '')} up` : '';
       this.result = tag === 'estimate'
         ? `Your test used about ${bytes(this.perTest)}.`
-        : `Done: ${mbps(t.down_bps)} down, ${t.up_bps != null ? mbps(t.up_bps).replace(' Mbit/s', '') : '—'} up.${pct}${fb ? ' ' + fb : ''}`;
+        : `Done: ${t.label}, ${mbps(t.down_bps)} down${up}${pct}.${t.up_bps == null ? ' The upload didn’t finish.' : ''}${fb ? ' ' + fb : ''}`;
     } else {
       this.result = t.outcome === 'busy' ? 'That server is busy with someone else’s test. We tried 3 ports.'
         : t.outcome === 'unreachable' ? 'That server didn’t answer.' : 'The test didn’t finish.';

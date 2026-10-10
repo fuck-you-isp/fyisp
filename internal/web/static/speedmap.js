@@ -66,7 +66,8 @@ function hourShort(/** @type {number} */ hr) {
 /** The slower hours to mark: the finding's when it found a dip, else the pattern's. @param {SpeedSummary} d */
 export function dipHoursOf(d) {
   const f = d.finding;
-  if (f && f.hours && f.hours.length && f.case !== 'nothing' && f.case !== 'mixed') return f.hours;
+  // Only a finding with hours: not while still learning, and not for mixed or nothing.
+  if (f) return f.hours && f.hours.length && !['nothing', 'mixed', 'not_enough_data'].includes(f.case) ? f.hours : [];
   return d.pattern ? d.pattern.hours : [];
 }
 /** "8 to 11 pm" for a run of hours (the end is the last hour's end). @param {number[]} hours */
@@ -100,6 +101,10 @@ function resultWord(t) {
 }
 /** A reading that hit the 100 MB cap is a lower bound. @param {number|null} b @param {boolean|undefined} short */
 function atLeast(b, short) { return b == null ? '—' : (short ? '≥ ' : '') + mb(b).replace(' Mbit/s', ''); }
+/** A table cell for a reading; a capped one also says "short test" to screen readers. @param {string} k @param {number|null} b @param {boolean|undefined} short */
+function readingCell(k, b, short) {
+  return h('td', { class: 'num', 'data-k': k }, atLeast(b, short), short && b != null ? h('span', { class: 'sr-only', text: ' (short test: at least this)' }) : null);
+}
 /** "8 → 21 ms (+13)" for one layer of a test's latency. @param {import('./speed.js').SpeedLat|undefined} idle @param {import('./speed.js').SpeedLat|undefined} load */
 function lat(idle, load) { return idle && load ? `${Math.round(idle.p50_ms)} → ${Math.round(load.p50_ms)} ms${load.loss ? `, ${Math.round(load.loss * 100)}% lost` : ''}` : 'not known'; }
 
@@ -499,7 +504,9 @@ export class SpeedMap {
       if (lk) sw.style.color = lk.color;
       return h('li', { class: dips ? 'dips' : '' },
         h('span', { class: 'sp-cmp-name' }, sw, name),
-        h('span', { class: 'sp-cmp-bars', 'aria-hidden': 'true' }, bar(a, 'day'), b != null ? bar(b, 'dip') : ''),
+        h('span', { class: 'sp-cmp-bars', 'aria-hidden': 'true' },
+          h('span', { class: 'sp-cmp-row' }, h('span', { class: 'sp-cmp-l', text: 'by day' }), bar(a, 'day')),
+          b != null ? h('span', { class: 'sp-cmp-row' }, h('span', { class: 'sp-cmp-l', text: dipWord }), bar(b, 'dip')) : ''),
         h('span', { class: 'sp-cmp-val', text: b != null ? `${pct(a)} → ${pct(b)}` : pct(a) }),
         h('span', { class: 'sp-cmp-word', text: b != null ? (dips ? 'dips' : 'no dip') : '' }),
         h('span', { class: 'sr-only', text: text }));
@@ -543,8 +550,8 @@ export class SpeedMap {
         h('td', { class: 'when', 'data-k': 'When', text: `${new Date(t.start).toLocaleDateString([], { weekday: 'short' })} ${clock(t.start)}` }),
         h('td', { 'data-k': 'Region', text: regionTitle(t.region) }),
         h('td', { 'data-k': 'Server', text: t.label }),
-        h('td', { class: 'num', 'data-k': 'Down', text: atLeast(t.down_bps, t.down_short) }),
-        h('td', { class: 'num', 'data-k': 'Up', text: atLeast(t.up_bps, t.up_short) }),
+        readingCell('Down', t.down_bps, t.down_short),
+        readingCell('Up', t.up_bps, t.up_short),
         h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));
@@ -557,6 +564,7 @@ export class SpeedMap {
       rows.length ? h('table', { class: 'sp-tt' },
         h('thead', {}, h('tr', {}, ...['When', 'Region', 'Server', 'Down (Mbit/s)', 'Up (Mbit/s)', '% of normal', 'Result', ''].map((x, i) => h('th', { scope: 'col', class: i >= 3 && i <= 5 ? 'num' : '', text: x })))),
         h('tbody', {}, ...rows)) : h('p', { class: 'muted', text: this.problems ? 'No problems in this span.' : 'No tests in this span yet.' }),
+      shown.some((t) => t.down_short || t.up_short) ? h('p', { class: 'muted small', text: '≥ means the test stopped at its data limit, so the speed was at least this.' }) : '',
       list.length > this.shown ? h('button', { class: 'btn sm', type: 'button', text: `Show older (${list.length - this.shown} more)`, onclick: () => { this.shown += 30; this.renderRow(); } }) : '');
   }
 
@@ -644,7 +652,7 @@ function serverState(x) {
   if (x.skip_locked) return 'Skipped (start-up setting)';
   if (x.skipped) return 'Skipped';
   if (x.rest_until && x.rest_until > Date.now()) return `Resting until ${clock(x.rest_until)}`;
-  return 'Tested';
+  return 'Included';
 }
 
 /** "Leaseweb London was busy, so Clouvider London ran it." @param {SpeedSummary} d @param {SpeedTest} t */

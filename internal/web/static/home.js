@@ -292,7 +292,7 @@ export class Home {
     this.speedEl.hidden = !sp;
     if (sp) {
       this.speedEl.replaceChildren(
-        h('span', { class: 'ho-speed-i', 'aria-hidden': 'true', text: sp.impact === 'video_risk' ? '!' : sp.kind === 'pattern' ? '↘' : '·' }),
+        h('span', { class: 'ho-speed-i', 'aria-hidden': 'true', text: sp.impact === 'video_risk' ? '!' : '↘' }),
         // The server's warm-up line already starts with "Speed:".
         /^Speed:/.test(sp.text) ? h('span', { text: sp.text }) : h('span', {}, h('b', { text: 'Speed: ' }), sp.text.charAt(0).toLowerCase() + sp.text.slice(1)), ' ',
         h('a', { class: 'ho-link', href: '#v=speed', text: 'See speed by hour', onclick: (/** @type {Event} */ e) => { e.preventDefault(); this.host.openDetails('#v=speed'); } }));
