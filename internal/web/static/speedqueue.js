@@ -11,7 +11,7 @@ import { clock } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
-/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[]}} QueueEntry */
+/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[],wait_reason?:string|null}} QueueEntry */
 /** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
 /** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
@@ -257,6 +257,7 @@ export class SpeedQueue {
       const when = e2.state === 'running'
         ? (e2.kind === 'sweep' ? `now, server ${e2.step} of ${e2.steps}` : 'now')
         : e2.kind === 'sweep' && e2.step > 0 ? `paused at server ${e2.step} of ${e2.steps}, carries on about ${clock(e2.est_start)}`
+          : e2.wait_reason === 'cooldown' ? `waits for the 30-minute gap after the last full test, starts about ${clock(e2.est_start)}`
           : `#${e2.position}, starts about ${clock(e2.est_start)}`;
       return h('li', { class: (e2.state === 'running' ? 'run' : '') + (e2.who === 'you' ? ' you' : '') },
         h('span', { class: 'sp-q-what', text: what(e2) }),
@@ -281,6 +282,10 @@ export class SpeedQueue {
     if (e.state === 'waiting' && e.kind === 'sweep' && e.step > 0) {
       return h('div', { class: 'sp-mine' },
         h('p', { class: 'sp-mine-t', tabindex: '-1', text: `Testing every server: paused after server ${e.step} of ${e.steps} while another test runs. It carries on next.` }));
+    }
+    if (e.state === 'waiting' && e.wait_reason === 'cooldown') {
+      return h('div', { class: 'sp-mine' },
+        h('p', { class: 'sp-mine-t', tabindex: '-1', text: `${what(e)}: full tests from this link are 30 minutes apart, so yours starts ${inAbout(e.est_start - Date.now())}. Other tests can go first.` }));
     }
     if (e.state === 'waiting') {
       return h('div', { class: 'sp-mine' },
