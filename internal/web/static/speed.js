@@ -8,7 +8,7 @@
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, dialog, MODE } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, dialog, MODE, tzParam } from './core.js';
 import { clock } from './home.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
@@ -103,7 +103,7 @@ export class Speed {
   async refresh() {
     const seq = ++this.seq;
     try {
-      const q = new URLSearchParams({ days: String(this.host.days()), tz: String(-new Date().getTimezoneOffset()) });
+      const q = new URLSearchParams({ days: String(this.host.days()), tz: tzParam() });
       if (this.host.nofb()) q.set('exclude_fallback', '1');
       const d = /** @type {SpeedSummary} */ (await fetchJSON('api/speed?' + q));
       if (seq !== this.seq) return;

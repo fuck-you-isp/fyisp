@@ -7,7 +7,7 @@
 // keeps it accessible. Plain ES module, no build step.
 // @ts-check
 
-import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText } from './core.js';
+import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText, tzParam } from './core.js';
 
 /** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string,recovered?:number}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
@@ -232,7 +232,7 @@ export class Home {
     if (this.marked && this.marked.undoUntil && now > this.marked.undoUntil) { this.marked.undoUntil = 0; this.renderMark(); }
   }
 
-  tz() { return String(-new Date().getTimezoneOffset()); }
+  tz() { return tzParam(); }
 
   async loadLive() {
     if (this.liveBusy) return;

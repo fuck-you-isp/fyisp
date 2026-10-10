@@ -6,7 +6,7 @@
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON } from './core.js';
+import { h, fetchJSON, tzParam } from './core.js';
 import { hourRange } from './speedmap.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -39,7 +39,7 @@ export class SpeedReport {
   async load() {
     if (this.off) return;
     try {
-      this.d = /** @type {SpeedSummary} */ (await fetchJSON('api/speed?' + new URLSearchParams({ days: '7', tz: String(-new Date().getTimezoneOffset()) })));
+      this.d = /** @type {SpeedSummary} */ (await fetchJSON('api/speed?' + new URLSearchParams({ days: '7', tz: tzParam() })));
     } catch (e) {
       if (/** @type {any} */ (e).status === 404) this.off = true;
       return;

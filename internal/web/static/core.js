@@ -132,6 +132,14 @@ export function fmtStep(/** @type {number} */ ms) {
   return `${Math.round(ms / 86400e3)}d`;
 }
 
+/** tz= for the API: the browser's IANA zone, so hours of day stay right across DST; minutes east of UTC when it has none. */
+export function tzParam() {
+  try {
+    const z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (z) return z;
+  } catch { /* old browser */ }
+  return String(-new Date().getTimezoneOffset());
+}
 export function fmtInt(/** @type {number} */ n) { return n.toLocaleString('en-US'); }
 
 export function median(/** @type {number[]} */ v) {
