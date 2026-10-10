@@ -67,10 +67,13 @@ func (n num) MarshalJSON() ([]byte, error) {
 
 // callsCause says why the top state is not good. Source is "verdict" (the
 // path verdict: Kind lan, isp, upstream, dns or no_network; Summary is its
-// sentence), "udp" (Kind udp_blocked, stun_blocked or udp_degraded) or
-// "path" (the call path's own score; Factor is loss, jitter or latency).
+// sentence), "udp" (Kind udp_blocked, stun_blocked or udp_degraded), "path"
+// (the call path's own score; Factor is loss, jitter or latency) or "app"
+// (a measured app scores worse than the path: App names it, Factor as for
+// the path).
 type callsCause struct {
 	Source  string            `json:"source"`
+	App     string            `json:"app,omitempty"`
 	Kind    model.VerdictKind `json:"kind,omitempty"`
 	Summary string            `json:"summary,omitempty"`
 	Factor  string            `json:"factor,omitempty"`
@@ -450,8 +453,9 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		out.Apps = append(out.Apps, app)
 	}
 
-	// The top state: the worst of the path verdict, the UDP verdicts and
-	// the path's score. Ties keep the earlier one, which names a cause.
+	// The top state: the worst of the path verdict, the UDP verdicts, the
+	// path's score and the measured apps' scores. Ties keep the earlier
+	// one, which names the broader cause.
 	type cand struct {
 		state string
 		cause *callsCause
@@ -476,6 +480,16 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 			c = &callsCause{Source: "path", Factor: out.Path.Factor}
 		}
 		cs = append(cs, cand{out.Path.State, c})
+	}
+	// The top state is never better than a measured app's score: the rows
+	// below it use the same window and the same worst-minute rule.
+	for _, a := range out.Apps {
+		if a.callsGroup == nil {
+			continue
+		}
+		if r := callRank(a.State); r >= callRank(string(callq.Unusable)) && r <= callRank(string(callq.Fair)) {
+			cs = append(cs, cand{a.State, &callsCause{Source: "app", App: a.App, Factor: a.Factor}})
+		}
 	}
 	best := cand{state: callNotEnoughData} // no path and no verdict
 	for i, c := range cs {

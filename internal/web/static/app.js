@@ -2584,7 +2584,7 @@ class Overview {
 /** @typedef {{at:number,state:string,mos:number|null,rtt_ms:number|null,jitter_ms:number|null,loss:number|null}} CallsMinute */
 /** @typedef {{state:string,mos:number|null,rtt_ms:number|null,rtt_p95_ms:number|null,jitter_ms:number|null,loss:number|null,samples:number,unknown?:number,factor?:string,worst?:CallsMinute,minutes:CallsSeries}} CallsGroup */
 /** @typedef {Partial<CallsGroup> & {app:string,udp:string,region?:string,web_ms?:number|null,web_loss?:number|null,web_samples?:number}} CallsApp */
-/** @typedef {{source:string,kind?:string,summary?:string,factor?:string}} CallsCause */
+/** @typedef {{source:string,app?:string,kind?:string,summary?:string,factor?:string}} CallsCause */
 /** @typedef {{from:number,to:number,start:number,step:number,state:string,quiet?:boolean,cause?:CallsCause,path?:CallsGroup,apps:CallsApp[]}} CallsData */
 
 const CALLS_LIVE_MS = 15000; // the top card ("updated 4 s ago")
@@ -2760,7 +2760,15 @@ class Calls {
     this.whenSeg = h('div', { class: 'seg sm', role: 'group', 'aria-label': 'When was the bad call?' });
     this.markOut = h('span', { class: 'cq-marked small', 'aria-live': 'polite' });
     this.markEl = h('div', { class: 'cq-mark', hidden: true },
-      this.markBtn, h('span', { class: 'muted small', text: 'When?' }), this.whenSeg, this.markOut);
+      this.markBtn, h('span', { class: 'cq-when muted small', text: 'When?' }), this.whenSeg, this.markOut);
+    // On a phone the Mark bar floats at the bottom of the screen once it
+    // has been scrolled past (never over the top card); the wrapper keeps
+    // its place in the page.
+    this.markWrap = h('div', { class: 'cq-markwrap' }, this.markEl);
+    this.floating = false;
+    new IntersectionObserver((es) => {
+      for (const e of es) this.setFloat(!e.isIntersecting && e.boundingClientRect.top < 0);
+    }).observe(this.markWrap);
 
     this.stripSum = h('p', { class: 'cq-strip-sum' });
     this.strip = /** @type {HTMLCanvasElement} */ (h('canvas', { class: 'cq-strip', role: 'img' }));
@@ -2800,8 +2808,18 @@ class Calls {
     // The public link shows the top card and the strip (and public notes, above).
     if (MODE === 'public') { this.askBox.hidden = true; this.appsBox.hidden = true; }
     this.el = h('section', { id: 'calls', class: 'calls', 'aria-label': 'Calls', hidden: true },
-      this.top, this.markEl, this.stripBox, this.askBox, this.appsBox);
+      this.top, this.markWrap, this.stripBox, this.askBox, this.appsBox);
     new ResizeObserver(() => this.drawStrip()).observe(this.strip);
+  }
+
+  /** Floats the Mark bar (phones only, while Calls is on screen and the bar is writable). */
+  setFloat(/** @type {boolean} */ on) {
+    on = on && !this.markEl.hidden && callsShown() && matchMedia('(max-width: 767.98px)').matches;
+    if (on === this.floating) return;
+    this.markWrap.style.minHeight = on ? `${this.markEl.offsetHeight}px` : '';
+    this.floating = on;
+    this.markEl.classList.toggle('float', on);
+    document.body.classList.toggle('cq-floating', on);
   }
 
   /** Loads both windows now (a view switch or a refresh). */
@@ -2915,6 +2933,13 @@ class Calls {
     }
     const label = callLabel(st);
     if (c && c.source !== 'path' && c.kind && CALL_CAUSE[c.kind]) return `${label}: ${CALL_CAUSE[c.kind]}.`;
+    if (c && c.source === 'app') {
+      // A measured app scores worse than the path: name it (its row below says the same).
+      const a = d.apps.find((x) => x.app === c.app);
+      const name = APP_TITLE[c.app || ''] || c.app;
+      if (a && a.worst) return `${label}: ${minuteWhat(a.worst, c.factor || a.factor || '')} to ${name} (worst minute ${hhmm(a.worst.at)}).`;
+      return `${label}: ${name} scores ${label.toLowerCase()}.`;
+    }
     if (p && p.worst) {
       const w = p.worst;
       return `${label}: ${minuteWhat(w, c?.factor || p.factor || '')} on your call path (worst minute ${hhmm(w.at)}).`;
@@ -3017,9 +3042,11 @@ class Calls {
       }
       if (!scored) this.stripSum.textContent = head + 'not enough data yet.';
       else {
-        const pct = (/** @type {number} */ x) => (x > 0 && Math.round((100 * x) / scored) === 0 ? '<1%' : `${Math.round((100 * x) / scored)}%`);
-        const parts = [`Good ${pct(n.good)}`];
-        if (n.fair) parts.push(`Fair ${pct(n.fair)}`);
+        const pct = (/** @type {number} */ x) => `${Math.round((100 * x) / scored)}%`;
+        // Bands that round to 0% are left out.
+        const parts = [];
+        if (Math.round((100 * n.good) / scored)) parts.push(`Good ${pct(n.good)}`);
+        if (Math.round((100 * n.fair) / scored)) parts.push(`Fair ${pct(n.fair)}`);
         const runs = callRuns(d, d.path, wh[0], to, BAD_CALL);
         for (const r of runs.slice(0, 3)) parts.push(`${callLabel(r.worst.state)} ${runText(r)}`);
         if (runs.length > 3) parts.push(`+${runs.length - 3} more`);

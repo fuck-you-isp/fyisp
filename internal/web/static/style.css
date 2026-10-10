@@ -744,7 +744,7 @@ th[aria-sort] .ov-sort { color: var(--ink); }
 
 /* ---------- calls (call quality) ---------- */
 .calls { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; align-items: start; }
-.calls .cq-top, .calls .cq-mark, .calls .cq-day { grid-column: 1 / -1; }
+.calls .cq-top, .calls .cq-markwrap, .calls .cq-day { grid-column: 1 / -1; }
 /* Calls comes first: the view switch, then Calls, then the network path. */
 body.calls-on .viewbar { order: -2; }
 body.calls-on .calls { order: -1; }
@@ -826,10 +826,13 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: va
   /* Two-line app cards. */
   .cq-app > summary { grid-template-columns: minmax(0, 1fr) auto; }
   .cq-app-stats { grid-column: 1 / -1; text-align: left; }
-  /* The Mark button stays at hand while scrolling. */
-  .cq-mark {
-    position: sticky; bottom: 0; z-index: 15; margin: 0 -12px; padding: 8px 12px;
-    background: var(--page); border-top: 1px solid var(--border);
-  }
   .cq-markbtn { flex: 1 1 100%; padding: 8px 10px; }
+  /* Scrolled past, the Mark button floats at the bottom of the screen (app.js). */
+  .cq-mark.float {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: var(--page); border-top: 1px solid var(--border); box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+  }
+  .cq-mark.float .cq-when, .cq-mark.float .seg { display: none; }
+  body.cq-floating { padding-bottom: 72px; }
 }

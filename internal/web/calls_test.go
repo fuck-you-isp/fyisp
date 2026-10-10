@@ -170,7 +170,7 @@ type callsResp struct {
 	State                 string
 	Quiet                 bool
 	Cause                 *struct {
-		Source, Kind, Summary, Factor string
+		Source, App, Kind, Summary, Factor string
 	}
 	Path *callsGroupResp
 	Apps []callsAppResp
@@ -383,6 +383,16 @@ func TestCallsStates(t *testing.T) {
 			},
 		},
 		{
+			name: "one lossy app: the top state is never better than an app",
+			fill: func(name string, ts time.Time) burst {
+				if name == "Teams-Relay" {
+					return burst{rtt: 30, jitter: 2, answered: 4} // 20% loss
+				}
+				return ok
+			},
+			top: "unusable", cause: "app:teams:loss", path: "good", apps: map[string]string{"teams": "unusable", "meet": "good"},
+		},
+		{
 			name: "jittery path",
 			fill: func(string, time.Time) burst { return burst{rtt: 30, jitter: 130, answered: 5} },
 			top:  "fair", cause: "path:jitter", path: "fair",
@@ -401,6 +411,21 @@ func TestCallsStates(t *testing.T) {
 			cause := ""
 			if c.Cause != nil {
 				cause = c.Cause.Source + ":" + c.Cause.Kind + c.Cause.Factor
+				if c.Cause.App != "" {
+					cause = c.Cause.Source + ":" + c.Cause.App + ":" + c.Cause.Factor
+				}
+			}
+			// Invariant: the top state is never better than a measured
+			// app's band (or the path's).
+			bands := map[string]int{"unusable": 0, "poor": 1, "fair": 2, "good": 3}
+			top, topBand := bands[c.State]
+			if c.State == "blocked" {
+				top, topBand = -1, true
+			}
+			for _, a := range c.Apps {
+				if r, ok := bands[a.State]; ok && (!topBand || r < top) {
+					t.Errorf("top state %q is better than %s's %q", c.State, a.App, a.State)
+				}
 			}
 			if cause != tc.cause {
 				t.Errorf("cause %q, want %q", cause, tc.cause)

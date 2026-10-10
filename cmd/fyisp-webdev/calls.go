@@ -73,7 +73,8 @@ func callsSink(inner model.Sink, mode string, start time.Time) model.Sink {
 }
 
 // callsVerdict adds the scenario to a verdict source: an ISP incident over
-// the past poor stretch and, for blocked, a current udp_blocked verdict.
+// the past poor stretch and a current udp_degraded (poor) or udp_blocked
+// (blocked) verdict, as the engine would give.
 type callsVerdict struct {
 	web.VerdictSource
 	mode  string
@@ -81,8 +82,14 @@ type callsVerdict struct {
 }
 
 func (c callsVerdict) Current() model.Verdict {
+	if c.mode == callsPoor {
+		return model.Verdict{Kind: model.VerdictUDPDegraded, Since: c.start.Add(-10 * time.Minute),
+			Summary:  "Calls may sound choppy: the UDP path to 4 call services shows up to 20% packet loss and up to 45 ms of jitter, while the rest of your connection looks fine.",
+			Targets:  []string{"Meet-STUN", "Cloudflare-STUN", "Twilio-STUN-global", "Teams-Relay"},
+			Evidence: map[string]float64{"udp_providers": 4, "udp_poor_providers": 4, "udp_loss": 0.2, "udp_jitter_ms": 45, "loss": 0.2}}
+	}
 	if c.mode == callsBlocked {
-		return model.Verdict{Kind: "udp_blocked", Since: c.start.Add(-10 * time.Minute),
+		return model.Verdict{Kind: model.VerdictUDPBlocked, Since: c.start.Add(-10 * time.Minute),
 			Summary:  "UDP is blocked or failing on this network (or a firewall on this computer is blocking fyisp): calls will fall back to slower TCP relays.",
 			Targets:  []string{"Meet-STUN", "Cloudflare-STUN", "Twilio-STUN-global"},
 			Evidence: map[string]float64{"udp_providers": 3, "udp_blocked_providers": 3, "udp53_ok": 0}}
@@ -100,9 +107,13 @@ func (c callsVerdict) Incidents(ctx context.Context, from, to time.Time) ([]mode
 		list = append(list, model.Incident{ID: 900, Start: past.from.Add(-time.Minute), End: past.to, Kind: model.VerdictISP, PeakLoss: 0.11,
 			Summary: "Your ISP dropped 11% of packets while your router was fine."})
 	}
-	if c.mode == callsBlocked {
-		list = append(list, model.Incident{ID: 901, Start: c.start.Add(-10 * time.Minute), Kind: "udp_blocked", PeakLoss: 1,
+	switch c.mode {
+	case callsBlocked:
+		list = append(list, model.Incident{ID: 901, Start: c.start.Add(-10 * time.Minute), Kind: model.VerdictUDPBlocked, PeakLoss: 1,
 			Summary: "UDP was blocked on this network: calls fell back to slower relays."})
+	case callsPoor:
+		list = append(list, model.Incident{ID: 902, Start: c.start.Add(-10 * time.Minute), Kind: model.VerdictUDPDegraded, PeakLoss: 0.2,
+			Summary: "The UDP path to call services was losing packets and jittery."})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Start.After(list[j].Start) })
 	return list, nil
