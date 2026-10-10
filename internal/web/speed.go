@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -139,8 +140,11 @@ type speedTestJSON struct {
 	UpRetrans       *int64   `json:"up_retrans"`
 	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
 	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
-	Connection      string   `json:"connection,omitempty"`
-	Latency         any      `json:"latency,omitempty"` // by layer (edge, gateway): idle and per direction
+	// Latency under load at the ISP edge and the gateway; Conn the
+	// connection type; Handoff (local only) the first network past the ISP.
+	Latency *model.SpeedLatency `json:"latency"`
+	Conn    string              `json:"conn"`
+	Handoff *model.Handoff      `json:"handoff,omitempty"`
 }
 
 type speedRunning struct {
@@ -253,6 +257,20 @@ type speedJSON struct {
 	Finding         speedtest.Finding  `json:"finding"`
 	Coverage        []speedHour        `json:"coverage"`
 	UnderLoad       speedUnderLoad     `json:"under_load"`
+	// EdgeHours is the access network's control: the idle RTT and loss to
+	// the ISP edge by local hour of day over the pattern's 30 days (tests
+	// are masked out of the series, so it is idle by construction); null
+	// without an ISP edge target.
+	EdgeHours []speedEdgeHour `json:"edge_hours"`
+}
+
+// speedEdgeHour is one local hour of day of the ISP edge's idle RTT: the
+// median over days of that hour's mean RTT, and the loss over them.
+type speedEdgeHour struct {
+	Hour  int  `json:"hour"`
+	N     int  `json:"n"`      // days with samples in that hour
+	RTTms *num `json:"rtt_ms"` // |null when n is 0
+	Loss  *num `json:"loss"`   // |null when n is 0
 }
 
 type speedConnection struct {
@@ -360,13 +378,9 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		r := t.Region
 		j.Region = &r
 	}
-	x := speedtest.ParseExtra(t.Extra)
-	j.Connection = x.Connection
-	if len(x.Latency) > 0 {
-		j.Latency = x.Latency
-	}
+	j.Latency, j.Conn = t.Latency, cmp.Or(t.Conn, model.ConnUnknown)
 	if !n.public {
-		j.Port = t.Port
+		j.Port, j.Handoff = t.Port, t.Handoff
 	}
 	return j
 }
@@ -853,13 +867,16 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		out.Latest = &l
 	}
 	for i := len(latest) - 1; i >= 0; i-- { // the newest test that knows
-		if x := speedtest.ParseExtra(latest[i].Extra); x.Connection != "" {
-			out.Connection.Type = x.Connection
+		if c := latest[i].Conn; c != "" && c != model.ConnUnknown {
+			out.Connection.Type = c
 			break
 		}
 	}
 	out.Pattern = speedtest.PooledPattern(all, tz)
-	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, TZ: tz, Catalog: cat, EdgeIdle: s.edgeIdleByHour(ctx, now, tz)})
+	if out.EdgeHours, err = s.edgeHours(ctx, now, tz); err != nil {
+		return nil, err
+	}
+	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, TZ: tz, Catalog: cat, EdgeIdle: edgeIdle(out.EdgeHours)})
 	out.Coverage = speedCoverage(span, tz, cat)
 	out.UnderLoad = speedUnderLoadOf(span)
 	if s.public { // the share link's wording: a visitor's line is not "yours"
@@ -874,6 +891,73 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 			for i := range rows {
 				rows[i].publicWording()
 			}
+		}
+	}
+	return out, nil
+}
+
+// edgeIdle is the finding's access-network control: the ISP edge's idle
+// RTT per local hour (NaN with fewer than 3 days).
+func edgeIdle(eh []speedEdgeHour) [24]float64 {
+	var out [24]float64
+	for h := range out {
+		out[h] = math.NaN()
+	}
+	for _, x := range eh {
+		if x.N >= 3 && x.RTTms != nil {
+			out[x.Hour] = float64(*x.RTTms)
+		}
+	}
+	return out
+}
+
+// edgeHours reads the ISP edge's hourly RTT over speedtest.PatternSpan and
+// folds it into 24 local hours of day (see speedEdgeHour); nil without an
+// ISP edge target.
+func (s *server) edgeHours(ctx context.Context, now time.Time, tz time.Duration) ([]speedEdgeHour, error) {
+	var key model.SeriesKey
+	if p := s.d.Profile(); p != nil {
+		for _, t := range p.Targets {
+			if t.Layer == model.LayerEdge {
+				key = model.SeriesKey{Target: t.Name, Kind: model.KindICMP}
+			}
+		}
+	}
+	if key.Target == "" || s.d.Store == nil {
+		return nil, nil
+	}
+	to := now.Truncate(time.Hour)
+	from := to.Add(-speedtest.PatternSpan)
+	res, err := s.d.Store.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{key}, From: from, To: to, MaxPoints: int(speedtest.PatternSpan / time.Hour)})
+	if err != nil {
+		return nil, err
+	}
+	rtts := make([][]float64, 24)
+	var ok, lost [24]float64
+	for _, c := range res.Series {
+		for i := range c.N {
+			n, l := float64(c.N[i]), float64(at(c.Lost, i))
+			if n+l == 0 {
+				continue
+			}
+			h := res.Start.Add(time.Duration(i) * res.Step).Add(tz).UTC().Hour()
+			ok[h] += n
+			lost[h] += l
+			if n > 0 && i < len(c.Mean) && !math.IsNaN(float64(c.Mean[i])) {
+				rtts[h] = append(rtts[h], float64(c.Mean[i]))
+			}
+		}
+	}
+	out := make([]speedEdgeHour, 24)
+	for h := range out {
+		out[h] = speedEdgeHour{Hour: h, N: len(rtts[h])}
+		if ok[h]+lost[h] > 0 {
+			l := num(lost[h] / (ok[h] + lost[h]))
+			out[h].Loss = &l
+		}
+		if len(rtts[h]) > 0 {
+			r := num(callq.Median(rtts[h]))
+			out[h].RTTms = &r
 		}
 	}
 	return out, nil
@@ -939,22 +1023,25 @@ func speedUnderLoadOf(ts []model.SpeedTest) speedUnderLoad {
 		if t.Outcome != model.SpeedOK {
 			continue
 		}
-		for layer, l := range speedtest.ParseExtra(t.Extra).Latency {
+		if t.Latency == nil {
+			continue
+		}
+		for layer, l := range map[string]model.LoadPhases{speedtest.LayerEdge: t.Latency.Edge, speedtest.LayerGateway: t.Latency.Gateway} {
 			a := by[layer]
 			if a == nil {
 				a = &acc{}
 				by[layer] = a
 			}
-			if l.IdleMs != nil {
-				a.idle = append(a.idle, *l.IdleMs)
+			if l.Idle != nil {
+				a.idle = append(a.idle, l.Idle.P50Ms)
 			}
 			if l.Down != nil {
-				a.down = append(a.down, l.Down.P50)
-				a.sentD, a.lostD = a.sentD+l.Down.Sent, a.lostD+l.Down.Lost
+				a.down = append(a.down, l.Down.P50Ms)
+				a.sentD, a.lostD = a.sentD+l.Down.N, a.lostD+l.Down.Lost
 			}
 			if l.Up != nil {
-				a.up = append(a.up, l.Up.P50)
-				a.sentU, a.lostU = a.sentU+l.Up.Sent, a.lostU+l.Up.Lost
+				a.up = append(a.up, l.Up.P50Ms)
+				a.sentU, a.lostU = a.sentU+l.Up.N, a.lostU+l.Up.Lost
 			}
 		}
 	}
@@ -1027,48 +1114,6 @@ func ptrOr(p *float64, d float64) float64 {
 		return d
 	}
 	return *p
-}
-
-// edgeIdleByHour is the ISP edge's median idle RTT per local hour over the
-// last 14 days (the access-network control of the finding).
-func (s *server) edgeIdleByHour(ctx context.Context, now time.Time, tz time.Duration) [24]float64 {
-	var out [24]float64
-	for h := range out {
-		out[h] = math.NaN()
-	}
-	p := s.d.Profile()
-	if p == nil {
-		return out
-	}
-	var key model.SeriesKey
-	for _, t := range p.Targets {
-		if t.Layer == model.LayerEdge {
-			key = model.SeriesKey{Target: t.Name, Kind: model.KindICMP}
-		}
-	}
-	if key.Target == "" {
-		return out
-	}
-	from := now.Add(-14 * 24 * time.Hour).Truncate(time.Hour)
-	res, err := s.d.Store.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{key}, From: from, To: now, MaxPoints: 14*24 + 1})
-	if err != nil || len(res.Series) == 0 {
-		return out
-	}
-	var by [24][]float64
-	c := res.Series[0]
-	for i := range c.N {
-		if c.N[i] == 0 || math.IsNaN(float64(c.Mean[i])) {
-			continue
-		}
-		h := res.Start.Add(time.Duration(i) * res.Step).Add(tz).UTC().Hour()
-		by[h] = append(by[h], float64(c.Mean[i]))
-	}
-	for h := range 24 {
-		if len(by[h]) >= 3 {
-			out[h] = callq.Median(by[h])
-		}
-	}
-	return out
 }
 
 var errNoSpeedID = errors.New("no such server or region")
@@ -1144,7 +1189,8 @@ func (s *server) speedHome(ctx context.Context, now time.Time, tz time.Duration,
 	if err != nil {
 		return nil
 	}
-	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, TZ: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: s.edgeIdleByHour(ctx, now, tz)})
+	eh, _ := s.edgeHours(ctx, now, tz)
+	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, TZ: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: edgeIdle(eh)})
 	line := speedtest.HomeLine(f, ts, tz, now)
 	if line != nil && voicePublic {
 		line.Text = strings.ReplaceAll(line.Text, "your daytime", "the daytime")

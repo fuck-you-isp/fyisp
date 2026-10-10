@@ -30,7 +30,13 @@
 // the edge columns are the ISP edge's latency before (idle) and during
 // each direction (lost: probes without an answer):
 //
-//	id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,connection,idle_gateway_ms,loaded_gateway_ms,idle_edge_ms,down_edge_p50_ms,down_edge_p90_ms,down_edge_lost,up_edge_p50_ms,up_edge_p90_ms,up_edge_lost
+//	id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,
+//	down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,idle_gateway_ms,loaded_gateway_ms,
+//	conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,
+//	gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms
+//
+// (one line). Latency under load: ISP edge and gateway RTT percentiles in
+// ms, lost probes counted as 1 s; loss is a fraction.
 //
 // The SQLite format holds the same columns in a table named samples (raw;
 // ts is the column ts_utc, lost is NULL when not measured) or summary_1h;
@@ -52,7 +58,6 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
-	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	_ "modernc.org/sqlite"
 )
@@ -102,8 +107,9 @@ var (
 	// server ran another test: not a slow result), unreachable or failed.
 	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "fallback_level", "port", "attempts", "down_bps", "up_bps",
 		"down_retrans", "up_retrans", "down_s", "up_s", "down_capped_by_bytes", "up_capped_by_bytes", "capped_by_server", "bytes", "score_down", "score_up",
-		"connection", "idle_gateway_ms", "loaded_gateway_ms", "idle_edge_ms", "down_edge_p50_ms", "down_edge_p90_ms", "down_edge_lost",
-		"up_edge_p50_ms", "up_edge_p90_ms", "up_edge_lost"}
+		"idle_gateway_ms", "loaded_gateway_ms",
+		"conn", "handoff_asn", "isp_asn", "edge_idle_p50_ms", "edge_idle_loss", "edge_down_p50_ms", "edge_down_p95_ms", "edge_down_loss",
+		"edge_up_p50_ms", "edge_up_p95_ms", "edge_up_loss", "gw_down_p50_ms", "gw_down_p95_ms", "gw_up_p50_ms", "gw_up_p95_ms"}
 )
 
 // Run exports to o.Output, or as CSV to stdout when o.Output is "" or "-".
@@ -250,20 +256,37 @@ func WriteSpeedTests(ctx context.Context, sr SpeedTestReader, w io.Writer, from,
 		}
 		return strconv.FormatFloat(v, 'f', -1, 64)
 	}
-	dir := func(d *speedtest.LoadedDir) []string {
-		if d == nil {
-			return []string{"", "", ""}
-		}
-		return []string{secs(d.P50), secs(d.P90), strconv.Itoa(d.Lost)}
-	}
 	for _, t := range ts {
-		x := speedtest.ParseExtra(t.Extra)
-		edge := x.Latency[speedtest.LayerEdge]
 		row := []string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
 			t.Trigger, t.Outcome, t.Region, t.Server, fb(t.Fallback), t.FallbackLevel, strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
 			i(t.DownRetrans), i(t.UpRetrans), secs(t.DownSecs), secs(t.UpSecs), fb(t.DownShort), fb(t.UpShort), fb(t.CappedByServer),
-			strconv.FormatInt(t.Bytes, 10), f(t.ScoreDown), f(t.ScoreUp), x.Connection, f(t.IdleGatewayMs), f(t.LoadedGatewayMs), f(edge.IdleMs)}
-		row = append(append(row, dir(edge.Down)...), dir(edge.Up)...)
+			strconv.FormatInt(t.Bytes, 10), f(t.ScoreDown), f(t.ScoreUp), f(t.IdleGatewayMs), f(t.LoadedGatewayMs)}
+		var lat model.SpeedLatency
+		if t.Latency != nil {
+			lat = *t.Latency
+		}
+		st := func(x *model.LoadStats, part string) string {
+			if x == nil {
+				return ""
+			}
+			v := map[string]float64{"p50": x.P50Ms, "p95": x.P95Ms, "loss": x.Loss}[part]
+			return f(&v)
+		}
+		as := func(v uint32) string {
+			if v == 0 {
+				return ""
+			}
+			return strconv.FormatUint(uint64(v), 10)
+		}
+		var h model.Handoff
+		if t.Handoff != nil {
+			h = *t.Handoff
+		}
+		row = append(row, t.Conn, as(h.ASN), as(h.ISPASN),
+			st(lat.Edge.Idle, "p50"), st(lat.Edge.Idle, "loss"),
+			st(lat.Edge.Down, "p50"), st(lat.Edge.Down, "p95"), st(lat.Edge.Down, "loss"),
+			st(lat.Edge.Up, "p50"), st(lat.Edge.Up, "p95"), st(lat.Edge.Up, "loss"),
+			st(lat.Gateway.Down, "p50"), st(lat.Gateway.Down, "p95"), st(lat.Gateway.Up, "p50"), st(lat.Gateway.Up, "p95"))
 		if err := cw.Write(row); err != nil {
 			return err
 		}

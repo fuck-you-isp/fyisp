@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
@@ -170,13 +169,15 @@ func (m Mask) Observe(s model.Sample) {
 
 // Layers of latency under load.
 const (
-	LayerGateway = "gateway" // the home router (ICMP)
-	LayerCall    = "call"    // the call path (core STUN targets, median of a burst)
+	LayerGateway = "gateway" // the home router (ICMP): queues in the home network
+	LayerEdge    = "edge"    // the ISP edge (ICMP): the first hop past the router, behind the WAN queue
 )
 
-// LoadTap keeps the recent RTTs of the gateway and the call path, by
-// arrival time, for idle vs loaded latency. Put it in the fan-out before
-// Mask. Safe for concurrent use.
+// LoadTap keeps the recent ICMP samples of the gateway and the ISP edge,
+// lost ones included, by the probe's start (Sample.At; its arrival when
+// unset): the idle side of latency under load
+// (the loaded side comes from the test's own prober, see load.go). Put it
+// in the fan-out before Mask. Safe for concurrent use.
 type LoadTap struct {
 	now    func() time.Time
 	layers map[model.SeriesKey]string
@@ -188,7 +189,7 @@ type LoadTap struct {
 type tapSample struct {
 	at    time.Time
 	layer string
-	ms    float64
+	s     loadSample
 }
 
 // tapKeep is how long samples are kept: the idle window before a test plus
@@ -198,8 +199,7 @@ const tapKeep = idleWindow + 2*time.Minute
 // idleWindow is the span before a test whose RTTs are "idle".
 const idleWindow = 2 * time.Minute
 
-// NewLoadTap watches p's gateway and ISP edge (ICMP) and core call-path
-// STUN targets: their idle RTT before a test.
+// NewLoadTap watches p's gateway and ISP edge targets (ICMP).
 func NewLoadTap(p *model.Profile, now func() time.Time) *LoadTap {
 	if now == nil {
 		now = time.Now
@@ -209,47 +209,59 @@ func NewLoadTap(p *model.Profile, now func() time.Time) *LoadTap {
 		return t
 	}
 	for _, tg := range p.Targets {
-		switch {
-		case tg.Layer == model.LayerGateway:
+		switch tg.Layer {
+		case model.LayerGateway:
 			t.layers[model.SeriesKey{Target: tg.Name, Kind: model.KindICMP}] = LayerGateway
-		case tg.Layer == model.LayerEdge:
+		case model.LayerEdge:
 			t.layers[model.SeriesKey{Target: tg.Name, Kind: model.KindICMP}] = LayerEdge
-		case callq.IsCorePath(tg):
-			t.layers[model.SeriesKey{Target: tg.Name, Kind: model.KindUDP}] = LayerCall
 		}
 	}
 	return t
 }
 
-// Observe implements model.Sink.
+// Observe implements model.Sink. A lost probe is kept as lost; only "not
+// measured" samples are left out.
 func (t *LoadTap) Observe(s model.Sample) {
 	layer, ok := t.layers[s.Key]
-	if !ok || s.Lost {
+	if !ok || (s.Lost && s.Reason == model.ReasonGap) {
 		return
 	}
 	now := t.now()
+	at := s.At
+	if at.IsZero() {
+		at = now
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cut := 0
 	for cut < len(t.buf) && now.Sub(t.buf[cut].at) > tapKeep {
 		cut++
 	}
-	t.buf = append(t.buf[cut:], tapSample{at: now, layer: layer, ms: float64(s.RTT) / float64(time.Millisecond)})
+	t.buf = append(t.buf[cut:], tapSample{at: at, layer: layer, s: loadSample{ms: float64(s.RTT) / float64(time.Millisecond), lost: s.Lost}})
 }
 
-// Median is the median RTT (ms) of layer's samples that arrived in
-// [from, to), and false when there are fewer than 3.
-func (t *LoadTap) Median(layer string, from, to time.Time) (float64, bool) {
+// Stats summarises layer's samples taken in [from, to) (see statsOf),
+// leaving out those during a test window or its MaskTail (w, may be nil):
+// a test just before is not idle. nil with fewer than 3.
+func (t *LoadTap) Stats(layer string, from, to time.Time, w *Windows) *model.LoadStats {
 	t.mu.Lock()
-	var v []float64
+	var v []loadSample
+	var at []time.Time
 	for _, x := range t.buf {
 		if x.layer == layer && !x.at.Before(from) && x.at.Before(to) {
-			v = append(v, x.ms)
+			v, at = append(v, x.s), append(at, x.at)
 		}
 	}
 	t.mu.Unlock()
-	if len(v) < 3 {
-		return 0, false
+	if w != nil {
+		k := 0
+		for i := range v {
+			if !w.Overlaps(at[i], at[i]) {
+				v[k] = v[i]
+				k++
+			}
+		}
+		v = v[:k]
 	}
-	return callq.Median(v), true
+	return statsOf(v)
 }

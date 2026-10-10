@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -115,13 +116,25 @@ type Options struct {
 	Interval time.Duration
 	// Extra regions: opt-in regions in mode regions, far regions in mode
 	// nearby (--speedtest=...,add=canada or far=us-west).
-	Extra    []string
-	Store    Store
-	Windows  *Windows // marked for every test (masking)
-	Load     *LoadTap // idle latency before a test (nil: none)
-	Prober   Prober   // latency under load during a test (nil: none)
-	Conn     func() string
-	Ping     func(ctx context.Context, host string) (time.Duration, error)
+	Extra   []string
+	Store   Store
+	Windows *Windows // marked for every test (masking)
+	Load    *LoadTap // idle latency before each test; nil: none
+	// Path returns the gateway and the ISP edge (netinfo); OpenPinger the
+	// ICMP pinger (probe.OpenPinger). With both, each direction of a test
+	// pings them every LoadEvery (latency under load, see load.go).
+	Path       func() (gateway, edge netip.Addr)
+	OpenPinger func() (LoadPinger, error)
+	// Conn returns the connection type (model.ConnWired, ...) of the
+	// interface tests use; nil: unknown.
+	Conn func() string
+	// Handoff returns where the path to host leaves the user's ISP
+	// (HandoffFinder.Handoff); nil: not recorded.
+	Handoff func(ctx context.Context, host string) (*model.Handoff, error)
+	// Ping returns the ICMP RTT to a host (probe.PingOnce); nil or failing:
+	// TCP connect time to port 80, 443, then the server's first iperf3 port.
+	Ping func(ctx context.Context, host string) (time.Duration, error)
+	// OnResult is called after every saved test (metrics).
 	OnResult func(model.SpeedTest)
 	Log      *slog.Logger
 	Now      func() time.Time
@@ -129,10 +142,11 @@ type Options struct {
 	Fake *Fake
 
 	// Tests: the iperf3 run, the RTT check, the sleep and the random source.
-	run   func(ctx context.Context, c Config) (Result, error)
-	rtt   func(ctx context.Context, host string, port int) (time.Duration, error)
-	sleep func(ctx context.Context, d time.Duration) bool
-	rand  *rand.Rand
+	run       func(ctx context.Context, c Config) (Result, error)
+	loadEvery time.Duration // default LoadEvery
+	rtt       func(ctx context.Context, host string, port int) (time.Duration, error)
+	sleep     func(ctx context.Context, d time.Duration) bool
+	rand      *rand.Rand
 }
 
 // Fake stands in for the network: Run for the iperf3 run, RTT for the
@@ -238,6 +252,9 @@ func New(o Options) *Scheduler {
 	}
 	if o.run == nil {
 		o.run = Run
+	}
+	if o.loadEvery <= 0 {
+		o.loadEvery = LoadEvery
 	}
 	if o.rtt == nil {
 		ping := o.Ping

@@ -59,10 +59,14 @@ type Finding struct {
 	Regions    []string `json:"regions"`   // region IDs involved
 	Providers  []string `json:"providers"` // provider names involved
 	Servers    []string `json:"servers"`   // server IDs involved (case server)
-	Drop       float64  `json:"drop"`
-	Up         bool     `json:"up"`   // about uploads
-	Days       int      `json:"days"` // days with scored scheduled tests
-	Tests      int      `json:"tests"`
+	// Network is the first network past the ISP that the slow tests share
+	// (case provider: e.g. "AS3356 LEVEL3"), from the tests' handoff
+	// traceroutes; "" when unknown or not shared. Local wording only.
+	Network string  `json:"network,omitempty"`
+	Drop    float64 `json:"drop"`
+	Up      bool    `json:"up"`   // about uploads
+	Days    int     `json:"days"` // days with scored scheduled tests
+	Tests   int     `json:"tests"`
 }
 
 // FindingInput is what the finding is computed from.
@@ -157,7 +161,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 	}
 	pooled := FindDip(HourMedians(noFallback, in.TZ, up), up)
 	regWith, regAll, regDips := dips(byRegion)
-	provWith, _, provDips := dips(byProvider)
+	provWith, provAll, provDips := dips(byProvider)
 	srvWith, _, srvDips := dips(byServer)
 	f.Up = up
 	set := func(c string, p *Pattern) {
@@ -175,7 +179,9 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 				provs = append(provs, p)
 			}
 		}
-		if len(regAll) > 0 && 2*len(regs) >= len(regAll) && len(provs) >= 2 {
+		// Every provider with enough data dips: one staying flat means the
+		// slowdown is on the way to the others, not in the ISP's network.
+		if len(regAll) > 0 && 2*len(regs) >= len(regAll) && len(provs) >= 2 && len(provs) == len(provAll) {
 			set(CaseISP, pooled)
 			f.Regions, f.Providers = regs, provs
 			return true
@@ -205,6 +211,34 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 			slices.Sort(regs)
 			set(CaseProvider, provDips[p])
 			f.Providers, f.Regions = []string{p}, regs
+			f.Network = sharedHandoff(byProvider[p])
+			return true
+		}
+	}
+	// One network past the ISP (the handoff) in ≥ 2 regions and of ≥ 2
+	// providers, the networks flat at those hours.
+	byNet := map[string][]model.SpeedTest{}
+	for _, t := range noFallback {
+		if k := handoffKey(t); k != "" {
+			byNet[k] = append(byNet[k], t)
+		}
+	}
+	if netWith, netAll, netDips := dips(byNet); len(netWith) == 1 && len(netAll) >= 2 {
+		k := netWith[0]
+		regs, provs := []string{}, []string{}
+		for _, t := range byNet[k] {
+			if t.Region != "" && !slices.Contains(regs, t.Region) {
+				regs = append(regs, t.Region)
+			}
+			if p := providerOf(in.Catalog, t.Server); !slices.Contains(provs, p) {
+				provs = append(provs, p)
+			}
+		}
+		if len(regs) >= 2 && len(provs) >= 2 {
+			slices.Sort(regs)
+			slices.Sort(provs)
+			set(CaseProvider, netDips[k])
+			f.Providers, f.Regions, f.Network = provs, regs, k
 			return true
 		}
 	}
@@ -243,6 +277,36 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 	return false
 }
 
+// handoffKey names a test's handoff network ("AS3356 LEVEL3"); "" unknown.
+func handoffKey(t model.SpeedTest) string {
+	h := t.Handoff
+	if h == nil || h.ASN == 0 {
+		return ""
+	}
+	if h.Name == "" {
+		return fmt.Sprintf("AS%d", h.ASN)
+	}
+	return fmt.Sprintf("AS%d %s", h.ASN, h.Name)
+}
+
+// sharedHandoff is the handoff network of most of ts (≥ 80%), else "".
+func sharedHandoff(ts []model.SpeedTest) string {
+	n := map[string]int{}
+	known := 0
+	for _, t := range ts {
+		if k := handoffKey(t); k != "" {
+			n[k]++
+			known++
+		}
+	}
+	for k, c := range n {
+		if known > 0 && c*5 >= known*4 {
+			return k
+		}
+	}
+	return ""
+}
+
 func countValid(v [24]float64) int {
 	n := 0
 	for _, x := range v {
@@ -278,18 +342,17 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		minTests, minProv = min(minTests, n), min(minProv, len(provs))
 	}
 	for _, t := range tests {
-		x := ParseExtra(t.Extra)
-		switch x.Connection {
-		case "wifi":
+		switch t.Conn {
+		case model.ConnWiFi:
 			connWifi++
-		case "wired":
+		case model.ConnWired:
 			connWired++
 		}
-		if slices.Contains(f.Hours, t.Start.Add(in.TZ).UTC().Hour()) {
-			g, e := x.Latency[LayerGateway], x.Latency[LayerEdge]
-			if g.IdleMs != nil && g.Down != nil && e.IdleMs != nil && e.Down != nil {
-				gwRise = append(gwRise, g.Down.P50-*g.IdleMs)
-				edgeRise = append(edgeRise, e.Down.P50-*e.IdleMs)
+		if l := t.Latency; l != nil && slices.Contains(f.Hours, t.Start.Add(in.TZ).UTC().Hour()) {
+			g, e := l.Gateway, l.Edge
+			if g.Idle != nil && g.Down != nil && e.Idle != nil && e.Down != nil {
+				gwRise = append(gwRise, g.Down.P50Ms-g.Idle.P50Ms)
+				edgeRise = append(edgeRise, e.Down.P50Ms-e.Idle.P50Ms)
 			}
 		}
 	}
@@ -336,8 +399,23 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		for _, r := range f.Regions {
 			regs = append(regs, region(r))
 		}
+		if len(f.Providers) > 1 { // grouped by the network past the ISP
+			claim = fmt.Sprintf("Only servers reached through one network (%s; %s) %s from about %s; the others stay normal.",
+				joinAnd(f.Providers), joinAnd(regs), slowVerb(f.Up), when)
+			who = "the link between your internet provider and " + f.Network
+			f.Text = claim + " " + tierTail(f.Tier, who)
+			f.TextPublic = claim + " " + tierTail(f.Tier, "the link between the internet provider and that network")
+			f.evidence(minTests, minProv)
+			return
+		}
 		claim = fmt.Sprintf("Only %s servers %s from about %s (%s); other providers stay normal.", f.Providers[0], slowVerb(f.Up), when, joinAnd(regs))
 		who = "the link between your internet provider and " + f.Providers[0]
+		if f.Network != "" {
+			f.Text = claim + " " + tierTail(f.Tier, who+" (reached through "+f.Network+")")
+			f.TextPublic = claim + " " + tierTail(f.Tier, "the link between the internet provider and "+f.Providers[0])
+			f.evidence(minTests, minProv)
+			return
+		}
 	case CaseRoute:
 		claim = fmt.Sprintf("Only tests to %s %s, from about %s, whichever provider.", region(f.Regions[0]), slowVerb(f.Up), when)
 		who = "the long-distance route to " + region(f.Regions[0])
@@ -352,18 +430,20 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		f.evidence(minTests, minProv)
 		return
 	}
-	var tail string
-	switch f.Tier {
-	case TierPointsTo:
-		tail = "That points to " + who + "."
-	case TierMostLikely:
-		tail = "So it's most likely " + who + "."
-	default:
-		tail = "It may be " + who + ". We'll know more in a few days."
-	}
-	f.Text = claim + " " + tail
+	f.Text = claim + " " + tierTail(f.Tier, who)
 	f.TextPublic = strings.NewReplacer("your internet provider", "the internet provider", "your connection", "the connection", "Your provider's", "The provider's").Replace(f.Text)
 	f.evidence(minTests, minProv)
+}
+
+// tierTail is the closing sentence: who, as sure as the tier allows.
+func tierTail(tier, who string) string {
+	switch tier {
+	case TierPointsTo:
+		return "That points to " + who + "."
+	case TierMostLikely:
+		return "So it's most likely " + who + "."
+	}
+	return "It may be " + who + ". We'll know more in a few days."
 }
 
 func (f *Finding) evidence(minTests, minProv int) {
@@ -389,6 +469,8 @@ func slowVerb1(up bool) string {
 
 // edgeControl reads the ISP edge's idle RTT in the dip hours against the
 // other hours: rising, the slowdown is in the provider's local network.
+// It only supports the cross-destination comparison: a flat edge says
+// nothing on lines with active queue management (fq_codel, CAKE).
 func edgeControl(edge [24]float64, hours []int) string {
 	var in, out []float64
 	for h, v := range edge {
@@ -408,7 +490,9 @@ func edgeControl(edge [24]float64, hours []int) string {
 	if a-b >= max(2, 0.3*b) {
 		return fmt.Sprintf("Your provider's first router also answers slower then (%.0f ms instead of %.0f ms), so it's in its local network.", a, b)
 	}
-	return "Your provider's first router answers as usual then, so it's further into its network or its links out."
+	// Flat proves nothing: a line with active queue management keeps its
+	// delay flat while congested.
+	return ""
 }
 
 // hoursText is "8 to 11 pm" for local hours [first, last+1).

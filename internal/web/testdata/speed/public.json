@@ -129,6 +129,7 @@
   }
  ],
  "days": 7,
+ "edge_hours": null,
  "enabled": true,
  "exclude_fallback": false,
  "extra": [],
@@ -164,7 +165,7 @@
   "bytes": 146800640,
   "capped_by_server": false,
   "city": "New York",
-  "connection": "wired",
+  "conn": "wired",
   "display": "US East · Leaseweb, New York",
   "down_bps": 141000000,
   "down_retrans": 8,
@@ -179,32 +180,48 @@
   "latency": {
    "edge": {
     "down": {
+     "loss": 0.033,
      "lost": 1,
+     "n": 30,
      "p50_ms": 21,
-     "p90_ms": 34,
-     "sent": 30
+     "p95_ms": 34
     },
-    "idle_ms": 8.2,
-    "up": {
+    "idle": {
+     "loss": 0,
      "lost": 0,
+     "n": 40,
+     "p50_ms": 8.2,
+     "p95_ms": 9.9
+    },
+    "up": {
+     "loss": 0,
+     "lost": 0,
+     "n": 25,
      "p50_ms": 48,
-     "p90_ms": 90,
-     "sent": 25
+     "p95_ms": 90
     }
    },
    "gateway": {
     "down": {
+     "loss": 0,
      "lost": 0,
+     "n": 30,
      "p50_ms": 1.4,
-     "p90_ms": 2,
-     "sent": 30
+     "p95_ms": 2
     },
-    "idle_ms": 1.1,
-    "up": {
+    "idle": {
+     "loss": 0,
      "lost": 0,
+     "n": 40,
+     "p50_ms": 1.1,
+     "p95_ms": 1.9
+    },
+    "up": {
+     "loss": 0,
+     "lost": 0,
+     "n": 25,
      "p50_ms": 1.5,
-     "p90_ms": 2.2,
-     "sent": 25
+     "p95_ms": 2.2
     }
    }
   },

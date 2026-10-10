@@ -6,7 +6,6 @@ import (
 	"errors"
 	"math"
 	"net"
-	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
@@ -16,47 +15,9 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// Latency under load: during each direction a Prober pings the ISP edge
-// (the first hop on the ISP's side: its queues are where bufferbloat
-// lives) and the gateway (the home network: Wi-Fi, the router) every
-// 150 ms, so each direction gets dozens of samples. A probe that times
-// out counts as lost and as the timeout in the percentiles: dropping it
-// would understate the delay.
-
-// Prober measures latency under load during a test.
-type Prober interface {
-	// Start probes until the run is stopped; Phase sets the direction the
-	// following samples belong to ("" between directions).
-	Start(ctx context.Context) ProbeRun
-}
-
-// ProbeRun is one test's probing.
-type ProbeRun interface {
-	Phase(dir string)
-	Stop() map[string]Loaded // by layer (LayerEdge, LayerGateway)
-}
-
-// Loaded is one layer's latency around a test. Milliseconds.
-type Loaded struct {
-	IdleMs *float64   `json:"idle_ms"`
-	Down   *LoadedDir `json:"down,omitempty"`
-	Up     *LoadedDir `json:"up,omitempty"`
-}
-
-// LoadedDir is one direction's samples: percentiles with lost probes at
-// the timeout, and the counts.
-type LoadedDir struct {
-	P50  float64 `json:"p50_ms"`
-	P90  float64 `json:"p90_ms"`
-	Sent int     `json:"sent"`
-	Lost int     `json:"lost"`
-}
-
 // Extra is a test's further measurements, stored as JSON.
 type Extra struct {
-	Connection string            `json:"connection,omitempty"` // wired, wifi or unknown
-	Latency    map[string]Loaded `json:"latency,omitempty"`    // by layer: edge, gateway
-	RampMs     [2]float64        `json:"ramp_ms"`              // down, up
+	RampMs [2]float64 `json:"ramp_ms"` // down, up: the ramp-up left out
 }
 
 // ParseExtra reads a test's Extra ("" gives the zero value).
@@ -64,120 +25,6 @@ func ParseExtra(s string) Extra {
 	var x Extra
 	_ = json.Unmarshal([]byte(s), &x)
 	return x
-}
-
-// LayerEdge is the ISP edge layer of latency under load.
-const LayerEdge = "edge"
-
-// FastProber pings Targets' addresses every Interval during a test.
-type FastProber struct {
-	Targets  func() map[string]netip.Addr // by layer; invalid addresses are skipped
-	Ping     func(ctx context.Context, dst netip.Addr, timeout time.Duration) (time.Duration, error)
-	Interval time.Duration // default 150 ms
-	Timeout  time.Duration // default 1 s
-}
-
-type fastRun struct {
-	p      *FastProber
-	cancel func()
-	wg     sync.WaitGroup
-	mu     sync.Mutex
-	dir    string
-	rtts   map[string]map[string][]float64 // layer -> dir -> ms (lost = timeout)
-	sent   map[string]map[string]int
-	lost   map[string]map[string]int
-}
-
-// Start implements Prober.
-func (p *FastProber) Start(ctx context.Context) ProbeRun {
-	iv, to := p.Interval, p.Timeout
-	if iv <= 0 {
-		iv = 150 * time.Millisecond
-	}
-	if to <= 0 {
-		to = time.Second
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	r := &fastRun{p: p, cancel: cancel, rtts: map[string]map[string][]float64{}, sent: map[string]map[string]int{}, lost: map[string]map[string]int{}}
-	targets := p.Targets()
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
-		tk := time.NewTicker(iv)
-		defer tk.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tk.C:
-			}
-			r.mu.Lock()
-			dir := r.dir
-			r.mu.Unlock()
-			if dir == "" {
-				continue
-			}
-			for layer, a := range targets {
-				if !a.IsValid() {
-					continue
-				}
-				r.wg.Add(1)
-				go func() {
-					defer r.wg.Done()
-					rtt, err := p.Ping(ctx, a, to)
-					if ctx.Err() != nil {
-						return // stopped: neither sent nor lost
-					}
-					r.mu.Lock()
-					defer r.mu.Unlock()
-					add := func(m map[string]map[string]int) {
-						if m[layer] == nil {
-							m[layer] = map[string]int{}
-						}
-						m[layer][dir]++
-					}
-					add(r.sent)
-					ms := float64(rtt) / float64(time.Millisecond)
-					if err != nil {
-						add(r.lost)
-						ms = float64(to) / float64(time.Millisecond)
-					}
-					if r.rtts[layer] == nil {
-						r.rtts[layer] = map[string][]float64{}
-					}
-					r.rtts[layer][dir] = append(r.rtts[layer][dir], ms)
-				}()
-			}
-		}
-	}()
-	return r
-}
-
-func (r *fastRun) Phase(dir string) {
-	r.mu.Lock()
-	r.dir = dir
-	r.mu.Unlock()
-}
-
-func (r *fastRun) Stop() map[string]Loaded {
-	r.cancel()
-	r.wg.Wait()
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := map[string]Loaded{}
-	for layer, byDir := range r.rtts {
-		var l Loaded
-		for dir, v := range byDir {
-			d := &LoadedDir{P50: round2(callq.Quantile(v, 0.5)), P90: round2(callq.Quantile(v, 0.9)), Sent: r.sent[layer][dir], Lost: r.lost[layer][dir]}
-			if dir == Download.String() {
-				l.Down = d
-			} else {
-				l.Up = d
-			}
-		}
-		out[layer] = l
-	}
-	return out
 }
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
@@ -312,62 +159,79 @@ func (s *Scheduler) runSteps(ctx context.Context, e *Entry, region string, steps
 	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
 	var x Extra
+	t.Conn = model.ConnUnknown
 	if s.o.Conn != nil {
-		x.Connection = s.o.Conn()
+		t.Conn = s.o.Conn()
 	}
-	var probe ProbeRun
-	if s.o.Prober != nil {
-		probe = s.o.Prober.Start(sctx)
+	lr := s.loadRun()
+	if lr != nil {
+		defer lr.p.Close()
 	}
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)
+	var used Server
 	for i, st := range steps {
 		if i > 0 && s.o.Now().Sub(t.Start) >= SlotBudget {
 			break
 		}
-		t.Server, t.FallbackLevel, t.Fallback, t.Port = st.Server.ID, st.Level, st.Level != FallbackNone, 0
-		s.testServer(sctx, e, st.Server, &t, &x, probe)
+		t.Server, t.FallbackLevel, t.Fallback, t.Port, used = st.Server.ID, st.Level, st.Level != FallbackNone, 0, st.Server
+		s.testServer(sctx, e, st.Server, &t, &x, lr)
 		if t.Outcome == model.SpeedOK || t.DownBps != nil || sctx.Err() != nil {
 			break // measured (a failed upload keeps the download), or out of time
 		}
 	}
 	t.End = s.o.Now()
 	win := s.o.Windows.End(t.End)
-	var lat map[string]Loaded
-	if probe != nil {
-		lat = probe.Stop()
-	}
 	if ctx.Err() != nil {
 		return nil // cancelled or shutting down: not a result
 	}
-	if l := s.o.Load; l != nil {
-		for _, layer := range []string{LayerEdge, LayerGateway} {
-			if v, ok := l.Median(layer, win.Start.Add(-idleWindow), win.Start); ok {
-				ll := lat[layer]
-				ll.IdleMs = &v
-				if lat == nil {
-					lat = map[string]Loaded{}
-				}
-				lat[layer] = ll
+	if t.Latency = latency(s.o.Load, s.o.Windows, lr, win.Start); t.Latency != nil {
+		g := t.Latency.Gateway
+		if g.Idle != nil {
+			t.IdleGatewayMs = &g.Idle.P50Ms
+		}
+		for _, x := range []*model.LoadStats{g.Down, g.Up} {
+			if x != nil && (t.LoadedGatewayMs == nil || x.P50Ms > *t.LoadedGatewayMs) {
+				t.LoadedGatewayMs = &x.P50Ms
 			}
 		}
 	}
-	if len(lat) > 0 {
-		x.Latency = lat
-		if g, ok := lat[LayerGateway]; ok {
-			t.IdleGatewayMs = g.IdleMs
-			if g.Down != nil && g.Up != nil {
-				v := max(g.Down.P50, g.Up.P50)
-				t.LoadedGatewayMs = &v
-			}
+	if s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && used.Host != "" {
+		hctx, cancel := context.WithTimeout(ctx, handoffBudget)
+		h, err := s.o.Handoff(hctx, used.Host)
+		cancel()
+		if err != nil {
+			s.o.Log.Debug("speed test: handoff traceroute failed", "server", used.ID, "err", err)
 		}
+		t.Handoff = h
 	}
 	s.save(ctx, &t, x)
 	return &t
 }
 
+// handoffBudget bounds one handoff traceroute (after the test's window).
+const handoffBudget = 10 * time.Second
+
+// loadRun opens the pinger for one test's latency under load; nil without
+// Path or OpenPinger, or when neither address is known.
+func (s *Scheduler) loadRun() *loadRun {
+	if s.o.Path == nil || s.o.OpenPinger == nil {
+		return nil
+	}
+	gw, edge := s.o.Path()
+	if !gw.IsValid() && !edge.IsValid() {
+		return nil
+	}
+	p, err := s.o.OpenPinger()
+	if err != nil {
+		s.o.Log.Debug("speed test: no ICMP for latency under load", "err", err)
+		return nil
+	}
+	return &loadRun{p: p, gw: gw, edge: edge, every: s.o.loadEvery}
+}
+
 func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest, x Extra) {
-	if b, err := json.Marshal(x); err == nil && string(b) != `{"ramp_ms":[0,0]}` {
+	if b, err := json.Marshal(x); err == nil && x != (Extra{}) {
 		t.Extra = string(b)
 	}
 	if sv, ok := s.server(t.Server); ok && sv.CapacityMbps > 0 {
@@ -454,7 +318,8 @@ func (s *Scheduler) score(ctx context.Context, t *model.SpeedTest) {
 }
 
 // testServer runs download then upload against sv.
-func (s *Scheduler) testServer(ctx context.Context, e *Entry, sv Server, t *model.SpeedTest, x *Extra, probe ProbeRun) {
+// It probes latency under load during each direction (lr nil: none).
+func (s *Scheduler) testServer(ctx context.Context, e *Entry, sv Server, t *model.SpeedTest, x *Extra, lr *loadRun) {
 	port := 0
 	for i, dir := range []Direction{Download, Upload} {
 		s.q.update(e, func(e *Entry) {
@@ -470,12 +335,17 @@ func (s *Scheduler) testServer(ctx context.Context, e *Entry, sv Server, t *mode
 			t.Outcome = model.SpeedFailed
 			return
 		}
-		if probe != nil {
-			probe.Phase(dir.String())
+		var stop func() [2][]loadSample
+		if lr != nil {
+			stop = lr.probe(ctx)
 		}
 		res, p, attempts, outcome := s.direction(ctx, sv, dir, port, t.Start)
-		if probe != nil {
-			probe.Phase("")
+		if stop != nil {
+			if smp := stop(); dir == Download {
+				lr.down = smp
+			} else {
+				lr.up = smp
+			}
 		}
 		t.Attempts += attempts
 		if p != 0 {

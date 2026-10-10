@@ -207,7 +207,13 @@ CREATE TABLE speedtests(
 	down_retrans    INT,
 	up_retrans      INT,
 	idle_gw_ms      REAL,
-	loaded_gw_ms    REAL
+	loaded_gw_ms    REAL,
+	latency_json    TEXT,
+	conn            TEXT NOT NULL DEFAULT '',
+	handoff_asn     INT,
+	handoff_name    TEXT,
+	isp_asn         INT,
+	handoff_ms      INT
 );
 CREATE INDEX speedtests_start ON speedtests(start_ms);
 `,

@@ -352,8 +352,8 @@ Please don't run modes more often than every 15 minutes against these servers. F
 - TCP retransmits;
 - the region, the server, and the fallback level (`none`, `same_metro` or `nearby_city`);
 - whether the server's own link was the limit (a result within 10% of its published capacity);
-- **latency under load**: the round-trip time to your provider's first router and to your own router before the test and every 150 ms during each direction, with lost probes counted. A big jump is bufferbloat, the reason calls break while someone uploads;
-- whether you were on Wi-Fi or wired, where the system tells.
+- **latency under load**: the round-trip time to your ISP's first router (behind your line's queue) and to your own router, in the 2 minutes before the test and during its download and upload, pinged every 150 ms; lost pings count. A big jump at the ISP's router is bufferbloat, the reason calls break while someone uploads; a jump at your own router is your home network (often Wi-Fi).
+- **connection type** (wired or Wi-Fi, Linux) and, locally, **the first network past your ISP** on the way to each server (a traceroute at most once a day per server).
 
 Details → Speed shows:
 - what the slowdown points to: your provider's network (every region and provider dips together, checked against your provider's first router), the link to one provider, one long-distance route, or one server's own busy hours, with the evidence and how sure it is;

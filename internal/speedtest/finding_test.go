@@ -55,9 +55,8 @@ func synth(c *Catalog, days int, score func(server string, h int) float64, conn 
 				sv := r.Chain(c, at, 0)[0].Server.ID
 				sc := score(sv, h)
 				down, up := sc*400e6, 40e6
-				x := `{"connection":"` + conn + `"}`
 				out = append(out, model.SpeedTest{Start: at, Trigger: "schedule", Outcome: model.SpeedOK, Region: r.ID, Server: sv,
-					FallbackLevel: FallbackNone, DownBps: &down, UpBps: &up, ScoreDown: &sc, Extra: x})
+					FallbackLevel: FallbackNone, DownBps: &down, UpBps: &up, ScoreDown: &sc, Conn: conn})
 			}
 		}
 	}
@@ -145,6 +144,25 @@ func TestFinding(t *testing.T) {
 			t.Errorf("%s: no Wi-Fi caveat", tc.name)
 		}
 	}
+	// Providers A and C reached through one network past the ISP, B
+	// through another: A and C dip, B stays flat.
+	ts := synth(c, 9, func(sv string, h int) float64 {
+		if evening(h) && sv[0] != 'B' {
+			return 0.5
+		}
+		return 1
+	}, "wired")
+	for i := range ts {
+		h := &model.Handoff{ASN: 3356, Name: "LEVEL3", ISPASN: 3320}
+		if ts[i].Server[0] == 'B' {
+			h = &model.Handoff{ASN: 174, Name: "COGENT-174", ISPASN: 3320}
+		}
+		ts[i].Handoff = h
+	}
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseProvider || f.Network != "AS3356 LEVEL3" || len(f.Providers) != 2 ||
+		!strings.Contains(f.Text, "the link between your internet provider and AS3356 LEVEL3") || strings.Contains(f.TextPublic, "LEVEL3") {
+		t.Errorf("handoff: %s %q %v: %s / %s", f.Case, f.Network, f.Providers, f.Text, f.TextPublic)
+	}
 	// The ISP case's evidence line.
 	f := FindFinding(FindingInput{Tests: synth(c, 9, func(_ string, h int) float64 {
 		if evening(h) {
@@ -156,7 +174,7 @@ func TestFinding(t *testing.T) {
 		t.Errorf("evidence %q hours %v", f.Evidence, f.Hours)
 	}
 	// Manual tests and sweeps never count.
-	ts := synth(c, 9, func(string, int) float64 { return 1 }, "wired")
+	ts = synth(c, 9, func(string, int) float64 { return 1 }, "wired")
 	for i := range ts {
 		if evening(ts[i].Start.Hour()) {
 			ts[i].Trigger = "manual"

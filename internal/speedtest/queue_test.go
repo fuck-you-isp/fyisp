@@ -3,8 +3,6 @@ package speedtest
 import (
 	"context"
 	"errors"
-	"net/netip"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -214,38 +212,5 @@ func TestMask(t *testing.T) {
 	}
 	if sh := w.Share(t0.Add(time.Minute), 5*time.Minute); sh < 21.9/300 || sh > 22.1/300 {
 		t.Errorf("share %v", sh)
-	}
-}
-
-// TestFastProber: samples per direction, lost probes counted and at the
-// timeout in the percentiles.
-func TestFastProber(t *testing.T) {
-	edge, gw := netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("192.168.1.1")
-	var n atomic.Int64
-	p := &FastProber{Interval: 5 * time.Millisecond, Timeout: 50 * time.Millisecond,
-		Targets: func() map[string]netip.Addr { return map[string]netip.Addr{LayerEdge: edge, LayerGateway: gw} },
-		Ping: func(ctx context.Context, dst netip.Addr, to time.Duration) (time.Duration, error) {
-			if dst == edge {
-				if n.Add(1)%4 == 0 {
-					return 0, errors.New("timeout")
-				}
-				return 20 * time.Millisecond, nil
-			}
-			return time.Millisecond, nil
-		}}
-	r := p.Start(context.Background())
-	r.Phase(Download.String())
-	time.Sleep(150 * time.Millisecond)
-	r.Phase("")
-	time.Sleep(30 * time.Millisecond)
-	r.Phase(Upload.String())
-	time.Sleep(100 * time.Millisecond)
-	out := r.Stop()
-	e := out[LayerEdge]
-	if e.Down == nil || e.Up == nil || e.Down.Sent < 10 || e.Down.Lost == 0 || e.Down.P50 != 20 || e.Down.P90 != 50 {
-		t.Errorf("edge %+v %+v", e.Down, e.Up)
-	}
-	if g := out[LayerGateway]; g.Down == nil || g.Down.P50 != 1 || g.Down.Lost != 0 {
-		t.Errorf("gateway %+v", g.Down)
 	}
 }

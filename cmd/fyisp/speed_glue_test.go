@@ -8,6 +8,7 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/metrics"
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
@@ -51,16 +52,16 @@ func TestSpeedFlags(t *testing.T) {
 	}
 	// The scheduler is always there (Details choice, Test now, sweeps).
 	cfg, _ := parseFlags([]string{"--speedtest=regions,every=2h"})
-	s, tap, w, done, err := newSpeed(cfg, nil, nil, newTestCollector(), nil, nil)
+	noPath := func() netinfo.Path { return netinfo.Path{} }
+	s, tap, w, err := newSpeed(cfg, nil, nil, newTestCollector(), noPath, nil)
 	if err != nil || tap == nil || w == nil {
 		t.Fatal(err)
 	}
-	done()
 	if st := s.State(); len(st.Servers) != 45 || len(st.Regions) != 19 || len(st.Custom) != 0 || s.SweepSize() != 45 {
 		t.Errorf("%d servers, %d regions", len(st.Servers), len(st.Regions))
 	}
 	cfg, _ = parseFlags([]string{"--speedtest-server", "iperf.example.net:5201"})
-	s, _, _, _, _ = newSpeed(cfg, nil, nil, newTestCollector(), nil, nil)
+	s, _, _, _ = newSpeed(cfg, nil, nil, newTestCollector(), noPath, nil)
 	if st := s.State(); len(st.Custom) != 1 || len(st.Servers) != 46 || len(st.Modes) != 4 {
 		t.Errorf("custom: %+v", st.Custom)
 	}

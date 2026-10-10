@@ -109,13 +109,12 @@ func checkSpeedFlags(c *config) error {
 }
 
 // newSpeed sets up the speed tests: the scheduler (always present, so the
-// Details choice, Test now and sweeps work; it schedules only when a mode
-// is on), the load tap and the windows the mask uses. path is the network
-// path (gateway, ISP edge, interface); nil: no latency under load.
-func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, func(), error) {
+// Details choice and Test now work; it only tests when a mode is on), the
+// load tap and the windows the mask uses.
+func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, error) {
 	cat, err := speedtest.Builtin()
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("speed test catalog: %w", err)
+		return nil, nil, nil, fmt.Errorf("speed test catalog: %w", err)
 	}
 	o := speedtest.Options{Catalog: cat, Mode: c.speed.mode, Interval: c.speed.every, Extra: c.speed.extra, Store: st,
 		Windows: &speedtest.Windows{}, Log: log,
@@ -124,27 +123,21 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 		}}
 	if c.speedServer != "" {
 		if o.Custom, err = speedtest.Custom(c.speedServer, cat); err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	o.Load = speedtest.NewLoadTap(prof, nil)
-	closer := func() {}
-	if path != nil {
-		o.Conn = func() string { return netinfo.LinkType(path().Iface) }
-		if pg, err := probe.OpenPinger(); err == nil {
-			closer = func() { _ = pg.Close() }
-			o.Prober = &speedtest.FastProber{Ping: pg.Ping, Targets: func() map[string]netip.Addr {
-				p := path()
-				return map[string]netip.Addr{speedtest.LayerEdge: p.Edge, speedtest.LayerGateway: p.Gateway}
-			}}
-		} else if log != nil {
-			log.Info("speed tests: no ICMP socket; latency under load is not measured", "err", err)
-		}
-	}
+	// Latency under load (ISP edge and gateway), the connection type and
+	// the handoff network, from the network path.
+	o.Path = func() (netip.Addr, netip.Addr) { p := path(); return p.Gateway, p.Edge }
+	o.OpenPinger = func() (speedtest.LoadPinger, error) { return probe.OpenPinger() }
+	o.Conn = func() string { return netinfo.ConnType(path().Iface) }
+	hf := &speedtest.HandoffFinder{Edge: func() netip.Addr { return path().Edge }}
+	o.Handoff = hf.Handoff
 	sm := metrics.NewSpeed()
 	mc.Register(sm)
 	o.OnResult = sm.Observe
-	return speedtest.New(o), o.Load, o.Windows, closer, nil
+	return speedtest.New(o), o.Load, o.Windows, nil
 }
 
 // maskedTrace blanks trace hop samples taken during a speed test, like

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"log/slog"
+	"math"
 	"math/rand/v2"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +47,13 @@ func newFakeSpeed(ctx context.Context, now time.Time, bf time.Duration, log *slo
 	s := speedtest.New(speedtest.Options{Catalog: cat, Store: st, Log: log, Fake: &speedtest.Fake{Run: n.run, RTT: n.rtt}})
 	go func() { _ = s.Run(ctx) }()
 	return s
+}
+
+// handoffs: the network each provider is reached through from the fake
+// vantage point.
+var handoffs = map[string]model.Handoff{
+	"Leaseweb": {ASN: 3356, Name: "LEVEL3", ISPASN: 3320}, "Clouvider": {ASN: 174, Name: "COGENT-174", ISPASN: 3320},
+	"InterServer": {ASN: 174, Name: "COGENT-174", ISPASN: 3320}, "OVH": {ASN: 16276, Name: "OVH", ISPASN: 3320},
 }
 
 // fakeNet fakes the network: speeds and RTTs by the server's area.
@@ -115,18 +122,21 @@ func (n *fakeNet) result(at time.Time, reg speedtest.Region, chain []speedtest.S
 	t.DownShort = down*t.DownSecs/8 > speedtest.MaxBytes
 	t.CappedByServer = sv.CapacityMbps > 0 && down >= 0.9*sv.CapacityMbps*1e6
 	t.IdleGatewayMs, t.LoadedGatewayMs = pf(1+n.float()), pf(1.5+n.float())
-	edgeDown, edgeUp := 10+15*n.float(), 25+50*n.float()
-	lost := 0
-	if n.float() < 0.2 {
-		lost = 1 + int(n.float()*3)
+	ls := func(p50, spread, loss float64) *model.LoadStats {
+		return &model.LoadStats{N: 60, Lost: int(loss * 60), Loss: math.Round(loss*1000) / 1000, P50Ms: math.Round(p50*10) / 10, P95Ms: math.Round((p50+spread)*10) / 10}
 	}
-	t.Extra = `{"connection":"wired","latency":{"edge":{"idle_ms":8,"down":{"p50_ms":` + f1(edgeDown) + `,"p90_ms":` + f1(edgeDown*1.6) +
-		`,"sent":30,"lost":` + f1(float64(lost)) + `},"up":{"p50_ms":` + f1(edgeUp) + `,"p90_ms":` + f1(edgeUp*1.5) + `,"sent":27,"lost":0}},` +
-		`"gateway":{"idle_ms":1.2,"down":{"p50_ms":1.6,"p90_ms":2.5,"sent":30,"lost":0},"up":{"p50_ms":1.8,"p90_ms":3,"sent":27,"lost":0}}},"ramp_ms":[700,500]}`
+	t.Latency = &model.SpeedLatency{
+		Edge:    model.LoadPhases{Idle: ls(8+2*n.float(), 3, 0), Down: ls(20+30*n.float(), 40, 0), Up: ls(60+120*n.float(), 150, 0.05*n.float())},
+		Gateway: model.LoadPhases{Idle: ls(1+n.float(), 1, 0), Down: ls(2+3*n.float(), 4, 0), Up: ls(2+3*n.float(), 4, 0)},
+	}
+	t.Conn = model.ConnWired
+	if h, ok := handoffs[sv.Provider]; ok {
+		h.At = at
+		t.Handoff = &h
+	}
+	t.Extra = `{"ramp_ms":[700,500]}`
 	return t
 }
-
-func f1(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 
 // run fakes one direction: about 4 s at the area's speed.
 func (n *fakeNet) run(ctx context.Context, c speedtest.Config) (speedtest.Result, error) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -134,6 +135,12 @@ func (h *harness) entry(t *testing.T, e *Entry) []model.SpeedTest {
 }
 
 // slot runs the scheduled slot of a region or server.
+// region runs one scheduled slot of region id.
+func (h *harness) region(t *testing.T, id string) model.SpeedTest {
+	t.Helper()
+	return h.slot(t, target{region: id})
+}
+
 func (h *harness) slot(t *testing.T, tg target) model.SpeedTest {
 	t.Helper()
 	if tg.region == "" && tg.server == "" {
@@ -421,6 +428,127 @@ func TestScore(t *testing.T) {
 	}
 }
 
+// fakePinger answers from reply (lost: an error at once).
+type fakePinger struct {
+	mu    sync.Mutex
+	reply func(dst netip.Addr) (time.Duration, bool)
+	n     map[netip.Addr]int
+}
+
+func (f *fakePinger) Ping(_ context.Context, dst netip.Addr, _ time.Duration) (time.Duration, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.n == nil {
+		f.n = map[netip.Addr]int{}
+	}
+	f.n[dst]++
+	rtt, ok := f.reply(dst)
+	if !ok {
+		return 0, errors.New("timeout")
+	}
+	return rtt, nil
+}
+
+func (f *fakePinger) Close() error { return nil }
+
+// Latency under load: idle from the tap (lost probes kept), loaded from the
+// test's own probes of the gateway and the ISP edge per direction; lost
+// probes count as loss and as LoadTimeout in the percentiles.
+func TestLatencyUnderLoad(t *testing.T) {
+	gwA, edgeA := netip.MustParseAddr("192.168.1.1"), netip.MustParseAddr("62.1.1.1")
+	p := &model.Profile{Targets: []model.Target{
+		{Name: "Gateway", Layer: model.LayerGateway, Kinds: []model.ProbeKind{model.KindICMP}},
+		{Name: "ISP edge", Layer: model.LayerEdge, Kinds: []model.ProbeKind{model.KindICMP}},
+	}}
+	h := newHarness(t, Options{})
+	tap := NewLoadTap(p, h.clock)
+	fp := &fakePinger{}
+	h.s.o.Load, h.s.o.loadEvery = tap, 2*time.Millisecond
+	h.s.o.Path = func() (netip.Addr, netip.Addr) { return gwA, edgeA }
+	h.s.o.OpenPinger = func() (LoadPinger, error) { return fp, nil }
+	h.s.o.Conn = func() string { return model.ConnWired }
+	gw := model.SeriesKey{Target: "Gateway", Kind: model.KindICMP}
+	edge := model.SeriesKey{Target: "ISP edge", Kind: model.KindICMP}
+	feed := func(k model.SeriesKey, ms float64, n int, lost bool) {
+		for range n {
+			s := model.Sample{Key: k, RTT: time.Duration(ms * float64(time.Millisecond))}
+			if lost {
+				s = model.Sample{Key: k, Lost: true, Reason: model.ReasonTimeout}
+			}
+			tap.Observe(s)
+		}
+	}
+	h.mu.Lock()
+	h.now = h.now.Add(-30 * time.Second)
+	h.mu.Unlock()
+	feed(gw, 2, 10, false)
+	feed(edge, 8, 8, false)
+	feed(edge, 0, 2, true)
+	tap.Observe(model.Sample{Key: edge, Lost: true, Reason: model.ReasonGap}) // not measured: left out
+	var dir Direction
+	var upN int
+	fp.reply = func(dst netip.Addr) (time.Duration, bool) {
+		switch {
+		case dst == gwA:
+			return 3 * time.Millisecond, true
+		case dir == Download:
+			return 30 * time.Millisecond, true
+		}
+		upN++ // under fp.mu
+		return 200 * time.Millisecond, upN%2 == 0
+	}
+	h.mu.Lock()
+	h.now = h.now.Add(30 * time.Second)
+	h.run = func(c Config, n int) (Result, error) {
+		fp.mu.Lock()
+		dir = c.Direction
+		fp.mu.Unlock()
+		time.Sleep(60 * time.Millisecond) // the direction runs; the prober pings
+		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
+	}
+	h.mu.Unlock()
+	r := h.region(t, "home")
+	l := r.Latency
+	if l == nil || l.Edge.Idle == nil || l.Edge.Down == nil || l.Edge.Up == nil || l.Gateway.Idle == nil || l.Gateway.Down == nil || l.Gateway.Up == nil {
+		t.Fatalf("latency %+v", l)
+	}
+	if e := l.Edge.Idle; e.N != 10 || e.Lost != 2 || e.Loss != 0.2 || e.P50Ms != 8 || e.P95Ms != 1000 {
+		t.Errorf("edge idle %+v, want 10 probes, 2 lost, p50 8, p95 1000 (lost = timeout)", *e)
+	}
+	if e := l.Edge.Down; e.Lost != 0 || e.P50Ms != 30 || e.N < 5 {
+		t.Errorf("edge download %+v, want p50 30, no loss", *e)
+	}
+	if e := l.Edge.Up; e.Loss < 0.3 || e.Loss > 0.7 || e.P95Ms != 1000 || e.N < 5 {
+		t.Errorf("edge upload %+v, want about half lost, p95 1000", *e)
+	}
+	if g := l.Gateway; g.Idle.P50Ms != 2 || g.Down.P50Ms != 3 || g.Up.P50Ms != 3 || g.Up.Lost != 0 {
+		t.Errorf("gateway %+v %+v %+v", *g.Idle, *g.Down, *g.Up)
+	}
+	if r.IdleGatewayMs == nil || *r.IdleGatewayMs != 2 || r.LoadedGatewayMs == nil || *r.LoadedGatewayMs != 3 || r.Conn != model.ConnWired {
+		t.Errorf("idle/loaded gateway %v %v conn %q", r.IdleGatewayMs, r.LoadedGatewayMs, r.Conn)
+	}
+}
+
+// Without the network path or ICMP there is no loaded side; the idle side
+// still comes from the tap, and fewer than 3 probes are no stats.
+func TestLatencyIdleOnly(t *testing.T) {
+	p := &model.Profile{Targets: []model.Target{{Name: "Gateway", Layer: model.LayerGateway, Kinds: []model.ProbeKind{model.KindICMP}}}}
+	h := newHarness(t, Options{})
+	tap := NewLoadTap(p, h.clock)
+	h.s.o.Load = tap
+	h.s.o.Path = func() (netip.Addr, netip.Addr) { return netip.Addr{}, netip.Addr{} }
+	h.s.o.OpenPinger = func() (LoadPinger, error) { t.Error("pinger opened without addresses"); return nil, errors.New("no") }
+	tap.Observe(model.Sample{Key: model.SeriesKey{Target: "Gateway", Kind: model.KindICMP}, RTT: time.Millisecond})
+	tap.Observe(model.Sample{Key: model.SeriesKey{Target: "Gateway", Kind: model.KindICMP}, RTT: time.Millisecond})
+	if r := h.region(t, "home"); r.Latency != nil || r.Conn != model.ConnUnknown {
+		t.Errorf("latency %+v conn %q, want none (2 probes) and unknown", r.Latency, r.Conn)
+	}
+	if statsOf([]loadSample{{ms: 1}, {lost: true}, {ms: 3}}) == nil {
+		t.Error("3 probes, one lost: want stats")
+	}
+}
+
+// TestBuiltinCatalog: the shipped catalog's servers and regions.
 func TestBuiltinCatalog(t *testing.T) {
 	c, err := Builtin()
 	if err != nil {
@@ -489,5 +617,38 @@ func TestCatalogErrors(t *testing.T) {
 		if _, err := LoadCatalog(files); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v", want, err)
 		}
+	}
+}
+
+// The idle side: samples are timed by the probe's start (Sample.At), and a
+// test earlier in the idle window (back-to-back runs) is not idle.
+func TestLoadTapIdle(t *testing.T) {
+	p := &model.Profile{Targets: []model.Target{{Name: "ISP edge", Layer: model.LayerEdge, Kinds: []model.ProbeKind{model.KindICMP}}}}
+	t0 := time.Date(2026, 10, 10, 21, 0, 0, 0, time.UTC)
+	now := t0
+	tap := NewLoadTap(p, func() time.Time { return now })
+	edge := model.SeriesKey{Target: "ISP edge", Kind: model.KindICMP}
+	obs := func(at time.Time, ms float64) {
+		tap.Observe(model.Sample{Key: edge, At: at, RTT: time.Duration(ms * float64(time.Millisecond))})
+	}
+	w := &Windows{}
+	// An earlier test 60-50 s before: its loaded probes must not count.
+	w.Add(Window{Start: t0.Add(-60 * time.Second), End: t0.Add(-50 * time.Second)})
+	for i := range 10 {
+		now = t0.Add(-90*time.Second + time.Duration(i)*time.Second)
+		obs(now, 8) // idle
+		now = t0.Add(-59*time.Second + time.Duration(i)*time.Second)
+		obs(now, 900) // during the earlier test
+	}
+	// A probe sent just before this test (t0) that arrives during it is idle
+	// by its start.
+	now = t0.Add(time.Second)
+	obs(t0.Add(-500*time.Millisecond), 9)
+	st := tap.Stats(LayerEdge, t0.Add(-idleWindow), t0, w)
+	if st == nil || st.N != 11 || st.P95Ms > 9 {
+		t.Errorf("idle %+v, want the 11 idle probes only", st)
+	}
+	if all := tap.Stats(LayerEdge, t0.Add(-idleWindow), t0, nil); all == nil || all.N != 21 || all.P95Ms != 900 {
+		t.Errorf("without windows %+v, want 21 probes", all)
 	}
 }
