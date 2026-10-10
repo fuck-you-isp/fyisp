@@ -6,7 +6,7 @@
 // with the charts, is one click away. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON } from './core.js';
+import { h, fetchJSON, tzParam } from './core.js';
 import { LEVELS, NODE_ICON, badge, cls, minutes, buildTimeline } from './home.js';
 import { SpeedReport } from './speedreport.js';
 
@@ -103,7 +103,7 @@ export class Report {
     if (now - this.liveAt >= LIVE_MS && !this.liveBusy) this.loadLive();
     if (now - this.historyAt >= HISTORY_MS && !this.historyBusy) this.loadHistory();
   }
-  tz() { return String(-new Date().getTimezoneOffset()); }
+  tz() { return tzParam(); }
 
   async loadLive() {
     if (this.liveBusy) return;

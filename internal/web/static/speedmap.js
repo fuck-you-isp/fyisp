@@ -7,7 +7,7 @@
 // no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, MODE } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, MODE, tzParam } from './core.js';
 import { clock } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -323,7 +323,7 @@ export class SpeedMap {
     const key = this.host.sel() || (rows[0] ? rows[0].key : '');
     if (!key) { this.rowEl.replaceChildren(); return; }
     const [k, id] = [key.slice(0, 1), key.slice(2)];
-    const q = new URLSearchParams({ [k === 'r' ? 'region' : 'server']: id, days: String(d.days), tz: String(d.tz) });
+    const q = new URLSearchParams({ [k === 'r' ? 'region' : 'server']: id, days: String(d.days), tz: tzParam() });
     if (k === 'r' && d.exclude_fallback) q.set('exclude_fallback', '1');
     const want = q.toString();
     const seq = ++this.viewSeq;
