@@ -985,6 +985,7 @@ body.home-on #reports, body.home-on #panels, body.home-on .foot, body.home-on #i
 .ho-blk.b-later { cursor: default; }
 .ho-blk.b-later::before { height: 4px; background: var(--grid); }
 .ho-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.ho-speed { margin: 10px 0 0; color: var(--ink-2); }
 .ho-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .ho-key { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
 .ho-key.b-fine { height: 6px; background: color-mix(in srgb, var(--v-ok) 55%, var(--surface)); }

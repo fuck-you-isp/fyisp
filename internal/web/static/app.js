@@ -520,7 +520,7 @@ class Panel {
       hooks: {
         setSelect: [onChartSelect],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { self.drawBand(u); self.drawIncidents(u); drawNotes(u); self.drawStrip(); }],
+        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawBand(u); self.drawIncidents(u); drawNotes(u); self.drawStrip(); }],
       },
     };
     this.emptyEl.remove();
@@ -767,6 +767,7 @@ class Panel {
         nodes.push(h('div', { class: 'row inc' }, sw, `incident: ${inc.summary}`));
       }
     }
+    nodes.push(...speedTipNodes(d.start + i * d.step, d.start + (i + 1) * d.step));
     nodes.push(...noteTipNodes(notesNear(u, u.cursor.left)));
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
@@ -1559,7 +1560,7 @@ class Investigate {
           u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
         }],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { self.drawChanges(u, !isLoss); drawNotes(u); }],
+        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawChanges(u, !isLoss); drawNotes(u); }],
       },
     };
     const u = new uPlot(opts, data, el);
@@ -1625,6 +1626,7 @@ class Investigate {
         if (t >= b0 && t < b1) nodes.push(h('div', { class: 'row inc' }, `route changed at hop ${ch.first_diff}`));
       }
     }
+    nodes.push(...speedTipNodes(d.start + i * d.step, d.start + (i + 1) * d.step));
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
   }
@@ -1733,6 +1735,74 @@ function drawNotes(/** @type {any} */ u) {
 }
 
 /** Tooltip rows for notes under the cursor. */
+// ---------- speed-test windows ----------
+
+/** @typedef {{start:number,end:number}} SpeedWindow */
+
+// false once this fyisp answers 404 (no speed tests): stop asking.
+let speedOn = true;
+/** @type {SpeedWindow[]} */
+let speedWins = [];
+
+/** Speed-test windows in the view: probes inside are "not measured", never judged. */
+async function loadSpeedWindows() {
+  if (!speedOn) return;
+  const { from, to } = queryRange();
+  try {
+    const d = await fetchJSON('api/speed?' + new URLSearchParams({ part: 'windows', from, to }));
+    speedWins = Array.isArray(d.windows) ? d.windows : [];
+  } catch (e) {
+    if (/** @type {any} */ (e).status === 404) { speedOn = false; speedWins = []; redrawCharts(); }
+    return;
+  }
+  redrawCharts();
+}
+
+/**
+ * Speed tests as marks along the top of the chart; a test wide enough to see
+ * (zoomed in) also gets a faint band. Thin full-height bands would read as a
+ * grid: with a test every 88 s they'd cover a day view.
+ */
+function drawSpeedWindows(/** @type {any} */ u) {
+  if (!speedWins.length) return;
+  const ctx = u.ctx;
+  const { left, top, width, height } = u.bbox;
+  const vmin = u.scales.x.min, vmax = u.scales.x.max;
+  const dpr = window.devicePixelRatio || 1;
+  const c = css('--muted') || '#898781';
+  // Merge windows that touch on screen, each at least 2 px wide.
+  /** @type {[number, number][]} */
+  const spans = [];
+  for (const w of speedWins) {
+    if (w.end / 1000 < vmin || w.start / 1000 > vmax) continue;
+    let x0 = u.valToPos(w.start / 1000, 'x', true), x1 = u.valToPos(w.end / 1000, 'x', true);
+    if (x1 - x0 < 2 * dpr) { const m = (x0 + x1) / 2; x0 = m - dpr; x1 = m + dpr; }
+    const last = spans[spans.length - 1];
+    if (last && x0 <= last[1] + dpr) last[1] = Math.max(last[1], x1);
+    else spans.push([x0, x1]);
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  for (const [x0, x1] of spans) {
+    if (x1 - x0 >= 6 * dpr) {
+      ctx.fillStyle = rgba(c, 0.10);
+      ctx.fillRect(x0, top, x1 - x0, height);
+    }
+    ctx.fillStyle = rgba(c, 0.7);
+    ctx.fillRect(x0, top, x1 - x0, 4 * dpr);
+  }
+  ctx.restore();
+}
+
+/** Tooltip line for a bucket that overlaps a speed test. */
+function speedTipNodes(/** @type {number} */ a, /** @type {number} */ b) {
+  const n = speedWins.filter((w) => w.start < b && w.end > a).length;
+  if (!n) return [];
+  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: n === 1 ? 'speed test: not measured' : `${n} speed tests: not measured` })];
+}
+
 function noteTipNodes(/** @type {Note[]} */ list) {
   const nodes = [];
   if (!list.length) return nodes;
@@ -3630,12 +3700,12 @@ async function refreshAll() {
   refreshing = true;
   updateRefreshLabel();
   try {
-    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), inv.load()]);
+    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), loadSpeedWindows(), inv.load()]);
     // Home makes two requests; the status (for sharing and notes) at most twice a minute.
     else if (homeShown()) await Promise.all([Date.now() - statusAt > 30e3 ? loadStatus() : null, /** @type {Home} */ (home).refresh()]);
     else {
       // Hidden panels (the Overview is showing, or focus) load when shown.
-      await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
+      await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), loadSpeedWindows(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
         callsShown() ? /** @type {Calls} */ (calls).refresh() : null,
         ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
     }

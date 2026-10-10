@@ -15,7 +15,7 @@ import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, c
 /** @typedef {{state:string,delay?:string,dropouts?:string,smoothness?:string,words?:string,worst_at?:number}} HomeCalls */
 /** @typedef {{app:string,title:string,level:string,state:string,label:string,note?:string}} HomeApp */
 /** @typedef {{id:string,label:string,done:boolean}} HomeStep */
-/** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[]}} HomeLive */
+/** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[],speed?:{text:string,level:string}}} HomeLive */
 /** @typedef {{from:number,to:number,level:string,who:string,kind?:string,label:string,text?:string,source:string,incident?:number,ongoing?:boolean}} HomeRun */
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
@@ -165,9 +165,11 @@ export class Home {
     this.timeErr = h('p', { class: 'ho-err', hidden: true }, 'Couldn’t load the history. ',
       h('button', { class: 'ho-link', type: 'button', text: 'Try again', onclick: () => this.loadHistory() }));
     this.legendEl = h('div', { class: 'ho-legend' });
+    // Speed tests' time-of-day pattern: one plain line, only when there is one.
+    this.speedEl = h('p', { class: 'ho-speed', hidden: true });
     this.timeEl = h('section', { class: 'ho-time', 'aria-labelledby': 'ho-time-h' },
       h('div', { class: 'ho-sec-head' }, h('h2', { id: 'ho-time-h', text: 'When was it bad?' }), this.spanSeg),
-      this.sumEl, this.timeErr, this.stripsEl, this.legendEl);
+      this.sumEl, this.timeErr, this.stripsEl, this.legendEl, this.speedEl);
 
     // What happened at…?
     this.askIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', id: 'ho-ask-in' }));
@@ -285,6 +287,8 @@ export class Home {
       this.renderMeta();
       return;
     }
+    this.speedEl.hidden = !d.speed;
+    this.speedEl.textContent = d.speed ? d.speed.text : '';
     const a = d.answer;
     // Can't reach fyisp: grey, never red, and the last answer "as of".
     const level = lost ? 'checking' : a.level;
