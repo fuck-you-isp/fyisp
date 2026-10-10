@@ -73,9 +73,16 @@ import (
 //
 // In order, the first match wins:
 //
-//  1. no_network: no samples at all; or nothing succeeded and most losses
-//     are "no network"/"unreachable"; or every known layer loses everything
-//     that way while no internet target succeeds.
+//  0. unknown (no verdict: the engine holds the current one and its
+//     incident): no samples at all, or more than a quarter of the window's
+//     slots not measured (a speed test masks every probe it overlaps). Not
+//     measured is never loss and never "no network". A quarter, not half:
+//     a mask removes evidence unevenly (the layers are probed every 5 s,
+//     services every 15 s), and a window a third masked can already shift
+//     the blame, e.g. from the ISP edge to "beyond your ISP".
+//  1. no_network: at least 5 samples lost, and nothing succeeded with most
+//     losses "no network"/"unreachable", or every known layer loses
+//     everything that way while no internet target succeeds.
 //  2. lan: the gateway layer is to blame (innermost lossy layer, below).
 //  3. isp: the ISP-edge layer is to blame (the gateway is not).
 //  4. upstream: the anycast layer is unhealthy and the loss did not start
@@ -169,6 +176,9 @@ type judgement struct {
 	v      model.Verdict // Since unset
 	loss   float64       // headline loss for PeakLoss
 	layers map[string]*bool
+	// unknown: the window was mostly not measured (no verdict; the
+	// engine holds the current one).
+	unknown bool
 }
 
 // judge applies the rules to one window.
@@ -178,8 +188,9 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		ls[l] = &layerStat{name: l}
 	}
 	var inet []*tstat // internet targets with samples
-	var n, lost, nonet, inetOK, inetN, inetLost int
+	var n, lost, nonet, gap, inetOK, inetN, inetLost int
 	for _, t := range ts {
+		gap += t.gap
 		if t.n == 0 {
 			continue
 		}
@@ -286,9 +297,17 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 			}
 		}
 	}
+	// 0. unknown: no samples at all, or more than a quarter of the
+	// window's slots not measured (masked by a speed test). Missing
+	// samples are never loss: a device without a network still probes, and
+	// loses every probe with "no network" or "unreachable".
+	if n == 0 || 3*gap > n {
+		j.unknown = true
+		return j
+	}
 	switch {
-	case n == 0,
-		lost == n && 2*nonet > lost,
+	case lost < minLost:
+	case lost == n && 2*nonet > lost,
 		knownLayers > 0 && deadLayers == knownLayers && inetOK == 0:
 		return set(model.VerdictNoNetwork, 1, "This device has no working network connection.")
 	}

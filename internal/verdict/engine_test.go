@@ -474,9 +474,11 @@ func TestRules(t *testing.T) {
 			kind: model.VerdictNoNetwork,
 		},
 		{
+			// Nothing is known: the verdict holds (a device without a
+			// network still probes and loses every probe).
 			name: "no samples at all",
 			stop: true,
-			kind: model.VerdictNoNetwork,
+			kind: model.VerdictOK,
 		},
 		{
 			name: "edge unknown: gateway fine, internet broken is upstream beyond the router",
@@ -889,10 +891,17 @@ func TestBoundedMemory(t *testing.T) {
 	if len(e.series) != 0 {
 		t.Fatal("stale series kept")
 	}
-	// Gaps are ignored; duplicates and late samples are handled.
-	e.Observe(model.Sample{Key: k, Slot: t0, Lost: true, Reason: model.ReasonGap})
+	// Gaps are noted (bounded, never as samples) and trimmed like
+	// samples; duplicates and late samples are handled.
+	for i := 0; i < 5000; i++ {
+		e.Observe(model.Sample{Key: k, Slot: t0.Add(time.Duration(i) * 100 * time.Millisecond), Lost: true, Reason: model.ReasonGap})
+	}
+	if sr := e.series[k]; sr == nil || len(sr.raw) != 0 || len(sr.gaps) != maxRaw {
+		t.Fatalf("gaps %+v", sr)
+	}
+	e.collect(t0.Add(3*time.Hour), nil)
 	if len(e.series) != 0 {
-		t.Fatal("gap recorded")
+		t.Fatal("series with stale gaps kept")
 	}
 	e.Observe(model.Sample{Key: k, Slot: t0.Add(time.Second), RTT: time.Millisecond})
 	e.Observe(model.Sample{Key: k, Slot: t0, RTT: time.Millisecond})
