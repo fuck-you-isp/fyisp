@@ -98,9 +98,22 @@ func (s *Scheduler) slotJob(t target) Job {
 // A sweep's tests would blind the monitoring for minutes back to back: it
 // leaves the probes SweepGap of unmasked time after the last window's
 // tail. False: ctx ended while waiting.
+//
+// A sweep also stops after SweepUnreachable unreachable servers in a row:
+// during an outage it would only mask the monitoring.
 func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) bool {
 	if trigger != "sweep" && trigger != "public_sweep" {
 		return true
+	}
+	s.mu.Lock()
+	stop := s.sweepUnreach >= SweepUnreachable
+	if stop {
+		s.sweepUnreach = 0
+	}
+	s.mu.Unlock()
+	if stop {
+		s.o.Log.Info("speed test: sweep stopped: the servers stopped answering")
+		return false
 	}
 	if last := s.o.Windows.LastEnd(); !last.IsZero() {
 		if d := last.Add(MaskTail + SweepGap).Sub(s.o.Now()); d > 0 {
@@ -131,6 +144,16 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 		}
 	}
 	t, saved, bytes := s.runSteps(ctx, region, steps, trigger)
+	s.mu.Lock()
+	switch {
+	case trigger != "sweep" && trigger != "public_sweep":
+		s.sweepUnreach = 0
+	case t != nil && t.Outcome == model.SpeedUnreachable:
+		s.sweepUnreach++
+	case t != nil:
+		s.sweepUnreach = 0
+	}
+	s.mu.Unlock()
 	if t == nil {
 		return 0, false, bytes
 	}

@@ -67,6 +67,8 @@ const (
 	// MaxBytes caps each direction (ramp-up included): one test never
 	// moves more than 2 × MaxBytes.
 	MaxBytes = 100_000_000 // 100 MB (decimal, as the docs and the owner's 200 MB per test mean it)
+	// SweepUnreachable unreachable servers in a row end a sweep.
+	SweepUnreachable = 3
 	// SlotMaxBytes caps a whole test, every server and retry included.
 	SlotMaxBytes = 2 * MaxBytes
 	// EstTestTime is a typical test (both directions, adaptive): the
@@ -191,23 +193,24 @@ type Scheduler struct {
 	wake chan struct{}
 	q    *Queue
 
-	mu         sync.Mutex
-	mode       Mode
-	setByFlag  bool
-	extra      []string
-	seed       uint32
-	cycleBase  time.Time // the cycle's start on the install's grid, without jitter
-	cycleStart time.Time
-	slot       int
-	next       time.Time            // the next slot; zero when off
-	cur        *live                // the test running: its direction and server
-	skip       map[string]bool      // the user's saved skip list
-	busyRun    map[string]int       // scheduled tests in a row that found the server busy
-	rest       map[string]time.Time // the busy backoff: resting until
-	picked     []string             // mode nearby: the picked servers, by ID
-	far        string               // mode nearby: the automatic far region
-	pickedAt   time.Time
-	rtts       map[string]time.Duration
+	mu           sync.Mutex
+	mode         Mode
+	setByFlag    bool
+	extra        []string
+	seed         uint32
+	cycleBase    time.Time // the cycle's start on the install's grid, without jitter
+	cycleStart   time.Time
+	slot         int
+	next         time.Time            // the next slot; zero when off
+	cur          *live                // the test running: its direction and server
+	skip         map[string]bool      // the user's saved skip list
+	busyRun      map[string]int       // scheduled tests in a row that found the server busy
+	sweepUnreach int                  // a sweep's unreachable servers in a row (see pause)
+	rest         map[string]time.Time // the busy backoff: resting until
+	picked       []string             // mode nearby: the picked servers, by ID
+	far          string               // mode nearby: the automatic far region
+	pickedAt     time.Time
+	rtts         map[string]time.Duration
 }
 
 // Row is a scheduled row of the current mode (a region or a server).
