@@ -267,9 +267,11 @@ func newSpeedNames(st speedtest.State, cat *speedtest.Catalog, public bool) spee
 	}
 	for _, r := range st.Regions {
 		n.regions[r.ID] = r.Title
-		for _, id := range append(slices.Clone(r.Servers), r.Nearby...) {
-			if _, ok := n.inReg[id]; !ok {
-				n.inReg[id] = r.ID
+	}
+	if cat != nil { // every catalog server's one region (catalog.RegionOf)
+		for _, sv := range cat.Servers {
+			if r := cat.RegionOf(sv.ID); r != "" {
+				n.inReg[sv.ID] = r
 			}
 		}
 	}
@@ -1056,7 +1058,10 @@ func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location
 	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, Loc: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: edgeIdle(eh)})
 	line := speedtest.HomeLine(f, ts, tz, now)
 	if line != nil && voicePublic {
-		line.Text = strings.ReplaceAll(line.Text, "your daytime", "the daytime")
+		if f.Caveat != "" {
+			line.Text = strings.Replace(line.Text, f.Caveat, f.CaveatPublic, 1)
+		}
+		line.Text = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual", "your internet provider's", "the internet provider's").Replace(line.Text)
 	}
 	return line
 }

@@ -421,7 +421,7 @@ const pageTmpl = `<!doctype html>
 <dl class="kinds">
 <dt>ISP problem</dt><dd>Your router answered normally, but the first router on your ISP's side did not: the fault is in your ISP's access network.</dd>
 <dt>Internet problem beyond your ISP</dt><dd>Your router and your ISP's first router were fine, but the big anycast resolvers (Cloudflare, Google, Quad9) and most services failed: your ISP's upstream links or peering.</dd>
-<dt>Home network problem</dt><dd>Your own router did not answer reliably: Wi-Fi, cables or the router. Not your ISP's fault.</dd>
+<dt>Home network problem</dt><dd>Your own router did not answer reliably: Wi-Fi, cables or the router. Your internet provider looked fine from there.</dd>
 <dt>DNS problem</dt><dd>The network worked but name lookups failed widely: usually the router's or the ISP's DNS resolver.</dd>
 <dt>Some services down</dt><dd>Only some services failed: their problem, not your connection's.</dd>
 <dt>No network</dt><dd>This device had no working connection at all.</dd>

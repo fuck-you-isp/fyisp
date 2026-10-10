@@ -146,6 +146,9 @@ type Region struct {
 	// fallback. Nearby are servers in a nearby city, tried last.
 	Servers []string
 	Nearby  []string
+	// Others are the region's servers in no chain (sweeps and custom lists
+	// still test them): they name the region a server belongs to.
+	Others  []string
 	Default bool // tested unless opted out; false: opt-in
 }
 
@@ -265,6 +268,7 @@ type regionsFile struct {
 		Title   string   `yaml:"title"`
 		Servers []string `yaml:"servers"`
 		Nearby  []string `yaml:"nearby"`
+		Others  []string `yaml:"others"`
 		Default *bool    `yaml:"default"`
 	} `yaml:"regions"`
 }
@@ -367,6 +371,11 @@ func LoadCatalog(fsys fs.FS) (*Catalog, error) {
 			}
 			seen[x.ID] = true
 			metro := ""
+			for _, id := range x.Others {
+				if _, ok := c.Server(id); !ok {
+					bad("regions.yml: region %q: no server %q", x.ID, id)
+				}
+			}
 			for i, id := range append(slices.Clone(x.Servers), x.Nearby...) {
 				s, ok := c.Server(id)
 				switch {
@@ -378,7 +387,7 @@ func LoadCatalog(fsys fs.FS) (*Catalog, error) {
 					metro = s.Metro
 				}
 			}
-			c.Regions = append(c.Regions, Region{ID: x.ID, Title: x.Title, Servers: x.Servers, Nearby: x.Nearby, Default: x.Default == nil || *x.Default})
+			c.Regions = append(c.Regions, Region{ID: x.ID, Title: x.Title, Servers: x.Servers, Nearby: x.Nearby, Others: x.Others, Default: x.Default == nil || *x.Default})
 		}
 	}
 	if len(c.Servers) == 0 {
@@ -483,4 +492,22 @@ func (r Region) Zone(c *Catalog) *time.Location {
 		}
 	}
 	return nil
+}
+
+// RegionOf is the one region a server belongs to (its ID; "" for none):
+// a default region it is a server of, else one it backs up (nearby), else
+// one it is listed under (others); then the same in opt-in regions.
+func (c *Catalog) RegionOf(id string) string {
+	for _, def := range []bool{true, false} {
+		for _, list := range []func(Region) []string{
+			func(r Region) []string { return r.Servers }, func(r Region) []string { return r.Nearby }, func(r Region) []string { return r.Others },
+		} {
+			for _, r := range c.Regions {
+				if r.Default == def && slices.Contains(list(r), id) {
+					return r.ID
+				}
+			}
+		}
+	}
+	return ""
 }

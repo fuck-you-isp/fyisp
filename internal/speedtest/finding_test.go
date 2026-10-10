@@ -122,7 +122,7 @@ func TestFinding(t *testing.T) {
 				return 0.4
 			}
 			return 1
-		}, "wired", nan, CaseServer, "", []string{"Only C one slows from about 7 to 11 pm. That's most likely that server's own busy time, not your connection."}},
+		}, "wired", nan, CaseServer, "", []string{"Only C one slows from about 7 to 11 pm. That's most likely that server's own busy time: the other servers in its city stay normal then."}},
 		{"flat", 9, func(string, int) float64 { return 1 }, "wired", nan, CaseNothing, "", []string{"No slowdown of 25% or more stands out: every hour stays within about 10% of normal."}},
 		{"two days", 2, func(string, int) float64 { return 1 }, "wired", nan, CaseNotEnough, "", []string{"2 of 3 days so far."}},
 	}
@@ -201,7 +201,8 @@ func TestHomeLine(t *testing.T) {
 	ts := synth(c, 9, dip, "wired")
 	f := FindFinding(FindingInput{Tests: ts, Catalog: c})
 	l := HomeLine(f, ts, nil, now)
-	if l == nil || l.Kind != "pattern" || l.Impact != "ok" || l.Text != "Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). That's still plenty for video calls." {
+	if l == nil || l.Kind != "pattern" || l.Impact != "ok" || l.Text != "Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). Every test server shows it, so it's most likely your internet provider's network."+
+		" That's still plenty for video calls. Wi-Fi, or other people at home using the internet heavily at those hours, can look the same." {
 		t.Fatalf("%+v", l)
 	}
 	// A slow evening: may be too slow for video calls.
