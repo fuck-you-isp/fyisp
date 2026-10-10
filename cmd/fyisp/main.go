@@ -330,7 +330,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	reports := webReports{
 		b: report.New(report.Deps{
 			Profile: func() *model.Profile { return prof }, Store: st, Trace: st,
-			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, Version: version,
+			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, SpeedTests: st.SpeedTests, Version: version,
 		}),
 		ReportStore: st,
 	}
