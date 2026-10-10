@@ -10,7 +10,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// Home's words (docs/HOME-API.md; wording from the v1.0 content review).
+// Home's words (docs/HOME-API.md; wording from the v0.6 content review).
 // Every string is in two voices: "you" for the owner, and the neutral third
 // person for the share link, whose reader may be the provider's support.
 // No string holds a time, a number of milliseconds or a technical term

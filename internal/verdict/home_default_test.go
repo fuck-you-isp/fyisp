@@ -8,7 +8,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 )
 
-// TestDefaultProfileServiceVsUpstream pins how the v1.0 default (18
+// TestDefaultProfileServiceVsUpstream pins how the v0.6 default (18
 // internet targets in three groups: call apps, work apps, websites) splits
 // "some services" from "beyond your ISP": upstream needs at least half of
 // the internet targets, in more than one group.

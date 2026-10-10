@@ -1,4 +1,6 @@
-# fyisp v1.0: Home first (plan v2)
+# fyisp v0.6: Home first (plan v2)
+
+**Released as v0.6.0 (owner decision: pre-1.0, not a major).**
 
 **What the owner asked for (2026-10-10):**
 - The default launch is for a home user: a remote employee who wants the basics, especially audio and video calls, to work.
