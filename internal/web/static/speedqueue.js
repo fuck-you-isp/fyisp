@@ -11,7 +11,8 @@ import { clock } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
-/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string}} QueueEntry */
+/** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[]}} QueueEntry */
+/** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
 /** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean}} QueueHost */
@@ -55,7 +56,8 @@ function queueError(e) {
     case 'queue_full': return 'The test queue is full right now. Try again later.';
     case 'rate_limited': return `You’ve asked for several tests recently. Try again ${s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while'}.`;
     case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), b.budget === 'time');
-    case 'sweep_cooldown': return nextSweep(Number(b.available_at) || (s ? Date.now() + s * 1000 : 0));
+    case 'time_cap': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), true);
+    case 'cooldown': case 'sweep_cooldown': return nextSweep(Number(b.resets_at || b.available_at) || (s ? Date.now() + s * 1000 : 0));
     case 'disabled': return 'The owner of this connection hasn’t turned on tests from this link.';
     case 'not_found': return 'That test isn’t in the queue any more.';
     case 'forbidden': return MODE === 'public' ? 'Tests can’t be started from this link.' : 'Speed tests can only be changed from the device running fyisp.';
@@ -77,7 +79,7 @@ export class SpeedQueue {
     /** @type {number|undefined} */
     this.timer = undefined;
     this.seq = 0;
-    /** @type {{entry:QueueEntry|null,tests:SpeedTest[]}|null} */
+    /** The last finished sweep, and one under way with its results so far. @type {{entry:QueueEntry|null,tests:SpeedTest[],running:QueueEntry|null}|null} */
     this.sweep = null;
     this.sweepAt = 0;
     /** @type {{key:string,asc:boolean}} */
@@ -101,8 +103,9 @@ export class SpeedQueue {
     await this.settle();
     // The last full test's results, when it changed.
     const ls = this.q?.last_sweep;
-    if (ls && (ls.finished_at || 0) !== this.sweepAt) await this.loadSweep();
-    else if (!ls && !this.sweep) await this.loadSweep();
+    // The last full test's results when it changed, and a running one's every poll.
+    const sweeping = this.q?.running?.kind === 'sweep' || !!this.sweep?.running;
+    if (sweeping || (ls && (ls.finished_at || 0) !== this.sweepAt) || (!ls && !this.sweep)) await this.loadSweep();
     this.render();
     clearTimeout(this.timer);
     const busy = this.q && (this.q.running || this.q.waiting.length || this.watch.size);
@@ -129,7 +132,7 @@ export class SpeedQueue {
   async loadSweep() {
     try {
       const r = await fetchJSON('api/speed?part=sweep');
-      this.sweep = { entry: r.entry, tests: Array.isArray(r.tests) ? r.tests : [] };
+      this.sweep = { entry: r.entry, tests: Array.isArray(r.tests) ? r.tests : [], running: r.running || null };
       this.sweepAt = r.entry?.finished_at || 0;
     } catch { /* keep what we had */ }
   }
@@ -215,8 +218,11 @@ export class SpeedQueue {
    */
   async setPublic(on) {
     try {
-      await apiWrite('POST', 'api/speed/config', { public: on }, 'Changing who can start tests needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
-      this.host.say(on ? 'People with your share link can now start tests.' : 'Tests from the share link are off. Their waiting requests were removed.');
+      const r = await apiWrite('POST', 'api/speed/config', { public: on }, 'Changing who can start tests needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
+      const l = r && r.limits;
+      const limits = l ? ` They share up to ${gb(l.budget_bytes)} a day, and at most ${Math.round(l.time_hour_max_s / 60)} minutes of testing an hour and ${Math.round(l.time_day_max_s / 60)} a day.` : '';
+      this.note = on ? `People with your share link can now start tests.${limits}` : 'Tests from the share link are off. Their waiting requests were removed.';
+      this.host.say(this.note);
     } catch (e) { this.note = queueError(e); if (this.note) this.host.say(this.note); }
     await this.load();
     /** @type {HTMLElement|null} */ (this.sweepEl.querySelector('#sp-pub'))?.focus();
@@ -324,8 +330,38 @@ export class SpeedQueue {
       h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${Math.round(n * 20 / 60)} minutes and about 8 GB of data. The results are a snapshot, kept apart from the hourly pattern.` }),
       h('div', { class: 'sp-go-row' }, start, why ? h('span', { class: 'muted small', text: why }) : null),
       this.budgetLine(),
+      MODE === 'local' && this.note && this.el.hidden ? h('p', { class: 'sp-note', text: this.note }) : null,
+      s && s.running && s.running.results ? this.liveNodes(s.running) : null,
       s && s.entry && s.tests.length ? this.resultNodes(s.entry, s.tests) : null,
     ].filter((x) => !!x));
+  }
+
+  /**
+   * A full test under way: every server with its state, in run order. Status
+   * is words and a mark, never colour alone; nothing here is announced.
+   * @param {QueueEntry} e
+   */
+  liveNodes(e) {
+    const res = e.results || [];
+    const done = res.filter((r) => r.status !== 'waiting' && r.status !== 'testing').length;
+    const word = (/** @type {SweepResult} */ r) => {
+      switch (r.status) {
+        case 'ok': return `${mbit(r.down_bps)} down, ${mbit(r.up_bps)} up`;
+        case 'testing': return 'testing now…';
+        case 'busy': return 'server busy';
+        case 'unreachable': return 'didn’t answer';
+        case 'failed': return 'didn’t finish';
+        case 'skipped': return 'skipped';
+        default: return 'waiting';
+      }
+    };
+    const mark = { ok: '✓', testing: '●', busy: '×', unreachable: '×', failed: '×', skipped: '–', waiting: '○' };
+    return h('div', { class: 'sp-live' },
+      h('h3', { text: `${e.who === 'you' ? 'Your' : 'A'} full test: ${done} of ${res.length} servers done` }),
+      h('ol', { class: 'sp-live-list' }, ...res.map((r) => h('li', { class: 'st-' + r.status },
+        h('span', { class: 'sp-live-m', 'aria-hidden': 'true', text: mark[/** @type {'ok'} */ (r.status)] || '○' }),
+        h('span', { class: 'sp-live-n', text: r.server.label }),
+        h('span', { class: 'sp-live-v', text: word(r) })))));
   }
 
   /** The last full test: by region and provider, then every server, sortable. @param {QueueEntry} e @param {SpeedTest[]} tests */
