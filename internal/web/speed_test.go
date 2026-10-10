@@ -92,7 +92,7 @@ func newSpeedRigWith(t *testing.T, step time.Duration, ro rigOpts) *speedRig {
 	}
 	g := &speedRig{st: &speedtest.MemStore{}, release: make(chan struct{}), tokens: make(chan struct{}, 100)}
 	if ro.wire == 0 {
-		ro.wire = 240e6
+		ro.wire = 90e6 // per direction: within the slot's 200 MB
 	}
 	g.st.SetSetting(ctx, speedtest.SettingKey, "regions")
 	g.st.SetSetting(ctx, "speedtest_seed", "7")
@@ -153,7 +153,7 @@ func newSpeedRigWith(t *testing.T, step time.Duration, ro rigOpts) *speedRig {
 				case <-g.release:
 				case <-g.tokens:
 				}
-				return speedtest.Result{Direction: c.Direction, Bytes: 200e6, Elapsed: 4 * time.Second, Streams: 8, TotalBytes: ro.wire, WireBytes: ro.wire}, nil
+				return speedtest.Result{Direction: c.Direction, Bytes: 80e6, Elapsed: 4 * time.Second, Streams: 8, TotalBytes: ro.wire, WireBytes: ro.wire}, nil
 			},
 			Sleep: func(ctx context.Context, _ time.Duration) bool { return ctx.Err() == nil },
 			RTT: func(_ context.Context, host string, _ int) (time.Duration, error) {
@@ -619,7 +619,7 @@ func speedQueueOf(t *testing.T, pub *publicHandler, hdr map[string]string) (stri
 // (403 disabled; the Details toggle turns them on), and spend a 24-hour
 // data budget counted on the wire (429 budget_exhausted with resets_at).
 func TestSpeedPublicOptInBudget(t *testing.T) {
-	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 5e9, wire: 1.5e9})
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 300e6, wire: 90e6})
 	close(g.release)
 	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
 	queue := func(h http.Handler, path string, hdr map[string]string) speedQueueJSON {
@@ -642,10 +642,10 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 		if w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", speedVisitor(ip)); w.Code != 202 {
 			t.Fatalf("start %d: %d %s", i, w.Code, w.Body.String())
 		}
-		waitUntil(t, func() bool { return queue(loc, "/api/speed?part=queue", speedHost).Budget.UsedBytes >= int64(i+1)*3e9 })
+		waitUntil(t, func() bool { return queue(loc, "/api/speed?part=queue", speedHost).Budget.UsedBytes >= int64(i+1)*180e6 })
 	}
 	q := queue(pub, speedPub+"/api/speed?part=queue", speedVisitor("3.3.3.3"))
-	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 5e9 || q.Budget.UsedBytes != 6e9 || q.Budget.RemainingBytes != 0 || q.Budget.ResetsAt == nil {
+	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 300e6 || q.Budget.UsedBytes != 360e6 || q.Budget.RemainingBytes != 0 || q.Budget.ResetsAt == nil {
 		t.Errorf("spent: %+v", q)
 	}
 	w = do(pub, "POST", speedPub+"/api/speed/run?kind=sweep", speedVisitor("3.3.3.3"))
@@ -689,7 +689,7 @@ func TestSweepResults(t *testing.T) {
 			t.Errorf("result %d: %+v, want %s", i, r, want[i])
 		}
 	}
-	if r := e.Results[0]; r.Test == nil || r.DownBps == nil || *r.DownBps != 400e6 || r.Region == nil || r.Provider == "" {
+	if r := e.Results[0]; r.Test == nil || r.DownBps == nil || *r.DownBps != 160e6 || r.Region == nil || r.Provider == "" {
 		t.Errorf("ok result: %+v", r)
 	}
 	var sw struct{ Running *speedEntryJSON }
