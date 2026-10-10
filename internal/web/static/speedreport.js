@@ -7,7 +7,7 @@
 // @ts-check
 
 import { h, fetchJSON, tzParam } from './core.js';
-import { hourRange } from './speedmap.js';
+import { hourRange, findingExtras, dipHoursOf } from './speedmap.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedRow} SpeedRow */
@@ -57,7 +57,7 @@ export class SpeedReport {
     const rows = all;
     // Mbit/s from the fastest region (nearest, usually): far ones always read lower.
     const ref = [...rows].sort((a, b) => (b.best_down_bps || 0) - (a.best_down_bps || 0))[0];
-    const dip = d.finding?.hours?.length ? d.finding.hours : d.pattern ? d.pattern.hours : [];
+    const dip = dipHoursOf(d);
     const cell = (/** @type {number[]} */ hours) => {
       const norms = [], n = [];
       for (const r of rows) for (const hr of hours) { const x = r.hours[hr]; if (x && x.score_median != null) norms.push(x.score_median); if (x) n.push(x.n); }
@@ -83,6 +83,7 @@ export class SpeedReport {
     this.el.replaceChildren(
       h('h2', { id: 'rp-speed-h', text: 'Speed through the day' }),
       h('p', { class: 'ho-summary', text }),
+      d.finding ? findingExtras(d, d.finding, true) : '',
       h('table', { class: 'rp-table rp-speed-t' },
         h('thead', {}, h('tr', {},
           h('th', { scope: 'col', text: 'Time of day' }),

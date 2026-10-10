@@ -16,6 +16,33 @@ import { clock } from './home.js';
 /** @typedef {{at:number,kind:string,row:SpeedRow,tests:SpeedTest[],windows:{start:number,end:number}[]}} SpeedView */
 /** @typedef {{sel:()=>string, setSel:(v:string)=>void, days:()=>number, setDays:(d:number)=>void, nofb:()=>boolean, setNofb:(b:boolean)=>void, refresh:()=>void, sweep:()=>boolean}} SpeedHost */
 
+/** A word over the finding: how sure, or what kind of nothing. */
+const KICKER = /** @type {Object<string,string>} */ ({ early_sign: 'Early sign', most_likely: 'Most likely', points_to: 'Clear pattern', mild: 'A little slower', mixed: 'Mixed results', not_enough_data: 'Still learning' });
+
+/**
+ * The finding's supporting lines under its sentence: the caveat (Wi-Fi,
+ * household, behind another router). The server already writes the far
+ * regions into the sentence, the slower days into the evidence and the
+ * far end's evening into the sentence; each is added here only when it
+ * is not, so nothing says it twice. publicVoice for the report.
+ * @param {SpeedSummary} d @param {import('./speed.js').SpeedFinding} f @param {boolean} publicVoice
+ */
+export function findingExtras(d, f, publicVoice) {
+  const lines = [];
+  const said = `${publicVoice ? f.text_public : f.text} ${f.evidence || ''} ${f.caveat || ''}`;
+  const evening = f.hours && f.hours.length && f.hours.every((x) => x >= 17 || x <= 1);
+  if (f.slow_days && f.day_count && !/Slower on \d/.test(said)) lines.push(`Slower at those hours on ${f.slow_days} of ${f.day_count} ${evening ? 'evenings' : 'days'} with tests.`);
+  if (f.far_regions && f.far_regions.length && !/too far away/.test(said)) {
+    const names = f.far_regions.map((id) => d.regions.find((r) => r.id === id)?.title || id);
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+    lines.push(`${list} ${names.length > 1 ? 'are' : 'is'} too far away to show it.`);
+  }
+  if (f.far_evening && !/evening there/.test(said)) lines.push('It’s evening at the far end too, so busy time there could explain it as well.');
+  if (f.caveat) lines.push(f.caveat);
+  if (f.bridged && !/container|second router/.test(said)) lines.push('Tests ran from inside a container or VM (or behind a second router), so Wi-Fi and the home router can’t be ruled out.');
+  return lines.length ? h('ul', { class: 'sp-found-x' }, ...lines.map((t) => h('li', { text: t }))) : '';
+}
+
 /** Bins of "% of normal": lower bound, class, the word a screen reader hears. The 75% edge is the dip rule's. */
 const BINS = /** @type {[number, string, string][]} */ ([
   [0.9, 'b1', 'normal'], [0.75, 'b2', 'a little below normal'], [0.6, 'b3', 'below normal'],
@@ -35,8 +62,15 @@ function hourShort(/** @type {number} */ hr) {
   const n = hr % 12 || 12;
   return hr === 0 ? '12a' : hr === 12 ? '12p' : String(n);
 }
+/** The slower hours to mark: the finding's when it found a dip, else the pattern's. @param {SpeedSummary} d */
+export function dipHoursOf(d) {
+  const f = d.finding;
+  if (f && f.hours && f.hours.length && f.case !== 'nothing' && f.case !== 'mixed') return f.hours;
+  return d.pattern ? d.pattern.hours : [];
+}
 /** "8 to 11 pm" for a run of hours (the end is the last hour's end). @param {number[]} hours */
 export function hourRange(hours) {
+  hours = hours || [];
   if (!hours.length) return '';
   const a = hours[0], b = (hours[hours.length - 1] + 1) % 24;
   return `${hourLong(a)} to ${hourLong(b)}`;
@@ -127,12 +161,16 @@ export class SpeedMap {
       : !ok ? 'No tests yet. The first results show here a few minutes after a test.'
         : filled < rows.length * 12 ? 'We need about 3 days of tests to compare times of day. The grid below fills in as tests run.'
           : 'No time of day stands out.';
+    // Mild and mixed name themselves; otherwise how sure the finding is.
+    const kick = !f ? '' : f.case === 'mild' || f.case === 'mixed' ? KICKER[f.case] : KICKER[f.tier || ''] || KICKER[f.case] || '';
     const notes = rows.filter((r) => r.note).map((r) => h('li', { text: /** @type {string} */ (r.note) }));
     const failing = ok + bad >= 20 && bad / (ok + bad) >= 0.3;
     const unreachable = rows.reduce((s, r) => s + r.unreachable, 0);
     this.foundEl.replaceChildren(
       h('h2', { id: 'sp-found-h', text: 'What we found' }),
+      kick ? h('p', { class: 'sp-kicker', text: kick }) : '',
       h('p', { class: 'sp-found-text', text }),
+      f ? findingExtras(d, f, false) : '',
       f && f.evidence ? h('p', { class: 'muted small', text: f.evidence })
         : ok ? h('p', { class: 'muted small', text: `Based on ${ok.toLocaleString()} test${ok === 1 ? '' : 's'} over ${d.days} days${d.exclude_fallback ? ', without backup servers' : ''}.` }) : '',
       failing ? h('p', { class: 'notice warn', text: unreachable > bad * 0.8
@@ -192,7 +230,7 @@ export class SpeedMap {
     if (!d) return;
     const phone = isPhoneGrid();
     const cols = phone ? [0, 3, 6, 9, 12, 15, 18, 21].map((a) => [a, a + 1, a + 2]) : [...Array(24).keys()].map((x) => [x]);
-    const dip = new Set(d.pattern ? d.pattern.hours : []);
+    const dip = new Set(dipHoursOf(d));
     const rows = this.mapRows();
     const sel = this.host.sel() || (rows[0] ? rows[0].key : '');
     const seg = (/** @type {string} */ label, /** @type {[string,string][]} */ opts, /** @type {string} */ cur, /** @type {(v:string)=>void} */ set) =>
@@ -264,7 +302,7 @@ export class SpeedMap {
         h('span', {}, h('i', { class: 'sp-sw sp-c none' }), 'no tests yet'),
         h('span', {}, h('i', { class: 'sp-sw sp-c none fail' }, h('span', { class: 'sp-x', text: '×' })), 'no result (server busy)'),
         h('span', {}, h('i', { class: 'sp-sw sp-c b1 fb' }), 'includes backup servers')]),
-      dip.size ? h('span', {}, h('i', { class: 'sp-sw sp-dipmark' }), `slower hours: ${hourRange(/** @type {SpeedSummary} */ (d).pattern?.hours || [])}`) : null);
+      dip.size ? h('span', {}, h('i', { class: 'sp-sw sp-dipmark' }), `slower hours: ${hourRange(dipHoursOf(/** @type {SpeedSummary} */ (d)))}`) : null);
     this.mapEl.replaceChildren(
       h('div', { class: 'sp-sec-head' }, h('h2', { id: 'sp-map-h', text: phone ? 'Speed by time of day' : 'Speed by hour of day' }),
         h('button', { class: 'btn sm', type: 'button', text: this.numbers ? 'Show as colours' : 'Show as table', 'aria-pressed': String(this.numbers), onclick: () => { this.numbers = !this.numbers; this.renderMap(); } })),
@@ -381,7 +419,7 @@ export class SpeedMap {
       h('div', { class: 't', text: `${new Date(p.t.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(p.t.start)}` }),
       h('div', { text: `${p.t.label}${p.t.fallback ? ' (backup server)' : ''}${p.t.trigger !== 'schedule' ? ' · on demand' : ''}` }),
       h('div', { text: `${mb(p.t.down_bps)} down · ${mb(p.t.up_bps)} up${this.unit === 'pct' ? ` · ${fmtY(p.y)} of normal` : ''}` })];
-    const dipHours = r.dip?.hours || d.pattern?.hours || [];
+    const dipHours = r.dip?.hours || dipHoursOf(d);
     const byHour = scatter({
       x: [0, 24], ticks: [0, 3, 6, 9, 12, 15, 18, 21, 24].map((x) => ({ v: x, label: x === 24 ? '' : hourShort(x) })),
       shade: dipHours.map((x) => [x, x + 1]), points: pts.map((p) => ({ ...p, x: p.hx })), line, fmtY, tip: tipFor, pctAxis: this.unit === 'pct',

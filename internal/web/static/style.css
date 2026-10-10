@@ -1335,3 +1335,6 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 
 .sp-st tr.skipped th, .sp-st tr.skipped td { color: var(--ink-2); }
 .sp-skip { white-space: nowrap; }
+
+.sp-kicker { margin: 6px 0 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-2); }
+.sp-found-x { margin: 6px 0 0; padding-left: 20px; color: var(--ink-2); font-size: 13px; max-width: 75ch; }
