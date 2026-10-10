@@ -26,8 +26,9 @@ func (e *lockedError) Error() string { return "already running: " + e.Holder }
 const defaultProbeInterval = 15 * time.Second
 
 // openStore opens the SQLite store. Series intervals must match the probe
-// scheduler exactly: the target's interval (default 15s) and a third of it
-// for ICMP.
+// scheduler exactly: the target's interval (default 15s), a third of it for
+// ICMP, and the target's interval for all three UDP siblings (5s or 30s for
+// shipped targets: one burst per slot).
 func openStore(dir string, prof *model.Profile, traceInterval func(target string) time.Duration, log *slog.Logger) (*store.SQLite, error) {
 	iv := map[string]time.Duration{}
 	for _, t := range prof.Targets {
@@ -51,6 +52,7 @@ func openStore(dir string, prof *model.Profile, traceInterval func(target string
 			if k.Kind == model.KindICMP {
 				d /= 3
 			}
+			// The UDP siblings of a burst share its slot: the target's interval.
 			return d
 		},
 	})

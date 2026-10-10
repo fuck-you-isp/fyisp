@@ -351,6 +351,8 @@ func kindLabel(k model.ProbeKind) string {
 		return "TCP"
 	case model.KindICMP:
 		return "ICMP"
+	case model.KindUDP:
+		return "UDP"
 	}
 	return k.String()
 }

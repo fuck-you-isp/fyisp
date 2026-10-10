@@ -82,14 +82,16 @@ func (m *multi) Set(v string) error {
 	return nil
 }
 
-// ParseKind parses "https", "tcp", "icmp" or "trace".
+// ParseKind parses "https", "tcp", "icmp", "trace", "udp", "udp_jitter" or
+// "udp_loss".
 func ParseKind(s string) (model.ProbeKind, error) {
-	for _, k := range []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP, model.KindTrace} {
+	for _, k := range []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP, model.KindTrace,
+		model.KindUDP, model.KindUDPJitter, model.KindUDPLoss} {
 		if strings.EqualFold(s, k.String()) {
 			return k, nil
 		}
 	}
-	return 0, fmt.Errorf("unknown kind %q (https, tcp, icmp or trace)", s)
+	return 0, fmt.Errorf("unknown kind %q (https, tcp, icmp, trace, udp, udp_jitter or udp_loss)", s)
 }
 
 // ParseTime parses the --from/--to forms; "" gives the zero time.

@@ -343,7 +343,7 @@ func ivText(set map[time.Duration]bool) string {
 func (r *run) method() []string {
 	p := r.prof
 	var services, path, anycast, traced int
-	tcp, https, icmp := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
+	tcp, https, icmp, udp := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
 	pathIcmp, anyIcmp, anyTCP := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
 	for _, t := range p.Targets {
 		iv := t.Interval
@@ -376,6 +376,8 @@ func (r *run) method() []string {
 				https[iv] = true
 			case model.KindICMP:
 				icmp[iv/3] = true
+			case model.KindUDP:
+				udp[iv] = true
 			}
 		}
 		if t.Trace {
@@ -393,6 +395,9 @@ func (r *run) method() []string {
 	}
 	if len(icmp) > 0 {
 		parts = append(parts, "ICMP echo (ping) "+ivText(icmp))
+	}
+	if len(udp) > 0 {
+		parts = append(parts, "UDP STUN bursts (5 requests 20 ms apart, the path call audio and video use) "+ivText(udp))
 	}
 	if len(parts) > 0 {
 		s += ": " + strings.Join(parts, ", and ")
