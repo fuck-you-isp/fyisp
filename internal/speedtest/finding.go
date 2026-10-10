@@ -2,6 +2,7 @@ package speedtest
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -175,9 +176,66 @@ func overlaps(p *Pattern, hours []int) bool {
 	return p != nil && slices.ContainsFunc(p.Hours, func(h int) bool { return slices.Contains(hours, h) })
 }
 
-// find tries the cases in order on download (or upload) scores.
+// Group states at a dip's hours (see groupState).
+const (
+	stUnknown = iota // too few tests
+	stDips           // at least half the dip's drop at those hours
+	stFlat           // at most a quarter of it: normal then
+	stUnclear        // in between
+)
+
+// groupState compares a group's scores (all its tests pooled, not hourly
+// medians: groups are sparse) in the dip's hours with the other hours.
+func groupState(ts []model.SpeedTest, loc *time.Location, up bool, hours []int, drop float64) int {
+	var in, out []float64
+	for _, t := range ts {
+		sc := t.ScoreDown
+		if up {
+			sc = t.ScoreUp
+		}
+		if sc == nil || t.CappedByServer || (t.Outcome != model.SpeedOK && (up || t.DownBps == nil)) {
+			continue
+		}
+		if slices.Contains(hours, localHour(t.Start, loc)) {
+			in = append(in, *sc)
+		} else {
+			out = append(out, *sc)
+		}
+	}
+	if len(in) < MinPerHour || len(out) < 2*MinPerHour {
+		return stUnknown
+	}
+	r := callq.Median(in) / callq.Median(out)
+	switch {
+	case r <= 1-drop/2:
+		return stDips
+	case r >= 1-drop/4:
+		return stFlat
+	}
+	return stUnclear
+}
+
+// states is every group's state at the hours, by state.
+func states(groups map[string][]model.SpeedTest, loc *time.Location, up bool, p *Pattern) map[int][]string {
+	out := map[int][]string{}
+	for k, ts := range groups {
+		st := groupState(ts, loc, up, p.Hours, p.Drop)
+		out[st] = append(out[st], k)
+	}
+	for _, v := range out {
+		slices.Sort(v)
+	}
+	return out
+}
+
+// find tries the cases on download (or upload) scores. Candidate dips are
+// the pooled one, then each provider's, network's, region's and server's
+// own; at a candidate's hours every group is dipping, flat, unclear or
+// unknown (too few tests), and the cases ask for dips where they say and
+// flat groups to compare with: a group with too few tests never counts as
+// either.
 func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
-	byRegion, byProvider, byServer := map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}
+	byRegion, byProvider, byServer, byNet := map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}
 	var noFallback []model.SpeedTest
 	for _, t := range tests {
 		if t.Fallback {
@@ -189,137 +247,116 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 		}
 		byProvider[providerOf(in.Catalog, t.Server)] = append(byProvider[providerOf(in.Catalog, t.Server)], t)
 		byServer[t.Server] = append(byServer[t.Server], t)
-	}
-	dips := func(groups map[string][]model.SpeedTest) (with, all []string, by map[string]*Pattern) {
-		by = map[string]*Pattern{}
-		for k, ts := range groups {
-			if p := FindDip(HourMedians(ts, in.Loc, up), up); p != nil {
-				by[k] = p
-			}
-			if med := HourMedians(ts, in.Loc, up); countValid(med) >= minHours {
-				all = append(all, k)
-			}
-		}
-		for k := range by {
-			with = append(with, k)
-		}
-		slices.Sort(with)
-		slices.Sort(all)
-		return with, all, by
-	}
-	pooled := FindDip(HourMedians(noFallback, in.Loc, up), up)
-	regWith, regAll, regDips := dips(byRegion)
-	provWith, provAll, provDips := dips(byProvider)
-	srvWith, _, srvDips := dips(byServer)
-	f.Up = up
-	set := func(c string, p *Pattern) {
-		f.Case, f.Hours, f.Drop = c, p.Hours, p.Drop
-	}
-	if pooled != nil {
-		var regs, provs []string
-		for _, r := range regWith {
-			if overlaps(regDips[r], pooled.Hours) {
-				regs = append(regs, r)
-			}
-		}
-		for _, p := range provWith {
-			if overlaps(provDips[p], pooled.Hours) {
-				provs = append(provs, p)
-			}
-		}
-		// Every provider with enough data dips: one staying flat means the
-		// slowdown is on the way to the others, not in the ISP's network.
-		if len(regAll) > 0 && 2*len(regs) >= len(regAll) && len(provs) >= 2 && len(provs) == len(provAll) {
-			set(CaseISP, pooled)
-			f.Regions, f.Providers = regs, provs
-			return true
-		}
-	}
-	// One provider in ≥ 2 regions, the others flat at those hours.
-	for _, p := range provWith {
-		var regs []string
-		for r, ts := range byRegion {
-			var mine []model.SpeedTest
-			for _, t := range ts {
-				if providerOf(in.Catalog, t.Server) == p {
-					mine = append(mine, t)
-				}
-			}
-			if overlaps(FindDip(HourMedians(mine, in.Loc, up), up), provDips[p].Hours) {
-				regs = append(regs, r)
-			}
-		}
-		others := 0
-		for _, q := range provWith {
-			if q != p && overlaps(provDips[q], provDips[p].Hours) {
-				others++
-			}
-		}
-		if len(regs) >= 2 && others == 0 && len(provWith) < len(byProvider) {
-			slices.Sort(regs)
-			set(CaseProvider, provDips[p])
-			f.Providers, f.Regions = []string{p}, regs
-			f.Network = sharedHandoff(byProvider[p])
-			return true
-		}
-	}
-	// One network past the ISP (the handoff) in ≥ 2 regions and of ≥ 2
-	// providers, the networks flat at those hours.
-	byNet := map[string][]model.SpeedTest{}
-	for _, t := range noFallback {
 		if k := handoffKey(t); k != "" {
 			byNet[k] = append(byNet[k], t)
 		}
 	}
-	if netWith, netAll, netDips := dips(byNet); len(netWith) == 1 && len(netAll) >= 2 {
-		k := netWith[0]
-		regs, provs := []string{}, []string{}
-		for _, t := range byNet[k] {
-			if t.Region != "" && !slices.Contains(regs, t.Region) {
-				regs = append(regs, t.Region)
+	var cands []*Pattern
+	if p := FindDip(HourMedians(noFallback, in.Loc, up), up); p != nil {
+		cands = append(cands, p)
+	}
+	for _, groups := range []map[string][]model.SpeedTest{byProvider, byNet, byRegion, byServer} {
+		keys := slices.Sorted(maps.Keys(groups))
+		for _, k := range keys {
+			if p := FindDip(HourMedians(groups[k], in.Loc, up), up); p != nil {
+				cands = append(cands, p)
 			}
-			if p := providerOf(in.Catalog, t.Server); !slices.Contains(provs, p) {
-				provs = append(provs, p)
-			}
-		}
-		if len(regs) >= 2 && len(provs) >= 2 {
-			slices.Sort(regs)
-			slices.Sort(provs)
-			set(CaseProvider, netDips[k])
-			f.Providers, f.Regions, f.Network = provs, regs, k
-			return true
 		}
 	}
-	// One region, the other regions flat.
-	if len(regWith) == 1 && len(regAll) >= 2 {
-		r := regWith[0]
-		set(CaseRoute, regDips[r])
-		f.Regions = []string{r}
-		for _, t := range byRegion[r] {
-			if p := providerOf(in.Catalog, t.Server); !slices.Contains(f.Providers, p) {
-				f.Providers = append(f.Providers, p)
+	f.Up = up
+	regionsOf := func(ts []model.SpeedTest) []string {
+		var out []string
+		for _, t := range ts {
+			if t.Region != "" && !slices.Contains(out, t.Region) {
+				out = append(out, t.Region)
 			}
 		}
-		slices.Sort(f.Providers)
-		return true
+		slices.Sort(out)
+		return out
 	}
-	// One server, the rest of its metro flat.
-	if len(srvWith) == 1 {
-		id := srvWith[0]
-		metro := ""
-		if s, ok := in.Catalog.Server(id); ok {
-			metro = s.Metro
+	for _, p := range cands {
+		set := func(c string) { f.Case, f.Hours, f.Drop = c, p.Hours, p.Drop }
+		prov := states(byProvider, in.Loc, up, p)
+		reg := states(byRegion, in.Loc, up, p)
+		// Your ISP: every provider that can tell dips (at least 2), none is
+		// flat, and most regions that can tell dip.
+		if len(prov[stDips]) >= 2 && len(prov[stFlat]) == 0 && len(reg[stDips]) > 0 && 2*len(reg[stDips]) >= len(reg[stDips])+len(reg[stFlat])+len(reg[stUnclear]) {
+			set(CaseISP)
+			f.Regions, f.Providers = reg[stDips], prov[stDips]
+			return true
 		}
-		flat := 0
-		for k := range byServer {
-			if s, ok := in.Catalog.Server(k); ok && k != id && s.Metro == metro && countValid(HourMedians(byServer[k], in.Loc, up)) >= minHours {
-				flat++
+		// One provider, in at least 2 regions, the others flat.
+		if len(prov[stDips]) == 1 && len(prov[stFlat]) > 0 {
+			pv := prov[stDips][0]
+			var regs []string // the regions where this provider's servers dip
+			for _, r := range regionsOf(byProvider[pv]) {
+				var mine []model.SpeedTest
+				for _, t := range byRegion[r] {
+					if providerOf(in.Catalog, t.Server) == pv {
+						mine = append(mine, t)
+					}
+				}
+				if groupState(mine, in.Loc, up, p.Hours, p.Drop) == stDips {
+					regs = append(regs, r)
+				}
+			}
+			if len(regs) >= 2 {
+				set(CaseProvider)
+				f.Providers, f.Regions = []string{pv}, regs
+				f.Network = sharedHandoff(byProvider[pv])
+				return true
 			}
 		}
-		if flat > 0 || len(byServer) > 1 {
-			set(CaseServer, srvDips[id])
-			f.Servers, f.Providers = []string{id}, []string{providerOf(in.Catalog, id)}
+		// One network past the ISP (the handoff), of at least 2 providers,
+		// the other networks flat.
+		if net := states(byNet, in.Loc, up, p); len(net[stDips]) == 1 && len(net[stFlat]) > 0 {
+			k := net[stDips][0]
+			var provs []string
+			for _, t := range byNet[k] {
+				if pv := providerOf(in.Catalog, t.Server); !slices.Contains(provs, pv) {
+					provs = append(provs, pv)
+				}
+			}
+			if regs := regionsOf(byNet[k]); len(provs) >= 2 && len(regs) >= 2 {
+				slices.Sort(provs)
+				set(CaseProvider)
+				f.Providers, f.Regions, f.Network = provs, regs, k
+				return true
+			}
+		}
+		// One region, the other regions flat.
+		if len(reg[stDips]) == 1 && len(reg[stFlat]) > 0 {
+			r := reg[stDips][0]
+			set(CaseRoute)
+			f.Regions = []string{r}
+			for _, t := range byRegion[r] {
+				if pv := providerOf(in.Catalog, t.Server); !slices.Contains(f.Providers, pv) {
+					f.Providers = append(f.Providers, pv)
+				}
+			}
+			slices.Sort(f.Providers)
 			return true
+		}
+		// One server, the rest of its metro (or, without one, the others)
+		// flat.
+		srv := states(byServer, in.Loc, up, p)
+		if len(srv[stDips]) == 1 {
+			id := srv[stDips][0]
+			metro := ""
+			if sv, ok := in.Catalog.Server(id); ok {
+				metro = sv.Metro
+			}
+			flat := 0
+			for _, k := range srv[stFlat] {
+				if sv, ok := in.Catalog.Server(k); ok && sv.Metro == metro || metro == "" {
+					flat++
+				}
+			}
+			if flat > 0 && len(prov[stDips]) <= 1 && len(reg[stDips]) <= 1 {
+				set(CaseServer)
+				f.Servers, f.Providers = []string{id}, []string{providerOf(in.Catalog, id)}
+				return true
+			}
 		}
 	}
 	return false
