@@ -259,8 +259,14 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 	if s.public {
 		v.Targets = targetFilter(prof)(v.Targets)
 	}
+	// Outages that already ended don't count against the apps or calls
+	// while their samples age out of the windows.
+	tcpSkip, callSkip, recovered, err := s.explained(ctx, now)
+	if err != nil {
+		return nil, err
+	}
 	// Whole minutes, so a minute scores the same here and in part=at.
-	c, err := s.calls(ctx, callsParams{from: now.Add(-homeCallsWindow).Truncate(time.Minute), to: now})
+	c, err := s.calls(ctx, callsParams{from: now.Add(-homeCallsWindow).Truncate(time.Minute), to: now, skip: callSkip})
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +295,7 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 	}
 	rowOf := map[string]overviewRow{}
 	for k, ts := range byKind {
-		rows, err := s.overviewRows(ctx, k, now.Add(-homeTileWindow), now, ts)
+		rows, err := s.overviewRowsMasked(ctx, k, now.Add(-homeTileWindow), now, ts, tcpSkip)
 		if err != nil {
 			return nil, err
 		}
@@ -330,6 +336,9 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 	}
 	in := answerIn{v: v, own: own, calls: c, tiles: out.Tiles, hs: hs, names: names, now: now}
 	out.Answer = homeAnswerOf(in, cp)
+	if out.Answer.Level == levelGood && recovered > 0 {
+		out.Answer.Recovered = recovered
+	}
 	out.Path = homePath(path, out.Answer, out.Tiles, cp)
 	// During a path problem a website that answers says little about the
 	// app: don't show it as fine.
@@ -371,6 +380,40 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 		out.AppsNote = ""
 	}
 	return out, nil
+}
+
+// homeRecoveryGrace extends an ended outage: the verdict needs about a
+// minute of clean samples to clear, and so do the windows.
+const homeRecoveryGrace = time.Minute
+
+// explained returns the spans of the outages that ended within the live
+// windows and explain the samples in them: path, DNS and no-network
+// incidents for the tiles (tcp), those and the UDP ones for calls; and
+// when the last of them ended (0: none).
+func (s *server) explained(ctx context.Context, now time.Time) (tcp, calls []HomeSpan, recovered int64, err error) {
+	if s.d.Verdict == nil {
+		return nil, nil, 0, nil
+	}
+	list, err := s.d.Verdict.Incidents(ctx, now.Add(-homeTileWindow-homeRecoveryGrace), now)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	for _, in := range list {
+		if in.End.IsZero() || in.End.After(now) {
+			continue // ongoing: the verdict says so itself
+		}
+		sp := HomeSpan{From: in.Start.UnixMilli(), To: in.End.Add(homeRecoveryGrace).UnixMilli()}
+		switch in.Kind {
+		case model.VerdictLAN, model.VerdictISP, model.VerdictUpstream, model.VerdictDNS, model.VerdictNoNetwork:
+			tcp = append(tcp, sp)
+		case model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded:
+		default:
+			continue
+		}
+		calls = append(calls, sp)
+		recovered = max(recovered, in.End.UnixMilli())
+	}
+	return tcp, calls, recovered, nil
 }
 
 // ownCallState is the call state the call path and the measured apps
@@ -834,11 +877,42 @@ func confidenceOf(in answerIn) string {
 	switch {
 	case impact:
 		return confSure
-	case quiet && (in.v.Kind == model.VerdictLAN || in.v.Kind == model.VerdictISP):
+	case quiet && confined(in.v):
 		return confWeak
 	}
 	return confLikely
 }
+
+// confined reports a lan or isp verdict whose loss stays on the blamed hop:
+// every known layer past it is clean. Loss that carries on outward is a
+// real fault even when apps don't show it (TCP retransmits hide loss from
+// services_loss); without the outer layers' evidence it can't be told.
+func confined(v model.Verdict) bool {
+	var outer []string
+	switch v.Kind {
+	case model.VerdictLAN:
+		outer = []string{"edge_loss", "anycast_loss"}
+	case model.VerdictISP:
+		outer = []string{"anycast_loss"}
+	default:
+		return false
+	}
+	known := false
+	for _, k := range outer {
+		l, ok := v.Evidence[k]
+		if !ok {
+			continue
+		}
+		if l >= confinedLoss {
+			return false
+		}
+		known = true
+	}
+	return known
+}
+
+// confinedLoss: an outer layer losing this much shares the fault.
+const confinedLoss = 0.02
 
 // homeAnswerOf makes the one answer: the worst of the verdict, the call
 // state and the tiles. The headline comes from the worst; the cause from
