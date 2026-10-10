@@ -47,12 +47,15 @@ func DefaultInterval(m Mode) time.Duration {
 
 // Schedule and test limits (see docs/SPEEDTEST-API.md).
 const (
-	MinInterval = 15 * time.Minute // per region or server; none when every server is the user's own
-	Jitter      = time.Minute      // on each cycle's start only: the spacing stays regular
-	RepickEvery = 24 * time.Hour   // nearby servers by RTT
-	MaxAttempts = 3                // per server: busy or refused tries another port (not on a single-port server)
-	AttemptGap  = 2 * time.Second
-	DirTimeout  = 15 * time.Second // one direction, connect to results
+	MinInterval = 15 * time.Minute // per region or server; MinOwnInterval when every server is the user's own (LAN)
+	// MinOwnInterval is the floor for the user's LAN servers: a test takes
+	// about 15 s.
+	MinOwnInterval = time.Minute
+	Jitter         = time.Minute    // on each cycle's start only: the spacing stays regular
+	RepickEvery    = 24 * time.Hour // nearby servers by RTT
+	MaxAttempts    = 3              // per server: busy or refused tries another port (not on a single-port server)
+	AttemptGap     = 2 * time.Second
+	DirTimeout     = 15 * time.Second // one direction, connect to results
 	// SlotBudget: no new attempt or fallback server after this much of a
 	// slot; SlotCap is the hard limit of one slot.
 	SlotBudget = 25 * time.Second
@@ -109,7 +112,10 @@ type Options struct {
 	Interval time.Duration
 	// Extra regions: opt-in regions in mode regions, far regions in mode
 	// nearby (--speedtest=...,add=canada or far=us-west).
-	Extra   []string
+	Extra []string
+	// Skip is servers never to test (--speedtest-skip), on top of the
+	// saved Details choice.
+	Skip    []string
 	Store   Store
 	Windows *Windows // marked for every test (masking)
 	Load    *LoadTap // idle latency before each test; nil: none
@@ -187,10 +193,13 @@ type Scheduler struct {
 	cycleBase  time.Time // the cycle's start on the install's grid, without jitter
 	cycleStart time.Time
 	slot       int
-	next       time.Time // the next slot; zero when off
-	cur        *live     // the test running: its direction and server
-	picked     []string  // mode nearby: the picked servers, by ID
-	far        string    // mode nearby: the automatic far region
+	next       time.Time            // the next slot; zero when off
+	cur        *live                // the test running: its direction and server
+	skip       map[string]bool      // the user's saved skip list
+	busyRun    map[string]int       // scheduled tests in a row that found the server busy
+	rest       map[string]time.Time // the busy backoff: resting until
+	picked     []string             // mode nearby: the picked servers, by ID
+	far        string               // mode nearby: the automatic far region
 	pickedAt   time.Time
 	rtts       map[string]time.Duration
 }
@@ -209,6 +218,10 @@ type ServerState struct {
 	Server
 	RTTms  *float64
 	Picked bool
+	// Skipped: the user skipped it (SkipLocked: by --speedtest-skip, so the
+	// toggle can't undo it); RestUntil: the busy backoff (zero: none).
+	Skipped, SkipLocked bool
+	RestUntil           time.Time
 }
 
 // Plan is one mode's load: tests per hour and the share of time under test.
@@ -276,7 +289,7 @@ func New(o Options) *Scheduler {
 		o.Catalog = &Catalog{byID: map[string]int{}}
 	}
 	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff,
-		extra: slices.Clone(o.Extra), seed: o.rand.Uint32()}
+		extra: slices.Clone(o.Extra), seed: o.rand.Uint32(), skip: map[string]bool{}, busyRun: map[string]int{}, rest: map[string]time.Time{}}
 	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Live: s.live, Log: o.Log, Now: o.Now,
 		Public: o.Public, PublicBudget: o.PublicBudget}
 	if o.Store != nil {
@@ -289,7 +302,7 @@ func New(o Options) *Scheduler {
 // OwnOnly reports a non-empty custom list of the user's own servers only:
 // the 15-minute floor does not apply to it.
 func OwnOnly(ss []Server) bool {
-	return len(ss) > 0 && !slices.ContainsFunc(ss, func(s Server) bool { return !s.Custom })
+	return len(ss) > 0 && !slices.ContainsFunc(ss, func(s Server) bool { return !s.LAN })
 }
 
 // IntervalFor is mode m's interval per region or server.
@@ -299,7 +312,7 @@ func (s *Scheduler) IntervalFor(m Mode) time.Duration {
 		return DefaultInterval(m)
 	}
 	if m == ModeCustom && OwnOnly(s.o.Custom) {
-		return iv
+		return max(iv, MinOwnInterval)
 	}
 	return max(iv, MinInterval)
 }
@@ -467,6 +480,11 @@ func (s *Scheduler) load(ctx context.Context) {
 		}
 		if v, ok, err := st.Setting(ctx, settingExtra); err == nil && ok && v != "" && len(s.o.Extra) == 0 {
 			s.extra = splitIDs(v)
+		}
+	}
+	if v, ok, err := st.Setting(ctx, settingSkip); err == nil && ok {
+		for _, id := range splitIDs(v) {
+			s.skip[id] = true
 		}
 	}
 }
@@ -641,7 +659,10 @@ func (s *Scheduler) State() State {
 		}
 	}
 	add := func(sv Server) {
-		ss := ServerState{Server: sv, Picked: slices.Contains(s.picked, sv.ID)}
+		ss := ServerState{Server: sv, Picked: slices.Contains(s.picked, sv.ID), Skipped: s.skippedLocked(sv.ID), SkipLocked: slices.Contains(s.o.Skip, sv.ID)}
+		if r := s.rest[sv.ID]; s.o.Now().Before(r) {
+			ss.RestUntil = r
+		}
 		if d, ok := s.rtts[sv.ID]; ok {
 			ms := float64(d) / float64(time.Millisecond)
 			ss.RTTms = &ms

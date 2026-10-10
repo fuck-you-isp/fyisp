@@ -38,10 +38,12 @@ func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
 	case KindSweep:
 		var out []Job
 		for _, sv := range s.o.Catalog.Servers {
-			out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
+			if !s.skipped(sv.ID) {
+				out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
+			}
 		}
 		for _, sv := range s.o.Custom {
-			if _, ok := s.o.Catalog.Server(sv.ID); !ok {
+			if _, ok := s.o.Catalog.Server(sv.ID); !ok && !s.skipped(sv.ID) {
 				out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
 			}
 		}
@@ -52,6 +54,8 @@ func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
 				if _, ok := s.region(id); !ok {
 					return nil, ErrUnknownID
 				}
+			} else if s.skipped(id) {
+				return nil, ErrSkipped
 			}
 		}
 		j := Job{steps: func(ctx context.Context) (string, []Step) { return s.resolveTest(ctx, id) }}
@@ -95,6 +99,11 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 				lvl = FallbackSameMetro
 			}
 			steps = append(steps, Step{Server: sv, Level: lvl})
+		}
+	}
+	if n := len(steps); n > 0 {
+		if steps = s.filter(steps, trigger == "schedule"); len(steps) == 0 {
+			return 0, false, 0 // every server skipped or resting: no test, not a failure
 		}
 	}
 	t, saved, bytes := s.runSteps(ctx, region, steps, trigger)
@@ -233,12 +242,21 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		}
 		t.Server, t.FallbackLevel, t.Fallback, t.Port, used = st.Server.ID, st.Level, st.Level != FallbackNone, 0, st.Server
 		s.testServer(sctx, st.Server, &t, &x, lr)
+		if trigger == "schedule" && sctx.Err() == nil {
+			s.noteBusy(st.Server.ID, t.Outcome == model.SpeedBusy)
+		}
 		if t.Outcome == model.SpeedOK || t.DownBps != nil || sctx.Err() != nil {
 			break // measured (a failed upload keeps the download), or out of time
 		}
 	}
 	t.End = s.o.Now()
-	win := s.o.Windows.End(t.End)
+	end := t.End
+	if sctx.Err() != nil || t.Outcome == model.SpeedFailed {
+		// Cut short: data still in flight (in the network, or queued in the
+		// server's buffers) arrives after the test; mask it too.
+		end = end.Add(AbortTail)
+	}
+	win := s.o.Windows.End(end)
 	if ctx.Err() != nil {
 		return nil, false, t.Bytes // cancelled or shutting down: not a result
 	}
@@ -447,7 +465,7 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 		var err error
 		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes,
+			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes, Check: sv.check,
 		})
 		wire += max(res.WireBytes, res.TotalBytes, res.Bytes)
 		switch {
@@ -512,7 +530,15 @@ func (s *Scheduler) pick(ctx context.Context) {
 	var got []r
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, pickParallel)
+	s.mu.Lock()
+	var servers []Server
 	for _, sv := range s.o.Catalog.Servers {
+		if s.usableLocked(sv.ID) { // not skipped, not resting
+			servers = append(servers, sv)
+		}
+	}
+	s.mu.Unlock()
+	for _, sv := range servers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -593,16 +619,26 @@ func (s *Scheduler) pick(ctx context.Context) {
 // ICMP echo, else a TCP connect to port 80 or 443. A connect to the iperf3
 // port itself is the last resort: the server takes it for a client and logs
 // an error when it closes without a cookie.
+//
+// The host is resolved once and must be public (only catalog servers are
+// picked by RTT).
 func serverRTT(ctx context.Context, ping func(context.Context, string) (time.Duration, error), host string, iperfPort int) (time.Duration, error) {
+	ips, err := lookupIPv4(ctx, host)
+	if err != nil {
+		return 0, err
+	}
+	if len(ips) == 0 || !PublicIPv4(ips[0]) {
+		return 0, fmt.Errorf("%s: no public IPv4 address", host)
+	}
+	ip := ips[0].Unmap().String()
 	if ping != nil {
-		if d, err := ping(ctx, host); err == nil {
+		if d, err := ping(ctx, ip); err == nil {
 			return d, nil
 		}
 	}
-	var err error
 	for _, p := range []int{80, 443, iperfPort} {
 		var d time.Duration
-		if d, err = connectRTT(ctx, host, p); err == nil {
+		if d, err = connectRTT(ctx, ip, p); err == nil {
 			return d, nil
 		}
 	}

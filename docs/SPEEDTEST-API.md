@@ -23,10 +23,10 @@ Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and n
 | HTTP | `code` |
 |---|---|
 | 400 | `bad_request` |
-| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off) |
+| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off); `speed_off` (speed tests are off) |
+| 409 | `skipped` (Test now of a server the user skipped) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
-| 409 | `conflict` |
 | 421 | `unknown_host` |
 | 429 | `queue_full`; `rate_limited`, `budget_exhausted`, `time_cap` and `cooldown` (with `retry_after`, the last three with `resets_at`) |
 | 503 | `unavailable` (retry after `Retry-After`) |
@@ -83,7 +83,8 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
     {"mode": "regions", "tests_per_hour": 9, "share": 0.038, "est_gb_month": 907.2}
   ],                              // est_gb_month: tests per hour × 720 × the median data of recent tests (150 MB before any)
   "masked_share_24h": 0.037,      // share of the last 24 h actually under test (masked)
-  "bytes_month": 86580579678,     // data used by speed tests since the 1st of this month (UTC); 0 on the share link
+  "bytes_month": 86580579678,
+  "bytes_24h": 3120000000,        // the last 24 hours; 0 on the share link     // data used by speed tests since the 1st of this month (UTC); 0 on the share link
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
   "next_row": "uk",               // |null: its row id
@@ -134,6 +135,9 @@ The queue's running entry in short (the full entry is in `part=queue`):
   "custom": false,                // the user's own server
   "single_port": false,           // one port only (HE Fremont): busy moves on, no port retries
   "capacity_mbps": 10000,         // |null: the server's published link capacity, where known
+  "skipped": false,               // the user skipped it: never tested (config {"skip": [...]})
+  "skip_locked": false,           // skipped by --speedtest-skip: the toggle can't undo it
+  "rest_until": null,             // |null: resting after BusyRun (3) busy scheduled tests in a row, for 6 h
   "host": "speedtest.nyc1.us.leaseweb.net",   // local only
   "ports": "5201-5210"                        // local only
 }
@@ -182,7 +186,8 @@ Only **scheduled** tests count in rows. Test now and sweeps are stored and liste
      "score_median": 0.96, "up_score_median": 0.98,             // |null likewise; leaves out server-capped tests
      "servers": {"Leaseweb-NewYork": 2, "Clouvider-NewYork": 2}}   // ok tests per server
   ],
-  "note": null                    // |null: regions, when over half of the last 24 h's tests used a fallback
+  "note": null,                   // |null: regions, when over half of the last 24 h's tests used a fallback
+  "learning": false               // tests but no scores yet: a server needs 20 first-choice tests over 14 days
 }
 ```
 
@@ -262,6 +267,7 @@ The latency under load over the span: per layer, the median over tests.
   "attempts": 2,                  // connection attempts over every server tried
   "down_bps": 182345678, "up_bps": 38123456,   // |null when not measured
   "down_short": false, "up_short": false,      // the direction hit the 100 MB cap: measured for less time
+  "capped_by_budget": false,      // down_short || up_short: show the speed as "≥ X"
   "down_s": 4.0, "up_s": 3.2,                  // seconds measured (0 when not measured)
   "capped_by_server": false,      // a direction within 10% of the server's published capacity
   "score": 0.94, "up_score": 0.97,             // |null: against the server's baseline
@@ -426,6 +432,7 @@ The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: t
 It works in every mode, `off` included.
 
 **Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
+- **Speed tests on:** 403 `speed_off` while the mode is `off` (part=queue `speed_on: false`).
 - **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
 - **Budget:** 429 `budget_exhausted` (data) or `time_cap` (test time) with `resets_at` (ms) and `retry_after` once either is spent.
 - **Sweep gap:** 429 `cooldown` with `resets_at` and `retry_after` for a sweep within 30 minutes of the last public one.
@@ -448,6 +455,7 @@ These use the same protections as notes (admin-gated):
 POST api/speed/config
 {"mode": "regions", "extra": ["canada"]}   // and/or
 {"public": true}               // let the share link queue tests (saved; --speedtest-public sets it at start)
+{"skip": ["Leaseweb-Tokyo"]}   // servers never to test (replaces the saved list; --speedtest-skip adds to it)
 ```
 
 - `200 {"mode": "regions", "next_at": 1760104920000, "public": true, "limits": {"budget_bytes": 10000000000, "time_hour_max_s": 600, "time_day_max_s": 3600}}`, with the fields it changed; `next_at` is null for `off`. `limits` comes with `public`: the share link's caps, for the toggle's confirmation (the same values as part=queue `budget`).

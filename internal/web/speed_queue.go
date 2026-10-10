@@ -55,10 +55,11 @@ type speedJobJSON struct {
 	Test     *int64   `json:"test"`     // the stored test's id
 	// DownBps and UpBps: the result (ok only); DownShort and UpShort: the
 	// direction hit the byte cap (show "≥ X").
-	DownBps   *float64 `json:"down_bps"`
-	UpBps     *float64 `json:"up_bps"`
-	DownShort bool     `json:"down_short"`
-	UpShort   bool     `json:"up_short"`
+	DownBps        *float64 `json:"down_bps"`
+	UpBps          *float64 `json:"up_bps"`
+	DownShort      bool     `json:"down_short"`
+	UpShort        bool     `json:"up_short"`
+	CappedByBudget bool     `json:"capped_by_budget"`
 }
 
 // speedResults fills a sweep entry's results from the stored tests.
@@ -92,7 +93,7 @@ func (s *server) speedResults(ctx context.Context, j *speedEntryJSON, e speedtes
 				t := ts[k]
 				r.Status, r.Test = t.Outcome, &t.ID
 				if t.Outcome == model.SpeedOK {
-					r.DownBps, r.UpBps, r.DownShort, r.UpShort = t.DownBps, t.UpBps, t.DownShort, t.UpShort
+					r.DownBps, r.UpBps, r.DownShort, r.UpShort, r.CappedByBudget = t.DownBps, t.UpBps, t.DownShort, t.UpShort, t.DownShort || t.UpShort
 				}
 			}
 		case e.State == speedtest.StateRunning && i == e.Step-1:
@@ -117,6 +118,7 @@ type speedQueueJSON struct {
 	// Details toggle); PublicStart: the share link may start one now (on,
 	// budget left, room in the queue).
 	PublicEnabled bool            `json:"public_enabled"`
+	SpeedOn       bool            `json:"speed_on"` // speed tests are on (a mode other than off): the share link may only ask then
 	PublicStart   bool            `json:"public_start"`
 	Budget        speedBudgetJSON `json:"budget"`
 }
@@ -326,7 +328,8 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 			TimeHourS: int64(qs.TimeHour / time.Second), TimeDayS: int64(qs.TimeDay / time.Second),
 			TimeHourMaxS: int64(speedtest.PublicTimePerHour / time.Second), TimeDayMaxS: int64(speedtest.PublicTimePerDay / time.Second),
 			TimeResetsAt: msPtr(qs.TimeResets), SweepAvailAt: msPtr(qs.SweepAt)}
-		out.PublicStart = qs.Public && qs.BudgetResets.IsZero() && qs.TimeResets.IsZero() && !qs.Full
+		out.SpeedOn = st.Mode != speedtest.ModeOff
+		out.PublicStart = out.SpeedOn && qs.Public && qs.BudgetResets.IsZero() && qs.TimeResets.IsZero() && !qs.Full
 		writeJSON(w, r, http.StatusOK, out)
 	}
 }
@@ -375,6 +378,9 @@ func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, req speedt
 	switch {
 	case errors.Is(err, speedtest.ErrUnknownID):
 		writeErr(w, r, http.StatusNotFound, "no such server or region")
+		return
+	case errors.Is(err, speedtest.ErrSkipped):
+		writeErrCode(w, r, http.StatusConflict, "skipped", err.Error())
 		return
 	case err != nil:
 		writeErr(w, r, http.StatusBadRequest, err.Error())
@@ -460,6 +466,10 @@ func (h *publicHandler) servePublicSpeedRun(w http.ResponseWriter, r *http.Reque
 	key := limitKey(clientKey(r)) // the start limiter's (in memory only)
 	req := speedtest.Request{Kind: kind, Target: id, Who: speedtest.WhoPublic, Visitor: visitorKey(r)}
 	// The queue's answer first: a duplicate or a refusal is not a start.
+	if h.d.Speed.State().Mode == speedtest.ModeOff {
+		writeInvErr(w, r, http.StatusForbidden, "speed_off", "speed tests are off", 0)
+		return
+	}
 	dup, err := h.d.Speed.Queue().Admit(req)
 	if queueRefused(w, r, err, h.now()) {
 		return

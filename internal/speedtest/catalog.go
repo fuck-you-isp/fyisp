@@ -2,10 +2,12 @@ package speedtest
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net"
+	"net/netip"
 	"regexp"
 	"slices"
 	"sort"
@@ -54,9 +56,42 @@ type Server struct {
 	// CapacityMbps is the published link capacity (0: unknown): a result
 	// within 10% of it measured the server, not the line.
 	CapacityMbps float64
-	// Custom is a user-supplied server (--speedtest-server host:port): the
-	// 15-minute floor does not apply when every server is one.
+	// Custom is a user-supplied server (--speedtest-server host:port). LAN:
+	// it is on the user's own network (a private address); the 15-minute
+	// floor does not apply when every server is one, and it is only ever
+	// dialled at a private address.
 	Custom bool
+	LAN    bool
+}
+
+// PublicIPv4 reports a public unicast IPv4 address: not private, CGNAT,
+// loopback, link-local, multicast or unspecified.
+func PublicIPv4(a netip.Addr) bool {
+	a = a.Unmap()
+	return a.Is4() && a.IsGlobalUnicast() && !a.IsPrivate() && !cgnat.Contains(a)
+}
+
+// PrivateIPv4 reports an address on the user's own networks: RFC 1918,
+// CGNAT (100.64/10), link-local or loopback.
+func PrivateIPv4(a netip.Addr) bool {
+	a = a.Unmap()
+	return a.Is4() && (a.IsPrivate() || cgnat.Contains(a) || a.IsLinkLocalUnicast() || a.IsLoopback())
+}
+
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// check vets the address a test of s dials: catalog servers must be
+// public (a rebound or hijacked name must not aim 8 streams into the LAN),
+// the user's LAN servers private (they have no interval floor); the user's
+// other servers may be anywhere.
+func (s Server) check(a netip.Addr) error {
+	switch {
+	case !s.Custom && !PublicIPv4(a):
+		return fmt.Errorf("%s resolves to %s, not a public address", s.Host, a)
+	case s.LAN && !PrivateIPv4(a):
+		return fmt.Errorf("%s resolves to %s, not on your network", s.Host, a)
+	}
+	return nil
 }
 
 func (s Server) ports() int { return s.PortMax - s.PortMin + 1 }
@@ -339,12 +374,38 @@ func Custom(list string, c *Catalog) ([]Server, error) {
 			return nil, fmt.Errorf("--speedtest-server %q: want host:port or a catalog server id (see the README)", x)
 		}
 		hp := net.JoinHostPort(host, port)
-		out = append(out, Server{ID: hp, Label: "Your server", Provider: "Your server", Host: host, PortMin: p, PortMax: p, Custom: true})
+		out = append(out, Server{ID: hp, Label: "Your server", Provider: "Your server", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: onLAN(host)})
 	}
 	if len(out) == 0 {
 		return nil, errors.New("--speedtest-server: no servers")
 	}
 	return out, nil
+}
+
+// onLAN reports a host on the user's own network: a private IPv4 literal,
+// or a name whose IPv4 addresses are all private (resolved once, at start;
+// every test checks again).
+func onLAN(host string) bool {
+	if a, err := netip.ParseAddr(host); err == nil {
+		return PrivateIPv4(a)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ips, err := lookupIPv4(ctx, host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, a := range ips {
+		if !PrivateIPv4(a) {
+			return false
+		}
+	}
+	return true
+}
+
+// lookupIPv4 resolves A records (a variable: tests).
+var lookupIPv4 = func(ctx context.Context, host string) ([]netip.Addr, error) {
+	return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
 }
 
 func hasKey[V any](m map[string]V, k string) bool {

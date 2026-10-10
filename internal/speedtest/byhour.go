@@ -122,9 +122,10 @@ func Summarize(tests []model.SpeedTest, tz time.Duration) Stats {
 			st.Failed++
 			c.NFailed++
 		}
-		if t.Outcome != model.SpeedOK {
+		if t.Outcome != model.SpeedOK && t.DownBps == nil {
 			continue
 		}
+		// A partial result (the upload failed) keeps its download.
 		h := c.Hour
 		if t.DownBps != nil {
 			down = append(down, *t.DownBps)
@@ -175,7 +176,8 @@ func HourMedians(tests []model.SpeedTest, tz time.Duration, up bool) [24]float64
 		if up {
 			sc = t.ScoreUp
 		}
-		if t.OnDemand() || t.Outcome != model.SpeedOK || sc == nil || t.CappedByServer {
+		usable := t.Outcome == model.SpeedOK || (!up && t.DownBps != nil) // a partial result keeps its download
+		if t.OnDemand() || !usable || sc == nil || t.CappedByServer {
 			continue
 		}
 		h := t.Start.Add(tz).UTC().Hour()

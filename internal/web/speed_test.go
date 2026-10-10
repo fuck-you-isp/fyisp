@@ -162,7 +162,10 @@ func newSpeedRigWith(t *testing.T, step time.Duration, ro rigOpts) *speedRig {
 				}
 				return 80 * time.Millisecond, nil
 			}}})
-	if ro.noRun {
+	if ro.noRun { // the queue stays stopped; the mode is regions as saved
+		if _, err := g.s.SetMode(ctx, speedtest.ModeRegions, nil); err != nil {
+			t.Fatal(err)
+		}
 		return g
 	}
 	rctx, cancel := context.WithCancel(ctx)
@@ -512,6 +515,15 @@ func TestSpeedPublicQueue(t *testing.T) {
 	if w := do(pub, "GET", speedPub+"/api/speed/run", speedVisitor("1.1.1.1")); w.Code != 405 {
 		t.Errorf("GET run: %d", w.Code)
 	}
+	// With speed tests off the share link can't ask.
+	g.s.SetMode(context.Background(), speedtest.ModeOff, nil)
+	if w, r := post("/api/speed/run", speedVisitor("1.1.1.1")); w.Code != 403 || r.Code != "speed_off" {
+		t.Errorf("off: %d %+v", w.Code, r)
+	}
+	if _, q := speedQueueOf(t, pub, speedVisitor("1.1.1.1")); q.SpeedOn || q.PublicStart {
+		t.Errorf("off: %+v", q)
+	}
+	g.s.SetMode(context.Background(), speedtest.ModeRegions, nil)
 	if w := speedSend(pub, "POST", speedPub+"/api/speed/run", "kind=sweep", speedVisitor("1.1.1.1")); w.Code != 400 {
 		t.Errorf("body: %d", w.Code)
 	}
@@ -593,6 +605,14 @@ func TestSpeedPublicQueue(t *testing.T) {
 	if w := do(pub, "GET", speedPub+"/api/speed?part=queue&id=1", speedVisitor("1.1.1.1")); w.Code != 400 {
 		t.Errorf("id outside part=entry: %d", w.Code)
 	}
+}
+
+func speedQueueOf(t *testing.T, pub *publicHandler, hdr map[string]string) (string, speedQueueJSON) {
+	t.Helper()
+	w := do(pub, "GET", speedPub+"/api/speed?part=queue", hdr)
+	var q speedQueueJSON
+	json.Unmarshal(w.Body.Bytes(), &q)
+	return w.Body.String(), q
 }
 
 // TestSpeedPublicOptInBudget: the share link's tests are an owner opt-in

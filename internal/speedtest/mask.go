@@ -21,6 +21,11 @@ import (
 // MaskTail is masked after every test: queues take a moment to drain.
 const MaskTail = 2 * time.Second
 
+// AbortTail extends a test's window when it was cut short (cancelled, timed
+// out, failed): the sockets are reset (SO_LINGER 0), but data already in
+// flight still arrives for a moment.
+const AbortTail = 3 * time.Second
+
 // Window is one test's span.
 type Window struct {
 	Start time.Time `json:"start"`
