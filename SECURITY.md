@@ -31,14 +31,24 @@ reports and logs for it). Socket errors are stored only as a reason code,
 never as text that could contain an address. `--no-udp` turns STUN off.
 
 Speed tests are off unless you switch them on (`--speedtest` or the Details
-choice). Then fyisp sends iperf3 traffic to public iperf3 servers in its
-catalog (Leaseweb, OVH, Clouvider, Scaleway and others; the README lists them)
-and to servers you name with `--speedtest-server`, and to no one else. Those
-servers see your public IP address. "Test now" and the mode choice are write
-actions behind the same protections as notes (same origin, CSRF token, admin
-token); the share link has neither. The share link shows server labels
-(provider and city) but never hosts, addresses or ports, and shows your own
-servers only as "Your server".
+choice). Then fyisp sends iperf3 traffic over IPv4 to public iperf3 servers in
+its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
+Scaleway and others; the README lists them) and to servers you name with
+`--speedtest-server`, and to no one else. The catalog is built into the
+binary and never fetched. Those servers see your public IP address. Each test
+moves at most 200 MB.
+
+The mode choice, cancelling and clearing the queue are write actions behind
+the same protections as notes (same origin, CSRF token, admin token). "Test
+now" and "Test all servers" are also open to share-link visitors, so anyone
+with the link can make your line run speed tests. Those requests need the
+same origin and a token served with the shared page, are rate-limited per
+visitor (by `Cf-Connecting-Ip`, IPv6 by /64), and wait in the one queue: one
+waiting request per visitor, at most 3 waiting sweeps, the owner's requests
+first, one test at a time. Stop sharing to close it. The share link shows
+server labels (provider and city) but never hosts, addresses or ports, shows
+your own servers only as "Your server", and never shows visitors' addresses
+or data use.
 
 The public share link hides the STUN target names and the Teams relay region
 (the Azure region fyisp's relay lookup landed in, which hints at where you

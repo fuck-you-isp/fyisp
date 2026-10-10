@@ -1,30 +1,34 @@
 # Speed tests: API contract (fyisp v0.7)
 
-Scheduled iperf3 speed tests. Each test runs download, then upload: 8 TCP streams, a 1 s ramp-up that is left out, then 3 to 8 s measured. The measurement stops once a second is within 5% of the one before.
+iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs download, then upload: 8 TCP streams, an adaptive ramp-up that is left out (until a 100 ms tick stops rising, at most 1 s), then 3 to 8 s measured, stopping once a second is within 5% of the one before. Each direction stops at 100 MB (the test is then "short"), so a test moves at most 200 MB.
 
-Schedule and modes:
-- **Mode `regions`**, the default once speed tests are on: the 9 catalog regions are each tested every 15 minutes, one test at a time, spread evenly about 100 s apart. Each region has a fallback chain across providers.
-- **Mode `nearest`**: the 2 nearest servers, alternating, one test every 15 minutes.
-- **Mode `custom`**: the `--speedtest-server` list, each server every 15 minutes.
-- **Mode `off`** is the default.
+Modes:
+- **`off`**, the default.
+- **`regions`**, the default once speed tests are on (`speedtest.DefaultMode`; **TBD**, the owner may still change it): the 9 default regions, each **once an hour**, one test at a time about 400 s apart. The order and the minute differ per install (a saved seed), and each hour's start has ±60 s of jitter. Each region lists same-metro servers from several providers. The first choice rotates per (region, hour of day) by day, so each hour is measured with every provider within N days. `extra` adds opt-in regions.
+- **`nearby`**: the nearest server of 3 different providers (same metro preferred), plus 1 automatic far region on a major route (Europe and South America → US East; North America, Africa and the Middle East → UK; Asia and Oceania → US West) and any `extra` far regions, each every 15 minutes. The picks are redone daily.
+- **`custom`**: the `--speedtest-server` list, each every 15 minutes. It is offered only with that flag.
 
-The catalog (`internal/profile/catalog/iperf3/`: 41 servers in per-provider files, and `regions.yml`) is data, changed by PR. The Go types live in `internal/web/speed.go`; keep this file in sync with them. Golden examples: `internal/web/testdata/speed/{local,public}.json`.
+Intervals can be changed with `--speedtest=…,every=`. The floor is 15 minutes against public servers; with only the user's own servers there is no floor.
 
-Routes are relative like every other API: `/api/speed` locally, `/s/<secret>/api/speed` on the share link. Unknown parameters return 400. When fyisp runs without a speed-test source (an old build, `fyisp-webdev -no-speed`), every route answers 404: hide Speed.
+The catalog (`internal/profile/catalog/iperf3/`: 45 servers in per-provider files, plus `regions.yml`) is built into the binary. It changes only with a release.
+
+The Go types live in `internal/web/speed.go`; keep this file in sync with them. Golden examples: `internal/web/testdata/speed/{local,public}.json`.
+
+Routes are relative like every other API: `/api/speed` locally, `/s/<secret>/api/speed` on the share link. Unknown parameters return 400. When fyisp runs without a speed-test source (an old build, or `fyisp-webdev -no-speed`), every route answers 404 and `/api/profile` has `features.speed: false`. Hide Speed then.
 
 ## Errors
 
-Every API error (not only these routes) is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and never match on the sentence.
+Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and never match on the sentence.
 
 | HTTP | `code` |
 |---|---|
 | 400 | `bad_request` |
-| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token) |
+| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token, admin token or page token) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
-| 409 | `running` (a speed test runs or is queued); `conflict` elsewhere |
+| 409 | `conflict` |
 | 421 | `unknown_host` |
-| 429 | `rate_limited` |
+| 429 | `queue_full` (with `retry_after` and `queue`), or `rate_limited` (with `retry_after`) |
 | 503 | `unavailable` (retry after `Retry-After`) |
 
 ## Nullables
@@ -33,12 +37,17 @@ In the JSON below, `|null` marks fields that are **always present and may be nul
 
 ## Identity and the share link
 
-Servers have three names:
-- `id` is the catalog id, e.g. `Leaseweb-NewYork`. It is stable, URL-safe, and the same on both listeners, so `#v=speed&srv=<id>` works on both.
-- `label` is public-safe: provider and city, e.g. "Leaseweb New York".
+Servers have these names:
+- `id` is the catalog id, e.g. `Leaseweb-NewYork`. It is stable, URL-safe, and the same on both listeners.
+- `label` is provider and city, e.g. "Leaseweb New York" or "InterServer Secaucus NJ".
+- `display` is the public label "Region · Provider, City", e.g. "US East · Leaseweb, New York". It falls back to "Provider, City" for servers in no region.
 - `host` and the ports are **local only**, along with every test's `port`.
 
-The user's own servers (`--speedtest-server host:port`) have the id `host:port` locally. On the share link they appear as `custom-1`, `custom-2`, … with the label "Your server" (or "Your server 2" and so on), and the share link accepts those ids as well. Regions have an `id` (`uk`, `eu-west`, …) and a `title` ("UK", "Western Europe", …).
+The user's own servers (`--speedtest-server host:port`) have the id `host:port` locally. On the share link they appear as `custom-1`, `custom-2`, … with the label "Your server" (or "Your server 2" and so on), and the share link accepts those ids as well.
+
+Regions have an `id` (`uk`, `eu-west`, …) and a `title` ("UK", "Western Europe", …). Neither a client address nor data use (`bytes_month` is 0) ever appears on the share link.
+
+Wording: `finding.text`, `pattern.text`, row dips and `under_load.text` speak to the owner ("your internet provider"). On the share link the same fields carry the public wording ("the internet provider").
 
 ## `GET api/speed` (summary)
 
@@ -48,40 +57,47 @@ GET api/speed?days=7&tz=120[&exclude_fallback=1]
 
 | Param | Values | Default | Notes |
 |---|---|---|---|
-| `days` | `7`, `30` | `7` | The span of the rows. The pattern is always judged over 30 days. |
+| `days` | `7`, `30` | `7` | The span of the rows. The pattern and the finding are judged over 30 days. |
 | `tz` | minutes east of UTC, integer from -840 to 840 | `0` | Rounded to 15 min and echoed. Hours of day are local to it. Send `-new Date().getTimezoneOffset()`. |
-| `exclude_fallback` | `0`, `1` | `0` | `1` leaves fallback tests out of `per_region`. |
+| `exclude_fallback` | `0`, `1` | `0` | `1` leaves fallback tests out of the region rows. |
+| `row`, `region`, `server` | an id | | One row's view (below). |
 
-**No full test lists here.** The summary carries rows and the latest test only; use `?server=` or `?region=` (below) for tests. With no tests yet it is still 200, with `latest: null`, rows with `n: 0`, and `pattern: null`.
+The summary carries rows and the latest test only; use `?row=` for tests. With no tests yet it is still 200, with `latest: null`, rows with `n: 0`, `pattern: null` and `finding.case: "not_enough_data"`.
 
-Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=running` (below) for the "testing now" line.
+Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=running` or `part=queue` for live state (every 3 s while something runs).
 
 ```jsonc
 {
   "at": 1760104800000, "tz": 120, "days": 7, "exclude_fallback": false,
-  "mode": "regions",              // "off" | "regions" | "nearest" | "custom"
-  "modes": ["off", "regions", "nearest"],  // offered here; "custom" only with --speedtest-server
+  "mode": "regions",              // "off" | "regions" | "nearby" | "custom"
+  "modes": ["off", "regions", "nearby"],   // offered here; "custom" only with --speedtest-server
   "enabled": true,                // mode != "off"
-  "configurable": true,           // may use run and config (local, controls allowed); always false on the share link
-  "interval_s": 900,              // each region or server is tested once per interval
-  "spacing_s": 100,               // between tests
-  "planned_share": 0.15,          // share of time the line is planned to be under test
+  "set_by_flag": false,           // a --speedtest flag chose the mode at start (the Details choice is overridden until restart)
+  "extra": ["canada"],            // the opt-in (regions) or extra far (nearby) regions
+  "configurable": true,           // may use config, cancel and clear (local, controls allowed); always false on the share link
+  "interval_s": 3600,             // each region or server is tested once per interval
+  "spacing_s": 400,               // between scheduled tests
+  "planned_share": 0.038,         // share of time the line is planned to be under test
   "warning": null,                // |null: a sentence when planned_share > 0.25
-  "masked_share_24h": 0.143,      // share of the last 24 h actually under test (masked)
-  "next_at": 1760104860000,       // |null: the next scheduled test; null when off or while running
-  "next": {"region": "uk", "server": "Clouvider-London"},   // |null; region |null outside mode regions
+  "plans": [                      // every offered mode except off, for the mode picker
+    {"mode": "regions", "tests_per_hour": 9, "share": 0.038, "est_gb_month": 907.2}
+  ],                              // est_gb_month: tests per hour × 720 × the median data of recent tests (150 MB before any)
+  "masked_share_24h": 0.037,      // share of the last 24 h actually under test (masked)
+  "bytes_month": 86580579678,     // data used by speed tests since the 1st of this month (UTC); 0 on the share link
+  "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
+  "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
+  "next_row": "uk",               // |null: its row id
   "running": { ...Running },      // |null
+  "rows": [ ...Row ],             // the current mode's scheduled rows, in plan order (empty when off)
+  "per_region": [ ...Row ],       // every default region, plus scheduled or tested opt-in regions, catalog order
+  "per_server": [ ...Row ],       // servers that are scheduled or have tests in the span
   "servers": [ ...Server ],       // every catalog server, then the own servers
-  "regions": [ {"id": "uk", "title": "UK", "chain": ["Clouvider-London", "Leaseweb-London", "OVH-London"]} ],
-  "per_region": [ ...Row ],       // the heatmap rows: every region, in catalog order
-  "per_server": [ ...Row ],       // servers with tests in the span, catalog order then own servers
+  "regions": [ ...Region ],       // every region, default and opt-in
   "latest": { ...Test },          // |null: the newest test of any kind
-  "pattern": {                    // |null: a clear time-of-day dip of your own line (same rule as Home)
-    "text": "Evenings are slower: about 40% below your daytime speed.",
-    "level": "info",
-    "hours": [19, 20, 21, 22],    // local hours of the dip, in order (may wrap: [23, 0, 1])
-    "drop": 0.4                   // rounded to 0.1
-  }
+  "pattern": { ...Pattern },      // |null: a clear time-of-day dip of all scheduled tests' scores pooled (fallback tests left out)
+  "finding": { ...Finding },      // what a dip points to
+  "coverage": [ {"hour": 0, "n": 4, "providers": 2} ],   // 24 entries: scheduled ok tests and providers per local hour, in the span
+  "under_load": { ...UnderLoad }
 }
 ```
 
@@ -89,11 +105,13 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
 
 ```jsonc
 {
+  "entry": 17,                    // the queue entry
+  "kind": "test",                 // "test" | "sweep" | "scheduled"
   "started": 1760104790000,
-  "expected_end": 1760104810000,  // a typical test's end; it can run up to 45 s
-  "direction": "download",        // "picking" (nearest: RTT checks) | "download" | "upload"
+  "expected_end": 1760104810000,  // an estimate (20 s a test; a sweep: 20 s × the servers left); a test can run up to 45 s
+  "step": "download",             // "picking" (nearby: RTT checks) | "download" | "upload"
   "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null while picking
-  "region": "us-east"             // |null outside mode regions
+  "index": 1, "total": 1          // a sweep: the server being tested, 1-based, of total
 }
 ```
 
@@ -101,40 +119,124 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
 
 ```jsonc
 {
-  "id": "Leaseweb-NewYork", "label": "Leaseweb New York", "provider": "Leaseweb",
-  "city": "New York", "country": "US", "geo": "na", "region": "North America",  // region: the geo's title (not a test region)
-  "rtt_ms": 82.4,                 // |null: the last RTT check (nearest mode, Test now); null when never checked
-  "picked": false,                // one of the 2 nearest
+  "id": "Leaseweb-NewYork", "label": "Leaseweb New York", "display": "US East · Leaseweb, New York",
+  "provider": "Leaseweb", "city": "New York", "country": "US",
+  "geo": "na", "area": "North America",   // the continent and its title
+  "region": "us-east",            // |null: the first test region it belongs to
+  "metro": "new-york",            // "" for own servers
+  "rtt_ms": 82.4,                 // |null: the last RTT check (mode nearby, Test now of the nearest); null when never checked
+  "picked": false,                // one of the nearby picks
   "custom": false,                // the user's own server
+  "single_port": false,           // one port only (HE Fremont): busy moves on, no port retries
+  "capacity_mbps": 10000,         // |null: the server's published link capacity, where known
   "host": "speedtest.nyc1.us.leaseweb.net",   // local only
   "ports": "5201-5210"                        // local only
 }
 ```
 
-### Row (`per_region[]`, `per_server[]`, and `row` of a single view)
+### Region
 
 ```jsonc
 {
-  "id": "us-east", "label": "US East",   // region title, or server label
-  "latest_at": 1760104790000,     // |null
-  "n": 96,                        // ok tests
-  "busy": 2, "unreachable": 0, "failed": 1,
-  "fallback": 7,                  // ok tests on a fallback server (regions)
-  "down_median_bps": 181000000,   // |null without ok tests (all *_bps below likewise)
-  "down_p10_bps": 150000000,      // the slow end
-  "up_median_bps": 38000000, "up_p10_bps": 35000000,
-  "best_down_bps": 196000000,     // p90 of the downloads: the row's "best"
-  "dip": { ...pattern },          // |null: this row's own time-of-day dip, same shape as pattern
-  "hours": [                      // always 24 entries, local hours
-    {"hour": 0, "n": 4, "down_median_bps": 188000000, "up_median_bps": 38000000,
-     "down_norm": 0.96}           // down median ÷ best_down_bps, 0.01 steps; |null when the medians are
-  ],
-  "fallback_share_24h": 0.12,     // regions only (omitempty): share of the last 24 h's ok tests on a fallback server
-  "fallback_note": "UK mostly used a fallback server in the last 24 hours: its first choice was busy or not answering."   // regions only, omitempty: when the share is over 0.5
+  "id": "us-east", "title": "US East",
+  "servers": ["Leaseweb-NewYork", "InterServer-Secaucus", "Clouvider-NewYork"],   // same metro, rotated per hour and day
+  "nearby": ["Leaseweb-Washington"],   // the nearby-city fallback, tried last
+  "default": true,                // false: opt-in (extra)
+  "providers": ["Leaseweb", "InterServer", "Clouvider"]
 }
 ```
 
-**Sample size.** An hour cell needs `n ≥ 3` tests for its medians; otherwise they are null. In mode `regions` a region gets 4 tests per hour of day per day, so after one day nearly every cell is filled. Server rows in `regions` mode fill only for the servers in use. Show cells with n < 3 as "filling in".
+### Row (`rows[]`, `per_region[]`, `per_server[]`, and `row` of a single view)
+
+Only **scheduled** tests count in rows. Test now and sweeps are stored and listed, but they never enter rows, patterns or the finding.
+
+```jsonc
+{
+  "id": "us-east", "kind": "region",   // "region" | "server"
+  "label": "US East",             // region title, or server label
+  "why": "added",                 // omitempty: why it is scheduled ("added", "nearest Clouvider", "far: US East", …)
+  "scheduled": true,              // a row of the current mode
+  "servers": ["Leaseweb-NewYork", "InterServer-Secaucus", "Clouvider-NewYork", "Leaseweb-Washington"],
+  "latest_at": 1760104790000,     // |null
+  "n": 96,                        // ok tests
+  "busy": 2, "unreachable": 0, "failed": 1,
+  "fallback": 7, "fallback_share": 0.07,   // ok tests not on the first choice
+  "fallback_share_24h": 0.12,     // |null: regions, the last 24 h
+  "capped_by_server": 0,          // ok tests within 10% of the server's capacity
+  "server_now": "Leaseweb-NewYork",   // the server of the newest ok test ("" without)
+  "down_median_bps": 181000000,   // |null without ok tests (every *_bps below likewise)
+  "down_p10_bps": 150000000,      // the slow end
+  "up_median_bps": 38000000, "up_p10_bps": 35000000,
+  "best_down_bps": 196000000,     // p90 of the downloads
+  "score_median": 0.97,           // |null: the median score (below)
+  "dip": { ...Pattern },          // |null: this row's download dip by score
+  "up_dip": { ...Pattern },       // |null: its upload dip
+  "hours": [                      // always 24 entries, local hours
+    {"hour": 0, "n": 4, "n_fallback": 0, "n_failed": 0, "n_capped": 0,
+     "down_median_bps": 188000000, "up_median_bps": 38000000,   // |null with fewer than 3 ok tests
+     "score_median": 0.96, "up_score_median": 0.98,             // |null likewise; leaves out server-capped tests
+     "servers": {"Leaseweb-NewYork": 2, "Clouvider-NewYork": 2}}   // ok tests per server
+  ],
+  "note": null                    // |null: regions, when over half of the last 24 h's tests used a fallback
+}
+```
+
+**Scores.** A test's score is its speed divided by that server's baseline. The baseline is the p90 of the server's first-choice scheduled ok tests over the 14 days before the test, leaving out tests the server capped; it needs at least 20 such tests, so the score is null for a new server's first days. Scores make servers of different speeds comparable, and the heatmap and every pattern use them. A cell needs `n ≥ 3`; show fewer as "filling in". In mode `regions` a region gets one test per hour of day per day.
+
+### Pattern
+
+```jsonc
+{
+  "text": "Evenings are slower: about 40% below your daytime speed.",
+  "level": "info",
+  "hours": [19, 20, 21, 22],      // local hours of the dip, in order (may wrap: [23, 0, 1])
+  "drop": 0.4,                    // rounded to 0.1
+  "up": false                     // an upload dip
+}
+```
+
+### Finding
+
+What the slowdown points to. It is computed in Go and reused by Details, Home and the report.
+
+```jsonc
+{
+  "case": "isp",                  // "not_enough_data" | "nothing" | "isp" | "provider" | "route" | "server"
+  "tier": "points_to",            // omitempty: "points_to" | "most_likely" | "early_sign" (how sure)
+  "text": "Every region slows from about 7 to 11 pm, with every provider: about 40% below normal. Your provider's first router also answers slower then (25 ms instead of 8 ms), so it's in its local network. That points to your internet provider's own network.",
+  "text_public": "… That points to the internet provider's own network.",   // the share link's and report's wording
+  "evidence": "Based on 648 tests over 9 days; each evening hour was tested at least 9 times across 3 providers.",
+  "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
+  "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],
+  "servers": [],                  // case server: the server
+  "drop": 0.4, "up": false,
+  "days": 9, "tests": 648         // days and scored scheduled tests behind it
+}
+```
+
+The cases:
+- `isp`: every region dips at the same hours with every provider. The ISP edge's idle RTT by hour is the access-network control: it says whether the slowdown is in the provider's local network or further in.
+- `provider`: only one provider's servers dip, in more than one region.
+- `route`: only one region dips, whichever provider.
+- `server`: only one server.
+
+The tier depends on days, tests and providers per dip hour. `not_enough_data` says how many of 3 days are in.
+
+### UnderLoad
+
+The latency under load over the span: per layer, the median over tests.
+
+```jsonc
+{
+  "layers": [
+    {"layer": "edge", "idle_ms": 8.2, "down_ms": 21, "up_ms": 48, "loss_down": 0.033, "loss_up": 0},   // ms |null
+    {"layer": "gateway", "idle_ms": 1.1, "down_ms": 1.4, "up_ms": 1.5, "loss_down": 0, "loss_up": 0}
+  ],
+  "text": ["Delay through your provider rises from 8 ms to 48 ms while uploading (+40 ms): noticeable on calls.", "…"]
+}
+```
+
+`edge` is the provider's first router, and `gateway` is the user's router. Both are probed every 150 ms during each direction; a lost probe counts as the 1 s timeout in the percentiles.
 
 ### Test
 
@@ -142,49 +244,58 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual"
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep"
+  "manual": false,                // not "schedule": never in rows, patterns or the finding
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed"
-  "region": "us-east",            // |null outside mode regions
-  "server": "Leaseweb-NewYork", "label": "Leaseweb New York",   // the server actually used
-  "fallback": false,              // not the region's first choice
+  "region": "us-east",            // |null when the test was for no region
+  "server": "Leaseweb-NewYork", "label": "Leaseweb New York", "display": "US East · Leaseweb, New York",
+  "provider": "Leaseweb", "city": "New York",
+  "fallback": false,
+  "fallback_level": "none",       // "none" | "same_metro" | "nearby_city"
   "port": 5203,                   // local only
   "attempts": 2,                  // connection attempts over every server tried
-  "down_bps": 182345678,          // |null when not measured
-  "up_bps": 38123456,             // |null
-  "down_retrans": 112, "up_retrans": null,      // |null when unknown
-  "idle_gateway_ms": 1.1, "loaded_gateway_ms": 9.8,   // |null: router RTT 2 min before / during
-  "idle_call_ms": 14.2, "loaded_call_ms": 61.0        // |null: call path (STUN) before / during
+  "down_bps": 182345678, "up_bps": 38123456,   // |null when not measured
+  "down_short": false, "up_short": false,      // the direction hit the 100 MB cap: measured for less time
+  "down_s": 4.0, "up_s": 3.2,                  // seconds measured (0 when not measured)
+  "capped_by_server": false,      // a direction within 10% of the server's published capacity
+  "score": 0.94, "up_score": 0.97,             // |null: against the server's baseline
+  "bytes": 146800640,             // data used, both directions, ramp-up included
+  "down_retrans": 112, "up_retrans": null,     // |null when unknown
+  "idle_gateway_ms": 1.1, "loaded_gateway_ms": 1.5,   // |null: router RTT before / worse direction's median during
+  "connection": "wired",          // omitempty: "wired" | "wifi" | "unknown"
+  "latency": {                    // omitempty: by layer
+    "edge": {"idle_ms": 8.2,
+             "down": {"p50_ms": 21, "p90_ms": 34, "sent": 30, "lost": 1},
+             "up": {"p50_ms": 48, "p90_ms": 90, "sent": 25, "lost": 0}},
+    "gateway": { … }
+  }
 }
 ```
 
 **Outcomes.**
-- `busy`: every port tried, and every server of the chain within the slot's budget, was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
-- `unreachable`: no server of the chain accepted a connection (timeouts, DNS failures, or refusals on every port).
+- `busy`: every port and server tried within the slot's budget was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
+- `unreachable`: no server accepted a connection (timeouts, DNS failures, or refusals on every port).
 - `failed`: anything else.
 
-When a download worked but the upload failed, `down_bps` is set and `outcome` is the upload's; no fallback follows.
+When a download worked but the upload failed, `down_bps` is set and `outcome` is the upload's.
 
-**Fallback.** For each server in the chain:
-- busy or refused tries 2 more ports, 2 s apart;
-- unreachable moves to the next server at once.
+**Fallback.** A busy or refusing port gets up to 2 more ports. After that, fyisp moves to the next same-metro provider (`same_metro`), then the nearby city (`nearby_city`). Unreachable servers are skipped at once. Single-port servers get no port retries. There is no new attempt after 25 s, and a slot is cut off at 45 s. A slot never pushes later slots back; a late one is skipped.
 
-There is no new attempt after 25 s, and a slot is cut off at 45 s. A slot never pushes later slots back; a late one is skipped.
+## `GET api/speed?row=<id>` (or `server=`, `region=`)
 
-## `GET api/speed?server=<id>` or `?region=<id>`
-
-One server's or region's view. It takes `days`, `tz` and `exclude_fallback` (the last only with `region`). An unknown id returns 404.
+One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An unknown id returns 404, and on the share link own servers are found only by `custom-N`.
 
 ```jsonc
 {
   "at": ..., "tz": 120, "days": 7, "exclude_fallback": false,
   "kind": "region",               // "region" | "server"
   "row": { ...Row },
-  "tests": [ ...Test ],           // every test in the span, oldest first (a region: ≤ 30 × 96)
+  "tests": [ ...Test ],           // every test in the span (any trigger), oldest first, the newest 5000 at most
   "windows": [ {"start": ..., "end": ...} ]
 }
 ```
 
-For compare, make one request per server or region (up to 4).
+For compare, make one request per row (up to 4).
 
 ## `GET api/speed?part=windows&from=...&to=...`
 
@@ -192,56 +303,119 @@ For compare, make one request per server or region (up to 4).
 {"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000}]}
 ```
 
-`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples that ran inside a window, or within 2 s after it, are stored as "not measured", so charts show a gap. The verdict, call minutes, Home and history never count them.
+`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples that ran inside a window, or within 2 s after it, are stored as "not measured", so charts show a gap. The verdict, call minutes, Home and history never count them, and history never calls them "fyisp wasn't running".
 
-## `GET api/speed?part=running`
+## The queue
 
-A light poll for the "testing now" line: `{"at": ..., "running": { ...Running } | null}`.
+Scheduled slots, Test now and sweeps share one process-wide queue, and one entry runs at a time:
+- The owner's entries (local listener) wait ahead of scheduled slots and visitors' entries (share link). A running entry is never pre-empted.
+- An equivalent waiting entry is returned instead of a new one: the same kind and target. Sweeps are all equivalent.
+- Visitors are keyed by `Cf-Connecting-Ip`, with IPv6 grouped by /64. Each visitor may have 1 waiting entry, and at most 3 visitors' sweeps wait at once. Beyond that the answer is `429 queue_full`.
+- A scheduled slot that waited more than 10 minutes is dropped, and slots never stack up.
+- A sweep tests every catalog server once (45), with the normal test and byte cap, and is stored with trigger `sweep`.
 
-## `POST api/speed/run[?id=<server or region id>]` (local only)
+### Entry
 
-"Test now". It uses the same protections as notes: same origin, `X-FYISP-Token` (the page's CSRF token), and the admin token or session cookie when one is set. There is no body.
+```jsonc
+{
+  "id": 17,
+  "kind": "test",                 // "test" | "sweep" | "scheduled"
+  "who": "you",                   // "you" (this listener's owner, or this visitor) | "someone" | "scheduled"
+  "state": "waiting",             // "waiting" | "running" | "done" | "cancelled" | "dropped"
+  "position": 1,                  // 1 = next; 0 when running or finished
+  "label": "US East",             // the target's title or label; "Nearest servers"; "All servers"
+  "target": "us-east",            // omitempty: the region or server id (custom-N on the share link)
+  "requested_at": 1760104790000,
+  "started_at": null, "finished_at": null,     // |null
+  "est_start": 1760104810000, "est_end": 1760104830000,   // |null: estimates (20 s a test)
+  "progress": { ...Running },     // omitempty: while running
+  "results": [                    // omitempty: sweeps, one per server, in order
+    {"server": "Clouvider-London", "label": "Clouvider London", "display": "UK · Clouvider, London",
+     "region": "uk", "provider": "Clouvider",  // region |null
+     "status": "done",            // "waiting" | "testing" | "done" | "busy" | "unreachable" | "failed"
+     "direction": "upload",       // omitempty: while testing
+     "down_bps": 412000000, "up_bps": 41000000, "down_short": false, "up_short": false,   // bps |null
+     "at": 1760104795000}         // |null
+  ]
+}
+```
 
-The test targets depend on `id`:
-- no `id`: the 2 nearest servers;
-- a server id: that server only;
-- a region id: that region's chain.
+### `GET api/speed?part=queue`
 
-Share-link ids (`custom-1`) are accepted.
+`{"at": ..., "running": Entry|null, "waiting": [Entry…], "last_sweep": Entry|null}`
+
+### `GET api/speed?part=running`
+
+A light poll: `{"at": ..., "running": Running|null}`.
+
+### `GET api/speed?part=entry&id=<id>` and `?part=sweep[&id=<id>]`
+
+- `entry`: `{"at": ..., "entry": Entry}` for a waiting, running or recently finished entry; otherwise 404.
+- `sweep`: `{"at": ..., "sweep": Entry|null}`. Without `id` it gives the last finished or cancelled sweep (`null` before any); with `id` that sweep, or 404.
+
+### `POST api/speed/run` and `POST api/speed/sweep`
+
+```
+POST api/speed/run
+{"server": "us-east"}            // optional: a server or region id (custom-N accepted); omitted: the nearest servers
+POST api/speed/sweep              // no body
+```
 
 Responses:
-- `202 {"started": 1760104800000}`;
-- `409` with code `running`;
+- `202 {"entry": Entry}`: queued; it may already be running;
+- `200 {"entry": Entry, "duplicate": true}`: an equivalent entry was already waiting;
+- `429 {"error", "code": "queue_full", "retry_after": 60, "queue": {...}}`;
 - `404` for an unknown id;
-- `403` when controls are not allowed.
+- `400` for any other body field or a query parameter.
 
-It works in every mode, `off` included.
+Protections:
+- **Local**: same origin, the page's CSRF token in `X-FYISP-Token`, and the admin token (`X-FYISP-Admin`) or session when one is set. Otherwise `403`.
+- **Share link**: no admin token. It needs the same origin (`Origin` or `Sec-Fetch-Site` matching the host) and the shared page's own token in `X-FYISP-Token`; the page carries it like the local CSRF token. Otherwise `403`. A per-visitor rate of 1 request per 10 s, burst 3, gives `429 rate_limited` with `retry_after: 10`.
+
+Both work in every mode, `off` included.
+
+### `DELETE api/speed/queue/<id>` (local only)
+
+Cancels a waiting entry, or stops the running one (nothing is stored for a cancelled test). Responses: `200 {"cancelled": 17}`, or `404`. It uses the same protections as config.
+
+### `POST api/speed/queue/clear?who=public|all` (local only)
+
+Cancels the visitors' waiting entries (`public`) or every waiting entry (`all`, the default). Response: `200 {"cancelled": 2}`.
 
 ## `POST api/speed/config` (local only)
 
 ```
 POST api/speed/config
-{"mode": "regions"}
+{"mode": "regions", "extra": ["canada"]}
 ```
 
 - `200 {"mode": "regions", "next_at": 1760104920000}`, with `next_at` null for `off`.
-- `400` for a mode not in `modes`, or for a body with any other field.
+- `400` for a mode not in `modes`, an unknown region in `extra`, or a body with any other field.
 
-The choice is saved and survives restarts. A `--speedtest…` flag on the command line overrides it at start. Switching to a mode schedules the first test about 2 minutes later.
+The choice and `extra` are saved and survive restarts. A `--speedtest…` flag on the command line overrides them at start (`set_by_flag`). Switching to a mode schedules the first test about 2 minutes later.
 
 ## `GET api/status`
 
 `speed_masked_share_24h` (omitempty) is the share of the last 24 hours under test. Probes in that time are stored as "not measured".
 
-## `api/home` (live part)
+## `GET api/profile`
 
-`HomeLive` gains an optional `speed`:
+`features.speed` is true when speed tests are available (any mode).
+
+## `api/home`
+
+`HomeLive.speed` (omitempty) is the speed line:
 
 ```json
-"speed": {"text": "Evenings are slower: about 40% below your daytime speed.", "level": "info"}
+"speed": {"text": "Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). That's still plenty for video calls.", "kind": "pattern", "impact": "ok"}
 ```
 
-It is present only when there is a clear pattern in the user's own line. Each test is taken as a fraction of its region's (or server's) p90, so far servers that always read lower neither hide nor fake a dip. Fallback tests are left out. Send `tz` on `live` too, since the wording depends on local hours.
+- `kind`: `warmup` (the first days: "Speed: checking at different times of day. We need about 3 days to see a pattern."), `pattern`, or `steady` (no time of day stands out).
+- `impact`: `ok`, or `video_risk` when the dip hours' download may be too slow for video calls.
+- It is absent when speed tests are off, while the answer card shows a problem (warn or bad), when the dip is narrow (fewer than half the regions or fewer than 2 providers), and when the last day's tests mostly failed.
+- Send `tz` on `live` too: the wording depends on local hours. The share link says "the daytime" instead of "your daytime".
+
+`HomeAt` ("What happened at") gains `speed_test_overlap_s` and `speed_note` (both omitempty) when a speed test ran in the window. At 10 s or more of overlap, the note names the test as the most likely cause.
 
 ## Metrics (`/metrics`)
 
@@ -249,11 +423,12 @@ These give the latest result per region and server, set after every test:
 
 | Metric | Labels | |
 |---|---|---|
-| `fyisp_speed_download_bits_per_second` | `region`, `server` | gauge (`region` empty outside mode regions) |
+| `fyisp_speed_download_bits_per_second` | `region`, `server` | gauge (`region` empty for tests for no region) |
 | `fyisp_speed_upload_bits_per_second` | `region`, `server` | gauge |
-| `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`gateway`, `call`), `load` (`idle`, `loaded`) | gauge |
+| `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`edge`, `gateway`), `load` (`idle`, `download`, `upload`) | gauge: median RTT |
+| `fyisp_speed_loaded_probes_lost_ratio` | `region`, `server`, `layer`, `load` (`download`, `upload`) | gauge |
 | `fyisp_speed_tests_total` | `region`, `server`, `outcome` | counter |
 
 ## Export
 
-`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms`.
+`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,connection,idle_gateway_ms,loaded_gateway_ms,idle_edge_ms,down_edge_p50_ms,down_edge_p90_ms,down_edge_lost,up_edge_p50_ms,up_edge_p90_ms,up_edge_lost`.

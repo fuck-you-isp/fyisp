@@ -43,15 +43,17 @@ That's 1.69 GB of images using 7–9% of a CPU core and 187–451 MiB of RAM (me
   - An on-demand bufferbloat test.
   - Alerts.
 - **v0.7: speed tests** (`docs/SPEEDTEST-API.md`):
-  - A pure-Go iperf3 client (`internal/speedtest`) with adaptive length: 8 streams, 1 s omitted, 3–8 s each way.
-  - Off by default. Mode `regions` tests 9 regions, each every 15 minutes, one test at a time about 100 s apart, with jitter on each cycle's start. Each region falls back along a chain of servers from different providers.
-  - Mode `nearest` tests the 2 nearest servers; mode `custom` tests the user's own list.
-  - The catalog (41 servers, regions) is data in `internal/profile/catalog/iperf3/`.
-  - Busy servers are retried and recorded as busy, never slow.
-  - Latency under load is stored: gateway and call path, idle vs loaded.
+  - A pure-Go iperf3 client (`internal/speedtest`) over IPv4: 8 streams, an adaptive ramp-up of at most 1 s left out, 3–8 s measured each way, at most 100 MB a direction.
+  - Off by default. Mode `regions` (the default once on) tests 9 regions once an hour, one test at a time about 400 s apart, with a per-install order and phase and jitter on each hour's start; providers rotate per region and hour of day. 10 opt-in regions.
+  - Mode `nearby` tests 3 nearby providers and 1 far region every 15 minutes; mode `custom` tests the user's own list.
+  - The catalog (45 servers, regions) is data in `internal/profile/catalog/iperf3/`, built in; it changes only with a release.
+  - Busy servers fall back to another port, then another provider in the city, then a nearby city, and are recorded as busy, never slow.
+  - One queue for scheduled tests, Test now and "Test all servers" sweeps, also open to share-link visitors with per-visitor limits.
+  - Scores against each server's 14-day p90; latency under load at the ISP edge and gateway every 150 ms per direction, lost probes counted; the connection type.
+  - A finding that tells the ISP's network, one provider, one route and one server apart, with the ISP edge's idle RTT as the access-network control.
   - Probes during a test (+2 s) are masked as "not measured", so a test never starts an incident or a bad call minute. The masked share is shown in `/api/status`.
-  - The results go to a `speedtests` table (store schema v5, with region, server and fallback), `/metrics`, `fyisp export --speedtests` and the report.
-  - Details → Speed (a region heatmap, per-server views) and one line on Home for a clear time-of-day pattern.
+  - The results go to a `speedtests` table (store schema v5), `/metrics`, `fyisp export --speedtests` and the report.
+  - Details → Speed (finding, heatmap, per-server views, queue) and one line on Home for a broad time-of-day pattern.
 - **Later:**
   - live CD (rebuilt around the binary)
   - browser quick-check page
