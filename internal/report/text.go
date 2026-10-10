@@ -188,12 +188,23 @@ func (r *run) kindTotals() []kindTotal {
 	return out
 }
 
-// problemTime is the union of all incidents' time in the range.
+// policyKind reports a kind that describes the network's policy rather than
+// a fault (a hotel or office firewall that blocks UDP): it is listed with
+// the incidents, but left out of the headline statistics (problemTime and
+// the longest incident).
+func policyKind(k model.VerdictKind) bool {
+	return k == model.VerdictUDPBlocked || k == model.VerdictSTUNBlocked
+}
+
+// problemTime is the union of all incidents' time in the range, policy
+// kinds excepted.
 func (r *run) problemTime() time.Duration {
 	type iv struct{ a, b time.Time }
 	var ivs []iv
 	for _, in := range r.incidents {
-		ivs = append(ivs, iv{in.start, in.end})
+		if !policyKind(in.Kind) {
+			ivs = append(ivs, iv{in.start, in.end})
+		}
 	}
 	sort.Slice(ivs, func(i, j int) bool { return ivs[i].a.Before(ivs[j].a) })
 	var total time.Duration
@@ -256,13 +267,13 @@ func (r *run) summary(totals []kindTotal) (string, []string) {
 	} else {
 		headline = "No data: fyisp has no measurements in this range."
 	}
-	if len(r.incidents) > 0 {
-		worst := r.incidents[0]
-		for _, in := range r.incidents {
-			if in.dur() > worst.dur() {
-				worst = in
-			}
+	var worst *incident
+	for i, in := range r.incidents {
+		if !policyKind(in.Kind) && (worst == nil || in.dur() > worst.dur()) {
+			worst = &r.incidents[i]
 		}
+	}
+	if worst != nil {
 		s := fmt.Sprintf("The longest incident (%s) started %s and lasted %s",
 			kindOf(worst.Kind).Label, fmtLongTime(worst.Start), fmtDur(worst.dur()))
 		if worst.ongoing {

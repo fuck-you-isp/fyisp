@@ -163,3 +163,37 @@ func TestFixtureWithUDP(t *testing.T) {
 	q := PanelQuery{Keys: append(keys, model.SeriesKey{Target: "github", Kind: model.KindTCP}), From: t0.Add(2 * time.Hour), To: now, MaxPoints: 10}
 	equalPanel(t, "mixed panel", panel(t, s, q), panel(t, f, q), 1e-6)
 }
+
+// TestFixtureIncidentsWithUDPKinds: a v0.4.x database (the v3 fixture,
+// upgraded on open) stores and lists incidents of the call path kinds next
+// to its old ones, also after a reopen.
+func TestFixtureIncidentsWithUDPKinds(t *testing.T) {
+	dir := fixtureDirV3(t)
+	now := t0.Add(2*time.Hour + 30*time.Minute)
+	s := openT(t, dir, Options{Now: func() time.Time { return now }})
+	kinds := []model.VerdictKind{model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded}
+	for i, k := range kinds {
+		in := &model.Incident{Start: t0.Add(2*time.Hour + time.Duration(i)*time.Minute), Kind: k, Summary: string(k), Targets: []string{"Meet-STUN"}, PeakLoss: 0.1}
+		if i < 2 {
+			in.End = in.Start.Add(30 * time.Second)
+		}
+		if err := s.SaveIncident(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s = openT(t, dir, Options{Now: func() time.Time { return now }})
+	defer s.Close()
+	got, err := s.Incidents(ctx, t0, now)
+	if err != nil || len(got) != len(fixtureIncidents())+len(kinds) {
+		t.Fatalf("incidents %+v %v", got, err)
+	}
+	for i, k := range kinds {
+		in := got[len(kinds)-1-i] // newest first
+		if in.Kind != k || in.Summary != string(k) || !slices.Equal(in.Targets, []string{"Meet-STUN"}) || (i < 2) == in.End.IsZero() {
+			t.Errorf("incident %d: %+v", i, in)
+		}
+	}
+}

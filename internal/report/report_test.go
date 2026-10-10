@@ -267,3 +267,35 @@ func TestCallPathIncidents(t *testing.T) {
 		}
 	}
 }
+
+// udp_blocked and stun_blocked describe the network's policy, not a fault:
+// listed, but left out of the longest incident and the problem-free share.
+// udp_degraded counts.
+func TestPolicyKindsOutOfHeadlineStats(t *testing.T) {
+	stats := regexp.MustCompile(`The longest incident \(([^)]*)\)[^.]*\.|No problem was detected during [^.;]*`)
+	build := func(extra ...model.Incident) (string, []string) {
+		f := newFixture(t, 7, 5*time.Minute)
+		f.incidents = append(f.incidents, extra...)
+		html := f.build(t, f.deps(), Options{})
+		return html, stats.FindAllString(html, -1)
+	}
+	at := newFixture(t, 7, 5*time.Minute).to.Add(-30 * time.Hour)
+	_, base := build()
+	if len(base) != 2 {
+		t.Fatalf("headline stats %q", base)
+	}
+	html, got := build(
+		model.Incident{ID: 601, Start: at, End: at.Add(20 * time.Hour), Kind: model.VerdictUDPBlocked, Summary: "UDP is blocked."},
+		model.Incident{ID: 602, Start: at.Add(21 * time.Hour), End: at.Add(29 * time.Hour), Kind: model.VerdictSTUNBlocked, Summary: "Call ports are blocked."},
+	)
+	if !slices.Equal(got, base) {
+		t.Errorf("headline stats with policy incidents %q, want %q", got, base)
+	}
+	if !strings.Contains(html, "UDP blocked (calls)") || !strings.Contains(html, "Call ports (STUN) blocked") {
+		t.Error("policy incidents not listed")
+	}
+	_, got = build(model.Incident{ID: 603, Start: at, End: at.Add(20 * time.Hour), Kind: model.VerdictUDPDegraded, PeakLoss: 0.1, Summary: "Calls may sound choppy."})
+	if len(got) != 2 || !strings.Contains(got[0], "(Call path degraded)") || got[1] == base[1] {
+		t.Errorf("headline stats with udp_degraded %q (without: %q)", got, base)
+	}
+}
