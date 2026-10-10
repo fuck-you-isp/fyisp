@@ -80,6 +80,9 @@ const (
 type Job struct {
 	Region string
 	Chain  []Server
+	// steps, when set, resolves the job's servers when it runs (the
+	// schedule's rotation and fallback levels, the nearest servers).
+	steps func(ctx context.Context) (region string, steps []Step)
 }
 
 // Request asks for an entry. Target is a server or region ID ("" with

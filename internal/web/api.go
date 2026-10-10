@@ -681,6 +681,7 @@ type profileJSON struct {
 		Notes     bool `json:"notes"`     // timeline notes (/api/annotations)
 		Reports   bool `json:"reports"`   // evidence reports (local only)
 		Baselines bool `json:"baselines"` // "normal" badges and band (/api/baselines)
+		Speed     bool `json:"speed"`     // speed tests (/api/speed)
 	} `json:"features"`
 	Groups  []groupJSON     `json:"groups"`
 	Targets []targetSummary `json:"targets"`

@@ -4,4 +4,4 @@ display: Scaleway
 sources:
   - http://ping.online.net/
 servers:
-  - {id: Scaleway-Paris, host: ping.online.net, ports: 5200-5209, city: Paris, country: FR, geo: eu, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Scaleway-Paris, host: ping.online.net, ports: 5200-5209, city: Paris, country: FR, metro: paris, geo: eu, verified: {date: 2026-10-10, tcp: true}}

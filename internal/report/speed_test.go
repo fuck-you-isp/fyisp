@@ -17,12 +17,12 @@ func TestSpeedSection(t *testing.T) {
 	for i := range 7 * 96 {
 		at := start.Add(time.Duration(i) * 15 * time.Minute)
 		for _, reg := range []string{"uk", "us-east"} {
-			x := model.SpeedTest{Start: at, End: at.Add(23 * time.Second), Outcome: model.SpeedOK, Region: reg, Server: "Clouvider-London"}
+			x := model.SpeedTest{Start: at, End: at.Add(23 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, FallbackLevel: "none", Region: reg, Server: "Clouvider-London"}
 			base := 400e6
 			if reg == "us-east" {
 				x.Server, base = "Leaseweb-NewYork", 150e6
 				if i%10 == 0 {
-					x.Server, x.Fallback = "Clouvider-NewYork", true
+					x.Server, x.Fallback, x.FallbackLevel = "Clouvider-NewYork", true, "same_metro"
 				}
 			}
 			if i%40 == 3 {
@@ -32,7 +32,11 @@ func TestSpeedSection(t *testing.T) {
 				if h := at.Hour(); h >= 19 && h <= 22 {
 					down /= 2
 				}
-				x.DownBps, x.UpBps = &down, &up
+				sc := down / base
+				x.DownBps, x.UpBps, x.ScoreDown = &down, &up, &sc
+				x.Conn, x.DownSecs, x.UpSecs, x.DownShort = model.ConnWired, 0.9, 3.1, base > 300e6
+				x.Latency = &model.SpeedLatency{Edge: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8},
+					Down: &model.LoadStats{N: 30, P50Ms: 21, P95Ms: 34}, Up: &model.LoadStats{N: 25, Lost: 1, P50Ms: 48, P95Ms: 90}}}
 			}
 			tests = append(tests, x)
 		}
@@ -57,7 +61,13 @@ func TestSpeedSection(t *testing.T) {
 		`id="speed"`, "<h2>Speed tests</h2>",
 		"1346 speed tests ran in this range: 1311 measured, 35 found the test servers busy (not counted as slow).",
 		"Of these, 1 started by hand and 1 started from the share link; the rest were scheduled.",
-		"Evenings are slower: about 50% below your daytime speed (19:00–23:00 UTC, every region alike).",
+		"Pooled over every server, tests read about 50% lower from 19:00 to 23:00 UTC than the same servers",
+		"after a ramp-up of up to 1 second and at most 100 MB each way",
+		"Connection: of 1311 measured tests, 1310 wired, 1 on a link of unknown type.",
+		"Delay to the provider",
+		"8 ms idle, 21 ms while downloading (95th percentile 34 ms, 0.0% lost), 48 ms while uploading (95th percentile 90 ms, 4.0% lost).",
+		"downloads were measured for a median of 0.9 s (0.9–0.9 s), uploads for a median of 3.1 s (3.1–3.1 s); 655 of 2620 directions stopped at the 100 MB cap",
+		"What to ask your provider:",
 		"The largest dip: UK, 50% slower",
 		"<td>UK</td><td>Clouvider London</td><td class=\"n\">672</td><td class=\"n\">400 Mbit/s</td>",
 		"<td>US East</td><td>Leaseweb New York (1 fallback server)</td>",
@@ -68,6 +78,11 @@ func TestSpeedSection(t *testing.T) {
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("report lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"every region alike", "3 to 8 seconds"} {
+		if strings.Contains(html, bad) {
+			t.Errorf("report still says %q", bad)
 		}
 	}
 	if strings.Contains(html, "192.168.1.20") || strings.Contains(html, "speedtest.") {

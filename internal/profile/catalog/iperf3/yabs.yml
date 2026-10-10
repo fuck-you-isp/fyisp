@@ -4,7 +4,9 @@ provider: yabs
 display: YABS list
 sources:
   - https://github.com/masonr/yet-another-bench-script/blob/master/yabs.sh
+notes: >-
+  capacity_gbps is the link YABS's server list states (yabs.sh IPERF_LOCS labels), where it states one.
 servers:
-  - {id: Eranium-Amsterdam, provider: Eranium, host: iperf-ams-nl.eranium.net, ports: 5201-5210, city: Amsterdam, country: NL, geo: eu, verified: {date: 2026-10-10, tcp: true, iperf3: true}}
-  - {id: Uztelecom-Tashkent, provider: Uztelecom, host: speedtest.uztelecom.uz, ports: 5200-5209, city: Tashkent, country: UZ, geo: as, verified: {date: 2026-10-10, tcp: true}}
-  - {id: Edgoo-SaoPaulo, provider: Edgoo, label: Edgoo São Paulo, host: speedtest.sao1.edgoo.net, ports: 9204-9240, city: São Paulo, country: BR, geo: sa, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Eranium-Amsterdam, provider: Eranium, host: iperf-ams-nl.eranium.net, ports: 5201-5210, city: Amsterdam, country: NL, metro: amsterdam, capacity_gbps: 100, geo: eu, verified: {date: 2026-10-10, tcp: true, iperf3: true}}
+  - {id: Uztelecom-Tashkent, provider: Uztelecom, host: speedtest.uztelecom.uz, ports: 5200-5209, city: Tashkent, country: UZ, metro: tashkent, capacity_gbps: 10, geo: as, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Edgoo-SaoPaulo, provider: Edgoo, label: Edgoo São Paulo, host: speedtest.sao1.edgoo.net, ports: 9204-9240, city: São Paulo, country: BR, metro: sao-paulo, capacity_gbps: 1, geo: sa, verified: {date: 2026-10-10, tcp: true}}

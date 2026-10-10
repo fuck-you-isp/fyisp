@@ -13,6 +13,8 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/netip"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -99,22 +101,36 @@ func (e *ServerError) Error() string {
 
 // Config is one test run.
 type Config struct {
-	Addr      string // host:port (the host already resolved by the caller, or a name)
+	Addr      string // host:port: an IPv4 address or a name, resolved once per run
 	Direction Direction
 	Streams   int           // parallel TCP streams, default 8
 	Duration  time.Duration // measured time, default 9s; with MinDuration, the most
-	Omit      time.Duration // ramp-up excluded from the result, default 1s
+	// Omit is the ramp-up excluded from the result, default 1s. With
+	// MinDuration it is the longest ramp-up: the ramp ends as soon as the
+	// throughput of a 100 ms tick stops rising (on a fast line with a byte
+	// cap, a fixed second would leave nothing to measure).
+	Omit time.Duration
 	// MinDuration > 0 makes the length adaptive: the test ends once at
 	// least MinDuration is measured and the last second's bytes are within
 	// Stable (default 5%) of the second before, else after Duration. The
 	// client ends it early with TEST_END, which stock servers accept.
 	MinDuration time.Duration
 	Stable      float64
+	// MaxBytes caps the bytes moved in this direction, ramp-up included
+	// (0: no cap): the test ends there, and Result.CappedByBytes is set.
+	MaxBytes int64
 	// Timeout bounds the whole run, default Omit+Duration+5s. The caller's
 	// ctx may end it sooner.
 	Timeout time.Duration
 	// Dial opens TCP connections (tests: a stub). Default net.Dialer.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// Lookup resolves a name to IPv4 addresses (default net.DefaultResolver).
+	// The run resolves once and dials that one address for the control
+	// connection and every stream: they must all reach one server.
+	Lookup func(ctx context.Context, host string) ([]netip.Addr, error)
+	// Check, when set, vets the address before any dial (catalog servers
+	// must be public, the user's LAN servers private).
+	Check func(netip.Addr) error
 }
 
 // Result is one direction's measurement.
@@ -130,6 +146,11 @@ type Result struct {
 	// TCP_INFO: the server's for downloads, ours on Linux for uploads).
 	Retransmits int64
 	Streams     int
+	// CappedByBytes: the test hit Config.MaxBytes, so Elapsed may be short.
+	CappedByBytes bool
+	Ramp          time.Duration // the ramp-up left out
+	IP            netip.Addr    // the address the test ran against
+	TotalBytes    int64         // every byte moved, ramp-up included (data use)
 }
 
 // BitsPerSecond is the throughput.
@@ -162,6 +183,49 @@ func (c *Config) defaults() {
 		d := &net.Dialer{Timeout: 5 * time.Second}
 		c.Dial = d.DialContext
 	}
+	if c.Lookup == nil {
+		c.Lookup = func(ctx context.Context, host string) ([]netip.Addr, error) {
+			return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+		}
+	}
+}
+
+// resolve picks the one IPv4 address of c.Addr's host the run uses, and
+// returns ip:port. A failed lookup is ErrUnreachable.
+func (c *Config) resolve(ctx context.Context) (netip.AddrPort, error) {
+	host, port, err := net.SplitHostPort(c.Addr)
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("%w: bad port %q", ErrUnreachable, port)
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		ips, lerr := c.Lookup(ctx, host)
+		for _, a := range ips {
+			if a = a.Unmap(); a.Is4() {
+				ip = a
+				break
+			}
+		}
+		if !ip.IsValid() {
+			if lerr == nil {
+				lerr = errors.New("no IPv4 address")
+			}
+			return netip.AddrPort{}, fmt.Errorf("%w: %s: %w", ErrUnreachable, host, lerr)
+		}
+	}
+	if ip = ip.Unmap(); !ip.Is4() {
+		return netip.AddrPort{}, fmt.Errorf("%w: %s is not IPv4", ErrUnreachable, ip)
+	}
+	if c.Check != nil {
+		if err := c.Check(ip); err != nil {
+			return netip.AddrPort{}, fmt.Errorf("%w: %w", ErrUnreachable, err)
+		}
+	}
+	return netip.AddrPortFrom(ip, uint16(p)), nil
 }
 
 // stepTimeout bounds every control-channel step outside the data phase.
@@ -176,7 +240,15 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer cancel()
 	res := Result{Direction: c.Direction, Retransmits: -1, Streams: c.Streams}
 
-	ctrl, err := c.Dial(ctx, "tcp", c.Addr)
+	ap, err := c.resolve(ctx)
+	if err != nil {
+		return res, err
+	}
+	res.IP = ap.Addr()
+	c.Addr = ap.String() // IPv4 only, by decision; one address for every dial
+	t0 := time.Now()
+	ctrl, err := c.Dial(ctx, "tcp4", c.Addr)
+	dialRTT := time.Since(t0)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return res, ctx.Err()
@@ -186,13 +258,21 @@ func Run(ctx context.Context, c Config) (Result, error) {
 		}
 		return res, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
-	t := &test{c: c, ctrl: ctrl}
+	t := &test{c: c, ctrl: ctrl, dialRTT: dialRTT}
+	if c.MaxBytes > 0 {
+		t.stopAt.Store(c.MaxBytes - inflightFloor(c.MaxBytes))
+	}
 	defer t.close()
-	stop := context.AfterFunc(ctx, t.close) // unblocks every read and write
+	stop := context.AfterFunc(ctx, t.abort) // unblocks every read and write
 	defer stop()
 
 	r, err := t.run(ctx, &res)
+	t.noteReceived()
+	if err != nil {
+		t.abort() // nothing more to send: drop what is queued
+	}
 	t.close() // the streams stop: their counters are final
+	t.wg.Wait()
 	if ctx.Err() != nil {
 		res.WireBytes = t.wire()
 		return res, ctx.Err()
@@ -210,7 +290,30 @@ func (t *test) wire() int64 {
 	for i := range counts {
 		n += counts[i].Load()
 	}
-	return n
+	return max(n, t.received.Load())
+}
+
+// noteReceived keeps the streams' TCP_INFO received bytes (what arrived,
+// read or still buffered: a download's data budget must count it) while
+// they are open.
+func (t *test) noteReceived() {
+	if t.c.Direction != Download {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return
+	}
+	var n int64
+	for _, s := range t.streams {
+		if r := tcpReceived(s); r > 0 {
+			n += r
+		}
+	}
+	if n > t.received.Load() {
+		t.received.Store(n)
+	}
 }
 
 type test struct {
@@ -221,7 +324,17 @@ type test struct {
 	mu      sync.Mutex
 	streams []net.Conn
 	closed  bool
-	counts  []atomic.Int64 // per stream, the whole data phase (mu: the slice)
+	wg      sync.WaitGroup // the data phase's stream goroutines
+
+	counts   []atomic.Int64 // per stream, the whole data phase (mu: the slice)
+	moved    atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
+	received atomic.Int64   // downloads: TCP_INFO received bytes, every stream
+	// stopAt is where a download stops reading: MaxBytes less what is
+	// still in flight then (see inflightSlack), so the total that arrives
+	// stays within MaxBytes.
+	stopAt  atomic.Int64
+	dialRTT time.Duration // the control connection's connect time: the RTT without TCP_INFO
+	capped  atomic.Bool
 }
 
 func (t *test) close() {
@@ -235,6 +348,23 @@ func (t *test) close() {
 	for _, s := range t.streams {
 		_ = s.Close()
 	}
+}
+
+// abort closes the run on cancel, timeout or error: the data streams with
+// SO_LINGER 0, so upload data still queued in the kernel is dropped (an RST)
+// rather than sent on after the masked window. The happy path closes
+// gracefully (a stock server reading an RST mid-test logs an error).
+func (t *test) abort() {
+	t.mu.Lock()
+	if !t.closed {
+		for _, s := range t.streams {
+			if tc, ok := s.(*net.TCPConn); ok {
+				_ = tc.SetLinger(0)
+			}
+		}
+	}
+	t.mu.Unlock()
+	t.close()
 }
 
 func (t *test) run(ctx context.Context, res *Result) (Result, error) {
@@ -266,20 +396,25 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	// Streams connect one at a time, in order: the server numbers them in
 	// accept order (1, 3, 4, ...) and so do we.
 	for range t.c.Streams {
-		s, err := t.c.Dial(ctx, "tcp", t.c.Addr)
+		s, err := t.c.Dial(ctx, "tcp4", t.c.Addr)
 		if err != nil {
 			return *res, fmt.Errorf("data stream: %w", err)
 		}
 		t.mu.Lock()
-		t.streams = append(t.streams, s)
 		closed := t.closed
+		if !closed {
+			t.streams = append(t.streams, s)
+		}
 		t.mu.Unlock()
-		if closed {
+		if closed { // dialled after the run was closed: close() won't see it
+			_ = s.Close()
 			return *res, ctx.Err()
 		}
+		_ = s.SetWriteDeadline(time.Now().Add(stepTimeout))
 		if _, err := s.Write(t.cookie[:]); err != nil {
 			return *res, fmt.Errorf("data stream: %w", err)
 		}
+		_ = s.SetWriteDeadline(time.Time{})
 	}
 	for _, want := range []int8{stateTestStart, stateTestRunning} {
 		if st, err = t.state(stepTimeout); err != nil {
@@ -297,44 +432,21 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	t.counts = counts
 	t.mu.Unlock()
 	var done atomic.Bool
-	var wg sync.WaitGroup
 	for i, s := range t.streams {
-		wg.Add(1)
+		t.wg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer t.wg.Done()
 			if t.c.Direction == Download {
-				drain(s, &counts[i])
+				t.drain(s, &counts[i])
 			} else {
-				fill(s, &counts[i], &done)
+				t.fill(s, &counts[i], &done)
 			}
 		}()
 	}
-	omitEnd := time.Now().Add(t.c.Omit)
-	if err := t.idle(omitEnd); err != nil {
-		return *res, err
-	}
-	base := make([]int64, len(t.streams))
-	retransStart := make([]int64, len(t.streams))
-	t.snapshot(counts, base, retransStart)
-	winStart := time.Now()
-	if err := t.measure(counts, winStart); err != nil {
-		return *res, err
-	}
-	final := make([]int64, len(t.streams))
-	retransEnd := make([]int64, len(t.streams))
-	t.snapshot(counts, final, retransEnd)
-	res.Elapsed = time.Since(winStart)
+	per, err := t.dataPhase(counts, res)
 	done.Store(true)
-	per := make([]int64, len(t.streams))
-	for i := range per {
-		per[i] = final[i] - base[i]
-		res.Bytes += per[i]
-	}
-	if t.c.Direction == Upload && retransStart[0] >= 0 {
-		res.Retransmits = 0
-		for i := range retransEnd {
-			res.Retransmits += max(retransEnd[i]-retransStart[i], 0)
-		}
+	if err != nil {
+		return *res, err
 	}
 
 	if err := t.write([]byte{stateTestEnd}); err != nil {
@@ -361,15 +473,16 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 		return *res, err
 	}
 	_ = t.write([]byte{stateIperfDone})
+	t.noteReceived()
 	t.close()
-	wg.Wait()
+	t.wg.Wait()
 	return *res, nil
 }
 
 // idle waits until deadline on the control connection. The server sends
 // nothing during the data phase unless it fails.
 func (t *test) idle(deadline time.Time) error {
-	for time.Now().Before(deadline) {
+	for time.Now().Before(deadline) && !t.capped.Load() {
 		_ = t.ctrl.SetReadDeadline(deadline)
 		var b [1]byte
 		_, err := t.ctrl.Read(b[:])
@@ -385,56 +498,202 @@ func (t *test) idle(deadline time.Time) error {
 	return nil
 }
 
-// measure waits out the measured window: Duration, or with MinDuration
-// until the per-second throughput settles.
-func (t *test) measure(counts []atomic.Int64, start time.Time) error {
-	end := start.Add(t.c.Duration)
-	if t.c.MinDuration <= 0 {
-		return t.idle(end)
-	}
+// tick is the data phase's clock: progress is read every 100 ms.
+const tick = 100 * time.Millisecond
+
+// dataPhase runs the ramp-up and the measured window on 100 ms ticks, then
+// fills res. per is each stream's bytes in the window (for our results).
+func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
+	n := len(t.streams)
 	total := func() int64 {
-		var n int64
+		var x int64
 		for i := range counts {
-			n += counts[i].Load()
+			x += counts[i].Load()
 		}
-		return n
+		return x
 	}
-	prev, last := int64(-1), total()
+	adaptive := t.c.MinDuration > 0
+	start := time.Now()
+	base := make([]int64, n)
+	retransStart := make([]int64, n)
+	ackedStart := make([]int64, n)
+	measuring := false
+	var winStart time.Time
+	var prevMax, last, secBytes int64
+	kWin := 0 // the tick the window started at
+	prevSec := int64(-1)
 	for k := 1; ; k++ {
-		tick := start.Add(time.Duration(k) * time.Second)
-		if tick.After(end) {
-			return t.idle(end)
+		at := start.Add(time.Duration(k) * tick)
+		if err := t.idle(at); err != nil {
+			return nil, err
 		}
-		if err := t.idle(tick); err != nil {
-			return err
+		b := total()
+		d := b - last
+		last = b
+		t.updateStop(float64(d) / tick.Seconds())
+		if t.capped.Load() {
+			res.CappedByBytes = true
+			if !measuring { // capped in the ramp-up: the whole run is the window,
+				winStart = start // counted from the connections' start
+				for i := range ackedStart {
+					retransStart[i], ackedStart[i] = 0, 0
+					if t.c.Direction == Download {
+						retransStart[i], ackedStart[i] = -1, -1
+					}
+				}
+			}
+			break
 		}
-		n := total()
-		cur := n - last
-		last = n
-		if time.Duration(k)*time.Second >= t.c.MinDuration && prev > 0 &&
-			math.Abs(float64(cur-prev)) <= t.c.Stable*float64(prev) {
-			return nil
+		if !measuring {
+			rampOver := time.Duration(k)*tick >= t.c.Omit ||
+				(adaptive && k >= 3 && float64(d) <= 1.05*float64(prevMax))
+			prevMax = max(prevMax, d)
+			if rampOver {
+				measuring = true
+				t.snapshot(counts, base, retransStart, ackedStart)
+				winStart, secBytes, kWin = time.Now(), b, k
+				res.Ramp = winStart.Sub(start)
+			}
+			continue
 		}
-		prev = cur
+		// Seconds are counted in ticks, so every second has the same length.
+		w := time.Duration(k-kWin) * tick
+		if w >= t.c.Duration {
+			break
+		}
+		if adaptive && (k-kWin)%int(time.Second/tick) == 0 {
+			cur := b - secBytes
+			if w >= t.c.MinDuration && prevSec > 0 && math.Abs(float64(cur-prevSec)) <= t.c.Stable*float64(prevSec) {
+				break
+			}
+			prevSec, secBytes = cur, b
+		}
 	}
+	final := make([]int64, n)
+	retransEnd := make([]int64, n)
+	ackedEnd := make([]int64, n)
+	t.snapshot(counts, final, retransEnd, ackedEnd)
+	res.Elapsed = time.Since(winStart)
+	per := make([]int64, n)
+	acked := true
+	var ackedBytes int64
+	for i := range per {
+		per[i] = final[i] - base[i]
+		res.Bytes += per[i]
+		res.TotalBytes += final[i]
+		if ackedStart[i] < 0 || ackedEnd[i] < 0 {
+			acked = false
+		}
+		ackedBytes += ackedEnd[i] - ackedStart[i]
+	}
+	if t.c.Direction == Upload {
+		// What the server received, not what sat in our send buffers.
+		if acked {
+			res.Bytes = ackedBytes
+		}
+		if retransStart[0] >= 0 {
+			res.Retransmits = 0
+			for i := range retransEnd {
+				res.Retransmits += max(retransEnd[i]-retransStart[i], 0)
+			}
+		}
+	}
+	return per, nil
 }
 
-func (t *test) snapshot(counts []atomic.Int64, into, retrans []int64) {
+// tcpCounters is stream i's retransmits and bytes acked so far (upload),
+// -1 when unknown.
+func (t *test) tcpCounters(i int) (retrans, acked int64) {
+	if t.c.Direction != Upload {
+		return -1, -1
+	}
+	return tcpInfo(t.streams[i])
+}
+
+func (t *test) snapshot(counts []atomic.Int64, into, retrans, acked []int64) {
 	for i := range counts {
 		into[i] = counts[i].Load()
-		retrans[i] = -1
-		if t.c.Direction == Upload {
-			retrans[i] = totalRetrans(t.streams[i])
+		retrans[i], acked[i] = t.tcpCounters(i)
+	}
+}
+
+// moved counts the bytes of every stream against Config.MaxBytes; capped
+// is set the moment it is reached, and wakes the control loop.
+func (t *test) count(n *atomic.Int64, k int) {
+	n.Add(int64(k))
+	if t.c.MaxBytes <= 0 || t.c.Direction != Download {
+		return
+	}
+	if t.moved.Add(int64(k)) >= t.stopAt.Load() {
+		t.capNow()
+	}
+}
+
+func (t *test) capNow() {
+	if t.capped.CompareAndSwap(false, true) {
+		_ = t.ctrl.SetReadDeadline(time.Now()) // end the current wait now
+	}
+}
+
+// Download overshoot: once we stop reading, the server keeps sending until
+// TEST_END reaches it, and that data still arrives (into our receive
+// buffers). A download therefore stops at MaxBytes less the data in
+// flight: the current rate × (the smoothed RTT + inflightSlack), at least
+// inflightFloor.
+const inflightSlack = 50 * time.Millisecond
+
+// inflightFloor is 5 MB, or a twentieth of a small cap.
+func inflightFloor(max int64) int64 { return min(5<<20, max/20) }
+
+// updateStop moves the download's stop point for the rate just measured
+// (bytes per second).
+func (t *test) updateStop(rate float64) {
+	if t.c.MaxBytes <= 0 || t.c.Direction != Download {
+		return
+	}
+	rtt := t.dialRTT
+	t.mu.Lock()
+	if len(t.streams) > 0 {
+		if r := tcpRTT(t.streams[0]); r > 0 {
+			rtt = r
+		}
+	}
+	t.mu.Unlock()
+	in := max(int64(rate*(rtt+inflightSlack).Seconds()), inflightFloor(t.c.MaxBytes))
+	t.stopAt.Store(t.c.MaxBytes - in)
+	if t.moved.Load() >= t.c.MaxBytes-in {
+		t.capNow()
+	}
+}
+
+// reserve claims up to want bytes of the upload's cap for one write: the
+// streams never write more than MaxBytes between them.
+func (t *test) reserve(want int) int {
+	if t.c.MaxBytes <= 0 {
+		return want
+	}
+	for {
+		cur := t.moved.Load()
+		left := t.c.MaxBytes - cur
+		if left <= 0 {
+			t.capNow()
+			return 0
+		}
+		n := min(int64(want), left)
+		if t.moved.CompareAndSwap(cur, cur+n) {
+			return int(n)
 		}
 	}
 }
 
-// drain reads a download stream until the server closes it.
-func drain(s net.Conn, n *atomic.Int64) {
+// drain reads a download stream until the server closes it, or until the
+// byte cap: then it stops reading, so TCP flow control stops the server
+// within its buffers while TEST_END is sent.
+func (t *test) drain(s net.Conn, n *atomic.Int64) {
 	buf := make([]byte, blockSize)
-	for {
+	for !t.capped.Load() {
 		k, err := s.Read(buf)
-		n.Add(int64(k))
+		t.count(n, k)
 		if err != nil {
 			return
 		}
@@ -449,11 +708,19 @@ var payload = func() []byte {
 	return b
 }()
 
-func fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
-	for !done.Load() {
+// fill writes an upload stream until done, never past the byte cap.
+func (t *test) fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
+	for !done.Load() && !t.capped.Load() {
+		r := t.reserve(len(payload))
+		if r == 0 {
+			return
+		}
 		_ = s.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
-		k, err := s.Write(payload)
-		n.Add(int64(k))
+		k, err := s.Write(payload[:r])
+		if k < r {
+			t.moved.Add(int64(k - r)) // give back what wasn't written
+		}
+		t.count(n, k)
 		if err != nil {
 			var ne net.Error
 			if errors.As(err, &ne) && ne.Timeout() {
@@ -466,9 +733,11 @@ func fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
 
 func (t *test) params() map[string]any {
 	p := map[string]any{
-		"tcp":            true,
-		"omit":           int(t.c.Omit / time.Second),
-		"time":           int(t.c.Duration / time.Second),
+		"tcp": true,
+		// The client leaves the ramp-up out itself (it may be shorter than a
+		// second) and ends the test with TEST_END; time only bounds it.
+		"omit":           0,
+		"time":           int((t.c.Omit+t.c.Duration+time.Second-1)/time.Second) + 1,
 		"num":            0,
 		"blockcount":     0,
 		"parallel":       t.c.Streams,
@@ -525,28 +794,28 @@ func (t *test) results(per []int64, res *Result) serverResults {
 	return out
 }
 
-// applyServer uses the server's side where it is the better measure: for
-// uploads the bytes it received after the ramp-up and its window, for
-// downloads its retransmits.
+// applyServer takes the server's retransmits for downloads (it is the
+// sender). Its byte counts include the ramp-up, so the client's own are
+// used for both directions.
 func (t *test) applyServer(srv *serverResults, res *Result) {
-	var bytes, retrans int64
-	var window float64
+	// Bounded: a server's figures are not trusted (the upload's bytes are
+	// measured here, from TCP_INFO; only retransmits come from the server).
+	var retrans int64
 	for _, s := range srv.Streams {
-		bytes += s.Bytes
-		retrans += max(s.Retransmits, 0)
-		window = max(window, s.EndTime-s.StartTime)
+		retrans += min(max(s.Retransmits, 0), maxRetrans)
 	}
-	switch t.c.Direction {
-	case Upload:
-		if bytes > 0 && window > 0.5 {
-			res.Bytes, res.Elapsed = bytes, time.Duration(window*float64(time.Second))
-		}
-	case Download:
-		if srv.SenderHasRetransmits == 1 {
-			res.Retransmits = retrans
-		}
+	retrans = min(retrans, maxRetrans)
+	if t.c.Direction == Download && srv.SenderHasRetransmits == 1 {
+		res.Retransmits = retrans
 	}
 }
+
+// maxRetrans bounds a server-reported retransmit count.
+const maxRetrans = 1e9
+
+// cookiePrefix makes fyisp's tests recognisable in a server's debug log
+// (the server checks only the cookie's length).
+const cookiePrefix = "fyisp"
 
 func newCookie(c *[cookieSize]byte) error {
 	const alphabet = "abcdefghijklmnopqrstuvwxyz234567"
@@ -557,6 +826,7 @@ func newCookie(c *[cookieSize]byte) error {
 	for i, b := range r {
 		c[i] = alphabet[int(b)%len(alphabet)]
 	}
+	copy(c[:], cookiePrefix)
 	c[cookieSize-1] = 0
 	return nil
 }

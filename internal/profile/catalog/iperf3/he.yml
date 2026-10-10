@@ -1,0 +1,11 @@
+# Hurricane Electric's public iperf3 server: a single port (5201), so a
+# busy server is skipped at once, never retried on other ports.
+provider: he
+display: Hurricane Electric
+sources:
+  - https://www.he.net/
+notes: >-
+  Named by the owner from public speed-test lists; single port 5201 (team lead,
+  2026-10-10).
+servers:
+  - {id: HE-Fremont, label: Hurricane Electric Fremont, host: iperf.he.net, ports: "5201", city: Fremont, metro: bay-area, country: US, geo: na, verified: {date: 2026-10-10}}

@@ -810,7 +810,7 @@ func TestBudgetChargesTheWire(t *testing.T) {
 	f.rate = 32 << 10
 	host, port, _ := net.SplitHostPort(f.addr())
 	p, _ := strconv.Atoi(port)
-	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p}
+	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: true} // catalog servers must be public
 	s := New(Options{Catalog: &Catalog{Servers: []Server{sv}, byID: map[string]int{"Local": 0}}})
 	on := true
 	q := NewQueue(QueueOptions{Public: &on, Exec: s.execJob, Live: s.live,

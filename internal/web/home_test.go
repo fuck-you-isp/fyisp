@@ -804,3 +804,24 @@ func TestHomeTileGrammar(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+// TestEverythingFollowsTiles: the answer card's "all working" only when
+// every tile says Working; otherwise it says which work and which are
+// slower, never contradicting a tile.
+func TestEverythingFollowsTiles(t *testing.T) {
+	var cp homeCopy
+	tile := func(id, st string) HomeTile { return HomeTile{ID: id, State: st} }
+	for _, c := range []struct {
+		tiles []HomeTile
+		want  string
+	}{
+		{[]HomeTile{tile(tileCalls, "good"), tile(tileWork, tileWorking), tile(tileWeb, tileWorking)}, "Calls, work apps and websites are all working."},
+		{[]HomeTile{tile(tileCalls, "good"), tile(tileWork, tileMostly), tile(tileWeb, tileSlow)}, "Calls are working. Some work apps and websites are slower than usual."},
+		{[]HomeTile{tile(tileCalls, "not_enough_data"), tile(tileWork, tileWorking), tile(tileWeb, tileWorking)}, "Work apps and websites are working."},
+		{[]HomeTile{tile(tileCalls, "fair"), tile(tileWork, tileWorking)}, "Work apps are working."}, // the calls tile speaks for itself
+	} {
+		if got := cp.everything(true, c.tiles); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.tiles, got, c.want)
+		}
+	}
+}

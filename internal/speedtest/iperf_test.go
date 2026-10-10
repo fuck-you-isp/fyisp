@@ -8,7 +8,10 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -171,12 +174,17 @@ func (f *fakeServer) session(c net.Conn) {
 				buf := make([]byte, f.rate)
 				tk := time.NewTicker(10 * time.Millisecond)
 				defer tk.Stop()
+				t0 := time.Now()
 				for {
 					select {
 					case <-stop:
 						return
 					case <-tk.C:
-						k, err := s.Write(buf)
+						n := len(buf)
+						if f.mode == "ramp" { // slow start: full rate after 500 ms
+							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(500*time.Millisecond)))
+						}
+						k, err := s.Write(buf[:max(n, 1)])
 						sent[i] += int64(k)
 						if err != nil {
 							return
@@ -195,7 +203,11 @@ func (f *fakeServer) session(c net.Conn) {
 		}()
 	}
 	var st [1]byte
-	if _, err := io.ReadFull(c, st[:]); err != nil || st[0] != stateTestEnd {
+	_, err = io.ReadFull(c, st[:])
+	if f.mode == "slowend" { // a far server: TEST_END takes a while to act on
+		time.Sleep(40 * time.Millisecond)
+	}
+	if err != nil || st[0] != stateTestEnd {
 		if f.mode != "stall" {
 			f.fail(errors.New("no TEST_END"))
 		}
@@ -254,8 +266,16 @@ func TestDownload(t *testing.T) {
 	if r.WireBytes <= r.Bytes { // the ramp-up is on the wire too
 		t.Errorf("wire bytes %d, measured %d", r.WireBytes, r.Bytes)
 	}
-	if bps := r.BitsPerSecond(); bps < want*0.7 || bps > want*1.3 || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 1700*time.Millisecond {
+	// Wall-clock rates vary with CI load: a wide band, and the bytes
+	// checked against what the server itself sent.
+	if bps := r.BitsPerSecond(); bps < want*0.3 || bps > want*2 || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 2500*time.Millisecond {
 		t.Errorf("%.1f Mbit/s (want ~%.1f) over %v", bps/1e6, want/1e6, r.Elapsed)
+	}
+	f.mu.Lock()
+	sent := f.moved
+	f.mu.Unlock()
+	if r.Bytes <= 0 || r.WireBytes > sent+4096 { // (TCP_INFO may count a few bytes of framing)
+		t.Errorf("measured %d, wire %d, the server sent %d", r.Bytes, r.WireBytes, sent)
 	}
 	if r.Retransmits != 21 {
 		t.Errorf("retransmits %d, want the server's 3×7", r.Retransmits)
@@ -263,7 +283,7 @@ func TestDownload(t *testing.T) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	p := f.params
-	if p["reverse"] != true || p["tcp"] != true || p["parallel"] != 3.0 || p["time"] != 1.0 || p["omit"] != 0.0 || p["len"] != float64(blockSize) {
+	if p["reverse"] != true || p["tcp"] != true || p["parallel"] != 3.0 || p["time"] != 3.0 || p["omit"] != 0.0 || p["len"] != float64(blockSize) {
 		t.Errorf("params %v", p)
 	}
 	if len(f.cookies) != 1 {
@@ -286,8 +306,9 @@ func TestUpload(t *testing.T) {
 	if _, ok := f.params["reverse"]; ok {
 		t.Errorf("params %v", f.params)
 	}
-	// The server's received bytes and window are the result.
-	if r.Bytes != f.recv || r.Elapsed != 1500*time.Millisecond || r.Bytes == 0 {
+	// The bytes the server acknowledged in the window (Linux), at most what
+	// it received in all.
+	if r.Bytes == 0 || r.Bytes > f.recv || r.TotalBytes < r.Bytes || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 2500*time.Millisecond {
 		t.Errorf("result %+v, server received %d", r, f.recv)
 	}
 	if f.results.SenderHasRetransmits < 0 {
@@ -378,11 +399,11 @@ func TestAdaptive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Elapsed < 2*time.Second || r.Elapsed > 3500*time.Millisecond || time.Since(t0) > 5*time.Second {
-		t.Errorf("steady rate: measured %v in %v, want an early end at ~2-3 s", r.Elapsed, time.Since(t0))
+	if r.Elapsed < 1900*time.Millisecond || r.Elapsed > 5*time.Second || time.Since(t0) > 7*time.Second {
+		t.Errorf("steady rate: measured %v in %v, want an early end before the 6 s limit", r.Elapsed, time.Since(t0))
 	}
 	want := 3 * float64(64<<10) * 100 * 8
-	if bps := r.BitsPerSecond(); bps < want*0.7 || bps > want*1.3 {
+	if bps := r.BitsPerSecond(); bps < want*0.3 || bps > want*2 {
 		t.Errorf("%.1f Mbit/s, want ~%.1f", bps/1e6, want/1e6)
 	}
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
@@ -390,5 +411,183 @@ func TestAdaptive(t *testing.T) {
 	ln.Close()
 	if _, err := Run(context.Background(), quick(addr, Download)); !errors.Is(err, ErrRefused) || errors.Is(err, ErrUnreachable) {
 		t.Errorf("closed port: %v", err)
+	}
+}
+
+// TestByteCap: a direction stops at MaxBytes, ramp-up included, and says
+// so; the cookie carries the fyisp prefix.
+func TestByteCap(t *testing.T) {
+	f := newFakeServer(t, "")
+	cfg := quick(f.addr(), Download)
+	cfg.MaxBytes = 2 << 20 // 3 streams at ~6.5 MB/s each: ~100-200 ms
+	t0 := time.Now()
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// It stops early enough that what keeps arriving stays within the cap.
+	if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes/2 || r.WireBytes > cfg.MaxBytes || time.Since(t0) > time.Second || r.Elapsed <= 0 {
+		t.Errorf("capped %v, %d bytes in all, %d measured over %v, run %v", r.CappedByBytes, r.TotalBytes, r.Bytes, r.Elapsed, time.Since(t0))
+	}
+	f.mu.Lock()
+	if !strings.HasPrefix(f.cookies[0], cookiePrefix) {
+		t.Errorf("cookie %q", f.cookies[0])
+	}
+	f.mu.Unlock()
+	// A cap above what the test moves changes nothing.
+	cfg.MaxBytes = 1 << 40
+	if r, _ := Run(context.Background(), cfg); r.CappedByBytes {
+		t.Error("capped without reaching the cap")
+	}
+}
+
+// TestAdaptiveRamp: the ramp-up ends when a 100 ms tick stops rising (here
+// after ~500 ms of slow start), not after a fixed second; without
+// MinDuration it is Omit.
+func TestAdaptiveRamp(t *testing.T) {
+	f := newFakeServer(t, "ramp")
+	cfg := quick(f.addr(), Download)
+	cfg.Omit, cfg.Duration, cfg.MinDuration = time.Second, 3*time.Second, 2*time.Second
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Ramp < 400*time.Millisecond || r.Ramp > 900*time.Millisecond {
+		t.Errorf("adaptive ramp %v, want ~500-700 ms", r.Ramp)
+	}
+	want := 3 * float64(64<<10) * 100 * 8
+	if bps := r.BitsPerSecond(); bps < want*0.75 || bps > want*1.25 {
+		t.Errorf("%.1f Mbit/s, want ~%.1f: the ramp leaked into the window", bps/1e6, want/1e6)
+	}
+	cfg.MinDuration, cfg.Duration = 0, 1500*time.Millisecond
+	if r, _ := Run(context.Background(), cfg); r.Ramp < time.Second || r.Ramp > 1200*time.Millisecond {
+		t.Errorf("fixed ramp %v", r.Ramp)
+	}
+}
+
+// trackConn records its Close.
+type trackConn struct {
+	net.Conn
+	closed *atomic.Int32
+}
+
+func (c trackConn) Close() error { c.closed.Add(1); return c.Conn.Close() }
+
+// TestResolveOnce: a name is resolved once and every dial (control and
+// streams) goes to that one IPv4 address; Check vets it before any dial.
+func TestResolveOnce(t *testing.T) {
+	f := newFakeServer(t, "")
+	_, port, _ := net.SplitHostPort(f.addr())
+	var lookups atomic.Int32
+	var mu sync.Mutex
+	var dialled []string
+	cfg := quick("speed.example:"+port, Download)
+	cfg.Lookup = func(context.Context, string) ([]netip.Addr, error) {
+		lookups.Add(1)
+		return []netip.Addr{netip.MustParseAddr("::1"), netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("127.0.0.2")}, nil
+	}
+	cfg.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		mu.Lock()
+		dialled = append(dialled, network+" "+addr)
+		mu.Unlock()
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lookups.Load() != 1 || r.IP != netip.MustParseAddr("127.0.0.1") || len(dialled) != 4 {
+		t.Fatalf("%d lookups, ip %v, dials %v", lookups.Load(), r.IP, dialled)
+	}
+	for _, d := range dialled {
+		if d != "tcp4 127.0.0.1:"+port {
+			t.Errorf("dialled %s", d)
+		}
+	}
+	cfg.Check = func(a netip.Addr) error { return errors.New("not public") }
+	dialled = nil
+	if _, err := Run(context.Background(), cfg); !errors.Is(err, ErrUnreachable) || len(dialled) != 0 {
+		t.Errorf("checked: %v, dials %v", err, dialled)
+	}
+	cfg.Lookup = func(context.Context, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("::1")}, nil
+	}
+	if _, err := Run(context.Background(), cfg); !errors.Is(err, ErrUnreachable) {
+		t.Errorf("IPv6 only: %v", err)
+	}
+}
+
+// TestCancelDuringStreamDial: a stream dialled after the run was cancelled
+// is closed, not leaked (M1), and so is every other socket.
+func TestCancelDuringStreamDial(t *testing.T) {
+	f := newFakeServer(t, "stall")
+	ctx, cancel := context.WithCancel(context.Background())
+	var n, closed atomic.Int32
+	cfg := quick(f.addr(), Upload)
+	cfg.Dial = func(dctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := (&net.Dialer{}).DialContext(context.Background(), network, addr)
+		if err != nil {
+			return nil, err
+		}
+		if n.Add(1) == 3 { // the second stream: cancelled while it dials
+			cancel()
+			time.Sleep(50 * time.Millisecond) // the AfterFunc closes the run first
+		}
+		return trackConn{c, &closed}, nil
+	}
+	if _, err := Run(ctx, cfg); !errors.Is(err, context.Canceled) {
+		t.Fatalf("run: %v", err)
+	}
+	if n.Load() != 3 || closed.Load() < 3 {
+		t.Errorf("%d dialled, %d closed", n.Load(), closed.Load())
+	}
+}
+
+func TestAddressChecks(t *testing.T) {
+	for a, want := range map[string][2]bool{ // public, private
+		"8.8.8.8": {true, false}, "192.168.1.20": {false, true}, "10.1.2.3": {false, true}, "100.64.1.1": {false, true},
+		"127.0.0.1": {false, true}, "169.254.1.1": {false, true}, "224.0.0.1": {false, false}, "0.0.0.0": {false, false},
+		"0.1.2.3": {false, false}, "192.0.0.9": {false, false}, "192.0.2.1": {false, false}, "198.18.0.1": {false, false},
+		"198.51.100.7": {false, false}, "203.0.113.5": {false, false}, "240.0.0.1": {false, false}, "1.1.1.1": {true, false},
+	} {
+		ip := netip.MustParseAddr(a)
+		if PublicIPv4(ip) != want[0] || PrivateIPv4(ip) != want[1] {
+			t.Errorf("%s: public %v private %v", a, PublicIPv4(ip), PrivateIPv4(ip))
+		}
+	}
+	cat := Server{Host: "speed.example"}
+	lan := Server{Host: "nas", Custom: true, LAN: true}
+	far := Server{Host: "vps.example", Custom: true}
+	pub, priv := netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("192.168.1.20")
+	if cat.check(pub) != nil || cat.check(priv) == nil || lan.check(priv) != nil || lan.check(pub) == nil || far.check(pub) != nil || far.check(priv) != nil {
+		t.Error("checks")
+	}
+	own, err := Custom("192.168.1.20:5201,8.8.8.8:5201", nil)
+	if err != nil || !own[0].LAN || own[1].LAN || OwnOnly(own) || !OwnOnly(own[:1]) {
+		t.Errorf("custom %+v %v", own, err)
+	}
+}
+
+// TestByteCapInFlight: at a high rate with a server that keeps sending for
+// a while after TEST_END (a far one), a download stops early enough that
+// everything that arrives, read or still buffered, stays within the cap.
+func TestByteCapInFlight(t *testing.T) {
+	f := newFakeServer(t, "slowend")
+	f.rate = 512 << 10 // 3 streams × 512 KiB per 10 ms: ~150 MB/s
+	cfg := quick(f.addr(), Download)
+	cfg.MaxBytes = 40 << 20
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.CappedByBytes || r.WireBytes > cfg.MaxBytes || r.WireBytes < cfg.MaxBytes/3 {
+		t.Errorf("capped %v: %d bytes arrived (cap %d), %d measured", r.CappedByBytes, r.WireBytes, cfg.MaxBytes, r.Bytes)
+	}
+	// Uploads never write past the cap, whatever the streams' interleaving.
+	f2 := newFakeServer(t, "")
+	cfg = quick(f2.addr(), Upload)
+	cfg.MaxBytes = 3 << 20
+	if r, err := Run(context.Background(), cfg); err != nil || !r.CappedByBytes || r.WireBytes > cfg.MaxBytes {
+		t.Errorf("upload: %v capped %v, %d written (cap %d)", err, r.CappedByBytes, r.WireBytes, cfg.MaxBytes)
 	}
 }

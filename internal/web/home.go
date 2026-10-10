@@ -13,6 +13,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
 )
@@ -92,7 +93,9 @@ func appTitle(id string) string {
 // homeParams is a parsed /api/home query.
 type homeParams struct {
 	part, span, voice string
-	tz                int       // minutes east of UTC, rounded to 15
+	tz                int            // minutes east of UTC, rounded to 15 (now, for an IANA zone)
+	loc               *time.Location // the zone: the speed line's hours (DST-correct with an IANA name)
+	tzKey             string
 	at                time.Time // part=at
 	key               string
 }
@@ -140,20 +143,21 @@ func parseHome(q url.Values, public bool) (homeParams, error) {
 	if public {
 		p.voice = voicePublic
 	}
+	p.loc = time.Local // the speed line's hours without tz: the server's zone
 	if s := q.Get("tz"); s != "" {
-		tz, err := strconv.Atoi(s)
-		if err != nil || tz < -840 || tz > 840 {
-			return p, badReq("bad tz %q: want minutes east of UTC, -840 to 840", s)
+		z, err := parseZone(s, time.Now())
+		if err != nil {
+			return p, err
 		}
-		p.tz = int(math.Round(float64(tz)/15)) * 15
+		p.tz, p.loc, p.tzKey = z.min, z.loc, z.key
 	}
 	switch p.part {
 	case "live":
-		p.key = "home\x00live\x00" + p.voice + "\x00" + strconv.Itoa(p.tz)
+		p.key = "home\x00live\x00" + p.voice + "\x00" + p.tzKey
 	case "at":
 		p.key = "home\x00at\x00" + strconv.FormatInt(p.at.UnixMilli(), 10) + "\x00" + p.voice
 	default:
-		p.key = "home\x00history\x00" + p.span + "\x00" + strconv.Itoa(p.tz) + "\x00" + p.voice
+		p.key = "home\x00history\x00" + p.span + "\x00" + p.tzKey + "\x00" + p.voice
 	}
 	return p, nil
 }
@@ -186,10 +190,10 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
-			// Speed by time of day: one plain line, only for a clear
-			// pattern (its hours are local, hence tz).
-			if pt := s.speedPattern(ctx, now, time.Duration(p.tz)*time.Minute); pt != nil {
-				l.Speed = &HomeSpeed{Text: pt.Text, Level: pt.Level}
+			// Speed by time of day: one plain line (its hours are local,
+			// hence tz), never while the answer card shows a problem.
+			if l.Answer.Level != levelWarn && l.Answer.Level != levelBad {
+				l.Speed = s.speedHome(ctx, now, p.loc, p.voice == voicePublic)
 			}
 			return jsonCached(l)
 		})
@@ -1099,7 +1103,7 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 	switch {
 	case who == whoNone && a.Cause != "":
 	case who == whoNone:
-		a.Cause = cp.everything(in.hs.home > 0)
+		a.Cause = cp.everything(in.hs.home > 0, in.tiles)
 	case whoOf(in.v.Kind) == who:
 		a.Cause = cp.verdictCause(in.v.Kind, a.Confidence, in.v.Quiet, affected, in.hs.onlyOther())
 	case who == whoCallTraffic:
@@ -1220,6 +1224,7 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 		if off, err = s.offSpans(ctx, beat, later(from, first), today, now); err != nil {
 			return nil, err
 		}
+		off = s.withoutSpeedTests(ctx, off, from, now)
 	}
 
 	// Incidents, relevant to Home.
@@ -1691,7 +1696,43 @@ func (s *server) homeAt(ctx context.Context, at time.Time, voice string, now tim
 		worst = ""
 	}
 	out.Headline, out.Cause = cp.atWords(out.Measured, worst, inc != nil, out.Who, out.Kind)
+	s.speedAt(ctx, out, from, to)
 	return out, nil
+}
+
+// speedAt notes a speed test that ran in the window: it fills the line for
+// a few seconds and can make calls stutter; at 10 s or more of overlap it
+// is the most likely explanation.
+func (s *server) speedAt(ctx context.Context, out *HomeAt, from, to time.Time) {
+	if s.d.Speed == nil {
+		return
+	}
+	ts, err := s.d.Speed.SpeedTests(ctx, from.Add(-time.Minute), to)
+	if err != nil {
+		return
+	}
+	var overlap time.Duration
+	for _, t := range ts {
+		a, b := t.Start, t.End.Add(2*time.Second)
+		if a.Before(from) {
+			a = from
+		}
+		if b.After(to) {
+			b = to
+		}
+		if b.After(a) {
+			overlap += b.Sub(a)
+		}
+	}
+	if overlap <= 0 {
+		return
+	}
+	out.SpeedTestOverlapS = int(overlap.Round(time.Second) / time.Second)
+	note := "A speed test was running then. It fills the line for a few seconds and can make calls stutter; we don't count that against the connection."
+	if overlap >= 10*time.Second {
+		note = "Most likely our speed test: it was running then, and it fills the line for a few seconds. We don't count that against the connection."
+	}
+	out.SpeedNote = note
 }
 
 // incidentRank orders incident kinds by how much they explain, worst first.
@@ -1735,4 +1776,42 @@ func sideOf(who string) string {
 		return "provider"
 	}
 	return "other"
+}
+
+// withoutSpeedTests removes speed test windows from "not running" spans:
+// probes in a test window are stored as not measured, but fyisp was
+// running. A window is widened to the whole minutes it touches (and the
+// mask's tail), the buckets it can empty.
+func (s *server) withoutSpeedTests(ctx context.Context, off []HomeSpan, from, now time.Time) []HomeSpan {
+	if s.d.Speed == nil || len(off) == 0 {
+		return off
+	}
+	ts, err := s.d.Speed.SpeedTests(ctx, from.Add(-time.Minute), now)
+	if err != nil || len(ts) == 0 {
+		return off
+	}
+	var out []HomeSpan
+	for _, sp := range off {
+		parts := []HomeSpan{sp}
+		for _, t := range ts {
+			a := t.Start.Truncate(time.Minute).UnixMilli()
+			b := t.End.Add(speedtest.MaskTail).Truncate(time.Minute).Add(time.Minute).UnixMilli()
+			var next []HomeSpan
+			for _, p := range parts {
+				if b <= p.From || a >= p.To {
+					next = append(next, p)
+					continue
+				}
+				if p.From < a {
+					next = append(next, HomeSpan{From: p.From, To: a})
+				}
+				if b < p.To {
+					next = append(next, HomeSpan{From: b, To: p.To})
+				}
+			}
+			parts = next
+		}
+		out = append(out, parts...)
+	}
+	return out
 }

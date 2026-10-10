@@ -31,12 +31,15 @@ reports and logs for it). Socket errors are stored only as a reason code,
 never as text that could contain an address. `--no-udp` turns STUN off.
 
 Speed tests are off unless you switch them on (`--speedtest` or the Details
-choice). Then fyisp sends iperf3 traffic to public iperf3 servers in its
-catalog (Leaseweb, OVH, Clouvider, Scaleway and others; the README lists them)
-and to servers you name with `--speedtest-server`, and to no one else. Those
-servers see your public IP address. "Test now", sweeps, cancelling and the
+choice). Then fyisp sends iperf3 traffic over IPv4 to public iperf3 servers in
+its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
+Scaleway and others; the README lists them) and to servers you name with
+`--speedtest-server`, and to no one else. The catalog is built into the
+binary and never fetched. Those servers see your public IP address. Each test
+moves at most 200 MB. Once a day per server, fyisp traceroutes the path to
+it to name the first network past your ISP (shown locally only). "Test now", sweeps, cancelling and the
 mode choice are write actions behind the same protections as notes (same
-origin, CSRF token, admin token). Only if the owner turns it on
+origin, CSRF token, admin token). Only while speed tests are on and the owner turns it on
 (`--speedtest-public` or the Details toggle; off by default), people with
 the share link may queue a test or a sweep of every server (`POST
 /s/<secret>/api/speed/run`), but never change the mode or cancel anything.
@@ -63,8 +66,9 @@ are), along with the other redactions listed in the README.
 
 On-demand traces (*Investigate*) can be started by anyone who can open the
 dashboard, without the admin token, and by anyone with the share link: `POST
-/s/<secret>/api/investigate` is the public listener's only write route. The
-safeguards are:
+/s/<secret>/api/investigate` is one of the public listener's two write
+routes (the other, `POST /s/<secret>/api/speed/run`, exists only while the
+owner allows tests from the share link; see below). The safeguards are:
 
 - only the profile's target names are accepted, never a host or address;
 - each trace stops by itself after 250 rounds (about 10 minutes); re-posting

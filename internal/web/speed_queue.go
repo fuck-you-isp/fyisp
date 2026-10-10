@@ -52,12 +52,19 @@ type speedEntryJSON struct {
 
 // speedJobJSON is one server of a sweep.
 type speedJobJSON struct {
-	Server speedRef `json:"server"`
-	Status string   `json:"status"` // waiting | testing | ok | busy | unreachable | failed | skipped
-	Test   *int64   `json:"test"`   // the stored test's id
-	// DownBps and UpBps: the result (ok only).
-	DownBps *float64 `json:"down_bps"`
-	UpBps   *float64 `json:"up_bps"`
+	Server   speedRef `json:"server"`
+	Display  string   `json:"display"`  // "Region · Provider, City"
+	Region   *string  `json:"region"`   // the test region the server belongs to
+	Provider string   `json:"provider"` //
+	Status   string   `json:"status"`   // waiting | testing | ok | busy | unreachable | failed | skipped
+	Test     *int64   `json:"test"`     // the stored test's id
+	// DownBps and UpBps: the result (ok only); DownShort and UpShort: the
+	// direction hit the byte cap (show "≥ X").
+	DownBps        *float64 `json:"down_bps"`
+	UpBps          *float64 `json:"up_bps"`
+	DownShort      bool     `json:"down_short"`
+	UpShort        bool     `json:"up_short"`
+	CappedByBudget bool     `json:"capped_by_budget"`
 }
 
 // jobStatus is a sweep's job i before its stored test is looked up:
@@ -94,13 +101,17 @@ func (s *server) speedResults(ctx context.Context, j *speedEntryJSON, e speedtes
 	}
 	j.Results = make([]speedJobJSON, len(e.Servers))
 	for i, id := range e.Servers {
-		r := speedJobJSON{Server: names.ref(id), Status: jobStatus(e, i)}
+		ref, display, provider, _ := names.server(id)
+		r := speedJobJSON{Server: ref, Display: display, Provider: provider, Status: jobStatus(e, i)}
+		if reg := names.inReg[id]; reg != "" {
+			r.Region = &reg
+		}
 		k := slices.IndexFunc(ts, func(t model.SpeedTest) bool { return t.ID == e.JobTests[i] })
 		if r.Status == "skipped" && i < e.Ran && e.JobTests[i] != 0 && k >= 0 {
 			t := ts[k]
 			r.Status, r.Test = t.Outcome, &t.ID
 			if t.Outcome == model.SpeedOK {
-				r.DownBps, r.UpBps = t.DownBps, t.UpBps
+				r.DownBps, r.UpBps, r.DownShort, r.UpShort, r.CappedByBudget = t.DownBps, t.UpBps, t.DownShort, t.UpShort, t.DownShort || t.UpShort
 			}
 		}
 		j.Results[i] = r
@@ -122,6 +133,7 @@ type speedQueueJSON struct {
 	// Details toggle); PublicStart: the share link may start one now (on,
 	// budget left, room in the queue).
 	PublicEnabled bool            `json:"public_enabled"`
+	SpeedOn       bool            `json:"speed_on"` // speed tests are on (a mode other than off): the share link may only ask then
 	PublicStart   bool            `json:"public_start"`
 	Budget        speedBudgetJSON `json:"budget"`
 }
@@ -249,7 +261,7 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 	w.Header().Set("Cache-Control", "no-store")
 	q := s.d.Speed.Queue()
 	st := s.d.Speed.State()
-	names := newSpeedNames(st, s.public)
+	names := newSpeedNames(st, s.d.Speed.Catalog(), s.public)
 	v := s.speedViewer(r)
 	switch p.part {
 	case "entry":
@@ -335,7 +347,8 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 			TimeHourS: int64(qs.TimeHour / time.Second), TimeDayS: int64(qs.TimeDay / time.Second),
 			TimeHourMaxS: int64(speedtest.PublicTimePerHour / time.Second), TimeDayMaxS: int64(speedtest.PublicTimePerDay / time.Second),
 			TimeResetsAt: msPtr(qs.TimeResets), SweepAvailAt: msPtr(qs.SweepAt)}
-		out.PublicStart = qs.Public && qs.BudgetResets.IsZero() && qs.TimeResets.IsZero() && !qs.Full
+		out.SpeedOn = st.Mode != speedtest.ModeOff
+		out.PublicStart = out.SpeedOn && qs.Public && qs.BudgetResets.IsZero() && qs.TimeResets.IsZero() && !qs.Full
 		writeJSON(w, r, http.StatusOK, out)
 	}
 }
@@ -376,7 +389,7 @@ func speedRunRequest(r *http.Request, names speedNames) (speedtest.Kind, string,
 // is called when a new entry was added, not for a duplicate.
 func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, req speedtest.Request, started func()) {
 	st := s.d.Speed.State()
-	names := newSpeedNames(st, s.public)
+	names := newSpeedNames(st, s.d.Speed.Catalog(), s.public)
 	e, dup, err := s.d.Speed.Queue().Enqueue(req)
 	if queueRefused(w, r, err, s.now()) {
 		return
@@ -384,6 +397,9 @@ func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, req speedt
 	switch {
 	case errors.Is(err, speedtest.ErrUnknownID):
 		writeErr(w, r, http.StatusNotFound, "no such server or region")
+		return
+	case errors.Is(err, speedtest.ErrSkipped):
+		writeErrCode(w, r, http.StatusConflict, "skipped", err.Error())
 		return
 	case err != nil:
 		writeErr(w, r, http.StatusBadRequest, err.Error())
@@ -402,7 +418,7 @@ func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r, "kind", "id") {
 		return
 	}
-	kind, id, err := speedRunRequest(r, newSpeedNames(h.d.Speed.State(), false))
+	kind, id, err := speedRunRequest(r, newSpeedNames(h.d.Speed.State(), h.d.Speed.Catalog(), false))
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -433,7 +449,7 @@ func (h *localHandler) serveSpeedCancel(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		st := h.d.Speed.State()
-		writeJSON(w, r, http.StatusOK, map[string]any{"entry": h.speedEntry(e, speedViewer{}, st, newSpeedNames(st, false))})
+		writeJSON(w, r, http.StatusOK, map[string]any{"entry": h.speedEntry(e, speedViewer{}, st, newSpeedNames(st, h.d.Speed.Catalog(), false))})
 	default:
 		writeErr(w, r, http.StatusBadRequest, "want id=<entry> or public=1")
 	}
@@ -457,7 +473,7 @@ func (h *publicHandler) servePublicSpeedRun(w http.ResponseWriter, r *http.Reque
 		writeInvErr(w, r, http.StatusForbidden, "forbidden", "cross-origin request refused", 0)
 		return
 	}
-	kind, id, err := speedRunRequest(r, newSpeedNames(h.d.Speed.State(), true))
+	kind, id, err := speedRunRequest(r, newSpeedNames(h.d.Speed.State(), h.d.Speed.Catalog(), true))
 	if errors.Is(err, errNoSpeedID) {
 		writeErr(w, r, http.StatusNotFound, "no such server or region")
 		return
@@ -469,6 +485,10 @@ func (h *publicHandler) servePublicSpeedRun(w http.ResponseWriter, r *http.Reque
 	key := limitKey(clientKey(r)) // the start limiter's (in memory only)
 	req := speedtest.Request{Kind: kind, Target: id, Who: speedtest.WhoPublic, Visitor: visitorKey(r)}
 	// The queue's answer first: a duplicate or a refusal is not a start.
+	if h.d.Speed.State().Mode == speedtest.ModeOff {
+		writeInvErr(w, r, http.StatusForbidden, "speed_off", "speed tests are off", 0)
+		return
+	}
 	dup, err := h.d.Speed.Queue().Admit(req)
 	if queueRefused(w, r, err, h.now()) {
 		return
