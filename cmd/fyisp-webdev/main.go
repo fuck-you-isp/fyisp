@@ -314,6 +314,7 @@ func main() {
 		ft := newFakeTrace(st, now, *bf)
 		go ft.run(ctx)
 		d.Trace = ft
+		d.Investigations = web.NewInvestigations()
 	}
 	switch {
 	case sc != nil:

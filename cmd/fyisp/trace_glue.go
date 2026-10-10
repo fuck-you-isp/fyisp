@@ -91,8 +91,8 @@ func (w *webTrace) RouteChanges(ctx context.Context, from, to time.Time) ([]mode
 	return w.st.RouteChanges(ctx, from, to)
 }
 
-func (w *webTrace) Investigate(target string, ttl time.Duration) (func(), error) {
-	return w.tr.Investigate(target, ttl)
+func (w *webTrace) Investigate(target string, rounds int) (web.Investigation, error) {
+	return w.tr.Investigate(target, rounds)
 }
 
 func (w *webTrace) Traced() []string { return w.traced }

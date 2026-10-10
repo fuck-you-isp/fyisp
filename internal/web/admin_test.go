@@ -148,6 +148,9 @@ func TestPublicIgnoresAdmin(t *testing.T) {
 	for _, m := range []string{"POST", "PUT", "DELETE"} {
 		for _, p := range []string{"api/admin/session", "api/share/start", "api/share/stop", "api/annotations", "api/annotations/1", "api/reports", "api/reports/1", "api/investigate", "r/1"} {
 			for _, prefix := range []string{base, "/"} {
+				if m == "POST" && prefix == base && p == "api/investigate" {
+					continue // the one public write route: TestPublicInvestigate
+				}
 				w := do(h, m, prefix+p, hdr)
 				if w.Code != 404 && w.Code != 405 {
 					t.Errorf("%s %s%s = %d, want 404/405", m, prefix, p, w.Code)
