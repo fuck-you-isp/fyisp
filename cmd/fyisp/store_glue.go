@@ -25,11 +25,11 @@ func (e *lockedError) Error() string { return "already running: " + e.Holder }
 
 const defaultProbeInterval = 15 * time.Second
 
-// openStore opens the SQLite store. Series intervals must match the probe
-// scheduler exactly: the target's interval (default 15s), a third of it for
-// ICMP, and the target's interval for all three UDP siblings (5s or 30s for
-// shipped targets: one burst per slot).
-func openStore(dir string, prof *model.Profile, traceInterval func(target string) time.Duration, log *slog.Logger) (*store.SQLite, error) {
+// seriesInterval is every series' slot interval (the store's, and the
+// speed-test mask's): the target's interval (default 15s), a third of it for
+// ICMP, the target's interval for all three UDP siblings (one burst per
+// slot), and the tracer's round interval for trace hops.
+func seriesInterval(prof *model.Profile, traceInterval func(target string) time.Duration) func(model.SeriesKey) time.Duration {
 	iv := map[string]time.Duration{}
 	for _, t := range prof.Targets {
 		d := t.Interval
@@ -38,23 +38,28 @@ func openStore(dir string, prof *model.Profile, traceInterval func(target string
 		}
 		iv[t.Name] = d
 	}
+	return func(k model.SeriesKey) time.Duration {
+		if k.Kind == model.KindTrace {
+			return traceInterval(k.Target) // 5s, 2.5s while investigated
+		}
+		d, ok := iv[k.Target]
+		if !ok {
+			d = defaultProbeInterval
+		}
+		if k.Kind == model.KindICMP {
+			d /= 3
+		}
+		return d
+	}
+}
+
+// openStore opens the SQLite store. Series intervals must match the probe
+// scheduler exactly (seriesInterval).
+func openStore(dir string, prof *model.Profile, traceInterval func(target string) time.Duration, log *slog.Logger) (*store.SQLite, error) {
 	st, err := store.Open(dir, store.Options{
-		Version: version,
-		Log:     log,
-		Interval: func(k model.SeriesKey) time.Duration {
-			if k.Kind == model.KindTrace {
-				return traceInterval(k.Target) // 5s, 2.5s while investigated
-			}
-			d, ok := iv[k.Target]
-			if !ok {
-				d = defaultProbeInterval
-			}
-			if k.Kind == model.KindICMP {
-				d /= 3
-			}
-			// The UDP siblings of a burst share its slot: the target's interval.
-			return d
-		},
+		Version:  version,
+		Log:      log,
+		Interval: seriesInterval(prof, traceInterval),
 	})
 	var le *store.LockedError
 	if errors.As(err, &le) {

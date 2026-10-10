@@ -72,9 +72,9 @@ type Pattern struct {
 // Pattern rule: enough hours, and a run of ≥ 2 consecutive hours whose
 // download median is at most dipRatio of the median of the other hours.
 const (
-	minHours  = 12
-	minRun    = 2
-	dipRatio  = 0.75
+	minHours    = 12
+	minRun      = 2
+	dipRatio    = 0.75
 	PatternSpan = 30 * 24 * time.Hour // the span the pattern is judged over
 )
 

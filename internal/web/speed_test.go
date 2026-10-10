@@ -196,7 +196,7 @@ func TestSpeedSummary(t *testing.T) {
 	}
 	for q, code := range map[string]int{
 		"days=14": 400, "tz=900": 400, "part=x": 400, "part=windows&days=7": 400, "from=now-1h": 400,
-"bogus=1": 400, "part=windows&from=now&to=now-1h": 400,
+		"bogus=1": 400, "part=windows&from=now&to=now-1h": 400,
 	} {
 		if w := do(loc, "GET", "/api/speed?"+q, host); w.Code != code {
 			t.Errorf("%s: %d %s", q, w.Code, w.Body.String())

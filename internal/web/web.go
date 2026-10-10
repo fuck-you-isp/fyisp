@@ -71,7 +71,7 @@ type Deps struct {
 	// Speed runs the speed tests (speedtest.Scheduler); nil: the speed
 	// routes answer 404 and the UI hides Speed.
 	Speed SpeedSource
-	Log *slog.Logger
+	Log   *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }
