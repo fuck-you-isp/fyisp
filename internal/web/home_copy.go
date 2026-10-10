@@ -569,3 +569,66 @@ func plural(n int, word string) string {
 	}
 	return strconv.Itoa(n) + " " + word + "s"
 }
+
+// atWords is "what happened then": the call state in the past tense, and
+// where the problem was (past observation: "looked fine", never "was").
+func (c homeCopy) atWords(measured bool, calls string, incident bool, who, kind string) (headline, cause string) {
+	switch {
+	case !measured && !incident:
+		return c.v("We weren't checking at that time", "Nothing was being checked at that time"),
+			c.v("The monitor wasn't running, so there's no record. Leave it running to catch the next one.",
+				"The monitor wasn't running, so there's no record.")
+	case !measured:
+		headline = c.v("We weren't checking calls then, but we did see a problem", "Calls weren't being checked then, but there was a problem")
+	default:
+		headline = map[string]string{
+			string(callq.Good):     c.v("Your connection was good for calls then", "The connection was good for calls then"),
+			string(callq.Fair):     "Mostly fine for calls, with a few glitches",
+			string(callq.Poor):     "Calls would have been choppy",
+			string(callq.Unusable): "Calls would have broken up",
+			callBlocked:            "This network was blocking call traffic",
+			callNotAnswering:       c.v("Our call test servers weren't answering then", "The call test servers weren't answering then"),
+		}[calls]
+		if headline == "" {
+			headline = c.v("We weren't checking calls then", "Calls weren't being checked then")
+		}
+	}
+	switch {
+	case incident:
+		cause = c.wasWhere(who, model.VerdictKind(kind))
+	case calls == string(callq.Good) || calls == callNotAnswering:
+		cause = c.v("If the call was bad, the problem was probably the app or the other person's connection.",
+			"If a call was bad then, the problem was probably the app or the other side's connection.")
+	default:
+		cause = c.v("We didn't see a cause on your side: your Wi-Fi, router and provider looked fine.",
+			"No cause was seen on this side: the home network and the provider looked fine.")
+	}
+	return headline, cause
+}
+
+// wasWhere is a past incident's place, in a sentence.
+func (c homeCopy) wasWhere(who string, k model.VerdictKind) string {
+	switch who {
+	case whoHome:
+		return c.v("The problem was most likely your Wi-Fi or router.", "The problem was most likely in the home network (Wi-Fi or router).")
+	case whoProvider:
+		return c.v("The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
+			"The problem was most likely in the provider's network. The home network looked fine.")
+	case whoBeyond:
+		return c.v("Your Wi-Fi, router and provider's nearest equipment looked fine. The problem was further out on the internet.",
+			"The home network and the provider's nearest equipment looked fine. The problem was further out on the internet.")
+	case whoDNS:
+		return "At the same time, apps and websites couldn't be found by name."
+	case whoOffline:
+		return c.v("The device running this monitor was offline.", "The monitoring device was offline.")
+	case whoApp:
+		return c.v("Your connection was fine; some online services had trouble.", "The connection was fine; some online services had trouble.")
+	case whoCallTraffic:
+		if k == model.VerdictUDPBlocked || k == model.VerdictSTUNBlocked {
+			return "The network was blocking call traffic."
+		}
+		return c.v("Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers.",
+			"The home network and the provider looked fine. The problem was on the way to the call servers.")
+	}
+	return ""
+}

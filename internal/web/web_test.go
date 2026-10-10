@@ -429,7 +429,7 @@ func TestLocalRoutes(t *testing.T) {
 	}
 	w := do(h, "GET", "/", host)
 	if !strings.Contains(w.Body.String(), `<meta name="fyisp-token" content="tok123">`) ||
-		!strings.Contains(w.Body.String(), `<title>F*** you ISP!</title>`) {
+		!strings.Contains(w.Body.String(), `<title>fyisp</title>`) {
 		t.Error("index lacks token meta or title")
 	}
 	if strings.Contains(w.Body.String(), "<script>") || strings.Contains(w.Body.String(), "style=") {

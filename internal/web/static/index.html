@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="fyisp-mode" content="{{mode}}">
 <meta name="fyisp-token" content="{{token}}">
-<title>F*** you ISP!</title>
+<title>fyisp</title>
 <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="static/vendor/uPlot.min.css">
 <link rel="stylesheet" href="static/style.css">
@@ -17,21 +17,22 @@
 <body>
 <header class="top">
   <div class="brand">
-    <h1>F*** you ISP!</h1>
+    <h1>fyisp</h1>
     <span id="mode-badge" class="badge" hidden></span>
     <span id="profile-badge" class="badge" hidden></span>
   </div>
-  <div id="share" class="share" aria-live="polite"></div>
+  <nav id="viewnav" class="seg viewnav" aria-label="View"></nav>
+  <div id="share" class="share"></div>
   <div class="controls">
     <div id="ranges" class="seg" role="group" aria-label="Time range"></div>
     <div id="kinds" class="seg" role="group" aria-label="Probe kinds"></div>
     <div id="tools" class="tools" hidden></div>
-    <span id="refresh" class="muted small" aria-live="polite"></span>
-    <button id="theme" class="btn ghost" type="button" title="Toggle light/dark">Theme</button>
+    <span id="refresh" class="muted small"></span>
+    <button id="theme" class="btn ghost theme" type="button">◐</button>
   </div>
 </header>
-<div id="notices" class="notices" aria-live="polite"></div>
-<section id="verdict" class="verdict" aria-live="polite" aria-label="Current verdict" hidden></section>
+<div id="notices" class="notices"></div>
+<section id="verdict" class="verdict" aria-label="Current verdict" hidden></section>
 <details id="outages" class="outages" hidden>
   <summary><span class="o-title">Outage log</span> <span id="outages-count" class="muted"></span></summary>
   <div id="outages-list" class="o-list"></div>
