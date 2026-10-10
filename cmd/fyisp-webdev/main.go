@@ -342,7 +342,9 @@ func main() {
 		d.Reports = fr
 	}
 	if !*noSpeed {
-		d.Speed = newFakeSpeed(now, *bf)
+		fs := newFakeSpeed(now, *bf)
+		go fs.q.Run(ctx)
+		d.Speed = fs
 	}
 	if !*noBaselines {
 		fb := newFakeBaselines(ctx, st, p, now, *bf)

@@ -22,9 +22,9 @@ Every API error (not only these routes) is `{"error": "<sentence>", "code": "<wo
 | 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
-| 409 | `running` (a speed test runs or is queued); `conflict` elsewhere |
+| 409 | `conflict` |
 | 421 | `unknown_host` |
-| 429 | `rate_limited` |
+| 429 | `rate_limited` (with `retry_after`, seconds, and `Retry-After`); `queue_full` (share link: see Queue) |
 | 503 | `unavailable` (retry after `Retry-After`) |
 
 ## Nullables
@@ -54,7 +54,7 @@ GET api/speed?days=7&tz=120[&exclude_fallback=1]
 
 **No full test lists here.** The summary carries rows and the latest test only; use `?server=` or `?region=` (below) for tests. With no tests yet it is still 200, with `latest: null`, rows with `n: 0`, and `pattern: null`.
 
-Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=running` (below) for the "testing now" line.
+Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=running` (below) for the "testing now" line, or `part=queue` (Queue) for the queue.
 
 ```jsonc
 {
@@ -142,7 +142,8 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual"
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep"
+  "on_demand": false,             // trigger "manual" or "sweep": left out of rows, hours, dips and patterns (still in test lists and latest)
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed"
   "region": "us-east",            // |null outside mode regions
   "server": "Leaseweb-NewYork", "label": "Leaseweb New York",   // the server actually used
@@ -198,24 +199,92 @@ For compare, make one request per server or region (up to 4).
 
 A light poll for the "testing now" line: `{"at": ..., "running": { ...Running } | null}`.
 
-## `POST api/speed/run[?id=<server or region id>]` (local only)
+## Queue
 
-"Test now". It uses the same protections as notes: same origin, `X-FYISP-Token` (the page's CSRF token), and the admin token or session cookie when one is set. There is no body.
+Every test goes through one process-wide queue, and exactly one runs at a time:
+- **Test now:** one server, a region's chain, or the nearest servers.
+- **Sweep:** every catalog server and the user's own servers, one test each, about 45.
+- **Scheduled slots:** a slot is enqueued when it falls due. It is **dropped** if it is still waiting 10 minutes later, and a slot already waiting is never stacked.
 
-The test targets depend on `id`:
-- no `id`: the 2 nearest servers;
-- a server id: that server only;
-- a region id: that region's chain.
+The order is FIFO, with the owner's entries (the local dashboard) ahead of the share link's and the schedule's. They never interrupt the running test.
 
-Share-link ids (`custom-1`) are accepted.
+There is no cooldown and no daily budget; the queue's limits replace them. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
 
-Responses:
-- `202 {"started": 1760104800000}`;
-- `409` with code `running`;
-- `404` for an unknown id;
-- `403` when controls are not allowed.
+### `GET api/speed?part=queue`
+
+In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It's cheap; poll every 3 s.
+
+```jsonc
+{
+  "at": 1760104800000,
+  "max_waiting": 12,            // the share link's waiting entries, in all
+  "full": false,                // the share link can't add any now
+  "sweeps_full": false,         // 3 share-link sweeps are waiting
+  "mine": 17,                   // |null: the viewer's newest waiting or running entry (share link: this visitor; local: the owner)
+  "running": { ...Entry },      // |null
+  "waiting": [ { ...Entry } ],  // in run order
+  "last_sweep": { ...Entry }    // |null: the last finished sweep
+}
+```
+
+### Entry
+
+```jsonc
+{
+  "id": 17,
+  "kind": "sweep",              // "single" | "sweep" | "scheduled"
+  "who": "you",                 // "you" | "someone" | "scheduled": relative to the viewer; never an address
+  "state": "running",           // "waiting" | "running" | "done" | "cancelled" | "dropped"
+  "target": {"id": "us-east", "label": "US East"},   // |null: the nearest servers, a sweep, or a slot
+  "position": 0,                // waiting: 1 is next; otherwise 0
+  "enqueued_at": 1760104700000,
+  "started_at": 1760104790000,  // |null
+  "finished_at": null,          // |null
+  "est_start": 1760104790000,   // estimates at about 20 s per test; once finished, the real times
+  "est_finish": 1760105690000,
+  "step": 3, "steps": 45,       // "server 3 of 45"; a single is 1 of 1
+  "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null: running only
+  "direction": "download",      // |null: running only ("picking" | "download" | "upload")
+  "tests": [412, 413]           // the stored tests so far
+}
+```
+
+On the share link, `who` is `you` only for that visitor's own entries; everyone else's, the owner's included, are `someone`. Locally, the owner's are `you` and the share link's are `someone`. Targets and servers use the share link's ids (`custom-1`), and no host, port or address appears.
+
+### `GET api/speed?part=entry&id=<id>`
+
+One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
+
+### `GET api/speed?part=sweep`
+
+The last finished sweep and its tests: `{"at": ..., "entry": { ...Entry } | null, "tests": [ ...Test ]}`.
+
+### `POST api/speed/run?kind=single[&id=<server or region id>]` or `?kind=sweep`
+
+"Test now" (no `id`: the nearest servers) or a sweep. There is no body; `kind` defaults to `single`. The share link's own-server ids (`custom-1`) are accepted.
+
+The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the same requester (the owner, or the same share-link visitor) already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
+
+**Local:** the same protections as notes:
+- same origin;
+- `X-FYISP-Token`;
+- the admin token or session cookie when one is set.
 
 It works in every mode, `off` included.
+
+**Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
+- **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
+- **Queue limits (429 `queue_full`, its `error` says which):**
+  - one waiting entry per visitor;
+  - at most 3 waiting share-link sweeps;
+  - at most 12 waiting share-link entries in all.
+- **Start limit (429 `rate_limited`, with `retry_after`):** per visitor, 1 new entry per 30 s and 10 per hour. Visitors are `Cf-Connecting-Ip`, with IPv6 grouped by /64. A duplicate or a refused request doesn't count.
+
+### `POST api/speed/cancel?id=<id>` or `?public=1` (local only)
+
+These use the same protections as notes (admin-gated):
+- `id`: cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
+- `public=1`: cancels every waiting share-link entry. It returns `200 {"cancelled": 3}`.
 
 ## `POST api/speed/config` (local only)
 

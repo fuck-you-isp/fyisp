@@ -23,7 +23,8 @@ import (
 type SpeedSource interface {
 	State() speedtest.State
 	SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
-	TestNow(id string) (time.Time, error)
+	// Queue is the speed-test queue (Test now, sweeps, schedule slots).
+	Queue() *speedtest.Queue
 	SetMode(ctx context.Context, m speedtest.Mode) (time.Time, error)
 	MaskedShare(d time.Duration) float64
 }
@@ -124,6 +125,7 @@ type speedTestJSON struct {
 	Start           int64    `json:"start"`
 	End             int64    `json:"end"`
 	Trigger         string   `json:"trigger"`
+	OnDemand        bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
 	Outcome         string   `json:"outcome"`
 	Region          *string  `json:"region"`
 	Server          string   `json:"server"`
@@ -200,7 +202,7 @@ func roundP(p *float64, digits float64) *float64 {
 
 func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	ref := n.ref(t.Server)
-	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, Outcome: t.Outcome,
+	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, OnDemand: t.OnDemand(), Outcome: t.Outcome,
 		Server: ref.ID, Label: ref.Label, Fallback: t.Fallback, Attempts: t.Attempts,
 		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans,
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10),
@@ -221,13 +223,17 @@ type speedParams struct {
 	excludeFallback bool
 	server, region  string
 	from, to        time.Time
+	entry           uint64 // part=entry
 	key             string
 }
 
 func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 	p := speedParams{part: q.Get("part"), days: 7}
-	if err := checkParams(q, "part", "days", "tz", "from", "to", "exclude_fallback", "server", "region"); err != nil {
+	if err := checkParams(q, "part", "days", "tz", "from", "to", "exclude_fallback", "server", "region", "id"); err != nil {
 		return p, err
+	}
+	if q.Has("id") && p.part != "entry" {
+		return p, badReq("id is for part=entry")
 	}
 	only := func(part string, names ...string) error {
 		for _, n := range names {
@@ -303,8 +309,19 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 			return p, err
 		}
 		p.key = "speedr"
+	case "queue", "sweep", "entry":
+		if err := only("summary or windows", "days", "tz", "exclude_fallback", "server", "region", "from", "to"); err != nil {
+			return p, err
+		}
+		if p.part == "entry" {
+			id, err := strconv.ParseUint(q.Get("id"), 10, 64)
+			if err != nil || len(q["id"]) != 1 {
+				return p, badReq("part=entry needs one id")
+			}
+			p.entry = id
+		}
 	default:
-		return p, badReq("bad part %q: want summary, windows or running", p.part)
+		return p, badReq("bad part %q: want summary, windows, running, queue, entry or sweep", p.part)
 	}
 	return p, nil
 }
@@ -319,6 +336,11 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	p, err := parseSpeed(r.URL.Query(), now)
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch p.part {
+	case "queue", "entry", "sweep":
+		s.serveSpeedQueue(w, r, p, now)
 		return
 	}
 	configurable := !s.public && s.canControl != nil && s.canControl(r)
@@ -436,6 +458,9 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	byRegion, byServer := map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}
 	var last24 []model.SpeedTest
 	for _, t := range all {
+		if t.OnDemand() {
+			continue // rows and patterns are the schedule's (latest still shows every test)
+		}
 		if !t.Start.Before(now.Add(-24 * time.Hour)) {
 			last24 = append(last24, t)
 		}
@@ -551,7 +576,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, now time.Time) (*s
 	if id == "" {
 		id = p.server
 	}
-	out.Row = speedRow(id, label, ts, time.Duration(p.tz)*time.Minute)
+	out.Row = speedRow(id, label, speedtest.Scheduled(ts), time.Duration(p.tz)*time.Minute) // tests lists every test
 	out.Windows = speedWindows(ts, from)
 	return out, nil
 }
@@ -566,27 +591,6 @@ func (s *server) speedPattern(ctx context.Context, now time.Time, tz time.Durati
 		return nil
 	}
 	return speedtest.PooledPattern(ts, tz)
-}
-
-// serveSpeedRun answers POST api/speed/run[?id=<server or region>].
-func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
-	if !h.speedPOST(w, r, "id") {
-		return
-	}
-	id := r.URL.Query().Get("id")
-	if id != "" {
-		id = newSpeedNames(h.d.Speed.State(), false).resolve(id)
-	}
-	at, err := h.d.Speed.TestNow(id)
-	switch {
-	case errors.Is(err, speedtest.ErrRunning):
-		writeErrCode(w, r, http.StatusConflict, "running", err.Error())
-		return
-	case err != nil:
-		writeErr(w, r, http.StatusNotFound, err.Error())
-		return
-	}
-	writeJSON(w, r, http.StatusAccepted, map[string]any{"started": at.UnixMilli()})
 }
 
 // serveSpeedConfig answers POST api/speed/config {"mode": ...}.

@@ -303,34 +303,59 @@ The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch r
 
 ## Speed tests
 
-fyisp can measure your download and upload speed every 15 minutes, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams). **It is off by default.** Switch it on with `--speedtest`, or with the toggle in Details → Speed (the setting is saved). "Test now" runs one test right away, even with the schedule off.
+fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams). **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" queues one test, and "Test all servers" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
 
 ```sh
-fyisp --speedtest                     # every 15 minutes (±1 minute, so installs don't line up)
-fyisp --speedtest=every=1h            # less often (15 minutes is the minimum)
+fyisp --speedtest                              # mode regions: 9 regions, each every 15 minutes
+fyisp --speedtest=nearest                      # the 2 nearest servers, alternating, every 15 minutes
+fyisp --speedtest=regions,every=30m            # less often (15 minutes is the minimum per region)
 fyisp --speedtest-server 192.168.1.20:5201 --speedtest=every=5m   # your own iperf3 server: no minimum
+fyisp --speedtest-server Leaseweb-Tokyo,OVH-Sydney                 # chosen catalog servers (mode custom)
 ```
 
-**What is sent, to whom.** Each test is an iperf3 test, the same as `iperf3 -c SERVER -P 8 -O 1 -t 9` and then the same with `-R`, but built into fyisp, so nothing has to be installed:
-- 10 seconds of download, then 10 seconds of upload;
-- 8 parallel TCP streams, with the first second left out as ramp-up.
+**Modes:**
+- **`regions`**, the default once switched on: 9 regions (UK, Western Europe, Central Europe, US East, US Central, US West, East Asia, Southeast Asia and Oceania), each tested every 15 minutes.
+  - Only one test runs at a time; tests are spread evenly, about 100 seconds apart.
+  - Each region has an ordered fallback chain of servers from different providers, e.g. UK: Clouvider London → Leaseweb London → OVH London.
+  - Results show whether a dip is your line (every region at once) or one route (one region).
+- **`nearest`**: the two catalog servers nearest by round-trip time, alternating, every 15 minutes. It's lighter, and shows only your own line.
+- **`custom`**: the servers you list with `--speedtest-server`, catalog ids or `host:port` of your own iperf3 server, each every 15 minutes.
 
-At your connection's full speed that is a lot of data: a 500/50 Mbit/s line moves about 690 MB per test, or about 65 GB a day at four tests an hour. Leave it off on metered or capped connections.
+**What is sent, to whom.** Each test is an iperf3 test, built into fyisp, so nothing has to be installed:
+- download, then upload, each with 8 parallel TCP streams;
+- the first second of each direction is left out as ramp-up;
+- then 3 to 8 seconds are measured, stopping as soon as the speed is steady (a second within 5% of the one before).
 
-The servers are the public iperf3 servers that [YABS](https://github.com/masonr/yet-another-bench-script) uses, listed in [`internal/profile/catalog/iperf3/yabs.yml`](internal/profile/catalog/iperf3/yabs.yml). They are Clouvider (London, Los Angeles), Eranium (Amsterdam), Uztelecom (Tashkent), Leaseweb (Singapore, New York) and Edgoo (São Paulo). fyisp tests against the two nearest by round-trip time, alternating between them, and checks which are nearest once a day: with one ping each, or a TCP connect to port 80 or 443 where ping is blocked. Like every probe target, they see your public IP address.
+The servers are public iperf3 servers run by hosting companies and volunteers: Leaseweb (16), OVH (12), Clouvider (9), Scaleway, Eranium, Uztelecom and Edgoo. All 41 are listed with their sources in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), with the regions in `regions.yml`. Like every probe target, they see your public IP address.
 
-**Be kind to the servers.** These servers are run by volunteers and hosting companies, and each port runs one test at a time. If a server is busy, fyisp tries up to 3 random ports 2 seconds apart. Then it records **"server busy"**, never a slow result, and tries again at the next slot. If the server doesn't accept a connection at all, fyisp stops for that slot. Please don't lower the interval against them. If you want tests more often, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
+**How much it costs your line.** A speed test fills the line while it runs, by design:
+- **Time under test:** mode `regions` keeps the line under test about 15% of the time (9 tests of ~15 seconds every 15 minutes); `nearest` about 2%. Details shows the planned share. fyisp warns when your settings would exceed 25%.
+- **Data:** on a 500/50 Mbit/s line, one test moves about 350 MB, and up to 600 MB when the speed takes the full 8 seconds to settle. Mode `regions` runs 864 tests a day, so that is on the order of 100–300 GB a day, less on slower lines and to far regions. `nearest` uses about a ninth of that.
+- **Metered lines:** leave speed tests off on metered or capped connections.
+
+**Be kind to the servers.** Each server port runs one test at a time.
+- If a port is busy, or refuses for a moment (a stock iperf3 server re-listens after every test), fyisp tries up to 2 more ports 2 seconds apart.
+- Then it moves to the next server of the region's chain. If nothing answers, it records **"server busy"**, never a slow result.
+- A slot never uses more than about 30 seconds and never delays the next one.
+
+Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
 
 **What you get.** For each test:
-- download and upload speed (Mbit/s);
+- download and upload speed;
 - TCP retransmits;
+- the region, the server used, and whether it was a fallback;
 - **latency under load**: your router's and your call path's round-trip time in the 2 minutes before the test and during it. A big jump is bufferbloat, the reason calls break while someone uploads.
 
-Details → Speed shows the latest test, a time series and **speed by hour of day** (median and slowest 10% per hour, over 7 or 30 days), with the slow hours highlighted. When there is a clear pattern, Home shows one line, for example *Evenings are slower: about 40% below your daytime speed.* Reports get a short speed section. `fyisp export --speedtests` writes every test as CSV.
+Details → Speed shows:
+- a heatmap of regions × hour of day, each cell compared to that region's own best;
+- a time series per region and server, a table, and compare;
+- a note when a region mostly used its fallback in the last day.
 
-**Tests don't count against your connection.** A test fills the line, so every probe that runs during it measures the test. Those probes are stored as "not measured", like time when fyisp was stopped. The verdict, call scores, Home and history ignore them, charts shade the test windows, and a speed test never starts an incident or a bad call minute.
+When there is a clear pattern on your own line, Home shows one line, for example *Evenings are slower: about 40% below your daytime speed.* Reports get a speed section by region. `fyisp export --speedtests` writes every test as CSV.
 
-Limits: one test at a time; at most 15 seconds per direction and 60 seconds per test, retries included; IPv4 only.
+**Tests don't count against your connection.** Every probe that runs during a test, or in the 2 seconds after it, measures the test. Those probes are stored as "not measured", like time when fyisp was stopped. The verdict, call scores, Home and history ignore them, charts shade the test windows, and a speed test never starts an incident or a bad call minute. `/api/status` reports the share of the last 24 hours spent under test.
+
+Limits: one test at a time, at most 15 seconds per direction and 45 seconds per slot, retries included; IPv4 only.
 
 ## What to measure (profiles)
 
@@ -442,6 +467,7 @@ Sharing is **off by default**. Start it with *Make a report* on Home, the share 
 - fyisp opens a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) from inside the process (no `cloudflared` install, no Cloudflare account) and prints a link like `https://<random-words>.trycloudflare.com/s/<secret>/`.
 - **What is public:** the report, the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, and requests are rate-limited.
 - **People with your link can start a trace** (*Investigate*) of your profile's targets, and nothing else. It is the one thing the public link can change. Only targets in your profile can be traced, never a host or address of the visitor's choosing. Each trace runs 250 rounds (about 10 minutes) and stops by itself. At most 4 run at once, and visitors can hold at most 3 of them, so you always have one. Each visitor can start one every 30 seconds and 10 an hour, and a target whose trace just finished can be traced again from the link only after 5 minutes. The hops it shows are redacted like the rest of the public link.
+- **People with your link can queue a speed test** (one server, or a sweep of every server) when speed tests are available. Tests wait in one queue and run one at a time, yours always first. Each visitor can have one waiting and start one every 30 seconds (10 an hour). At most 3 sweeps and 12 tests from the link wait at once, and you can cancel or clear them in Details → Speed.
 - **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
 - The tunnel tries QUIC (UDP port 7844) first and switches to HTTP/2 over TCP port 443 after about 30 seconds if UDP is blocked. Force one with `--share-protocol quic` or `--share-protocol http2`.
 - The link is random. It changes when fyisp restarts, or when the tunnel has to be re-created after 5 minutes without a connection. The browser on your machine always opens `127.0.0.1`, never the public link.
@@ -455,7 +481,7 @@ The services are measured with TCP only, so `ping_*` now covers the Network path
 
 UDP (STUN) targets never feed `ping_*`. Each burst counts once in `fyisp_probe_samples_total{kind="udp"}` (and `fyisp_probe_lost_total{kind="udp"}` when nothing answered); the latest burst's values are `fyisp_udp_rtt_seconds{name,target}` (median round trip), `fyisp_udp_jitter_seconds` and `fyisp_udp_loss_ratio` (0 to 1), each absent while the latest burst did not measure it.
 
-Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{server}` and `fyisp_speed_upload_bits_per_second{server}`, both from the latest test against that server that measured them. They also add `fyisp_speed_loaded_rtt_seconds{server,layer,load}`: the median RTT to the gateway (`layer="gateway"`) or the call path (`layer="call"`), before the test (`load="idle"`) and during it (`load="loaded"`). `fyisp_speed_tests_total{server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable` or `failed`.
+Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{region,server}` and `fyisp_speed_upload_bits_per_second{region,server}`, both from the latest test against that server that measured them (`region` is empty outside mode `regions`). They also add `fyisp_speed_loaded_rtt_seconds{region,server,layer,load}`: the median RTT to the gateway (`layer="gateway"`) or the call path (`layer="call"`), before the test (`load="idle"`) and during it (`load="loaded"`). `fyisp_speed_tests_total{region,server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable` or `failed`.
 
 `fyisp_call_mos{app}` is the call-quality score the Calls view shows (MOS, 1 to 4.5; 4.0 and up is good, 3.6 fair, 3.1 poor, below that unusable): the worst minute of the last 5 minutes. `app="path"` is your call path, and `app="meet"` and `app="teams"` are the measured apps (Teams only with the `calls` profile). Each is absent until its STUN servers have 10 bursts in the window. With `--no-udp` there are no `fyisp_udp_*` or `fyisp_call_mos` series.
 

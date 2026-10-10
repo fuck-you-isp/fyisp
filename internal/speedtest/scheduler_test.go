@@ -364,7 +364,7 @@ func TestNearest(t *testing.T) {
 	}
 }
 
-func TestModesAndTestNow(t *testing.T) {
+func TestModesAndQueue(t *testing.T) {
 	h := newHarness(t, Options{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -376,8 +376,8 @@ func TestModesAndTestNow(t *testing.T) {
 	if _, err := h.s.SetMode(ctx, ModeCustom); !errors.Is(err, ErrMode) {
 		t.Errorf("custom without servers: %v", err)
 	}
-	if _, err := h.s.TestNow("Nope"); err == nil {
-		t.Error("unknown id accepted")
+	if _, _, err := h.s.Queue().Enqueue(Request{Kind: KindSingle, Target: "Nope", Who: WhoOwner}); !errors.Is(err, ErrUnknownID) {
+		t.Errorf("unknown id: %v", err)
 	}
 	release := make(chan struct{})
 	h.mu.Lock()
@@ -386,11 +386,8 @@ func TestModesAndTestNow(t *testing.T) {
 		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
 	}
 	h.mu.Unlock()
-	if _, err := h.s.TestNow("away"); err != nil {
+	if _, _, err := h.s.Queue().Enqueue(Request{Kind: KindSingle, Target: "away", Who: WhoOwner}); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := h.s.TestNow(""); !errors.Is(err, ErrRunning) {
-		t.Errorf("second: %v", err)
 	}
 	for h.s.State().Running == nil || h.s.State().Running.Direction == "picking" {
 		time.Sleep(5 * time.Millisecond)

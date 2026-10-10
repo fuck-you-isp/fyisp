@@ -585,7 +585,7 @@ func TestPublicInvestigate(t *testing.T) {
 		if w.Code != c.status || code(w) != c.code {
 			t.Errorf("%s: %d %q, want %d %q (%s)", name, w.Code, code(w), c.status, c.code, w.Body.String())
 		}
-		if c.code != "not_found" { // the share link's plain 404 sets no Cache-Control
+		if name != "bad secret" {
 			if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
 				t.Errorf("%s: Cache-Control %q", name, cc)
 			}
