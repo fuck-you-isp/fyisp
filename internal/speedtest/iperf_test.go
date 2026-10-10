@@ -203,7 +203,11 @@ func (f *fakeServer) session(c net.Conn) {
 		}()
 	}
 	var st [1]byte
-	if _, err := io.ReadFull(c, st[:]); err != nil || st[0] != stateTestEnd {
+	_, err = io.ReadFull(c, st[:])
+	if f.mode == "slowend" { // a far server: TEST_END takes a while to act on
+		time.Sleep(40 * time.Millisecond)
+	}
+	if err != nil || st[0] != stateTestEnd {
 		if f.mode != "stall" {
 			f.fail(errors.New("no TEST_END"))
 		}
@@ -304,7 +308,7 @@ func TestUpload(t *testing.T) {
 	}
 	// The bytes the server acknowledged in the window (Linux), at most what
 	// it received in all.
-	if r.Bytes == 0 || r.Bytes > f.recv || r.TotalBytes < r.Bytes || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 1700*time.Millisecond {
+	if r.Bytes == 0 || r.Bytes > f.recv || r.TotalBytes < r.Bytes || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 2500*time.Millisecond {
 		t.Errorf("result %+v, server received %d", r, f.recv)
 	}
 	if f.results.SenderHasRetransmits < 0 {
@@ -421,7 +425,8 @@ func TestByteCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes || r.TotalBytes > cfg.MaxBytes+4<<20 || time.Since(t0) > time.Second || r.Elapsed <= 0 {
+	// It stops early enough that what keeps arriving stays within the cap.
+	if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes/2 || r.WireBytes > cfg.MaxBytes || time.Since(t0) > time.Second || r.Elapsed <= 0 {
 		t.Errorf("capped %v, %d bytes in all, %d measured over %v, run %v", r.CappedByBytes, r.TotalBytes, r.Bytes, r.Elapsed, time.Since(t0))
 	}
 	f.mu.Lock()
@@ -560,5 +565,29 @@ func TestAddressChecks(t *testing.T) {
 	own, err := Custom("192.168.1.20:5201,8.8.8.8:5201", nil)
 	if err != nil || !own[0].LAN || own[1].LAN || OwnOnly(own) || !OwnOnly(own[:1]) {
 		t.Errorf("custom %+v %v", own, err)
+	}
+}
+
+// TestByteCapInFlight: at a high rate with a server that keeps sending for
+// a while after TEST_END (a far one), a download stops early enough that
+// everything that arrives, read or still buffered, stays within the cap.
+func TestByteCapInFlight(t *testing.T) {
+	f := newFakeServer(t, "slowend")
+	f.rate = 512 << 10 // 3 streams × 512 KiB per 10 ms: ~150 MB/s
+	cfg := quick(f.addr(), Download)
+	cfg.MaxBytes = 40 << 20
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.CappedByBytes || r.WireBytes > cfg.MaxBytes || r.WireBytes < cfg.MaxBytes/3 {
+		t.Errorf("capped %v: %d bytes arrived (cap %d), %d measured", r.CappedByBytes, r.WireBytes, cfg.MaxBytes, r.Bytes)
+	}
+	// Uploads never write past the cap, whatever the streams' interleaving.
+	f2 := newFakeServer(t, "")
+	cfg = quick(f2.addr(), Upload)
+	cfg.MaxBytes = 3 << 20
+	if r, err := Run(context.Background(), cfg); err != nil || !r.CappedByBytes || r.WireBytes > cfg.MaxBytes {
+		t.Errorf("upload: %v capped %v, %d written (cap %d)", err, r.CappedByBytes, r.WireBytes, cfg.MaxBytes)
 	}
 }

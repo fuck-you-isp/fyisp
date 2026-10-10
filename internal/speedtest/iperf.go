@@ -246,7 +246,9 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	}
 	res.IP = ap.Addr()
 	c.Addr = ap.String() // IPv4 only, by decision; one address for every dial
+	t0 := time.Now()
 	ctrl, err := c.Dial(ctx, "tcp4", c.Addr)
+	dialRTT := time.Since(t0)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return res, ctx.Err()
@@ -256,7 +258,10 @@ func Run(ctx context.Context, c Config) (Result, error) {
 		}
 		return res, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
-	t := &test{c: c, ctrl: ctrl}
+	t := &test{c: c, ctrl: ctrl, dialRTT: dialRTT}
+	if c.MaxBytes > 0 {
+		t.stopAt.Store(c.MaxBytes - inflightFloor(c.MaxBytes))
+	}
 	defer t.close()
 	stop := context.AfterFunc(ctx, t.abort) // unblocks every read and write
 	defer stop()
@@ -322,9 +327,14 @@ type test struct {
 	wg      sync.WaitGroup // the data phase's stream goroutines
 
 	counts   []atomic.Int64 // per stream, the whole data phase (mu: the slice)
-	moved    atomic.Int64   // bytes of every stream, against MaxBytes
+	moved    atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
 	received atomic.Int64   // downloads: TCP_INFO received bytes, every stream
-	capped   atomic.Bool
+	// stopAt is where a download stops reading: MaxBytes less what is
+	// still in flight then (see inflightSlack), so the total that arrives
+	// stays within MaxBytes.
+	stopAt  atomic.Int64
+	dialRTT time.Duration // the control connection's connect time: the RTT without TCP_INFO
+	capped  atomic.Bool
 }
 
 func (t *test) close() {
@@ -520,6 +530,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		b := total()
 		d := b - last
 		last = b
+		t.updateStop(float64(d) / tick.Seconds())
 		if t.capped.Load() {
 			res.CappedByBytes = true
 			if !measuring { // capped in the ramp-up: the whole run is the window,
@@ -610,8 +621,68 @@ func (t *test) snapshot(counts []atomic.Int64, into, retrans, acked []int64) {
 // is set the moment it is reached, and wakes the control loop.
 func (t *test) count(n *atomic.Int64, k int) {
 	n.Add(int64(k))
-	if t.c.MaxBytes > 0 && t.moved.Add(int64(k)) >= t.c.MaxBytes && t.capped.CompareAndSwap(false, true) {
+	if t.c.MaxBytes <= 0 || t.c.Direction != Download {
+		return
+	}
+	if t.moved.Add(int64(k)) >= t.stopAt.Load() {
+		t.capNow()
+	}
+}
+
+func (t *test) capNow() {
+	if t.capped.CompareAndSwap(false, true) {
 		_ = t.ctrl.SetReadDeadline(time.Now()) // end the current wait now
+	}
+}
+
+// Download overshoot: once we stop reading, the server keeps sending until
+// TEST_END reaches it, and that data still arrives (into our receive
+// buffers). A download therefore stops at MaxBytes less the data in
+// flight: the current rate × (the smoothed RTT + inflightSlack), at least
+// inflightFloor.
+const inflightSlack = 50 * time.Millisecond
+
+// inflightFloor is 5 MB, or a twentieth of a small cap.
+func inflightFloor(max int64) int64 { return min(5<<20, max/20) }
+
+// updateStop moves the download's stop point for the rate just measured
+// (bytes per second).
+func (t *test) updateStop(rate float64) {
+	if t.c.MaxBytes <= 0 || t.c.Direction != Download {
+		return
+	}
+	rtt := t.dialRTT
+	t.mu.Lock()
+	if len(t.streams) > 0 {
+		if r := tcpRTT(t.streams[0]); r > 0 {
+			rtt = r
+		}
+	}
+	t.mu.Unlock()
+	in := max(int64(rate*(rtt+inflightSlack).Seconds()), inflightFloor(t.c.MaxBytes))
+	t.stopAt.Store(t.c.MaxBytes - in)
+	if t.moved.Load() >= t.c.MaxBytes-in {
+		t.capNow()
+	}
+}
+
+// reserve claims up to want bytes of the upload's cap for one write: the
+// streams never write more than MaxBytes between them.
+func (t *test) reserve(want int) int {
+	if t.c.MaxBytes <= 0 {
+		return want
+	}
+	for {
+		cur := t.moved.Load()
+		left := t.c.MaxBytes - cur
+		if left <= 0 {
+			t.capNow()
+			return 0
+		}
+		n := min(int64(want), left)
+		if t.moved.CompareAndSwap(cur, cur+n) {
+			return int(n)
+		}
 	}
 }
 
@@ -640,17 +711,15 @@ var payload = func() []byte {
 // fill writes an upload stream until done, never past the byte cap.
 func (t *test) fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
 	for !done.Load() && !t.capped.Load() {
-		b := payload
-		if t.c.MaxBytes > 0 {
-			left := t.c.MaxBytes - t.moved.Load()
-			if left <= 0 {
-				t.count(n, 0)
-				return
-			}
-			b = b[:min(int64(len(b)), left)]
+		r := t.reserve(len(payload))
+		if r == 0 {
+			return
 		}
 		_ = s.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
-		k, err := s.Write(b)
+		k, err := s.Write(payload[:r])
+		if k < r {
+			t.moved.Add(int64(k - r)) // give back what wasn't written
+		}
 		t.count(n, k)
 		if err != nil {
 			var ne net.Error

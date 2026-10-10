@@ -255,7 +255,7 @@ func TestSlotCap(t *testing.T) {
 	h.slot(t, target{server: "Near"})
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(h.calls) != 2 || h.calls[0].MaxBytes != MaxBytes || h.calls[1].MaxBytes != 50<<20 {
+	if len(h.calls) != 2 || h.calls[0].MaxBytes != MaxBytes || h.calls[1].MaxBytes != SlotMaxBytes-150<<20 {
 		var caps []int64
 		for _, c := range h.calls {
 			caps = append(caps, c.MaxBytes)
