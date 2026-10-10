@@ -460,5 +460,6 @@ function resultWord(t) {
   if (t.outcome === 'busy') return 'Server busy';
   if (t.outcome === 'unreachable') return 'Didn’t answer';
   if (t.outcome === 'failed') return 'Didn’t finish';
+  if (t.outcome === 'cancelled') return 'Cancelled';
   return 'OK';
 }
