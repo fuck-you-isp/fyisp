@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -225,6 +226,44 @@ func TestWriteSamples(t *testing.T) {
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(html), 0o644); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// The call path (UDP) kinds have their own wording, after every other kind.
+func TestCallPathIncidents(t *testing.T) {
+	f := newFixture(t, 7, 5*time.Minute)
+	at := f.to.Add(-6 * time.Hour)
+	f.incidents = append(f.incidents,
+		model.Incident{ID: 501, Start: at, End: at.Add(20 * time.Minute), Kind: model.VerdictUDPBlocked, Summary: "UDP is blocked."},
+		model.Incident{ID: 502, Start: at.Add(time.Hour), End: at.Add(70 * time.Minute), Kind: model.VerdictSTUNBlocked, Summary: "Call ports are blocked."},
+		model.Incident{ID: 503, Start: at.Add(2 * time.Hour), End: at.Add(2*time.Hour + 5*time.Minute), Kind: model.VerdictUDPDegraded, PeakLoss: 0.12, Summary: "Calls may sound choppy."},
+	)
+	html := f.build(t, f.deps(), Options{})
+	checkStatic(t, html)
+	prev := strings.Index(html, "Your ISP&#39;s network dropped packets")
+	for _, want := range []string{
+		"UDP, which calls use, was blocked or failing on 1 of 7 days (20m in 1 incident).",
+		"The call ports (STUN) were blocked on 1 of 7 days (10m in 1 incident).",
+		"The UDP path calls use was degraded on 1 of 7 days (5m in 1 incident, losing up to 12% of probes in a minute).",
+	} {
+		i := strings.Index(html, want)
+		if i < 0 {
+			t.Fatalf("report lacks %q", want)
+		}
+		if i < prev {
+			t.Errorf("%q comes too early", want)
+		}
+		prev = i
+	}
+	for _, want := range []string{"UDP blocked (calls)", "Call ports (STUN) blocked", "Call path degraded"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report lacks label %q", want)
+		}
+	}
+	for k := range kinds {
+		if !slices.Contains(kindOrder, k) {
+			t.Errorf("kind %s not in kindOrder", k)
 		}
 	}
 }

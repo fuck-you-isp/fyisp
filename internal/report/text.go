@@ -25,11 +25,18 @@ var kinds = map[model.VerdictKind]kindInfo{
 	model.VerdictNoNetwork: {"No network", "This device's own connection", "#8a1c1c"},
 	model.VerdictDNS:       {"DNS problem", "Name resolution (DNS)", "#5b4bc8"},
 	model.VerdictService:   {"Some services down", "Individual services (their fault, not your ISP's)", "#b58300"},
+
+	// The call path (UDP).
+	model.VerdictUDPBlocked:  {"UDP blocked (calls)", "UDP, which calls use,", "#2f7f86"},
+	model.VerdictSTUNBlocked: {"Call ports (STUN) blocked", "The call ports (STUN)", "#4f9aa0"},
+	model.VerdictUDPDegraded: {"Call path degraded", "The UDP path calls use", "#7d8a2e"},
 }
 
-// kindOrder is the order of the summary: the ISP first.
+// kindOrder is the order of the summary: the ISP first, the call path (UDP)
+// kinds last.
 var kindOrder = []model.VerdictKind{model.VerdictISP, model.VerdictUpstream, model.VerdictLAN,
-	model.VerdictNoNetwork, model.VerdictDNS, model.VerdictService}
+	model.VerdictNoNetwork, model.VerdictDNS, model.VerdictService,
+	model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded}
 
 func kindOf(k model.VerdictKind) kindInfo {
 	if i, ok := kinds[k]; ok {
@@ -219,8 +226,15 @@ func (r *run) summary(totals []kindTotal) (string, []string) {
 		if t.PeakLoss > 0 {
 			verb = "dropped packets"
 		}
-		if t.Kind == model.VerdictService {
+		switch t.Kind {
+		case model.VerdictService:
 			verb = "failed"
+		case model.VerdictUDPBlocked:
+			verb = "was blocked or failing"
+		case model.VerdictSTUNBlocked:
+			verb = "were blocked"
+		case model.VerdictUDPDegraded:
+			verb = "was degraded"
 		}
 		what := fmt.Sprintf("%s in %s", fmtDur(t.Dur), plural(t.Count, "incident", "incidents"))
 		var s string

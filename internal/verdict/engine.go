@@ -86,6 +86,10 @@ type series struct {
 	curMin int64
 	curRTT []uint32
 	mins   [baselineMins]minute
+
+	// timeouts counts the latest KindUDP bursts that timed out in a row
+	// (another kind's series keeps 0).
+	timeouts int
 }
 
 type engine struct {
@@ -111,6 +115,13 @@ type engine struct {
 	candN     int
 	candSince time.Time
 	okSince   time.Time // start of the current streak of ok evaluations
+
+	// udpPoorSince: since when ≥ 2 providers are poor (udp_degraded);
+	// blockedSince: since when the current verdict is a blocked kind
+	// (Quiet). Both zero when not.
+	udpPoorSince time.Time
+	blockedSince time.Time
+
 	open      *model.Incident
 	openSaved time.Time
 	retry     []*model.Incident // closed incidents whose save failed
@@ -252,6 +263,13 @@ func (e *engine) Observe(s model.Sample) {
 	}
 	if len(sr.raw) > maxRaw {
 		sr.raw = append(sr.raw[:0], sr.raw[len(sr.raw)-maxRaw:]...)
+	}
+	if s.Key.Kind == model.KindUDP {
+		if s.Lost && s.Reason == model.ReasonTimeout {
+			sr.timeouts++
+		} else {
+			sr.timeouts = 0 // answered, or a socket error: no evidence of a block
+		}
 	}
 	if s.Lost {
 		return
@@ -410,6 +428,7 @@ func (e *engine) step(ctx context.Context, now time.Time) {
 	p := e.profile()
 	e.mu.Lock()
 	ts := e.collect(now, p)
+	us := e.collectUDP(now, p)
 	e.mu.Unlock()
 	var normals []SlowTarget
 	for _, t := range ts {
@@ -418,7 +437,9 @@ func (e *engine) step(ctx context.Context, now time.Time) {
 	e.vmu.Lock()
 	e.normals = normals
 	e.vmu.Unlock()
-	e.apply(ctx, now, judge(p, ts))
+	j := judge(p, ts)
+	e.judgeUDP(now, p, us, &j)
+	e.apply(ctx, now, j)
 }
 
 // apply runs warm-up, hysteresis and the incident log for one judgement.
@@ -446,6 +467,7 @@ func (e *engine) apply(ctx context.Context, now time.Time, j judgement) {
 		e.setCurrent(warmingUp(now), 0)
 	}
 	e.lastEval = now
+	defer e.markQuiet(now)
 
 	e.vmu.Lock()
 	e.layers = j.layers

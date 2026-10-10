@@ -121,6 +121,10 @@ type outcome struct {
 	lost   bool
 	reason model.Reason
 	rtt    time.Duration
+	// UDP bursts only: the burst's jitter, and the share of its requests
+	// lost in percent (default: 100 when lost, else 0).
+	jitter  time.Duration
+	udpLoss int
 }
 
 type behavior func(t model.Target, k model.ProbeKind, at time.Time) (outcome, bool)
@@ -155,8 +159,8 @@ func newHarness(t *testing.T) *harness {
 }
 
 // run advances the clock in 1s steps: ICMP every 5s, TCP/HTTPS every 15s,
-// an evaluation every 5s. Internet targets without kinds are TCP only, as
-// in the shipped profiles.
+// UDP every Interval (15s without), an evaluation every 5s. Internet
+// targets without kinds are TCP only, as in the shipped profiles.
 func (h *harness) run(d time.Duration) {
 	h.t.Helper()
 	end := h.now.Add(d)
@@ -168,6 +172,9 @@ func (h *harness) run(d time.Duration) {
 				iv := int64(15)
 				if k == model.KindICMP {
 					iv = 5
+				}
+				if k == model.KindUDP && t.Interval >= time.Second {
+					iv = int64(t.Interval / time.Second)
 				}
 				if sec%iv != 0 {
 					continue
@@ -185,15 +192,21 @@ func (h *harness) run(d time.Duration) {
 					h.e.Observe(model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: k}, Slot: h.now, RTT: o.rtt, Lost: o.lost, Reason: o.reason})
 				}
 				if send && k == model.KindUDP {
-					// A burst writes its siblings with the same slot: here
-					// the outcome's RTT as jitter, and all requests lost
-					// when the burst is.
-					loss := time.Duration(0)
-					if o.lost {
-						loss = 100 * time.Millisecond
+					// A burst writes its siblings with the same slot, as
+					// probe.burstSamples: a socket error loses all three
+					// with its reason; a timed-out burst has no jitter and
+					// 100% loss.
+					jit := model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: model.KindUDPJitter}, Slot: h.now, RTT: o.jitter}
+					loss := model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: model.KindUDPLoss}, Slot: h.now, RTT: time.Duration(o.udpLoss) * time.Millisecond}
+					switch {
+					case o.lost && o.reason != model.ReasonTimeout:
+						jit.Lost, jit.Reason, loss.Lost, loss.Reason = true, o.reason, true, o.reason
+					case o.lost:
+						jit.Lost, jit.Reason = true, model.ReasonGap
+						loss.RTT = 100 * time.Millisecond
 					}
-					h.e.Observe(model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: model.KindUDPJitter}, Slot: h.now, RTT: o.rtt, Lost: o.lost, Reason: model.ReasonGap})
-					h.e.Observe(model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: model.KindUDPLoss}, Slot: h.now, RTT: loss})
+					h.e.Observe(jit)
+					h.e.Observe(loss)
 				}
 			}
 		}
@@ -894,15 +907,16 @@ func checkEvidence(t *testing.T, ev map[string]float64) {
 	}
 }
 
-// TestUDPIgnored: UDP (STUN) series never enter the verdict: dead or very
-// slow STUN targets leave it ok, and add nothing to the services' loss or
-// the affected targets. (UDP verdicts of their own come with the Calls
-// view.)
+// TestUDPIgnored: UDP (STUN) series never enter the TCP rules: dead or
+// very slow STUN targets leave the verdict ok, and add nothing to the
+// services' loss or the affected targets. The targets share one provider
+// (one domain), so the call path verdicts of udp.go, which need two, stay
+// out of it too (see udp_test.go).
 func TestUDPIgnored(t *testing.T) {
 	h := newHarness(t)
 	h.p.Groups = append(h.p.Groups, model.Group{ID: "calls", Title: "Call path (UDP)"})
 	for _, n := range []string{"Meet-STUN", "Cloudflare-STUN", "Twilio-STUN-global", "Teams-Relay"} {
-		h.p.Targets = append(h.p.Targets, model.Target{Name: n, Host: strings.ToLower(n) + ".example", Port: 3478, Group: "calls",
+		h.p.Targets = append(h.p.Targets, model.Target{Name: n, Host: strings.ToLower(n) + ".stun.example", Port: 3478, Group: "calls",
 			Kinds: []model.ProbeKind{model.KindUDP}, Interval: 5 * time.Second})
 	}
 	h.with(func(t model.Target, _ model.ProbeKind, at time.Time) (outcome, bool) {
@@ -912,7 +926,7 @@ func TestUDPIgnored(t *testing.T) {
 		if at.Before(t0.Add(3 * time.Minute)) {
 			return outcome{lost: true, reason: model.ReasonTimeout}, true // all lost
 		}
-		return outcome{rtt: 3 * time.Second}, true // answering, but very slow
+		return outcome{rtt: 3 * time.Second, jitter: time.Second, udpLoss: 40}, true // answering, but very slow and lossy
 	})
 	h.run(6 * time.Minute)
 	if h.seen[model.VerdictService] || h.seen[model.VerdictUpstream] || h.seen[model.VerdictISP] {
