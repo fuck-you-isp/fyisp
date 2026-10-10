@@ -90,6 +90,37 @@ func TestLoadProfileFlags(t *testing.T) {
 	}
 }
 
+// TestProfileEnv: FYISP_PROFILE stands in for --profile; --profile and
+// --config win over it.
+func TestProfileEnv(t *testing.T) {
+	t.Setenv("FYISP_PROFILE", " Calls, dns ")
+	c, err := parseFlags(nil)
+	if err != nil || !slices.Equal(c.profiles, []string{"calls", "dns"}) {
+		t.Fatalf("env: %v %v", c.profiles, err)
+	}
+	if p, err := loadProfile(c); err != nil || p.Name != "calls,dns" {
+		t.Errorf("env profile: %v", err)
+	}
+	if c, _ := parseFlags([]string{"--profile", "aws"}); !slices.Equal(c.profiles, []string{"aws"}) {
+		t.Errorf("--profile: %v", c.profiles)
+	}
+	f := filepath.Join(t.TempDir(), "p.yml")
+	if err := os.WriteFile(f, []byte("extends: [default]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := parseFlags([]string{"--config", f}); err != nil || len(c.profiles) != 0 {
+		t.Errorf("--config: %v %v", c.profiles, err)
+	}
+	// --geo still needs a profile: the env's.
+	if c, err := parseFlags([]string{"--geo", "eu"}); err != nil || !slices.Equal(c.profiles, []string{"calls", "dns"}) {
+		t.Errorf("--geo: %v %v", c.profiles, err)
+	}
+	t.Setenv("FYISP_PROFILE", "")
+	if c, _ := parseFlags(nil); len(c.profiles) != 0 {
+		t.Errorf("empty env: %v", c.profiles)
+	}
+}
+
 func TestCmdProfiles(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := cmdProfiles(nil, &out, &errb); code != 0 {
