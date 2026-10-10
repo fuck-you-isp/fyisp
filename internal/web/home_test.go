@@ -45,6 +45,19 @@ func homeProfile() *model.Profile {
 // lost (every TCP/ICMP probe lost) and bad (bursts for the call path).
 func homeFixture(t *testing.T, p *model.Profile, now time.Time, lost []string, choppy bool) (*server, *countingStore, *fakeVerdict) {
 	t.Helper()
+	return homeFixtureFn(t, p, now, func(name string, _ time.Time) bool { return slices.Contains(lost, name) },
+		func(_ string, ts time.Time) burst {
+			if choppy && ts.After(now.Add(-4*time.Minute)) {
+				return burst{rtt: 60, jitter: 40, answered: 4}
+			}
+			return burst{rtt: 20, jitter: 2, answered: 5}
+		})
+}
+
+// homeFixtureFn fills 30 minutes before now: lost says which TCP/ICMP
+// probes are lost, bursts how each STUN burst goes.
+func homeFixtureFn(t *testing.T, p *model.Profile, now time.Time, lost func(string, time.Time) bool, bursts func(string, time.Time) burst) (*server, *countingStore, *fakeVerdict) {
+	t.Helper()
 	f := store.NewFake()
 	for _, tg := range p.Targets {
 		for _, k := range tg.ProbeKinds() {
@@ -54,15 +67,11 @@ func homeFixture(t *testing.T, p *model.Profile, now time.Time, lost []string, c
 			}
 			for ts := now.Add(-30 * time.Minute).Truncate(iv); ts.Before(now); ts = ts.Add(iv) {
 				if k == model.KindUDP {
-					b := burst{rtt: 20, jitter: 2, answered: 5}
-					if choppy && ts.After(now.Add(-4*time.Minute)) {
-						b = burst{rtt: 60, jitter: 40, answered: 4}
-					}
-					writeBurst(f, tg.Name, ts, b)
+					writeBurst(f, tg.Name, ts, bursts(tg.Name, ts))
 					continue
 				}
 				s := model.Sample{Key: model.SeriesKey{Target: tg.Name, Kind: k}, Slot: ts, RTT: 20 * time.Millisecond}
-				if slices.Contains(lost, tg.Name) {
+				if lost(tg.Name, ts) {
 					s.Lost, s.Reason, s.RTT = true, model.ReasonTimeout, 0
 				}
 				f.Observe(s)
@@ -298,7 +307,7 @@ func TestHomeAnswer(t *testing.T) {
 		{"no verdict", model.Verdict{Kind: VerdictUnknown}, "good", nil, levelGood, whoNone, "", "Your internet is fine"},
 		{"isp, apps losing", model.Verdict{Kind: model.VerdictISP, Evidence: ev("services_loss", 0.2)}, "good", nil,
 			levelBad, whoProvider, confSure, "Your internet provider is having trouble"},
-		{"isp, only the edge", model.Verdict{Kind: model.VerdictISP, Evidence: ev("edge_loss", 0.3, "services_loss", 0.0)}, "good", nil,
+		{"isp, only the edge", model.Verdict{Kind: model.VerdictISP, Evidence: ev("edge_loss", 0.3, "anycast_loss", 0.0, "services_loss", 0.0)}, "good", nil,
 			levelInfo, whoProvider, confWeak, "Your internet is fine"},
 		{"isp, a little loss", model.Verdict{Kind: model.VerdictISP, Evidence: ev("services_loss", 0.02)}, "good", nil,
 			levelWarn, whoProvider, confLikely, "Your internet provider may be having trouble"},
@@ -693,4 +702,95 @@ func repeats(a, b string) string {
 		}
 	}
 	return ""
+}
+
+// TestHomeRecovery reproduces the netns recovery lag (d-upstream,
+// e2-dns-at-start, i-udp-block): right after a path, DNS or UDP outage
+// clears, its samples are still in the tile and call windows. The ended
+// incident explains them: Home must not blame the apps or the calls.
+func TestHomeRecovery(t *testing.T) {
+	now := homeNow
+	out := func(ts time.Time) bool {
+		return ts.After(now.Add(-9*time.Minute)) && ts.Before(now.Add(-2*time.Minute))
+	}
+	for _, tc := range []struct {
+		name string
+		kind model.VerdictKind
+		tcp  bool // the outage hit the work apps and websites; else the STUN bursts
+	}{
+		{"d-upstream", model.VerdictUpstream, true},
+		{"e2-dns", model.VerdictDNS, true},
+		{"i-udp-block", model.VerdictUDPBlocked, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, fv := homeFixtureFn(t, homeProfile(), now,
+				func(name string, ts time.Time) bool {
+					return tc.tcp && out(ts) && name != "Gateway" && name != "ISP edge" && name != "Cloudflare DNS" && name != "AWS-me-south-1"
+				},
+				func(_ string, ts time.Time) burst {
+					if !tc.tcp && out(ts) {
+						return burst{} // every request times out
+					}
+					return burst{rtt: 20, jitter: 2, answered: 5}
+				})
+			end := now.Add(-2 * time.Minute)
+			fv.list = []model.Incident{{ID: 1, Start: now.Add(-9 * time.Minute), End: end, Kind: tc.kind}}
+			l, err := s.homeLive(context.Background(), voiceYou, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := l.Answer
+			if a.Level != levelGood || a.Who != whoNone || a.Recovered != end.UnixMilli() {
+				t.Errorf("answer %+v", a)
+			}
+			for _, x := range l.Tiles {
+				if x.Level != levelGood {
+					t.Errorf("tile %s: %s %q", x.ID, x.State, x.Label)
+				}
+			}
+			// Without the incident the same samples are the apps' or the calls' trouble.
+			fv.list = nil
+			if l, _ = s.homeLive(context.Background(), voiceYou, now); l.Answer.Level == levelGood {
+				t.Errorf("without the incident: %+v", l.Answer)
+			}
+		})
+	}
+}
+
+// TestHomeConfidenceConfined reproduces the netns c-isp flap: at 40%
+// provider-link loss the outer layer loses as much as the edge, and apps
+// (TCP retransmits) show no loss. That is a likely provider fault, never
+// "slow to answer our checks".
+func TestHomeConfidenceConfined(t *testing.T) {
+	p := homeProfile()
+	ev := map[string]float64{"anycast_loss": 0.128, "anycast_targets": 3, "edge_loss": 0.133, "edge_targets": 1,
+		"gateway_loss": 0, "internet_targets": 5, "internet_unhealthy": 0, "services_loss": 0}
+	a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), copyFor(voiceYou))
+	if a.Confidence != confLikely || a.Level != levelWarn {
+		t.Errorf("c-isp: %+v", a)
+	}
+	// Only the first provider hop: weak.
+	ev["anycast_loss"] = 0
+	if a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), copyFor(voiceYou)); a.Confidence != confWeak {
+		t.Errorf("edge only: %+v", a)
+	}
+	// No outer evidence: can't tell it's confined.
+	delete(ev, "anycast_loss")
+	if a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), copyFor(voiceYou)); a.Confidence != confLikely {
+		t.Errorf("no outer evidence: %+v", a)
+	}
+}
+
+// TestHomeTileGrammar: tile titles are plural ("Websites are working").
+func TestHomeTileGrammar(t *testing.T) {
+	cp := copyFor(voiceYou)
+	tiles := []HomeTile{{ID: tileWeb, Title: "Websites", Level: levelGood},
+		{ID: tileWork, Title: "Work apps", Level: levelWarn, Affected: []string{"Outlook"}, Note: "Outlook isn't answering from here."}}
+	if got := cp.oneApp(tiles, []string{"Outlook"}); got != "Websites are working. Outlook isn't answering from here." {
+		t.Errorf("%q", got)
+	}
+	tiles[0].Title, tiles[0].ID = "Calls", tileCalls
+	if got := cp.oneApp(tiles, []string{"Outlook"}); !strings.HasPrefix(got, "Calls are working.") {
+		t.Errorf("%q", got)
+	}
 }

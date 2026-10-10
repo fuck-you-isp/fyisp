@@ -479,7 +479,7 @@ func (c homeCopy) oneApp(tiles []HomeTile, affected []string) string {
 	if len(ok) > 1 {
 		w = strings.Join(ok[:len(ok)-1], ", ") + " and " + w
 	}
-	return strings.ToUpper(w[:1]) + w[1:] + verb(len(ok), " is", " are") + " working. " + note
+	return strings.ToUpper(w[:1]) + w[1:] + " are working. " + note // tile titles are plural
 }
 
 // affectedBy is a tile's label while a path problem explains its trouble.

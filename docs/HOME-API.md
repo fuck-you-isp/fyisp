@@ -409,6 +409,12 @@ What it does to calls is the Calls tile's job. During such a problem, call apps 
   - Websites "aren't loading reliably"; everything else "aren't answering reliably".
 - **One app of a working tile:** the cause reads "Calls and websites are working. Outlook isn't answering from here. That's most likely a problem on their side." That is the tile's own note, so the verb is the same.
 
+**Recovery:**
+- Live tiles and call states leave out the minutes of an outage that already ended and that the verdict explained (lan, isp, upstream, dns and no_network for the tiles; those and the UDP verdicts for calls), plus one minute of grace. Right after an outage the apps and calls are not blamed for its samples, and blocked minutes are never scored as bad calls.
+- `answer.recovered` (ms) is when such an outage ended, while the answer is good: "Back to normal since 3:12 PM".
+
+**Weak tier:** only when the loss stays on the blamed hop. Every known layer past it must lose < 2 %; without that evidence the tier is `likely`. TCP retransmits hide loss from apps, so `services_loss` alone never makes it weak.
+
 **The headline never repeats the cause.**
 - The headline says what the user notices: "Your internet is having trouble", "Calls will break up", "Outlook and Gmail aren't answering".
 - The cause says where the problem is, or whose it is: "The problem is with your internet provider…", "Your connection looks fine, so this is most likely a problem on their side."
