@@ -193,22 +193,68 @@ export function whyButton(/** @type {string} */ title, /** @type {string} */ tex
   return b;
 }
 
+// ---------- dialogs ----------
+
+/**
+ * An in-page modal <dialog> (instead of prompt/confirm/alert): a title, an
+ * optional message, optional fields and buttons. It resolves with the
+ * button's value, or '' when dismissed (Escape, Cancel); fields are read by
+ * the caller before it resolves.
+ * @param {{title:string, text?:string, fields?:Node[], buttons:{label:string,value:string,primary?:boolean,danger?:boolean}[], focus?:HTMLElement}} o
+ * @returns {Promise<string>}
+ */
+export function dialog(o) {
+  return new Promise((resolve) => {
+    const dlg = /** @type {HTMLDialogElement} */ (h('dialog', { class: 'dlg', 'aria-labelledby': 'dlg-t' }));
+    const form = h('form', { class: 'dlg-form', method: 'dialog' },
+      h('h2', { id: 'dlg-t', text: o.title }),
+      o.text ? h('p', { class: 'dlg-text', text: o.text }) : null,
+      ...(o.fields || []),
+      h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }),
+        ...o.buttons.map((b) => h('button', { class: `btn${b.primary ? ' primary' : ' ghost'}${b.danger ? ' danger' : ''}`, value: b.value, text: b.label }))));
+    dlg.append(form);
+    dlg.addEventListener('close', () => { resolve(dlg.returnValue || ''); dlg.remove(); });
+    document.body.append(dlg);
+    dlg.showModal();
+    (o.focus || /** @type {HTMLElement|null} */ (form.querySelector('.btn.primary')) || form)?.focus();
+  });
+}
+
+/** Asks to confirm a destructive action. @param {string} title @param {string} text @param {string} ok */
+export async function confirmDialog(title, text, ok) {
+  return (await dialog({ title, text, buttons: [{ label: 'Cancel', value: 'cancel' }, { label: ok, value: 'ok', primary: true, danger: true }] })) === 'ok';
+}
+
+/** Tells something that needs no answer. @param {string} title @param {string} text */
+export async function alertDialog(title, text) {
+  await dialog({ title, text, buttons: [{ label: 'OK', value: 'ok', primary: true }] });
+}
+
 // ---------- writes ----------
 
-export function adminHeader() {
+/** The admin token for writes: remembered for this tab, else asked for in a password field. */
+export async function adminHeader() {
   let t = null;
   try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
   if (!t) {
-    t = window.prompt('Admin token for sharing, notes and reports (or open the link from fyisp\'s log):') || '';
+    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
+    const v = await dialog({
+      title: 'Admin token',
+      text: 'Sharing, notes and reports on this dashboard need the admin token. You can also open the link fyisp printed when it started.',
+      fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
+      buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Continue', value: 'ok', primary: true }],
+      focus: input,
+    });
+    t = v === 'ok' ? input.value.trim() : '';
     try { if (t) sessionStorage.setItem('fyisp-admin', t); } catch { /* ignore */ }
   }
   return t;
 }
 
 /** Adds X-FYISP-Admin when controls need the admin token and no session cookie carries it. @param {Record<string,string>} headers */
-export function addAdmin(headers) {
+export async function addAdmin(headers) {
   const status = statusOf();
-  if (status && status.controls === 'admin' && !status.admin) headers['X-FYISP-Admin'] = adminHeader();
+  if (status && status.controls === 'admin' && !status.admin) headers['X-FYISP-Admin'] = await adminHeader();
 }
 
 /** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] */
@@ -217,7 +263,7 @@ export async function apiWrite(method, url, body) {
   const headers = { 'X-FYISP-Token': TOKEN };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const status = statusOf();
-  addAdmin(headers);
+  await addAdmin(headers);
   try {
     return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
   } catch (e) {
@@ -241,6 +287,14 @@ export function fromLocalInput(/** @type {string} */ s) { const t = s ? new Date
 
 export async function copyText(/** @type {string} */ text, /** @type {HTMLElement} */ btn) {
   const label = btn.textContent;
-  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch { window.prompt('Copy this link:', text); }
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = 'Copied';
+  } catch {
+    // No clipboard access (an insecure origin, a denied permission): show it selected to copy by hand.
+    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'dlg-copy', readonly: true, value: text }));
+    input.addEventListener('focus', () => input.select());
+    await dialog({ title: 'Copy this link', fields: [h('label', { class: 'fld', for: 'dlg-copy' }, h('span', { text: 'Link' }), input)], buttons: [{ label: 'Done', value: 'ok', primary: true }], focus: input });
+  }
   setTimeout(() => { btn.textContent = label; }, 1500);
 }

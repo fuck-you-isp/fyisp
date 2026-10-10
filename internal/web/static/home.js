@@ -9,7 +9,7 @@
 
 import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText } from './core.js';
 
-/** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string}} HomeAnswer */
+/** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string,recovered?:number}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
 /** @typedef {{id:string,title:string,level:string,state:string,label:string,note?:string,names:string[],more?:number,affected?:string[],ok:number,total:number,details:string}} HomeTile */
 /** @typedef {{state:string,delay?:string,dropouts?:string,smoothness?:string,words?:string,worst_at?:number}} HomeCalls */
@@ -342,6 +342,8 @@ export class Home {
     if (d && d.answer.since && d.answer.level !== 'good' && d.answer.level !== 'checking') {
       bits.push(`Since ${when(d.answer.since)} (${minutes(Date.now() - d.answer.since)})`);
     }
+    // Just after an outage ended: a calm "back to normal" line.
+    if (d && d.answer.recovered && d.answer.level === 'good') bits.push(`Back to normal since ${when(d.answer.recovered)}`);
     if (d && d.answer.level === 'checking') bits.push('First results in about 2 minutes');
     else if (this.liveAt && d) bits.push(`Checked ${ago(Date.now() - this.liveAt)}`);
     this.metaEl.textContent = bits.join(' · ');
