@@ -184,6 +184,10 @@ type QueueOptions struct {
 	// PublicBudget is the share link's bytes per rolling 24 hours
 	// (default DefaultPublicBudget).
 	PublicBudget int64
+	// Pause, when set, runs before each job and may wait (e.g. to leave
+	// the probes unmasked time between a sweep's tests); that time is not
+	// charged to the share link. It returns false when ctx ended.
+	Pause func(ctx context.Context, j Job, trigger string) bool
 	// Live reports the running test's direction and server (optional).
 	Live func() (direction, server string, expectedEnd time.Time)
 	Log  *slog.Logger
@@ -709,6 +713,9 @@ func (q *Queue) gapLocked(e *qentry, now time.Time) bool {
 func (q *Queue) execute(ctx context.Context, e *qentry) {
 	for i := e.next; i < len(e.jobs); i++ {
 		if ctx.Err() != nil {
+			break
+		}
+		if q.o.Pause != nil && !q.o.Pause(ctx, e.jobs[i], trigger(e.Kind, e.Who)) {
 			break
 		}
 		if beforeNextJob != nil {
