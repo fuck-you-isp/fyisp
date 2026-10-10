@@ -280,7 +280,7 @@ func TestSpeedSummary(t *testing.T) {
 		t.Errorf("coverage %+v", s.Coverage[20])
 	}
 	if len(s.UnderLoad.Layers) != 2 || s.UnderLoad.Layers[0].Layer != "edge" || *s.UnderLoad.Layers[0].UpMs != 48 || len(s.UnderLoad.Text) != 3 ||
-		!strings.Contains(s.UnderLoad.Text[1], "rises from 8 ms to 48 ms while uploading (+40 ms): noticeable on calls") {
+		!strings.Contains(s.UnderLoad.Text[1], "rises from 8 to 48 ms while uploading (+40 ms): a small rise, fine for calls") {
 		t.Errorf("under load %+v", s.UnderLoad)
 	}
 	if len(s.PerServer) != 4 || s.Latest == nil || s.Servers[0].Host == "" || s.Servers[0].Ports != "5200-5209" || s.Servers[0].Capacity == nil ||
@@ -788,7 +788,7 @@ func TestHomeSpeedLine(t *testing.T) {
 	loc, _, _ := speedHandlers(t, newSpeedRig(t, 15*time.Minute), LocalOptions{})
 	var l HomeLive
 	json.Unmarshal(do(loc, "GET", "/api/home?part=live", speedHost).Body.Bytes(), &l)
-	if l.Speed == nil || l.Speed.Kind != "pattern" || l.Speed.Impact != "ok" || !strings.HasPrefix(l.Speed.Text, "Evenings are slower: about 40% below your daytime speed") {
+	if l.Speed == nil || l.Speed.Kind != "pattern" || l.Speed.Impact != "ok" || !strings.HasPrefix(l.Speed.Text, "Speed: evenings are about 40% slower than daytime") {
 		t.Errorf("speed line %+v", l.Speed)
 	}
 	g := newSpeedRig(t, 15*time.Minute)
@@ -849,5 +849,20 @@ func TestSpeedEdgeHours(t *testing.T) {
 	l2.now = func() time.Time { return speedNow }
 	if err := json.Unmarshal(do(l2, "GET", "/api/speed", speedHost).Body.Bytes(), &s); err != nil || string(s["edge_hours"]) != "null" {
 		t.Errorf("edge_hours without an edge target: %s %v", s["edge_hours"], err)
+	}
+}
+
+// TestUnderLoadWords: the words match the numbers.
+func TestUnderLoadWords(t *testing.T) {
+	ls := func(p50 float64) *model.LoadStats { return &model.LoadStats{N: 30, P50Ms: p50, P95Ms: p50 * 1.5} }
+	ts := []model.SpeedTest{{Outcome: model.SpeedOK, Latency: &model.SpeedLatency{Edge: model.LoadPhases{Idle: ls(9), Down: ls(36), Up: ls(117)}}}}
+	got := speedUnderLoadOf(ts).Text
+	want := []string{
+		"Delay to your provider's first router rises from 9 to 36 ms while downloading (+27 ms): a small rise, fine for calls.",
+		"Delay to your provider's first router rises from 9 to 117 ms while uploading (+108 ms): enough to break up calls while the line is busy." +
+			" This usually builds up in the queue on your line (your modem, or the provider's first router), not further out.",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("%q", got)
 	}
 }
