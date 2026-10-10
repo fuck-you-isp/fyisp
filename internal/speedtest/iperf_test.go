@@ -25,6 +25,7 @@ type fakeServer struct {
 	results serverResults
 	cookies []string // control cookie, then each stream's
 	recv    int64
+	moved   int64 // every byte sent or received on data streams, over every test
 	err     error
 	wg      sync.WaitGroup
 }
@@ -161,7 +162,7 @@ func (f *fakeServer) session(c net.Conn) {
 	reverse := p["reverse"] == true
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
-	var recv [16]int64
+	var recv, sent [16]int64
 	for i, s := range streams {
 		wg.Add(1)
 		go func() {
@@ -175,7 +176,9 @@ func (f *fakeServer) session(c net.Conn) {
 					case <-stop:
 						return
 					case <-tk.C:
-						if _, err := s.Write(buf); err != nil {
+						k, err := s.Write(buf)
+						sent[i] += int64(k)
+						if err != nil {
 							return
 						}
 					}
@@ -225,6 +228,9 @@ func (f *fakeServer) session(c net.Conn) {
 	}
 	f.mu.Lock()
 	f.results, f.recv = cr, total
+	for i := range streams {
+		f.moved += recv[i] + sent[i]
+	}
 	f.mu.Unlock()
 	writeJSON(c, srv)
 	c.Write([]byte{stateDisplayResults})

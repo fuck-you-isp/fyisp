@@ -40,7 +40,7 @@ origin, CSRF token, admin token). Only if the owner turns it on
 (`--speedtest-public` or the Details toggle; off by default), people with
 the share link may queue a test or a sweep of every server (`POST
 /s/<secret>/api/speed/run`), but never change the mode or cancel anything.
-Their tests may transfer at most `--speedtest-public-budget` (default 50 GB)
+Their tests may transfer at most `--speedtest-public-budget` (default 10 GB)
 per rolling 24 hours, counted from every byte on the wire (all attempts,
 ramp-up included) and kept across restarts. Because probes are masked
 during a test, the share link's tests may also keep the line under test at

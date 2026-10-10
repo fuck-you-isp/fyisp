@@ -114,8 +114,9 @@ type speedRowJSON struct {
 }
 
 type speedWindow struct {
-	Start int64 `json:"start"`
-	End   int64 `json:"end"`
+	Start  int64  `json:"start"`
+	End    int64  `json:"end"`
+	Origin string `json:"origin"` // scheduled | owner | public (the share link)
 }
 
 // speedTestJSON is one test. The port (and every host) is left out on the
@@ -383,7 +384,7 @@ func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
 	out := []speedWindow{}
 	for _, t := range ts {
 		if !t.End.Before(from) && t.End.After(t.Start) {
-			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli()})
+			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: t.Origin()})
 		}
 	}
 	return out
@@ -631,7 +632,11 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 			h.storeErr(w, r, "save the speed test setting", err)
 			return
 		}
-		out["public"] = *body.Public
+		// The limits the confirmation shows (also in part=queue budget).
+		limit, _, _ := h.d.Speed.Queue().Budget()
+		out["public"], out["limits"] = *body.Public, map[string]int64{"budget_bytes": limit,
+			"time_hour_max_s": int64(speedtest.PublicTimePerHour / time.Second),
+			"time_day_max_s":  int64(speedtest.PublicTimePerDay / time.Second)}
 	}
 	writeJSON(w, r, http.StatusOK, out)
 }

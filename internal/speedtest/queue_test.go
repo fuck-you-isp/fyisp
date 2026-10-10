@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
 // fakeExec runs jobs that wait for release (or ctx), counting how many run
@@ -459,7 +463,7 @@ func TestQueueBudget(t *testing.T) {
 	// budget (it got in before).
 	q2.mu.Lock()
 	q2.nextID++
-	q2.waiting = append(q2.waiting, &qentry{Entry: Entry{ID: q2.nextID, Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v9", State: StateWaiting}, jobs: []Job{{}}})
+	q2.waiting = append(q2.waiting, &qentry{Entry: Entry{ID: q2.nextID, Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v9", State: StateWaiting, JobTests: []int64{0}}, jobs: []Job{{}}})
 	q2.mu.Unlock()
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	done2 := make(chan struct{})
@@ -500,7 +504,7 @@ func TestQueueScheduledAheadOfPublic(t *testing.T) {
 	}
 	f.release <- struct{}{}
 	waitFor(t, func() bool { return len(f.log()) >= 5 })
-	if got := f.log(); !eq(got[:5], []string{"sweep:A", "schedule:uk", "sweep:B", "sweep:C", "sweep:A"}) {
+	if got := f.log(); !eq(got[:5], []string{"public_sweep:A", "schedule:uk", "public_sweep:B", "public_sweep:C", "public_sweep:A"}) {
 		t.Errorf("ran %v", got)
 	}
 	if st := q.State(); st.Running == nil || st.Running.Visitor != "v1" || st.Running.Step != 1 {
@@ -571,5 +575,68 @@ func TestQueuePublicTime(t *testing.T) {
 	q.mu.Unlock()
 	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "C", Who: WhoPublic, Visitor: "v7"}); !errors.As(err, &be) || !be.Time {
 		t.Errorf("day cap: %v", err)
+	}
+}
+
+// TestBudgetChargesTheWire: a share-link test against a real (fake) iperf3
+// server charges the budget at least every byte the server moved, both
+// directions, ramp-up included.
+func TestBudgetChargesTheWire(t *testing.T) {
+	f := newFakeServer(t, "")
+	f.rate = 32 << 10
+	host, port, _ := net.SplitHostPort(f.addr())
+	p, _ := strconv.Atoi(port)
+	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p}
+	s := New(Options{Catalog: &Catalog{Servers: []Server{sv}, byID: map[string]int{"Local": 0}}})
+	on := true
+	q := NewQueue(QueueOptions{Public: &on, Exec: s.execJob, Live: s.live,
+		Resolve: func(Kind, string) ([]Job, error) { return []Job{{Chain: []Server{sv}}}, nil }})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "Local", Who: WhoPublic, Visitor: "v"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		if x, _ := q.Get(e.ID); x.State == StateDone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("test did not finish")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	f.mu.Lock()
+	moved := f.moved
+	f.mu.Unlock()
+	if _, used, _ := q.Budget(); moved == 0 || used < moved {
+		t.Errorf("budget charged %d bytes, the server moved %d", used, moved)
+	}
+	if st := q.State(); st.TimeHour <= 0 {
+		t.Errorf("no test time charged: %+v", st)
+	}
+}
+
+// TestTriggerOrigin: the stored trigger keeps who asked, so windows can say
+// a share-link visitor's test masked them.
+func TestTriggerOrigin(t *testing.T) {
+	for _, c := range []struct {
+		k              Kind
+		who            Who
+		trigger, owner string
+	}{
+		{KindScheduled, WhoSchedule, "schedule", "scheduled"},
+		{KindSingle, WhoOwner, "manual", "owner"},
+		{KindSweep, WhoOwner, "sweep", "owner"},
+		{KindSingle, WhoPublic, "public", "public"},
+		{KindSweep, WhoPublic, "public_sweep", "public"},
+	} {
+		tr := trigger(c.k, c.who)
+		st := model.SpeedTest{Trigger: tr}
+		if tr != c.trigger || st.Origin() != c.owner || st.OnDemand() != (c.k != KindScheduled) {
+			t.Errorf("%s/%s: trigger %q origin %q on-demand %v", c.k, c.who, tr, st.Origin(), st.OnDemand())
+		}
 	}
 }

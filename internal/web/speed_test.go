@@ -29,7 +29,8 @@ type fakeSpeed struct {
 	q       *speedtest.Queue // not run: entries stay waiting
 	public  bool             // the share link's opt-in at start
 	budget  int64
-	bytes   int64 // > 0: tests are instant and transfer this much (for a running queue)
+	bytes   int64   // > 0: tests are instant and transfer this much (for a running queue)
+	saved   []int64 // tests that finish at once and return these ids, then the rest block
 }
 
 func (f *fakeSpeed) State() speedtest.State { f.mu.Lock(); defer f.mu.Unlock(); return f.st }
@@ -70,6 +71,14 @@ func (f *fakeSpeed) Queue() *speedtest.Queue {
 				if f.bytes > 0 { // a run queue: each test is instant and uses f.bytes
 					return 0, false, f.bytes
 				}
+				f.mu.Lock()
+				if len(f.saved) > 0 {
+					id := f.saved[0]
+					f.saved = f.saved[1:]
+					f.mu.Unlock()
+					return id, true, 0
+				}
+				f.mu.Unlock()
 				<-ctx.Done()
 				return 0, false, 0
 			},
@@ -628,7 +637,7 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 	}
 	cw := httptest.NewRecorder()
 	loc.ServeHTTP(cw, r)
-	if cw.Code != 200 || !strings.Contains(cw.Body.String(), `"public":true`) {
+	if cw.Code != 200 || !strings.Contains(cw.Body.String(), `"public":true`) || !strings.Contains(cw.Body.String(), `"time_hour_max_s":600`) {
 		t.Fatalf("toggle: %d %s", cw.Code, cw.Body.String())
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -665,6 +674,54 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 	}
 }
 
+// TestSweepResults: a running sweep lists each server with its status and
+// the results so far.
+func TestSweepResults(t *testing.T) {
+	f := newFakeSpeedEvery(5 * time.Hour)
+	ms := func(v float64) *float64 { return &v }
+	f.tests = append(f.tests,
+		model.SpeedTest{ID: 9001, Start: speedNow, Trigger: "sweep", Outcome: model.SpeedOK, Server: "Clouvider-London", DownBps: ms(4e8), UpBps: ms(4e7)},
+		model.SpeedTest{ID: 9002, Start: speedNow, Trigger: "sweep", Outcome: model.SpeedBusy, Server: "Leaseweb-London"})
+	f.saved = []int64{9001, 9002}
+	loc, _, _ := speedHandlers(t, f, LocalOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.Queue().Run(ctx)
+	w := do(loc, "POST", "/api/speed/run?kind=sweep", speedPOSTHeaders())
+	var started struct{ Entry speedEntryJSON }
+	if json.Unmarshal(w.Body.Bytes(), &started); w.Code != 202 {
+		t.Fatalf("start: %d %s", w.Code, w.Body.String())
+	}
+	var e speedEntryJSON
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		e = speedEntryJSON{}
+		json.Unmarshal(do(loc, "GET", fmt.Sprintf("/api/speed?part=entry&id=%d", started.Entry.ID), speedHost).Body.Bytes(), &e)
+		if len(e.Results) == 5 && e.Results[2].Status == "testing" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no third test running: %+v", e)
+		}
+	}
+	want := []string{"ok", "busy", "testing", "waiting", "waiting"}
+	for i, r := range e.Results {
+		if r.Status != want[i] || r.Server.ID != speedServers[i].ID || r.Server.Label == "" {
+			t.Errorf("result %d: %+v, want %s on %s", i, r, want[i], speedServers[i].ID)
+		}
+	}
+	if r := e.Results[0]; r.Test == nil || *r.Test != 9001 || r.DownBps == nil || *r.DownBps != 4e8 {
+		t.Errorf("ok result: %+v", r)
+	}
+	if r := e.Results[1]; r.DownBps != nil || r.Test == nil {
+		t.Errorf("busy result: %+v", r)
+	}
+	var sw struct{ Running *speedEntryJSON }
+	json.Unmarshal(do(loc, "GET", "/api/speed?part=sweep", speedHost).Body.Bytes(), &sw)
+	if sw.Running == nil || len(sw.Running.Results) != 5 {
+		t.Errorf("part=sweep running: %+v", sw.Running)
+	}
+}
+
 // TestQueueRefusals: every share-link refusal's code and fields.
 func TestQueueRefusals(t *testing.T) {
 	now := speedNow
@@ -675,9 +732,9 @@ func TestQueueRefusals(t *testing.T) {
 	}{
 		{speedtest.ErrPublicDisabled, 403, []string{`"code":"disabled"`}},
 		{&speedtest.QueueFullError{Reason: "the queue is full"}, 429, []string{`"code":"queue_full"`}},
-		{&speedtest.BudgetError{ResetsAt: now.Add(time.Hour)}, 429, []string{`"code":"budget_exhausted"`, `"budget":"data"`, `"retry_after":3600`}},
-		{&speedtest.BudgetError{ResetsAt: now.Add(time.Minute), Time: true}, 429, []string{`"budget":"time"`, `"retry_after":60`}},
-		{&speedtest.SweepWaitError{Until: now.Add(30 * time.Minute)}, 429, []string{`"code":"sweep_cooldown"`, `"available_at":`, `"retry_after":1800`}},
+		{&speedtest.BudgetError{ResetsAt: now.Add(time.Hour)}, 429, []string{`"code":"budget_exhausted"`, `"resets_at":`, `"retry_after":3600`}},
+		{&speedtest.BudgetError{ResetsAt: now.Add(time.Minute), Time: true}, 429, []string{`"code":"time_cap"`, `"resets_at":`, `"retry_after":60`}},
+		{&speedtest.SweepWaitError{Until: now.Add(30 * time.Minute)}, 429, []string{`"code":"cooldown"`, `"resets_at":`, `"retry_after":1800`}},
 	} {
 		w := httptest.NewRecorder()
 		if !queueRefused(w, httptest.NewRequest("POST", "/", nil), tc.err, now) || w.Code != tc.status {

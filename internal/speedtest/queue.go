@@ -59,7 +59,7 @@ const (
 	EstJob = EstTestTime + 5*time.Second
 	// DefaultPublicBudget is the share link's data budget per rolling 24
 	// hours: bytes its tests actually transferred.
-	DefaultPublicBudget int64 = 50e9
+	DefaultPublicBudget int64 = 10e9
 	budgetSpan                = 24 * time.Hour
 	// The share link's tests mask probes (they would measure the test),
 	// so they may keep the line under test at most PublicTimePerHour in
@@ -111,6 +111,12 @@ type Entry struct {
 	Server    string // running: the server under test
 	Direction string // running: picking, download, upload
 	Tests     []int64
+	// Per job, in order: the server tested (a sweep's jobs are single
+	// servers; a region's is its first choice), the stored test (0: none
+	// yet, or none saved), and how many jobs have run.
+	Servers  []string
+	JobTests []int64
+	Ran      int
 }
 
 // Refusals.
@@ -159,7 +165,8 @@ type QueueOptions struct {
 	// chain, "" for the nearest), sweep (every server), scheduled (filled
 	// in by EnqueueScheduled). An unknown ID is ErrUnknownID.
 	Resolve func(kind Kind, id string) ([]Job, error)
-	// Exec runs one test with trigger ("manual", "sweep" or "schedule")
+	// Exec runs one test with trigger ("manual", "sweep", "public",
+	// "public_sweep" or "schedule")
 	// and returns the stored test's ID, if one was saved, and the bytes it
 	// transferred. It must return promptly once ctx ends.
 	Exec func(ctx context.Context, j Job, trigger string) (id int64, saved bool, bytes int64)
@@ -377,12 +384,16 @@ func (q *Queue) poke() {
 	}
 }
 
-func trigger(k Kind) string {
-	switch k {
-	case KindSweep:
-		return "sweep"
-	case KindScheduled:
+func trigger(k Kind, who Who) string {
+	switch {
+	case k == KindScheduled:
 		return "schedule"
+	case who == WhoPublic && k == KindSweep:
+		return "public_sweep"
+	case who == WhoPublic:
+		return "public"
+	case k == KindSweep:
+		return "sweep"
 	}
 	return "manual"
 }
@@ -433,7 +444,7 @@ func (q *Queue) Enqueue(r Request) (Entry, bool, error) {
 	}
 	q.nextID++
 	e := &qentry{Entry: Entry{ID: q.nextID, Kind: r.Kind, Who: r.Who, Visitor: r.Visitor, Target: r.Target,
-		State: StateWaiting, Enqueued: now, Steps: len(jobs)}, jobs: jobs}
+		State: StateWaiting, Enqueued: now, Steps: len(jobs), Servers: jobServers(jobs), JobTests: make([]int64, len(jobs))}, jobs: jobs}
 	if r.Who != WhoPublic {
 		e.Visitor = ""
 	}
@@ -505,7 +516,7 @@ func (q *Queue) EnqueueScheduled(j Job) bool {
 	}
 	q.nextID++
 	q.insertLocked(&qentry{Entry: Entry{ID: q.nextID, Kind: KindScheduled, Who: WhoSchedule, State: StateWaiting,
-		Enqueued: q.o.Now(), Steps: 1}, jobs: []Job{j}})
+		Enqueued: q.o.Now(), Steps: 1, Servers: jobServers([]Job{j}), JobTests: make([]int64, 1)}, jobs: []Job{j}})
 	q.poke()
 	return true
 }
@@ -661,12 +672,14 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		e.Step = i + 1
 		q.mu.Unlock()
 		t0 := q.o.Now()
-		id, saved, bytes := q.o.Exec(ctx, e.jobs[i], trigger(e.Kind))
+		id, saved, bytes := q.o.Exec(ctx, e.jobs[i], trigger(e.Kind, e.Who))
+		q.mu.Lock()
+		e.Ran = i + 1
 		if saved {
-			q.mu.Lock()
 			e.Tests = append(e.Tests, id)
-			q.mu.Unlock()
+			e.JobTests[i] = id
 		}
+		q.mu.Unlock()
 		if e.Who == WhoPublic {
 			q.spend(bytes, q.o.Now().Sub(t0))
 			q.mu.Lock()
@@ -696,6 +709,17 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+// jobServers is each job's first-choice server.
+func jobServers(jobs []Job) []string {
+	out := make([]string, len(jobs))
+	for i, j := range jobs {
+		if len(j.Chain) > 0 {
+			out[i] = j.Chain[0].ID
+		}
+	}
+	return out
 }
 
 // QueueState is the queue for the API.
@@ -795,6 +819,7 @@ func (q *Queue) runningLeftLocked(now time.Time) time.Duration {
 func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
 	out := e.Entry
 	out.Tests = slices.Clone(e.Tests)
+	out.JobTests = slices.Clone(e.JobTests)
 	switch e.State {
 	case StateRunning:
 		out.EstStart = e.Started

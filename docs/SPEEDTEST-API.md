@@ -25,7 +25,7 @@ Every API error (not only these routes) is `{"error": "<sentence>", "code": "<wo
 | 409 | `conflict` |
 | 421 | `unknown_host` |
 | 403 | `disabled` (share link: the owner hasn't turned on its tests) |
-| 429 | `rate_limited` (with `retry_after`, seconds, and `Retry-After`); `queue_full`, `budget_exhausted` (with `budget` and `resets_at`), `sweep_cooldown` (with `available_at`) (share link: see Queue) |
+| 429 | `rate_limited` (with `retry_after`, seconds, and `Retry-After`); `queue_full`, `budget_exhausted`, `time_cap`, `cooldown` (each with `resets_at`) (share link: see Queue) |
 | 503 | `unavailable` (retry after `Retry-After`) |
 
 ## Nullables
@@ -143,8 +143,8 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep"
-  "on_demand": false,             // trigger "manual" or "sweep": left out of rows, hours, dips and patterns (still in test lists and latest)
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | "public" | "public_sweep" (the last two from the share link)
+  "on_demand": false,             // any trigger but "schedule": left out of rows, hours, dips and patterns (still in test lists and latest)
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed"
   "region": "us-east",            // |null outside mode regions
   "server": "Leaseweb-NewYork", "label": "Leaseweb New York",   // the server actually used
@@ -191,8 +191,10 @@ For compare, make one request per server or region (up to 4).
 ## `GET api/speed?part=windows&from=...&to=...`
 
 ```json
-{"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000}]}
+{"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "public"}]}
 ```
+
+`origin` is who asked for the test: `scheduled`, `owner`, or `public` (a share-link visitor). It comes from the stored test's trigger, so it survives restarts. A gap shaded `public` was a visitor's test, not the owner's schedule.
 
 `from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples that ran inside a window, or within 2 s after it, are stored as "not measured", so charts show a gap. The verdict, call minutes, Home and history never count them.
 
@@ -213,7 +215,7 @@ There is no cooldown. Sweep and Test now results are stored with `on_demand: tru
 
 **The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
 
-**The share link has a data budget:** at most `--speedtest-public-budget` (default 50 GB) over a rolling 24 hours.
+**The share link has a data budget:** at most `--speedtest-public-budget` (default 10 GB) over a rolling 24 hours.
 - It counts every byte the share link's tests put on the wire: every attempt, the ramp-up, and tests that were cut short.
 - It is saved across restarts.
 - Once spent:
@@ -226,7 +228,7 @@ There is no cooldown. Sweep and Test now results are stored with `on_demand: tru
 - 10 minutes in any hour;
 - 60 minutes in any 24 hours.
 
-A new public sweep can start at the earliest 30 minutes after the last one ended (429 `sweep_cooldown` with `available_at`); single tests are not affected. A capped share link gets 429 `budget_exhausted` with `"budget": "time"` and `resets_at`. Visitors therefore can't blank out the monitoring.
+A new public sweep can start at the earliest 30 minutes after the last one ended (429 `cooldown` with `resets_at`); single tests are not affected. A capped share link gets 429 `time_cap` with `resets_at`. Visitors therefore can't blank out the monitoring.
 
 ### `GET api/speed?part=queue`
 
@@ -274,9 +276,18 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "step": 3, "steps": 45,       // "server 3 of 45"; a single is 1 of 1
   "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null: running only
   "direction": "download",      // |null: running only ("picking" | "download" | "upload")
-  "tests": [412, 413]           // the stored tests so far
+  "tests": [412, 413],          // the stored tests so far
+  "results": [                  // a sweep's servers in order (part=entry and part=sweep only)
+    {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "status": "ok", "test": 412,
+     "down_bps": 412000000, "up_bps": 38000000},
+    {"server": {"id": "OVH-Erith", "label": "OVH Erith"}, "status": "busy", "test": 413, "down_bps": null, "up_bps": null},
+    {"server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"}, "status": "testing", "test": null, "down_bps": null, "up_bps": null},
+    {"server": {"id": "Clouvider-NewYork", "label": "Clouvider New York"}, "status": "waiting", "test": null, "down_bps": null, "up_bps": null}
+  ]
 }
 ```
+
+`results[].status` is `waiting`, `testing`, the stored outcome (`ok`, `busy`, `unreachable`, `failed`), or `skipped` (cancelled mid-test). `down_bps` and `up_bps` are set for `ok` only.
 
 On the share link, `who` is `you` only for that visitor's own entries; everyone else's, the owner's included, are `someone`. Locally, the owner's are `you` and the share link's are `someone`. Targets and servers use the share link's ids (`custom-1`), and no host, port or address appears.
 
@@ -286,7 +297,7 @@ One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
 ### `GET api/speed?part=sweep`
 
-The last finished sweep and its tests: `{"at": ..., "entry": { ...Entry } | null, "tests": [ ...Test ]}`.
+`{"at": ..., "running": { ...Entry } | null, "entry": { ...Entry } | null, "tests": [ ...Test ]}`: `running` is a sweep under way, with its results so far; `entry` and `tests` are the last finished sweep.
 
 ### `POST api/speed/run?kind=single[&id=<server or region id>]` or `?kind=sweep`
 
@@ -303,8 +314,8 @@ It works in every mode, `off` included.
 
 **Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
 - **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
-- **Budget:** 429 `budget_exhausted` with `budget` (`data` or `time`), `resets_at` (ms) and `retry_after` once the data budget or the test time is spent.
-- **Sweep gap:** 429 `sweep_cooldown` with `available_at` and `retry_after` for a sweep within 30 minutes of the last public one.
+- **Budget:** 429 `budget_exhausted` (data) or `time_cap` (test time) with `resets_at` (ms) and `retry_after` once either is spent.
+- **Sweep gap:** 429 `cooldown` with `resets_at` and `retry_after` for a sweep within 30 minutes of the last public one.
 - **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
 - **Queue limits (429 `queue_full`, its `error` says which):**
   - one waiting entry per visitor;
@@ -326,7 +337,7 @@ POST api/speed/config
 {"public": true}               // let the share link queue tests (saved; --speedtest-public sets it at start)
 ```
 
-- `200 {"mode": "regions", "next_at": 1760104920000, "public": true}`, with the fields it changed; `next_at` is null for `off`.
+- `200 {"mode": "regions", "next_at": 1760104920000, "public": true, "limits": {"budget_bytes": 10000000000, "time_hour_max_s": 600, "time_day_max_s": 3600}}`, with the fields it changed; `next_at` is null for `off`. `limits` comes with `public`: the share link's caps, for the toggle's confirmation (the same values as part=queue `budget`).
 - `400` for a mode not in `modes`, for neither field, or for any other field.
 
 The choice is saved and survives restarts. A `--speedtest…` flag on the command line overrides it at start. Switching to a mode schedules the first test about 2 minutes later.

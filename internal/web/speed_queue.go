@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
@@ -39,6 +40,57 @@ type speedEntryJSON struct {
 	Server     *speedRef `json:"server"`    // running: the server under test
 	Direction  *string   `json:"direction"` // running: picking, download, upload
 	Tests      []int64   `json:"tests"`
+	// Results: a sweep's servers in order, with each one's status (part=entry
+	// and part=sweep only).
+	Results []speedJobJSON `json:"results,omitempty"`
+}
+
+// speedJobJSON is one server of a sweep.
+type speedJobJSON struct {
+	Server speedRef `json:"server"`
+	Status string   `json:"status"` // waiting | testing | ok | busy | unreachable | failed | skipped
+	Test   *int64   `json:"test"`   // the stored test's id
+	// DownBps and UpBps: the result (ok only).
+	DownBps *float64 `json:"down_bps"`
+	UpBps   *float64 `json:"up_bps"`
+}
+
+// speedResults fills a sweep entry's results from the stored tests.
+func (s *server) speedResults(ctx context.Context, j *speedEntryJSON, e speedtest.Entry, names speedNames, now time.Time) error {
+	if e.Kind != speedtest.KindSweep {
+		return nil
+	}
+	var ts []model.SpeedTest
+	if e.Ran > 0 {
+		to := now
+		if !e.Finished.IsZero() {
+			to = e.Finished
+		}
+		var err error
+		if ts, err = s.d.Speed.SpeedTests(ctx, e.Started.Add(-time.Second), to.Add(time.Second)); err != nil {
+			return err
+		}
+	}
+	j.Results = make([]speedJobJSON, len(e.Servers))
+	for i, id := range e.Servers {
+		r := speedJobJSON{Server: names.ref(id), Status: "waiting"}
+		switch {
+		case i < e.Ran:
+			r.Status = "skipped" // cancelled mid-test, or not saved
+			k := slices.IndexFunc(ts, func(t model.SpeedTest) bool { return t.ID == e.JobTests[i] })
+			if e.JobTests[i] != 0 && k >= 0 {
+				t := ts[k]
+				r.Status, r.Test = t.Outcome, &t.ID
+				if t.Outcome == model.SpeedOK {
+					r.DownBps, r.UpBps = t.DownBps, t.UpBps
+				}
+			}
+		case e.State == speedtest.StateRunning && i == e.Step-1:
+			r.Status = "testing"
+		}
+		j.Results[i] = r
+	}
+	return nil
 }
 
 // speedQueueJSON is api/speed?part=queue.
@@ -187,14 +239,36 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 			writeErr(w, r, http.StatusNotFound, "no such queue entry")
 			return
 		}
-		writeJSON(w, r, http.StatusOK, s.speedEntry(e, v, st, names))
+		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+		defer cancel()
+		j := s.speedEntry(e, v, st, names)
+		if err := s.speedResults(ctx, &j, e, names, now); err != nil {
+			writeErr(w, r, http.StatusServiceUnavailable, "speed tests unavailable")
+			return
+		}
+		writeJSON(w, r, http.StatusOK, j)
 	case "sweep":
 		qs := q.State()
-		out := map[string]any{"at": now.UnixMilli(), "entry": nil, "tests": []speedTestJSON{}}
+		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+		defer cancel()
+		// running: a sweep under way (its results so far); entry and tests:
+		// the last finished one.
+		out := map[string]any{"at": now.UnixMilli(), "running": nil, "entry": nil, "tests": []speedTestJSON{}}
+		if e := qs.Running; e != nil && e.Kind == speedtest.KindSweep {
+			j := s.speedEntry(*e, v, st, names)
+			if err := s.speedResults(ctx, &j, *e, names, now); err != nil {
+				writeErr(w, r, http.StatusServiceUnavailable, "speed tests unavailable")
+				return
+			}
+			out["running"] = j
+		}
 		if e := qs.LastSweep; e != nil {
-			out["entry"] = s.speedEntry(*e, v, st, names)
-			ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
-			defer cancel()
+			j := s.speedEntry(*e, v, st, names)
+			if err := s.speedResults(ctx, &j, *e, names, now); err != nil {
+				writeErr(w, r, http.StatusServiceUnavailable, "speed tests unavailable")
+				return
+			}
+			out["entry"] = j
 			ts, err := s.d.Speed.SpeedTests(ctx, e.Started.Add(-time.Second), e.Finished.Add(time.Second))
 			if err != nil {
 				writeErr(w, r, http.StatusServiceUnavailable, "speed tests unavailable")
@@ -388,8 +462,8 @@ func (h *publicHandler) servePublicSpeedRun(w http.ResponseWriter, r *http.Reque
 }
 
 // queueRefused writes the queue's refusals of a share-link request: 403
-// disabled (the owner hasn't opted in), 429 budget_exhausted (with
-// resets_at), 429 queue_full. It reports whether it wrote one.
+// disabled (the owner hasn't opted in), 429 budget_exhausted, time_cap or
+// cooldown (each with resets_at), 429 queue_full. It reports whether it wrote one.
 func queueRefused(w http.ResponseWriter, r *http.Request, err error, now time.Time) bool {
 	var full *speedtest.QueueFullError
 	var budget *speedtest.BudgetError
@@ -398,19 +472,19 @@ func queueRefused(w http.ResponseWriter, r *http.Request, err error, now time.Ti
 	case errors.As(err, &gap):
 		secs := int((gap.Until.Sub(now) + time.Second - 1) / time.Second)
 		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
-		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": gap.Error(), "code": "sweep_cooldown",
-			"available_at": gap.Until.UnixMilli(), "retry_after": max(secs, 1)})
+		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": gap.Error(), "code": "cooldown",
+			"resets_at": gap.Until.UnixMilli(), "retry_after": max(secs, 1)})
 	case errors.Is(err, speedtest.ErrPublicDisabled):
 		writeInvErr(w, r, http.StatusForbidden, "disabled", "the owner hasn't turned on tests from the share link", 0)
 	case errors.As(err, &budget):
 		secs := int((budget.ResetsAt.Sub(now) + time.Second - 1) / time.Second)
 		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
-		kind := "data"
+		code := "budget_exhausted"
 		if budget.Time {
-			kind = "time"
+			code = "time_cap"
 		}
-		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": budget.Error(), "code": "budget_exhausted",
-			"budget": kind, "resets_at": budget.ResetsAt.UnixMilli(), "retry_after": max(secs, 1)})
+		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": budget.Error(), "code": code,
+			"resets_at": budget.ResetsAt.UnixMilli(), "retry_after": max(secs, 1)})
 	case errors.As(err, &full):
 		writeInvErr(w, r, http.StatusTooManyRequests, "queue_full", full.Reason, 0)
 	default:

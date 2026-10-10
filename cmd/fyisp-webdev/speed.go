@@ -62,7 +62,7 @@ func (f *fakeSpeed) result(at time.Time, reg speedtest.Region, trigger string) m
 	case x < 0.01:
 		t.Outcome, t.Attempts, t.Server, t.Fallback = model.SpeedBusy, 6, reg.Chain[len(reg.Chain)-1], true
 		return t
-	case x < 0.08:
+	case x < 0.08 && len(reg.Chain) > 1: // a sweep job is a one-server chain
 		t.Server, t.Fallback, t.Attempts = reg.Chain[1], true, 5
 	case x < 0.085:
 		t.Outcome, t.Attempts = model.SpeedUnreachable, 1
