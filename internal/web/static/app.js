@@ -3,7 +3,7 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[]}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[],home?:string}} TargetInfo */
 /** @typedef {{target:string,kind:string,ratio:number,now_ms:number,normal_ms:number}} SlowItem */
 /** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[],quiet?:boolean}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
@@ -17,6 +17,7 @@ import {
   hideTip, whyButton, adminHeader, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText,
   useStatus,
 } from './core.js';
+import { Home } from './home.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
 
@@ -67,15 +68,15 @@ const LAYERS = [
 const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
 
 /**
- * Page state; everything but band lives in the URL hash. view: 'calls' (Calls),
- * 'o' (Overview) or 'c' (charts), null for the profile's default; focus: a target shown alone
+ * Page state; everything but band lives in the URL hash. view: 'h' (Home),
+ * 'calls' (Calls), 'o' (Overview) or 'c' (charts), null for Home; focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
- * problems-only, heatmap cell and heatmap mode.
+ * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter.
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '' };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '' };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -123,8 +124,10 @@ function applyTheme(/** @type {string|null} */ t) {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
   const b = $('#theme');
-  b.textContent = effectiveTheme() === 'dark' ? 'Light' : 'Dark';
-  b.setAttribute('aria-label', `Switch to ${b.textContent.toLowerCase()} theme`);
+  const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+  b.textContent = '◐';
+  b.setAttribute('aria-label', `Switch to ${next} theme`);
+  b.title = `Switch to ${next} theme`;
 }
 function themeChanged() {
   cssCache.clear();
@@ -133,6 +136,7 @@ function themeChanged() {
   renderLayers();
   if (inv && state.inv) { inv.sig = ''; inv.render(); }
   calls?.render();
+  home?.render();
 }
 
 // ---------- colours ----------
@@ -169,7 +173,10 @@ function readHash() {
   }
   fixKinds();
   const v = p.get('v');
-  state.view = v === 'o' || v === 'c' || v === 'calls' ? v : null;
+  state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' ? v : null;
+  state.hw = p.get('hw') === 'w' ? 'w' : 'd';
+  const ot = p.get('ot');
+  state.ot = ot && /^[a-z]+$/.test(ot) ? ot : '';
   state.focus = p.get('f') || null;
   state.os = p.get('os') || '';
   state.oq = p.get('oq') || '';
@@ -192,6 +199,8 @@ function hashString() {
   if (state.reports) p.set('rp', '1');
   if (state.inv) p.set('t', state.inv);
   if (state.view) p.set('v', state.view);
+  if (state.hw === 'w') p.set('hw', 'w');
+  if (state.ot) p.set('ot', state.ot);
   if (state.focus) p.set('f', state.focus);
   if (state.os) p.set('os', state.os);
   if (state.oq) p.set('oq', state.oq);
@@ -1878,20 +1887,21 @@ let bigProfile = false;
 /** @type {Overview|null} */
 let ov = null;
 
-/** The view on screen: Calls ('calls'), the Overview ('o') or the chart wall ('c'). Focus is always charts. */
+/** The view on screen: Home ('h', the default for every profile), or in Details Calls ('calls'), the Overview ('o') or the chart wall ('c'). Focus is always charts. */
 function currentView() {
   if (state.focus && focusPanel()) return 'c';
-  if (state.view === 'calls' && !callsOn) return bigProfile ? 'o' : 'c';
-  return state.view || defaultView();
+  if (state.view === 'calls' && !callsOn) return detailsView();
+  return state.view || 'h';
 }
-/** The profile's own view: Calls for the default and calls profiles (and small ones with a call path), the Overview for big ones. */
-function defaultView() { return callsOn && callsDefault ? 'calls' : bigProfile ? 'o' : 'c'; }
+/** Details' own view: Calls when the profile has a call path or call apps, the Overview for big profiles, else the charts. */
+function detailsView() { return callsOn ? 'calls' : bigProfile ? 'o' : 'c'; }
 function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
 /** The kind the Overview shows: the first selected of TCP, HTTPS, ICMP. */
 function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || kindsOffered[0]; }
 function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.targets.some((t) => t.name === state.focus)) || null : null; }
 /** Panels that are on screen and may load: the path panel always, the others per view and focus. */
 function panelShown(/** @type {Panel} */ p) {
+  if (currentView() === 'h') return false; // Details loads its charts only when opened
   if (p.isPath) return true;
   if (currentView() !== 'c') return false;
   const fp = focusPanel();
@@ -1903,6 +1913,17 @@ function bySeverity(/** @type {OvRow} */ a, /** @type {OvRow} */ b) {
   return (OV_STATES[a.state]?.rank ?? 9) - (OV_STATES[b.state]?.rank ?? 9) || b.loss - a.loss || (b.ratio ?? 0) - (a.ratio ?? 0) || a.target.localeCompare(b.target);
 }
 function geoOf(/** @type {TargetInfo} */ t) { return t.geo || ''; }
+/** Home's tile names, for the Overview's ot= filter (a Home tile's "See details"). */
+/** @type {Object<string,string>} */
+const HOME_TILE = { calls: 'Calls', work: 'Work apps', streaming: 'Streaming', web: 'Websites', other: 'Other services' };
+/** A target's Home tile: the server's category (profile.HomeCategory), else its home:* tag, else calls for call targets, else other. */
+function homeCategory(/** @type {TargetInfo} */ t) {
+  if (t.home) return t.home;
+  const tags = t.tags || [];
+  const x = tags.find((g) => g.startsWith('home:'));
+  if (x) return x.slice(5);
+  return tags.some((g) => g === 'udp-path' || g.startsWith('app:')) ? 'calls' : 'other';
+}
 function locationOf(/** @type {TargetInfo} */ t) { return [t.city, t.country].filter(Boolean).join(', '); }
 function windowWords(/** @type {OvData} */ d) {
   return isRelative() ? `last ${fmtDur(Number(rangeSecs()) * 1000)}` : `${fmtWhen(d.from)} – ${fmtWhen(d.to)}`;
@@ -2225,6 +2246,12 @@ class Overview {
         text: `${p ? p.title : pid}${g != null ? ' · ' + GEO_TITLE[g] : ''} ×`, onclick: () => this.setCell(''),
       }));
     } else this.cellChip.replaceChildren();
+    if (state.ot) {
+      this.cellChip.append(h('button', {
+        class: 'btn sm on', type: 'button', title: 'Show every target',
+        text: `${HOME_TILE[state.ot] || state.ot} ×`, onclick: () => { state.ot = ''; writeHash(); this.renderControls(); this.applyRows(); },
+      }));
+    }
     const m = this.mode();
     const noNormal = !this.data || this.data.summary.with_normal === 0;
     this.modeSeg.replaceChildren(
@@ -2270,6 +2297,7 @@ class Overview {
       let ok = true;
       if (q) ok = [t.name, t.provider_title, t.city, t.country].some((x) => x && x.toLowerCase().includes(q));
       if (ok && state.og) ok = geoOf(t) === state.og;
+      if (ok && state.ot) ok = homeCategory(t) === state.ot;
       if (ok && state.op) ok = PROBLEMS.has(st);
       if (ok && pid) ok = (t.provider || t.group) === pid && (pg === undefined || geoOf(t) === pg);
       e.tr.hidden = !ok;
@@ -2468,7 +2496,6 @@ const CALL_BLAME_ORDER = ['no_network', 'lan', 'isp', 'upstream', 'udp_blocked',
 /** @type {Calls|null} */
 let calls = null;
 let callsOn = false; // the profile has call-path (udp-path) or app targets
-let callsDefault = false; // Calls is the profile's default view
 
 function callsShown() { return !!calls && currentView() === 'calls' && !(state.inv && inv); }
 function callLabel(/** @type {string} */ st) { return (CALL_STATES[st] || { label: st }).label; }
@@ -2584,7 +2611,7 @@ class Calls {
     this.statsEl = h('span', { class: 'cq-stats' });
     this.causeEl = h('p', { class: 'cq-cause' });
     this.updatedEl = h('span', { class: 'cq-updated muted small' });
-    this.top = h('section', { class: 'panel cq-top', 'aria-label': 'Call quality now', 'aria-live': 'polite' },
+    this.top = h('section', { class: 'panel cq-top', 'aria-label': 'Call quality now' },
       h('div', { class: 'cq-line' }, this.dot, this.headEl, this.statsEl,
         whyButton('Your call path', 'fyisp sends tiny STUN requests over UDP, the way call audio and video travel, to Google, Cloudflare and Twilio servers every few seconds. They answer from the edge nearest to you, so this measures your connection to the nearest edge, not the other people on the call.')),
       this.causeEl,
@@ -3134,6 +3161,47 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
   });
 }
 
+// ---------- Home and the Home | Details switch ----------
+
+/** @type {Home|null} */
+let home = null;
+/** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
+let onNav = () => {};
+function homeShown() { return !!home && currentView() === 'h' && !(state.inv && inv); }
+
+/** The header's Home | Details switch. */
+function renderViewNav() {
+  const v = currentView();
+  const nav = $('#viewnav');
+  nav.replaceChildren(
+    h('button', { type: 'button', text: 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
+    h('button', { type: 'button', text: 'Details', 'aria-current': v !== 'h' ? 'page' : null, onclick: () => { if (currentView() === 'h') openDetails(''); } }));
+}
+
+/**
+ * Opens Details with pushState, so Back returns to Home. hash pre-sets the
+ * Details state (a tile's filter, a zoomed range); empty opens Details' own view.
+ * @param {string} hash
+ */
+function openDetails(hash) {
+  if (!hash) {
+    state.view = detailsView();
+    state.focus = null;
+    hash = hashString();
+  }
+  history.pushState({ fyispHome: true }, '', hash);
+  onNav();
+  window.scrollTo({ top: 0 });
+}
+/** Back to Home: Back when Details was opened from Home, else a new entry. */
+function goHome() {
+  if (history.state && history.state.fyispHome) { history.back(); return; }
+  state.view = 'h';
+  state.focus = null;
+  history.pushState(null, '', hashString());
+  onNav();
+}
+
 // ---------- view switch & focus ----------
 
 const viewSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'View' });
@@ -3166,6 +3234,10 @@ function renderViewBar() {
 /** Applies the view and focus to the page: which panels show, the focus bar, isolation. */
 function applyView() {
   const v = currentView();
+  document.body.classList.toggle('home-on', v === 'h');
+  if (home) home.el.hidden = v !== 'h';
+  if (v !== 'h') document.title = 'Details · fyisp';
+  renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
   if (ov) ov.el.hidden = v !== 'o';
@@ -3439,6 +3511,8 @@ async function refreshAll() {
   updateRefreshLabel();
   try {
     if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), inv.load()]);
+    // Home makes two requests; the status (for sharing and notes) at most twice a minute.
+    else if (homeShown()) await Promise.all([Date.now() - statusAt > 30e3 ? loadStatus() : null, /** @type {Home} */ (home).refresh()]);
     else {
       // Hidden panels (the Overview is showing, or focus) load when shown.
       await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
@@ -3622,14 +3696,15 @@ function refreshMs() { return state.inv ? INV_REFRESH_MS : REFRESH_MS; }
 
 setInterval(() => {
   calls?.tick();
-  if (document.hidden || refreshing) return;
+  home?.tick();
+  if (document.hidden || refreshing || homeShown()) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   // The banner is always "now", even when zoomed; it is cheap to poll.
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
 }, 1000);
 document.addEventListener('visibilitychange', () => {
   updateRefreshLabel();
-  if (document.hidden) return;
+  if (document.hidden || homeShown()) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
   if (inv && state.inv) inv.keepalive();
@@ -3773,9 +3848,12 @@ function renderNotices() {
 }
 
 let statusTimer = 0;
+/** When the status was last loaded. */
+let statusAt = 0;
 async function loadStatus() {
   try {
     status = await fetchJSON('api/status');
+    statusAt = Date.now();
   } catch {
     return;
   }
@@ -3818,7 +3896,7 @@ async function main() {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !notePop.hidden) closeNoteEditor(); });
   // Back from focus mode restores the Overview's scroll position itself.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-  const onNav = () => {
+  onNav = () => {
     if (location.hash === lastHash) return;
     lastHash = location.hash;
     readHash(); log.open = state.log; notesBox.open = state.notes; repBox.open = state.reports;
@@ -3829,6 +3907,7 @@ async function main() {
   renderShare();
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
+  if (st) statusAt = Date.now();
   traceOn = !!(prof.features && prof.features.trace);
   notesOn = !!(prof.features && prof.features.notes);
   reportsOn = MODE === 'local' && !!(prof.features && prof.features.reports);
@@ -3847,7 +3926,8 @@ async function main() {
   repBox.open = state.reports;
   renderNotes();
   renderReports();
-  if (reportsOn) loadReports();
+  // The reports list is Details only (Home loads it when Details opens).
+  if (reportsOn && state.view && state.view !== 'h') loadReports();
   renderControls();
   renderShare();
   renderNotices();
@@ -3858,14 +3938,11 @@ async function main() {
   panels = groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
   bigProfile = targets.filter((t) => !t.layer).length > OVERVIEW_MIN;
   callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
-  const pathUDP = targets.filter((t) => (t.tags || []).includes('udp-path'));
-  callsDefault = callsOn && (String(prof.name || '').split(',').some((n) => n === 'default' || n === 'calls') ||
-    (pathUDP.length > 0 && targets.filter((t) => !t.layer && !pathUDP.includes(t)).length <= OVERVIEW_MIN));
   ov = new Overview();
   calls = callsOn ? new Calls() : null;
-  // The path panel on top, then the view switch, then Calls, the Overview or the charts (Calls moves above the path panel, see style.css).
+  // The view switch, then Calls, the network path, the Overview or the charts: DOM order is visual order.
   const path = panels.filter((p) => p.isPath).map((p) => p.el);
-  $('#panels').replaceChildren(...path, viewBar, focusBar, calls ? calls.el : '', ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
+  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
   if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
@@ -3882,6 +3959,17 @@ async function main() {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
+  home = new Home({
+    span: () => state.hw,
+    setSpan: (s) => { state.hw = s; writeHash(); },
+    openDetails,
+    status: () => status,
+    startShare: () => shareAction('start'),
+    notesOn: () => notesOn,
+    notesChanged: () => { if (!homeShown()) loadNotes(); },
+    reportsOn: () => reportsOn,
+  });
+  $('#notices').before(home.el);
   applyView();
   showView();
   writeHash();
