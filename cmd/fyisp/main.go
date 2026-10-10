@@ -365,9 +365,10 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			}
 			return out
 		},
-		Trace: newWebTrace(st, tr, prof),
-		Share: share,
-		Log:   log,
+		Trace:          newWebTrace(st, tr, prof),
+		Investigations: web.NewInvestigations(), // one set for both listeners
+		Share:          share,
+		Log:            log,
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	localAddr := localLn.Addr().String()

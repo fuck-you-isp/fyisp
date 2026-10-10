@@ -30,11 +30,10 @@ type TraceSource interface {
 	Route(ctx context.Context, target string) (model.Route, bool)
 	// RouteChanges returns every target's route changes in [from, to).
 	RouteChanges(ctx context.Context, from, to time.Time) ([]model.RouteChange, error)
-	// Investigate starts (or extends) an on-demand trace of target for ttl;
-	// see internal/trace.Tracer. The web layer calls it again on every
-	// keepalive and then stops the previous session, so overlapping calls
-	// for one target must extend, not duplicate, the trace.
-	Investigate(target string, ttl time.Duration) (stop func(), err error)
+	// Investigate starts an on-demand trace session of target for at most
+	// rounds rounds; see internal/trace.Tracer. Concurrent sessions of one
+	// target share one trace.
+	Investigate(target string, rounds int) (Investigation, error)
 	// Traced returns the targets with always-on traces.
 	Traced() []string
 }
@@ -57,12 +56,22 @@ type HopStat struct {
 
 // Trace limits.
 const (
-	// InvestigateTTL is how long one POST /api/investigate keeps an
-	// on-demand trace running; the UI re-posts every 60s while open.
-	InvestigateTTL = 2 * time.Minute
-	// MaxInvestigations bounds concurrent on-demand traces started from
-	// the web UI (distinct targets).
+	// InvestigateRounds is how many rounds one on-demand trace runs
+	// (about 10.4 minutes at InvestigateInterval); it then stops by
+	// itself. A POST while it runs doesn't extend it.
+	InvestigateRounds = 250
+	// InvestigateInterval is the tracer's on-demand round interval
+	// (internal/trace.DefaultInvestigate), reported to the UI.
+	InvestigateInterval = 2500 * time.Millisecond
+	// MaxInvestigations bounds concurrent on-demand traces (distinct
+	// targets), shared by the local and public listeners.
 	MaxInvestigations = 4
+	// InvestigationKeep is how long a finished trace's state is shown.
+	InvestigationKeep = time.Hour
+	// Public starts: per client (Cf-Connecting-Ip), at most one new trace
+	// per PublicInvestigateEvery and PublicInvestigatePerHour an hour.
+	PublicInvestigateEvery   = 30 * time.Second
+	PublicInvestigatePerHour = 10
 	// MaxTraceHops bounds hop numbers accepted by /api/trace/panel.
 	MaxTraceHops = 40
 	// MaxHopStats and MaxRouteChanges cap list lengths in responses.
@@ -282,9 +291,9 @@ type traceJSON struct {
 	Hops   []hopStatJSON `json:"hops"`
 	// Changes of this target's route in the range, newest first.
 	Changes []changeJSON `json:"changes"`
-	// InvestigateUntil is when the on-demand trace started from this UI
-	// ends (local only, unix ms; omitted when none is running).
-	InvestigateUntil int64 `json:"investigate_until,omitempty"`
+	// Investigation is the target's on-demand trace: running, or finished
+	// less than InvestigationKeep ago (omitted otherwise).
+	Investigation *investigationJSON `json:"investigation,omitempty"`
 }
 
 func clamp01(f float64) float64 {
@@ -527,9 +536,7 @@ func (s *server) serveTrace(w http.ResponseWriter, r *http.Request) {
 			return nil, err
 		}
 		if s.inv != nil {
-			if until := s.inv.until(target); !until.IsZero() {
-				t.InvestigateUntil = until.UnixMilli()
-			}
+			t.Investigation = s.inv.state(target)
 		}
 		return jsonCached(t)
 	})
@@ -683,70 +690,154 @@ func (s *server) serveRouteChanges(w http.ResponseWriter, r *http.Request) {
 
 // ---------- on-demand traces (local only) ----------
 
-type invSession struct {
-	stop  func()
-	until time.Time
-	timer *time.Timer
+// Investigation is one on-demand trace session (internal/trace.Investigation).
+type Investigation interface {
+	Stop()
+	Progress() (rounds int, ended time.Time)
 }
 
-// investigations tracks on-demand traces started from the local UI.
-type investigations struct {
+// investigationJSON is an on-demand trace's state, in POST /api/investigate
+// and /api/trace: the same on both listeners (nothing in it is private).
+type investigationJSON struct {
+	Target     string `json:"target"`
+	State      string `json:"state"` // running | finished
+	RoundsDone int    `json:"rounds_done"`
+	RoundsMax  int    `json:"rounds_max"`
+	IntervalMs int64  `json:"interval_ms"`
+	StartedAt  int64  `json:"started_at"`
+	FinishedAt int64  `json:"finished_at,omitempty"`
+}
+
+type invSession struct {
+	inv     Investigation
+	started time.Time
+}
+
+func (se *invSession) json(target string) *investigationJSON {
+	n, ended := se.inv.Progress()
+	j := &investigationJSON{Target: target, State: "running", RoundsDone: n, RoundsMax: InvestigateRounds,
+		IntervalMs: InvestigateInterval.Milliseconds(), StartedAt: se.started.UnixMilli()}
+	if !ended.IsZero() {
+		j.State, j.FinishedAt = "finished", ended.UnixMilli()
+	}
+	return j
+}
+
+func (se *invSession) running() bool { _, ended := se.inv.Progress(); return ended.IsZero() }
+
+// Investigations tracks on-demand traces. One value is shared by the local
+// and the public handler (Deps.Investigations), so MaxInvestigations holds
+// across both.
+type Investigations struct {
 	mu  sync.Mutex
 	m   map[string]*invSession
 	now func() time.Time
 }
 
+// NewInvestigations returns an empty set.
+func NewInvestigations() *Investigations {
+	return &Investigations{m: map[string]*invSession{}, now: time.Now}
+}
+
 var errTooManyInvestigations = errors.New("too many on-demand traces running")
 
-// start starts or extends target's on-demand trace for InvestigateTTL. The
-// previous session of the same target is stopped after the new one starts.
-func (iv *investigations) start(src TraceSource, target string) (time.Time, error) {
-	iv.mu.Lock()
-	defer iv.mu.Unlock()
-	now := iv.now()
-	for k, s := range iv.m {
-		if !now.Before(s.until) {
+// pruneLocked drops finished traces older than InvestigationKeep. mu is held.
+func (iv *Investigations) pruneLocked(now time.Time) {
+	for k, se := range iv.m {
+		if _, ended := se.inv.Progress(); !ended.IsZero() && now.Sub(ended) >= InvestigationKeep {
 			delete(iv.m, k)
 		}
 	}
-	old := iv.m[target]
-	if old == nil && len(iv.m) >= MaxInvestigations {
-		return time.Time{}, errTooManyInvestigations
-	}
-	stop, err := src.Investigate(target, InvestigateTTL)
-	if err != nil {
-		return time.Time{}, err
-	}
-	if stop == nil {
-		stop = func() {}
-	}
-	sess := &invSession{stop: stop, until: now.Add(InvestigateTTL)}
-	sess.timer = time.AfterFunc(InvestigateTTL, func() {
-		iv.mu.Lock()
-		defer iv.mu.Unlock()
-		if iv.m[target] == sess {
-			delete(iv.m, target)
-		}
-	})
-	iv.m[target] = sess
-	if old != nil {
-		old.timer.Stop()
-		old.stop()
-	}
-	return sess.until, nil
 }
 
-// until reports when target's on-demand trace ends (zero if none).
-func (iv *investigations) until(target string) time.Time {
+// running reports whether target's trace is running.
+func (iv *Investigations) running(target string) bool {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	if s := iv.m[target]; s != nil && iv.now().Before(s.until) {
-		return s.until
-	}
-	return time.Time{}
+	se := iv.m[target]
+	return se != nil && se.running()
 }
 
-// serveInvestigate answers POST /api/investigate?target= (local only).
+// start starts target's trace for InvestigateRounds rounds. A running one
+// is returned as is (its count is not reset); a finished one starts afresh.
+func (iv *Investigations) start(src TraceSource, target string) (*investigationJSON, error) {
+	iv.mu.Lock()
+	defer iv.mu.Unlock()
+	iv.pruneLocked(iv.now())
+	if se := iv.m[target]; se != nil && se.running() {
+		return se.json(target), nil
+	}
+	n := 0
+	for _, se := range iv.m {
+		if se.running() {
+			n++
+		}
+	}
+	if n >= MaxInvestigations {
+		return nil, errTooManyInvestigations
+	}
+	inv, err := src.Investigate(target, InvestigateRounds)
+	if err != nil {
+		return nil, err
+	}
+	se := &invSession{inv: inv, started: iv.now()}
+	iv.m[target] = se
+	return se.json(target), nil
+}
+
+// state is target's trace, if it runs or finished recently.
+func (iv *Investigations) state(target string) *investigationJSON {
+	iv.mu.Lock()
+	defer iv.mu.Unlock()
+	iv.pruneLocked(iv.now())
+	if se := iv.m[target]; se != nil {
+		return se.json(target)
+	}
+	return nil
+}
+
+// investigate starts a trace for POST /api/investigate?target= once the
+// listener's own checks passed; limit (public only) is asked before a new
+// trace starts, not for one that already runs.
+func (s *server) investigate(w http.ResponseWriter, r *http.Request, limit func() (bool, time.Duration)) {
+	q := r.URL.Query()
+	if err := checkParams(q, "target"); err != nil {
+		writeErr(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	target := q.Get("target")
+	if !s.checkTarget(w, r, target) { // profile target names only
+		return
+	}
+	if limit != nil && !s.inv.running(target) {
+		if ok, wait := limit(); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds()+0.999)))
+			writeErr(w, r, http.StatusTooManyRequests, "too many traces started from here; try again later")
+			return
+		}
+	}
+	st, err := s.inv.start(s.d.Trace, target)
+	switch {
+	case errors.Is(err, errTooManyInvestigations):
+		w.Header().Set("Retry-After", "30")
+		writeErr(w, r, http.StatusTooManyRequests, err.Error())
+		return
+	case err != nil:
+		s.d.log().Warn("investigate", "target", target, "err", err)
+		msg := "could not start trace"
+		if !s.public {
+			msg += ": " + err.Error()
+		}
+		writeErr(w, r, http.StatusInternalServerError, msg)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r, http.StatusOK, st)
+}
+
+// serveInvestigate answers POST /api/investigate?target= on the local
+// listener: same origin and the CSRF token, no admin token (anyone who
+// can open the dashboard may trace a profile target).
 func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) {
 	if h.d.Trace == nil {
 		writeErr(w, r, http.StatusNotFound, "tracing is not available")
@@ -757,28 +848,45 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	q := r.URL.Query()
-	if err := checkParams(q, "target"); err != nil {
-		writeErr(w, r, http.StatusBadRequest, err.Error())
+	if !sameOrigin(r) {
+		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
 		return
 	}
-	if !h.controlAllowed(w, r, "on-demand traces") {
+	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
+		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
 		return
 	}
-	target := q.Get("target")
-	if !h.checkTarget(w, r, target) {
-		return
+	h.investigate(w, r, nil)
+}
+
+// startLimiter limits new public trace starts per client.
+type startLimiter struct {
+	mu sync.Mutex
+	m  map[string][]time.Time // client -> starts in the last hour
+}
+
+// allow records a start for key at now if the limits allow it; otherwise
+// it says how long to wait.
+func (l *startLimiter) allow(key string, now time.Time) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.m == nil || len(l.m) > 4096 {
+		l.m = map[string][]time.Time{} // bounded: forget everyone rather than grow
 	}
-	until, err := h.inv.start(h.d.Trace, target)
+	ts := l.m[key][:0:0]
+	for _, t := range l.m[key] {
+		if now.Sub(t) < time.Hour {
+			ts = append(ts, t)
+		}
+	}
 	switch {
-	case errors.Is(err, errTooManyInvestigations):
-		w.Header().Set("Retry-After", "30")
-		writeErr(w, r, http.StatusTooManyRequests, err.Error())
-		return
-	case err != nil:
-		h.d.log().Warn("investigate", "target", target, "err", err)
-		writeErr(w, r, http.StatusInternalServerError, "could not start trace: "+err.Error())
-		return
+	case len(ts) > 0 && now.Sub(ts[len(ts)-1]) < PublicInvestigateEvery:
+		l.m[key] = ts
+		return false, PublicInvestigateEvery - now.Sub(ts[len(ts)-1])
+	case len(ts) >= PublicInvestigatePerHour:
+		l.m[key] = ts
+		return false, time.Hour - now.Sub(ts[0])
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"target": target, "until": until.UnixMilli()})
+	l.m[key] = append(ts, now)
+	return true, 0
 }

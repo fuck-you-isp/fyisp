@@ -33,6 +33,7 @@ type publicHandler struct {
 	prefix string // "/s/<secret>/"
 	secret string
 	lim    *limiter
+	starts startLimiter // new on-demand traces per client
 }
 
 // Public returns the tunnel origin's handler. The UI and read-only API live
@@ -93,6 +94,10 @@ func (h *publicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.prefix, http.StatusMovedPermanently)
 		return
 	}
+	if rel == "api/investigate" {
+		h.servePublicInvestigate(w, r)
+		return
+	}
 	if id, ok := strings.CutPrefix(rel, "r/"); ok {
 		if !allowGET(w, r) {
 			return
@@ -115,4 +120,26 @@ func (h *publicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func notFound(w http.ResponseWriter, r *http.Request) {
 	writeErr(w, r, http.StatusNotFound, "not found")
+}
+
+// servePublicInvestigate answers POST /s/<secret>/api/investigate?target=,
+// the public listener's only write route: anyone with the link may trace a
+// profile target. Same origin only; new starts are limited per client; the
+// global MaxInvestigations is shared with the local listener.
+func (h *publicHandler) servePublicInvestigate(w http.ResponseWriter, r *http.Request) {
+	if h.d.Trace == nil {
+		notFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !sameOrigin(r) {
+		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
+		return
+	}
+	key := clientKey(r)
+	h.investigate(w, r, func() (bool, time.Duration) { return h.starts.allow(key, h.now()) })
 }

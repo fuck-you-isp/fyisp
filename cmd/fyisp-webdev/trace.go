@@ -271,14 +271,45 @@ func contains(l []string, s string) bool {
 func (f *fakeTrace) Interval() time.Duration { return f.iv }
 func (f *fakeTrace) Traced() []string        { return append([]string(nil), tracedTargets...) }
 
-func (f *fakeTrace) Investigate(target string, ttl time.Duration) (func(), error) {
+func (f *fakeTrace) Investigate(target string, rounds int) (web.Investigation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	until := time.Now().Add(ttl)
+	inv := &fakeInvestigation{start: time.Now(), max: rounds}
+	until := inv.start.Add(time.Duration(rounds) * web.InvestigateInterval)
 	if until.After(f.invest[target]) {
 		f.invest[target] = until
 	}
-	return func() {}, nil
+	return inv, nil
+}
+
+// fakeInvestigation counts a round every web.InvestigateInterval.
+type fakeInvestigation struct {
+	mu      sync.Mutex
+	start   time.Time
+	max     int
+	stopped time.Time
+}
+
+func (i *fakeInvestigation) Stop() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.stopped.IsZero() {
+		i.stopped = time.Now()
+	}
+}
+
+func (i *fakeInvestigation) Progress() (int, time.Time) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	now := time.Now()
+	if !i.stopped.IsZero() {
+		now = i.stopped
+	}
+	n := int(now.Sub(i.start) / web.InvestigateInterval)
+	if n >= i.max {
+		return i.max, i.start.Add(time.Duration(i.max) * web.InvestigateInterval)
+	}
+	return n, i.stopped
 }
 
 func (f *fakeTrace) Route(_ context.Context, target string) (model.Route, bool) {

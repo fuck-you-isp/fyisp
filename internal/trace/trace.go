@@ -23,17 +23,27 @@ type Sink interface {
 	ObserveRouteChange(c model.RouteChange) // path changed (after it held for 2 rounds)
 }
 
+// Investigation is one on-demand trace session.
+type Investigation interface {
+	// Stop ends the session (idempotent).
+	Stop()
+	// Progress returns the rounds traced for this session so far and when
+	// it ended (zero while it runs).
+	Progress() (rounds int, ended time.Time)
+}
+
 // Tracer runs traces while Run runs.
 //
 //	func New(o Options) Tracer
 type Tracer interface {
 	Run(ctx context.Context, p *model.Profile, sink Sink) error
-	// Investigate traces target every Options.Investigate until the
-	// returned stop function is called or ttl passes (on-demand, for any
-	// profile target). Concurrent callers share one trace; it slows back
+	// Investigate traces target every Options.Investigate for at most
+	// rounds rounds (on-demand, for any profile target): the session ends
+	// by itself after its rounds, on Stop, or at a safety deadline of twice
+	// the rounds' time. Concurrent sessions share one trace; it slows back
 	// down (or stops, for an untraced target) when the last one ends.
-	// Errors: not running, unknown target, ttl <= 0.
-	Investigate(target string, ttl time.Duration) (stop func(), err error)
+	// Errors: not running, unknown target, rounds <= 0.
+	Investigate(target string, rounds int) (Investigation, error)
 	// Routes returns the current route of every traced target.
 	Routes() []model.Route
 	// Interval is the current slot interval of target's KindTrace series

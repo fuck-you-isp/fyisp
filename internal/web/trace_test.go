@@ -18,11 +18,48 @@ import (
 
 // fakeTrace is a TraceSource over a fixed route with a route change.
 type fakeTrace struct {
+	mu       sync.Mutex
+	now      time.Time
+	started  []string
+	sessions []*fakeInv
+	err      error
+}
+
+// fakeInv is an on-demand session whose rounds the test advances.
+type fakeInv struct {
 	mu      sync.Mutex
-	now     time.Time
-	started []string
-	stopped int
-	err     error
+	target  string
+	max     int
+	rounds  int
+	ended   time.Time
+	stopped bool
+}
+
+func (i *fakeInv) Stop() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.stopped = true
+	if i.ended.IsZero() {
+		i.ended = time.Now()
+	}
+}
+
+func (i *fakeInv) Progress() (int, time.Time) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.rounds, i.ended
+}
+
+// advance runs n rounds, ending the session at its max, as the tracer does.
+func (i *fakeInv) advance(n int) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	for ; n > 0 && i.ended.IsZero(); n-- {
+		i.rounds++
+		if i.rounds >= i.max {
+			i.ended = time.Now()
+		}
+	}
 }
 
 var (
@@ -98,14 +135,16 @@ func (f *fakeTrace) RouteChanges(ctx context.Context, from, to time.Time) ([]mod
 	}, nil
 }
 
-func (f *fakeTrace) Investigate(target string, ttl time.Duration) (func(), error) {
+func (f *fakeTrace) Investigate(target string, rounds int) (Investigation, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.started = append(f.started, target)
-	return func() { f.mu.Lock(); f.stopped++; f.mu.Unlock() }, nil
+	inv := &fakeInv{target: target, max: rounds}
+	f.sessions = append(f.sessions, inv)
+	return inv, nil
 }
 
 func (f *fakeTrace) Traced() []string { return []string{"Alpha"} }
@@ -171,7 +210,7 @@ type traceResp struct {
 		From      []hopJSON `json:"from"`
 		To        []hopJSON `json:"to"`
 	} `json:"changes"`
-	InvestigateUntil int64 `json:"investigate_until"`
+	Investigation *investigationJSON `json:"investigation"`
 }
 
 func TestTraceShapeAndClamps(t *testing.T) {
@@ -350,11 +389,13 @@ func TestTracePublicRedaction(t *testing.T) {
 	if body := get("api/routes/changes"); !strings.Contains(body, `"203.0.113.x"`) || strings.Contains(body, "Secret-Target") {
 		t.Errorf("public route changes = %s", body)
 	}
-	// Public: no investigate, no POST.
-	for _, p := range []string{"api/investigate?target=Alpha", "api/trace?target=Alpha"} {
-		if w := do(h, "POST", base+p, map[string]string{"Cf-Connecting-Ip": "198.51.100.9"}); w.Code != 404 && w.Code != 405 {
-			t.Errorf("public POST %s = %d", p, w.Code)
-		}
+	// Public: POST api/investigate is the one write route (same origin
+	// only; TestPublicInvestigate); every other POST is refused.
+	if w := do(h, "POST", base+"api/investigate?target=Alpha", map[string]string{"Cf-Connecting-Ip": "198.51.100.9"}); w.Code != 403 {
+		t.Errorf("public cross-origin investigate = %d", w.Code)
+	}
+	if w := do(h, "POST", base+"api/trace?target=Alpha", map[string]string{"Cf-Connecting-Ip": "198.51.100.9"}); w.Code != 404 && w.Code != 405 {
+		t.Errorf("public POST api/trace = %d", w.Code)
 	}
 	// Store errors are not passed through.
 	d.Trace.(*fakeTrace).err = fmt.Errorf("open /home/venkat/x.db: 192.168.1.20")
@@ -420,26 +461,38 @@ func TestInvestigate(t *testing.T) {
 		}
 	}
 	w := do(h, "POST", "/api/investigate?target=Beta", good)
-	var r struct {
-		Target string
-		Until  int64
-	}
+	var r investigationJSON
 	_ = json.Unmarshal(w.Body.Bytes(), &r)
-	if w.Code != 200 || r.Target != "Beta" || time.Until(time.UnixMilli(r.Until)) < InvestigateTTL-5*time.Second {
+	if w.Code != 200 || r.Target != "Beta" || r.State != "running" || r.RoundsMax != InvestigateRounds || r.RoundsDone != 0 ||
+		r.IntervalMs != 2500 || r.StartedAt == 0 || r.FinishedAt != 0 {
 		t.Fatalf("investigate = %d %s", w.Code, w.Body.String())
 	}
-	// Keepalive: a new session starts, the old one stops.
-	do(h, "POST", "/api/investigate?target=Beta", good)
-	if len(ft.started) != 2 || ft.stopped != 1 {
-		t.Errorf("keepalive: started %v, stopped %d", ft.started, ft.stopped)
+	// A POST while it runs returns its state: no new session, no reset.
+	ft.sessions[0].advance(40)
+	w = do(h, "POST", "/api/investigate?target=Beta", good)
+	_ = json.Unmarshal(w.Body.Bytes(), &r)
+	if len(ft.started) != 1 || r.RoundsDone != 40 || r.State != "running" {
+		t.Errorf("re-post: started %v, %s", ft.started, w.Body.String())
 	}
-	// The trace view reports the running session.
+	// The trace view reports it.
 	var tr traceResp
 	_ = json.Unmarshal(do(h, "GET", "/api/trace?target=Beta", good).Body.Bytes(), &tr)
-	if tr.InvestigateUntil == 0 || tr.Traced {
+	if tr.Investigation == nil || tr.Investigation.RoundsDone != 40 || tr.Traced {
 		t.Errorf("trace Beta = %+v", tr)
 	}
-	// Bounded: at most MaxInvestigations distinct targets.
+	// It stops at 250 rounds by itself, and stays visible as finished.
+	ft.sessions[0].advance(1000)
+	_ = json.Unmarshal(do(h, "GET", "/api/trace?target=Beta", good).Body.Bytes(), &tr)
+	if inv := tr.Investigation; inv == nil || inv.State != "finished" || inv.RoundsDone != InvestigateRounds || inv.FinishedAt == 0 {
+		t.Errorf("finished: %+v", tr.Investigation)
+	}
+	// Starting again after it finished is a fresh 250.
+	w = do(h, "POST", "/api/investigate?target=Beta", good)
+	_ = json.Unmarshal(w.Body.Bytes(), &r)
+	if len(ft.started) != 2 || r.State != "running" || r.RoundsDone != 0 {
+		t.Errorf("restart: started %v, %s", ft.started, w.Body.String())
+	}
+	// Bounded: at most MaxInvestigations distinct targets running.
 	p := d.Profile()
 	for i := range MaxInvestigations + 2 {
 		p.Targets = append(p.Targets, model.Target{Name: fmt.Sprintf("T%d", i), Group: "common"})
@@ -451,15 +504,105 @@ func TestInvestigate(t *testing.T) {
 	if codes[200] != MaxInvestigations-1 || codes[http.StatusTooManyRequests] != 3 {
 		t.Errorf("limit: %v", codes)
 	}
-	// Disabled controls (LAN bind without admin token) refuse.
-	hb := Local(d, LocalOptions{Addr: "0.0.0.0:3000", CSRFToken: "tok123"})
-	if w := do(hb, "POST", "/api/investigate?target=Alpha", good); w.Code != 403 {
-		t.Errorf("disabled controls = %d", w.Code)
+	// No admin token needed, even where the other controls are disabled
+	// (LAN bind without one) or need it.
+	for _, o := range []LocalOptions{{Addr: "0.0.0.0:3000", CSRFToken: "tok123"}, {Addr: "0.0.0.0:3000", CSRFToken: "tok123", AdminToken: testAdmin}} {
+		d2, _, _ := traceFixture(t)
+		hb := Local(d2, o)
+		lan := with(map[string]string{"Host": "192.168.1.5:3000", "Origin": "http://192.168.1.5:3000"})
+		if w := do(hb, "POST", "/api/investigate?target=Alpha", lan); w.Code != 200 {
+			t.Errorf("%+v: %d %s", o, w.Code, w.Body.String())
+		}
 	}
 	// Tracer errors surface locally.
-	ft.err = fmt.Errorf("no ping socket")
-	h2 := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
+	d3, ft3, _ := traceFixture(t)
+	ft3.err = fmt.Errorf("no ping socket")
+	h2 := Local(d3, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
 	if w := do(h2, "POST", "/api/investigate?target=Alpha", good); w.Code != 500 || !strings.Contains(w.Body.String(), "no ping socket") {
 		t.Errorf("tracer error = %d %s", w.Code, w.Body.String())
+	}
+}
+
+// TestPublicInvestigate: anyone with the link may trace a profile target,
+// same origin only, with per-client and global limits.
+func TestPublicInvestigate(t *testing.T) {
+	d, ft, _ := traceFixture(t)
+	d.Investigations = NewInvestigations()
+	h := Public(d, testSecret).(*publicHandler)
+	now := time.Now()
+	h.now = func() time.Time { return now }
+	base := "/s/" + testSecret + "/api/investigate"
+	hdr := func(ip string) map[string]string {
+		return map[string]string{"Host": "x.trycloudflare.com", "Origin": "https://x.trycloudflare.com", "Sec-Fetch-Site": "same-origin", "Cf-Connecting-Ip": ip}
+	}
+	for name, c := range map[string]struct {
+		method, path string
+		hdr          map[string]string
+		code         int
+	}{
+		"cross-origin":       {"POST", base + "?target=Alpha", map[string]string{"Origin": "https://evil.com", "Cf-Connecting-Ip": "1.1.1.1"}, 403},
+		"no origin":          {"POST", base + "?target=Alpha", map[string]string{"Cf-Connecting-Ip": "1.1.1.1"}, 403},
+		"not a target":       {"POST", base + "?target=8.8.8.8", hdr("1.1.1.1"), 404},
+		"host, not a target": {"POST", base + "?target=evil.example.com", hdr("1.1.1.1"), 404},
+		"GET":                {"GET", base + "?target=Alpha", hdr("1.1.1.1"), 405},
+		"bad secret":         {"POST", "/s/" + strings.Repeat("0", len(testSecret)) + "/api/investigate?target=Alpha", hdr("1.1.1.1"), 404},
+	} {
+		if w := do(h, c.method, c.path, c.hdr); w.Code != c.code {
+			t.Errorf("%s: %d, want %d (%s)", name, w.Code, c.code, w.Body.String())
+		}
+	}
+	if len(ft.started) != 0 {
+		t.Fatalf("refused requests started traces: %v", ft.started)
+	}
+	w := do(h, "POST", base+"?target=Alpha", hdr("1.1.1.1"))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"rounds_max":250`) || len(ft.started) != 1 {
+		t.Fatalf("start: %d %s", w.Code, w.Body.String())
+	}
+	// Re-posting the running trace is free; a new one within 30 s isn't.
+	if w := do(h, "POST", base+"?target=Alpha", hdr("1.1.1.1")); w.Code != 200 || len(ft.started) != 1 {
+		t.Errorf("re-post: %d", w.Code)
+	}
+	if w := do(h, "POST", base+"?target=Beta", hdr("1.1.1.1")); w.Code != 429 || w.Header().Get("Retry-After") == "" {
+		t.Errorf("second start within 30 s: %d", w.Code)
+	}
+	// Another client may; then the global limit (shared with the local
+	// listener) holds.
+	if w := do(h, "POST", base+"?target=Beta", hdr("2.2.2.2")); w.Code != 200 {
+		t.Errorf("other client: %d", w.Code)
+	}
+	p := d.Profile()
+	for i := range 4 {
+		p.Targets = append(p.Targets, model.Target{Name: fmt.Sprintf("T%d", i), Group: "common"})
+	}
+	lh := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
+	local := map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000", "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123"}
+	for i := range 2 {
+		if w := do(lh, "POST", fmt.Sprintf("/api/investigate?target=T%d", i), local); w.Code != 200 {
+			t.Errorf("local T%d: %d", i, w.Code)
+		}
+	}
+	if w := do(h, "POST", base+"?target=T2", hdr("3.3.3.3")); w.Code != 429 || !strings.Contains(w.Body.String(), "too many on-demand traces") {
+		t.Errorf("global limit across listeners: %d %s", w.Code, w.Body.String())
+	}
+	// Per client: at most 10 an hour.
+	for _, se := range ft.sessions {
+		se.advance(1000) // all finished: the global limit is out of the way
+	}
+	codes := map[int]int{}
+	for i := range 12 {
+		now = now.Add(31 * time.Second)
+		codes[do(h, "POST", fmt.Sprintf("%s?target=T%d", base, i%4), hdr("4.4.4.4")).Code]++
+		for _, se := range ft.sessions {
+			se.advance(1000)
+		}
+	}
+	if codes[200] != PublicInvestigatePerHour || codes[429] != 2 {
+		t.Errorf("per hour: %v", codes)
+	}
+	// The public trace view shows the state, nothing more.
+	var tr traceResp
+	_ = json.Unmarshal(do(h, "GET", "/s/"+testSecret+"/api/trace?target=Alpha", hdr("5.5.5.5")).Body.Bytes(), &tr)
+	if tr.Investigation == nil || tr.Investigation.Target != "Alpha" {
+		t.Errorf("public trace: %+v", tr.Investigation)
 	}
 }

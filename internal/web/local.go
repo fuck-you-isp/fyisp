@@ -56,10 +56,11 @@ type localHandler struct {
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
-// /metrics, and the write routes (POST /api/share/start|stop, POST
-// /api/investigate, POST/PUT/DELETE /api/annotations[/{id}] and
-// /api/reports[/{id}]), all behind controlAllowed, and POST/DELETE
-// /api/admin/session, which exchanges the admin token for a cookie.
+// /metrics, and the write routes (POST /api/share/start|stop, POST/PUT/
+// DELETE /api/annotations[/{id}] and /api/reports[/{id}]), all behind
+// controlAllowed; POST /api/investigate, behind the same-origin and CSRF
+// checks only (no admin token); and POST/DELETE /api/admin/session, which
+// exchanges the admin token for a cookie.
 func Local(d Deps, o LocalOptions) http.Handler {
 	tok := o.CSRFToken
 	if tok == "" {
@@ -68,7 +69,6 @@ func Local(d Deps, o LocalOptions) http.Handler {
 		tok = hex.EncodeToString(b[:])
 	}
 	h := &localHandler{server: newServer(d, false, tok), opts: o, csrf: tok, extra: map[string]bool{}}
-	h.inv = &investigations{m: map[string]*invSession{}, now: func() time.Time { return h.now() }}
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
 		ip := net.ParseIP(host)
