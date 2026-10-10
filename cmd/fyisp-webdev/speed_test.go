@@ -27,7 +27,7 @@ func TestFakeSpeedFinding(t *testing.T) {
 			if days == 2 {
 				want = speedtest.CaseNotEnough
 			}
-			if f.Case != want {
+			if f.Case != want || (days == 4 && f.Tier != speedtest.TierEarly) {
 				t.Errorf("%d days, %v: %s %s: %s", days, loc, f.Case, f.Tier, f.Text)
 			}
 		}

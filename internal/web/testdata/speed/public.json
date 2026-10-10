@@ -136,9 +136,9 @@
  "extra": [],
  "finding": {
   "case": "isp",
-  "days": 31,
+  "days": 30,
   "drop": 0.4,
-  "evidence": "Based on 279 tests over 31 days; each evening hour was tested at least 11 times across 2 providers.",
+  "evidence": "Based on 279 tests over 30 days; each evening hour was tested at least 11 times across 2 providers.",
   "hours": [
    21,
    22,
