@@ -129,6 +129,7 @@ func TestFinding(t *testing.T) {
 	for _, tc := range cases {
 		ts := synth(c, tc.days, tc.score, tc.conn)
 		f := FindFinding(FindingInput{Tests: ts, Catalog: c, EdgeIdle: tc.edge})
+		publicVoice(t, tc.name, f)
 		if f.Case != tc.want || (tc.tier != "" && f.Tier != tc.tier) {
 			t.Errorf("%s: case %s tier %s, want %s %s: %s", tc.name, f.Case, f.Tier, tc.want, tc.tier, f.Text)
 			continue
@@ -339,6 +340,17 @@ func synthDown(c *Catalog, days int, score func(sv string, h int) float64, base 
 }
 
 // TestFindingNetIsp: the re-review's cases (net-isp-review.md).
+// publicVoice: the share link's and report's texts never address the
+// viewer ("your …"): they're about someone else's line.
+func publicVoice(t *testing.T, name string, f Finding) {
+	t.Helper()
+	for what, s := range map[string]string{"text_public": f.TextPublic, "caveat_public": f.CaveatPublic, "evidence": f.Evidence} {
+		if strings.Contains(strings.ToLower(s), "your") || strings.Contains(s, " you ") {
+			t.Errorf("%s: %s %q", name, what, s)
+		}
+	}
+}
+
 func TestFindingNetIsp(t *testing.T) {
 	c := findingCatalog(t)
 	evening := func(drop float64, dips func(sv string) bool) func(string, int) float64 {
@@ -360,26 +372,31 @@ func TestFindingNetIsp(t *testing.T) {
 	}
 	// M3: a fast line's access dip shows in the near regions only.
 	f := FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), farSlow, 0), Catalog: c})
+	publicVoice(t, "net-isp", f)
 	if f.Case != CaseISP || !strings.Contains(f.Text, "All 2 regions close enough to show your line's speed slow") ||
 		!strings.Contains(f.Text, "Far Asia is too far away to show it.") || len(f.FarRegions) != 1 {
 		t.Errorf("near only: %s %s: %s", f.Case, f.Tier, f.Text)
 	}
 	// M1: 2 of 3 regions is "most", not "every".
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), flatBase, 0), Catalog: c})
+	publicVoice(t, "net-isp", f)
 	if f.Case != CaseISP || !strings.Contains(f.Text, "Most regions (2 of 3) slow") || strings.Contains(f.Text, "Every region") {
 		t.Errorf("2 of 3: %s: %s", f.Case, f.Text)
 	}
 	// S7: ±15% noise still finds it, and counts the evenings.
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, all), flatBase, 0.15), Catalog: c})
+	publicVoice(t, "net-isp", f)
 	if f.Case != CaseISP || f.DayCount < 8 || 2*f.SlowDays < f.DayCount || !strings.Contains(f.Evidence, " evenings.") {
 		t.Errorf("noisy: %s %s %d/%d: %s / %s", f.Case, f.Tier, f.SlowDays, f.DayCount, f.Text, f.Evidence)
 	}
 	// M2: a 15% dip is "a little slower", never "within 10%".
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.15, all), flatBase, 0), Catalog: c})
+	publicVoice(t, "net-isp", f)
 	if f.Case != CaseMild || !strings.Contains(f.Text, "a little slower: about 15% below normal") {
 		t.Errorf("mild: %s: %s", f.Case, f.Text)
 	}
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, func(string, int) float64 { return 1 }, flatBase, 0.05), Catalog: c})
+	publicVoice(t, "net-isp", f)
 	if f.Case != CaseNothing || !strings.HasPrefix(f.Text, "No slowdown of 25% or more stands out") {
 		t.Errorf("flat: %s: %s", f.Case, f.Text)
 	}

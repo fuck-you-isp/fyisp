@@ -220,6 +220,14 @@ func TestSpeedGolden(t *testing.T) {
 		}
 		got, _ := json.MarshalIndent(v, "", " ")
 		got = append(got, '\n')
+		// The share link speaks about someone else's line: no "your" (the
+		// own-server label "Your server" aside).
+		if name == "public" {
+			if l := strings.ReplaceAll(strings.ToLower(string(got)), "your server", ""); strings.Contains(l, "your") {
+				i := strings.Index(l, "your")
+				t.Errorf("public speed JSON addresses the viewer: …%s…", l[max(0, i-80):min(len(l), i+40)])
+			}
+		}
 		path := filepath.Join("testdata", "speed", name+".json")
 		if *update {
 			os.MkdirAll(filepath.Dir(path), 0o755)
