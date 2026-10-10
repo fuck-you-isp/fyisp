@@ -1,5 +1,6 @@
 {
  "at": 1791655200000,
+ "bytes_24h": 1174405120,
  "bytes_month": 13065256960,
  "configurable": true,
  "connection": {
@@ -163,6 +164,7 @@
  "latest": {
   "attempts": 1,
   "bytes": 146800640,
+  "capped_by_budget": false,
   "capped_by_server": false,
   "city": "New York",
   "conn": "wired",
@@ -627,6 +629,7 @@
    "kind": "region",
    "label": "UK",
    "latest_at": 1791637200000,
+   "learning": false,
    "n": 32,
    "note": "UK has run on its fallback servers most of the last 24 hours: its first choice was busy or not answering.",
    "scheduled": true,
@@ -1003,6 +1006,7 @@
    "kind": "region",
    "label": "US East",
    "latest_at": 1791639000000,
+   "learning": false,
    "n": 33,
    "note": null,
    "scheduled": true,
@@ -1351,6 +1355,7 @@
    "kind": "server",
    "label": "Clouvider London",
    "latest_at": 1791547200000,
+   "learning": false,
    "n": 13,
    "note": null,
    "scheduled": false,
@@ -1701,6 +1706,7 @@
    "kind": "server",
    "label": "Clouvider New York",
    "latest_at": 1791621000000,
+   "learning": false,
    "n": 16,
    "note": null,
    "scheduled": false,
@@ -2051,6 +2057,7 @@
    "kind": "server",
    "label": "Leaseweb London",
    "latest_at": 1791637200000,
+   "learning": false,
    "n": 19,
    "note": null,
    "scheduled": false,
@@ -2403,6 +2410,7 @@
    "kind": "server",
    "label": "Leaseweb New York",
    "latest_at": 1791639000000,
+   "learning": false,
    "n": 17,
    "note": null,
    "scheduled": false,
@@ -2845,6 +2853,7 @@
    "kind": "region",
    "label": "US East",
    "latest_at": 1791639000000,
+   "learning": false,
    "n": 33,
    "note": null,
    "scheduled": true,
@@ -3217,6 +3226,7 @@
    "kind": "region",
    "label": "UK",
    "latest_at": 1791637200000,
+   "learning": false,
    "n": 32,
    "note": "UK has run on its fallback servers most of the last 24 hours: its first choice was busy or not answering.",
    "scheduled": true,
@@ -3250,8 +3260,11 @@
    "ports": "5200-5209",
    "provider": "Clouvider",
    "region": "uk",
+   "rest_until": null,
    "rtt_ms": null,
-   "single_port": false
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
   },
   {
    "area": "North America",
@@ -3269,8 +3282,11 @@
    "ports": "5200-5209",
    "provider": "Clouvider",
    "region": "us-east",
+   "rest_until": null,
    "rtt_ms": null,
-   "single_port": false
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
   },
   {
    "area": "Europe",
@@ -3288,8 +3304,11 @@
    "ports": "5201-5210",
    "provider": "Leaseweb",
    "region": "uk",
+   "rest_until": null,
    "rtt_ms": null,
-   "single_port": false
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
   },
   {
    "area": "North America",
@@ -3307,8 +3326,11 @@
    "ports": "5201-5210",
    "provider": "Leaseweb",
    "region": "us-east",
+   "rest_until": null,
    "rtt_ms": null,
-   "single_port": false
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
   },
   {
    "area": "North America",
@@ -3326,8 +3348,11 @@
    "ports": "5201-5210",
    "provider": "Leaseweb",
    "region": "us-east",
+   "rest_until": null,
    "rtt_ms": null,
-   "single_port": false
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
   },
   {
    "area": "",
@@ -3345,8 +3370,11 @@
    "ports": "5201",
    "provider": "Your server",
    "region": null,
+   "rest_until": null,
    "rtt_ms": null,
-   "single_port": true
+   "single_port": true,
+   "skip_locked": false,
+   "skipped": false
   }
  ],
  "set_by_flag": false,

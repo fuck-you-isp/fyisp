@@ -3,6 +3,7 @@ package speedtest
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -150,5 +151,60 @@ func TestAbortTail(t *testing.T) {
 		if got := h.s.o.Windows.Overlaps(after, after); got != fail {
 			t.Errorf("failed %v: masked %v at end+%v", fail, got, MaskTail+time.Second)
 		}
+	}
+}
+
+// TestSkipAndRest: a skipped server is never tested (chains, sweeps, Test
+// now); one busy BusyRun scheduled tests in a row rests for BusyRest.
+func TestSkipAndRest(t *testing.T) {
+	h := newHarness(t, Options{})
+	ctx := context.Background()
+	if err := h.s.SetSkip(ctx, []string{"Nope"}); !errors.Is(err, ErrMode) {
+		t.Errorf("unknown: %v", err)
+	}
+	if err := h.s.SetSkip(ctx, []string{"Mid"}); err != nil || h.st.settings[settingSkip] != "Mid" {
+		t.Fatalf("%v %v", err, h.st.settings)
+	}
+	if _, err := h.s.resolve(KindSingle, "Mid"); !errors.Is(err, ErrSkipped) {
+		t.Errorf("Test now of a skipped server: %v", err)
+	}
+	jobs, _ := h.s.resolve(KindSweep, "")
+	for _, j := range jobs {
+		if j.Chain[0].ID == "Mid" {
+			t.Error("a sweep tests a skipped server")
+		}
+	}
+	for range 24 {
+		ts := h.region(t, "home")
+		if ts.Server == "Mid" {
+			t.Fatal("a slot used a skipped server")
+		}
+		h.mu.Lock()
+		h.now = h.now.Add(time.Hour)
+		h.mu.Unlock()
+	}
+	if st := h.s.State(); !st.Servers[slices.IndexFunc(st.Servers, func(s ServerState) bool { return s.ID == "Mid" })].Skipped {
+		t.Error("state")
+	}
+	// Busy three scheduled tests in a row: rests.
+	h.setRun(func(c Config, n int) (Result, error) {
+		if host, _ := hostPort(c); host == "near.example" {
+			return Result{}, ErrBusy
+		}
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second}, nil
+	})
+	for range BusyRun {
+		h.slot(t, target{server: "Near"})
+	}
+	st := h.s.State()
+	near := st.Servers[slices.IndexFunc(st.Servers, func(s ServerState) bool { return s.ID == "Near" })]
+	if near.RestUntil.Sub(h.clock()) < BusyRest-time.Minute {
+		t.Fatalf("rest %v", near.RestUntil)
+	}
+	if ts := h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), "schedule"); len(ts) != 0 {
+		t.Errorf("a resting server was tested: %+v", ts)
+	}
+	if ts := h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), "manual"); len(ts) != 1 {
+		t.Error("Test now of a resting server")
 	}
 }

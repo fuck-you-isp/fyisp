@@ -39,7 +39,7 @@ binary and never fetched. Those servers see your public IP address. Each test
 moves at most 200 MB. Once a day per server, fyisp traceroutes the path to
 it to name the first network past your ISP (shown locally only). "Test now", sweeps, cancelling and the
 mode choice are write actions behind the same protections as notes (same
-origin, CSRF token, admin token). Only if the owner turns it on
+origin, CSRF token, admin token). Only while speed tests are on and the owner turns it on
 (`--speedtest-public` or the Details toggle; off by default), people with
 the share link may queue a test or a sweep of every server (`POST
 /s/<secret>/api/speed/run`), but never change the mode or cancel anything.

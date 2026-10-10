@@ -38,10 +38,12 @@ func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
 	case KindSweep:
 		var out []Job
 		for _, sv := range s.o.Catalog.Servers {
-			out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
+			if !s.skipped(sv.ID) {
+				out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
+			}
 		}
 		for _, sv := range s.o.Custom {
-			if _, ok := s.o.Catalog.Server(sv.ID); !ok {
+			if _, ok := s.o.Catalog.Server(sv.ID); !ok && !s.skipped(sv.ID) {
 				out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
 			}
 		}
@@ -52,6 +54,8 @@ func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
 				if _, ok := s.region(id); !ok {
 					return nil, ErrUnknownID
 				}
+			} else if s.skipped(id) {
+				return nil, ErrSkipped
 			}
 		}
 		j := Job{steps: func(ctx context.Context) (string, []Step) { return s.resolveTest(ctx, id) }}
@@ -95,6 +99,11 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 				lvl = FallbackSameMetro
 			}
 			steps = append(steps, Step{Server: sv, Level: lvl})
+		}
+	}
+	if n := len(steps); n > 0 {
+		if steps = s.filter(steps, trigger == "schedule"); len(steps) == 0 {
+			return 0, false, 0 // every server skipped or resting: no test, not a failure
 		}
 	}
 	t, saved, bytes := s.runSteps(ctx, region, steps, trigger)
@@ -233,6 +242,9 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		}
 		t.Server, t.FallbackLevel, t.Fallback, t.Port, used = st.Server.ID, st.Level, st.Level != FallbackNone, 0, st.Server
 		s.testServer(sctx, st.Server, &t, &x, lr)
+		if trigger == "schedule" && sctx.Err() == nil {
+			s.noteBusy(st.Server.ID, t.Outcome == model.SpeedBusy)
+		}
 		if t.Outcome == model.SpeedOK || t.DownBps != nil || sctx.Err() != nil {
 			break // measured (a failed upload keeps the download), or out of time
 		}
@@ -518,7 +530,15 @@ func (s *Scheduler) pick(ctx context.Context) {
 	var got []r
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, pickParallel)
+	s.mu.Lock()
+	var servers []Server
 	for _, sv := range s.o.Catalog.Servers {
+		if s.usableLocked(sv.ID) { // not skipped, not resting
+			servers = append(servers, sv)
+		}
+	}
+	s.mu.Unlock()
+	for _, sv := range servers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -334,13 +334,25 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 
 **How much it costs your line.** A speed test fills the line while it runs, by design:
 - **Time under test:** mode `regions` keeps the line under test about 4% of the time (9 tests of 15 to 25 seconds an hour); `nearby` about 7%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
-- **Data:** at most 200 MB per test. On a 500/50 Mbit/s line a test moves about 140 MB, so mode `regions` uses about 30 GB a day (roughly 0.9 TB a month), less on slower lines and to far regions; `nearby` about 1.8 times that. Details shows this month's use and an estimate per mode. A sweep of every server is about 45 tests.
+- **Data:** at most 200 MB per test (100 MB each way). Mode `regions`, the default, runs 216 tests a day:
+
+  | Your line | Data a month (mode `regions`) |
+  |---|---|
+  | 25 Mbit/s | about 150 GB |
+  | 100 Mbit/s | about 600 GB |
+  | fast lines (several hundred Mbit/s and up) | about 1.3 TB (the 200 MB cap) |
+  | one "Test all servers" sweep | about 8 GB |
+
+  Mode `nearby` uses about 1.8 times as much. Details shows the data used in the last 24 hours and this month, and an estimate for each mode.
+- **Fast lines:** the 200 MB cap ends a test early, after half a second to a couple of seconds of measuring, so results show *changes over the day* better than your top speed; Details marks them "≥". Speed tests show when your speed drops, not whether you get your plan's advertised speed.
 - **Metered lines:** leave speed tests off on metered or capped connections.
 
-**Be kind to the servers.** Each server port runs one test at a time.
+**Be kind to the servers.** The operators and what fyisp sends them are listed in [`docs/IPERF3-TERMS.md`](docs/IPERF3-TERMS.md); [`docs/OPERATORS.md`](docs/OPERATORS.md) is for the operators themselves. Each server port runs one test at a time.
 - If a port is busy, or refuses for a moment (a stock iperf3 server re-listens after every test), fyisp tries up to 2 more ports.
 - Then it moves to another provider in the same city, then to a nearby city. Single-port servers (Hurricane Electric) are never retried. If nothing answers, it records **"server busy"**, never a slow result.
 - A slot never uses more than about 30 seconds and never delays the next one.
+- A server that was busy 3 scheduled tests in a row rests for 6 hours.
+- `--speedtest-skip=<id,…>` (or the toggle per server in Details → Speed) never tests a server again: honour an operator's request without waiting for a release.
 
 **One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones, then the share link's. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
@@ -525,6 +537,8 @@ To uninstall, stop fyisp, then delete its data directory and the binary. The lau
 - **systemd:** `sudo systemctl disable --now fyisp && sudo rm /etc/systemd/system/fyisp.service /usr/local/bin/fyisp && sudo rm -rf /var/lib/private/fyisp`.
 
 fyisp does not update itself: run the launcher from a newer release, or replace the binary.
+
+**Upgrading to v0.7** changes the database (a new table for speed tests). Before it does, fyisp copies the database to `fyisp.db.bak-v<old version>` in the data directory. v0.6 refuses to open the upgraded file: to go back to v0.6, stop fyisp and put the backup in place of `fyisp.db` (tests and samples since the upgrade are lost). Speed tests stay off after the upgrade.
 
 ## Building from source
 

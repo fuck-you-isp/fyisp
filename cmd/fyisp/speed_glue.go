@@ -151,6 +151,11 @@ func checkSpeedFlags(c *config) error {
 	if c.speed.mode == speedtest.ModeCustom && len(custom) == 0 {
 		return fmt.Errorf("--speedtest=custom needs --speedtest-server")
 	}
+	for _, id := range speedSkips(c) {
+		if _, ok := cat.Server(id); !ok {
+			return fmt.Errorf("--speedtest-skip: no catalog server %q (see the README's \"Speed tests\")", id)
+		}
+	}
 	for _, r := range c.speed.extra {
 		if !slices.ContainsFunc(cat.Regions, func(x speedtest.Region) bool { return x.ID == r }) {
 			return fmt.Errorf("--speedtest: no region %q (see the README's \"Speed tests\")", r)
@@ -190,6 +195,7 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 		o.Public = &on
 	}
 	o.PublicBudget = int64(c.speedBudget)
+	o.Skip = speedSkips(&c)
 	o.Load = speedtest.NewLoadTap(prof, nil)
 	// Latency under load (ISP edge and gateway), the connection type and
 	// the handoff network, from the network path.
@@ -212,3 +218,14 @@ type maskedTrace struct {
 }
 
 func (m maskedTrace) Observe(s model.Sample) { m.mask.Observe(s) }
+
+// speedSkips is --speedtest-skip's server IDs.
+func speedSkips(c *config) []string {
+	var out []string
+	for _, id := range strings.Split(c.speedSkip, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}

@@ -30,6 +30,7 @@ type SpeedSource interface {
 	SetMode(ctx context.Context, m speedtest.Mode, extra []string) (time.Time, error)
 	// Queue is the speed-test queue (Test now, sweeps, schedule slots).
 	Queue() *speedtest.Queue
+	SetSkip(ctx context.Context, ids []string) error
 	MaskedShare(d time.Duration) float64
 	Catalog() *speedtest.Catalog
 	BytesSince(ctx context.Context, t time.Time) (int64, error)
@@ -68,8 +69,13 @@ type speedServerJSON struct {
 	Custom   bool     `json:"custom"`
 	Single   bool     `json:"single_port"`
 	Capacity *float64 `json:"capacity_mbps"`
-	Host     string   `json:"host,omitempty"`  // local only
-	Ports    string   `json:"ports,omitempty"` // local only
+	// Skipped: never tested (SkipLocked: by --speedtest-skip, the toggle
+	// can't undo it); RestUntil: resting after being busy several times.
+	Skipped    bool   `json:"skipped"`
+	SkipLocked bool   `json:"skip_locked"`
+	RestUntil  *int64 `json:"rest_until"`
+	Host       string `json:"host,omitempty"`  // local only
+	Ports      string `json:"ports,omitempty"` // local only
 }
 
 type speedRegionJSON struct {
@@ -93,6 +99,9 @@ type speedRow struct {
 	speedtest.Stats
 	FallbackShare24h *float64 `json:"fallback_share_24h"`
 	Note             *string  `json:"note"`
+	// Learning: tests but no scores yet (a server needs BaselineMin
+	// first-choice tests over 14 days for its baseline).
+	Learning bool `json:"learning"`
 }
 
 type speedWindow struct {
@@ -124,6 +133,7 @@ type speedTestJSON struct {
 	UpBps           *float64 `json:"up_bps"`
 	DownShort       bool     `json:"down_short"`
 	UpShort         bool     `json:"up_short"`
+	CappedByBudget  bool     `json:"capped_by_budget"` // either direction hit the 100 MB cap: show "≥ X"
 	DownSecs        float64  `json:"down_s"`
 	UpSecs          float64  `json:"up_s"`
 	CappedByServer  bool     `json:"capped_by_server"`
@@ -200,6 +210,7 @@ type speedJSON struct {
 	Plans           []speedPlan        `json:"plans"`
 	MaskedShare24h  float64            `json:"masked_share_24h"`
 	BytesMonth      int64              `json:"bytes_month"`
+	Bytes24h        int64              `json:"bytes_24h"`
 	Connection      speedConnection    `json:"connection"`
 	NextAt          *int64             `json:"next_at"`
 	NextRow         *string            `json:"next_row"`
@@ -324,7 +335,7 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, OnDemand: t.OnDemand(),
 		Outcome: t.Outcome, Server: ref.ID, Label: ref.Label, Display: display, Provider: provider, City: city,
 		Fallback: t.Fallback, FallbackLevel: t.FallbackLevel, Attempts: t.Attempts,
-		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownShort: t.DownShort, UpShort: t.UpShort,
+		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownShort: t.DownShort, UpShort: t.UpShort, CappedByBudget: t.DownShort || t.UpShort,
 		DownSecs: t.DownSecs, UpSecs: t.UpSecs, CappedByServer: t.CappedByServer, ScoreDown: t.ScoreDown, ScoreUp: t.ScoreUp,
 		Bytes: t.Bytes, DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans,
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
@@ -565,12 +576,13 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	if !s.public {
 		month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		out.BytesMonth, _ = s.d.Speed.BytesSince(ctx, month)
+		out.Bytes24h, _ = s.d.Speed.BytesSince(ctx, now.Add(-24*time.Hour))
 	}
 	for _, sv := range st.Servers {
 		ref, display, _, _ := names.server(sv.ID)
 		j := speedServerJSON{ID: ref.ID, Label: ref.Label, Display: display, Provider: sv.Provider, City: sv.City, Country: sv.Country,
 			Geo: sv.Geo, Area: profile.GeoTitles[sv.Geo], Metro: sv.Metro, RTTms: roundP(sv.RTTms, 10), Picked: sv.Picked, Custom: sv.Custom,
-			Single: sv.SinglePort()}
+			Single: sv.SinglePort(), Skipped: sv.Skipped, SkipLocked: sv.SkipLocked, RestUntil: ms(sv.RestUntil)}
 		if reg := names.inReg[sv.ID]; reg != "" {
 			j.Region = &reg
 		}
@@ -817,6 +829,7 @@ func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz time.Duration) 
 	if row.Stats.LatestAt != nil {
 		row.LatestAt = ms(*row.Stats.LatestAt)
 	}
+	row.Learning = row.N > 0 && row.Score == nil
 	return row
 }
 
@@ -1076,11 +1089,12 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		Mode   *string  `json:"mode"`
 		Extra  []string `json:"extra"`  // opt-in (regions) or far (nearby) regions
 		Public *bool    `json:"public"` // the share link may queue tests
+		Skip   []string `json:"skip"`   // servers never to test (replaces the list)
 	}
-	d := json.NewDecoder(io.LimitReader(r.Body, 1<<10))
+	d := json.NewDecoder(io.LimitReader(r.Body, 4<<10))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Public == nil) || (body.Mode == nil && body.Extra != nil) {
-		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]} and/or {"public": true or false}`)
+	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Public == nil && body.Skip == nil) || (body.Mode == nil && body.Extra != nil) {
+		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]}, {"public": true or false} and/or {"skip": [server ids]}`)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
@@ -1100,6 +1114,21 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		if !next.IsZero() {
 			out["next_at"] = next.UnixMilli()
 		}
+	}
+	if body.Skip != nil {
+		ids := make([]string, len(body.Skip))
+		names := newSpeedNames(h.d.Speed.State(), h.d.Speed.Catalog(), false)
+		for i, id := range body.Skip {
+			ids[i] = names.resolve(id)
+		}
+		if err := h.d.Speed.SetSkip(ctx, ids); errors.Is(err, speedtest.ErrMode) {
+			writeErr(w, r, http.StatusBadRequest, err.Error())
+			return
+		} else if err != nil {
+			h.storeErr(w, r, "save the speed test setting", err)
+			return
+		}
+		out["skip"] = body.Skip
 	}
 	if body.Public != nil {
 		if err := h.d.Speed.Queue().SetPublic(ctx, *body.Public); err != nil {
