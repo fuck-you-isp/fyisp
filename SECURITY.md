@@ -31,16 +31,19 @@ reports and logs for it). Socket errors are stored only as a reason code,
 never as text that could contain an address. `--no-udp` turns STUN off.
 
 Speed tests are off unless you switch them on (`--speedtest` or the Details
-choice). Then fyisp sends iperf3 traffic to public iperf3 servers in its
-catalog (Leaseweb, OVH, Clouvider, Scaleway and others; the README lists them)
-and to servers you name with `--speedtest-server`, and to no one else. Those
-servers see your public IP address. "Test now", sweeps, cancelling and the
+choice). Then fyisp sends iperf3 traffic over IPv4 to public iperf3 servers in
+its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
+Scaleway and others; the README lists them) and to servers you name with
+`--speedtest-server`, and to no one else. The catalog is built into the
+binary and never fetched. Those servers see your public IP address. Each test
+moves at most 200 MB. Once a day per server, fyisp traceroutes the path to
+it to name the first network past your ISP (shown locally only). "Test now", sweeps, cancelling and the
 mode choice are write actions behind the same protections as notes (same
 origin, CSRF token, admin token). Only if the owner turns it on
 (`--speedtest-public` or the Details toggle; off by default), people with
 the share link may queue a test or a sweep of every server (`POST
 /s/<secret>/api/speed/run`), but never change the mode or cancel anything.
-Their tests may transfer at most `--speedtest-public-budget` (default 50 GB)
+Their tests may transfer at most `--speedtest-public-budget` (default 10 GB)
 per rolling 24 hours, counted from every byte on the wire (all attempts,
 ramp-up included) and kept across restarts. Because probes are masked
 during a test, the share link's tests may also keep the line under test at

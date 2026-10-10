@@ -1,14 +1,15 @@
-# HELP fyisp_speed_download_bits_per_second Download speed of the latest speed test against this server that measured it (iperf3, 8 streams, the first second left out, 3 to 8 s measured). region is the catalog region the test was for (empty outside mode regions).
+# HELP fyisp_speed_download_bits_per_second Download speed of the latest speed test against this server that measured it (iperf3 over IPv4, 8 streams, the ramp-up of up to 1 s left out, 3 to 8 s measured). region is the catalog region the test was for (empty outside mode regions).
 # TYPE fyisp_speed_download_bits_per_second gauge
 fyisp_speed_download_bits_per_second{region="",server="Leaseweb-Tokyo"} 1.2e+08
 fyisp_speed_download_bits_per_second{region="eu-central",server="Eranium-Amsterdam"} 3.9e+08
 fyisp_speed_download_bits_per_second{region="uk",server="Clouvider-London"} 4.12e+08
-# HELP fyisp_speed_loaded_rtt_seconds Latency under load of the latest speed test against this server: the median RTT to the gateway or the call path in the 2 minutes before the test (load="idle") and during it (load="loaded").
+# HELP fyisp_speed_loaded_rtt_seconds Latency under load of the latest speed test against this server: the median RTT to the ISP edge (layer="edge", behind the line's queue) or the gateway (layer="gateway", the home network) in the 2 minutes before the test (load="idle") and during its download and upload (load="download", "upload"). Lost probes count as 1 s.
 # TYPE fyisp_speed_loaded_rtt_seconds gauge
-fyisp_speed_loaded_rtt_seconds{layer="call",load="idle",region="uk",server="Clouvider-London"} 0.014
-fyisp_speed_loaded_rtt_seconds{layer="call",load="loaded",region="uk",server="Clouvider-London"} 0.061
+fyisp_speed_loaded_rtt_seconds{layer="edge",load="download",region="uk",server="Clouvider-London"} 0.024
+fyisp_speed_loaded_rtt_seconds{layer="edge",load="idle",region="uk",server="Clouvider-London"} 0.0082
+fyisp_speed_loaded_rtt_seconds{layer="edge",load="upload",region="uk",server="Clouvider-London"} 0.14
+fyisp_speed_loaded_rtt_seconds{layer="gateway",load="download",region="uk",server="Clouvider-London"} 0.0014
 fyisp_speed_loaded_rtt_seconds{layer="gateway",load="idle",region="uk",server="Clouvider-London"} 0.0012
-fyisp_speed_loaded_rtt_seconds{layer="gateway",load="loaded",region="uk",server="Clouvider-London"} 0.0095
 # HELP fyisp_speed_tests_total Speed tests since start by server and outcome (ok, busy: the server was running another test, unreachable, failed).
 # TYPE fyisp_speed_tests_total counter
 fyisp_speed_tests_total{outcome="busy",region="uk",server="Clouvider-London"} 1

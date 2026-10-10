@@ -4,5 +4,5 @@ package speedtest
 
 import "net"
 
-// totalRetrans is unknown outside Linux (no portable TCP_INFO).
-func totalRetrans(net.Conn) int64 { return -1 }
+// tcpInfo is unknown outside Linux (no portable TCP_INFO).
+func tcpInfo(net.Conn) (retrans, acked int64) { return -1, -1 }

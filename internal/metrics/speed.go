@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math"
 	"sync"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -9,13 +10,13 @@ import (
 
 var (
 	speedDownDesc = prometheus.NewDesc("fyisp_speed_download_bits_per_second",
-		"Download speed of the latest speed test against this server that measured it (iperf3, 8 streams, the first second left out, 3 to 8 s measured). region is the catalog region the test was for (empty outside mode regions).",
+		"Download speed of the latest speed test against this server that measured it (iperf3 over IPv4, 8 streams, the ramp-up of up to 1 s left out, 3 to 8 s measured). region is the catalog region the test was for (empty outside mode regions).",
 		[]string{"region", "server"}, nil)
 	speedUpDesc = prometheus.NewDesc("fyisp_speed_upload_bits_per_second",
 		"Upload speed of the latest speed test against this server that measured it.",
 		[]string{"region", "server"}, nil)
 	speedRTTDesc = prometheus.NewDesc("fyisp_speed_loaded_rtt_seconds",
-		"Latency under load of the latest speed test against this server: the median RTT to the gateway or the call path in the 2 minutes before the test (load=\"idle\") and during it (load=\"loaded\").",
+		"Latency under load of the latest speed test against this server: the median RTT to the ISP edge (layer=\"edge\", behind the line's queue) or the gateway (layer=\"gateway\", the home network) in the 2 minutes before the test (load=\"idle\") and during its download and upload (load=\"download\", \"upload\"). Lost probes count as 1 s.",
 		[]string{"region", "server", "layer", "load"}, nil)
 	speedTestsDesc = prometheus.NewDesc("fyisp_speed_tests_total",
 		"Speed tests since start by server and outcome (ok, busy: the server was running another test, unreachable, failed).",
@@ -52,15 +53,13 @@ func (s *Speed) Observe(t model.SpeedTest) {
 	if t.UpBps != nil {
 		s.up[k] = *t.UpBps
 	}
-	for _, x := range []struct {
-		layer, load string
-		ms          *float64
-	}{
-		{"gateway", "idle", t.IdleGatewayMs}, {"gateway", "loaded", t.LoadedGatewayMs},
-		{"call", "idle", t.IdleCallMs}, {"call", "loaded", t.LoadedCallMs},
-	} {
-		if x.ms != nil {
-			s.rtt[[4]string{t.Region, t.Server, x.layer, x.load}] = *x.ms / 1000
+	if l := t.Latency; l != nil {
+		for layer, ph := range map[string]model.LoadPhases{"edge": l.Edge, "gateway": l.Gateway} {
+			for load, x := range map[string]*model.LoadStats{"idle": ph.Idle, "download": ph.Down, "upload": ph.Up} {
+				if x != nil {
+					s.rtt[[4]string{t.Region, t.Server, layer, load}] = math.Round(x.P50Ms*10) / 1e4 // ms to s, 0.1 ms
+				}
+			}
 		}
 	}
 }

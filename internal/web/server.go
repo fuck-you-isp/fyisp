@@ -199,6 +199,7 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		pj.Features.Notes = s.d.Annotations != nil
 		pj.Features.Reports = s.d.Reports != nil && !s.public
 		pj.Features.Baselines = s.d.Baselines != nil
+		pj.Features.Speed = s.d.Speed != nil
 		if s.d.Trace != nil {
 			pj.Features.Trace = true
 			tr := s.traced()

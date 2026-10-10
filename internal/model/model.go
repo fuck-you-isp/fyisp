@@ -363,7 +363,7 @@ type SpeedTest struct {
 	ID      int64     `json:"id"`
 	Start   time.Time `json:"start"`
 	End     time.Time `json:"end"`
-	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now) or "sweep"
+	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now), "sweep", or from the share link "public" or "public_sweep"
 	Outcome string    `json:"outcome"`
 	// Region is the catalog region the test was for ("" outside mode
 	// regions); Server the server actually used: a catalog ID, or host:port
@@ -378,15 +378,103 @@ type SpeedTest struct {
 	// Retransmits of the sending side, nil when unknown.
 	DownRetrans *int64 `json:"down_retrans"`
 	UpRetrans   *int64 `json:"up_retrans"`
-	// Latency under load: median RTT to the gateway and the call path in
-	// the 2 minutes before the test (idle) and during it (loaded).
+	// Median RTT to the gateway in the 2 minutes before the test (idle) and
+	// the worse of its download and upload medians (loaded): Latency.Gateway
+	// in short, kept for the v0.7 API.
 	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
 	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
-	IdleCallMs      *float64 `json:"idle_call_ms"`
-	LoadedCallMs    *float64 `json:"loaded_call_ms"`
+	// Latency under load at the ISP edge (the WAN queue) and the gateway
+	// (the home network): nil when neither was probed.
+	Latency *SpeedLatency `json:"latency"`
+	// Conn is the connection type of the interface the test ran on:
+	// ConnWired, ConnWiFi or ConnUnknown.
+	Conn string `json:"conn"`
+	// Handoff is the first network outside the user's ISP on the path to
+	// the server; nil when unknown.
+	Handoff *Handoff `json:"handoff"`
+	// FallbackLevel is "none", "same_metro" or "nearby_city".
+	FallbackLevel string `json:"fallback_level"`
+	// CappedByServer: a direction measured within 10% of the server's
+	// published link capacity (the server, not the line, set the limit).
+	CappedByServer bool `json:"capped_by_server"`
+	// DownShort/UpShort: the direction hit the per-test byte cap, so its
+	// measured time (DownSecs/UpSecs) may be short.
+	DownShort bool    `json:"down_short"`
+	UpShort   bool    `json:"up_short"`
+	DownSecs  float64 `json:"down_s"`
+	UpSecs    float64 `json:"up_s"`
+	Bytes     int64   `json:"bytes"` // data used, both directions
+	// ScoreDown/ScoreUp: the result relative to the server's baseline (the
+	// p90 of its first-choice scheduled tests over 14 days); nil while the
+	// server has fewer than 20 such tests.
+	ScoreDown *float64 `json:"score_down"`
+	ScoreUp   *float64 `json:"score_up"`
+	// Extra holds further measurements as JSON (the ramp-ups): see
+	// speedtest.Extra.
+	Extra string `json:"extra,omitempty"`
+}
+
+// Connection types (SpeedTest.Conn).
+const (
+	ConnWired   = "wired"
+	ConnWiFi    = "wifi"
+	ConnUnknown = "unknown"
+)
+
+// SpeedLatency is the latency under load of a speed test, per layer.
+type SpeedLatency struct {
+	Edge    LoadPhases `json:"edge"`
+	Gateway LoadPhases `json:"gateway"`
+}
+
+// LoadPhases is one layer's RTT in the 2 minutes before the test (Idle) and
+// during its download and upload; nil with fewer than 3 probes.
+type LoadPhases struct {
+	Idle *LoadStats `json:"idle"`
+	Down *LoadStats `json:"down"`
+	Up   *LoadStats `json:"up"`
+}
+
+// LoadStats summarises the ICMP probes of one layer over one phase. A lost
+// probe counts as loss and, in the percentiles, as an RTT of the probe's
+// timeout: it is never dropped (under heavy bufferbloat most probes time
+// out, and the survivors alone would understate it).
+type LoadStats struct {
+	N     int     `json:"n"`    // probes
+	Lost  int     `json:"lost"` // of N
+	Loss  float64 `json:"loss"` // Lost/N
+	P50Ms float64 `json:"p50_ms"`
+	P95Ms float64 `json:"p95_ms"`
+}
+
+// Handoff is where the path to a speed test server leaves the user's ISP:
+// the first traceroute hop whose ASN is not the ISP's.
+type Handoff struct {
+	ASN    uint32    `json:"asn"`
+	Name   string    `json:"name"`
+	ISPASN uint32    `json:"isp_asn"`
+	At     time.Time `json:"at"` // when the traceroute ran
 }
 
 // OnDemand reports a test someone asked for (Test now, a sweep) rather than
 // a schedule slot: patterns leave these out (they cluster at the hours
 // people look, and sweeps hit every server at once).
-func (t SpeedTest) OnDemand() bool { return t.Trigger == "manual" || t.Trigger == "sweep" }
+func (t SpeedTest) OnDemand() bool {
+	switch t.Trigger {
+	case "manual", "sweep", "public", "public_sweep":
+		return true
+	}
+	return false
+}
+
+// Origin is who asked for the test: "scheduled", "owner" or "public" (the
+// share link).
+func (t SpeedTest) Origin() string {
+	switch t.Trigger {
+	case "manual", "sweep":
+		return "owner"
+	case "public", "public_sweep":
+		return "public"
+	}
+	return "scheduled"
+}

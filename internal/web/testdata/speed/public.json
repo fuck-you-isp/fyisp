@@ -1,44 +1,255 @@
 {
  "at": 1791655200000,
+ "bytes_month": 0,
  "configurable": false,
+ "connection": {
+  "source": "detected",
+  "type": "wired"
+ },
+ "coverage": [
+  {
+   "hour": 0,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 1,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 2,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 3,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 4,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 5,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 6,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 7,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 8,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 9,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 10,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 11,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 12,
+   "n": 1,
+   "providers": 1
+  },
+  {
+   "hour": 13,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 14,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 15,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 16,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 17,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 18,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 19,
+   "n": 4,
+   "providers": 2
+  },
+  {
+   "hour": 20,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 21,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 22,
+   "n": 2,
+   "providers": 2
+  },
+  {
+   "hour": 23,
+   "n": 4,
+   "providers": 2
+  }
+ ],
  "days": 7,
+ "edge_hours": null,
  "enabled": true,
  "exclude_fallback": false,
- "interval_s": 900,
+ "extra": [],
+ "finding": {
+  "case": "isp",
+  "days": 31,
+  "drop": 0.4,
+  "evidence": "Based on 279 tests over 31 days; each evening hour was tested at least 11 times across 2 providers.",
+  "hours": [
+   21,
+   22,
+   23,
+   0
+  ],
+  "providers": [
+   "Clouvider",
+   "Leaseweb"
+  ],
+  "regions": [
+   "uk",
+   "us-east"
+  ],
+  "servers": [],
+  "tests": 279,
+  "text": "Every region slows from about 9 pm to 1 am, with Clouvider and Leaseweb: about 40% below normal. That points to the internet provider's own network.",
+  "text_public": "Every region slows from about 9 pm to 1 am, with Clouvider and Leaseweb: about 40% below normal. That points to the internet provider's own network.",
+  "tier": "points_to",
+  "up": false
+ },
+ "interval_s": 3600,
  "latest": {
-  "attempts": 2,
+  "attempts": 1,
+  "bytes": 146800640,
+  "capped_by_server": false,
+  "city": "New York",
+  "conn": "wired",
+  "display": "US East · Leaseweb, New York",
   "down_bps": 141000000,
   "down_retrans": 8,
-  "end": 1791637668000,
+  "down_s": 4,
+  "down_short": false,
+  "end": 1791639018000,
   "fallback": false,
-  "id": 288,
-  "idle_call_ms": 14.2,
+  "fallback_level": "none",
+  "id": 302,
   "idle_gateway_ms": 1.1,
   "label": "Leaseweb New York",
-  "loaded_call_ms": 61,
-  "loaded_gateway_ms": 9.8,
+  "latency": {
+   "edge": {
+    "down": {
+     "loss": 0.033,
+     "lost": 1,
+     "n": 30,
+     "p50_ms": 21,
+     "p95_ms": 34
+    },
+    "idle": {
+     "loss": 0,
+     "lost": 0,
+     "n": 40,
+     "p50_ms": 8.2,
+     "p95_ms": 9.9
+    },
+    "up": {
+     "loss": 0,
+     "lost": 0,
+     "n": 25,
+     "p50_ms": 48,
+     "p95_ms": 90
+    }
+   },
+   "gateway": {
+    "down": {
+     "loss": 0,
+     "lost": 0,
+     "n": 30,
+     "p50_ms": 1.4,
+     "p95_ms": 2
+    },
+    "idle": {
+     "loss": 0,
+     "lost": 0,
+     "n": 40,
+     "p50_ms": 1.1,
+     "p95_ms": 1.9
+    },
+    "up": {
+     "loss": 0,
+     "lost": 0,
+     "n": 25,
+     "p50_ms": 1.5,
+     "p95_ms": 2.2
+    }
+   }
+  },
+  "loaded_gateway_ms": 1.5,
   "on_demand": false,
   "outcome": "ok",
+  "provider": "Leaseweb",
   "region": "us-east",
+  "score": 0.94,
   "server": "Leaseweb-NewYork",
-  "start": 1791637650000,
+  "start": 1791639000000,
   "trigger": "schedule",
   "up_bps": 14100000,
-  "up_retrans": null
+  "up_retrans": null,
+  "up_s": 3.2,
+  "up_score": 0.94,
+  "up_short": false
  },
- "masked_share_24h": 0.071,
+ "masked_share_24h": 0.002,
  "mode": "regions",
  "modes": [
   "off",
   "regions",
-  "nearest",
+  "nearby",
   "custom"
  ],
- "next": {
-  "region": "uk",
-  "server": "Clouvider-London"
- },
- "next_at": 1791655620000,
+ "next_at": 1791657007000,
+ "next_row": "uk",
  "pattern": {
   "drop": 0.4,
   "hours": [
@@ -48,1028 +259,3104 @@
    0
   ],
   "level": "info",
-  "text": "Evenings are slower: about 40% below your daytime speed."
+  "text": "Evenings are slower: about 40% below the daytime speed.",
+  "up": false
  },
  "per_region": [
   {
    "best_down_bps": 424000000,
    "busy": 1,
+   "capped_by_server": 0,
    "dip": null,
    "down_median_bps": 388000000,
    "down_p10_bps": 255120000,
    "failed": 0,
    "fallback": 3,
-   "fallback_note": "UK mostly used a fallback server in the last 24 hours: its first choice was busy or not answering.",
+   "fallback_share": 0.09,
    "fallback_share_24h": 0.75,
    "hours": [
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 0,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 1,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 2,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 3,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 4,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 5,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 6,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 7,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 8,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 9,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 10,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 11,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 12,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 13,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 14,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 15,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 16,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 17,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 18,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 19,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 20,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 21,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 22,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 23,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     }
    ],
    "id": "uk",
+   "kind": "region",
    "label": "UK",
    "latest_at": 1791637200000,
    "n": 32,
+   "note": "UK has run on its fallback servers most of the last 24 hours: its first choice was busy or not answering.",
+   "scheduled": true,
+   "score_median": 0.97,
+   "server_now": "Leaseweb-London",
+   "servers": [
+    "Clouvider-London",
+    "Leaseweb-London"
+   ],
    "unreachable": 0,
+   "up_dip": null,
    "up_median_bps": 38800000,
    "up_p10_bps": 25512000
   },
   {
    "best_down_bps": 162600000,
    "busy": 0,
+   "capped_by_server": 0,
    "dip": null,
    "down_median_bps": 145500000,
    "down_p10_bps": 90000000,
    "failed": 0,
    "fallback": 0,
+   "fallback_share": 0,
    "fallback_share_24h": 0,
    "hours": [
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 0,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 1,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 2,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 3,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 4,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 5,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 6,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 7,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 8,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 9,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 10,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 11,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 12,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 13,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 14,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 15,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 16,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 17,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 18,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 19,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 20,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 21,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 22,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 23,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     }
    ],
    "id": "us-east",
+   "kind": "region",
    "label": "US East",
-   "latest_at": 1791637650000,
+   "latest_at": 1791639000000,
    "n": 33,
+   "note": null,
+   "scheduled": true,
+   "score_median": 0.97,
+   "server_now": "Leaseweb-NewYork",
+   "servers": [
+    "Leaseweb-NewYork",
+    "Clouvider-NewYork",
+    "Leaseweb-Washington"
+   ],
    "unreachable": 0,
+   "up_dip": null,
    "up_median_bps": 14550000,
    "up_p10_bps": 9000000
   }
  ],
  "per_server": [
   {
-   "best_down_bps": 426400000,
+   "best_down_bps": 412000000,
    "busy": 1,
+   "capped_by_server": 0,
    "dip": null,
-   "down_median_bps": 388000000,
-   "down_p10_bps": 260160000,
+   "down_median_bps": 376000000,
+   "down_p10_bps": 255840000,
    "failed": 0,
    "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": null,
    "hours": [
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 0,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 1,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 2,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 3,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 4,
-     "n": 2,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 5,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 6,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 7,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 8,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 9,
-     "n": 2,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 10,
-     "n": 2,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 11,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 12,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 13,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 14,
-     "n": 2,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 15,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 16,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 17,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 18,
-     "n": 1,
-     "up_median_bps": null
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 19,
-     "n": 2,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 20,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 21,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 22,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 23,
-     "n": 2,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     }
    ],
    "id": "Clouvider-London",
+   "kind": "server",
    "label": "Clouvider London",
-   "latest_at": 1791619200000,
-   "n": 29,
+   "latest_at": 1791547200000,
+   "n": 13,
+   "note": null,
+   "scheduled": false,
+   "score_median": 0.94,
+   "server_now": "Clouvider-London",
+   "servers": [
+    "Clouvider-London"
+   ],
    "unreachable": 0,
-   "up_median_bps": 38800000,
-   "up_p10_bps": 26016000
+   "up_dip": null,
+   "up_median_bps": 37600000,
+   "up_p10_bps": 25584000
   },
   {
-   "best_down_bps": 392800000,
+   "best_down_bps": 163500000,
    "busy": 0,
+   "capped_by_server": 0,
    "dip": null,
-   "down_median_bps": 364000000,
-   "down_p10_bps": 253280000,
+   "down_median_bps": 147750000,
+   "down_p10_bps": 113250000,
    "failed": 0,
-   "fallback": 3,
+   "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": null,
    "hours": [
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 0,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 1,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 2,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 3,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 4,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 5,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 6,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 7,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 8,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 9,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 10,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 11,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 12,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 13,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 14,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 15,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 16,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 17,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 18,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 19,
-     "n": 0,
-     "up_median_bps": null
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 20,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 21,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 22,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 23,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    }
+   ],
+   "id": "Clouvider-NewYork",
+   "kind": "server",
+   "label": "Clouvider New York",
+   "latest_at": 1791621000000,
+   "n": 16,
+   "note": null,
+   "scheduled": false,
+   "score_median": 0.985,
+   "server_now": "Clouvider-NewYork",
+   "servers": [
+    "Clouvider-NewYork"
+   ],
+   "unreachable": 0,
+   "up_dip": null,
+   "up_median_bps": 14775000,
+   "up_p10_bps": 11325000
+  },
+  {
+   "best_down_bps": 426400000,
+   "busy": 0,
+   "capped_by_server": 0,
+   "dip": null,
+   "down_median_bps": 400000000,
+   "down_p10_bps": 255840000,
+   "failed": 0,
+   "fallback": 3,
+   "fallback_share": 0.16,
+   "fallback_share_24h": null,
+   "hours": [
+    {
+     "down_median_bps": null,
+     "hour": 0,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 1,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 2,
      "n": 0,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 3,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 4,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 5,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 6,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 7,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 8,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 9,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 10,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 11,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 12,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 13,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 14,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 15,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 16,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 17,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 18,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 19,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 20,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 21,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 22,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 23,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     }
    ],
    "id": "Leaseweb-London",
+   "kind": "server",
    "label": "Leaseweb London",
    "latest_at": 1791637200000,
-   "n": 3,
+   "n": 19,
+   "note": null,
+   "scheduled": false,
+   "score_median": 1,
+   "server_now": "Leaseweb-London",
+   "servers": [
+    "Leaseweb-London"
+   ],
    "unreachable": 0,
-   "up_median_bps": 36400000,
-   "up_p10_bps": 25328000
+   "up_dip": null,
+   "up_median_bps": 40000000,
+   "up_p10_bps": 25584000
   },
+  {
+   "best_down_bps": 159000000,
+   "busy": 0,
+   "capped_by_server": 0,
+   "dip": null,
+   "down_median_bps": 145500000,
+   "down_p10_bps": 88920000,
+   "failed": 0,
+   "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": null,
+   "hours": [
+    {
+     "down_median_bps": null,
+     "hour": 0,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 1,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 2,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 3,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 4,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 5,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 6,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 7,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 8,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 9,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 10,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 11,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 12,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 13,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 14,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 15,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 16,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 17,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 18,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 19,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 20,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 21,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 22,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 23,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    }
+   ],
+   "id": "Leaseweb-NewYork",
+   "kind": "server",
+   "label": "Leaseweb New York",
+   "latest_at": 1791639000000,
+   "n": 17,
+   "note": null,
+   "scheduled": false,
+   "score_median": 0.97,
+   "server_now": "Leaseweb-NewYork",
+   "servers": [
+    "Leaseweb-NewYork"
+   ],
+   "unreachable": 0,
+   "up_dip": null,
+   "up_median_bps": 14550000,
+   "up_p10_bps": 8892000
+  }
+ ],
+ "planned_share": 0.008,
+ "plans": [
+  {
+   "est_gb_month": 211.4,
+   "mode": "regions",
+   "share": 0.008,
+   "tests_per_hour": 2
+  },
+  {
+   "est_gb_month": 1691.1,
+   "mode": "nearby",
+   "share": 0.067,
+   "tests_per_hour": 16
+  },
+  {
+   "est_gb_month": 422.8,
+   "mode": "custom",
+   "share": 0.017,
+   "tests_per_hour": 4
+  }
+ ],
+ "regions": [
+  {
+   "default": true,
+   "id": "uk",
+   "nearby": [],
+   "providers": [
+    "Clouvider",
+    "Leaseweb"
+   ],
+   "servers": [
+    "Clouvider-London",
+    "Leaseweb-London"
+   ],
+   "title": "UK"
+  },
+  {
+   "default": true,
+   "id": "us-east",
+   "nearby": [
+    "Leaseweb-Washington"
+   ],
+   "providers": [
+    "Leaseweb",
+    "Clouvider"
+   ],
+   "servers": [
+    "Leaseweb-NewYork",
+    "Clouvider-NewYork"
+   ],
+   "title": "US East"
+  },
+  {
+   "default": false,
+   "id": "us-mid-atlantic",
+   "nearby": [],
+   "providers": [
+    "Leaseweb"
+   ],
+   "servers": [
+    "Leaseweb-Washington"
+   ],
+   "title": "US Mid-Atlantic"
+  }
+ ],
+ "rows": [
   {
    "best_down_bps": 162600000,
    "busy": 0,
+   "capped_by_server": 0,
    "dip": null,
    "down_median_bps": 145500000,
    "down_p10_bps": 90000000,
    "failed": 0,
    "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": 0,
    "hours": [
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 0,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 1,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 2,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 3,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 4,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 5,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 6,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 7,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 8,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 9,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 10,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 11,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 12,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 13,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 14,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 15,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 16,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 17,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 18,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 19,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 20,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 21,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 22,
      "n": 1,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     },
     {
      "down_median_bps": null,
-     "down_norm": null,
      "hour": 23,
      "n": 2,
-     "up_median_bps": null
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-NewYork": 1,
+      "Leaseweb-NewYork": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
     }
    ],
-   "id": "Leaseweb-NewYork",
-   "label": "Leaseweb New York",
-   "latest_at": 1791637650000,
+   "id": "us-east",
+   "kind": "region",
+   "label": "US East",
+   "latest_at": 1791639000000,
    "n": 33,
+   "note": null,
+   "scheduled": true,
+   "score_median": 0.97,
+   "server_now": "Leaseweb-NewYork",
+   "servers": [
+    "Leaseweb-NewYork",
+    "Clouvider-NewYork",
+    "Leaseweb-Washington"
+   ],
    "unreachable": 0,
+   "up_dip": null,
    "up_median_bps": 14550000,
    "up_p10_bps": 9000000
-  }
- ],
- "planned_share": 0.033,
- "regions": [
+  },
   {
-   "chain": [
+   "best_down_bps": 424000000,
+   "busy": 1,
+   "capped_by_server": 0,
+   "dip": null,
+   "down_median_bps": 388000000,
+   "down_p10_bps": 255120000,
+   "failed": 0,
+   "fallback": 3,
+   "fallback_share": 0.09,
+   "fallback_share_24h": 0.75,
+   "hours": [
+    {
+     "down_median_bps": null,
+     "hour": 0,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 1,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 2,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 3,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 4,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 5,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 6,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 7,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 8,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 9,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 10,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 11,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 12,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 13,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 14,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 15,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 1,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 2
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 16,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 17,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 18,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 19,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 20,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 21,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 22,
+     "n": 1,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 23,
+     "n": 2,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {
+      "Clouvider-London": 1,
+      "Leaseweb-London": 1
+     },
+     "up_median_bps": null,
+     "up_score_median": null
+    }
+   ],
+   "id": "uk",
+   "kind": "region",
+   "label": "UK",
+   "latest_at": 1791637200000,
+   "n": 32,
+   "note": "UK has run on its fallback servers most of the last 24 hours: its first choice was busy or not answering.",
+   "scheduled": true,
+   "score_median": 0.97,
+   "server_now": "Leaseweb-London",
+   "servers": [
     "Clouvider-London",
     "Leaseweb-London"
    ],
-   "id": "uk",
-   "title": "UK"
-  },
-  {
-   "chain": [
-    "Leaseweb-NewYork",
-    "Clouvider-NewYork"
-   ],
-   "id": "us-east",
-   "title": "US East"
+   "unreachable": 0,
+   "up_dip": null,
+   "up_median_bps": 38800000,
+   "up_p10_bps": 25512000
   }
  ],
  "running": null,
  "servers": [
   {
+   "area": "Europe",
+   "capacity_mbps": 10000,
    "city": "London",
    "country": "GB",
    "custom": false,
+   "display": "UK · Clouvider, London",
    "geo": "eu",
    "id": "Clouvider-London",
    "label": "Clouvider London",
-   "picked": true,
+   "metro": "london",
+   "picked": false,
    "provider": "Clouvider",
-   "region": "Europe",
-   "rtt_ms": 12.4
+   "region": "uk",
+   "rtt_ms": null,
+   "single_port": false
   },
   {
-   "city": "London",
-   "country": "GB",
-   "custom": false,
-   "geo": "eu",
-   "id": "Leaseweb-London",
-   "label": "Leaseweb London",
-   "picked": false,
-   "provider": "Leaseweb",
-   "region": "Europe",
-   "rtt_ms": null
-  },
-  {
+   "area": "North America",
+   "capacity_mbps": null,
    "city": "New York",
    "country": "US",
    "custom": false,
-   "geo": "na",
-   "id": "Leaseweb-NewYork",
-   "label": "Leaseweb New York",
-   "picked": false,
-   "provider": "Leaseweb",
-   "region": "North America",
-   "rtt_ms": null
-  },
-  {
-   "city": "New York",
-   "country": "US",
-   "custom": false,
+   "display": "US East · Clouvider, New York",
    "geo": "na",
    "id": "Clouvider-NewYork",
    "label": "Clouvider New York",
+   "metro": "new-york",
    "picked": false,
    "provider": "Clouvider",
-   "region": "North America",
-   "rtt_ms": null
+   "region": "us-east",
+   "rtt_ms": null,
+   "single_port": false
   },
   {
+   "area": "Europe",
+   "capacity_mbps": null,
+   "city": "London",
+   "country": "GB",
+   "custom": false,
+   "display": "UK · Leaseweb, London",
+   "geo": "eu",
+   "id": "Leaseweb-London",
+   "label": "Leaseweb London",
+   "metro": "london",
+   "picked": false,
+   "provider": "Leaseweb",
+   "region": "uk",
+   "rtt_ms": null,
+   "single_port": false
+  },
+  {
+   "area": "North America",
+   "capacity_mbps": null,
+   "city": "New York",
+   "country": "US",
+   "custom": false,
+   "display": "US East · Leaseweb, New York",
+   "geo": "na",
+   "id": "Leaseweb-NewYork",
+   "label": "Leaseweb New York",
+   "metro": "new-york",
+   "picked": false,
+   "provider": "Leaseweb",
+   "region": "us-east",
+   "rtt_ms": null,
+   "single_port": false
+  },
+  {
+   "area": "North America",
+   "capacity_mbps": null,
+   "city": "Washington",
+   "country": "US",
+   "custom": false,
+   "display": "US East · Leaseweb, Washington",
+   "geo": "na",
+   "id": "Leaseweb-Washington",
+   "label": "Leaseweb Washington",
+   "metro": "washington",
+   "picked": false,
+   "provider": "Leaseweb",
+   "region": "us-east",
+   "rtt_ms": null,
+   "single_port": false
+  },
+  {
+   "area": "",
+   "capacity_mbps": null,
    "city": "",
    "country": "",
    "custom": true,
+   "display": "Your server",
    "geo": "",
    "id": "custom-1",
    "label": "Your server",
+   "metro": "",
    "picked": false,
    "provider": "Your server",
-   "region": "",
-   "rtt_ms": null
+   "region": null,
+   "rtt_ms": null,
+   "single_port": true
   }
  ],
- "spacing_s": 450,
+ "set_by_flag": false,
+ "spacing_s": 1800,
  "tz": 120,
+ "under_load": {
+  "layers": [
+   {
+    "down_ms": 21,
+    "idle_ms": 8.2,
+    "layer": "edge",
+    "loss_down": 0.033,
+    "loss_up": 0,
+    "up_ms": 48
+   },
+   {
+    "down_ms": 1.4,
+    "idle_ms": 1.1,
+    "layer": "gateway",
+    "loss_down": 0,
+    "loss_up": 0,
+    "up_ms": 1.5
+   }
+  ],
+  "text": [
+   "Delay through the internet provider rises from 8 ms to 21 ms while downloading (+13 ms): barely changes.",
+   "Delay through the internet provider rises from 8 ms to 48 ms while uploading (+40 ms): noticeable on calls.",
+   "The router's delay rises from 1 to 2 ms: the home network keeps up."
+  ]
+ },
  "warning": null
 }
