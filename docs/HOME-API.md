@@ -93,7 +93,7 @@ Unknown parameters return 400, like the other routes.
 | `working` | good | Working | every target healthy |
 | `mostly` | warn | Mostly working | exactly 1 target unhealthy out of ≥ 3 |
 | `slow` | warn | Slow | ≥ 2 targets (or the only 1–2) far above their normal; only once baselines exist, otherwise they count as working |
-| `down` | bad | Not working (most get nothing through), else Unreliable | ≥ 2 targets (or every target) failing |
+| `down` | bad | Not working (most get nothing through), else Unreliable | every measured target failing, or ≥ 2 failing and at least half of them (13 of 38 is `slow`, labelled "Some aren't working" / "Some aren't answering") |
 | `checking` | checking | Checking… | fewer than 5 samples on most targets |
 
 "Unhealthy" is the Overview's rule: failing (≥ 20 % loss), lossy, very slow or slow. With a single affected target out of ≥ 3, Home says "mostly working" and doesn't raise the answer.
@@ -201,6 +201,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 **Path node `state`:**
 - `ok`, `warn` (dropping some data, or slow), `bad` (not answering, or heavy loss);
 - `unknown` (no recent checks; the ISP edge not discoverable: "Can't see your provider from here");
+- `affected` (a node past the culprit that shows the trouble but isn't to blame: neutral, "Affected");
 - `finding` (discovering).
 
 `device` is always `ok`. `apps` sums the tiles: `warn` if any tile is `warn`, and `bad` if most Home targets are failing.
@@ -350,6 +351,20 @@ Write the times from `bad_from`/`bad_to` (or `time`) yourself.
 - No note text. Home's "marked bad call" notes are not part of this API.
 
 ## Banned on Home (in either voice)
+
+**A path verdict names the place in the headline:**
+- `lan`: "There's a problem in your home network"
+- `isp`: "Your internet provider is having trouble" ("may be" when only likely)
+- `no_network`: "You're offline"
+- `upstream` and `dns`: their own headlines
+
+What it does to calls is the Calls tile's job. During such a problem, call apps that are only measured by their website show `cant_tell` ("Can't tell right now"), never Reachable or Not answering.
+
+**The `apps` path node follows the tiles:** "OK", or which tiles have trouble ("Calls, work apps and websites affected").
+
+**A block lasting `verdict.UDPQuietAfter` (6 h) or more is information:** its runs are `info` and it isn't counted in `counts` or the summary.
+
+**One minute, one figure:** live and `part=at` both use whole-minute windows and the call path's worst minute, and TestHomeGolden checks it.
 
 **The headline never repeats the cause.**
 - The headline says what the user notices: "Your internet is having trouble", "Calls will break up", "Outlook and Gmail aren't answering".

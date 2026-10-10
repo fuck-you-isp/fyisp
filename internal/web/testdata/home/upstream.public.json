@@ -207,12 +207,12 @@
       "kind": "upstream",
       "calls": "unusable",
       "since": 1791548400000,
-      "headline": "Calls will break up",
+      "headline": "Many websites and apps are hard to reach",
       "cause": "The home network and the provider's nearest equipment look fine. The problem is further out: either the provider's links to the rest of the internet, or a wider outage.",
       "try": [],
       "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
       "fact_at": 1791548700000,
-      "announce": "Calls will break up. The home network and the provider's nearest equipment look fine."
+      "announce": "Many websites and apps are hard to reach. The home network and the provider's nearest equipment look fine."
     },
     "path": [
       {
@@ -246,8 +246,8 @@
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "bad",
-        "words": "Most aren't answering",
+        "state": "affected",
+        "words": "Calls, work apps and websites affected",
         "tooltip": "The apps and websites checked from this connection."
       }
     ],
@@ -333,10 +333,10 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Calls use the same call path (Breaking up)."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "meet",
@@ -348,42 +348,42 @@
       {
         "app": "zoom",
         "title": "Zoom",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "slack",
         "title": "Slack",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "discord",
         "title": "Discord",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "webex",
         "title": "Webex",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       }
     ]
   }

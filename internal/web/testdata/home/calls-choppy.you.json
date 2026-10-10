@@ -268,8 +268,8 @@
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "warn",
-        "words": "1 app has problems",
+        "state": "bad",
+        "words": "Calls affected",
         "tooltip": "The apps and websites we check for you."
       }
     ],

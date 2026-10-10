@@ -186,7 +186,7 @@
     "voice": "public",
     "at": 1791549000000,
     "answer": {
-      "level": "bad",
+      "level": "warn",
       "who": "app",
       "kind": "service",
       "since": 1791548280000,
@@ -226,8 +226,8 @@
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "bad",
-        "words": "Most aren't answering",
+        "state": "warn",
+        "words": "Other services affected",
         "blamed": true,
         "tooltip": "The apps and websites checked from this connection."
       }
@@ -236,9 +236,9 @@
       {
         "id": "other",
         "title": "Other services",
-        "level": "bad",
-        "state": "down",
-        "label": "Many are unreliable",
+        "level": "warn",
+        "state": "slow",
+        "label": "Some aren't answering",
         "note": "13 of 38 aren't loading reliably from here.",
         "names": [],
         "ok": 25,

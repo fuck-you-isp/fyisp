@@ -206,46 +206,47 @@
       "kind": "no_network",
       "calls": "unusable",
       "since": 1791548520000,
-      "headline": "Calls will break up",
+      "headline": "The monitoring device is offline",
       "cause": "The device running this monitor has no network connection.",
       "try": [],
       "fact": "In the worst minute, almost all of the sound was lost.",
       "fact_at": 1791548700000,
-      "announce": "Calls will break up. The device running this monitor has no network connection."
+      "announce": "The monitoring device is offline. The device running this monitor has no network connection."
     },
     "path": [
       {
         "id": "device",
         "label": "Monitoring device",
         "state": "bad",
-        "words": "Offline"
+        "words": "Offline",
+        "blamed": true
       },
       {
         "id": "router",
         "label": "Home router",
-        "state": "bad",
-        "words": "Not answering",
+        "state": "affected",
+        "words": "Affected",
         "tooltip": "The router that connects the home to the internet."
       },
       {
         "id": "provider",
         "label": "Provider network",
-        "state": "bad",
-        "words": "Not answering",
+        "state": "affected",
+        "words": "Affected",
         "tooltip": "The provider's first piece of equipment past the home router."
       },
       {
         "id": "internet",
         "label": "The wider internet",
-        "state": "bad",
-        "words": "Not answering",
+        "state": "affected",
+        "words": "Affected",
         "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
       },
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "bad",
-        "words": "Most aren't answering",
+        "state": "affected",
+        "words": "Calls, work apps and websites affected",
         "tooltip": "The apps and websites checked from this connection."
       }
     ],
@@ -335,10 +336,10 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "warn",
-        "state": "not_answering",
-        "label": "Not answering",
-        "note": "Calls use the same call path (Breaking up)."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "meet",
@@ -350,42 +351,42 @@
       {
         "app": "zoom",
         "title": "Zoom",
-        "level": "warn",
-        "state": "not_answering",
-        "label": "Not answering",
-        "note": "Zoom picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "slack",
         "title": "Slack",
-        "level": "warn",
-        "state": "not_answering",
-        "label": "Not answering",
-        "note": "Slack picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "discord",
         "title": "Discord",
-        "level": "warn",
-        "state": "not_answering",
-        "label": "Not answering",
-        "note": "Discord picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
-        "level": "warn",
-        "state": "not_answering",
-        "label": "Not answering",
-        "note": "WhatsApp picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "webex",
         "title": "Webex",
-        "level": "warn",
-        "state": "not_answering",
-        "label": "Not answering",
-        "note": "Webex picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       }
     ]
   }

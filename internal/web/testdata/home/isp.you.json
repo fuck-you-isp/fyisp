@@ -229,15 +229,15 @@
       "kind": "isp",
       "calls": "unusable",
       "since": 1791548160000,
-      "headline": "Calls will break up",
-      "cause": "The problem is with your internet provider. Your Wi-Fi and router are fine.",
+      "headline": "Your internet provider is having trouble",
+      "cause": "Your Wi-Fi and router are fine. The trouble starts just past them.",
       "try": [
         "Restarting your router sometimes helps.",
         "If it keeps happening, make a report and send it to your provider."
       ],
       "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
       "fact_at": 1791548700000,
-      "announce": "Calls will break up. The problem is with your internet provider."
+      "announce": "Your internet provider is having trouble. Your Wi-Fi and router are fine."
     },
     "path": [
       {
@@ -264,15 +264,15 @@
       {
         "id": "internet",
         "label": "The internet",
-        "state": "warn",
-        "words": "Dropping some data",
+        "state": "affected",
+        "words": "Affected",
         "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
       },
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "bad",
-        "words": "Most aren't answering",
+        "state": "affected",
+        "words": "Calls, work apps and websites affected",
         "tooltip": "The apps and websites we check for you."
       }
     ],
@@ -358,10 +358,10 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Calls use your call path (Breaking up)."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "meet",
@@ -373,42 +373,42 @@
       {
         "app": "zoom",
         "title": "Zoom",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "slack",
         "title": "Slack",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "discord",
         "title": "Discord",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "webex",
         "title": "Webex",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so we can't test it ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       }
     ]
   }
