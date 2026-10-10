@@ -1916,14 +1916,8 @@ function geoOf(/** @type {TargetInfo} */ t) { return t.geo || ''; }
 /** Home's tile names, for the Overview's ot= filter (a Home tile's "See details"). */
 /** @type {Object<string,string>} */
 const HOME_TILE = { calls: 'Calls', work: 'Work apps', web: 'Websites', other: 'Other services' };
-/** A target's Home tile: the server's category (profile.HomeCategory), else its home:* tag, else calls for call targets, else other. */
-function homeCategory(/** @type {TargetInfo} */ t) {
-  if (t.home) return t.home;
-  const tags = t.tags || [];
-  const x = tags.find((g) => g.startsWith('home:'));
-  if (x) return x.slice(5);
-  return tags.some((g) => g === 'udp-path' || g.startsWith('app:')) ? 'calls' : 'other';
-}
+/** A target's Home tile, as the server assigns it (profile.HomeCategory via /api/profile). */
+function homeCategory(/** @type {TargetInfo} */ t) { return t.home || ''; }
 function locationOf(/** @type {TargetInfo} */ t) { return [t.city, t.country].filter(Boolean).join(', '); }
 function windowWords(/** @type {OvData} */ d) {
   return isRelative() ? `last ${fmtDur(Number(rangeSecs()) * 1000)}` : `${fmtWhen(d.from)} – ${fmtWhen(d.to)}`;
