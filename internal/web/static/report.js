@@ -186,7 +186,7 @@ export class Report {
     }
     const z = zone(d.tz);
     this.zoneEl.textContent = `All times are in ${z}.`;
-    this.periodEl.textContent = `${stamp(d.first_data && d.first_data > d.from + 3600e3 ? d.first_data : d.from)} to ${stamp(d.to)} (${z})`;
+    this.periodEl.textContent = `${stamp(d.from)} to ${stamp(d.to)} (${z})`;
     this.sumEl.replaceChildren(h('span', { text: d.summary }));
     if (d.known && d.known.text) this.sumEl.append(' ', h('span', { text: `${d.known.text} ${stamp(d.known.since)} (${z}).` }));
     // Provider side vs home side, as counts in words.
@@ -195,20 +195,11 @@ export class Report {
       h('li', { class: `rp-side${s[/** @type {'home'} */ (k)] ? ' some' : ''}` },
         h('span', { class: 'rp-n', text: String(s[/** @type {'home'} */ (k)] || 0) }),
         h('span', { text: l }))));
-    const t = buildTimeline(d, this.focus, (st) => this.pickBlock(st), { noKeep: true, offWord: 'Not measured (fyisp wasn’t running)' });
+    const t = buildTimeline(d, this.focus, (st) => this.pickBlock(st), { noKeep: true, offWord: 'Not measured (fyisp wasn’t running)', dates: true });
     this.stripsEl.replaceChildren(t.grid);
     this.legendEl.replaceChildren(...t.legend);
-    // How much of the period was measured: honest about gaps.
-    // Measuring began inside the period only when the first data is clearly after its start.
-    const late = !!d.first_data && d.first_data > d.from + 3600e3;
-    const start = late ? /** @type {number} */ (d.first_data) : d.from;
-    const total = d.to - start;
-    let off = 0;
-    for (const day of d.days) for (const o of day.off) off += Math.max(0, Math.min(o.to, d.to) - Math.max(o.from, start));
-    if (total > 0) {
-      const pct = Math.round((100 * (total - off)) / total);
-      this.coverEl.textContent = `Measured ${pct}% of the time since ${stamp(start)}${late ? ' (when measuring began)' : ''}.`;
-    }
+    // How much of the period was measured (the server's figure): honest about gaps.
+    if (typeof d.coverage === 'number') this.coverEl.textContent = `Measured ${Math.round(d.coverage * 100)}% of these 7 days.`;
     this.renderTable(d);
     this.renderNow(); // its times carry the zone, which comes with the history
   }

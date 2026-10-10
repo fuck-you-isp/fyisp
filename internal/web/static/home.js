@@ -20,7 +20,7 @@ import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, c
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
 /** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,side?:string,level?:string,confidence?:string,text?:string,peak_loss:number,details:string}} HomeProblem */
-/** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number}}} HomeHistory */
+/** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number},coverage?:number}} HomeHistory */
 /** @typedef {{part:string,voice:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number}} HomeAt */
 /** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
 /**
@@ -670,7 +670,7 @@ function tileHash(/** @type {HomeTile} */ t) { return t.details; }
  * @param {HomeHistory} d
  * @param {{idx:number,span:string}} focus
  * @param {(st:{kind:string,level?:string,run?:HomeRun|null}, a:number, b:number) => void} onPick
- * @param {{noKeep?:boolean,offWord?:string}} opts
+ * @param {{noKeep?:boolean,offWord?:string,dates?:boolean}} opts (dates: label rows "Wed 7 Oct", for the report read later)
  */
 export function buildTimeline(d, focus, onPick, opts) {
   const phone = window.matchMedia('(max-width: 767.98px)').matches;
@@ -702,7 +702,7 @@ export function buildTimeline(d, focus, onPick, opts) {
       strip.append(now);
     }
     rows.push(h('div', { class: 'ho-row' },
-      h('span', { class: 'ho-day', 'aria-hidden': 'true', text: d.span === 'd' ? 'Today' : name }), strip));
+      h('span', { class: 'ho-day', 'aria-hidden': 'true', text: opts.dates ? new Date(day.from + 12 * 3600e3).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) : d.span === 'd' ? 'Today' : name }), strip));
   }
   // Hour marks under the strips, each at hour/24 of the strip.
   const axis = h('div', { class: 'ho-axis' });
