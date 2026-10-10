@@ -712,17 +712,17 @@ func TestQueuePauseNotCharged(t *testing.T) {
 	var q *Queue
 	var f *fakeExec
 	q, f = newQueueHarness(t, func(o *QueueOptions) {
-		o.Pause = func(ctx context.Context, j Job, trigger string) bool {
+		o.Pause = func(ctx context.Context, j Job, trigger string) string {
 			if trigger != "public_sweep" {
 				t.Errorf("pause for %s", trigger)
 			}
 			if paused.Add(1) == 3 {
 				close(cancelAt) // the test cancels during the third pause
 				<-ctx.Done()
-				return false
+				return "ctx"
 			}
 			f.advance(time.Minute) // the gap: a minute each, never charged
-			return true
+			return ""
 		}
 	})
 	f.step.Store(int64(10 * time.Second))
@@ -741,12 +741,15 @@ func TestQueuePauseNotCharged(t *testing.T) {
 	if _, err := q.Cancel(e.ID); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateCancelled })
+	waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateCancelled && !x.Finished.IsZero() })
 	if st := q.State(); st.TimeHour != 20*time.Second {
 		t.Errorf("charged %v, want the two tests' 20s (not the pauses)", st.TimeHour)
 	}
 	if got := f.log(); len(got) != 2 {
 		t.Errorf("ran %v after a cancel in the pause", got)
+	}
+	if x, _ := q.Get(e.ID); x.Stopped != StopCancelled {
+		t.Errorf("stopped %q, want cancelled (not Pause's reason)", x.Stopped)
 	}
 }
 
@@ -763,6 +766,39 @@ func TestQueueEstimatesSweepPause(t *testing.T) {
 	}
 	if y, _ := q.Get(one.ID); !y.EstStart.Equal(x.EstFinish) || !y.EstFinish.Equal(x.EstFinish.Add(EstJob)) {
 		t.Errorf("single %v–%v after the sweep's %v", y.EstStart, y.EstFinish, x.EstFinish)
+	}
+}
+
+// TestQueueStoppedReason: a sweep that Pause stops ends done with that
+// reason and the jobs it never reached unrun; one that ran every job has no
+// reason.
+func TestQueueStoppedReason(t *testing.T) {
+	var n atomic.Int32
+	q, f := newQueueHarness(t, func(o *QueueOptions) {
+		o.Pause = func(context.Context, Job, string) string {
+			if n.Add(1) == 2 {
+				return StopUnreachable // e.g. 3 unreachable servers in a row
+			}
+			return ""
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	e, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	<-f.started
+	f.release <- struct{}{}
+	waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateDone })
+	if x, _ := q.Get(e.ID); x.Stopped != StopUnreachable || x.Ran != 1 || x.Steps != 3 {
+		t.Errorf("stopped sweep: %+v", x)
+	}
+	n.Store(-100)
+	e2, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner})
+	<-f.started
+	f.release <- struct{}{}
+	waitFor(t, func() bool { x, _ := q.Get(e2.ID); return x.State == StateDone })
+	if x, _ := q.Get(e2.ID); x.Stopped != "" {
+		t.Errorf("complete entry stopped %q", x.Stopped)
 	}
 }
 

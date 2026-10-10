@@ -97,13 +97,13 @@ func (s *Scheduler) slotJob(t target) Job {
 // the share link's time cap: the line is neither tested nor masked then).
 // A sweep's tests would blind the monitoring for minutes back to back: it
 // leaves the probes SweepGap of unmasked time after the last window's
-// tail. False: ctx ended while waiting.
+// tail. StopCancelled: ctx ended while waiting.
 //
-// A sweep also stops after SweepUnreachable unreachable servers in a row:
-// during an outage it would only mask the monitoring.
-func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) bool {
+// A sweep also stops (StopUnreachable) after SweepUnreachable unreachable
+// servers in a row: during an outage it would only mask the monitoring.
+func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) string {
 	if trigger != "sweep" && trigger != "public_sweep" {
-		return true
+		return ""
 	}
 	s.mu.Lock()
 	stop := s.sweepUnreach >= SweepUnreachable
@@ -113,14 +113,14 @@ func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) bool {
 	s.mu.Unlock()
 	if stop {
 		s.o.Log.Info("speed test: sweep stopped: the servers stopped answering")
-		return false
+		return StopUnreachable
 	}
 	if last := s.o.Windows.LastEnd(); !last.IsZero() {
-		if d := last.Add(MaskTail + SweepGap).Sub(s.o.Now()); d > 0 {
-			return s.o.sleep(ctx, d)
+		if d := last.Add(MaskTail + SweepGap).Sub(s.o.Now()); d > 0 && !s.o.sleep(ctx, d) {
+			return StopCancelled
 		}
 	}
-	return true
+	return ""
 }
 
 // execJob runs one queued test (QueueOptions.Exec): the stored test's ID,

@@ -123,7 +123,17 @@ type Entry struct {
 	// Held: a waiting share-link sweep that may not start before EstStart
 	// (the gap after the last one).
 	Held bool
+	// Stopped: why a finished entry ended before its last job (StopCancelled,
+	// StopUnreachable, StopLimit); "" when it ran them all.
+	Stopped string
 }
+
+// Why an entry stopped early (Entry.Stopped).
+const (
+	StopCancelled   = "cancelled"   // the owner (or shutdown)
+	StopUnreachable = "unreachable" // a sweep's servers stopped answering (Pause)
+	StopLimit       = "limit"       // the share link's budget or time ran out, or it was turned off
+)
 
 // Refusals.
 var (
@@ -186,8 +196,10 @@ type QueueOptions struct {
 	PublicBudget int64
 	// Pause, when set, runs before each job and may wait (e.g. to leave
 	// the probes unmasked time between a sweep's tests); that time is not
-	// charged to the share link. It returns false when ctx ended.
-	Pause func(ctx context.Context, j Job, trigger string) bool
+	// charged to the share link. A non-empty result stops the entry with
+	// that reason (e.g. StopUnreachable); when ctx ended it is "cancelled"
+	// whatever Pause returns.
+	Pause func(ctx context.Context, j Job, trigger string) (stop string)
 	// EstSweepPause is Pause's typical wait before each of a sweep's
 	// tests, for the estimates (0: none).
 	EstSweepPause time.Duration
@@ -718,8 +730,15 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		if ctx.Err() != nil {
 			break
 		}
-		if q.o.Pause != nil && !q.o.Pause(ctx, e.jobs[i], trigger(e.Kind, e.Who)) {
-			break
+		if q.o.Pause != nil {
+			if why := q.o.Pause(ctx, e.jobs[i], trigger(e.Kind, e.Who)); why != "" {
+				if ctx.Err() == nil {
+					q.mu.Lock()
+					e.Stopped = why
+					q.mu.Unlock()
+				}
+				break
+			}
 		}
 		if beforeNextJob != nil {
 			beforeNextJob(e.ID, i)
@@ -782,7 +801,10 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 			charged.Wait()
 			q.spend(bytes, true)
 			q.mu.Lock()
-			stop := q.publicLocked(q.o.Now()) != nil
+			stop := q.publicLocked(q.o.Now()) != nil && i+1 < len(e.jobs)
+			if stop {
+				e.Stopped = StopLimit
+			}
 			q.mu.Unlock()
 			if stop {
 				break // a sweep stops when the budget runs out (or the owner turned it off)
@@ -797,7 +819,7 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 	cancel := e.cancel
 	st := StateDone
 	if e.State == StateCancelled || ctx.Err() != nil {
-		st = StateCancelled
+		st, e.Stopped = StateCancelled, StopCancelled
 	}
 	q.running = nil
 	now := q.o.Now()

@@ -321,7 +321,7 @@ func TestSweepGap(t *testing.T) {
 	h.mu.Lock()
 	h.slept = nil
 	h.mu.Unlock()
-	if !h.s.pause(context.Background(), job, "manual") || !h.s.pause(context.Background(), job, "sweep") {
+	if h.s.pause(context.Background(), job, "manual") != "" || h.s.pause(context.Background(), job, "sweep") != "" {
 		t.Fatal("pause")
 	}
 	h.mu.Lock()
@@ -404,7 +404,7 @@ func TestSweepStopsWhenUnreachable(t *testing.T) {
 	}
 	waitFor(t, func() bool { x, _ := h.s.Queue().Get(e.ID); return x.State == StateDone })
 	x, _ := h.s.Queue().Get(e.ID)
-	if x.Ran != SweepUnreachable || x.Steps <= SweepUnreachable {
-		t.Errorf("ran %d of %d", x.Ran, x.Steps)
+	if x.Ran != SweepUnreachable || x.Steps <= SweepUnreachable || x.Stopped != StopUnreachable {
+		t.Errorf("ran %d of %d, stopped %q", x.Ran, x.Steps, x.Stopped)
 	}
 }
