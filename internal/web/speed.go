@@ -728,7 +728,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	out.Coverage = speedCoverage(span, tz, cat)
 	out.UnderLoad = speedUnderLoadOf(span)
 	if s.public { // the share link's wording: a visitor's line is not "yours"
-		out.Finding.Text = out.Finding.TextPublic
+		out.Finding.Text, out.Finding.Caveat = out.Finding.TextPublic, out.Finding.CaveatPublic
 		if out.Pattern != nil {
 			out.Pattern.Text = publicWording.Replace(out.Pattern.Text)
 		}

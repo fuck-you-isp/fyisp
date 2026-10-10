@@ -217,6 +217,7 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
   "text_public": "… That points to the internet provider's own network.",   // the share link's and report's wording
   "evidence": "Based on 648 tests over 9 days; each evening hour was tested at least 9 times across 3 providers.",
   "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
+  "caveat_public": "Wi-Fi, or people in the home using the internet heavily at those hours, can look the same.",   // omitempty: the share link's and report's voice (the share link's `caveat` is this already)
   "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],
   "servers": [],                  // case server: the server
   "network": "AS3356 LEVEL3",     // omitempty, local wording only: the first network past the ISP the slow tests share (handoff)

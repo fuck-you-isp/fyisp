@@ -399,8 +399,9 @@ func TestFindingNetIsp(t *testing.T) {
 	for i := range ts {
 		ts[i].Extra = `{"bridged":true}`
 	}
-	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Tier == TierPointsTo || !f.Bridged || !strings.Contains(f.Caveat, "container") {
-		t.Errorf("bridged: %s %v %q", f.Tier, f.Bridged, f.Caveat)
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Tier == TierPointsTo || !f.Bridged || !strings.Contains(f.Caveat, "container") ||
+		!strings.Contains(f.CaveatPublic, "people in the home") || !strings.Contains(f.CaveatPublic, "the home router") || strings.Contains(f.CaveatPublic, "your") {
+		t.Errorf("bridged: %s %v %q / %q", f.Tier, f.Bridged, f.Caveat, f.CaveatPublic)
 	}
 }
 
