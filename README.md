@@ -470,7 +470,8 @@ Sharing is **off by default**. Start it with *Make a report* on Home, the share 
 - **People with your link can queue a speed test** (one server, or a sweep of every server), **only if you turn this on** (`--speedtest-public` or the toggle in Details → Speed; off by default). Tests wait in one queue and run one at a time: yours first, then the scheduled ones, then the link's.
   - Each visitor can have one waiting and start one every 30 seconds (10 an hour).
   - At most 3 sweeps and 12 tests from the link wait at once.
-  - The link's tests may use at most 50 GB in any 24 hours (`--speedtest-public-budget`, e.g. `--speedtest-public-budget=10GB`); then the link says when it can test again.
+  - The link's tests may use at most 50 GB in any 24 hours (`--speedtest-public-budget`, e.g. `--speedtest-public-budget=10GB`), and keep your line busy at most 10 minutes an hour and 60 minutes a day; a full sweep from the link waits 30 minutes after the last one. Then the link says when it can test again.
+  - A sweep from the link pauses between servers whenever one of your tests or a scheduled one is waiting.
   - You can cancel or clear them in Details → Speed.
 - **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
 - The tunnel tries QUIC (UDP port 7844) first and switches to HTTP/2 over TCP port 443 after about 30 seconds if UDP is blocked. Force one with `--share-protocol quic` or `--share-protocol http2`.

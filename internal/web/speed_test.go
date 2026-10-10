@@ -664,3 +664,32 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 		t.Errorf("origin on the share link: %s", body)
 	}
 }
+
+// TestQueueRefusals: every share-link refusal's code and fields.
+func TestQueueRefusals(t *testing.T) {
+	now := speedNow
+	for _, tc := range []struct {
+		err    error
+		status int
+		want   []string
+	}{
+		{speedtest.ErrPublicDisabled, 403, []string{`"code":"disabled"`}},
+		{&speedtest.QueueFullError{Reason: "the queue is full"}, 429, []string{`"code":"queue_full"`}},
+		{&speedtest.BudgetError{ResetsAt: now.Add(time.Hour)}, 429, []string{`"code":"budget_exhausted"`, `"budget":"data"`, `"retry_after":3600`}},
+		{&speedtest.BudgetError{ResetsAt: now.Add(time.Minute), Time: true}, 429, []string{`"budget":"time"`, `"retry_after":60`}},
+		{&speedtest.SweepWaitError{Until: now.Add(30 * time.Minute)}, 429, []string{`"code":"sweep_cooldown"`, `"available_at":`, `"retry_after":1800`}},
+	} {
+		w := httptest.NewRecorder()
+		if !queueRefused(w, httptest.NewRequest("POST", "/", nil), tc.err, now) || w.Code != tc.status {
+			t.Errorf("%v: %d", tc.err, w.Code)
+		}
+		for _, x := range tc.want {
+			if !strings.Contains(w.Body.String(), x) {
+				t.Errorf("%v: %s lacks %s", tc.err, w.Body.String(), x)
+			}
+		}
+	}
+	if queueRefused(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil), nil, now) {
+		t.Error("nil refused")
+	}
+}

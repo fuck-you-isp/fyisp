@@ -25,7 +25,7 @@ Every API error (not only these routes) is `{"error": "<sentence>", "code": "<wo
 | 409 | `conflict` |
 | 421 | `unknown_host` |
 | 403 | `disabled` (share link: the owner hasn't turned on its tests) |
-| 429 | `rate_limited` (with `retry_after`, seconds, and `Retry-After`); `queue_full`, `budget_exhausted` (with `resets_at`) (share link: see Queue) |
+| 429 | `rate_limited` (with `retry_after`, seconds, and `Retry-After`); `queue_full`, `budget_exhausted` (with `budget` and `resets_at`), `sweep_cooldown` (with `available_at`) (share link: see Queue) |
 | 503 | `unavailable` (retry after `Retry-After`) |
 
 ## Nullables
@@ -207,20 +207,26 @@ Every test goes through one process-wide queue, and exactly one runs at a time:
 - **Sweep:** every catalog server and the user's own servers, one test each, about 45.
 - **Scheduled slots:** a slot is enqueued when it falls due. It is **dropped** if it is still waiting 10 minutes later, and a slot already waiting is never stacked.
 
-The order is by class, FIFO within each: the owner's entries (the local dashboard) first, then schedule slots, then the share link's. Schedule slots therefore never starve behind public sweeps. Nothing interrupts the running test.
+The order is by class, FIFO within each: the owner's entries (the local dashboard) first, then schedule slots, then the share link's. Nothing interrupts the running test. A public sweep **yields** between its tests whenever an owner entry or a schedule slot is waiting, and then resumes at the head of the share link's entries. Schedule slots therefore never starve behind public sweeps.
 
 There is no cooldown. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
 
 **The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
 
 **The share link has a data budget:** at most `--speedtest-public-budget` (default 50 GB) over a rolling 24 hours.
-- It counts the bytes the share link's tests actually transferred.
+- It counts every byte the share link's tests put on the wire: every attempt, the ramp-up, and tests that were cut short.
 - It is saved across restarts.
 - Once spent:
   - new share-link requests get 429 `budget_exhausted` with `resets_at`, the moment enough use ages out;
   - waiting share-link entries are dropped when their turn comes;
   - a running share-link sweep stops after its current test.
 - The owner and the schedule are never limited by it.
+
+**The share link has test-time caps.** Probes are masked during every test, so its tests may keep the line under test for at most:
+- 10 minutes in any hour;
+- 60 minutes in any 24 hours.
+
+A new public sweep can start at the earliest 30 minutes after the last one ended (429 `sweep_cooldown` with `available_at`); single tests are not affected. A capped share link gets 429 `budget_exhausted` with `"budget": "time"` and `resets_at`. Visitors therefore can't blank out the monitoring.
 
 ### `GET api/speed?part=queue`
 
@@ -237,10 +243,14 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "waiting": [ { ...Entry } ],  // in run order
   "last_sweep": { ...Entry },   // |null: the last finished sweep
   "public_enabled": true,       // the owner lets the share link queue tests
-  "public_start": true,         // the share link may start one now: enabled, budget left, room in the queue (show its button only then)
+  "public_start": true,         // the share link may start one now: enabled, budget and test time left, room in the queue (show its button only then)
   "budget": {                   // the share link's rolling 24-hour data budget
     "limit_bytes": 50000000000, "used_bytes": 1200000000, "remaining_bytes": 48800000000,
-    "resets_at": null           // |null: when spent, when enough use ages out
+    "resets_at": null,          // |null: when spent, when enough use ages out
+    "time_hour_s": 240, "time_day_s": 960,          // the share link's test time in the last hour and day
+    "time_hour_max_s": 600, "time_day_max_s": 3600,
+    "time_resets_at": null,     // |null: when a capped one frees up
+    "sweep_available_at": null  // |null: a public sweep ran recently; the next from then
   }
 }
 ```
@@ -293,7 +303,8 @@ It works in every mode, `off` included.
 
 **Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
 - **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
-- **Budget:** 429 `budget_exhausted` with `resets_at` (ms) and `retry_after` once the 24-hour budget is spent.
+- **Budget:** 429 `budget_exhausted` with `budget` (`data` or `time`), `resets_at` (ms) and `retry_after` once the data budget or the test time is spent.
+- **Sweep gap:** 429 `sweep_cooldown` with `available_at` and `retry_after` for a sweep within 30 minutes of the last public one.
 - **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
 - **Queue limits (429 `queue_full`, its `error` says which):**
   - one waiting entry per visitor;

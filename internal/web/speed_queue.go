@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -63,6 +65,14 @@ type speedBudgetJSON struct {
 	UsedBytes      int64  `json:"used_bytes"`
 	RemainingBytes int64  `json:"remaining_bytes"`
 	ResetsAt       *int64 `json:"resets_at"` // when spent: when enough use ages out
+	// Test time: the share link's tests mask the monitoring, so they get
+	// at most time_hour_max_s in any hour and time_day_max_s in any day.
+	TimeHourS    int64  `json:"time_hour_s"`
+	TimeDayS     int64  `json:"time_day_s"`
+	TimeHourMaxS int64  `json:"time_hour_max_s"`
+	TimeDayMaxS  int64  `json:"time_day_max_s"`
+	TimeResetsAt *int64 `json:"time_resets_at"`     // when a capped one frees up
+	SweepAvailAt *int64 `json:"sweep_available_at"` // a public sweep ran recently: the next from then
 }
 
 // speedViewer is who looks at the queue: the owner (local) or a share-link
@@ -79,13 +89,22 @@ func (s *server) speedViewer(r *http.Request) speedViewer {
 	return speedViewer{public: true, key: visitorKey(r)}
 }
 
-// visitorKey is the queue's per-visitor key: a hash of the client's
-// address group (limitKey of Cf-Connecting-Ip), so entries never hold an
-// address.
+// visitorKey is the queue's per-visitor key: an HMAC of the client's
+// address group (limitKey of Cf-Connecting-Ip) under a key made at start,
+// so entries never hold an address and one can't be guessed back.
 func visitorKey(r *http.Request) string {
-	sum := sha256.Sum256([]byte("fyisp-speed-visitor\x00" + limitKey(clientKey(r))))
-	return hex.EncodeToString(sum[:12])
+	m := hmac.New(sha256.New, visitorSecret[:])
+	m.Write([]byte(limitKey(clientKey(r))))
+	return hex.EncodeToString(m.Sum(nil)[:12])
 }
+
+// visitorSecret is visitorKey's per-process key.
+var visitorSecret = func() (k [32]byte) {
+	if _, err := rand.Read(k[:]); err != nil {
+		panic("web: no randomness for the visitor key")
+	}
+	return k
+}()
 
 func (v speedViewer) mine(e speedtest.Entry) bool {
 	if v.public {
@@ -219,8 +238,11 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 		out.Mine = mine
 		out.PublicEnabled = qs.Public
 		out.Budget = speedBudgetJSON{LimitBytes: qs.BudgetLimit, UsedBytes: qs.BudgetUsed,
-			RemainingBytes: max(qs.BudgetLimit-qs.BudgetUsed, 0), ResetsAt: msPtr(qs.BudgetResets)}
-		out.PublicStart = qs.Public && qs.BudgetResets.IsZero() && !qs.Full
+			RemainingBytes: max(qs.BudgetLimit-qs.BudgetUsed, 0), ResetsAt: msPtr(qs.BudgetResets),
+			TimeHourS: int64(qs.TimeHour / time.Second), TimeDayS: int64(qs.TimeDay / time.Second),
+			TimeHourMaxS: int64(speedtest.PublicTimePerHour / time.Second), TimeDayMaxS: int64(speedtest.PublicTimePerDay / time.Second),
+			TimeResetsAt: msPtr(qs.TimeResets), SweepAvailAt: msPtr(qs.SweepAt)}
+		out.PublicStart = qs.Public && qs.BudgetResets.IsZero() && qs.TimeResets.IsZero() && !qs.Full
 		writeJSON(w, r, http.StatusOK, out)
 	}
 }
@@ -371,14 +393,24 @@ func (h *publicHandler) servePublicSpeedRun(w http.ResponseWriter, r *http.Reque
 func queueRefused(w http.ResponseWriter, r *http.Request, err error, now time.Time) bool {
 	var full *speedtest.QueueFullError
 	var budget *speedtest.BudgetError
+	var gap *speedtest.SweepWaitError
 	switch {
+	case errors.As(err, &gap):
+		secs := int((gap.Until.Sub(now) + time.Second - 1) / time.Second)
+		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
+		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": gap.Error(), "code": "sweep_cooldown",
+			"available_at": gap.Until.UnixMilli(), "retry_after": max(secs, 1)})
 	case errors.Is(err, speedtest.ErrPublicDisabled):
 		writeInvErr(w, r, http.StatusForbidden, "disabled", "the owner hasn't turned on tests from the share link", 0)
 	case errors.As(err, &budget):
 		secs := int((budget.ResetsAt.Sub(now) + time.Second - 1) / time.Second)
 		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
+		kind := "data"
+		if budget.Time {
+			kind = "time"
+		}
 		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": budget.Error(), "code": "budget_exhausted",
-			"resets_at": budget.ResetsAt.UnixMilli(), "retry_after": max(secs, 1)})
+			"budget": kind, "resets_at": budget.ResetsAt.UnixMilli(), "retry_after": max(secs, 1)})
 	case errors.As(err, &full):
 		writeInvErr(w, r, http.StatusTooManyRequests, "queue_full", full.Reason, 0)
 	default:
