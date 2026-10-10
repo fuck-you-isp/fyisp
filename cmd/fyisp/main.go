@@ -167,7 +167,7 @@ func parseFlags(args []string) (config, error) {
 	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (9 regions, each hourly), --speedtest=nearby (3 nearby providers and 1 far region, every 15m), --speedtest=regions,add=canada, --speedtest=nearby,far=us-west, every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
 	fs.Var(&c.speedPublic, "speedtest-public", "let people with the share link queue speed tests (default: the Details setting, off)")
 	fs.Var(&c.speedBudget, "speedtest-public-budget", "data the share link's speed tests may use per rolling 24 hours, e.g. 50GB or 500MB")
-	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor when all are your own")
+	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, sharing) when --listen is not loopback; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")

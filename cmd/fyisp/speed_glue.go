@@ -156,8 +156,13 @@ func checkSpeedFlags(c *config) error {
 			return fmt.Errorf("--speedtest: no region %q (see the README's \"Speed tests\")", r)
 		}
 	}
-	if c.speed.every > 0 && c.speed.every < speedtest.MinInterval && !(c.speed.mode == speedtest.ModeCustom && speedtest.OwnOnly(custom)) {
-		return fmt.Errorf("--speedtest every=%s: at least %s against public servers (any interval in mode custom with only your own servers)", c.speed.every, speedtest.MinInterval)
+	own := c.speed.mode == speedtest.ModeCustom && speedtest.OwnOnly(custom)
+	if c.speed.every > 0 && c.speed.every < speedtest.MinInterval && !own {
+		return fmt.Errorf("--speedtest every=%s: at least %s against public servers (down to %s in mode custom with only servers on your own network)",
+			c.speed.every, speedtest.MinInterval, speedtest.MinOwnInterval)
+	}
+	if c.speed.every > 0 && c.speed.every < speedtest.MinOwnInterval {
+		return fmt.Errorf("--speedtest every=%s: at least %s", c.speed.every, speedtest.MinOwnInterval)
 	}
 	return nil
 }

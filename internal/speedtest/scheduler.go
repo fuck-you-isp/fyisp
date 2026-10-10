@@ -47,12 +47,15 @@ func DefaultInterval(m Mode) time.Duration {
 
 // Schedule and test limits (see docs/SPEEDTEST-API.md).
 const (
-	MinInterval = 15 * time.Minute // per region or server; none when every server is the user's own
-	Jitter      = time.Minute      // on each cycle's start only: the spacing stays regular
-	RepickEvery = 24 * time.Hour   // nearby servers by RTT
-	MaxAttempts = 3                // per server: busy or refused tries another port (not on a single-port server)
-	AttemptGap  = 2 * time.Second
-	DirTimeout  = 15 * time.Second // one direction, connect to results
+	MinInterval = 15 * time.Minute // per region or server; MinOwnInterval when every server is the user's own (LAN)
+	// MinOwnInterval is the floor for the user's LAN servers: a test takes
+	// about 15 s.
+	MinOwnInterval = time.Minute
+	Jitter         = time.Minute    // on each cycle's start only: the spacing stays regular
+	RepickEvery    = 24 * time.Hour // nearby servers by RTT
+	MaxAttempts    = 3              // per server: busy or refused tries another port (not on a single-port server)
+	AttemptGap     = 2 * time.Second
+	DirTimeout     = 15 * time.Second // one direction, connect to results
 	// SlotBudget: no new attempt or fallback server after this much of a
 	// slot; SlotCap is the hard limit of one slot.
 	SlotBudget = 25 * time.Second
@@ -289,7 +292,7 @@ func New(o Options) *Scheduler {
 // OwnOnly reports a non-empty custom list of the user's own servers only:
 // the 15-minute floor does not apply to it.
 func OwnOnly(ss []Server) bool {
-	return len(ss) > 0 && !slices.ContainsFunc(ss, func(s Server) bool { return !s.Custom })
+	return len(ss) > 0 && !slices.ContainsFunc(ss, func(s Server) bool { return !s.LAN })
 }
 
 // IntervalFor is mode m's interval per region or server.
@@ -299,7 +302,7 @@ func (s *Scheduler) IntervalFor(m Mode) time.Duration {
 		return DefaultInterval(m)
 	}
 	if m == ModeCustom && OwnOnly(s.o.Custom) {
-		return iv
+		return max(iv, MinOwnInterval)
 	}
 	return max(iv, MinInterval)
 }

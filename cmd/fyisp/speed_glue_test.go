@@ -32,6 +32,8 @@ func TestSpeedFlags(t *testing.T) {
 		{[]string{"--speedtest=every=5m"}, "", 0, nil, "at least 15m0s"},
 		{[]string{"--speedtest=every=5m", "--speedtest-server", "10.0.0.2:5201"}, speedtest.ModeCustom, 5 * time.Minute, nil, ""},
 		{[]string{"--speedtest=every=5m", "--speedtest-server", "10.0.0.2:5201,Leaseweb-Tokyo"}, "", 0, nil, "at least 15m0s"},
+		{[]string{"--speedtest=every=5m", "--speedtest-server", "8.8.8.8:5201"}, "", 0, nil, "at least 15m0s"},
+		{[]string{"--speedtest=every=30s", "--speedtest-server", "10.0.0.2:5201"}, "", 0, nil, "at least 1m0s"},
 		{[]string{"--speedtest", "--speedtest-server", "Leaseweb-Tokyo"}, speedtest.ModeCustom, 0, nil, ""},
 		{[]string{"--speedtest=custom"}, "", 0, nil, "needs --speedtest-server"},
 		{[]string{"--speedtest-server", "nope"}, "", 0, nil, "want host:port or a catalog server id"},

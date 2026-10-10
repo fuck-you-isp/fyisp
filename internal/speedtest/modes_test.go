@@ -132,3 +132,23 @@ func TestMask(t *testing.T) {
 		t.Errorf("share %v", sh)
 	}
 }
+
+// TestAbortTail: a test cut short masks AbortTail more than one that ended
+// normally.
+func TestAbortTail(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		h := newHarness(t, Options{})
+		h.setRun(func(c Config, n int) (Result, error) {
+			if fail {
+				return Result{}, errors.New("protocol error")
+			}
+			return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second}, nil
+		})
+		ts := h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
+		end := ts[0].End
+		after := end.Add(MaskTail + time.Second)
+		if got := h.s.o.Windows.Overlaps(after, after); got != fail {
+			t.Errorf("failed %v: masked %v at end+%v", fail, got, MaskTail+time.Second)
+		}
+	}
+}

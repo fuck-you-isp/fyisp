@@ -8,8 +8,10 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -447,5 +449,106 @@ func TestAdaptiveRamp(t *testing.T) {
 	cfg.MinDuration, cfg.Duration = 0, 1500*time.Millisecond
 	if r, _ := Run(context.Background(), cfg); r.Ramp < time.Second || r.Ramp > 1200*time.Millisecond {
 		t.Errorf("fixed ramp %v", r.Ramp)
+	}
+}
+
+// trackConn records its Close.
+type trackConn struct {
+	net.Conn
+	closed *atomic.Int32
+}
+
+func (c trackConn) Close() error { c.closed.Add(1); return c.Conn.Close() }
+
+// TestResolveOnce: a name is resolved once and every dial (control and
+// streams) goes to that one IPv4 address; Check vets it before any dial.
+func TestResolveOnce(t *testing.T) {
+	f := newFakeServer(t, "")
+	_, port, _ := net.SplitHostPort(f.addr())
+	var lookups atomic.Int32
+	var mu sync.Mutex
+	var dialled []string
+	cfg := quick("speed.example:"+port, Download)
+	cfg.Lookup = func(context.Context, string) ([]netip.Addr, error) {
+		lookups.Add(1)
+		return []netip.Addr{netip.MustParseAddr("::1"), netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("127.0.0.2")}, nil
+	}
+	cfg.Dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		mu.Lock()
+		dialled = append(dialled, network+" "+addr)
+		mu.Unlock()
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lookups.Load() != 1 || r.IP != netip.MustParseAddr("127.0.0.1") || len(dialled) != 4 {
+		t.Fatalf("%d lookups, ip %v, dials %v", lookups.Load(), r.IP, dialled)
+	}
+	for _, d := range dialled {
+		if d != "tcp4 127.0.0.1:"+port {
+			t.Errorf("dialled %s", d)
+		}
+	}
+	cfg.Check = func(a netip.Addr) error { return errors.New("not public") }
+	dialled = nil
+	if _, err := Run(context.Background(), cfg); !errors.Is(err, ErrUnreachable) || len(dialled) != 0 {
+		t.Errorf("checked: %v, dials %v", err, dialled)
+	}
+	cfg.Lookup = func(context.Context, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("::1")}, nil
+	}
+	if _, err := Run(context.Background(), cfg); !errors.Is(err, ErrUnreachable) {
+		t.Errorf("IPv6 only: %v", err)
+	}
+}
+
+// TestCancelDuringStreamDial: a stream dialled after the run was cancelled
+// is closed, not leaked (M1), and so is every other socket.
+func TestCancelDuringStreamDial(t *testing.T) {
+	f := newFakeServer(t, "stall")
+	ctx, cancel := context.WithCancel(context.Background())
+	var n, closed atomic.Int32
+	cfg := quick(f.addr(), Upload)
+	cfg.Dial = func(dctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := (&net.Dialer{}).DialContext(context.Background(), network, addr)
+		if err != nil {
+			return nil, err
+		}
+		if n.Add(1) == 3 { // the second stream: cancelled while it dials
+			cancel()
+			time.Sleep(50 * time.Millisecond) // the AfterFunc closes the run first
+		}
+		return trackConn{c, &closed}, nil
+	}
+	if _, err := Run(ctx, cfg); !errors.Is(err, context.Canceled) {
+		t.Fatalf("run: %v", err)
+	}
+	if n.Load() != 3 || closed.Load() < 3 {
+		t.Errorf("%d dialled, %d closed", n.Load(), closed.Load())
+	}
+}
+
+func TestAddressChecks(t *testing.T) {
+	for a, want := range map[string][2]bool{ // public, private
+		"8.8.8.8": {true, false}, "192.168.1.20": {false, true}, "10.1.2.3": {false, true}, "100.64.1.1": {false, true},
+		"127.0.0.1": {false, true}, "169.254.1.1": {false, true}, "224.0.0.1": {false, false}, "0.0.0.0": {false, false},
+	} {
+		ip := netip.MustParseAddr(a)
+		if PublicIPv4(ip) != want[0] || PrivateIPv4(ip) != want[1] {
+			t.Errorf("%s: public %v private %v", a, PublicIPv4(ip), PrivateIPv4(ip))
+		}
+	}
+	cat := Server{Host: "speed.example"}
+	lan := Server{Host: "nas", Custom: true, LAN: true}
+	far := Server{Host: "vps.example", Custom: true}
+	pub, priv := netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("192.168.1.20")
+	if cat.check(pub) != nil || cat.check(priv) == nil || lan.check(priv) != nil || lan.check(pub) == nil || far.check(pub) != nil || far.check(priv) != nil {
+		t.Error("checks")
+	}
+	own, err := Custom("192.168.1.20:5201,8.8.8.8:5201", nil)
+	if err != nil || !own[0].LAN || own[1].LAN || OwnOnly(own) || !OwnOnly(own[:1]) {
+		t.Errorf("custom %+v %v", own, err)
 	}
 }

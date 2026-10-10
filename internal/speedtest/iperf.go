@@ -13,6 +13,8 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/netip"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -99,7 +101,7 @@ func (e *ServerError) Error() string {
 
 // Config is one test run.
 type Config struct {
-	Addr      string // host:port (the host already resolved by the caller, or a name)
+	Addr      string // host:port: an IPv4 address or a name, resolved once per run
 	Direction Direction
 	Streams   int           // parallel TCP streams, default 8
 	Duration  time.Duration // measured time, default 9s; with MinDuration, the most
@@ -122,6 +124,13 @@ type Config struct {
 	Timeout time.Duration
 	// Dial opens TCP connections (tests: a stub). Default net.Dialer.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	// Lookup resolves a name to IPv4 addresses (default net.DefaultResolver).
+	// The run resolves once and dials that one address for the control
+	// connection and every stream: they must all reach one server.
+	Lookup func(ctx context.Context, host string) ([]netip.Addr, error)
+	// Check, when set, vets the address before any dial (catalog servers
+	// must be public, the user's LAN servers private).
+	Check func(netip.Addr) error
 }
 
 // Result is one direction's measurement.
@@ -140,6 +149,7 @@ type Result struct {
 	// CappedByBytes: the test hit Config.MaxBytes, so Elapsed may be short.
 	CappedByBytes bool
 	Ramp          time.Duration // the ramp-up left out
+	IP            netip.Addr    // the address the test ran against
 	TotalBytes    int64         // every byte moved, ramp-up included (data use)
 }
 
@@ -173,6 +183,49 @@ func (c *Config) defaults() {
 		d := &net.Dialer{Timeout: 5 * time.Second}
 		c.Dial = d.DialContext
 	}
+	if c.Lookup == nil {
+		c.Lookup = func(ctx context.Context, host string) ([]netip.Addr, error) {
+			return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+		}
+	}
+}
+
+// resolve picks the one IPv4 address of c.Addr's host the run uses, and
+// returns ip:port. A failed lookup is ErrUnreachable.
+func (c *Config) resolve(ctx context.Context) (netip.AddrPort, error) {
+	host, port, err := net.SplitHostPort(c.Addr)
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("%w: bad port %q", ErrUnreachable, port)
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		ips, lerr := c.Lookup(ctx, host)
+		for _, a := range ips {
+			if a = a.Unmap(); a.Is4() {
+				ip = a
+				break
+			}
+		}
+		if !ip.IsValid() {
+			if lerr == nil {
+				lerr = errors.New("no IPv4 address")
+			}
+			return netip.AddrPort{}, fmt.Errorf("%w: %s: %w", ErrUnreachable, host, lerr)
+		}
+	}
+	if ip = ip.Unmap(); !ip.Is4() {
+		return netip.AddrPort{}, fmt.Errorf("%w: %s is not IPv4", ErrUnreachable, ip)
+	}
+	if c.Check != nil {
+		if err := c.Check(ip); err != nil {
+			return netip.AddrPort{}, fmt.Errorf("%w: %w", ErrUnreachable, err)
+		}
+	}
+	return netip.AddrPortFrom(ip, uint16(p)), nil
 }
 
 // stepTimeout bounds every control-channel step outside the data phase.
@@ -187,7 +240,13 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer cancel()
 	res := Result{Direction: c.Direction, Retransmits: -1, Streams: c.Streams}
 
-	ctrl, err := c.Dial(ctx, "tcp4", c.Addr) // IPv4 only, by decision
+	ap, err := c.resolve(ctx)
+	if err != nil {
+		return res, err
+	}
+	res.IP = ap.Addr()
+	c.Addr = ap.String() // IPv4 only, by decision; one address for every dial
+	ctrl, err := c.Dial(ctx, "tcp4", c.Addr)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return res, ctx.Err()
@@ -199,11 +258,15 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	}
 	t := &test{c: c, ctrl: ctrl}
 	defer t.close()
-	stop := context.AfterFunc(ctx, t.close) // unblocks every read and write
+	stop := context.AfterFunc(ctx, t.abort) // unblocks every read and write
 	defer stop()
 
 	r, err := t.run(ctx, &res)
+	if err != nil {
+		t.abort() // nothing more to send: drop what is queued
+	}
 	t.close() // the streams stop: their counters are final
+	t.wg.Wait()
 	if ctx.Err() != nil {
 		res.WireBytes = t.wire()
 		return res, ctx.Err()
@@ -232,6 +295,7 @@ type test struct {
 	mu      sync.Mutex
 	streams []net.Conn
 	closed  bool
+	wg      sync.WaitGroup // the data phase's stream goroutines
 
 	counts []atomic.Int64 // per stream, the whole data phase (mu: the slice)
 	moved  atomic.Int64   // bytes of every stream, against MaxBytes
@@ -249,6 +313,23 @@ func (t *test) close() {
 	for _, s := range t.streams {
 		_ = s.Close()
 	}
+}
+
+// abort closes the run on cancel, timeout or error: the data streams with
+// SO_LINGER 0, so upload data still queued in the kernel is dropped (an RST)
+// rather than sent on after the masked window. The happy path closes
+// gracefully (a stock server reading an RST mid-test logs an error).
+func (t *test) abort() {
+	t.mu.Lock()
+	if !t.closed {
+		for _, s := range t.streams {
+			if tc, ok := s.(*net.TCPConn); ok {
+				_ = tc.SetLinger(0)
+			}
+		}
+	}
+	t.mu.Unlock()
+	t.close()
 }
 
 func (t *test) run(ctx context.Context, res *Result) (Result, error) {
@@ -285,15 +366,20 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 			return *res, fmt.Errorf("data stream: %w", err)
 		}
 		t.mu.Lock()
-		t.streams = append(t.streams, s)
 		closed := t.closed
+		if !closed {
+			t.streams = append(t.streams, s)
+		}
 		t.mu.Unlock()
-		if closed {
+		if closed { // dialled after the run was closed: close() won't see it
+			_ = s.Close()
 			return *res, ctx.Err()
 		}
+		_ = s.SetWriteDeadline(time.Now().Add(stepTimeout))
 		if _, err := s.Write(t.cookie[:]); err != nil {
 			return *res, fmt.Errorf("data stream: %w", err)
 		}
+		_ = s.SetWriteDeadline(time.Time{})
 	}
 	for _, want := range []int8{stateTestStart, stateTestRunning} {
 		if st, err = t.state(stepTimeout); err != nil {
@@ -311,11 +397,10 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	t.counts = counts
 	t.mu.Unlock()
 	var done atomic.Bool
-	var wg sync.WaitGroup
 	for i, s := range t.streams {
-		wg.Add(1)
+		t.wg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer t.wg.Done()
 			if t.c.Direction == Download {
 				t.drain(s, &counts[i])
 			} else {
@@ -354,7 +439,7 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	}
 	_ = t.write([]byte{stateIperfDone})
 	t.close()
-	wg.Wait()
+	t.wg.Wait()
 	return *res, nil
 }
 
@@ -618,14 +703,20 @@ func (t *test) results(per []int64, res *Result) serverResults {
 // sender). Its byte counts include the ramp-up, so the client's own are
 // used for both directions.
 func (t *test) applyServer(srv *serverResults, res *Result) {
+	// Bounded: a server's figures are not trusted (the upload's bytes are
+	// measured here, from TCP_INFO; only retransmits come from the server).
 	var retrans int64
 	for _, s := range srv.Streams {
-		retrans += max(s.Retransmits, 0)
+		retrans += min(max(s.Retransmits, 0), maxRetrans)
 	}
+	retrans = min(retrans, maxRetrans)
 	if t.c.Direction == Download && srv.SenderHasRetransmits == 1 {
 		res.Retransmits = retrans
 	}
 }
+
+// maxRetrans bounds a server-reported retransmit count.
+const maxRetrans = 1e9
 
 // cookiePrefix makes fyisp's tests recognisable in a server's debug log
 // (the server checks only the cookie's length).

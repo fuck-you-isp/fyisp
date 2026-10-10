@@ -238,7 +238,13 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		}
 	}
 	t.End = s.o.Now()
-	win := s.o.Windows.End(t.End)
+	end := t.End
+	if sctx.Err() != nil || t.Outcome == model.SpeedFailed {
+		// Cut short: data still in flight (in the network, or queued in the
+		// server's buffers) arrives after the test; mask it too.
+		end = end.Add(AbortTail)
+	}
+	win := s.o.Windows.End(end)
 	if ctx.Err() != nil {
 		return nil, false, t.Bytes // cancelled or shutting down: not a result
 	}
@@ -447,7 +453,7 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 		var err error
 		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes,
+			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes, Check: sv.check,
 		})
 		wire += max(res.WireBytes, res.TotalBytes, res.Bytes)
 		switch {
@@ -593,16 +599,26 @@ func (s *Scheduler) pick(ctx context.Context) {
 // ICMP echo, else a TCP connect to port 80 or 443. A connect to the iperf3
 // port itself is the last resort: the server takes it for a client and logs
 // an error when it closes without a cookie.
+//
+// The host is resolved once and must be public (only catalog servers are
+// picked by RTT).
 func serverRTT(ctx context.Context, ping func(context.Context, string) (time.Duration, error), host string, iperfPort int) (time.Duration, error) {
+	ips, err := lookupIPv4(ctx, host)
+	if err != nil {
+		return 0, err
+	}
+	if len(ips) == 0 || !PublicIPv4(ips[0]) {
+		return 0, fmt.Errorf("%s: no public IPv4 address", host)
+	}
+	ip := ips[0].Unmap().String()
 	if ping != nil {
-		if d, err := ping(ctx, host); err == nil {
+		if d, err := ping(ctx, ip); err == nil {
 			return d, nil
 		}
 	}
-	var err error
 	for _, p := range []int{80, 443, iperfPort} {
 		var d time.Duration
-		if d, err = connectRTT(ctx, host, p); err == nil {
+		if d, err = connectRTT(ctx, ip, p); err == nil {
 			return d, nil
 		}
 	}

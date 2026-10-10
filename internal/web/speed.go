@@ -488,16 +488,19 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.part == "summary" && p.row != "" {
-		out, err := s.speedOne(r.Context(), p, st, names, now)
-		if errors.Is(err, errNoSpeedID) {
-			writeErr(w, r, http.StatusNotFound, err.Error())
+		if !rowKnown(p.row, st, names, s.public) {
+			writeErr(w, r, http.StatusNotFound, errNoSpeedID.Error())
 			return
 		}
-		if err != nil {
-			writeErr(w, r, http.StatusServiceUnavailable, "speed tests unavailable")
-			return
-		}
-		s.runCached(w, r, p.key, func(context.Context) (*cached, error) { return jsonCached(out) })
+		// The query runs inside the cache's fill: the share link's cache
+		// covers it.
+		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
+			out, err := s.speedOne(ctx, p, st, names, now)
+			if err != nil {
+				return nil, err
+			}
+			return jsonCached(out)
+		})
 		return
 	}
 	configurable := !s.public && s.canControl != nil && s.canControl(r)
@@ -950,6 +953,19 @@ func ptrOr(p *float64, d float64) float64 {
 }
 
 var errNoSpeedID = errors.New("no such server or region")
+
+// rowKnown reports a region or server id this viewer may ask for (own
+// servers only by their public id on the share link).
+func rowKnown(id string, st speedtest.State, names speedNames, public bool) bool {
+	if slices.ContainsFunc(st.Regions, func(r speedtest.Region) bool { return r.ID == id }) {
+		return true
+	}
+	local := names.resolve(id)
+	if public && local == id && names.custom[local] > 0 {
+		return false
+	}
+	return slices.ContainsFunc(st.Servers, func(sv speedtest.ServerState) bool { return sv.ID == local })
+}
 
 // speedOneJSON is api/speed?row=<id> (or server=, region=): one row's
 // stats, every test in the span (oldest first, at most speedTestsCap) and
