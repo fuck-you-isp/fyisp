@@ -667,8 +667,8 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			t.Outcome = model.SpeedFailed
 			return bytes
 		}
-		res, p, attempts, outcome := s.direction(ctx, sv, dir, port, t.Start)
-		bytes += res.Bytes
+		res, p, attempts, outcome, wire := s.direction(ctx, sv, dir, port, t.Start)
+		bytes += wire
 		t.Attempts += attempts
 		if p != 0 {
 			t.Port, port = p, p
@@ -697,33 +697,35 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 // for a moment after every test), on other random ports 2 s apart, up to
 // MaxAttempts and within the slot's budget. A timeout or DNS failure
 // (ErrUnreachable) and protocol errors end it at once.
-func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time) (Result, int, int, string) {
+func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time) (res Result, used, attempts int, outcome string, wire int64) {
 	tried := map[int]bool{}
 	for attempt := 1; ; attempt++ {
 		if attempt > 1 || port == 0 {
 			port = s.randomPort(sv, tried)
 		}
 		tried[port] = true
-		res, err := s.o.run(ctx, Config{
+		var err error
+		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
 			Duration: MaxMeasure, MinDuration: MinMeasure,
 		})
+		wire += max(res.WireBytes, res.Bytes) // every attempt's bytes on the wire
 		switch {
 		case err == nil:
-			return res, port, attempt, model.SpeedOK
+			return res, port, attempt, model.SpeedOK, wire
 		case ctx.Err() != nil:
-			return res, port, attempt, model.SpeedFailed
+			return res, port, attempt, model.SpeedFailed, wire
 		case errors.Is(err, ErrUnreachable):
-			return res, port, attempt, model.SpeedUnreachable
+			return res, port, attempt, model.SpeedUnreachable, wire
 		case !errors.Is(err, ErrBusy) && !errors.Is(err, ErrRefused):
 			s.o.Log.Debug("speed test failed", "server", sv.ID, "port", port, "direction", dir.String(), "err", err)
-			return res, port, attempt, model.SpeedFailed
+			return res, port, attempt, model.SpeedFailed, wire
 		}
 		if attempt == MaxAttempts || s.o.Now().Sub(slotStart)+AttemptGap >= SlotBudget || !s.o.sleep(ctx, AttemptGap) {
 			if errors.Is(err, ErrRefused) {
-				return Result{}, port, attempt, model.SpeedUnreachable
+				return Result{}, port, attempt, model.SpeedUnreachable, wire
 			}
-			return Result{}, port, attempt, model.SpeedBusy
+			return Result{}, port, attempt, model.SpeedBusy, wire
 		}
 	}
 }

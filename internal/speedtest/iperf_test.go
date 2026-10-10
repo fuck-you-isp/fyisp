@@ -245,6 +245,9 @@ func TestDownload(t *testing.T) {
 	}
 	// 3 streams × 64 KiB per 10 ms = 19.7 MB/s; the ramp-up is left out.
 	want := 3 * float64(64<<10) * 100 * 8
+	if r.WireBytes <= r.Bytes { // the ramp-up is on the wire too
+		t.Errorf("wire bytes %d, measured %d", r.WireBytes, r.Bytes)
+	}
 	if bps := r.BitsPerSecond(); bps < want*0.7 || bps > want*1.3 || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 1700*time.Millisecond {
 		t.Errorf("%.1f Mbit/s (want ~%.1f) over %v", bps/1e6, want/1e6, r.Elapsed)
 	}

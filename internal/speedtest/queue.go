@@ -61,6 +61,14 @@ const (
 	// hours: bytes its tests actually transferred.
 	DefaultPublicBudget int64 = 50e9
 	budgetSpan                = 24 * time.Hour
+	// The share link's tests mask probes (they would measure the test),
+	// so they may keep the line under test at most PublicTimePerHour in
+	// any hour and PublicTimePerDay in any 24 hours, and a public sweep
+	// can start PublicSweepGap after the last one ended at the earliest:
+	// visitors can't blank out the monitoring.
+	PublicTimePerHour = 10 * time.Minute
+	PublicTimePerDay  = 60 * time.Minute
+	PublicSweepGap    = 30 * time.Minute
 	// Settings keys (Store.Setting): the owner's opt-in and the budget's
 	// ledger, so both survive restarts.
 	SettingPublic       = "speedtest_public"
@@ -113,11 +121,25 @@ var (
 	ErrPublicDisabled = errors.New("tests from the share link are turned off")
 )
 
-// BudgetError: the share link's 24-hour data budget is spent until
-// ResetsAt.
-type BudgetError struct{ ResetsAt time.Time }
+// BudgetError: the share link's budget (data, or test time) is spent
+// until ResetsAt.
+type BudgetError struct {
+	ResetsAt time.Time
+	Time     bool // the test-time cap rather than the data budget
+}
 
-func (e *BudgetError) Error() string { return "the share link's daily test budget is used up" }
+func (e *BudgetError) Error() string {
+	if e.Time {
+		return "tests from the share link have used their time for now"
+	}
+	return "the share link's daily test budget is used up"
+}
+
+// SweepWaitError: a public sweep ran recently; the next may start at
+// Until.
+type SweepWaitError struct{ Until time.Time }
+
+func (e *SweepWaitError) Error() string { return "a full sweep ran recently; try again later" }
 
 // Settings persists the owner's choices (Store).
 type Settings interface {
@@ -158,6 +180,7 @@ type QueueOptions struct {
 type qentry struct {
 	Entry
 	jobs   []Job
+	next   int // the next job: a public sweep that yielded resumes here
 	cancel context.CancelFunc
 }
 
@@ -172,14 +195,17 @@ type Queue struct {
 	running   *qentry
 	finished  map[uint64]*qentry
 	lastSweep *qentry
-	public    bool    // the owner lets the share link queue tests
-	ledger    []usage // the share link's tests' bytes, last 24 h, oldest first
+	public    bool      // the owner lets the share link queue tests
+	ledger    []usage   // the share link's tests, last 24 h, oldest first
+	sweepEnd  time.Time // when the last public sweep ended
 }
 
-// usage is the bytes one share-link test transferred.
+// usage is the bytes one share-link test transferred and how long it kept
+// the line under test.
 type usage struct {
 	At    time.Time
 	Bytes int64
+	Dur   time.Duration `json:",omitempty"`
 }
 
 // NewQueue returns a Queue; Run drives it.
@@ -276,15 +302,49 @@ func (q *Queue) budgetLocked(now time.Time) (limit, used int64, resetsAt time.Ti
 	return limit, used, resetsAt
 }
 
-// spend adds a share-link test's bytes to the ledger and saves it.
-func (q *Queue) spend(bytes int64) {
-	if bytes <= 0 {
+// timeLocked is the share link's test time in the last hour and day, and,
+// when either cap is reached, when enough of it ages out.
+func (q *Queue) timeLocked(now time.Time) (hour, day time.Duration, resetsAt time.Time) {
+	q.pruneLedgerLocked(now)
+	for _, u := range q.ledger {
+		day += u.Dur
+		if now.Sub(u.At) < time.Hour {
+			hour += u.Dur
+		}
+	}
+	reset := func(span, limit, used time.Duration) time.Time {
+		left := used
+		for _, u := range q.ledger {
+			if now.Sub(u.At) >= span {
+				continue
+			}
+			left -= u.Dur
+			if left < limit {
+				return u.At.Add(span)
+			}
+		}
+		return now.Add(span)
+	}
+	if day >= PublicTimePerDay {
+		resetsAt = reset(budgetSpan, PublicTimePerDay, day)
+	}
+	if hour >= PublicTimePerHour {
+		if r := reset(time.Hour, PublicTimePerHour, hour); r.After(resetsAt) {
+			resetsAt = r
+		}
+	}
+	return hour, day, resetsAt
+}
+
+// spend adds a share-link test's bytes and time to the ledger and saves it.
+func (q *Queue) spend(bytes int64, dur time.Duration) {
+	if bytes <= 0 && dur <= 0 {
 		return
 	}
 	q.mu.Lock()
 	now := q.o.Now()
 	q.pruneLedgerLocked(now)
-	q.ledger = append(q.ledger, usage{At: now, Bytes: bytes})
+	q.ledger = append(q.ledger, usage{At: now, Bytes: bytes, Dur: dur})
 	b, _ := json.Marshal(q.ledger)
 	q.mu.Unlock()
 	if q.o.Settings != nil {
@@ -303,6 +363,9 @@ func (q *Queue) publicLocked(now time.Time) error {
 	}
 	if _, _, resets := q.budgetLocked(now); !resets.IsZero() {
 		return &BudgetError{ResetsAt: resets}
+	}
+	if _, _, resets := q.timeLocked(now); !resets.IsZero() {
+		return &BudgetError{ResetsAt: resets, Time: true}
 	}
 	return nil
 }
@@ -405,6 +468,8 @@ func (q *Queue) capsLocked(r Request) error {
 		return &QueueFullError{"the queue is full"}
 	case r.Kind == KindSweep && sweeps >= MaxPublicSweeps:
 		return &QueueFullError{"enough full sweeps are already waiting"}
+	case r.Kind == KindSweep && !q.sweepEnd.IsZero() && q.o.Now().Before(q.sweepEnd.Add(PublicSweepGap)):
+		return &SweepWaitError{Until: q.sweepEnd.Add(PublicSweepGap)}
 	}
 	return nil
 }
@@ -547,7 +612,10 @@ func (q *Queue) Run(ctx context.Context) {
 				e = nil
 				continue
 			}
-			e.State, e.Started = StateRunning, now
+			e.State = StateRunning
+			if e.Started.IsZero() {
+				e.Started = now
+			}
 			q.running = e
 		}
 		var ectx context.Context
@@ -569,21 +637,38 @@ func (q *Queue) Run(ctx context.Context) {
 }
 
 func (q *Queue) execute(ctx context.Context, e *qentry) {
-	for i, j := range e.jobs {
+	for i := e.next; i < len(e.jobs); i++ {
 		if ctx.Err() != nil {
 			break
 		}
 		q.mu.Lock()
+		// A public sweep yields between its tests to the owner's entries
+		// and schedule slots: it waits again at the head of the share
+		// link's entries and resumes here.
+		if i > e.next && e.Who == WhoPublic && slices.ContainsFunc(q.waiting, func(w *qentry) bool { return w.Who != WhoPublic }) {
+			e.next, e.State = i, StateWaiting
+			e.cancel()
+			e.cancel = nil
+			q.running = nil
+			first := slices.IndexFunc(q.waiting, func(w *qentry) bool { return w.Who == WhoPublic })
+			if first < 0 {
+				first = len(q.waiting)
+			}
+			q.waiting = slices.Insert(q.waiting, first, e)
+			q.mu.Unlock()
+			return
+		}
 		e.Step = i + 1
 		q.mu.Unlock()
-		id, saved, bytes := q.o.Exec(ctx, j, trigger(e.Kind))
+		t0 := q.o.Now()
+		id, saved, bytes := q.o.Exec(ctx, e.jobs[i], trigger(e.Kind))
 		if saved {
 			q.mu.Lock()
 			e.Tests = append(e.Tests, id)
 			q.mu.Unlock()
 		}
 		if e.Who == WhoPublic {
-			q.spend(bytes)
+			q.spend(bytes, q.o.Now().Sub(t0))
 			q.mu.Lock()
 			stop := q.publicLocked(q.o.Now()) != nil
 			q.mu.Unlock()
@@ -600,9 +685,13 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		st = StateCancelled
 	}
 	q.running = nil
-	q.finishLocked(e, st, q.o.Now())
+	now := q.o.Now()
+	q.finishLocked(e, st, now)
 	if e.Kind == KindSweep && st == StateDone {
 		q.lastSweep = e
+	}
+	if e.Kind == KindSweep && e.Who == WhoPublic {
+		q.sweepEnd = now
 	}
 	if cancel != nil {
 		cancel()
@@ -623,6 +712,12 @@ type QueueState struct {
 	Public                  bool
 	BudgetLimit, BudgetUsed int64
 	BudgetResets            time.Time
+	// The share link's test time in the last hour and day (caps
+	// PublicTimePerHour, PublicTimePerDay), and when a capped one frees up;
+	// when its next sweep may start (zero: now).
+	TimeHour, TimeDay time.Duration
+	TimeResets        time.Time
+	SweepAt           time.Time
 }
 
 // State reports the running entry, the waiting ones in order with their
@@ -649,6 +744,10 @@ func (q *Queue) State() QueueState {
 	st.SweepsFull = st.PublicSweeps >= MaxPublicSweeps
 	st.Public = q.public
 	st.BudgetLimit, st.BudgetUsed, st.BudgetResets = q.budgetLocked(now)
+	st.TimeHour, st.TimeDay, st.TimeResets = q.timeLocked(now)
+	if !q.sweepEnd.IsZero() && now.Before(q.sweepEnd.Add(PublicSweepGap)) {
+		st.SweepAt = q.sweepEnd.Add(PublicSweepGap)
+	}
 	if q.lastSweep != nil {
 		e := q.snapshotLocked(q.lastSweep, now)
 		st.LastSweep = &e

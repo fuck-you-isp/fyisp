@@ -41,8 +41,12 @@ origin, CSRF token, admin token). Only if the owner turns it on
 the share link may queue a test or a sweep of every server (`POST
 /s/<secret>/api/speed/run`), but never change the mode or cancel anything.
 Their tests may transfer at most `--speedtest-public-budget` (default 50 GB)
-per rolling 24 hours, counted from the bytes actually sent and received and
-kept across restarts. Every test waits in one queue and
+per rolling 24 hours, counted from every byte on the wire (all attempts,
+ramp-up included) and kept across restarts. Because probes are masked
+during a test, the share link's tests may also keep the line under test at
+most 10 minutes per hour and 60 per day, a public sweep can start only 30
+minutes after the last one, and a public sweep yields to the owner's and
+scheduled tests between servers. Visitors can't blank out the monitoring. Every test waits in one queue and
 exactly one runs at a time: the owner's tests first, then scheduled ones, then
 the share link's. The share link's
 entries are capped: one waiting entry per visitor, 3 waiting sweeps and 12

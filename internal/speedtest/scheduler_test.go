@@ -635,3 +635,22 @@ func TestScheduleThroughQueue(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// TestWireBytes: a test's bytes count every attempt's data phase on the
+// wire (ramp-up included), not only the measured window: the share link's
+// budget charges what was sent.
+func TestWireBytes(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.mu.Lock()
+	h.run = func(c Config, n int) (Result, error) {
+		if n == 1 { // the first download attempt fails after its data phase started
+			return Result{WireBytes: 7e6}, ErrBusy
+		}
+		return Result{Direction: c.Direction, Bytes: 10e6, WireBytes: 12e6, Elapsed: time.Second}, nil
+	}
+	h.mu.Unlock()
+	_, _, bytes := h.s.runTarget(context.Background(), target{chain: []Server{h.s.o.Catalog.Servers[0]}}, "manual")
+	if bytes != 7e6+12e6+12e6 {
+		t.Errorf("bytes %d, want %d", bytes, int64(7e6+12e6+12e6))
+	}
+}

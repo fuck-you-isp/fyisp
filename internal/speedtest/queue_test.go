@@ -21,6 +21,7 @@ type fakeExec struct {
 	release chan struct{}
 	started chan struct{}
 	bytes   atomic.Int64 // per finished test
+	step    atomic.Int64 // each finished test advances the clock this much
 }
 
 func newQueueHarness(t *testing.T, opts ...func(*QueueOptions)) (*Queue, *fakeExec) {
@@ -71,6 +72,7 @@ func newQueueHarness(t *testing.T, opts ...func(*QueueOptions)) (*Queue, *fakeEx
 			case <-ctx.Done():
 				return 0, false, 1e6
 			case <-f.release:
+				f.advance(time.Duration(f.step.Load()))
 				return id, true, f.bytes.Load()
 			}
 		},
@@ -474,7 +476,8 @@ func TestQueueBudget(t *testing.T) {
 }
 
 // TestQueueScheduledAheadOfPublic: a schedule slot queued behind public
-// sweeps runs next (after the running entry), not after them.
+// sweeps runs next: the running public sweep yields after its current
+// test, then resumes ahead of the other public sweeps.
 func TestQueueScheduledAheadOfPublic(t *testing.T) {
 	q, f := newQueueHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -490,15 +493,83 @@ func TestQueueScheduledAheadOfPublic(t *testing.T) {
 	if st := q.State(); st.Waiting[0].Kind != KindScheduled || st.Waiting[0].Position != 1 {
 		t.Fatalf("slot not next: %v", ids(st.Waiting))
 	}
-	// The running sweep isn't pre-empted: its tests go on until it's done.
+	// The running test isn't pre-empted; the sweep yields after it.
 	for range 3 {
 		f.release <- struct{}{}
 		<-f.started
 	}
 	f.release <- struct{}{}
 	waitFor(t, func() bool { return len(f.log()) >= 5 })
-	if got := f.log(); !eq(got[:5], []string{"sweep:A", "sweep:B", "sweep:C", "schedule:uk", "sweep:A"}) {
+	if got := f.log(); !eq(got[:5], []string{"sweep:A", "schedule:uk", "sweep:B", "sweep:C", "sweep:A"}) {
 		t.Errorf("ran %v", got)
 	}
+	if st := q.State(); st.Running == nil || st.Running.Visitor != "v1" || st.Running.Step != 1 {
+		t.Errorf("then the next public sweep: %+v", st.Running)
+	}
 	cancel()
+}
+
+// TestQueuePublicTime: the share link's tests may keep the line under test
+// at most PublicTimePerHour per hour (and PublicTimePerDay per day), and a
+// public sweep waits PublicSweepGap after the last one.
+func TestQueuePublicTime(t *testing.T) {
+	q, f := newQueueHarness(t)
+	f.step.Store(int64(4 * time.Minute))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	run := func(r Request) Entry {
+		t.Helper()
+		e, _, err := q.Enqueue(r)
+		if err != nil {
+			t.Fatalf("%+v: %v", r, err)
+		}
+		for {
+			<-f.started
+			f.release <- struct{}{}
+			x, _ := q.Get(e.ID)
+			if x.Step >= x.Steps {
+				break
+			}
+		}
+		waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateDone })
+		x, _ := q.Get(e.ID)
+		return x
+	}
+	first := run(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v1"})
+	run(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v2"})
+	run(Request{Kind: KindSingle, Target: "C", Who: WhoPublic, Visitor: "v3"}) // 12 min in the hour
+	var be *BudgetError
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v4"}); !errors.As(err, &be) || !be.Time ||
+		!be.ResetsAt.Equal(first.Finished.Add(time.Hour)) {
+		t.Fatalf("hour cap: %v (%+v)", err, be)
+	}
+	if st := q.State(); st.TimeHour != 12*time.Minute || st.TimeResets.IsZero() {
+		t.Errorf("state %+v", st)
+	}
+	run(Request{Kind: KindSingle, Target: "A", Who: WhoOwner}) // the owner is not capped
+	// An hour later there is room; a public sweep, then the gap.
+	f.advance(time.Hour)
+	f.step.Store(int64(time.Minute))
+	run(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v5"})
+	var gap *SweepWaitError
+	if _, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v6"}); !errors.As(err, &gap) {
+		t.Fatalf("sweep gap: %v", err)
+	}
+	if st := q.State(); !st.SweepAt.Equal(gap.Until) {
+		t.Errorf("sweep at %v, want %v", st.SweepAt, gap.Until)
+	}
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v6"}); err != nil {
+		t.Errorf("a single during the gap: %v", err)
+	}
+	// The day cap: 60 minutes in 24 hours.
+	q.mu.Lock()
+	q.ledger = nil
+	for i := range 6 {
+		q.ledger = append(q.ledger, usage{At: time.Unix(0, f.now.Load()).Add(-time.Duration(20-i*2) * time.Hour), Dur: 10 * time.Minute})
+	}
+	q.mu.Unlock()
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "C", Who: WhoPublic, Visitor: "v7"}); !errors.As(err, &be) || !be.Time {
+		t.Errorf("day cap: %v", err)
+	}
 }
