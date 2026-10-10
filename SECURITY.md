@@ -44,6 +44,34 @@ The public share link hides the STUN target names and the Teams relay region
 (the Azure region fyisp's relay lookup landed in, which hints at where you
 are), along with the other redactions listed in the README.
 
+On-demand traces (*Investigate*) can be started by anyone who can open the
+dashboard, without the admin token, and by anyone with the share link: `POST
+/s/<secret>/api/investigate` is the public listener's only write route. The
+safeguards are:
+
+- only the profile's target names are accepted, never a host or address;
+- each trace stops by itself after 250 rounds (about 10 minutes); re-posting
+  doesn't extend it;
+- at most 4 run at once, shared by the local and public listeners, of which
+  public starts may hold 3 (the owner always has a slot);
+- a target finished less than 5 minutes ago can't be restarted from the
+  public link;
+- the per-router probe cap is unchanged;
+- public starts are same-origin only (checked behind a real quick tunnel) and
+  limited per client by `Cf-Connecting-Ip` (IPv4 per address, IPv6 per /64;
+  1 per 30 s, 10 per hour), on top of the public rate limits; that key is
+  trustworthy because the public origin listens on 127.0.0.1 only; when the
+  limiter's table is full it prunes, then refuses new clients rather than
+  forgetting everyone;
+- the route takes exactly one `target` parameter and no body (a declared
+  length, chunking or anything read is refused), is never
+  cached, and its responses carry only the trace's state (target name,
+  rounds, times); hop addresses stay redacted as on every public trace view;
+- client addresses are never logged.
+
+The local route keeps the Host allowlist, the same-origin check and the CSRF
+token.
+
 
 In scope, for example:
 
@@ -51,7 +79,8 @@ In scope, for example:
   meant to be public: private addresses, settings, local-only endpoints,
   unpublished reports or notes;
 - bypasses of the local dashboard's protections (Host allowlist, CSRF,
-  `--admin-token`);
+  `--admin-token`), or of the on-demand trace safeguards above (tracing
+  anything but a profile target, more than 4 at once, past 250 rounds);
 - ways for a remote party to make fyisp run commands, read or write files, or
   exhaust memory or disk;
 - supply-chain issues in the release process (launchers, checksums, images).

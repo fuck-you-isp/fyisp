@@ -90,7 +90,7 @@ type server struct {
 	sem    chan struct{}   // bounds concurrent panel queries (public only)
 	cache  *respCache      // public only
 	hcache *respCache      // /api/home?part=history, local and public
-	inv    *investigations // on-demand traces; local only
+	inv    *Investigations // on-demand traces (Deps.Investigations, shared)
 	// canControl reports whether r may use the write routes (local only;
 	// api/speed's "configurable").
 	canControl func(r *http.Request) bool
@@ -104,7 +104,11 @@ func newServer(d Deps, public bool, token string) *server {
 	d.firsts = &firstCache{}
 	html := strings.NewReplacer("{{mode}}", mode, "{{token}}", token).Replace(indexTmpl)
 	hc := newRespCache(HomeHistoryTTL, 64, 4<<20, 1<<20)
-	return &server{d: d, public: public, index: []byte(html), now: time.Now, hcache: hc}
+	inv := d.Investigations
+	if inv == nil {
+		inv = NewInvestigations()
+	}
+	return &server{d: d, public: public, index: []byte(html), now: time.Now, hcache: hc, inv: inv}
 }
 
 // route is one GET route under the handler's base path.

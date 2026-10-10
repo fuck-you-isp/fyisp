@@ -352,6 +352,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	if err != nil {
 		return err
 	}
+	// The public origin must stay loopback-only: only the in-process tunnel
+	// may reach it, which is what makes its per-client limits' key
+	// (Cf-Connecting-Ip, set by Cloudflare's edge) trustworthy.
 	publicLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -382,9 +385,10 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			}
 			return out
 		},
-		Trace: newWebTrace(st, tr, prof),
-		Share: share,
-		Log:   log,
+		Trace:          newWebTrace(st, tr, prof),
+		Investigations: web.NewInvestigations(), // one set for both listeners
+		Share:          share,
+		Log:            log,
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed
