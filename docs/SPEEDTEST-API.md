@@ -18,9 +18,9 @@ GET api/speed?part=windows&from=now-6h&to=now
 | `part` | `summary`, `windows` | `summary` | |
 | `days` | `7`, `30` | `7` | `summary` only. The span of `tests`, `windows` and `by_hour`. |
 | `tz` | minutes **east** of UTC, integer -840..840 | `0` | `summary` only. Rounded to 15 min and echoed. Hours of day in `by_hour` and `pattern` are local to it. Send `-new Date().getTimezoneOffset()`. |
-| `from`, `to` | as `/api/panel` (`now-6h`, unix ms, RFC 3339) | `now-30m`, `now` | `windows` only, at most 90 days. |
+| `from`, `to` | as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms | `now-30m`, `now` | `windows` only, at most 90 days. |
 
-Caching: `summary` 30 s, `windows` 60 s, on both listeners. Every response has `at` (server time, unix ms).
+Caching: the share link caches both parts for 30 s; the local listener doesn't cache them, since `running` changes from second to second. Every response has `at` (server time, unix ms). Poll `summary` every few seconds while a test runs, and every 60 s otherwise.
 
 ### `part=summary`
 
@@ -46,6 +46,7 @@ Caching: `summary` 30 s, `windows` 60 s, on both listeners. Every response has `
   ],
   "latest": { ...Test },        // the newest test of any outcome, null if none ever
   "tests": [ ...Test ],         // every test in the last `days` days, oldest first (≤ 30 × 96)
+                                // golden examples: internal/web/testdata/speed/{local,public}.json
   "by_hour": {
     "hours": [                  // always 24 entries, hour 0..23 local
       {"hour": 0, "n": 9, "down_median_bps": 412000000, "down_p10_bps": 380000000,
@@ -53,7 +54,7 @@ Caching: `summary` 30 s, `windows` 60 s, on both listeners. Every response has `
       {"hour": 1, "n": 0, "down_median_bps": null, "down_p10_bps": null, "up_median_bps": null, "up_p10_bps": null}
       // ...
     ],
-    "dip_hours": [19, 20, 21, 22]   // hours to highlight (see pattern), [] if none
+    "dip_hours": [19, 20, 21, 22]   // the pattern's hours to highlight (judged over 30 days), [] if none
   },
   "pattern": {                  // null unless there is a clear pattern (same rule as Home)
     "text": "Evenings are slower: about 40% below your daytime speed.",

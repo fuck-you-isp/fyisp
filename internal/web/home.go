@@ -149,7 +149,7 @@ func parseHome(q url.Values, public bool) (homeParams, error) {
 	}
 	switch p.part {
 	case "live":
-		p.key = "home\x00live\x00" + p.voice
+		p.key = "home\x00live\x00" + p.voice + "\x00" + strconv.Itoa(p.tz)
 	case "at":
 		p.key = "home\x00at\x00" + strconv.FormatInt(p.at.UnixMilli(), 10) + "\x00" + p.voice
 	default:
@@ -181,9 +181,15 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.part == "live" {
 		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
-			l, err := s.homeLive(ctx, p.voice, s.now())
+			now := s.now()
+			l, err := s.homeLive(ctx, p.voice, now)
 			if err != nil {
 				return nil, err
+			}
+			// Speed by time of day: one plain line, only for a clear
+			// pattern (its hours are local, hence tz).
+			if pt := s.speedPattern(ctx, now, time.Duration(p.tz)*time.Minute); pt != nil {
+				l.Speed = &HomeSpeed{Text: pt.Text, Level: pt.Level}
 			}
 			return jsonCached(l)
 		})
