@@ -63,22 +63,21 @@ func resolve(t *testing.T, r *Registry, noPath bool, ns ...string) *model.Profil
 }
 
 func TestResolveDefaultUnchanged(t *testing.T) {
-	r := sampleRegistry(t)
 	want, err := Default()
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := resolve(t, r, false, "default")
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("--profile default differs from Default():\n got %+v\nwant %+v", got.Groups, want.Groups)
-	}
-	// And through the real embedded registry.
 	b, err := Builtin()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := resolve(t, b, false, "default"); !reflect.DeepEqual(got, want) {
-		t.Error("builtin --profile default differs from Default()")
+		t.Errorf("--profile default differs from Default():\n got %+v\nwant %+v", got.Groups, want.Groups)
+	}
+	// default selects from its registry's catalog: the sample has none of
+	// its targets.
+	if _, err := sampleRegistry(t).Resolve([]string{"default"}, ResolveOptions{}); err == nil || !strings.Contains(err.Error(), "not a probeable catalog target") {
+		t.Errorf("default over the sample catalog: %v", err)
 	}
 }
 
@@ -156,60 +155,39 @@ func TestResolveCombine(t *testing.T) {
 		t.Error(err)
 	}
 
-	// default first: catalog definitions replace default.yml targets of the
-	// same name (Discord, three AWS regions, two Hetzner sites) and move to
-	// the catalog's groups; the rest of default is untouched.
-	p = resolve(t, r, false, "default", "clouds", "common")
-	def, _ := Default()
-	replaced := []string{"Discord", "AWS-us-east-1", "AWS-us-west-2", "AWS-eu-central-1", "Hetzner-Falkenstein", "Hetzner-Ashburn"}
-	var kept []model.Target
-	for _, tg := range def.Targets {
-		if !slices.Contains(replaced, tg.Name) {
-			kept = append(kept, tg)
-		}
+	// default first: its part is untouched; targets it shares with calls
+	// keep their default group and place.
+	b, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(p.Targets[:len(kept)], kept) || !reflect.DeepEqual(p.Groups[:len(def.Groups)], def.Groups) {
+	def, _ := Default()
+	p = resolve(t, b, false, "default", "calls")
+	if !reflect.DeepEqual(p.Targets[:len(def.Targets)], def.Targets) || !reflect.DeepEqual(p.Groups[:len(def.Groups)], def.Groups) {
 		t.Errorf("default's part changed when combined: %v", names(p.Targets))
 	}
-	extra := names(p.Targets[len(kept):])
-	if !slices.Equal(extra, []string{"AWS-us-east-1", "AWS-us-west-2", "AWS-eu-central-1", "AWS-global-accelerator",
-		"Hetzner-Falkenstein", "Hetzner-Ashburn", "Discord", "Zoom-eu"}) {
+	extra := names(p.Targets[len(def.Targets):])
+	if !slices.Contains(extra, "Teams-Relay") || slices.Contains(extra, "Microsoft-Teams") || slices.Contains(extra, "Meet-STUN") {
 		t.Errorf("added %v", extra)
-	}
-	var ids []string
-	for _, g := range p.Groups[len(def.Groups):] {
-		ids = append(ids, g.ID)
-	}
-	if !slices.Equal(ids, []string{"aws-na", "aws-eu", "aws-global", "hetzner-na", "hetzner-eu", "services-voice"}) {
-		t.Errorf("new groups %v", ids)
-	}
-	by := map[string]model.Target{}
-	for _, tg := range p.Targets {
-		by[tg.Name] = tg
-	}
-	if a := by["AWS-us-east-1"]; a.Host != "dynamodb.us-east-1.amazonaws.com" || a.Path != "/ping" || a.Group != "aws-na" || !a.Trace {
-		t.Errorf("AWS-us-east-1 not replaced by the catalog one (trace kept): %+v", a)
 	}
 	if err := Validate(p, Limits{}); err != nil {
 		t.Error(err)
 	}
-	// The catalog wins in either order; default's AWS group merges into
-	// the catalog's aws group.
-	p = resolve(t, r, true, "aws", "default")
-	by = map[string]model.Target{}
+	// In the other order the calls groups win, and default's always-on
+	// trace carries over.
+	p = resolve(t, b, true, "calls", "default")
+	by := map[string]model.Target{}
 	for _, tg := range p.Targets {
 		by[tg.Name] = tg
 	}
-	if a := by["AWS-us-east-1"]; a.Host != "dynamodb.us-east-1.amazonaws.com" || a.Group != "aws" {
-		t.Errorf("aws,default: %+v", a)
+	if a := by["Microsoft-Teams"]; a.Group != "calls-apps" || !a.Trace {
+		t.Errorf("calls,default: %+v", a)
 	}
-	if len(p.Targets) != 4+88 || p.Groups[0].ID != "aws" || len(p.Groups) != 8 {
-		t.Errorf("aws,default: %d targets, groups %v", len(p.Targets), groupSummary(p))
+	if a := by["CDN-Cloudflare"]; a.Group != "web" || !a.Trace {
+		t.Errorf("calls,default: %+v", a)
 	}
-	// A group emptied by replacements is dropped and orders renumbered.
-	p = resolve(t, r, true, "default", "services-voice")
-	if i := indexGroup(p.Groups, "common"); i < 0 {
-		t.Error("common dropped though Google-Meet is left")
+	if len(p.Targets) != len(by) {
+		t.Errorf("calls,default: duplicates in %v", names(p.Targets))
 	}
 	// Repeating a profile changes nothing.
 	if q := resolve(t, r, false, "aws", "aws", "hyperscalers"); len(q.Targets) != 5+4 || len(q.Groups) != 2 {
@@ -240,12 +218,16 @@ func TestGeoFilter(t *testing.T) {
 		"aws-eu=Amazon Web Services · Europe/1", "hetzner-eu=Hetzner · Europe/1", "services-voice=Voice & video/1"}) {
 		t.Errorf("groups %v", got)
 	}
-	// default targets count by their catalog entry's geo; the others go.
-	p, err = r.Resolve([]string{"default"}, ResolveOptions{Geos: []string{"na"}})
+	// default's targets are all anycast: no geo keeps any of them.
+	b, err := Builtin()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := names(p.Targets[5:]); !slices.Equal(got, []string{"AWS-us-east-1", "AWS-us-west-2", "Hetzner-Ashburn"}) || p.Groups[0].ID != PathGroup {
+	p, err = b.Resolve([]string{"default"}, ResolveOptions{Geos: []string{"na"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(p.Targets); len(got) != 5 || p.Groups[0].ID != PathGroup {
 		t.Errorf("default@na: %v", got)
 	}
 	if _, err := r.Resolve([]string{"aws"}, ResolveOptions{Geos: []string{"europe"}}); err == nil {
@@ -262,12 +244,12 @@ func TestGeoFilter(t *testing.T) {
 
 func TestLimits(t *testing.T) {
 	r := sampleRegistry(t)
-	p := resolve(t, r, false, "default", "clouds") // 96 + 4 new
-	err := Validate(p, Limits{MaxTargets: 50})
-	if err == nil || !strings.Contains(err.Error(), "at most 50 allowed") {
+	p := resolve(t, r, false, "clouds", "common") // 5 + 8
+	err := Validate(p, Limits{MaxTargets: 10})
+	if err == nil || !strings.Contains(err.Error(), "at most 10 allowed") {
 		t.Errorf("limit: %v", err)
 	}
-	if err := Validate(p, Limits{MaxTargets: 100}); err != nil {
+	if err := Validate(p, Limits{MaxTargets: 13}); err != nil {
 		t.Error(err)
 	}
 }
@@ -398,14 +380,6 @@ add:
 	}
 	if _, err := Load(write(t, "extends: [nope]\n")); err == nil || !strings.Contains(err.Error(), "unknown profile") {
 		t.Errorf("unknown: %v", err)
-	}
-	// extends: [default] still works without the registry.
-	p, err = Load(write(t, "extends: [default, common]\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(p.Targets) != 96+1 {
-		t.Errorf("default+common: %d targets", len(p.Targets))
 	}
 }
 

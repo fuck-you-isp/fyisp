@@ -51,7 +51,7 @@ func TestLoadProfileFlags(t *testing.T) {
 		}
 	}
 	c, _ := parseFlags([]string{"--no-path"})
-	if p, _ := loadProfile(c); len(p.Targets) != 91 || p.Groups[0].ID == profile.PathGroup {
+	if p, _ := loadProfile(c); len(p.Targets) != 22 || p.Groups[0].ID == profile.PathGroup {
 		t.Errorf("--no-path: %d targets", len(p.Targets))
 	}
 	c, _ = parseFlags([]string{"--profile", "nope"})
@@ -90,13 +90,44 @@ func TestLoadProfileFlags(t *testing.T) {
 	}
 }
 
+// TestProfileEnv: FYISP_PROFILE stands in for --profile; --profile and
+// --config win over it.
+func TestProfileEnv(t *testing.T) {
+	t.Setenv("FYISP_PROFILE", " Calls, dns ")
+	c, err := parseFlags(nil)
+	if err != nil || !slices.Equal(c.profiles, []string{"calls", "dns"}) {
+		t.Fatalf("env: %v %v", c.profiles, err)
+	}
+	if p, err := loadProfile(c); err != nil || p.Name != "calls,dns" {
+		t.Errorf("env profile: %v", err)
+	}
+	if c, _ := parseFlags([]string{"--profile", "aws"}); !slices.Equal(c.profiles, []string{"aws"}) {
+		t.Errorf("--profile: %v", c.profiles)
+	}
+	f := filepath.Join(t.TempDir(), "p.yml")
+	if err := os.WriteFile(f, []byte("extends: [default]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := parseFlags([]string{"--config", f}); err != nil || len(c.profiles) != 0 {
+		t.Errorf("--config: %v %v", c.profiles, err)
+	}
+	// --geo still needs a profile: the env's.
+	if c, err := parseFlags([]string{"--geo", "eu"}); err != nil || !slices.Equal(c.profiles, []string{"calls", "dns"}) {
+		t.Errorf("--geo: %v %v", c.profiles, err)
+	}
+	t.Setenv("FYISP_PROFILE", "")
+	if c, _ := parseFlags(nil); len(c.profiles) != 0 {
+		t.Errorf("empty env: %v", c.profiles)
+	}
+}
+
 func TestCmdProfiles(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := cmdProfiles(nil, &out, &errb); code != 0 {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	s := out.String()
-	for _, want := range []string{"PROFILE", "default", "91", "hyperscalers", "europe", "gaming", "all", "calls", "PROVIDER"} {
+	for _, want := range []string{"PROFILE", "default", "22", "hyperscalers", "europe", "gaming", "all", "calls", "PROVIDER"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("list lacks %q:\n%s", want, s)
 		}
@@ -109,7 +140,7 @@ func TestCmdProfiles(t *testing.T) {
 	if code := cmdProfiles([]string{"default"}, &out, &errb); code != 0 {
 		t.Fatal(code)
 	}
-	if s := out.String(); !strings.Contains(s, "Profile default: 91 targets in 8 panels") || !strings.Contains(s, "dev-GitHub  github.com/robots.txt") {
+	if s := out.String(); !strings.Contains(s, "Profile default: 22 targets in 4 panels") || !strings.Contains(s, "CDN-Google      www.gstatic.com/generate_204") {
 		t.Errorf("default:\n%s", s)
 	}
 
@@ -148,7 +179,7 @@ func TestNoUDP(t *testing.T) {
 		return slices.ContainsFunc(p.Targets, func(tg model.Target) bool { return tg.IsUDP() })
 	}
 	p, err := loadProfile(c)
-	if err != nil || hasUDP(p) || len(p.Targets) != 87+5 || slices.ContainsFunc(p.Groups, func(g model.Group) bool { return g.ID == "calls" }) {
+	if err != nil || hasUDP(p) || len(p.Targets) != 18+5 || slices.ContainsFunc(p.Groups, func(g model.Group) bool { return g.ID == "calls" }) {
 		t.Fatalf("default --no-udp: %v, %d targets", err, len(p.Targets))
 	}
 	c, _ = parseFlags([]string{"--profile", "calls", "--no-udp"})

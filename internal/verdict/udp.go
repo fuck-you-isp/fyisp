@@ -46,7 +46,7 @@ import (
 // Providers. Independence is judged by the registrable part of the host's
 // domain (udpProvider), not by the catalog's provider ID: calls-stun.yml
 // lists Google's, Cloudflare's, Twilio's and Microsoft's servers under one
-// provider, and default.yml's copies carry none. One dead STUN service
+// provider, and a --config file's STUN targets carry none. One dead STUN service
 // therefore never raises a verdict.
 //
 // Evidence (besides the TCP rules' keys): udp_providers (providers judged),

@@ -118,19 +118,6 @@ func TestEmbeddedCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("embedded catalog: %d providers, %d targets", len(r.Catalog.Providers), len(r.Catalog.Targets))
-	// Catalog names that are also default targets are the same identity:
-	// combined with default, the catalog definition wins.
-	def, err := Default()
-	if err != nil {
-		t.Fatal(err)
-	}
-	shared := 0
-	for _, tg := range def.Targets {
-		if _, ok := r.Catalog.Target(tg.Name); ok {
-			shared++
-		}
-	}
-	t.Logf("%d default.yml targets are also in the catalog", shared)
 }
 
 func TestCatalogErrors(t *testing.T) {
@@ -173,6 +160,8 @@ func TestCatalogErrors(t *testing.T) {
 		"field regoin not found":       {"a.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: eu, regoin: x", 1))}},
 		"field website not found":      {"a.yml": {Data: []byte("website: x\n" + good)}},
 		"empty file":                   {"a.yml": {Data: nil}},
+		"tag \"home:tv\"":              {"a.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: eu, tags: [home:tv]", 1))}},
+		"more than one home: tag":      {"a.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: eu, tags: [home:web, home:work]", 1))}},
 	}
 	for want, fsys := range cases {
 		_, err := LoadCatalog(fsys)

@@ -1,150 +1,57 @@
-# fyisp default profile: 91 targets in 8 groups (one dashboard panel each).
-# Target names are identities: renaming one starts a new time series.
+# fyisp default profile: what a home and a remote worker rely on. 22 targets
+# in 4 groups (one dashboard panel each); the Home view sorts them into its
+# tiles by their home: tag (see package profile, HomeCategory).
+#
+# Every target is a catalog target (catalog/*.yml), named here with its
+# group and, optionally, `trace: true`: everything else (host, port, kinds,
+# interval, tags) comes from the catalog entry, so the default and the
+# catalog cannot drift apart. Target names are identities: renaming one
+# starts a new time series.
+#
 # The built-in "Network path" group (gateway, ISP edge, anycast resolvers) is
-# added in code, before these groups (see package profile).
+# added in code, before these groups. It also covers DNS: the resolvers are
+# probed there, and failing lookups raise the dns verdict.
 #
-# Every target is probed with a TCP connect to port 443 (a target without
-# `kinds` gets [tcp]) every `interval` (default 15s). An interval must be whole
-# seconds, divisible by 3 and divide an hour evenly (6s, 9s, 12s, 15s, 30s,
-# 60s, ...). The network path group keeps ICMP.
+# TCP targets are probed with a TCP connect to port 443 every 15s; the call
+# path's STUN targets send a burst of 5 Binding Requests every 5s (15s for
+# Cloudflare-UDP53). Two targets have an always-on traceroute (every 5s).
 #
-# One target per group has `trace: true`: an always-on traceroute every 5s
-# (per-hop loss and latency, route changes).
-#
-# The "calls" group measures the UDP path call audio and video use: STUN
-# Binding Requests (`kinds: [udp]`, a burst of 5 every `interval`) to public
-# STUN servers. They are the same targets as in catalog/calls-stun.yml (a
-# test keeps them equal); the Teams relay is there too, but opt-in only
-# (`--profile default,calls`).
+# Left out on purpose, each a --profile away: the Teams relay (calls, opt-in),
+# streaming (its lookups would show up in an employer's DNS logs every
+# minute, as would social sites), clouds and gaming.
 name: default
 version: "1"
 
 groups:
-  - id: common
-    title: "Common Services (<100ms is good for audio/video calls)"
-    order: 1
-  - id: dns
-    title: "DNS"
-    order: 2
-  - id: devtunnels
-    title: "DevTunnels"
-    order: 3
-  - id: dev
-    title: "Various Dev Related Services"
-    order: 4
-  - id: aws
-    title: "Amazon Web Services"
-    order: 5
-  - id: hetzner
-    title: "Hetzner"
-    order: 6
-  - id: gcp
-    title: "Google Cloud Platform"
-    order: 7
-  - id: calls
-    title: "Call path (UDP)"
-    order: 8
+  - {id: calls, title: "Call path", order: 1}
+  - {id: call-apps, title: "Call & chat apps", order: 2}
+  - {id: work, title: "Work apps", order: 3}
+  - {id: web, title: "Websites", order: 4}
 
 targets:
-  # Common Services (<100ms is good for audio/video calls)
-  # lens.l.google.com does not answer on TCP 443: TCP (and HTTPS, for files
-  # that add it) goes to meet.google.com.
-  - {name: Google-Meet, host: lens.l.google.com, group: common, host_overrides: {https: meet.google.com, tcp: meet.google.com}, tags: [app:meet]}
-  - {name: Microsoft-Teams, host: teams.microsoft.com, group: common, tags: [app:teams]}
-  - {name: Discord, host: discord.gg, group: common, trace: true, tags: [app:discord]}
-  # DNS
-  - {name: google-dns, host: 8.8.8.8, group: dns}
-  - {name: cloudflare-dns, host: 1.1.1.1, group: dns, trace: true}
-  - {name: quad9-dns, host: 9.9.9.9, group: dns}
-  - {name: open-dns, host: 208.67.222.222, group: dns}
-  # DevTunnels
-  - {name: DevTunnel-Global, host: global.rel.tunnels.api.visualstudio.com, group: devtunnels, trace: true}
-  - {name: DevTunnel-UkSouth, host: uks1.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-NorthEurope, host: eun1.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-WestEurope, host: euw.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-EastUs, host: use.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-EastUs2, host: use2.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-WestUs3, host: usw3.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-WestUs2, host: usw2.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-SouthEastAsia, host: asse.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-BrazilSouth, host: brs.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-CentralIndia, host: inc1.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-AustraliaEast, host: aue.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  - {name: DevTunnel-AustraliaCentral, host: auc1.rel.tunnels.api.visualstudio.com, group: devtunnels}
-  # Various Dev Related Services
-  - {name: dev-GHCR, host: pkg-containers.githubusercontent.com, group: dev}
-  # For files that add https: github.com "/" is 576 KB; robots.txt is tiny.
-  - {name: dev-GitHub, host: github.com, group: dev, path: /robots.txt, trace: true}
-  # Amazon Web Services
-  - {name: AWS-us-east-1, host: s3.us-east-1.amazonaws.com, group: aws, trace: true}
-  - {name: AWS-us-east-2, host: s3.us-east-2.amazonaws.com, group: aws}
-  - {name: AWS-us-west-1, host: s3.us-west-1.amazonaws.com, group: aws}
-  - {name: AWS-us-west-2, host: s3.us-west-2.amazonaws.com, group: aws}
-  - {name: AWS-af-south-1, host: s3.af-south-1.amazonaws.com, group: aws}
-  - {name: AWS-ap-east-1, host: s3.ap-east-1.amazonaws.com, group: aws}
-  - {name: AWS-ap-east-2, host: s3.ap-east-2.amazonaws.com, group: aws}
-  - {name: AWS-ap-south-1, host: s3.ap-south-1.amazonaws.com, group: aws}
-  - {name: AWS-ap-south-2, host: s3.ap-south-2.amazonaws.com, group: aws}
-  - {name: AWS-ap-southeast-1, host: s3.ap-southeast-1.amazonaws.com, group: aws}
-  - {name: AWS-ap-southeast-2, host: s3.ap-southeast-2.amazonaws.com, group: aws}
-  - {name: AWS-ap-southeast-3, host: s3.ap-southeast-3.amazonaws.com, group: aws}
-  - {name: AWS-ap-southeast-4, host: s3.ap-southeast-4.amazonaws.com, group: aws}
-  - {name: AWS-ap-southeast-5, host: s3.ap-southeast-5.amazonaws.com, group: aws}
-  - {name: AWS-ap-southeast-6, host: s3.ap-southeast-6.amazonaws.com, group: aws}
-  - {name: AWS-ap-southeast-7, host: s3.ap-southeast-7.amazonaws.com, group: aws}
-  - {name: AWS-ap-northeast-1, host: s3.ap-northeast-1.amazonaws.com, group: aws}
-  - {name: AWS-ap-northeast-2, host: s3.ap-northeast-2.amazonaws.com, group: aws}
-  - {name: AWS-ap-northeast-3, host: s3.ap-northeast-3.amazonaws.com, group: aws}
-  - {name: AWS-ca-central-1, host: s3.ca-central-1.amazonaws.com, group: aws}
-  - {name: AWS-ca-west-1, host: s3.ca-west-1.amazonaws.com, group: aws}
-  - {name: AWS-eu-central-1, host: s3.eu-central-1.amazonaws.com, group: aws}
-  - {name: AWS-eu-central-2, host: s3.eu-central-2.amazonaws.com, group: aws}
-  - {name: AWS-eu-west-1, host: s3.eu-west-1.amazonaws.com, group: aws}
-  - {name: AWS-eu-west-2, host: s3.eu-west-2.amazonaws.com, group: aws}
-  - {name: AWS-eu-west-3, host: s3.eu-west-3.amazonaws.com, group: aws}
-  - {name: AWS-eu-north-1, host: s3.eu-north-1.amazonaws.com, group: aws}
-  - {name: AWS-eu-south-1, host: s3.eu-south-1.amazonaws.com, group: aws}
-  - {name: AWS-eu-south-2, host: s3.eu-south-2.amazonaws.com, group: aws}
-  - {name: AWS-il-central-1, host: s3.il-central-1.amazonaws.com, group: aws}
-  - {name: AWS-mx-central-1, host: s3.mx-central-1.amazonaws.com, group: aws}
-  - {name: AWS-me-south-1, host: s3.me-south-1.amazonaws.com, group: aws}
-  - {name: AWS-me-central-1, host: s3.me-central-1.amazonaws.com, group: aws}
-  - {name: AWS-sa-east-1, host: s3.sa-east-1.amazonaws.com, group: aws}
-  # Hetzner
-  - {name: Hetzner-Falkenstein, host: fsn1-speed.hetzner.com, group: hetzner, trace: true}
-  - {name: Hetzner-Nuremberg, host: nbg1-speed.hetzner.com, group: hetzner}
-  - {name: Hetzner-Helsinki, host: hel1-speed.hetzner.com, group: hetzner}
-  - {name: Hetzner-Ashburn, host: ash-speed.hetzner.com, group: hetzner}
-  - {name: Hetzner-Hillsboro, host: hil-speed.hetzner.com, group: hetzner}
-  - {name: Hetzner-Singapore, host: sin-speed.hetzner.com, group: hetzner}
-  # Google Cloud Platform
-  - {name: GCP-us-west1, host: storage.us-west1.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-west2, host: storage.us-west2.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-west3, host: storage.us-west3.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-west4, host: storage.us-west4.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-central1, host: storage.us-central1.rep.googleapis.com, group: gcp, trace: true}
-  - {name: GCP-us-east1, host: storage.us-east1.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-east4, host: storage.us-east4.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-east5, host: storage.us-east5.rep.googleapis.com, group: gcp}
-  - {name: GCP-us-south1, host: storage.us-south1.rep.googleapis.com, group: gcp}
-  - {name: GCP-northamerica-northeast1, host: storage.northamerica-northeast1.rep.googleapis.com, group: gcp}
-  - {name: GCP-northamerica-northeast2, host: storage.northamerica-northeast2.rep.googleapis.com, group: gcp}
-  - {name: GCP-southamerica-east1, host: storage.southamerica-east1.rep.googleapis.com, group: gcp}
-  - {name: GCP-southamerica-west1, host: storage.southamerica-west1.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west1, host: storage.europe-west1.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west2, host: storage.europe-west2.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west3, host: storage.europe-west3.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west4, host: storage.europe-west4.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west6, host: storage.europe-west6.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west8, host: storage.europe-west8.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west9, host: storage.europe-west9.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west10, host: storage.europe-west10.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-west12, host: storage.europe-west12.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-north1, host: storage.europe-north1.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-southwest1, host: storage.europe-southwest1.rep.googleapis.com, group: gcp}
-  - {name: GCP-europe-central2, host: storage.europe-central2.rep.googleapis.com, group: gcp}
-  # Call path (UDP): STUN bursts, see catalog/calls-stun.yml
-  - {name: Meet-STUN, host: stun.l.google.com, port: 19302, group: calls, kinds: [udp], interval: 5s, tags: [udp-path, app:meet]}
-  - {name: Cloudflare-STUN, host: stun.cloudflare.com, port: 3478, group: calls, kinds: [udp], interval: 5s, tags: [udp-path]}
-  - {name: Cloudflare-UDP53, host: stun.cloudflare.com, port: 53, group: calls, kinds: [udp], interval: 15s, tags: [udp-path, udp-53]}
-  - {name: Twilio-STUN-global, host: global.stun.twilio.com, port: 3478, group: calls, kinds: [udp], interval: 5s, tags: [udp-path]}
+  # Call path (UDP): STUN to three independent providers (catalog/calls-stun.yml)
+  - {name: Meet-STUN, group: calls}
+  - {name: Cloudflare-STUN, group: calls}
+  - {name: Cloudflare-UDP53, group: calls}
+  - {name: Twilio-STUN-global, group: calls}
+  # Call & chat apps (catalog/services-communication.yml)
+  - {name: Microsoft-Teams, group: call-apps, trace: true}
+  - {name: Zoom, group: call-apps}
+  - {name: Google-Meet, group: call-apps}
+  - {name: Slack, group: call-apps}
+  - {name: Webex, group: call-apps}
+  - {name: Discord, group: call-apps}
+  - {name: WhatsApp-Chat, group: call-apps}
+  # Work apps (catalog/services-productivity.yml)
+  - {name: M365-Outlook, group: work}
+  - {name: M365-Portal, group: work}
+  - {name: M365-Login, group: work}
+  - {name: Google-Gmail, group: work}
+  - {name: Google-Docs, group: work}
+  - {name: Google-Drive, group: work}
+  # Websites: most popular sites are served by one of these CDNs (catalog/cdn-*.yml)
+  - {name: CDN-Cloudflare, group: web, trace: true}
+  - {name: CDN-Akamai, group: web}
+  - {name: CDN-Fastly, group: web}
+  - {name: CDN-CloudFront, group: web}
+  - {name: CDN-Google, group: web}

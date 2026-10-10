@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -13,22 +13,9 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// templateTargets reads the legacy network_exporter target list.
-func templateTargets(t *testing.T) (names, hosts []string) {
-	t.Helper()
-	b, err := os.ReadFile("testdata/network_exporter.yml.template")
-	if err != nil {
-		t.Fatal(err)
-	}
-	re := regexp.MustCompile(`-\s*name:\s*(\S+)\s*\n\s*host:\s*(\S+)`)
-	for _, m := range re.FindAllStringSubmatch(string(b), -1) {
-		names = append(names, m[1])
-		hosts = append(hosts, m[2])
-	}
-	return names, hosts
-}
-
-func TestDefaultMatchesTemplate(t *testing.T) {
+// TestDefaultMatchesCatalog checks that every default target is its
+// catalog entry, in its default.yml group, with only the trace added.
+func TestDefaultMatchesCatalog(t *testing.T) {
 	p, err := Default()
 	if err != nil {
 		t.Fatal(err)
@@ -36,37 +23,45 @@ func TestDefaultMatchesTemplate(t *testing.T) {
 	if err := Validate(p, Limits{}); err != nil {
 		t.Fatalf("default profile invalid: %v", err)
 	}
-	names, hosts := templateTargets(t)
-	var legacy []model.Target // the TCP targets; the call path's STUN targets are new
+	r, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	traced := map[string]bool{}
 	for _, tg := range withoutPath(p.Targets) {
-		if !tg.IsUDP() {
-			legacy = append(legacy, tg)
-		}
-	}
-	if len(names) != 87 || len(legacy) != 87 {
-		t.Fatalf("template has %d targets, default has %d outside the path group; want 87", len(names), len(legacy))
-	}
-	want := map[string]string{}
-	for i, n := range names {
-		want[n] = hosts[i]
-	}
-	var got []string
-	for _, tg := range legacy {
-		got = append(got, tg.Name)
-		h, ok := want[tg.Name]
+		ct, ok := r.Catalog.Target(tg.Name)
 		if !ok {
-			t.Errorf("target %q not in template", tg.Name)
-		} else if tg.Host != h {
-			t.Errorf("target %q host %q, template %q", tg.Name, tg.Host, h)
+			t.Errorf("%s: not in the catalog", tg.Name)
+			continue
 		}
-		if tg.Interval != 15*time.Second || !slices.Equal(tg.Kinds, []model.ProbeKind{model.KindTCP}) {
-			t.Errorf("target %q: interval %s kinds %v", tg.Name, tg.Interval, tg.Kinds)
+		want := ct.toTarget(tg.Group, r.Catalog.Provider(ct.Provider))
+		want.Trace = tg.Trace
+		if !reflect.DeepEqual(tg, want) {
+			t.Errorf("%s:\n got %+v\nwant %+v", tg.Name, tg, want)
+		}
+		traced[tg.Name] = tg.Trace
+	}
+	if n := len(withoutPath(p.Targets)); n != 22 {
+		t.Errorf("%d targets, want 22", n)
+	}
+	for n, on := range traced {
+		if on != (n == "Microsoft-Teams" || n == "CDN-Cloudflare") {
+			t.Errorf("%s: trace %v", n, on)
 		}
 	}
-	slices.Sort(got)
-	slices.Sort(names)
-	if !slices.Equal(got, names) {
-		t.Errorf("names differ:\n got %v\nwant %v", got, names)
+	// default.yml names targets; everything else comes from the catalog.
+	old := defaultYAML
+	t.Cleanup(func() { defaultYAML = old })
+	for yml, want := range map[string]string{
+		"targets: [{name: Zoom, group: g, host: zoom.us}]": "only name, group and trace",
+		"targets: [{name: Zoom, group: g, tags: [x]}]":     "only name, group and trace",
+		"targets: [{name: Nope, group: g}]":                "not a probeable catalog target",
+		"targets: [{name: Zoom, group: g, interval: 30s}]": "only name, group and trace",
+	} {
+		defaultYAML = []byte("groups: [{id: g, title: G}]\n" + yml + "\n")
+		if _, err := Default(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v", yml, err)
+		}
 	}
 }
 
@@ -85,10 +80,7 @@ func TestDefaultGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	titles := []string{
-		"Common Services (<100ms is good for audio/video calls)", "DNS", "DevTunnels",
-		"Various Dev Related Services", "Amazon Web Services", "Hetzner", "Google Cloud Platform", "Call path (UDP)",
-	}
+	titles := []string{"Call path", "Call & chat apps", "Work apps", "Websites"}
 	if len(p.Groups) != len(titles)+1 {
 		t.Fatalf("%d groups", len(p.Groups))
 	}
@@ -104,27 +96,14 @@ func TestDefaultGroups(t *testing.T) {
 	for _, tg := range withoutPath(p.Targets) {
 		count[tg.Group] = append(count[tg.Group], tg.Name)
 	}
-	if c := count["common"]; !slices.Equal(c, []string{"Google-Meet", "Microsoft-Teams", "Discord"}) {
-		t.Errorf("common = %v (the old panel-1 bug pulled AWS in)", c)
+	want := map[string][]string{
+		"calls":     {"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global"},
+		"call-apps": {"Microsoft-Teams", "Zoom", "Google-Meet", "Slack", "Webex", "Discord", "WhatsApp-Chat"},
+		"work":      {"M365-Outlook", "M365-Portal", "M365-Login", "Google-Gmail", "Google-Docs", "Google-Drive"},
+		"web":       {"CDN-Cloudflare", "CDN-Akamai", "CDN-Fastly", "CDN-CloudFront", "CDN-Google"},
 	}
-	wantPrefix := map[string]*regexp.Regexp{
-		"dns": regexp.MustCompile(`-dns$`), "devtunnels": regexp.MustCompile(`^DevTunnel-`),
-		"dev": regexp.MustCompile(`^dev-`), "aws": regexp.MustCompile(`^AWS-`),
-		"hetzner": regexp.MustCompile(`^Hetzner-`), "gcp": regexp.MustCompile(`^GCP-`),
-	}
-	sizes := map[string]int{"dns": 4, "devtunnels": 13, "dev": 2, "aws": 34, "hetzner": 6, "gcp": 25}
-	if c := count["calls"]; !slices.Equal(c, []string{"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global"}) {
-		t.Errorf("calls = %v", c)
-	}
-	for g, re := range wantPrefix {
-		if len(count[g]) != sizes[g] {
-			t.Errorf("group %s has %d targets, want %d", g, len(count[g]), sizes[g])
-		}
-		for _, n := range count[g] {
-			if !re.MatchString(n) {
-				t.Errorf("group %s contains %s", g, n)
-			}
-		}
+	if !reflect.DeepEqual(count, want) {
+		t.Errorf("groups %v", count)
 	}
 }
 
@@ -134,10 +113,6 @@ func TestDefaultOverrides(t *testing.T) {
 	for _, tg := range p.Targets {
 		byName[tg.Name] = tg
 	}
-	gh := byName["dev-GitHub"]
-	if gh.Path != "/robots.txt" {
-		t.Errorf("dev-GitHub path %q", gh.Path)
-	}
 	m := byName["Google-Meet"]
 	if m.HostFor(model.KindHTTPS) != "meet.google.com" || m.HostFor(model.KindTCP) != "meet.google.com" ||
 		m.HostFor(model.KindICMP) != "lens.l.google.com" {
@@ -145,9 +120,13 @@ func TestDefaultOverrides(t *testing.T) {
 	}
 	// Default returns independent copies.
 	p.Targets[0].Name = "changed"
+	byName["Google-Meet"].Tags[0] = "changed"
+	byName["Google-Meet"].HostOverrides[model.KindTCP] = "changed"
 	q, _ := Default()
-	if q.Targets[0].Name == "changed" {
-		t.Error("Default shares state between calls")
+	for _, tg := range q.Targets {
+		if tg.Name == "changed" || slices.Contains(tg.Tags, "changed") || tg.HostOverrides[model.KindTCP] == "changed" {
+			t.Errorf("Default shares state between calls: %+v", tg)
+		}
 	}
 }
 
@@ -166,10 +145,10 @@ name: mine
 extends: [default]
 groups:
   - {id: home, title: Home}
-  - {id: dns, title: Resolvers}
-remove: [Discord, AWS-us-east-1]
+  - {id: web, title: Sites}
+remove: [Discord, Zoom]
 override:
-  - {name: dev-GitHub, interval: 30s, kinds: [https, icmp]}
+  - {name: CDN-Google, interval: 30s, kinds: [https, icmp]}
   - {name: Google-Meet, host_overrides: {icmp: meet.google.com}}
 add:
   - {name: router, host: 192.168.1.1, group: home, kinds: [icmp], interval: 6s}
@@ -178,10 +157,10 @@ add:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "mine" || len(p.Targets) != 90+5 {
+	if p.Name != "mine" || len(p.Targets) != 21+5 {
 		t.Fatalf("name %q, %d targets", p.Name, len(p.Targets))
 	}
-	if len(p.Groups) != 10 || p.Groups[0].ID != PathGroup || p.Groups[9].ID != "home" || p.Groups[9].Order != 9 || p.Groups[2].Title != "Resolvers" {
+	if len(p.Groups) != 6 || p.Groups[0].ID != PathGroup || p.Groups[5].ID != "home" || p.Groups[5].Order != 5 || p.Groups[4].Title != "Sites" {
 		t.Errorf("groups %+v", p.Groups)
 	}
 	by := map[string]model.Target{}
@@ -191,10 +170,10 @@ add:
 	if _, ok := by["Discord"]; ok {
 		t.Error("Discord not removed")
 	}
-	gh := by["dev-GitHub"]
-	if gh.Interval != 30*time.Second || !slices.Equal(gh.Kinds, []model.ProbeKind{model.KindHTTPS, model.KindICMP}) ||
-		gh.Path != "/robots.txt" || gh.Host != "github.com" {
-		t.Errorf("dev-GitHub override: %+v", gh)
+	cg := by["CDN-Google"]
+	if cg.Interval != 30*time.Second || !slices.Equal(cg.Kinds, []model.ProbeKind{model.KindHTTPS, model.KindICMP}) ||
+		cg.Path != "/generate_204" || cg.Host != "www.gstatic.com" {
+		t.Errorf("CDN-Google override: %+v", cg)
 	}
 	if h := by["Google-Meet"].HostFor(model.KindICMP); h != "meet.google.com" {
 		t.Errorf("Google-Meet icmp host %s", h)
@@ -333,7 +312,7 @@ func TestPathGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Targets) != 96 || p.Groups[0].ID != PathGroup {
+	if len(p.Targets) != 22+5 || p.Groups[0].ID != PathGroup {
 		t.Errorf("path: true: %d targets, groups %+v", len(p.Targets), p.Groups)
 	}
 	// Negative orders still sort after the path group.
@@ -481,24 +460,26 @@ func TestTrace(t *testing.T) {
 			perGroup[tg.Group]++
 		}
 	}
-	want := []string{"Discord", "cloudflare-dns", "DevTunnel-Global", "dev-GitHub", "AWS-us-east-1", "Hetzner-Falkenstein", "GCP-us-central1"}
+	want := []string{"Microsoft-Teams", "CDN-Cloudflare"}
 	if !slices.Equal(traced, want) {
 		t.Errorf("traced targets %v, want %v", traced, want)
 	}
+	// One trace for the call apps and one for the websites: work apps share
+	// their paths with them (Microsoft's and Google's edges).
 	for _, g := range p.Groups {
-		if g.ID != PathGroup && g.ID != "calls" && perGroup[g.ID] != 1 {
-			t.Errorf("group %s: %d traced targets, want 1", g.ID, perGroup[g.ID])
+		if w := map[string]int{"call-apps": 1, "web": 1}[g.ID]; perGroup[g.ID] != w {
+			t.Errorf("group %s: %d traced targets, want %d", g.ID, perGroup[g.ID], w)
 		}
 	}
 
 	f := write(t, `
 extends: [default]
 override:
-  - {name: Discord, trace: false}
-  - {name: google-dns, trace: true}
-  - {name: dev-GitHub, interval: 30s}
+  - {name: Microsoft-Teams, trace: false}
+  - {name: Zoom, trace: true}
+  - {name: CDN-Cloudflare, kinds: [https]}
 add:
-  - {name: router, host: 192.168.1.1, group: common, kinds: [icmp], trace: true}
+  - {name: router, host: 192.168.1.1, group: call-apps, kinds: [icmp], trace: true}
 `)
 	p, err = Load(f)
 	if err != nil {
@@ -508,7 +489,7 @@ add:
 	for _, tg := range p.Targets {
 		got[tg.Name] = tg.Trace
 	}
-	if got["Discord"] || !got["google-dns"] || !got["router"] || !got["dev-GitHub"] {
+	if got["Microsoft-Teams"] || !got["Zoom"] || !got["router"] || !got["CDN-Cloudflare"] {
 		t.Errorf("trace after override/add: %v", got)
 	}
 
@@ -526,8 +507,7 @@ add:
 }
 
 // TestShippedUDP pins the STUN targets: default has four (no Teams relay:
-// it is opt-in), calls has every STUN target plus the call apps over TCP,
-// and default.yml's copies equal the catalog's.
+// it is opt-in), calls has every STUN target plus the call apps over TCP.
 func TestShippedUDP(t *testing.T) {
 	r, err := Builtin()
 	if err != nil {
@@ -545,20 +525,6 @@ func TestShippedUDP(t *testing.T) {
 	def, _ := Default()
 	if got := udpNames(def); !slices.Equal(got, []string{"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global"}) {
 		t.Errorf("default UDP targets %v", got)
-	}
-	for _, tg := range def.Targets {
-		if !tg.IsUDP() {
-			continue
-		}
-		ct, ok := r.Catalog.Target(tg.Name)
-		if !ok {
-			t.Errorf("%s: not in the catalog", tg.Name)
-			continue
-		}
-		c := ct.toTarget(tg.Group, nil)
-		if c.Host != tg.Host || c.Port != tg.Port || c.Interval != tg.Interval || !slices.Equal(c.Tags, tg.Tags) || !slices.Equal(c.Kinds, tg.Kinds) {
-			t.Errorf("%s: default.yml %s:%d %s %v, catalog %s:%d %s %v", tg.Name, tg.Host, tg.Port, tg.Interval, tg.Tags, c.Host, c.Port, c.Interval, c.Tags)
-		}
 	}
 	calls, err := r.Resolve([]string{"calls"}, ResolveOptions{})
 	if err != nil {
@@ -596,7 +562,8 @@ func TestShippedUDP(t *testing.T) {
 	if g := calls.Groups; len(g) != 4 || g[1].ID != "calls-udp" || g[2].ID != "calls-regions" || g[3].ID != "calls-apps" {
 		t.Errorf("calls groups %+v", g)
 	}
-	// all selects them too; default+calls moves default's copies into calls.
+	// all selects them too; default+calls keeps default's four in its own
+	// group and adds the rest to calls'.
 	all, _ := r.Resolve([]string{"all"}, ResolveOptions{})
 	if n := len(udpNames(all)); n != len(want) {
 		t.Errorf("all: %d UDP targets", n)
@@ -605,12 +572,12 @@ func TestShippedUDP(t *testing.T) {
 	if err := Validate(both, Limits{}); err != nil {
 		t.Fatal(err)
 	}
-	if got := udpNames(both); len(got) != len(want) || indexGroup(both.Groups, "calls") >= 0 {
+	if got := udpNames(both); len(got) != len(want) || indexGroup(both.Groups, "calls") != 1 || indexGroup(both.Groups, "calls-udp") < 0 {
 		t.Errorf("default,calls: %v groups %v", got, both.Groups)
 	}
-	// Tags reach the targets of default.yml and the catalog.
+	// Catalog tags reach the default's targets.
 	for _, tg := range def.Targets {
-		if tg.Name == "Microsoft-Teams" && !slices.Equal(tg.Tags, []string{"app:teams"}) {
+		if tg.Name == "Microsoft-Teams" && !slices.Equal(tg.Tags, []string{"voice", "video", "signaling", "app:teams", "home:calls"}) {
 			t.Errorf("default Microsoft-Teams tags %v", tg.Tags)
 		}
 	}
