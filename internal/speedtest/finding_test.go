@@ -198,7 +198,7 @@ func TestHomeLine(t *testing.T) {
 	}
 	ts := synth(c, 9, dip, "wired")
 	f := FindFinding(FindingInput{Tests: ts, Catalog: c})
-	l := HomeLine(f, ts, 0, now)
+	l := HomeLine(f, ts, nil, now)
 	if l == nil || l.Kind != "pattern" || l.Impact != "ok" || l.Text != "Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). That's still plenty for video calls." {
 		t.Fatalf("%+v", l)
 	}
@@ -209,16 +209,16 @@ func TestHomeLine(t *testing.T) {
 			ts[i].DownBps = &v
 		}
 	}
-	if l := HomeLine(f, ts, 0, now); l == nil || l.Impact != "video_risk" || !strings.Contains(l.Text, "may be too slow for video calls") {
+	if l := HomeLine(f, ts, nil, now); l == nil || l.Impact != "video_risk" || !strings.Contains(l.Text, "may be too slow for video calls") {
 		t.Errorf("%+v", l)
 	}
 	// Warm-up, steady, narrow and failing.
 	short := synth(c, 2, dip, "wired")
-	if l := HomeLine(FindFinding(FindingInput{Tests: short, Catalog: c}), short, 0, now.Add(-7*24*time.Hour)); l == nil || l.Kind != "warmup" {
+	if l := HomeLine(FindFinding(FindingInput{Tests: short, Catalog: c}), short, nil, now.Add(-7*24*time.Hour)); l == nil || l.Kind != "warmup" {
 		t.Errorf("warm-up %+v", l)
 	}
 	flat := synth(c, 9, func(string, int) float64 { return 1 }, "wired")
-	if l := HomeLine(FindFinding(FindingInput{Tests: flat, Catalog: c}), flat, 0, now); l == nil || l.Kind != "steady" {
+	if l := HomeLine(FindFinding(FindingInput{Tests: flat, Catalog: c}), flat, nil, now); l == nil || l.Kind != "steady" {
 		t.Errorf("steady %+v", l)
 	}
 	narrow := synth(c, 9, func(sv string, h int) float64 {
@@ -227,7 +227,7 @@ func TestHomeLine(t *testing.T) {
 		}
 		return 1
 	}, "wired")
-	if l := HomeLine(FindFinding(FindingInput{Tests: narrow, Catalog: c}), narrow, 0, now); l != nil {
+	if l := HomeLine(FindFinding(FindingInput{Tests: narrow, Catalog: c}), narrow, nil, now); l != nil {
 		t.Errorf("narrow %+v", l)
 	}
 	for i := range flat {
@@ -235,7 +235,7 @@ func TestHomeLine(t *testing.T) {
 			flat[i].Outcome = model.SpeedBusy
 		}
 	}
-	if l := HomeLine(FindFinding(FindingInput{Tests: flat, Catalog: c}), flat, 0, now); l != nil {
+	if l := HomeLine(FindFinding(FindingInput{Tests: flat, Catalog: c}), flat, nil, now); l != nil {
 		t.Errorf("failing %+v", l)
 	}
 }
@@ -256,7 +256,7 @@ func TestSummarize(t *testing.T) {
 	}
 	r1[0].Fallback, r1[1].Outcome = true, model.SpeedBusy
 	r1 = append(r1, model.SpeedTest{Start: r1[2].Start, Trigger: "manual", Outcome: model.SpeedOK, Server: "A1"})
-	st := Summarize(r1, 0)
+	st := Summarize(r1, nil)
 	if st.N != 215 || st.Busy != 1 || st.Fallback != 1 || st.Dip == nil || st.Hours[20].N != 9 || *st.Hours[20].Score != 0.6 || len(st.Hours[20].Servers) != 3 {
 		t.Errorf("%+v %+v", st, st.Hours[20])
 	}
@@ -299,5 +299,27 @@ func TestFindingThin(t *testing.T) {
 	}
 	if f := FindFinding(FindingInput{Tests: flat, Catalog: c}); f.Case != CaseNotEnough || !strings.HasPrefix(f.Text, "Still learning:") {
 		t.Errorf("flat: %s %s", f.Case, f.Text)
+	}
+}
+
+// TestDSTHours: with an IANA zone, a test at 7 pm local time is in the 19
+// cell on both sides of a DST change (a fixed offset would move it).
+func TestDSTHours(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no zoneinfo")
+	}
+	var ts []model.SpeedTest
+	for d := range 6 { // DST ends on 1 Nov 2026
+		at := time.Date(2026, 10, 29+d, 19, 0, 0, 0, ny)
+		sc := 0.5
+		ts = append(ts, model.SpeedTest{Start: at, Trigger: "schedule", Outcome: model.SpeedOK, Server: "A1", ScoreDown: &sc})
+	}
+	st := Summarize(ts, ny)
+	if st.Hours[19].N != 6 {
+		t.Errorf("19 h cell: %d tests", st.Hours[19].N)
+	}
+	if fixed := Summarize(ts, time.FixedZone("", -4*3600)); fixed.Hours[19].N == 6 {
+		t.Error("a fixed offset should split them")
 	}
 }

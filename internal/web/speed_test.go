@@ -279,6 +279,12 @@ func TestSpeedSummary(t *testing.T) {
 		*s.Servers[0].Capacity != 10000 || s.Servers[0].Display != "UK · Clouvider, London" {
 		t.Errorf("servers: %d per server, latest %v, %+v", len(s.PerServer), s.Latest, s.Servers[0])
 	}
+	// An IANA zone: hours by it (DST-correct), echoed.
+	var z speedJSON
+	json.Unmarshal(do(loc, "GET", "/api/speed?days=7&tz=Europe/Berlin", speedHost).Body.Bytes(), &z)
+	if z.TZName != "Europe/Berlin" || z.TZ != 120 || len(z.Coverage) != 24 {
+		t.Errorf("tz=Europe/Berlin: %q %d", z.TZName, z.TZ)
+	}
 	// Fallback tests left out of the region rows on request.
 	var x speedJSON
 	json.Unmarshal(do(loc, "GET", "/api/speed?days=30&exclude_fallback=1", speedHost).Body.Bytes(), &x)
@@ -323,6 +329,9 @@ func TestSpeedSummary(t *testing.T) {
 		"/api/speed?server=a&region=b":               400,
 		"/api/speed?days=14":                         400,
 		"/api/speed?tz=900":                          400,
+		"/api/speed?tz=Mars/Olympus":                 400,
+		"/api/speed?tz=../../etc/passwd":             400,
+		"/api/speed?tz=Local":                        400,
 		"/api/speed?part=x":                          400,
 		"/api/speed?part=windows&days=7":             400,
 		"/api/speed?from=now-1h":                     400,

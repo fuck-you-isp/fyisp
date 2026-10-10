@@ -93,7 +93,9 @@ func appTitle(id string) string {
 // homeParams is a parsed /api/home query.
 type homeParams struct {
 	part, span, voice string
-	tz                int       // minutes east of UTC, rounded to 15
+	tz                int            // minutes east of UTC, rounded to 15 (now, for an IANA zone)
+	loc               *time.Location // the zone: the speed line's hours (DST-correct with an IANA name)
+	tzKey             string
 	at                time.Time // part=at
 	key               string
 }
@@ -141,20 +143,21 @@ func parseHome(q url.Values, public bool) (homeParams, error) {
 	if public {
 		p.voice = voicePublic
 	}
+	p.loc = time.Local // the speed line's hours without tz: the server's zone
 	if s := q.Get("tz"); s != "" {
-		tz, err := strconv.Atoi(s)
-		if err != nil || tz < -840 || tz > 840 {
-			return p, badReq("bad tz %q: want minutes east of UTC, -840 to 840", s)
+		z, err := parseZone(s, time.Now())
+		if err != nil {
+			return p, err
 		}
-		p.tz = int(math.Round(float64(tz)/15)) * 15
+		p.tz, p.loc, p.tzKey = z.min, z.loc, z.key
 	}
 	switch p.part {
 	case "live":
-		p.key = "home\x00live\x00" + p.voice + "\x00" + strconv.Itoa(p.tz)
+		p.key = "home\x00live\x00" + p.voice + "\x00" + p.tzKey
 	case "at":
 		p.key = "home\x00at\x00" + strconv.FormatInt(p.at.UnixMilli(), 10) + "\x00" + p.voice
 	default:
-		p.key = "home\x00history\x00" + p.span + "\x00" + strconv.Itoa(p.tz) + "\x00" + p.voice
+		p.key = "home\x00history\x00" + p.span + "\x00" + p.tzKey + "\x00" + p.voice
 	}
 	return p, nil
 }
@@ -190,7 +193,7 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 			// Speed by time of day: one plain line (its hours are local,
 			// hence tz), never while the answer card shows a problem.
 			if l.Answer.Level != levelWarn && l.Answer.Level != levelBad {
-				l.Speed = s.speedHome(ctx, now, time.Duration(p.tz)*time.Minute, p.voice == voicePublic)
+				l.Speed = s.speedHome(ctx, now, p.loc, p.voice == voicePublic)
 			}
 			return jsonCached(l)
 		})

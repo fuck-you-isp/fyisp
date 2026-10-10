@@ -72,7 +72,7 @@ type Finding struct {
 // FindingInput is what the finding is computed from.
 type FindingInput struct {
 	Tests   []model.SpeedTest // the span's tests (any trigger: only scheduled ones count)
-	TZ      time.Duration
+	Loc     *time.Location    // local hours (nil: UTC); DST-correct with an IANA zone
 	Catalog *Catalog
 	// EdgeIdle is the ISP edge's idle RTT median (ms) per local hour (NaN:
 	// unknown): the access-network control.
@@ -89,7 +89,7 @@ func FindFinding(in FindingInput) Finding {
 	for _, t := range in.Tests {
 		if !t.OnDemand() && t.Outcome == model.SpeedOK && t.ScoreDown != nil {
 			tests = append(tests, t)
-			days[t.Start.Add(in.TZ).UTC().Format("2006-01-02")] = true
+			days[t.Start.In(zone(in.Loc)).Format("2006-01-02")] = true
 		}
 	}
 	f := Finding{Days: len(days), Tests: len(tests), Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{}}
@@ -130,10 +130,10 @@ func (f *Finding) thin(in FindingInput, tests []model.SpeedTest) bool {
 			groups[GroupKey(t)] = append(groups[GroupKey(t)], t)
 		}
 	}
-	pooled := HourMedians(noFallback, in.TZ, false)
+	pooled := HourMedians(noFallback, in.Loc, false)
 	covered, rows := countValid(pooled), 0
 	for _, ts := range groups {
-		if countValid(HourMedians(ts, in.TZ, false)) >= minHours {
+		if countValid(HourMedians(ts, in.Loc, false)) >= minHours {
 			rows++
 		}
 	}
@@ -193,10 +193,10 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 	dips := func(groups map[string][]model.SpeedTest) (with, all []string, by map[string]*Pattern) {
 		by = map[string]*Pattern{}
 		for k, ts := range groups {
-			if p := FindDip(HourMedians(ts, in.TZ, up), up); p != nil {
+			if p := FindDip(HourMedians(ts, in.Loc, up), up); p != nil {
 				by[k] = p
 			}
-			if med := HourMedians(ts, in.TZ, up); countValid(med) >= minHours {
+			if med := HourMedians(ts, in.Loc, up); countValid(med) >= minHours {
 				all = append(all, k)
 			}
 		}
@@ -207,7 +207,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 		slices.Sort(all)
 		return with, all, by
 	}
-	pooled := FindDip(HourMedians(noFallback, in.TZ, up), up)
+	pooled := FindDip(HourMedians(noFallback, in.Loc, up), up)
 	regWith, regAll, regDips := dips(byRegion)
 	provWith, provAll, provDips := dips(byProvider)
 	srvWith, _, srvDips := dips(byServer)
@@ -245,7 +245,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 					mine = append(mine, t)
 				}
 			}
-			if overlaps(FindDip(HourMedians(mine, in.TZ, up), up), provDips[p].Hours) {
+			if overlaps(FindDip(HourMedians(mine, in.Loc, up), up), provDips[p].Hours) {
 				regs = append(regs, r)
 			}
 		}
@@ -312,7 +312,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 		}
 		flat := 0
 		for k := range byServer {
-			if s, ok := in.Catalog.Server(k); ok && k != id && s.Metro == metro && countValid(HourMedians(byServer[k], in.TZ, up)) >= minHours {
+			if s, ok := in.Catalog.Server(k); ok && k != id && s.Metro == metro && countValid(HourMedians(byServer[k], in.Loc, up)) >= minHours {
 				flat++
 			}
 		}
@@ -382,7 +382,7 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		n := 0
 		provs := map[string]bool{}
 		for _, t := range tests {
-			if t.Start.Add(in.TZ).UTC().Hour() == h && !t.Fallback {
+			if localHour(t.Start, in.Loc) == h && !t.Fallback {
 				n++
 				provs[providerOf(in.Catalog, t.Server)] = true
 			}
@@ -396,7 +396,7 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		case model.ConnWired:
 			connWired++
 		}
-		if l := t.Latency; l != nil && slices.Contains(f.Hours, t.Start.Add(in.TZ).UTC().Hour()) {
+		if l := t.Latency; l != nil && slices.Contains(f.Hours, localHour(t.Start, in.Loc)) {
 			g, e := l.Gateway, l.Edge
 			if g.Idle != nil && g.Down != nil && e.Idle != nil && e.Down != nil {
 				gwRise = append(gwRise, g.Down.P50Ms-g.Idle.P50Ms)
@@ -619,7 +619,7 @@ const (
 //
 // Narrow patterns stay in Details. With most tests failing (≥ 50% in 24 h)
 // there is no line.
-func HomeLine(f Finding, tests []model.SpeedTest, tz time.Duration, now time.Time) *HomeSpeed {
+func HomeLine(f Finding, tests []model.SpeedTest, loc *time.Location, now time.Time) *HomeSpeed {
 	var n, ok int
 	for _, t := range tests {
 		if !t.OnDemand() && !t.Start.Before(now.Add(-24*time.Hour)) {
@@ -647,7 +647,7 @@ func HomeLine(f Finding, tests []model.SpeedTest, tz time.Duration, now time.Tim
 	// The dip hours' slow end (p10) decides the impact.
 	var down, up []float64
 	for _, t := range tests {
-		if !t.OnDemand() && t.Outcome == model.SpeedOK && !t.Fallback && slices.Contains(f.Hours, t.Start.Add(tz).UTC().Hour()) {
+		if !t.OnDemand() && t.Outcome == model.SpeedOK && !t.Fallback && slices.Contains(f.Hours, localHour(t.Start, loc)) {
 			if t.DownBps != nil {
 				down = append(down, *t.DownBps)
 			}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
@@ -109,7 +110,7 @@ func (r *run) speedSection() *speedView {
 	}
 	v.Summary += ". Each test is iperf3 over IPv4 with 8 streams, 3 to 8 seconds each way after a ramp-up of up to 1 second, at most 200 MB." +
 		" Only scheduled tests count toward the patterns below; Test now and Test all servers do not."
-	if p := speedtest.PooledPattern(r.speed, 0); p != nil {
+	if p := speedtest.PooledPattern(r.speed, time.UTC); p != nil {
 		v.Pattern = strings.TrimSuffix(p.Text, ".") + fmt.Sprintf(" (%02d:00–%02d:00 UTC, every region alike).", p.DipFrom, p.DipTo)
 	} else if ok >= 48 {
 		v.Pattern = "There is no clear time-of-day pattern."
@@ -138,7 +139,7 @@ func (r *run) speedSection() *speedView {
 	var worstDrop float64
 	for _, k := range order {
 		ts := groups[k]
-		st := speedtest.Summarize(ts, 0)
+		st := speedtest.Summarize(ts, time.UTC)
 		name, isRegion := titles[k]
 		if !isRegion {
 			name = label(k)

@@ -17,6 +17,18 @@ import (
 // people press "Test now" when things feel slow, which would bias the
 // hours. The API, Home, the finding and the report share these numbers.
 
+// zone is loc, or UTC for nil.
+func zone(loc *time.Location) *time.Location {
+	if loc == nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// localHour is t's hour of day in loc (nil: UTC): with an IANA zone, right
+// on both sides of a DST change.
+func localHour(t time.Time, loc *time.Location) int { return t.In(zone(loc)).Hour() }
+
 // MinPerHour is the tests an hour needs for its medians.
 const MinPerHour = 3
 
@@ -77,8 +89,8 @@ func medianOf(v []float64, digits float64) *float64 {
 }
 
 // Summarize computes Stats over a row's tests (only scheduled ones count),
-// hours local to tz.
-func Summarize(tests []model.SpeedTest, tz time.Duration) Stats {
+// hours local to loc (nil: UTC).
+func Summarize(tests []model.SpeedTest, loc *time.Location) Stats {
 	var st Stats
 	var down, up, score []float64
 	var hd, hu, hs, hus [24][]float64
@@ -95,7 +107,7 @@ func Summarize(tests []model.SpeedTest, tz time.Duration) Stats {
 			at := t.Start
 			st.LatestAt = &at
 		}
-		c := &cells[t.Start.Add(tz).UTC().Hour()]
+		c := &cells[localHour(t.Start, loc)]
 		switch t.Outcome {
 		case model.SpeedOK:
 			st.N++
@@ -169,7 +181,7 @@ func Summarize(tests []model.SpeedTest, tz time.Duration) Stats {
 
 // HourMedians is the median score per local hour of the scheduled ok
 // tests (NaN with fewer than MinPerHour); up picks the upload score.
-func HourMedians(tests []model.SpeedTest, tz time.Duration, up bool) [24]float64 {
+func HourMedians(tests []model.SpeedTest, loc *time.Location, up bool) [24]float64 {
 	var v [24][]float64
 	for _, t := range tests {
 		sc := t.ScoreDown
@@ -180,7 +192,7 @@ func HourMedians(tests []model.SpeedTest, tz time.Duration, up bool) [24]float64
 		if t.OnDemand() || !usable || sc == nil || t.CappedByServer {
 			continue
 		}
-		h := t.Start.Add(tz).UTC().Hour()
+		h := localHour(t.Start, loc)
 		v[h] = append(v[h], *sc)
 	}
 	var out [24]float64
@@ -306,14 +318,14 @@ func GroupKey(t model.SpeedTest) string {
 
 // PooledPattern is the time-of-day dip of every scheduled test's score
 // pooled (fallback tests left out): your own line's pattern.
-func PooledPattern(tests []model.SpeedTest, tz time.Duration) *Pattern {
+func PooledPattern(tests []model.SpeedTest, loc *time.Location) *Pattern {
 	var keep []model.SpeedTest
 	for _, t := range tests {
 		if !t.Fallback {
 			keep = append(keep, t)
 		}
 	}
-	return FindDip(HourMedians(keep, tz, false), false)
+	return FindDip(HourMedians(keep, loc, false), false)
 }
 
 // Scheduled keeps the schedule's tests: patterns and per-row hours leave
