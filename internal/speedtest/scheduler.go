@@ -20,15 +20,15 @@ import (
 // nearest servers by RTT re-picked daily, up to 3 attempts 2 s apart on a
 // busy server.
 const (
-	MinInterval  = 15 * time.Minute
-	Jitter       = time.Minute
-	RepickEvery  = 24 * time.Hour
-	MaxAttempts  = 3
-	AttemptGap   = 2 * time.Second
+	MinInterval = 15 * time.Minute
+	Jitter      = time.Minute
+	RepickEvery = 24 * time.Hour
+	MaxAttempts = 3
+	AttemptGap  = 2 * time.Second
 	// relisten is the pause before the upload: a stock iperf3 server
 	// closes and reopens its listener after every test, and refuses
 	// connections in between.
-	relisten = time.Second
+	relisten     = time.Second
 	DirTimeout   = 15 * time.Second // one direction, connect to results
 	MaxTestTime  = 60 * time.Second // the whole test, retries included
 	firstDelay   = 2 * time.Minute  // after start or enabling: idle RTTs first
