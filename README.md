@@ -12,7 +12,7 @@ fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It
 
 Technical users get every number under **Details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
 
-> **New in v0.6: the default changed.** Plain `fyisp` now checks the 22 targets above (calls, work apps, websites) instead of the 91 targets of v0.5 and earlier (mostly cloud regions and developer services), and opens on the plain-words **Home** view. The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
+> **New in v1.0: the default changed.** Plain `fyisp` now checks the 22 targets above (calls, work apps, websites) instead of the 91 targets of v0.x (mostly cloud regions and developer services), and opens on the plain-words **Home** view. The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
 
 ## Quick start
 
@@ -425,17 +425,17 @@ There is no limit on the number of targets; you can run every profile at once (`
 
 ### What it costs
 
-Measured on 2026-10-10 with the v0.6 `default` (Linux amd64, Docker, Frankfurt area; CPU, memory and traffic from the `/metrics` `process_*` counters over 8.6 minutes, after an 8-minute warm-up; the Network path group included), next to the v0.5 runs of the same method:
+Measured on 2026-10-10 with the v1.0 `default` (Linux amd64, Docker, Frankfurt area; CPU, memory and traffic from the `/metrics` `process_*` counters over 8.6 minutes, after an 8-minute warm-up; the Network path group included), next to the v0.5 runs of the same method:
 
 | Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
 |---|---:|---:|---:|---:|---:|---:|
-| **`default` (v0.6)** | 22 + 5 (4 STUN) | **0.8%** | **74 MB** | **0.75 / 0.76 KB/s** | **4.0 GB** | **0.08 GB** |
+| **`default` (v1.0)** | 22 + 5 (4 STUN) | **0.8%** | **74 MB** | **0.75 / 0.76 KB/s** | **4.0 GB** | **0.08 GB** |
 | `default` (v0.5, 91 targets) | 91 + 5 (4 STUN) | 2.4% | 77 MB | 1.7 / 2.0 KB/s | 10 GB | 0.29 GB |
 | `calls` | 31 + 5 (15 STUN) | 0.6% | 60 MB | 0.9 / 0.8 KB/s | 4.5 GB | 0.07 GB |
 | `all` (TCP only, v0.4) | 1411 | 5.9% | 96 MB | 10.3 / 18.8 KB/s | 76 GB | |
 
 - Traffic per month matters on metered connections (mobile hotspots, LTE/5G home internet, satellite): every target is checked around the clock.
-- Disk is extrapolated from the stored data, not from the file size, because a young database is mostly empty 16 KB pages. The v0.6 run covered one full clock hour: its compressed sample blobs took 32.9 KB and the hourly summaries about 0.9 KB per hour, × 2,160 hours = 73 MB, plus a few percent for SQLite's pages and indexes. (The v0.5 rows were fitted from two partial hours.)
+- Disk is extrapolated from the stored data, not from the file size, because a young database is mostly empty 16 KB pages. The v1.0 run covered one full clock hour: its compressed sample blobs took 32.9 KB and the hourly summaries about 0.9 KB per hour, × 2,160 hours = 73 MB, plus a few percent for SQLite's pages and indexes. (The v0.5 rows were fitted from two partial hours.)
 - Per 100 extra TCP targets: about 0.4% of one CPU core, 0.7 KB/s of download and 1.3 KB/s of upload (a TCP connect sends more small packets than it receives). The two always-on traceroutes of `default` (Microsoft Teams and Cloudflare) cost a little CPU on top.
 
 A `--config` file can start from any profiles and change them:
@@ -490,7 +490,7 @@ Sharing is **off by default**. Start it with *Make a report* on Home, the share 
 
 - fyisp opens a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) from inside the process (no `cloudflared` install, no Cloudflare account) and prints a link like `https://<random-words>.trycloudflare.com/s/<secret>/`.
 - **What is public:** the report, the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, and requests are rate-limited.
-- **People with your link can start a trace** (*Investigate*) of your profile's targets. If you turn on share-link speed tests (off by default), they can also queue a speed test; nothing else on the public link can change anything. Only targets in your profile can be traced, never a host or address of the visitor's choosing. Each trace runs 250 rounds (about 10 minutes) and stops by itself. At most 4 run at once, and visitors can hold at most 3 of them, so you always have one. Each visitor can start one every 30 seconds and 10 an hour, and a target whose trace just finished can be traced again from the link only after 5 minutes. The hops it shows are redacted like the rest of the public link.
+- **People with your link can start a trace** (*Investigate*) of your profile's targets. That, and queuing a speed test if you allow it (below), are the only things the public link can change. Only targets in your profile can be traced, never a host or address of the visitor's choosing. Each trace runs 250 rounds (about 10 minutes) and stops by itself. At most 4 run at once, and visitors can hold at most 3 of them, so you always have one. Each visitor can start one every 30 seconds and 10 an hour, and a target whose trace just finished can be traced again from the link only after 5 minutes. The hops it shows are redacted like the rest of the public link.
 - **People with your link can queue a speed test** (one server, or a sweep of every server), **only if you turn this on** (`--speedtest-public` or the toggle in Details → Speed; off by default). Tests wait in one queue and run one at a time: yours first, then the scheduled ones, then the link's.
   - Each visitor can have one waiting and start one every 30 seconds (10 an hour).
   - At most 3 sweeps and 12 tests from the link wait at once.

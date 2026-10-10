@@ -66,9 +66,9 @@ are), along with the other redactions listed in the README.
 
 On-demand traces (*Investigate*) can be started by anyone who can open the
 dashboard, without the admin token, and by anyone with the share link: `POST
-/s/<secret>/api/investigate` is one of the public listener's two write routes
-(the other is the opt-in speed-test request, `POST /s/<secret>/api/speed/run`,
-off by default; see below). The trace safeguards are:
+/s/<secret>/api/investigate` is one of the public listener's two write
+routes (the other, `POST /s/<secret>/api/speed/run`, exists only while the
+owner allows tests from the share link; see below). The safeguards are:
 
 - only the profile's target names are accepted, never a host or address;
 - each trace stops by itself after 250 rounds (about 10 minutes); re-posting
