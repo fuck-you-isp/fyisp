@@ -211,7 +211,7 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
 
 ```jsonc
 {
-  "case": "isp",                  // "not_enough_data" | "nothing" | "isp" | "provider" | "route" | "server"
+  "case": "isp",                  // "not_enough_data" | "nothing" | "mild" | "mixed" | "isp" | "provider" | "route" | "server"
   "tier": "points_to",            // omitempty: "points_to" | "most_likely" | "early_sign" (how sure)
   "text": "Every region slows from about 7 to 11 pm, with every provider: about 40% below normal. Your provider's first router also answers slower then (25 ms instead of 8 ms), so it's in its local network. That points to your internet provider's own network.",
   "text_public": "… That points to the internet provider's own network.",   // the share link's and report's wording
@@ -220,6 +220,11 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
   "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],
   "servers": [],                  // case server: the server
   "network": "AS3356 LEVEL3",     // omitempty, local wording only: the first network past the ISP the slow tests share (handoff)
+  "regions_judged": 9, "providers_judged": 4,   // omitempty (isp): how many could tell; "Most regions (5 of 9)" unless all dipped
+  "far_regions": ["oceania"],     // omitempty (isp): regions too far to show the line's speed (p90 under 60% of the best region's), left out
+  "slow_days": 17, "day_count": 21,   // omitempty: the dip hours were slower on 17 of 21 days with tests
+  "far_evening": false,           // omitempty (route, provider): the dip hours are evening at the far end too, so its own busy time fits as well
+  "bridged": false,               // omitempty: most tests ran behind another router (container, VM): no "points to", and a caveat
   "drop": 0.4, "up": false,
   "days": 9, "tests": 648         // days and scored scheduled tests behind it
 }
@@ -231,7 +236,11 @@ The cases:
 - `route`: only one region dips, whichever provider.
 - `server`: only one server.
 
-The tier depends on days, tests and providers per dip hour. `not_enough_data` says how many of 3 days are in.
+- `mild`: a 10–25% dip, below what the cases need: "a little slower", pointing nowhere.
+- `mixed`: some regions dip, but not in a pattern that points to one place.
+- `nothing`: no slowdown of 25% or more; the text gives the worst hour's actual distance from normal.
+
+Tiers: `points_to` needs 7 days, full coverage, a wired connection not behind another router, the dip on at least half the days, and in the ISP case a drop of at least 30% with the ISP edge rising too; `most_likely` 5 days and full coverage; `early_sign` otherwise. The ISP case always carries the household caveat (other people's traffic on the line looks the same). `not_enough_data` says how many of 3 days are in, or how many hours are covered.
 
 ### UnderLoad
 

@@ -2,6 +2,7 @@ package speedtest
 
 import (
 	"math"
+	"math/rand/v2"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -94,8 +95,8 @@ func TestFinding(t *testing.T) {
 			}
 			return 1
 		}, "wired", edgeRise, CaseISP, TierPointsTo, []string{
-			"Every region slows from about 7 to 11 pm, with every provider: about 40% below normal.",
-			"also answers slower then (25 ms instead of 8 ms), so it's in its local network.",
+			"Every region slows from about 7 to 11 pm, with every provider we could test: tests read about 40% below the same servers' usual results.",
+			"also answers slower then (25 ms instead of 8 ms), which fits congestion in its local network.",
 			"That points to your internet provider's own network."}},
 		{"isp on wifi, early", 4, func(_ string, h int) float64 {
 			if evening(h) {
@@ -108,21 +109,21 @@ func TestFinding(t *testing.T) {
 				return 0.5
 			}
 			return 1
-		}, "wired", nan, CaseProvider, TierPointsTo, []string{"Only B servers slow from about 7 to 11 pm (Region One and Region Two); other providers stay normal.",
+		}, "wired", nan, CaseProvider, TierPointsTo, []string{"Only B servers slow from about 7 to 11 pm (Region One and Region Two); other providers we could test there stay normal.",
 			"That points to the link between your internet provider and B."}},
 		{"long-distance route", 9, func(sv string, h int) float64 {
 			if evening(h) && strings.HasSuffix(sv, "3") {
 				return 0.5
 			}
 			return 1
-		}, "wired", nan, CaseRoute, TierPointsTo, []string{"Only tests to Far Asia slow, from about 7 to 11 pm, whichever provider.", "the long-distance route to Far Asia"}},
+		}, "wired", nan, CaseRoute, TierPointsTo, []string{"Only tests to Far Asia slow, from about 7 to 11 pm, whichever provider; the other regions stay normal.", "the long-distance route to Far Asia"}},
 		{"one server", 9, func(sv string, h int) float64 {
 			if evening(h) && sv == "C1" {
 				return 0.4
 			}
 			return 1
 		}, "wired", nan, CaseServer, "", []string{"Only C one slows from about 7 to 11 pm. That's most likely that server's own busy time, not your connection."}},
-		{"flat", 9, func(string, int) float64 { return 1 }, "wired", nan, CaseNothing, "", []string{"No time of day stands out."}},
+		{"flat", 9, func(string, int) float64 { return 1 }, "wired", nan, CaseNothing, "", []string{"No slowdown of 25% or more stands out: every hour stays within about 10% of normal."}},
 		{"two days", 2, func(string, int) float64 { return 1 }, "wired", nan, CaseNotEnough, "", []string{"2 of 3 days so far."}},
 	}
 	for _, tc := range cases {
@@ -321,5 +322,101 @@ func TestDSTHours(t *testing.T) {
 	}
 	if fixed := Summarize(ts, time.FixedZone("", -4*3600)); fixed.Hours[19].N == 6 {
 		t.Error("a fixed offset should split them")
+	}
+}
+
+// synthDown is synth with each test's download set by base(server) times
+// its score (far servers read lower), and seeded noise of ±noise.
+func synthDown(c *Catalog, days int, score func(sv string, h int) float64, base func(sv string) float64, noise float64) []model.SpeedTest {
+	r := rand.New(rand.NewPCG(7, 8))
+	ts := synth(c, days, score, "wired")
+	for i := range ts {
+		sc := *ts[i].ScoreDown * (1 + noise*(2*r.Float64()-1))
+		down := sc * base(ts[i].Server)
+		ts[i].ScoreDown, ts[i].DownBps = &sc, &down
+	}
+	return ts
+}
+
+// TestFindingNetIsp: the re-review's cases (net-isp-review.md).
+func TestFindingNetIsp(t *testing.T) {
+	c := findingCatalog(t)
+	evening := func(drop float64, dips func(sv string) bool) func(string, int) float64 {
+		return func(sv string, h int) float64 {
+			if h >= 19 && h <= 22 && dips(sv) {
+				return 1 - drop
+			}
+			return 1
+		}
+	}
+	all := func(string) bool { return true }
+	near := func(sv string) bool { return !strings.HasSuffix(sv, "3") }
+	flatBase := func(string) float64 { return 400e6 }
+	farSlow := func(sv string) float64 {
+		if strings.HasSuffix(sv, "3") {
+			return 60e6 // 150-300 ms away: far below the line's speed
+		}
+		return 400e6
+	}
+	// M3: a fast line's access dip shows in the near regions only.
+	f := FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), farSlow, 0), Catalog: c})
+	if f.Case != CaseISP || !strings.Contains(f.Text, "All 2 regions close enough to show your line's speed slow") ||
+		!strings.Contains(f.Text, "Far Asia is too far away to show it.") || len(f.FarRegions) != 1 {
+		t.Errorf("near only: %s %s: %s", f.Case, f.Tier, f.Text)
+	}
+	// M1: 2 of 3 regions is "most", not "every".
+	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), flatBase, 0), Catalog: c})
+	if f.Case != CaseISP || !strings.Contains(f.Text, "Most regions (2 of 3) slow") || strings.Contains(f.Text, "Every region") {
+		t.Errorf("2 of 3: %s: %s", f.Case, f.Text)
+	}
+	// S7: ±15% noise still finds it, and counts the evenings.
+	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, all), flatBase, 0.15), Catalog: c})
+	if f.Case != CaseISP || f.DayCount < 8 || 2*f.SlowDays < f.DayCount || !strings.Contains(f.Evidence, " evenings.") {
+		t.Errorf("noisy: %s %s %d/%d: %s / %s", f.Case, f.Tier, f.SlowDays, f.DayCount, f.Text, f.Evidence)
+	}
+	// M2: a 15% dip is "a little slower", never "within 10%".
+	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.15, all), flatBase, 0), Catalog: c})
+	if f.Case != CaseMild || !strings.Contains(f.Text, "a little slower: about 15% below normal") {
+		t.Errorf("mild: %s: %s", f.Case, f.Text)
+	}
+	f = FindFinding(FindingInput{Tests: synthDown(c, 9, func(string, int) float64 { return 1 }, flatBase, 0.05), Catalog: c})
+	if f.Case != CaseNothing || !strings.HasPrefix(f.Text, "No slowdown of 25% or more stands out") {
+		t.Errorf("flat: %s: %s", f.Case, f.Text)
+	}
+	// S1: B dips where no other provider was measured: never "the others
+	// stay normal".
+	var onlyB []model.SpeedTest
+	for _, x := range synthDown(c, 9, evening(0.5, func(sv string) bool { return sv == "B1" || sv == "B2" }), flatBase, 0) {
+		if x.Server[0] == 'B' || x.Region == "r3" {
+			onlyB = append(onlyB, x)
+		}
+	}
+	if f := FindFinding(FindingInput{Tests: onlyB, Catalog: c}); f.Case == CaseProvider {
+		t.Errorf("provider without comparison: %s", f.Text)
+	}
+	// M5: behind another router: no "points to", and the caveat says so.
+	ts := synthDown(c, 9, evening(0.4, all), flatBase, 0)
+	for i := range ts {
+		ts[i].Extra = `{"bridged":true}`
+	}
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Tier == TierPointsTo || !f.Bridged || !strings.Contains(f.Caveat, "container") {
+		t.Errorf("bridged: %s %v %q", f.Tier, f.Bridged, f.Caveat)
+	}
+}
+
+// TestFarEnd: the far end's evening and regions in nearby time zones.
+func TestFarEnd(t *testing.T) {
+	c, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ldn, _ := time.LoadLocation("Europe/London")
+	tyo, _ := time.LoadLocation("Asia/Tokyo")
+	eve := []int{19, 20, 21, 22}
+	if !eveningThere(eve, ldn, ldn) || eveningThere(eve, ldn, tyo) {
+		t.Error("eveningThere")
+	}
+	if !closeZones(c, []string{"uk", "eu-west"}) || closeZones(c, []string{"uk", "us-east"}) {
+		t.Error("closeZones")
 	}
 }
