@@ -703,6 +703,53 @@ func TestQueueCancelBeatsYield(t *testing.T) {
 	}
 }
 
+// TestQueuePauseNotCharged: a Pause before each job (a sweep's gap for the
+// probes) runs outside the share link's charged test time, and a cancel
+// during it stops the sweep.
+func TestQueuePauseNotCharged(t *testing.T) {
+	var paused atomic.Int32
+	cancelAt := make(chan struct{})
+	var q *Queue
+	var f *fakeExec
+	q, f = newQueueHarness(t, func(o *QueueOptions) {
+		o.Pause = func(ctx context.Context, j Job, trigger string) bool {
+			if trigger != "public_sweep" {
+				t.Errorf("pause for %s", trigger)
+			}
+			if paused.Add(1) == 3 {
+				close(cancelAt) // the test cancels during the third pause
+				<-ctx.Done()
+				return false
+			}
+			f.advance(time.Minute) // the gap: a minute each, never charged
+			return true
+		}
+	})
+	f.step.Store(int64(10 * time.Second))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	e, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		<-f.started
+		f.release <- struct{}{}
+	}
+	<-cancelAt
+	if _, err := q.Cancel(e.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateCancelled })
+	if st := q.State(); st.TimeHour != 20*time.Second {
+		t.Errorf("charged %v, want the two tests' 20s (not the pauses)", st.TimeHour)
+	}
+	if got := f.log(); len(got) != 2 {
+		t.Errorf("ran %v after a cancel in the pause", got)
+	}
+}
+
 // TestBudgetChargesTheWire: a share-link test against a real (fake) iperf3
 // server charges the budget at least every byte the server moved, both
 // directions, ramp-up included.
