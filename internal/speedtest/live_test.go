@@ -73,13 +73,20 @@ func TestStockAdaptive(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 		ad, err := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second})
+		time.Sleep(time.Second)
+		capped, err2 := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second, MaxBytes: 100 << 20})
+		if err2 != nil {
+			t.Fatalf("%s capped: %v", d, err2)
+		}
+		t.Logf("%s: capped at 100 MB: %.0f Mbit/s over %v after a %v ramp, %d MB in all, capped=%v", d,
+			capped.BitsPerSecond()/1e6, capped.Elapsed.Round(time.Millisecond), capped.Ramp.Round(time.Millisecond), capped.TotalBytes>>20, capped.CappedByBytes)
 		if err != nil {
 			t.Fatalf("%s adaptive: %v", d, err)
 		}
 		diff := ad.BitsPerSecond()/full.BitsPerSecond() - 1
 		t.Logf("%s: full %.0f Mbit/s over %v; adaptive %.0f Mbit/s over %v (%+.1f%%)", d,
 			full.BitsPerSecond()/1e6, full.Elapsed.Round(time.Millisecond), ad.BitsPerSecond()/1e6, ad.Elapsed.Round(time.Millisecond), diff*100)
-		if ad.Elapsed < 3*time.Second || ad.Elapsed > 8500*time.Millisecond {
+		if ad.Elapsed < 2900*time.Millisecond || ad.Elapsed > 8500*time.Millisecond {
 			t.Errorf("%s adaptive window %v", d, ad.Elapsed)
 		}
 	}

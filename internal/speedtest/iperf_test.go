@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -170,12 +171,17 @@ func (f *fakeServer) session(c net.Conn) {
 				buf := make([]byte, f.rate)
 				tk := time.NewTicker(10 * time.Millisecond)
 				defer tk.Stop()
+				t0 := time.Now()
 				for {
 					select {
 					case <-stop:
 						return
 					case <-tk.C:
-						if _, err := s.Write(buf); err != nil {
+						n := len(buf)
+						if f.mode == "ramp" { // slow start: full rate after 500 ms
+							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(500*time.Millisecond)))
+						}
+						if _, err := s.Write(buf[:max(n, 1)]); err != nil {
 							return
 						}
 					}
@@ -254,7 +260,7 @@ func TestDownload(t *testing.T) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	p := f.params
-	if p["reverse"] != true || p["tcp"] != true || p["parallel"] != 3.0 || p["time"] != 1.0 || p["omit"] != 0.0 || p["len"] != float64(blockSize) {
+	if p["reverse"] != true || p["tcp"] != true || p["parallel"] != 3.0 || p["time"] != 3.0 || p["omit"] != 0.0 || p["len"] != float64(blockSize) {
 		t.Errorf("params %v", p)
 	}
 	if len(f.cookies) != 1 {
@@ -277,8 +283,9 @@ func TestUpload(t *testing.T) {
 	if _, ok := f.params["reverse"]; ok {
 		t.Errorf("params %v", f.params)
 	}
-	// The server's received bytes and window are the result.
-	if r.Bytes != f.recv || r.Elapsed != 1500*time.Millisecond || r.Bytes == 0 {
+	// The bytes the server acknowledged in the window (Linux), at most what
+	// it received in all.
+	if r.Bytes == 0 || r.Bytes > f.recv || r.TotalBytes < r.Bytes || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 1700*time.Millisecond {
 		t.Errorf("result %+v, server received %d", r, f.recv)
 	}
 	if f.results.SenderHasRetransmits < 0 {
@@ -381,5 +388,55 @@ func TestAdaptive(t *testing.T) {
 	ln.Close()
 	if _, err := Run(context.Background(), quick(addr, Download)); !errors.Is(err, ErrRefused) || errors.Is(err, ErrUnreachable) {
 		t.Errorf("closed port: %v", err)
+	}
+}
+
+// TestByteCap: a direction stops at MaxBytes, ramp-up included, and says
+// so; the cookie carries the fyisp prefix.
+func TestByteCap(t *testing.T) {
+	f := newFakeServer(t, "")
+	cfg := quick(f.addr(), Download)
+	cfg.MaxBytes = 2 << 20 // 3 streams at ~6.5 MB/s each: ~100-200 ms
+	t0 := time.Now()
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes || r.TotalBytes > cfg.MaxBytes+4<<20 || time.Since(t0) > time.Second || r.Elapsed <= 0 {
+		t.Errorf("capped %v, %d bytes in all, %d measured over %v, run %v", r.CappedByBytes, r.TotalBytes, r.Bytes, r.Elapsed, time.Since(t0))
+	}
+	f.mu.Lock()
+	if !strings.HasPrefix(f.cookies[0], cookiePrefix) {
+		t.Errorf("cookie %q", f.cookies[0])
+	}
+	f.mu.Unlock()
+	// A cap above what the test moves changes nothing.
+	cfg.MaxBytes = 1 << 40
+	if r, _ := Run(context.Background(), cfg); r.CappedByBytes {
+		t.Error("capped without reaching the cap")
+	}
+}
+
+// TestAdaptiveRamp: the ramp-up ends when a 100 ms tick stops rising (here
+// after ~500 ms of slow start), not after a fixed second; without
+// MinDuration it is Omit.
+func TestAdaptiveRamp(t *testing.T) {
+	f := newFakeServer(t, "ramp")
+	cfg := quick(f.addr(), Download)
+	cfg.Omit, cfg.Duration, cfg.MinDuration = time.Second, 3*time.Second, 2*time.Second
+	r, err := Run(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Ramp < 400*time.Millisecond || r.Ramp > 900*time.Millisecond {
+		t.Errorf("adaptive ramp %v, want ~500-700 ms", r.Ramp)
+	}
+	want := 3 * float64(64<<10) * 100 * 8
+	if bps := r.BitsPerSecond(); bps < want*0.75 || bps > want*1.25 {
+		t.Errorf("%.1f Mbit/s, want ~%.1f: the ramp leaked into the window", bps/1e6, want/1e6)
+	}
+	cfg.MinDuration, cfg.Duration = 0, 1500*time.Millisecond
+	if r, _ := Run(context.Background(), cfg); r.Ramp < time.Second || r.Ramp > 1200*time.Millisecond {
+		t.Errorf("fixed ramp %v", r.Ramp)
 	}
 }

@@ -47,6 +47,9 @@ const (
 	// after a 1 s ramp-up.
 	MinMeasure = 3 * time.Second
 	MaxMeasure = 8 * time.Second
+	// MaxBytes caps each direction (ramp-up included): one test never
+	// moves more than 2 × MaxBytes.
+	MaxBytes = 100 << 20
 	// EstTestTime is a typical test (both directions, adaptive): the
 	// planned share of time under test is slots × EstTestTime / interval.
 	EstTestTime = 15 * time.Second
@@ -661,7 +664,7 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 		tried[port] = true
 		res, err := s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure,
+			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes,
 		})
 		switch {
 		case err == nil:
@@ -792,7 +795,7 @@ func serverRTT(ctx context.Context, ping func(context.Context, string) (time.Dur
 func connectRTT(ctx context.Context, host string, port int) (time.Duration, error) {
 	d := net.Dialer{Timeout: pickTimeout}
 	t0 := time.Now()
-	c, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	c, err := d.DialContext(ctx, "tcp4", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return 0, err
 	}

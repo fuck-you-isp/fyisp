@@ -6,22 +6,22 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// totalRetrans is a TCP connection's retransmitted segments so far
-// (TCP_INFO tcpi_total_retrans), -1 when unknown.
-func totalRetrans(c net.Conn) int64 {
+// tcpInfo is a TCP connection's retransmitted segments and bytes acked by
+// the peer so far (TCP_INFO), -1 when unknown.
+func tcpInfo(c net.Conn) (retrans, acked int64) {
 	tc, ok := c.(*net.TCPConn)
 	if !ok {
-		return -1
+		return -1, -1
 	}
 	rc, err := tc.SyscallConn()
 	if err != nil {
-		return -1
+		return -1, -1
 	}
-	n := int64(-1)
+	retrans, acked = -1, -1
 	_ = rc.Control(func(fd uintptr) {
 		if ti, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO); err == nil {
-			n = int64(ti.Total_retrans)
+			retrans, acked = int64(ti.Total_retrans), int64(ti.Bytes_acked)
 		}
 	})
-	return n
+	return retrans, acked
 }

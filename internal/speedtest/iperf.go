@@ -103,13 +103,20 @@ type Config struct {
 	Direction Direction
 	Streams   int           // parallel TCP streams, default 8
 	Duration  time.Duration // measured time, default 9s; with MinDuration, the most
-	Omit      time.Duration // ramp-up excluded from the result, default 1s
+	// Omit is the ramp-up excluded from the result, default 1s. With
+	// MinDuration it is the longest ramp-up: the ramp ends as soon as the
+	// throughput of a 100 ms tick stops rising (on a fast line with a byte
+	// cap, a fixed second would leave nothing to measure).
+	Omit time.Duration
 	// MinDuration > 0 makes the length adaptive: the test ends once at
 	// least MinDuration is measured and the last second's bytes are within
 	// Stable (default 5%) of the second before, else after Duration. The
 	// client ends it early with TEST_END, which stock servers accept.
 	MinDuration time.Duration
 	Stable      float64
+	// MaxBytes caps the bytes moved in this direction, ramp-up included
+	// (0: no cap): the test ends there, and Result.CappedByBytes is set.
+	MaxBytes int64
 	// Timeout bounds the whole run, default Omit+Duration+5s. The caller's
 	// ctx may end it sooner.
 	Timeout time.Duration
@@ -126,6 +133,10 @@ type Result struct {
 	// TCP_INFO: the server's for downloads, ours on Linux for uploads).
 	Retransmits int64
 	Streams     int
+	// CappedByBytes: the test hit Config.MaxBytes, so Elapsed may be short.
+	CappedByBytes bool
+	Ramp          time.Duration // the ramp-up left out
+	TotalBytes    int64         // every byte moved, ramp-up included (data use)
 }
 
 // BitsPerSecond is the throughput.
@@ -172,7 +183,7 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer cancel()
 	res := Result{Direction: c.Direction, Retransmits: -1, Streams: c.Streams}
 
-	ctrl, err := c.Dial(ctx, "tcp", c.Addr)
+	ctrl, err := c.Dial(ctx, "tcp4", c.Addr) // IPv4 only, by decision
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return res, ctx.Err()
@@ -202,6 +213,9 @@ type test struct {
 	mu      sync.Mutex
 	streams []net.Conn
 	closed  bool
+
+	moved  atomic.Int64 // bytes of every stream, against MaxBytes
+	capped atomic.Bool
 }
 
 func (t *test) close() {
@@ -246,7 +260,7 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	// Streams connect one at a time, in order: the server numbers them in
 	// accept order (1, 3, 4, ...) and so do we.
 	for range t.c.Streams {
-		s, err := t.c.Dial(ctx, "tcp", t.c.Addr)
+		s, err := t.c.Dial(ctx, "tcp4", t.c.Addr)
 		if err != nil {
 			return *res, fmt.Errorf("data stream: %w", err)
 		}
@@ -280,38 +294,16 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 		go func() {
 			defer wg.Done()
 			if t.c.Direction == Download {
-				drain(s, &counts[i])
+				t.drain(s, &counts[i])
 			} else {
-				fill(s, &counts[i], &done)
+				t.fill(s, &counts[i], &done)
 			}
 		}()
 	}
-	omitEnd := time.Now().Add(t.c.Omit)
-	if err := t.idle(omitEnd); err != nil {
-		return *res, err
-	}
-	base := make([]int64, len(t.streams))
-	retransStart := make([]int64, len(t.streams))
-	t.snapshot(counts, base, retransStart)
-	winStart := time.Now()
-	if err := t.measure(counts, winStart); err != nil {
-		return *res, err
-	}
-	final := make([]int64, len(t.streams))
-	retransEnd := make([]int64, len(t.streams))
-	t.snapshot(counts, final, retransEnd)
-	res.Elapsed = time.Since(winStart)
+	per, err := t.dataPhase(counts, res)
 	done.Store(true)
-	per := make([]int64, len(t.streams))
-	for i := range per {
-		per[i] = final[i] - base[i]
-		res.Bytes += per[i]
-	}
-	if t.c.Direction == Upload && retransStart[0] >= 0 {
-		res.Retransmits = 0
-		for i := range retransEnd {
-			res.Retransmits += max(retransEnd[i]-retransStart[i], 0)
-		}
+	if err != nil {
+		return *res, err
 	}
 
 	if err := t.write([]byte{stateTestEnd}); err != nil {
@@ -346,7 +338,7 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 // idle waits until deadline on the control connection. The server sends
 // nothing during the data phase unless it fails.
 func (t *test) idle(deadline time.Time) error {
-	for time.Now().Before(deadline) {
+	for time.Now().Before(deadline) && !t.capped.Load() {
 		_ = t.ctrl.SetReadDeadline(deadline)
 		var b [1]byte
 		_, err := t.ctrl.Read(b[:])
@@ -362,56 +354,141 @@ func (t *test) idle(deadline time.Time) error {
 	return nil
 }
 
-// measure waits out the measured window: Duration, or with MinDuration
-// until the per-second throughput settles.
-func (t *test) measure(counts []atomic.Int64, start time.Time) error {
-	end := start.Add(t.c.Duration)
-	if t.c.MinDuration <= 0 {
-		return t.idle(end)
-	}
+// tick is the data phase's clock: progress is read every 100 ms.
+const tick = 100 * time.Millisecond
+
+// dataPhase runs the ramp-up and the measured window on 100 ms ticks, then
+// fills res. per is each stream's bytes in the window (for our results).
+func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
+	n := len(t.streams)
 	total := func() int64 {
-		var n int64
+		var x int64
 		for i := range counts {
-			n += counts[i].Load()
+			x += counts[i].Load()
 		}
-		return n
+		return x
 	}
-	prev, last := int64(-1), total()
+	adaptive := t.c.MinDuration > 0
+	start := time.Now()
+	base := make([]int64, n)
+	retransStart := make([]int64, n)
+	ackedStart := make([]int64, n)
+	measuring := false
+	var winStart time.Time
+	var prevMax, last, secBytes int64
+	kWin := 0 // the tick the window started at
+	prevSec := int64(-1)
 	for k := 1; ; k++ {
-		tick := start.Add(time.Duration(k) * time.Second)
-		if tick.After(end) {
-			return t.idle(end)
+		at := start.Add(time.Duration(k) * tick)
+		if err := t.idle(at); err != nil {
+			return nil, err
 		}
-		if err := t.idle(tick); err != nil {
-			return err
+		b := total()
+		d := b - last
+		last = b
+		if t.capped.Load() {
+			res.CappedByBytes = true
+			if !measuring { // capped in the ramp-up: the whole run is the window,
+				winStart = start // counted from the connections' start
+				for i := range ackedStart {
+					retransStart[i], ackedStart[i] = 0, 0
+					if t.c.Direction == Download {
+						retransStart[i], ackedStart[i] = -1, -1
+					}
+				}
+			}
+			break
 		}
-		n := total()
-		cur := n - last
-		last = n
-		if time.Duration(k)*time.Second >= t.c.MinDuration && prev > 0 &&
-			math.Abs(float64(cur-prev)) <= t.c.Stable*float64(prev) {
-			return nil
+		if !measuring {
+			rampOver := time.Duration(k)*tick >= t.c.Omit ||
+				(adaptive && k >= 3 && float64(d) <= 1.05*float64(prevMax))
+			prevMax = max(prevMax, d)
+			if rampOver {
+				measuring = true
+				t.snapshot(counts, base, retransStart, ackedStart)
+				winStart, secBytes, kWin = time.Now(), b, k
+				res.Ramp = winStart.Sub(start)
+			}
+			continue
 		}
-		prev = cur
+		// Seconds are counted in ticks, so every second has the same length.
+		w := time.Duration(k-kWin) * tick
+		if w >= t.c.Duration {
+			break
+		}
+		if adaptive && (k-kWin)%int(time.Second/tick) == 0 {
+			cur := b - secBytes
+			if w >= t.c.MinDuration && prevSec > 0 && math.Abs(float64(cur-prevSec)) <= t.c.Stable*float64(prevSec) {
+				break
+			}
+			prevSec, secBytes = cur, b
+		}
 	}
+	final := make([]int64, n)
+	retransEnd := make([]int64, n)
+	ackedEnd := make([]int64, n)
+	t.snapshot(counts, final, retransEnd, ackedEnd)
+	res.Elapsed = time.Since(winStart)
+	per := make([]int64, n)
+	acked := true
+	var ackedBytes int64
+	for i := range per {
+		per[i] = final[i] - base[i]
+		res.Bytes += per[i]
+		res.TotalBytes += final[i]
+		if ackedStart[i] < 0 || ackedEnd[i] < 0 {
+			acked = false
+		}
+		ackedBytes += ackedEnd[i] - ackedStart[i]
+	}
+	if t.c.Direction == Upload {
+		// What the server received, not what sat in our send buffers.
+		if acked {
+			res.Bytes = ackedBytes
+		}
+		if retransStart[0] >= 0 {
+			res.Retransmits = 0
+			for i := range retransEnd {
+				res.Retransmits += max(retransEnd[i]-retransStart[i], 0)
+			}
+		}
+	}
+	return per, nil
 }
 
-func (t *test) snapshot(counts []atomic.Int64, into, retrans []int64) {
+// tcpCounters is stream i's retransmits and bytes acked so far (upload),
+// -1 when unknown.
+func (t *test) tcpCounters(i int) (retrans, acked int64) {
+	if t.c.Direction != Upload {
+		return -1, -1
+	}
+	return tcpInfo(t.streams[i])
+}
+
+func (t *test) snapshot(counts []atomic.Int64, into, retrans, acked []int64) {
 	for i := range counts {
 		into[i] = counts[i].Load()
-		retrans[i] = -1
-		if t.c.Direction == Upload {
-			retrans[i] = totalRetrans(t.streams[i])
-		}
+		retrans[i], acked[i] = t.tcpCounters(i)
 	}
 }
 
-// drain reads a download stream until the server closes it.
-func drain(s net.Conn, n *atomic.Int64) {
+// moved counts the bytes of every stream against Config.MaxBytes; capped
+// is set the moment it is reached, and wakes the control loop.
+func (t *test) count(n *atomic.Int64, k int) {
+	n.Add(int64(k))
+	if t.c.MaxBytes > 0 && t.moved.Add(int64(k)) >= t.c.MaxBytes && t.capped.CompareAndSwap(false, true) {
+		_ = t.ctrl.SetReadDeadline(time.Now()) // end the current wait now
+	}
+}
+
+// drain reads a download stream until the server closes it, or until the
+// byte cap: then it stops reading, so TCP flow control stops the server
+// within its buffers while TEST_END is sent.
+func (t *test) drain(s net.Conn, n *atomic.Int64) {
 	buf := make([]byte, blockSize)
-	for {
+	for !t.capped.Load() {
 		k, err := s.Read(buf)
-		n.Add(int64(k))
+		t.count(n, k)
 		if err != nil {
 			return
 		}
@@ -426,11 +503,21 @@ var payload = func() []byte {
 	return b
 }()
 
-func fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
-	for !done.Load() {
+// fill writes an upload stream until done, never past the byte cap.
+func (t *test) fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
+	for !done.Load() && !t.capped.Load() {
+		b := payload
+		if t.c.MaxBytes > 0 {
+			left := t.c.MaxBytes - t.moved.Load()
+			if left <= 0 {
+				t.count(n, 0)
+				return
+			}
+			b = b[:min(int64(len(b)), left)]
+		}
 		_ = s.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
-		k, err := s.Write(payload)
-		n.Add(int64(k))
+		k, err := s.Write(b)
+		t.count(n, k)
 		if err != nil {
 			var ne net.Error
 			if errors.As(err, &ne) && ne.Timeout() {
@@ -443,9 +530,11 @@ func fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
 
 func (t *test) params() map[string]any {
 	p := map[string]any{
-		"tcp":            true,
-		"omit":           int(t.c.Omit / time.Second),
-		"time":           int(t.c.Duration / time.Second),
+		"tcp": true,
+		// The client leaves the ramp-up out itself (it may be shorter than a
+		// second) and ends the test with TEST_END; time only bounds it.
+		"omit":           0,
+		"time":           int((t.c.Omit+t.c.Duration+time.Second-1)/time.Second) + 1,
 		"num":            0,
 		"blockcount":     0,
 		"parallel":       t.c.Streams,
@@ -502,28 +591,22 @@ func (t *test) results(per []int64, res *Result) serverResults {
 	return out
 }
 
-// applyServer uses the server's side where it is the better measure: for
-// uploads the bytes it received after the ramp-up and its window, for
-// downloads its retransmits.
+// applyServer takes the server's retransmits for downloads (it is the
+// sender). Its byte counts include the ramp-up, so the client's own are
+// used for both directions.
 func (t *test) applyServer(srv *serverResults, res *Result) {
-	var bytes, retrans int64
-	var window float64
+	var retrans int64
 	for _, s := range srv.Streams {
-		bytes += s.Bytes
 		retrans += max(s.Retransmits, 0)
-		window = max(window, s.EndTime-s.StartTime)
 	}
-	switch t.c.Direction {
-	case Upload:
-		if bytes > 0 && window > 0.5 {
-			res.Bytes, res.Elapsed = bytes, time.Duration(window*float64(time.Second))
-		}
-	case Download:
-		if srv.SenderHasRetransmits == 1 {
-			res.Retransmits = retrans
-		}
+	if t.c.Direction == Download && srv.SenderHasRetransmits == 1 {
+		res.Retransmits = retrans
 	}
 }
+
+// cookiePrefix makes fyisp's tests recognisable in a server's debug log
+// (the server checks only the cookie's length).
+const cookiePrefix = "fyisp"
 
 func newCookie(c *[cookieSize]byte) error {
 	const alphabet = "abcdefghijklmnopqrstuvwxyz234567"
@@ -534,6 +617,7 @@ func newCookie(c *[cookieSize]byte) error {
 	for i, b := range r {
 		c[i] = alphabet[int(b)%len(alphabet)]
 	}
+	copy(c[:], cookiePrefix)
 	c[cookieSize-1] = 0
 	return nil
 }
