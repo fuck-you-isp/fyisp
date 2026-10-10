@@ -1700,7 +1700,10 @@ function noteTipNodes(/** @type {Note[]} */ list) {
 function bindNoteGestures(u) {
   const over = /** @type {HTMLElement} */ (u.over);
   const timeAt = (/** @type {number} */ clientX) => Math.round(u.posToVal(clientX - over.getBoundingClientRect().left, 'x') * 1000);
-  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); }, true);
+  // Focusable (not in the tab order), so the note editor can return focus to the chart it was opened from.
+  over.tabIndex = -1;
+  over.setAttribute('aria-label', 'Chart');
+  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); if (notesOn && canWrite()) over.focus({ preventScroll: true }); }, true);
   over.addEventListener('contextmenu', (e) => {
     if (!notesOn || !canWrite()) return;
     e.preventDefault();
@@ -1720,7 +1723,7 @@ function bindNoteGestures(u) {
     if (e.pointerType !== 'touch' || !notesOn || !canWrite()) return;
     sx = e.clientX; sy = e.clientY;
     cancel();
-    timer = window.setTimeout(() => { timer = 0; hideTip(); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
+    timer = window.setTimeout(() => { timer = 0; hideTip(); over.focus({ preventScroll: true }); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
   });
   over.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
   over.addEventListener('pointerup', cancel);
@@ -1741,9 +1744,22 @@ function onChartSelect(/** @type {any} */ u) {
   u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
 }
 
-const notePop = h('div', { id: 'note-pop', class: 'pop', role: 'dialog', 'aria-label': 'Note', hidden: true });
+// The note editor is a modal <dialog> (the browser traps focus in it); when
+// it closes, focus returns to what opened it: the "+ note" button, a note's
+// Edit button, or the chart (whose overlay is focusable for this).
+const notePop = /** @type {HTMLDialogElement} */ (h('dialog', { id: 'note-pop', class: 'pop', 'aria-label': 'Note' }));
+/** @type {HTMLElement|null} */
+let noteOpener = null;
+notePop.addEventListener('close', () => {
+  notePop.replaceChildren();
+  const o = noteOpener;
+  noteOpener = null;
+  if (o && o.isConnected) o.focus({ preventScroll: true });
+});
+// A click on the backdrop (outside the editor's box) closes it.
+notePop.addEventListener('mousedown', (e) => { if (e.target === notePop) closeNoteEditor(); });
 
-function closeNoteEditor() { notePop.hidden = true; notePop.replaceChildren(); }
+function closeNoteEditor() { if (notePop.open) notePop.close(); }
 
 /**
  * The note popover: add (note null) or edit. preset gives the time(s) of a new note.
@@ -1751,6 +1767,8 @@ function closeNoteEditor() { notePop.hidden = true; notePop.replaceChildren(); }
  */
 function openNoteEditor(note, x, y, preset) {
   hideTip();
+  const ae = document.activeElement;
+  noteOpener = ae instanceof HTMLElement && ae !== document.body ? ae : null;
   const at = note ? Date.parse(note.at) : (preset ? preset.at : Date.now());
   const end = note ? (note.end ? Date.parse(note.end) : NaN) : (preset && preset.end ? preset.end : NaN);
   const atIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(at), required: true, 'aria-label': 'When' }));
@@ -1793,9 +1811,8 @@ function openNoteEditor(note, x, y, preset) {
       save.disabled = false;
     }
   });
-  form.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNoteEditor(); });
   notePop.replaceChildren(form);
-  notePop.hidden = false;
+  if (!notePop.open) notePop.showModal();
   const r = notePop.getBoundingClientRect();
   let left = x + 8, top = y + 8;
   if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 8);
@@ -3374,6 +3391,18 @@ async function loadReports() {
 }
 
 /** Open / Download / Copy public link / Publish / Delete for one report. */
+/**
+ * After an action re-renders the control that started it, focus would fall to
+ * <body>: put it on the replacement (or a fallback) instead.
+ * @param {() => (Element|null)} find
+ */
+function refocus(find) {
+  const ae = document.activeElement;
+  if (ae && ae !== document.body && ae.isConnected) return;
+  const el = /** @type {HTMLElement|null} */ (find());
+  el?.focus({ preventScroll: true });
+}
+
 function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ after, big = false) {
   const cls = big ? 'btn' : 'tbtn';
   const kids = [
@@ -3392,12 +3421,13 @@ function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ af
   if (canWrite()) {
     if (r.redacted) {
       kids.push(h('button', {
-        class: cls, type: 'button', text: r.public ? 'Remove from shared link' : 'Show on shared link',
+        class: cls, type: 'button', text: r.public ? 'Remove from shared link' : 'Show on shared link', 'data-rid': r.id, 'data-act': 'pub',
         title: r.public ? 'Stop showing this report on your shared link' : 'Show this report (safe to share) on your shared link',
         onclick: async () => {
           try { await apiWrite('PUT', `api/reports/${r.id}`, { public: !r.public }); } catch (e) { await alertDialog('Couldn’t change the report', /** @type {Error} */ (e).message); }
           await loadReports();
           after();
+          refocus(() => document.querySelector(`[data-rid="${r.id}"][data-act="pub"]`) || $('#reports > summary'));
         },
       }));
     }
@@ -3408,6 +3438,8 @@ function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ af
         try { await apiWrite('DELETE', `api/reports/${r.id}`); } catch (e) { await alertDialog('Couldn’t delete the report', /** @type {Error} */ (e).message); }
         await loadReports();
         after();
+        // The row is gone: the Reports heading (or, in the "ready" dialog, its first control).
+        refocus(() => (reportDlg && reportDlg.open ? reportDlg.querySelector('button, a') : null) || $('#reports > summary'));
       },
     }));
   }
@@ -3833,6 +3865,8 @@ async function shareAction(/** @type {'start'|'stop'} */ what) {
     status.share = { ...(status.share || {}), phase: 'error', last_err: err.message };
   }
   renderShare();
+  // The button that started this was replaced: focus the new controls.
+  refocus(() => $('#share').querySelector('button, input'));
   loadStatus();
 }
 
@@ -3879,7 +3913,14 @@ function renderShare() {
       if (!disabled) kids.push(h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => shareAction('stop') }));
   }
   if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started with --admin-token=off' }));
+  // It re-renders on every status poll: keep keyboard focus on the same control (or the first one).
+  const ae = document.activeElement;
+  const had = ae instanceof HTMLElement && el.contains(ae) ? ae.textContent || ae.tagName : '';
   el.replaceChildren(...kids);
+  if (had) {
+    const ctl = /** @type {HTMLElement[]} */ ([...el.querySelectorAll('button, input')]);
+    (ctl.find((x) => (x.textContent || x.tagName) === had) || ctl[0])?.focus({ preventScroll: true });
+  }
 }
 
 function renderNotices() {
@@ -3951,10 +3992,9 @@ async function main() {
   repBox.addEventListener('toggle', () => { if (state.reports !== repBox.open) { state.reports = repBox.open; writeHash(); } if (repBox.open) loadReports(); });
   document.body.append(notePop);
   // Clicks outside the note popover close it.
-  document.addEventListener('mousedown', (e) => { if (!notePop.hidden && !notePop.contains(/** @type {Node} */ (e.target))) closeNoteEditor(); });
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (!notePop.hidden) closeNoteEditor();
     hideTip(); // tooltips close on Escape (WCAG 1.4.13)
   });
   // Back from focus mode restores the Overview's scroll position itself.
