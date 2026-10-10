@@ -87,7 +87,9 @@ func (c homeCopy) serversDown() string {
 		"The call test servers aren't answering. That isn't a problem with this connection.")
 }
 
-func (c homeCopy) tileLabel(state string, other bool) string {
+// tileLabel: dead says most of the tile's targets get nothing through
+// (rather than losing some of it).
+func (c homeCopy) tileLabel(state string, other, dead bool) string {
 	switch state {
 	case tileWorking:
 		return "Working"
@@ -96,12 +98,76 @@ func (c homeCopy) tileLabel(state string, other bool) string {
 	case tileSlow:
 		return "Slow"
 	case tileDown:
-		if other {
+		switch {
+		case other && dead:
 			return "Many aren't answering"
+		case other:
+			return "Many are unreliable"
+		case dead:
+			return "Not working"
 		}
-		return "Not working"
+		return "Unreliable"
 	}
 	return "Checking…"
+}
+
+// displayNames are Home's names for targets, by target name: what a home
+// user calls the service, never a host. A CDN stands for the websites that
+// use it (see subject). Targets not listed fall back to their call app's
+// title, then their name with spaces (homeName).
+var displayNames = map[string]string{
+	"M365-Outlook":    "Outlook",
+	"M365-Portal":     "Microsoft 365",
+	"M365-Login":      "Microsoft sign-in",
+	"Google-Gmail":    "Gmail",
+	"Google-Docs":     "Google Docs",
+	"Google-Drive":    "Google Drive",
+	"Microsoft-Teams": "Teams",
+	"Google-Meet":     "Google Meet",
+	"Zoom":            "Zoom",
+	"Slack":           "Slack",
+	"Webex":           "Webex",
+	"Discord":         "Discord",
+	"WhatsApp-Chat":   "WhatsApp",
+	"CDN-Cloudflare":  cdnPrefix + "Cloudflare",
+	"CDN-Akamai":      cdnPrefix + "Akamai",
+	"CDN-Fastly":      cdnPrefix + "Fastly",
+	"CDN-CloudFront":  cdnPrefix + "Amazon CloudFront",
+	"CDN-Google":      cdnPrefix + "Google",
+}
+
+// cdnPrefix marks a display name that stands for the websites behind a CDN.
+const cdnPrefix = "websites using "
+
+// subject makes display names the subject of a sentence, capitalized:
+// "Outlook", "Outlook and Gmail", "Some websites (those using Akamai and
+// Fastly)". plural says which verb form follows.
+func subject(ns []string) (s string, plural bool) {
+	var cdn, parts []string
+	for _, n := range ns {
+		if c, ok := strings.CutPrefix(n, cdnPrefix); ok {
+			cdn = append(cdn, c)
+		} else {
+			parts = append(parts, n)
+		}
+	}
+	if len(cdn) > 0 {
+		parts = append(parts, "some websites (those using "+joinNames(cdn)+")")
+	}
+	s = joinNames(parts)
+	if s != "" {
+		s = strings.ToUpper(s[:1]) + s[1:]
+	}
+	return s, len(ns) > 1 || len(cdn) > 0
+}
+
+// says is subject plus a verb in the right form: says(ns, " isn't", " aren't").
+func says(ns []string, one, many string) string {
+	s, plural := subject(ns)
+	if plural {
+		return s + many
+	}
+	return s + one
 }
 
 // joinNames joins display names: "A", "A and B", "A, B and 2 more".
@@ -117,23 +183,33 @@ func joinNames(ns []string) string {
 	return ns[0] + ", " + ns[1] + " and " + strconv.Itoa(len(ns)-2) + " more"
 }
 
-func (c homeCopy) tileNote(state string, affected []string, failing, measured int) string {
+func (c homeCopy) tileNote(state string, affected []string, failing, dead, measured int) string {
+	// Failing targets that get nothing through "aren't answering"; the
+	// others lose some of it.
+	failWords := func() (string, string) {
+		if dead >= failing {
+			return " isn't answering", " aren't answering"
+		}
+		return " isn't loading reliably", " aren't loading reliably"
+	}
 	switch state {
 	case tileMostly:
 		if failing > 0 {
-			return affected[0] + " isn't answering from here. That's usually a problem on their side."
+			one, many := failWords()
+			return says(affected[:1], one, many) + " from here. That's usually a problem on their side."
 		}
-		return affected[0] + " is slower than usual."
+		return says(affected[:1], " is", " are") + " slower than usual."
 	case tileSlow:
 		if failing == 0 {
-			return joinNames(affected) + verb(len(affected), " is", " are") + " slower than usual."
+			return says(affected, " is", " are") + " slower than usual."
 		}
-		return joinNames(affected) + verb(len(affected), " isn't", " aren't") + " working well from here."
+		return says(affected, " isn't", " aren't") + " working well from here."
 	case tileDown:
+		one, many := failWords()
 		if len(affected) > 3 {
-			return fmt.Sprintf("%d of %d aren't answering from here.", len(affected), measured)
+			return fmt.Sprintf("%d of %d%s from here.", len(affected), measured, many)
 		}
-		return joinNames(affected) + verb(len(affected), " isn't", " aren't") + " answering from here."
+		return says(affected, one, many) + " from here."
 	}
 	return ""
 }
@@ -291,7 +367,7 @@ func (c homeCopy) verdictHead(k model.VerdictKind, quiet bool, affected []string
 		if onlyOther || len(affected) > 2 {
 			return "Some services aren't answering"
 		}
-		return joinNames(affected) + verb(len(affected), " isn't", " aren't") + " answering"
+		return says(affected, " isn't", " aren't") + " answering"
 	case model.VerdictUDPBlocked:
 		if quiet {
 			return "This network always blocks the fast connection calls use"
@@ -309,7 +385,7 @@ func (c homeCopy) verdictHead(k model.VerdictKind, quiet bool, affected []string
 }
 
 func (c homeCopy) serviceNote(affected []string) string {
-	return joinNames(affected) + verb(len(affected), " isn't", " aren't") + " answering from here. That's most likely a problem on their side."
+	return says(affected, " isn't", " aren't") + " answering from here. That's most likely a problem on their side."
 }
 
 func (c homeCopy) verdictCause(k model.VerdictKind, conf string, quiet bool, affected []string, onlyOther bool) string {
@@ -349,8 +425,8 @@ func (c homeCopy) verdictCause(k model.VerdictKind, conf string, quiet bool, aff
 			return c.v("Your connection is fine, but some services aren't answering from here. That's most likely on their side.",
 				"The connection is fine, but some services aren't answering from here. That's most likely on their side.")
 		}
-		return c.v("Your internet is fine. ", "The connection is fine. ") + joinNames(affected) +
-			verb(len(affected), " isn't", " aren't") + " answering from here. That's most likely a problem on their side."
+		return c.v("Your internet is fine. ", "The connection is fine. ") + says(affected, " isn't", " aren't") +
+			" answering from here. That's most likely a problem on their side."
 	case model.VerdictUDPBlocked:
 		return c.v("Calls may still connect, but sound and video can lag or drop. This is common on hotel, office and school Wi-Fi, or with some security software.",
 			"Calls may still connect, but sound and video can lag or drop. This is common on hotel, office and school Wi-Fi, or with security software on the device.")
@@ -469,7 +545,8 @@ func (c homeCopy) runLabel(who, name string) string {
 		return "Name lookups"
 	case whoApp:
 		if name != "" {
-			return name
+			n, _ := subject([]string{name})
+			return n
 		}
 		return "Some apps"
 	case whoCallTraffic:
@@ -492,7 +569,8 @@ func (c homeCopy) where(who, name string) string {
 		return c.v("Looking up names", "Name lookups (DNS)")
 	case whoApp:
 		if name != "" {
-			return name
+			n, _ := subject([]string{name})
+			return n
 		}
 		return "Some apps and websites"
 	case whoCallTraffic:
@@ -580,6 +658,10 @@ func (c homeCopy) atWords(measured bool, calls string, incident bool, who, kind 
 				"The monitor wasn't running, so there's no record.")
 	case !measured:
 		headline = c.v("We weren't checking calls then, but we did see a problem", "Calls weren't being checked then, but there was a problem")
+	case calls == "" && incident:
+		headline = c.v("There was a problem then", "There was a problem then")
+	case calls == "":
+		return c.v("Everything we check was working then", "Everything checked was working then"), ""
 	default:
 		headline = map[string]string{
 			string(callq.Good):     c.v("Your connection was good for calls then", "The connection was good for calls then"),

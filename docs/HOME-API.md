@@ -93,7 +93,7 @@ Unknown parameters return 400, like the other routes.
 | `working` | good | Working | every target healthy |
 | `mostly` | warn | Mostly working | exactly 1 target unhealthy out of ≥ 3 |
 | `slow` | warn | Slow | ≥ 2 targets (or the only 1–2) far above their normal; only once baselines exist, otherwise they count as working |
-| `down` | bad | Not working | ≥ 2 targets (or every target) failing |
+| `down` | bad | Not working (most get nothing through), else Unreliable | ≥ 2 targets (or every target) failing |
 | `checking` | checking | Checking… | fewer than 5 samples on most targets |
 
 "Unhealthy" is the Overview's rule: failing (≥ 20 % loss), lossy, very slow or slow. With a single affected target out of ≥ 3, Home says "mostly working" and doesn't raise the answer.
@@ -175,7 +175,12 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 ```
 
 **Notes:**
-- `names` and `affected` are **display names**: the call app's title for a target with an `app:*` tag ("Slack", "WhatsApp"), else the target name with `-` replaced by a space ("M365 Outlook", "CDN Cloudflare"). The calls tile lists app titles. They are never hosts. There is no `label:` field.
+- `names` and `affected` are **display names**, never hosts, and there is no `label:` field. In order of preference:
+  - **the table in `home_copy.go`:** "Outlook", "Microsoft 365", "Microsoft sign-in", "Gmail", "WhatsApp" and so on. A CDN is "websites using Akamai", which sentences turn into "Some websites (those using Akamai) aren't answering".
+  - **the call app's title.**
+  - **the target name with `-` replaced by a space.**
+
+  Under the Websites tile, `names` drop the "websites using" part ("Cloudflare", "Akamai"). The calls tile lists app titles.
 - `details` is `#v=calls` for the calls tile and `#v=o&ot=<tile id>` for the others (the Overview filtered to that Home category). `/api/profile` gives every non-path target its category as `"home": "calls"|"work"|"web"|"other"` (`profile.HomeCategory`), so the client never repeats the rules.
 - `fact` is set only when the call path or an app had a scored bad minute in the last 5 minutes. It never holds a time: show `fact_at` in the viewer's locale.
 - `since` is the verdict's `since`, or the first minute of the current bad call run.
@@ -342,23 +347,11 @@ Write the times from `bad_from`/`bad_to` (or `time`) yourself.
 
 None of these may appear in any copy field: STUN, UDP, TCP, ICMP, anycast, MOS, jitter, p95, probe, target, baseline, verdict, profile, gateway, ISP edge, ms, `×N`, or a CLI flag. `DNS` appears only in parentheses after "name lookups", and only in the public voice. A golden test scans every copy field of every scenario for these words.
 
-## Development: canned responses
+## Development: scenarios and golden files
 
-`cmd/fyisp-webdev -home <scenario>` serves fixed `/api/home` responses for the UI, on both the local and the public listener. The rest of the dashboard keeps its usual fake data, and the fake verdict is set to match the scenario. Scenarios:
+`internal/web/homescen` builds the Home scenarios: the default profile (`--profile aws` for `clouds-other`), a week of stored samples, and a verdict with its outage log. It covers good, warming, wifi, isp, upstream, one-app-down, calls-choppy, udp-blocked, no-network, week-with-gaps and clouds-other.
 
-| Scenario | What Home shows |
-|---|---|
-| `good` | all good, a quiet week |
-| `warming` | checking; steps half done; tiles checking; no history yet |
-| `wifi` | `lan`, likely; calls choppy |
-| `isp` | `isp`, sure; calls choppy; ongoing incident; week with 2 provider problems |
-| `upstream` | `upstream`; work apps and websites down |
-| `one-app-down` | `service` on M365 Outlook: work `mostly`; answer stays good, with the tile note |
-| `calls-choppy` | `udp_degraded`: only the call path is bad |
-| `udp-blocked` | quiet `udp_blocked`: `info`, calls tile blocked |
-| `no-network` | offline |
-| `week-with-gaps` | good now; a week with `off` spans, a no-record day, and home and provider problems |
-| `public` | the `isp` scenario in the public voice (use it on the local listener; the share link is always public) |
-| `clouds-other` | `--profile clouds`-like: only an `other` tile, escalated by a `service` verdict on 30 of 84 targets |
-
-Without `-home`, `fyisp-webdev` serves the real `/api/home` over its fake store.
+- **`cmd/fyisp-webdev -home <scenario>`** serves the **real** `/api/home` (and the rest of the dashboard) over that data, and keeps adding samples as time passes. `-home public` is the isp scenario; open the share link to see the public voice.
+- **`internal/web/testdata/home/<scenario>.<you|public>.json`** pins every scenario in both voices: live, today, the week, and `part=at` 5 minutes ago, on Friday 2026-10-09 at 14:30 (UTC+2). This is where the copy is reviewed.
+  - To rewrite the files, run `go test ./internal/web -run TestHomeGolden -update`, then review the diff.
+  - The test also runs every copy field through the banned-word rules.

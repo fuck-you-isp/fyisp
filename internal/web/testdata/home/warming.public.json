@@ -1,0 +1,328 @@
+{
+  "at_5_minutes_ago": {
+    "part": "at",
+    "voice": "public",
+    "at": 1791549000000,
+    "time": 1791548700000,
+    "from": 1791547800000,
+    "to": 1791549000000,
+    "measured": true,
+    "calls": "good",
+    "level": "good",
+    "who": "none",
+    "headline": "The connection was good for calls then",
+    "cause": "If a call was bad then, the problem was probably the app or the other side's connection."
+  },
+  "history_today": {
+    "part": "history",
+    "voice": "public",
+    "at": 1791549000000,
+    "tz": 120,
+    "span": "d",
+    "from": 1791496800000,
+    "to": 1791549000000,
+    "first_data": 1791548960000,
+    "days": [
+      {
+        "date": "2026-10-09",
+        "from": 1791496800000,
+        "to": 1791549000000,
+        "work_from": 1791529200000,
+        "work_to": 1791558000000,
+        "runs": [],
+        "off": []
+      }
+    ],
+    "summary": "Monitoring just started, so the history begins now.",
+    "counts": {
+      "problems": 0,
+      "home": 0,
+      "provider": 0,
+      "beyond": 0,
+      "dns": 0,
+      "app": 0,
+      "calltraffic": 0,
+      "offline": 0
+    },
+    "problems": [],
+    "work": {
+      "measured": 1,
+      "bad": 0,
+      "good": 1
+    }
+  },
+  "history_week": {
+    "part": "history",
+    "voice": "public",
+    "at": 1791549000000,
+    "tz": 120,
+    "span": "w",
+    "from": 1790978400000,
+    "to": 1791549000000,
+    "first_data": 1791548960000,
+    "days": [
+      {
+        "date": "2026-10-03",
+        "from": 1790978400000,
+        "to": 1791064800000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-04",
+        "from": 1791064800000,
+        "to": 1791151200000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-05",
+        "from": 1791151200000,
+        "to": 1791237600000,
+        "work_from": 1791183600000,
+        "work_to": 1791212400000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-06",
+        "from": 1791237600000,
+        "to": 1791324000000,
+        "work_from": 1791270000000,
+        "work_to": 1791298800000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-07",
+        "from": 1791324000000,
+        "to": 1791410400000,
+        "work_from": 1791356400000,
+        "work_to": 1791385200000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-08",
+        "from": 1791410400000,
+        "to": 1791496800000,
+        "work_from": 1791442800000,
+        "work_to": 1791471600000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-09",
+        "from": 1791496800000,
+        "to": 1791549000000,
+        "work_from": 1791529200000,
+        "work_to": 1791558000000,
+        "runs": [],
+        "off": []
+      }
+    ],
+    "summary": "Monitoring just started, so the history begins now.",
+    "counts": {
+      "problems": 0,
+      "home": 0,
+      "provider": 0,
+      "beyond": 0,
+      "dns": 0,
+      "app": 0,
+      "calltraffic": 0,
+      "offline": 0
+    },
+    "problems": [],
+    "work": {
+      "measured": 1,
+      "bad": 0,
+      "good": 1
+    }
+  },
+  "live": {
+    "part": "live",
+    "voice": "public",
+    "at": 1791549000000,
+    "answer": {
+      "level": "checking",
+      "who": "none",
+      "kind": "warming_up",
+      "calls": "good",
+      "headline": "Checking this connection…",
+      "cause": "Results appear after about a minute.",
+      "try": [],
+      "announce": "Checking this connection…"
+    },
+    "path": [
+      {
+        "id": "device",
+        "label": "Monitoring device",
+        "state": "ok",
+        "words": "OK"
+      },
+      {
+        "id": "router",
+        "label": "Home router",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The router that connects the home to the internet."
+      },
+      {
+        "id": "provider",
+        "label": "Provider network",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The provider's first piece of equipment past the home router."
+      },
+      {
+        "id": "internet",
+        "label": "The wider internet",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
+      },
+      {
+        "id": "apps",
+        "label": "Apps \u0026 websites",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The apps and websites checked from this connection."
+      }
+    ],
+    "tiles": [
+      {
+        "id": "calls",
+        "title": "Calls",
+        "level": "good",
+        "state": "good",
+        "label": "Good for calls",
+        "names": [
+          "Teams",
+          "Google Meet",
+          "Zoom"
+        ],
+        "more": 4,
+        "ok": 6,
+        "total": 7,
+        "details": "#v=calls"
+      },
+      {
+        "id": "work",
+        "title": "Work apps",
+        "level": "checking",
+        "state": "checking",
+        "label": "Checking…",
+        "names": [
+          "Outlook",
+          "Microsoft 365",
+          "Microsoft sign-in"
+        ],
+        "more": 3,
+        "ok": 0,
+        "total": 6,
+        "details": "#v=o\u0026ot=work"
+      },
+      {
+        "id": "web",
+        "title": "Websites",
+        "level": "checking",
+        "state": "checking",
+        "label": "Checking…",
+        "names": [
+          "Cloudflare",
+          "Akamai",
+          "Fastly"
+        ],
+        "more": 2,
+        "ok": 0,
+        "total": 5,
+        "details": "#v=o\u0026ot=web"
+      }
+    ],
+    "apps": [
+      {
+        "app": "teams",
+        "title": "Teams",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Calls use the same call path (Good)."
+      },
+      {
+        "app": "meet",
+        "title": "Google Meet",
+        "level": "checking",
+        "state": "not_enough_data",
+        "label": "Not checked yet"
+      },
+      {
+        "app": "zoom",
+        "title": "Zoom",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Zoom picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "slack",
+        "title": "Slack",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Slack picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "discord",
+        "title": "Discord",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Discord picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "whatsapp",
+        "title": "WhatsApp",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "WhatsApp picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "webex",
+        "title": "Webex",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Webex picks a server when each meeting starts, so it can't be tested ahead of time."
+      }
+    ],
+    "steps": [
+      {
+        "id": "router",
+        "label": "Home router",
+        "done": true
+      },
+      {
+        "id": "provider",
+        "label": "Provider network",
+        "done": true
+      },
+      {
+        "id": "internet",
+        "label": "The wider internet",
+        "done": true
+      },
+      {
+        "id": "apps",
+        "label": "Apps \u0026 websites",
+        "done": true
+      }
+    ]
+  }
+}

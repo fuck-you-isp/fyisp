@@ -1,0 +1,382 @@
+{
+  "at_5_minutes_ago": {
+    "part": "at",
+    "voice": "you",
+    "at": 1791549000000,
+    "time": 1791548700000,
+    "from": 1791547800000,
+    "to": 1791549000000,
+    "measured": true,
+    "calls": "good",
+    "level": "good",
+    "who": "none",
+    "headline": "Your connection was good for calls then",
+    "cause": "If the call was bad, the problem was probably the app or the other person's connection."
+  },
+  "history_today": {
+    "part": "history",
+    "voice": "you",
+    "at": 1791549000000,
+    "tz": 120,
+    "span": "d",
+    "from": 1791496800000,
+    "to": 1791549000000,
+    "first_data": 1791187200000,
+    "days": [
+      {
+        "date": "2026-10-09",
+        "from": 1791496800000,
+        "to": 1791549000000,
+        "work_from": 1791529200000,
+        "work_to": 1791558000000,
+        "runs": [],
+        "off": []
+      }
+    ],
+    "summary": "No problems today.",
+    "counts": {
+      "problems": 0,
+      "home": 0,
+      "provider": 0,
+      "beyond": 0,
+      "dns": 0,
+      "app": 0,
+      "calltraffic": 0,
+      "offline": 0
+    },
+    "problems": [],
+    "work": {
+      "measured": 330,
+      "bad": 0,
+      "good": 1
+    }
+  },
+  "history_week": {
+    "part": "history",
+    "voice": "you",
+    "at": 1791549000000,
+    "tz": 120,
+    "span": "w",
+    "from": 1790978400000,
+    "to": 1791549000000,
+    "first_data": 1791187200000,
+    "days": [
+      {
+        "date": "2026-10-03",
+        "from": 1790978400000,
+        "to": 1791064800000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-04",
+        "from": 1791064800000,
+        "to": 1791151200000,
+        "runs": [],
+        "off": [],
+        "no_record": true
+      },
+      {
+        "date": "2026-10-05",
+        "from": 1791151200000,
+        "to": 1791237600000,
+        "work_from": 1791183600000,
+        "work_to": 1791212400000,
+        "runs": [],
+        "off": []
+      },
+      {
+        "date": "2026-10-06",
+        "from": 1791237600000,
+        "to": 1791324000000,
+        "work_from": 1791270000000,
+        "work_to": 1791298800000,
+        "runs": [
+          {
+            "from": 1791288300000,
+            "to": 1791289200000,
+            "level": "bad",
+            "who": "provider",
+            "kind": "isp",
+            "label": "Your provider",
+            "source": "incident",
+            "incident": 81
+          }
+        ],
+        "off": [
+          {
+            "from": 1791306000000,
+            "to": 1791324000000
+          }
+        ]
+      },
+      {
+        "date": "2026-10-07",
+        "from": 1791324000000,
+        "to": 1791410400000,
+        "work_from": 1791356400000,
+        "work_to": 1791385200000,
+        "runs": [],
+        "off": [
+          {
+            "from": 1791324000000,
+            "to": 1791356400000
+          }
+        ]
+      },
+      {
+        "date": "2026-10-08",
+        "from": 1791410400000,
+        "to": 1791496800000,
+        "work_from": 1791442800000,
+        "work_to": 1791471600000,
+        "runs": [
+          {
+            "from": 1791445200000,
+            "to": 1791445920000,
+            "level": "bad",
+            "who": "provider",
+            "kind": "isp",
+            "label": "Your provider",
+            "source": "incident",
+            "incident": 82
+          },
+          {
+            "from": 1791468120000,
+            "to": 1791468360000,
+            "level": "bad",
+            "who": "home",
+            "kind": "lan",
+            "label": "Home network",
+            "source": "incident",
+            "incident": 83
+          }
+        ],
+        "off": []
+      },
+      {
+        "date": "2026-10-09",
+        "from": 1791496800000,
+        "to": 1791549000000,
+        "work_from": 1791529200000,
+        "work_to": 1791558000000,
+        "runs": [],
+        "off": []
+      }
+    ],
+    "summary": "3 problems this week: 2 from your internet provider and 1 in your home network.",
+    "counts": {
+      "problems": 3,
+      "home": 1,
+      "provider": 2,
+      "beyond": 0,
+      "dns": 0,
+      "app": 0,
+      "calltraffic": 0,
+      "offline": 0
+    },
+    "problems": [
+      {
+        "id": 83,
+        "from": 1791468120000,
+        "to": 1791468360000,
+        "kind": "lan",
+        "who": "home",
+        "where": "Your home network (Wi-Fi or router)",
+        "peak_loss": 0.35,
+        "details": "#v=calls\u0026from=1791466320000\u0026to=1791470160000\u0026o=1"
+      },
+      {
+        "id": 82,
+        "from": 1791445200000,
+        "to": 1791445920000,
+        "kind": "isp",
+        "who": "provider",
+        "where": "Your provider's network (past your router)",
+        "peak_loss": 0.7,
+        "details": "#v=calls\u0026from=1791443400000\u0026to=1791447720000\u0026o=1"
+      },
+      {
+        "id": 81,
+        "from": 1791288300000,
+        "to": 1791289200000,
+        "kind": "isp",
+        "who": "provider",
+        "where": "Your provider's network (past your router)",
+        "peak_loss": 1,
+        "details": "#v=calls\u0026from=1791286500000\u0026to=1791291000000\u0026o=1"
+      }
+    ],
+    "work": {
+      "measured": 330,
+      "bad": 0,
+      "good": 1
+    }
+  },
+  "live": {
+    "part": "live",
+    "voice": "you",
+    "at": 1791549000000,
+    "answer": {
+      "level": "good",
+      "who": "none",
+      "kind": "ok",
+      "calls": "good",
+      "headline": "Your internet is fine for calls and work",
+      "cause": "Calls, work apps and websites are all working.",
+      "try": [],
+      "announce": "Your internet is fine for calls and work. Calls, work apps and websites are all working."
+    },
+    "path": [
+      {
+        "id": "device",
+        "label": "This device",
+        "state": "ok",
+        "words": "OK"
+      },
+      {
+        "id": "router",
+        "label": "Your router",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The box that connects your home to the internet."
+      },
+      {
+        "id": "provider",
+        "label": "Your provider",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The first piece of your internet provider's equipment, just outside your home."
+      },
+      {
+        "id": "internet",
+        "label": "The internet",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
+      },
+      {
+        "id": "apps",
+        "label": "Apps \u0026 websites",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The apps and websites we check for you."
+      }
+    ],
+    "tiles": [
+      {
+        "id": "calls",
+        "title": "Calls",
+        "level": "good",
+        "state": "good",
+        "label": "Good for calls",
+        "names": [
+          "Teams",
+          "Google Meet",
+          "Zoom"
+        ],
+        "more": 4,
+        "ok": 7,
+        "total": 7,
+        "details": "#v=calls"
+      },
+      {
+        "id": "work",
+        "title": "Work apps",
+        "level": "good",
+        "state": "working",
+        "label": "Working",
+        "names": [
+          "Outlook",
+          "Microsoft 365",
+          "Microsoft sign-in"
+        ],
+        "more": 3,
+        "ok": 6,
+        "total": 6,
+        "details": "#v=o\u0026ot=work"
+      },
+      {
+        "id": "web",
+        "title": "Websites",
+        "level": "good",
+        "state": "working",
+        "label": "Working",
+        "names": [
+          "Cloudflare",
+          "Akamai",
+          "Fastly"
+        ],
+        "more": 2,
+        "ok": 5,
+        "total": 5,
+        "details": "#v=o\u0026ot=web"
+      }
+    ],
+    "calls": {
+      "state": "good",
+      "delay": "very_short",
+      "dropouts": "none",
+      "smoothness": "steady",
+      "words": "Delay very short · Dropouts none · Smoothness steady"
+    },
+    "apps": [
+      {
+        "app": "teams",
+        "title": "Teams",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Calls use your call path (Good)."
+      },
+      {
+        "app": "meet",
+        "title": "Google Meet",
+        "level": "good",
+        "state": "good",
+        "label": "Good"
+      },
+      {
+        "app": "zoom",
+        "title": "Zoom",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Zoom picks a server when each meeting starts, so we can't test it ahead of time."
+      },
+      {
+        "app": "slack",
+        "title": "Slack",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Slack picks a server when each meeting starts, so we can't test it ahead of time."
+      },
+      {
+        "app": "discord",
+        "title": "Discord",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Discord picks a server when each meeting starts, so we can't test it ahead of time."
+      },
+      {
+        "app": "whatsapp",
+        "title": "WhatsApp",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "WhatsApp picks a server when each meeting starts, so we can't test it ahead of time."
+      },
+      {
+        "app": "webex",
+        "title": "Webex",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Webex picks a server when each meeting starts, so we can't test it ahead of time."
+      }
+    ]
+  }
+}

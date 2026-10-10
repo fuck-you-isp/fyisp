@@ -5,7 +5,7 @@
 //	fyisp-webdev -listen 0.0.0.0:3000 -public 0.0.0.0:3001 -backfill 6h
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 //	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
-//	fyisp-webdev -home isp                    # canned /api/home (docs/HOME-API.md)
+//	fyisp-webdev -home isp                    # a Home scenario (internal/web/homescen)
 package main
 
 import (
@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/web"
+	"github.com/fuck-you-isp/fyisp/internal/web/homescen"
 )
 
 // udpBase are base RTTs (ms) of the STUN targets' fake bursts (see
@@ -193,23 +193,10 @@ func main() {
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
-	home := flag.String("home", "", "serve a canned /api/home scenario: "+strings.Join(homeScenarios, ", "))
+	home := flag.String("home", "", "a Home scenario instead of the fake probes and verdict (the real /api/home over its data): "+strings.Join(homescen.Names, ", "))
 	flag.Parse()
-	if *home != "" {
-		if !slices.Contains(homeScenarios, *home) {
-			fmt.Fprintf(os.Stderr, "-home: unknown scenario %q\n", *home)
-			os.Exit(2)
-		}
-		// The Details view tells the same story, unless -verdict or -calls say otherwise.
-		set := map[string]bool{}
-		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
-		k, c := homeVerdict(*home)
-		if !set["verdict"] {
-			*vKind = k
-		}
-		if !set["calls"] {
-			*callsMode = c
-		}
+	if *home == "public" { // the isp scenario; open the share link for the public voice
+		*home = "isp"
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -253,6 +240,14 @@ func main() {
 		}
 	}
 	now := time.Now()
+	var sc *homescen.Scenario
+	if *home != "" {
+		if sc, err = homescen.Build(*home, now, time.Local); err != nil {
+			log.Error("-home", "err", err)
+			os.Exit(2)
+		}
+		p = sc.Profile
+	}
 	// sink adds the evening slowdown and drops ISP edge samples with
 	// -edge-undiscovered.
 	sink := func(inner model.Sink) model.Sink {
@@ -268,12 +263,28 @@ func main() {
 	}
 	st := store.NewFake()
 	var warm web.Warmup
-	if *bf > 0 {
-		log.Info("backfilling", "range", *bf)
-		backfill(sink(st), p, *bf, now)
-	}
 	pr := &probe.Fake{Seed: 42, LossRate: *loss}
-	go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm})) }()
+	switch {
+	case sc != nil:
+		// The scenario's own samples, going on as they were.
+		st, *bf = sc.Store, 7*24*time.Hour
+		for _, t := range p.Targets { // reporting, except while warming up
+			if *home != "warming" || t.Layer != "" {
+				warm.Observe(model.Sample{Key: model.SeriesKey{Target: t.Name}, Slot: now})
+			}
+		}
+		go func() {
+			for t := time.NewTicker(5 * time.Second); ctx.Err() == nil; <-t.C {
+				sc.Fill(time.Now())
+			}
+		}()
+	default:
+		if *bf > 0 {
+			log.Info("backfilling", "range", *bf)
+			backfill(sink(st), p, *bf, now)
+		}
+		go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm})) }()
+	}
 
 	sec := *secret
 	if sec == "" {
@@ -304,7 +315,10 @@ func main() {
 		go ft.run(ctx)
 		d.Trace = ft
 	}
-	if !*noVerdict {
+	switch {
+	case sc != nil:
+		d.Verdict = sc.Verdict
+	case !*noVerdict:
 		d.Verdict = callsVerdict{newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge), *callsMode, now}
 	}
 	var notes *fakeNotes
@@ -334,12 +348,8 @@ func main() {
 		return &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 			WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	}
-	var lh, ph http.Handler = web.Local(d, web.LocalOptions{Addr: *listen, AdminToken: *admin}), web.Public(d, sec)
-	if *home != "" {
-		lh, ph = homeHandler(*home, false, lh), homeHandler(*home, true, ph)
-	}
-	ls := srv(*listen, lh)
-	ps := srv(*public, ph)
+	ls := srv(*listen, web.Local(d, web.LocalOptions{Addr: *listen, AdminToken: *admin}))
+	ps := srv(*public, web.Public(d, sec))
 	for _, s := range []*http.Server{ls, ps} {
 		go func() {
 			if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {

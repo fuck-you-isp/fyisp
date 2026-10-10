@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
@@ -76,6 +77,9 @@ func homeFixture(t *testing.T, p *model.Profile, now time.Time, lost []string, c
 	return s, cs, fv
 }
 
+// homeNow is the tests' clock: a Friday afternoon in working hours.
+var homeNow = time.Date(2026, 10, 9, 14, 30, 0, 0, time.FixedZone("", 120*60))
+
 func TestHomeParams(t *testing.T) {
 	for _, tc := range []struct {
 		q, part, span, voice string
@@ -114,7 +118,7 @@ func TestHomeParams(t *testing.T) {
 }
 
 func TestHomeLiveGood(t *testing.T) {
-	now := time.Now().Truncate(time.Second)
+	now := homeNow
 	s, _, _ := homeFixture(t, homeProfile(), now, nil, false)
 	l, err := s.homeLive(context.Background(), voiceYou, now)
 	if err != nil {
@@ -155,7 +159,7 @@ func TestHomeLiveGood(t *testing.T) {
 // stays good, with a muted line. One work app down out of three is
 // "mostly working", a note on its tile.
 func TestHomeLiveRelevance(t *testing.T) {
-	now := time.Now().Truncate(time.Second)
+	now := homeNow
 	s, _, fv := homeFixture(t, homeProfile(), now, []string{"AWS-me-south-1", "M365-Outlook"}, false)
 	fv.v = model.Verdict{Kind: model.VerdictService, Since: now.Add(-10 * time.Minute), Targets: []string{"AWS-me-south-1"}}
 	l, err := s.homeLive(context.Background(), voiceYou, now)
@@ -169,15 +173,15 @@ func TestHomeLiveRelevance(t *testing.T) {
 		t.Errorf("other %+v", l.Other)
 	}
 	w := l.Tiles[1]
-	if w.ID != tileWork || w.State != tileMostly || !slices.Equal(w.Affected, []string{"M365 Outlook"}) || w.OK != 2 ||
-		w.Note != "M365 Outlook isn't answering from here. That's usually a problem on their side." {
+	if w.ID != tileWork || w.State != tileMostly || !slices.Equal(w.Affected, []string{"Outlook"}) || w.OK != 2 ||
+		w.Note != "Outlook isn't answering from here. That's usually a problem on their side." {
 		t.Errorf("work %+v", w)
 	}
 
 	// The same verdict about one work app out of three is a hint.
 	fv.v.Targets = []string{"M365-Outlook"}
 	l, _ = s.homeLive(context.Background(), voiceYou, now)
-	if a := l.Answer; a.Level != levelGood || a.Who != whoNone || a.Hint != "M365 Outlook isn't answering from here. That's most likely a problem on their side." {
+	if a := l.Answer; a.Level != levelGood || a.Who != whoNone || a.Hint != "Outlook isn't answering from here. That's most likely a problem on their side." {
 		t.Errorf("answer %+v", a)
 	}
 
@@ -185,7 +189,7 @@ func TestHomeLiveRelevance(t *testing.T) {
 	s, _, fv = homeFixture(t, homeProfile(), now, []string{"M365-Outlook", "Google-Gmail"}, false)
 	fv.v = model.Verdict{Kind: model.VerdictService, Since: now.Add(-10 * time.Minute), Targets: []string{"M365-Outlook", "Google-Gmail"}}
 	l, _ = s.homeLive(context.Background(), voiceYou, now)
-	if a := l.Answer; a.Level != levelBad || a.Who != whoApp || a.App != "M365 Outlook" || a.Headline != "M365 Outlook and Google Gmail aren't answering" || a.Since == 0 {
+	if a := l.Answer; a.Level != levelBad || a.Who != whoApp || a.App != "Outlook" || a.Headline != "Outlook and Gmail aren't answering" || a.Since == 0 {
 		t.Errorf("answer %+v", a)
 	}
 }
@@ -193,7 +197,7 @@ func TestHomeLiveRelevance(t *testing.T) {
 // With a profile that has nothing for the Home tiles (e.g. clouds), Other
 // services is the user's set and escalates.
 func TestHomeLiveOnlyOther(t *testing.T) {
-	now := time.Now().Truncate(time.Second)
+	now := homeNow
 	p := &model.Profile{Name: "clouds"}
 	for _, r := range []string{"us-east-1", "eu-west-1", "ap-south-1", "me-south-1"} {
 		p.Targets = append(p.Targets, model.Target{Name: "AWS-" + r, Host: r + ".example.com", Group: "aws", Interval: 15 * time.Second})
@@ -216,7 +220,7 @@ func TestHomeLiveOnlyOther(t *testing.T) {
 }
 
 func TestHomeLiveChoppy(t *testing.T) {
-	now := time.Now().Truncate(time.Minute).Add(30 * time.Second)
+	now := homeNow.Add(30 * time.Second)
 	s, _, fv := homeFixture(t, homeProfile(), now, nil, true)
 	fv.v = model.Verdict{Kind: model.VerdictUDPDegraded, Since: now.Add(-3 * time.Minute)}
 	l, err := s.homeLive(context.Background(), voiceYou, now)
@@ -239,7 +243,7 @@ func TestHomeLiveChoppy(t *testing.T) {
 }
 
 func TestHomeLiveWarming(t *testing.T) {
-	now := time.Now().Truncate(time.Second)
+	now := homeNow
 	s, _, fv := homeFixture(t, homeProfile(), now, nil, false)
 	fv.v = model.Verdict{Kind: model.VerdictWarmingUp}
 	l, err := s.homeLive(context.Background(), voiceYou, now)
@@ -502,7 +506,9 @@ func TestHomeCopyWords(t *testing.T) {
 			texts = append(texts, cp.callHead(st, false), cp.callLabel(st))
 		}
 		for _, st := range []string{tileWorking, tileMostly, tileSlow, tileDown, tileChecking} {
-			texts = append(texts, cp.tileLabel(st, false), cp.tileNote(st, []string{"A", "B", "C", "D"}, 2, 4))
+			for _, dead := range []int{0, 2} {
+				texts = append(texts, cp.tileLabel(st, false, dead > 0), cp.tileLabel(st, true, dead > 0), cp.tileNote(st, []string{"A", "websites using B", "C", "D"}, 2, dead, 4))
+			}
 		}
 		for _, id := range []string{"device", "router", "provider", "internet", "apps"} {
 			for _, st := range []string{"ok", "warn", "bad", "unknown"} {
@@ -555,7 +561,7 @@ func TestHomeCopyWords(t *testing.T) {
 }
 
 func TestHomeAt(t *testing.T) {
-	now := time.Now().Truncate(time.Minute).Add(30 * time.Second)
+	now := homeNow.Add(30 * time.Second)
 	s, _, fv := homeFixture(t, homeProfile(), now, nil, true)
 	fv.list = []model.Incident{{ID: 7, Start: now.Add(-4 * time.Minute), Kind: model.VerdictISP, PeakLoss: 0.3}}
 	a, err := s.homeAt(context.Background(), now.Add(-2*time.Minute), voiceYou, now)
@@ -579,10 +585,41 @@ func TestHomeAt(t *testing.T) {
 	if a.Measured || a.Headline != "We weren't checking at that time" {
 		t.Errorf("unmeasured: %+v", a)
 	}
-	// Through the handler: the future is a 400.
+	// Through the handler (real clock): the future is a 400.
 	h := Local(s.d, LocalOptions{Addr: "127.0.0.1:3000"})
 	if w := do(h, "GET", "/api/home?part=at&at="+strconv.FormatInt(time.Now().Add(time.Hour).UnixMilli(), 10), localHdr); w.Code != 400 {
 		t.Errorf("future: %d", w.Code)
+	}
+}
+
+// TestHomeDisplayNames: every target of the default profile that Home can
+// name has a friendly name; and CDN names read as sentences.
+func TestHomeDisplayNames(t *testing.T) {
+	def, err := profile.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tg := range def.Targets {
+		if tg.Layer != "" || tg.IsUDP() {
+			continue // the path and the STUN servers are never named on Home
+		}
+		if displayNames[tg.Name] == "" {
+			t.Errorf("%s has no display name", tg.Name)
+		}
+	}
+	for _, tc := range []struct {
+		ns   []string
+		want string
+	}{
+		{[]string{"Outlook"}, "Outlook isn't answering"},
+		{[]string{"Outlook", "Gmail"}, "Outlook and Gmail aren't answering"},
+		{[]string{"websites using Akamai"}, "Some websites (those using Akamai) aren't answering"},
+		{[]string{"websites using Akamai", "websites using Fastly"}, "Some websites (those using Akamai and Fastly) aren't answering"},
+		{[]string{"Outlook", "websites using Akamai"}, "Outlook and some websites (those using Akamai) aren't answering"},
+	} {
+		if got := says(tc.ns, " isn't", " aren't") + " answering"; got != tc.want {
+			t.Errorf("%v: %q", tc.ns, got)
+		}
 	}
 }
 
@@ -592,8 +629,10 @@ func TestHomeName(t *testing.T) {
 		want string
 	}{
 		{model.Target{Name: "WhatsApp-Chat", Tags: []string{"home:calls", "app:whatsapp"}}, "WhatsApp"},
-		{model.Target{Name: "M365-Outlook", Tags: []string{"home:work"}}, "M365 Outlook"},
-		{model.Target{Name: "CDN-Cloudflare"}, "CDN Cloudflare"},
+		{model.Target{Name: "Teams-Relay", Tags: []string{"udp-path", "app:teams"}}, "Teams"},
+		{model.Target{Name: "M365-Outlook", Tags: []string{"home:work"}}, "Outlook"},
+		{model.Target{Name: "CDN-Akamai"}, "websites using Akamai"},
+		{model.Target{Name: "AWS-me-south-1"}, "AWS me south 1"},
 	} {
 		if got := homeName(tc.t); got != tc.want {
 			t.Errorf("%s: %q", tc.t.Name, got)
