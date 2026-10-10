@@ -386,6 +386,17 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 // minute of clean samples to clear, and so do the windows.
 const homeRecoveryGrace = time.Minute
 
+// How long before an incident's start its fault began: the verdict
+// engine's one-minute window for the path kinds; for a block, 10 timed-out
+// bursts in a row at up to 15 s plus its hold (netns: since came ~68 s
+// after the first timeout); for degraded calls, its 3 minutes of poor
+// bursts plus the window.
+const (
+	homePathLead     = time.Minute
+	homeBlockLead    = 3 * time.Minute
+	homeDegradedLead = 4 * time.Minute
+)
+
 // explained returns the spans of the outages that ended within the live
 // windows and explain the samples in them: path, DNS and no-network
 // incidents for the tiles (tcp), those and the UDP ones for calls; and
@@ -402,11 +413,17 @@ func (s *server) explained(ctx context.Context, now time.Time) (tcp, calls []Hom
 		if in.End.IsZero() || in.End.After(now) {
 			continue // ongoing: the verdict says so itself
 		}
-		sp := HomeSpan{From: in.Start.UnixMilli(), To: in.End.Add(homeRecoveryGrace).UnixMilli()}
+		// The verdict starts after the fault does: it needs a window of bad
+		// samples first. Those leading minutes are the same outage.
+		sp := HomeSpan{To: in.End.Add(homeRecoveryGrace).UnixMilli()}
 		switch in.Kind {
 		case model.VerdictLAN, model.VerdictISP, model.VerdictUpstream, model.VerdictDNS, model.VerdictNoNetwork:
+			sp.From = in.Start.Add(-homePathLead).UnixMilli()
 			tcp = append(tcp, sp)
-		case model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded:
+		case model.VerdictUDPBlocked, model.VerdictSTUNBlocked:
+			sp.From = in.Start.Add(-homeBlockLead).UnixMilli()
+		case model.VerdictUDPDegraded:
+			sp.From = in.Start.Add(-homeDegradedLead).UnixMilli()
 		default:
 			continue
 		}
