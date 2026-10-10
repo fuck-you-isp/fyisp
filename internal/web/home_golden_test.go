@@ -129,6 +129,10 @@ func checkGoldenCopy(t *testing.T, name, voice string, b []byte) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		t.Fatal(err)
 	}
+	// One minute, one figure.
+	if a, b := r.Live.Answer, r.At; a.FactAt != 0 && a.FactAt == b.FactAt && a.Fact != b.Fact {
+		t.Errorf("%s: the minute %d reads %q live and %q in part=at", name, a.FactAt, a.Fact, b.Fact)
+	}
 	for _, x := range [][2]string{{r.Live.Answer.Headline, r.Live.Answer.Cause}, {r.At.Headline, r.At.Cause}} {
 		if rep := repeats(x[0], x[1]); rep != "" {
 			t.Errorf("%s: headline %q and cause %q both say %q", name, x[0], x[1], rep)

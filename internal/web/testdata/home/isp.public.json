@@ -229,12 +229,12 @@
       "kind": "isp",
       "calls": "unusable",
       "since": 1791548160000,
-      "headline": "Calls will break up",
-      "cause": "The problem is in the provider's network. The home network (Wi-Fi and router) is fine.",
+      "headline": "The provider's network is having trouble",
+      "cause": "The home Wi-Fi and router are fine. The trouble starts just past them.",
       "try": [],
       "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
       "fact_at": 1791548700000,
-      "announce": "Calls will break up. The problem is in the provider's network."
+      "announce": "The provider's network is having trouble. The home Wi-Fi and router are fine."
     },
     "path": [
       {
@@ -261,15 +261,15 @@
       {
         "id": "internet",
         "label": "The wider internet",
-        "state": "warn",
-        "words": "Dropping some data",
+        "state": "affected",
+        "words": "Affected",
         "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
       },
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "bad",
-        "words": "Most aren't answering",
+        "state": "affected",
+        "words": "Calls, work apps and websites affected",
         "tooltip": "The apps and websites checked from this connection."
       }
     ],
@@ -355,10 +355,10 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Calls use the same call path (Breaking up)."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "meet",
@@ -370,42 +370,42 @@
       {
         "app": "zoom",
         "title": "Zoom",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Zoom picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "slack",
         "title": "Slack",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Slack picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "discord",
         "title": "Discord",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Discord picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "WhatsApp picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       },
       {
         "app": "webex",
         "title": "Webex",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Webex picks a server when each meeting starts, so it can't be tested ahead of time."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "This app can't be checked while the connection has a problem."
       }
     ]
   }

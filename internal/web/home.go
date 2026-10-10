@@ -14,6 +14,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
+	"github.com/fuck-you-isp/fyisp/internal/verdict"
 )
 
 // Home windows and limits (docs/HOME-API.md).
@@ -34,6 +35,10 @@ const (
 	// homeHeartbeat caps the series read to find when fyisp was not running.
 	homeHeartbeat = 8
 )
+
+// nodeAffected is a path node beyond the culprit: it shows the trouble but
+// is not to blame (neutral, not amber or red).
+const nodeAffected = "affected"
 
 // Home tile ids, in display order: profile's Home categories.
 const (
@@ -254,7 +259,8 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 	if s.public {
 		v.Targets = targetFilter(prof)(v.Targets)
 	}
-	c, err := s.calls(ctx, callsParams{from: now.Add(-homeCallsWindow), to: now})
+	// Whole minutes, so a minute scores the same here and in part=at.
+	c, err := s.calls(ctx, callsParams{from: now.Add(-homeCallsWindow).Truncate(time.Minute), to: now})
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +331,16 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 	in := answerIn{v: v, own: own, calls: c, tiles: out.Tiles, hs: hs, names: names, now: now}
 	out.Answer = homeAnswerOf(in, cp)
 	out.Path = homePath(path, out.Answer, out.Tiles, cp)
+	// During a path problem a website that answers says little about the
+	// app: don't show it as fine.
+	if a := out.Answer; slices.Contains([]string{whoHome, whoProvider, whoBeyond, whoOffline, whoDNS}, a.Who) &&
+		(a.Level == levelBad || a.Level == levelWarn) {
+		for i := range out.Apps {
+			if x := &out.Apps[i]; x.State == "reachable" || x.State == "not_answering" {
+				x.State, x.Level, x.Label, x.Note = "cant_tell", levelChecking, cp.callLabel("cant_tell"), cp.cantTell()
+			}
+		}
+	}
 	if out.Answer.Level == levelChecking {
 		out.Steps = homeSteps(path, out.Tiles, cp)
 		out.Calls = nil
@@ -489,13 +505,13 @@ func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]
 		t.State = tileWorking
 	case len(affected) == 1 && measured >= 3:
 		t.State = tileMostly
-	case failing >= 2 || failing == measured:
-		t.State = tileDown
+	case failing == measured || (failing >= 2 && 2*failing >= measured):
+		t.State = tileDown // most of the tile (13 of 38 is not most)
 	default:
 		t.State = tileSlow
 	}
 	t.Level = map[string]string{tileWorking: levelGood, tileMostly: levelWarn, tileSlow: levelWarn, tileDown: levelBad, tileChecking: levelChecking}[t.State]
-	t.Label = cp.tileLabel(t.State, id == tileOther, 2*dead >= measured)
+	t.Label = cp.tileLabel(t.State, id == tileOther, 2*dead >= measured, failing > 0)
 	if id == tileOther {
 		t.Note = cp.otherNote(t.State, len(affected), failing, dead, len(ts))
 	} else {
@@ -634,7 +650,15 @@ func (s *server) homePathRows(ctx context.Context, path []model.Target, now time
 
 // homePath builds the strip: device, router, provider, internet, apps.
 func homePath(ls map[string]layerStat, a HomeAnswer, tiles []HomeTile, cp homeCopy) []HomeNode {
-	blamed := map[string]string{whoHome: "router", whoProvider: "provider", whoBeyond: "internet", whoApp: "apps", whoDNS: "apps"}[a.Who]
+	blamed := map[string]string{whoOffline: "device", whoHome: "router", whoProvider: "provider", whoBeyond: "internet", whoApp: "apps", whoDNS: "apps"}[a.Who]
+	if a.Confidence == confWeak {
+		blamed = "" // slow to answer checks is not a culprit
+	}
+	order := []string{"device", "router", "provider", "internet", "apps"}
+	past := func(id string) bool { // beyond the culprit: shows its trouble, isn't to blame
+		bi := slices.Index(order, blamed)
+		return blamed != "" && bi >= 0 && slices.Index(order, id) > bi
+	}
 	node := func(id string, l layerStat) HomeNode {
 		n := HomeNode{ID: id, Label: cp.nodeLabel(id), Tooltip: cp.nodeTip(id)}
 		loss := l.loss()
@@ -648,8 +672,11 @@ func homePath(ls map[string]layerStat, a HomeAnswer, tiles []HomeTile, cp homeCo
 		default:
 			n.State = "ok"
 		}
-		if id == blamed && (n.State == "ok" || n.State == "unknown") && a.Confidence != confWeak {
+		if id == blamed && (n.State == "ok" || n.State == "unknown") {
 			n.State = levelWarn
+		}
+		if past(id) && (n.State == levelWarn || n.State == levelBad) {
+			n.State = nodeAffected
 		}
 		n.Words = cp.nodeWords(id, n.State, loss, l.slow)
 		n.Blamed = id == blamed
@@ -657,33 +684,40 @@ func homePath(ls map[string]layerStat, a HomeAnswer, tiles []HomeTile, cp homeCo
 	}
 	out := []HomeNode{{ID: "device", Label: cp.nodeLabel("device"), State: "ok", Words: cp.nodeWords("device", "ok", 0, false)}}
 	if a.Who == whoOffline {
-		out[0].State, out[0].Words = levelBad, cp.nodeWords("device", levelBad, 1, false)
+		out[0].State, out[0].Words, out[0].Blamed = levelBad, cp.nodeWords("device", levelBad, 1, false), true
 	}
 	out = append(out, node("router", ls[model.LayerGateway]), node("provider", ls[model.LayerEdge]), node("internet", ls[model.LayerAnycast]))
+
+	// Apps & websites: from the tiles, so the strip and the tiles agree.
 	apps := HomeNode{ID: "apps", Label: cp.nodeLabel("apps"), Tooltip: cp.nodeTip("apps"), State: "ok", Blamed: blamed == "apps"}
-	affected, bad, total, checking := 0, 0, 0, 0
+	var hurt []string
+	worst, total, checking := levelGood, 0, 0
 	for _, t := range tiles {
 		if t.ID == tileOther && len(tiles) > 1 {
 			continue
 		}
 		total++
-		affected += len(t.Affected)
 		switch t.Level {
-		case levelBad:
-			bad++
 		case levelChecking:
 			checking++
+		case levelWarn, levelBad:
+			hurt = append(hurt, strings.ToLower(t.Title))
+			if levelRank(t.Level) < levelRank(worst) {
+				worst = t.Level
+			}
 		}
 	}
 	switch {
 	case total == 0 || checking == total:
 		apps.State = "unknown"
-	case 2*bad > total:
-		apps.State = levelBad
-	case affected > 0 || bad > 0:
-		apps.State = levelWarn
+	case len(hurt) == 0:
+		apps.State = "ok"
+	case past("apps"):
+		apps.State = nodeAffected
+	default:
+		apps.State = worst
 	}
-	apps.Words = cp.appsWords(apps.State, affected)
+	apps.Words = cp.appsWords(apps.State, hurt)
 	return append(out, apps)
 }
 
@@ -904,15 +938,21 @@ func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
 
 	// Headline: from the worst source; cause from the verdict when it
 	// names a place.
-	callsDrive := cLevel != "" && cLevel == level && (level == levelBad || level == levelWarn) &&
+	// A path verdict (home network, provider, further out, offline, name
+	// lookups) names the place in the headline; the Calls tile says what
+	// it does to calls.
+	layer := who == whoOf(in.v.Kind) && slices.Contains([]string{whoHome, whoProvider, whoBeyond, whoOffline, whoDNS}, who) && a.Confidence != confWeak
+	callsDrive := !layer && cLevel != "" && cLevel == level && (level == levelBad || level == levelWarn) &&
 		in.v.Kind != model.VerdictUDPBlocked && in.v.Kind != model.VerdictSTUNBlocked
 	switch {
 	case level == levelGood || (level == levelInfo && a.Confidence == confWeak):
 		a.Headline = cp.fine(in.hs.home > 0)
+	case layer:
+		a.Headline = cp.verdictHead(in.v.Kind, a.Confidence, in.v.Quiet, affected, in.hs.onlyOther())
 	case callsDrive:
 		a.Headline = cp.callHead(in.own, false)
 	case vLevel == level && whoOf(in.v.Kind) == who && who != whoNone:
-		a.Headline = cp.verdictHead(in.v.Kind, in.v.Quiet, affected, in.hs.onlyOther())
+		a.Headline = cp.verdictHead(in.v.Kind, a.Confidence, in.v.Quiet, affected, in.hs.onlyOther())
 	case tLevel != "":
 		a.Headline = cp.tileHead(worstTile)
 	default:
@@ -972,9 +1012,11 @@ func worstFact(c *callsJSON, cp homeCopy) (string, int64) {
 	if c == nil {
 		return "", 0
 	}
+	// The call path's worst minute, so every view gives one figure for a
+	// minute; an app's only without a path.
 	g := c.Path
 	for _, a := range c.Apps {
-		if a.callsGroup != nil && a.Worst != nil && (g == nil || g.Worst == nil || a.Worst.MOS < g.Worst.MOS) {
+		if a.callsGroup != nil && a.Worst != nil && (g == nil || g.Worst == nil) {
 			g = a.callsGroup
 		}
 	}
@@ -1064,6 +1106,14 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 			switch in.Kind {
 			case model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
 				x.level = levelBad
+			case model.VerdictUDPBlocked, model.VerdictSTUNBlocked:
+				end := now
+				if !in.End.IsZero() {
+					end = in.End
+				}
+				if end.Sub(in.Start) >= verdict.UDPQuietAfter {
+					x.level = levelInfo // a network that always blocks calls: information, not a problem
+				}
 			}
 			if who == whoApp {
 				rel := hs.relevant(in.Targets)
@@ -1130,10 +1180,13 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 	}
 
 	for _, in := range incs { // newest first
-		if in.services {
+		switch {
+		case in.level == levelInfo:
+			// not a problem; still in the table, the timeline and runs
+		case in.services:
 			out.Counts.Problems++
 			out.Counts.Services++
-		} else {
+		default:
 			out.Counts.add(in.who)
 		}
 		if len(out.Problems) >= homeMaxProblems {
@@ -1374,7 +1427,7 @@ func (s *server) homeAt(ctx context.Context, at time.Time, voice string, now tim
 	cp := copyFor(voice)
 	prof := s.d.Profile()
 	hs := newHomeSet(prof)
-	from, to := at.Add(-homeAtWindow), at.Add(homeAtWindow)
+	from, to := at.Add(-homeAtWindow).Truncate(time.Minute), at.Add(homeAtWindow)
 	if to.After(now) {
 		to = now
 	}
@@ -1453,6 +1506,7 @@ func (s *server) homeAt(ctx context.Context, at time.Time, voice string, now tim
 	}
 	if inc != nil && (inc.Kind == model.VerdictUDPBlocked || inc.Kind == model.VerdictSTUNBlocked) && callRank(worst) <= callRank(string(callq.Poor)) {
 		out.Calls, worst = callBlocked, callBlocked // the block, not the call quality
+		out.Fact, out.FactAt, out.BadFrom, out.BadTo = "", 0, 0, 0
 	}
 	if !hasCallPath(prof) {
 		out.Measured = true // nothing to say about calls; the incidents answer

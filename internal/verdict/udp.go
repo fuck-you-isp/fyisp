@@ -254,6 +254,10 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 	}
 }
 
+// UDPQuietAfter is how long a blocked verdict lasts before it is Quiet
+// (the dashboard treats older blocks as information, not as problems).
+const UDPQuietAfter = udpQuietAfter
+
 // markQuiet sets Quiet on a blocked verdict that has lasted udpQuietAfter
 // without a break (udp_blocked and stun_blocked count as one).
 func (e *engine) markQuiet(now time.Time) {

@@ -234,7 +234,7 @@ func TestHomeLiveChoppy(t *testing.T) {
 		a.Fact == "" || a.FactAt == 0 || len(a.Try) != 3 || !strings.HasPrefix(a.Cause, "Browsing looks fine") {
 		t.Errorf("answer %+v", a)
 	}
-	if l.Calls == nil || l.Calls.Smoothness != "uneven" || l.Calls.WorstAt == 0 {
+	if l.Calls == nil || (l.Calls.Smoothness != "uneven" && l.Calls.Smoothness != "bit_uneven") || l.Calls.WorstAt == 0 {
 		t.Errorf("calls %+v", l.Calls)
 	}
 	// The public voice: third person, nothing to try.
@@ -296,17 +296,17 @@ func TestHomeAnswer(t *testing.T) {
 		{"ok", model.Verdict{Kind: model.VerdictOK}, "good", nil, levelGood, whoNone, "", "Your internet is fine"},
 		{"no verdict", model.Verdict{Kind: VerdictUnknown}, "good", nil, levelGood, whoNone, "", "Your internet is fine"},
 		{"isp, apps losing", model.Verdict{Kind: model.VerdictISP, Evidence: ev("services_loss", 0.2)}, "good", nil,
-			levelBad, whoProvider, confSure, "Your internet is having trouble"},
+			levelBad, whoProvider, confSure, "Your internet provider is having trouble"},
 		{"isp, only the edge", model.Verdict{Kind: model.VerdictISP, Evidence: ev("edge_loss", 0.3, "services_loss", 0.0)}, "good", nil,
 			levelInfo, whoProvider, confWeak, "Your internet is fine"},
 		{"isp, a little loss", model.Verdict{Kind: model.VerdictISP, Evidence: ev("services_loss", 0.02)}, "good", nil,
-			levelWarn, whoProvider, confLikely, "Your internet is having trouble"},
+			levelWarn, whoProvider, confLikely, "Your internet provider may be having trouble"},
 		{"lan, calls choppy", model.Verdict{Kind: model.VerdictLAN, Evidence: ev("gateway_loss", 0.3)}, "poor", nil,
-			levelBad, whoHome, confSure, "Calls may be choppy"},
+			levelBad, whoHome, confSure, "There's a problem in your home network"},
 		{"upstream", model.Verdict{Kind: model.VerdictUpstream, Evidence: ev("services_loss", 0.6)}, "good", nil,
 			levelBad, whoBeyond, confSure, "Many websites and apps are hard to reach"},
 		{"dns", model.Verdict{Kind: model.VerdictDNS}, "good", nil, levelWarn, whoDNS, confLikely, "Websites and apps may not open"},
-		{"offline", model.Verdict{Kind: model.VerdictNoNetwork}, "unusable", nil, levelBad, whoOffline, "", "Calls will break up"},
+		{"offline", model.Verdict{Kind: model.VerdictNoNetwork}, "unusable", nil, levelBad, whoOffline, "", "You're offline"},
 		{"quiet block", model.Verdict{Kind: model.VerdictUDPBlocked, Quiet: true}, "blocked", nil,
 			levelInfo, whoCallTraffic, "", "This network always blocks the fast connection calls use"},
 		{"stun block", model.Verdict{Kind: model.VerdictSTUNBlocked}, "blocked", nil,
@@ -512,7 +512,7 @@ func TestHomeCopyWords(t *testing.T) {
 		}
 		for _, st := range []string{tileWorking, tileMostly, tileSlow, tileDown, tileChecking} {
 			for _, dead := range []int{0, 2} {
-				texts = append(texts, cp.tileLabel(st, false, dead > 0), cp.tileLabel(st, true, dead > 0), cp.tileNote(st, []string{"A", "websites using B", "C", "D"}, 2, dead, 4))
+				texts = append(texts, cp.tileLabel(st, false, dead > 0, dead > 0), cp.tileLabel(st, true, dead > 0, dead > 0), cp.tileNote(st, []string{"A", "websites using B", "C", "D"}, 2, dead, 4))
 			}
 		}
 		for _, id := range []string{"device", "router", "provider", "internet", "apps"} {
@@ -562,7 +562,7 @@ func TestHomeCopyWords(t *testing.T) {
 			}
 		}
 		texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good"), cp.picksServer("Zoom"),
-			cp.callWords("short", "rare", "bit_uneven"), cp.appsWords("warn", 2), cp.quietHint())
+			cp.callWords("short", "rare", "bit_uneven"), cp.appsWords("warn", []string{"work apps", "websites"}), cp.cantTell(), cp.callLabel("cant_tell"), cp.quietHint())
 		for _, x := range texts {
 			if voice == voicePublic && regexp.MustCompile(`\b[Yy]our\b`).MatchString(x) {
 				t.Errorf("public voice says your: %q", x)
