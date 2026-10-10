@@ -320,8 +320,10 @@ func (l *speedLab) speedTest(t *testing.T, srv netip.Addr) speedTestAPI {
 	b, _ = json.Marshal(r)
 	t.Logf("speed test %s (%s): %s", id, time.Duration(r.End-r.Start)*time.Millisecond, b)
 	l.save(t, fmt.Sprintf("speedtest-%d.json", r.ID), b)
-	if r.Conn != "wired" {
-		t.Errorf("conn %q, want wired (a veth)", r.Conn)
+	// The lab's c0 is a veth: virtual (no /sys/class/net/c0/device), so
+	// neither wired nor Wi-Fi.
+	if r.Conn != "unknown" {
+		t.Errorf("conn %q, want unknown (a veth)", r.Conn)
 	}
 	return r
 }
