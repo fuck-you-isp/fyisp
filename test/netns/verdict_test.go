@@ -16,18 +16,19 @@ import (
 // verdictProfileYAML keeps the built-in network path group (gateway, ISP
 // edge, the three anycast resolvers, which live on the internet namespace's loopback in
 // the lab). The internet targets: three IP literals and two names served by
-// the test resolver, in two groups.
+// the test resolver, in two groups; on Home, alpha, bravo and charlie are
+// work apps and delta and kilo websites (home_test.go).
 const verdictProfileYAML = `name: netns-verdict
 version: "1"
 groups:
   - {id: core, title: Core}
   - {id: web, title: Web}
 targets:
-  - {name: alpha,   host: 203.0.113.10,   group: core, interval: 6s}
-  - {name: bravo,   host: 203.0.113.11,   group: core, interval: 6s}
-  - {name: charlie, host: 203.0.113.12,   group: web,  interval: 6s}
-  - {name: delta,   host: svc.fyisp.test, group: web,  interval: 6s}
-  - {name: kilo,    host: www.fyisp.test, group: web,  interval: 6s}
+  - {name: alpha,   host: 203.0.113.10,   group: core, interval: 6s, tags: [home:work]}
+  - {name: bravo,   host: 203.0.113.11,   group: core, interval: 6s, tags: [home:work]}
+  - {name: charlie, host: 203.0.113.12,   group: web,  interval: 6s, tags: [home:work]}
+  - {name: delta,   host: svc.fyisp.test, group: web,  interval: 6s, tags: [home:web]}
+  - {name: kilo,    host: www.fyisp.test, group: web,  interval: 6s, tags: [home:web]}
 `
 
 // Hysteresis of the verdict engine (internal/verdict): 60s warm-up, a new
@@ -179,6 +180,7 @@ func TestVerdict(t *testing.T) {
 		if list, raw := h.incidents(t, start.Add(-time.Hour)); len(list) != 0 {
 			t.Errorf("incidents after a healthy start: %s", raw)
 		}
+		h.checkHome(t, "a-baseline", "ok", nil)
 	})
 
 	// A fault: apply and revert run on the scenario's own topology.
@@ -220,11 +222,13 @@ func TestVerdict(t *testing.T) {
 			} else if open.End != nil {
 				t.Errorf("%s incident already closed while the fault is on: %s", kind, open)
 			}
+			h.checkHome(t, name, kind, targets)
 
 			revert(h, t)
 			reverted := time.Now()
 			_, raw = h.waitVerdict(t, "ok", recoverTimeout)
 			t.Logf("back to ok %s after the fault was removed", time.Since(reverted).Round(time.Second))
+			h.checkHome(t, name+"-recovered", "ok", nil)
 
 			list, rawList := h.incidents(t, applied.Add(-time.Minute))
 			h.save(t, "incidents-"+name+".json", rawList)
