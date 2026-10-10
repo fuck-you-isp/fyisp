@@ -474,11 +474,10 @@ func TestRules(t *testing.T) {
 			kind: model.VerdictNoNetwork,
 		},
 		{
-			// Nothing is known: the verdict holds (a device without a
-			// network still probes and loses every probe).
+			// No probe ran at all (none masked either: see gap_test.go).
 			name: "no samples at all",
 			stop: true,
-			kind: model.VerdictOK,
+			kind: model.VerdictNoNetwork,
 		},
 		{
 			name: "edge unknown: gateway fine, internet broken is upstream beyond the router",
