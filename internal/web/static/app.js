@@ -1170,7 +1170,7 @@ class Investigate {
     this.lastPoke = Date.now();
     /** @type {Record<string,string>} */
     const headers = { 'X-FYISP-Token': TOKEN };
-    await addAdmin(headers);
+    if (!await addAdmin(headers)) { this.poking = false; return; }
     try {
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
       if (target !== this.target) return;
@@ -3855,7 +3855,7 @@ let adminLinkErr = '';
 async function shareAction(/** @type {'start'|'stop'} */ what) {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
-  await addAdmin(headers);
+  if (!await addAdmin(headers)) return; // the token dialog was cancelled
   try {
     const r = await fetchJSON(`api/share/${what}`, { method: 'POST', headers }, 1);
     status.share = r.share;
