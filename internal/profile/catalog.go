@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -54,17 +55,20 @@ type Provider struct {
 
 // CatalogTarget is one endpoint of a provider.
 type CatalogTarget struct {
-	Name    string   `yaml:"name"`
-	Host    string   `yaml:"host"`
-	Kinds   []string `yaml:"kinds"` // [tcp], or [] while unreachable
-	Port    int      `yaml:"port"`  // TCP port, default 443
-	Path    string   `yaml:"path"`  // historical HTTPS path: validated, not probed
-	Region  string   `yaml:"region"`
-	City    string   `yaml:"city"`
-	Country string   `yaml:"country"`
-	Geo     string   `yaml:"geo"`
-	Anycast bool     `yaml:"anycast"`
-	Tags    []string `yaml:"tags"`
+	Name  string   `yaml:"name"`
+	Host  string   `yaml:"host"`
+	Kinds []string `yaml:"kinds"` // [tcp], [udp] (STUN), or [] while unreachable
+	Port  int      `yaml:"port"`  // TCP port, default 443; UDP: required
+	// Interval is a UDP target's interval (default UDPInterval, 5s); TCP
+	// targets use DefaultInterval and cannot set one.
+	Interval string   `yaml:"interval"`
+	Path     string   `yaml:"path"` // historical HTTPS path: validated, not probed
+	Region   string   `yaml:"region"`
+	City     string   `yaml:"city"`
+	Country  string   `yaml:"country"`
+	Geo      string   `yaml:"geo"`
+	Anycast  bool     `yaml:"anycast"`
+	Tags     []string `yaml:"tags"`
 	// HostOverrides probes some kinds on another host (kind -> host). Only
 	// tcp is used; https and icmp entries are historical (see SCHEMA.md).
 	HostOverrides map[string]string `yaml:"host_overrides"`
@@ -216,19 +220,38 @@ func (p *Provider) validate() error {
 		}
 		// Empty kinds mark a known but currently unreachable endpoint: kept
 		// in the catalog, skipped by every profile. Catalog targets are
-		// probed over TCP only.
+		// probed over TCP, or UDP (STUN) alone.
 		ks := map[model.ProbeKind]bool{}
 		for _, k := range t.Kinds {
 			kind, err := parseKind(k)
 			switch {
 			case err != nil:
 				bad("target %q: %v", t.Name, err)
-			case kind != model.KindTCP:
-				bad("target %q: kind %s: catalog targets are probed over TCP only (kinds: [tcp], or [] while unreachable)", t.Name, kind)
+			case kind != model.KindTCP && kind != model.KindUDP:
+				bad("target %q: kind %s: catalog targets are probed over TCP or UDP only (kinds: [tcp], [udp], or [] while unreachable)", t.Name, kind)
 			case ks[kind]:
 				bad("target %q: kind %s listed twice", t.Name, kind)
 			}
 			ks[kind] = true
+		}
+		if ks[model.KindUDP] {
+			switch {
+			case len(t.Kinds) != 1:
+				bad("target %q: kind udp cannot be combined with other kinds", t.Name)
+			case t.Port == 0:
+				bad("target %q: kind udp needs a port (e.g. 3478)", t.Name)
+			case len(t.HostOverrides) > 0 || t.Path != "":
+				bad("target %q: kind udp takes no host_overrides or path", t.Name)
+			}
+		}
+		if t.Interval != "" {
+			iv, err := time.ParseDuration(t.Interval)
+			switch {
+			case !ks[model.KindUDP]:
+				bad("target %q: interval is only for udp targets (TCP targets probe every %s)", t.Name, DefaultInterval)
+			case err != nil || iv < UDPInterval || iv%time.Second != 0 || 3600%int64(iv/time.Second) != 0:
+				bad("target %q: interval %q must be whole seconds, at least %s, and divide 1h evenly", t.Name, t.Interval, UDPInterval)
+			}
 		}
 		for k, h := range t.HostOverrides {
 			if _, err := parseKind(k); err != nil {
@@ -266,7 +289,13 @@ func (p *Provider) validate() error {
 func (t CatalogTarget) toTarget(group string, p *Provider) model.Target {
 	ks, _ := parseKinds(t.Kinds) // validated by LoadCatalog
 	mt := model.Target{Name: t.Name, Host: t.Host, Group: group, Port: t.Port, Path: t.Path, Kinds: ks, Interval: DefaultInterval,
-		City: t.City, Country: t.Country, Geo: t.GeoKey()}
+		City: t.City, Country: t.Country, Geo: t.GeoKey(), Tags: slices.Clone(t.Tags)}
+	if mt.IsUDP() {
+		mt.Interval = UDPInterval
+		if iv, err := time.ParseDuration(t.Interval); err == nil && t.Interval != "" {
+			mt.Interval = iv // validated by LoadCatalog
+		}
+	}
 	if p != nil {
 		mt.Provider, mt.ProviderTitle, mt.ProviderKind = p.ID, p.Display, p.Kind
 	}

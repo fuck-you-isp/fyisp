@@ -30,6 +30,7 @@ func cmdReport(args []string) int {
 	fs.Var(&profiles, "profile", "profiles the data was recorded with (as given to fyisp --profile)")
 	fs.Var(&geos, "geo", "regions the data was recorded with (as given to fyisp --geo)")
 	noPath := fs.Bool("no-path", false, "the data was recorded with --no-path")
+	noUDP := fs.Bool("no-udp", false, "the data was recorded with --no-udp")
 	from := fs.String("from", "7d", "start time: RFC 3339, YYYY-MM-DD, or an age like 24h or 7d")
 	to := fs.String("to", "now", "end time, same forms as --from")
 	title := fs.String("title", "", "report title")
@@ -68,7 +69,7 @@ func cmdReport(args []string) int {
 		return fail(2, fmt.Errorf("--config and --profile/--geo are mutually exclusive"))
 	}
 	// No target limit: the report covers whatever the run was allowed.
-	prof, err := loadProfile(config{configPath: *configPath, profiles: profiles, geos: geos, noPath: *noPath})
+	prof, err := loadProfile(config{configPath: *configPath, profiles: profiles, geos: geos, noPath: *noPath, noUDP: *noUDP})
 	if err != nil {
 		return fail(2, err)
 	}

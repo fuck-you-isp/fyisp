@@ -46,8 +46,22 @@ func (g *geoList) Set(v string) error {
 }
 
 // loadProfile builds the profile of a run: --config, --profile, or the
-// default.
+// default; --no-udp then drops every UDP (STUN) target.
 func loadProfile(c config) (*model.Profile, error) {
+	p, err := loadProfileTargets(c)
+	if err != nil || !c.noUDP {
+		return p, err
+	}
+	profile.WithoutUDP(p)
+	for _, t := range p.Targets {
+		if t.Group != profile.PathGroup {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("--no-udp leaves profile %s without targets", p.Name)
+}
+
+func loadProfileTargets(c config) (*model.Profile, error) {
 	l := profile.Limits{}
 	switch {
 	case c.configPath != "":

@@ -203,7 +203,7 @@ func TestResolveCombine(t *testing.T) {
 	if a := by["AWS-us-east-1"]; a.Host != "dynamodb.us-east-1.amazonaws.com" || a.Group != "aws" {
 		t.Errorf("aws,default: %+v", a)
 	}
-	if len(p.Targets) != 4+84 || p.Groups[0].ID != "aws" || len(p.Groups) != 7 {
+	if len(p.Targets) != 4+88 || p.Groups[0].ID != "aws" || len(p.Groups) != 8 {
 		t.Errorf("aws,default: %d targets, groups %v", len(p.Targets), groupSummary(p))
 	}
 	// A group emptied by replacements is dropped and orders renumbered.
@@ -262,12 +262,12 @@ func TestGeoFilter(t *testing.T) {
 
 func TestLimits(t *testing.T) {
 	r := sampleRegistry(t)
-	p := resolve(t, r, false, "default", "clouds") // 92 + 4 new
+	p := resolve(t, r, false, "default", "clouds") // 96 + 4 new
 	err := Validate(p, Limits{MaxTargets: 50})
 	if err == nil || !strings.Contains(err.Error(), "at most 50 allowed") {
 		t.Errorf("limit: %v", err)
 	}
-	if err := Validate(p, Limits{MaxTargets: 96}); err != nil {
+	if err := Validate(p, Limits{MaxTargets: 100}); err != nil {
 		t.Error(err)
 	}
 }
@@ -404,7 +404,7 @@ add:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Targets) != 92+1 {
+	if len(p.Targets) != 96+1 {
 		t.Errorf("default+common: %d targets", len(p.Targets))
 	}
 }

@@ -154,7 +154,7 @@ type Registry struct {
 }
 
 // DefaultDescription describes the built-in default profile.
-const DefaultDescription = "The original 87 targets: common services, DNS, dev tunnels, dev services, AWS, Hetzner, GCP"
+const DefaultDescription = "The original 87 targets (common services, DNS, dev tunnels, dev services, AWS, Hetzner, GCP) plus 4 STUN targets for the call path"
 
 var (
 	profileNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)

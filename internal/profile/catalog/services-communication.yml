@@ -42,7 +42,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video]
+    tags: [voice, video, app:zoom]
     verified:
       date: 2026-09-27
       icmp: true
@@ -63,7 +63,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video, media]
+    tags: [voice, video, media, app:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -75,7 +75,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [video, signaling]
+    tags: [video, signaling, app:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -89,7 +89,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, media, turn]
+    tags: [voice, video, media, turn, app:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -101,7 +101,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, media, turn]
+    tags: [voice, video, media, turn, app:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -113,7 +113,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, signaling]
+    tags: [voice, video, signaling, app:teams]
     verified:
       date: 2026-09-27
       icmp: true
@@ -127,7 +127,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, media, turn]
+    tags: [voice, video, media, turn, app:teams]
     verified:
       date: 2026-09-27
       icmp: false
@@ -140,7 +140,7 @@ targets:
     region: eu
     geo: eu
     anycast: true
-    tags: [voice, video, media, turn]
+    tags: [voice, video, media, turn, app:teams]
     verified:
       date: 2026-09-27
       icmp: false
@@ -153,7 +153,7 @@ targets:
     region: us
     geo: na
     anycast: true
-    tags: [voice, video, media, turn]
+    tags: [voice, video, media, turn, app:teams]
     verified:
       date: 2026-09-27
       icmp: false
@@ -166,7 +166,7 @@ targets:
     path: /u2c/api/v1/ping
     region: global
     anycast: true
-    tags: [voice, video, signaling]
+    tags: [voice, video, signaling, app:webex]
     verified:
       date: 2026-09-27
       icmp: false
@@ -180,7 +180,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat]
+    tags: [chat, app:slack]
     verified:
       date: 2026-09-27
       icmp: false
@@ -194,7 +194,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat]
+    tags: [chat, app:slack]
     verified:
       date: 2026-09-27
       icmp: false
@@ -208,7 +208,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, chat]
+    tags: [voice, chat, app:discord]
     verified:
       date: 2026-09-27
       icmp: true
@@ -223,7 +223,7 @@ targets:
     path: /api/v9/gateway
     region: global
     anycast: true
-    tags: [chat]
+    tags: [chat, app:discord]
     verified:
       date: 2026-09-27
       icmp: true
@@ -237,7 +237,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [chat]
+    tags: [chat, app:whatsapp]
     verified:
       date: 2026-09-27
       icmp: true
@@ -251,7 +251,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat, voice]
+    tags: [chat, voice, app:whatsapp]
     verified:
       date: 2026-09-27
       icmp: true

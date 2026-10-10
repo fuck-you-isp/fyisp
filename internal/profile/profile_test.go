@@ -37,7 +37,12 @@ func TestDefaultMatchesTemplate(t *testing.T) {
 		t.Fatalf("default profile invalid: %v", err)
 	}
 	names, hosts := templateTargets(t)
-	legacy := withoutPath(p.Targets)
+	var legacy []model.Target // the TCP targets; the call path's STUN targets are new
+	for _, tg := range withoutPath(p.Targets) {
+		if !tg.IsUDP() {
+			legacy = append(legacy, tg)
+		}
+	}
 	if len(names) != 87 || len(legacy) != 87 {
 		t.Fatalf("template has %d targets, default has %d outside the path group; want 87", len(names), len(legacy))
 	}
@@ -82,7 +87,7 @@ func TestDefaultGroups(t *testing.T) {
 	}
 	titles := []string{
 		"Common Services (<100ms is good for audio/video calls)", "DNS", "DevTunnels",
-		"Various Dev Related Services", "Amazon Web Services", "Hetzner", "Google Cloud Platform",
+		"Various Dev Related Services", "Amazon Web Services", "Hetzner", "Google Cloud Platform", "Call path (UDP)",
 	}
 	if len(p.Groups) != len(titles)+1 {
 		t.Fatalf("%d groups", len(p.Groups))
@@ -108,6 +113,9 @@ func TestDefaultGroups(t *testing.T) {
 		"hetzner": regexp.MustCompile(`^Hetzner-`), "gcp": regexp.MustCompile(`^GCP-`),
 	}
 	sizes := map[string]int{"dns": 4, "devtunnels": 13, "dev": 2, "aws": 34, "hetzner": 6, "gcp": 25}
+	if c := count["calls"]; !slices.Equal(c, []string{"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global"}) {
+		t.Errorf("calls = %v", c)
+	}
 	for g, re := range wantPrefix {
 		if len(count[g]) != sizes[g] {
 			t.Errorf("group %s has %d targets, want %d", g, len(count[g]), sizes[g])
@@ -170,10 +178,10 @@ add:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "mine" || len(p.Targets) != 86+5 {
+	if p.Name != "mine" || len(p.Targets) != 90+5 {
 		t.Fatalf("name %q, %d targets", p.Name, len(p.Targets))
 	}
-	if len(p.Groups) != 9 || p.Groups[0].ID != PathGroup || p.Groups[8].ID != "home" || p.Groups[8].Order != 8 || p.Groups[2].Title != "Resolvers" {
+	if len(p.Groups) != 10 || p.Groups[0].ID != PathGroup || p.Groups[9].ID != "home" || p.Groups[9].Order != 9 || p.Groups[2].Title != "Resolvers" {
 		t.Errorf("groups %+v", p.Groups)
 	}
 	by := map[string]model.Target{}
@@ -221,7 +229,8 @@ targets:
 }
 
 // TestShippedProfilesTCPOnly checks that the default profile and every
-// named profile probe their targets over TCP only, while the network path
+// named profile probe their targets over TCP only (or STUN over UDP for the
+// shipped call-path targets, see TestShippedUDP), while the network path
 // keeps ICMP.
 func TestShippedProfilesTCPOnly(t *testing.T) {
 	r, err := Builtin()
@@ -251,6 +260,9 @@ func TestShippedProfilesTCPOnly(t *testing.T) {
 				if slices.Contains(tg.Kinds, model.KindICMP) {
 					pathICMP++
 				}
+				continue
+			}
+			if tg.IsUDP() && isShippedUDP(tg) && slices.Contains(tg.Tags, "udp-path") {
 				continue
 			}
 			if !slices.Equal(tg.ProbeKinds(), tcp) {
@@ -321,7 +333,7 @@ func TestPathGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Targets) != 92 || p.Groups[0].ID != PathGroup {
+	if len(p.Targets) != 96 || p.Groups[0].ID != PathGroup {
 		t.Errorf("path: true: %d targets, groups %+v", len(p.Targets), p.Groups)
 	}
 	// Negative orders still sort after the path group.
@@ -350,7 +362,7 @@ func TestLoadErrors(t *testing.T) {
 		"need `extends":                "remove: [Discord]\n",
 		"unknown profile \"other\"":    "extends: [other]\n",
 		"not allowed with":             "extends: [default]\ntargets: [{name: a, host: b, group: dns}]\n",
-		"unknown kind":                 "extends: [default]\noverride: [{name: Discord, kinds: [udp]}]\n",
+		"unknown kind":                 "extends: [default]\noverride: [{name: Discord, kinds: [sctp]}]\n",
 		"field bogus not found":        "extends: [default]\nbogus: 1\n",
 		"interval":                     "extends: [default]\noverride: [{name: Discord, interval: soon}]\n",
 		"below the minimum":            "extends: [default]\noverride: [{name: Discord, interval: 1s}]\n",
@@ -474,7 +486,7 @@ func TestTrace(t *testing.T) {
 		t.Errorf("traced targets %v, want %v", traced, want)
 	}
 	for _, g := range p.Groups {
-		if g.ID != PathGroup && perGroup[g.ID] != 1 {
+		if g.ID != PathGroup && g.ID != "calls" && perGroup[g.ID] != 1 {
 			t.Errorf("group %s: %d traced targets, want 1", g.ID, perGroup[g.ID])
 		}
 	}
@@ -510,5 +522,201 @@ add:
 	p.Targets[0].Trace = false
 	if err := Validate(p, Limits{}); err != nil {
 		t.Errorf("20 traced targets: %v", err)
+	}
+}
+
+// TestShippedUDP pins the STUN targets: default has four (no Teams relay:
+// it is opt-in), calls has every STUN target plus the call apps over TCP,
+// and default.yml's copies equal the catalog's.
+func TestShippedUDP(t *testing.T) {
+	r, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	udpNames := func(p *model.Profile) []string {
+		var out []string
+		for _, tg := range p.Targets {
+			if tg.IsUDP() {
+				out = append(out, tg.Name)
+			}
+		}
+		return out
+	}
+	def, _ := Default()
+	if got := udpNames(def); !slices.Equal(got, []string{"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global"}) {
+		t.Errorf("default UDP targets %v", got)
+	}
+	for _, tg := range def.Targets {
+		if !tg.IsUDP() {
+			continue
+		}
+		ct, ok := r.Catalog.Target(tg.Name)
+		if !ok {
+			t.Errorf("%s: not in the catalog", tg.Name)
+			continue
+		}
+		c := ct.toTarget(tg.Group, nil)
+		if c.Host != tg.Host || c.Port != tg.Port || c.Interval != tg.Interval || !slices.Equal(c.Tags, tg.Tags) || !slices.Equal(c.Kinds, tg.Kinds) {
+			t.Errorf("%s: default.yml %s:%d %s %v, catalog %s:%d %s %v", tg.Name, tg.Host, tg.Port, tg.Interval, tg.Tags, c.Host, c.Port, c.Interval, c.Tags)
+		}
+	}
+	calls, err := r.Resolve([]string{"calls"}, ResolveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(calls, Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Meet-STUN", "Meet-STUN-3478", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global", "Teams-Relay",
+		"Twilio-us1", "Twilio-us2", "Twilio-ie1", "Twilio-de1", "Twilio-sg1", "Twilio-jp1", "Twilio-au1", "Twilio-br1", "Twilio-in1"}
+	if got := udpNames(calls); !slices.Equal(got, want) {
+		t.Errorf("calls UDP targets %v", got)
+	}
+	apps := map[string]bool{}
+	ivs := map[string]time.Duration{}
+	for _, tg := range calls.Targets {
+		ivs[tg.Name] = tg.Interval
+		for _, tag := range tg.Tags {
+			if a, ok := strings.CutPrefix(tag, "app:"); ok && !tg.IsUDP() {
+				apps[a] = true
+			}
+		}
+		if tg.IsUDP() && (tg.Port == 0 || !slices.Contains(tg.Tags, "udp-path")) {
+			t.Errorf("%s: port %d tags %v", tg.Name, tg.Port, tg.Tags)
+		}
+	}
+	for _, a := range []string{"teams", "meet", "zoom", "slack", "discord", "whatsapp", "webex"} {
+		if !apps[a] {
+			t.Errorf("calls: no TCP target tagged app:%s", a)
+		}
+	}
+	if ivs["Meet-STUN"] != 5*time.Second || ivs["Teams-Relay"] != 5*time.Second || ivs["Cloudflare-UDP53"] != 15*time.Second || ivs["Twilio-jp1"] != 30*time.Second {
+		t.Errorf("intervals %v", ivs)
+	}
+	if g := calls.Groups; len(g) != 4 || g[1].ID != "calls-udp" || g[2].ID != "calls-regions" || g[3].ID != "calls-apps" {
+		t.Errorf("calls groups %+v", g)
+	}
+	// all selects them too; default+calls moves default's copies into calls.
+	all, _ := r.Resolve([]string{"all"}, ResolveOptions{})
+	if n := len(udpNames(all)); n != len(want) {
+		t.Errorf("all: %d UDP targets", n)
+	}
+	both, _ := r.Resolve([]string{"default", "calls"}, ResolveOptions{})
+	if err := Validate(both, Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := udpNames(both); len(got) != len(want) || indexGroup(both.Groups, "calls") >= 0 {
+		t.Errorf("default,calls: %v groups %v", got, both.Groups)
+	}
+	// Tags reach the targets of default.yml and the catalog.
+	for _, tg := range def.Targets {
+		if tg.Name == "Microsoft-Teams" && !slices.Equal(tg.Tags, []string{"app:teams"}) {
+			t.Errorf("default Microsoft-Teams tags %v", tg.Tags)
+		}
+	}
+}
+
+func TestValidateUDP(t *testing.T) {
+	udp := []model.ProbeKind{model.KindUDP}
+	prof := func(ts ...model.Target) *model.Profile {
+		p := &model.Profile{Groups: []model.Group{{ID: "g"}}}
+		for _, tg := range ts {
+			tg.Group = "g"
+			p.Targets = append(p.Targets, tg)
+		}
+		return p
+	}
+	ok := model.Target{Name: "mine", Host: "stun.example.com", Port: 3478, Kinds: udp, Interval: 6 * time.Second}
+	if err := Validate(prof(ok), Limits{}); err != nil {
+		t.Errorf("custom 6s: %v", err)
+	}
+	// The shipped targets may probe every 5s, even with a stricter limit.
+	def, _ := Default()
+	if err := Validate(def, Limits{MinIntervalSecs: 15}); err != nil && strings.Contains(err.Error(), "STUN") {
+		t.Errorf("shipped: %v", err)
+	}
+	ship := model.Target{Name: "Meet-STUN", Host: "stun.l.google.com", Port: 19302, Kinds: udp, Interval: 5 * time.Second}
+	if err := Validate(prof(ship), Limits{MinIntervalSecs: 15}); err != nil {
+		t.Errorf("shipped at 5s: %v", err)
+	}
+	with := func(f func(*model.Target)) model.Target { tg := ok; f(&tg); return tg }
+	cases := map[string]*model.Profile{
+		"below the minimum 6s":      prof(with(func(tg *model.Target) { tg.Interval = 5 * time.Second })),
+		"below the minimum 15s":     prof(with(func(tg *model.Target) { tg.Interval = 10 * time.Second })),
+		"needs a port":              prof(with(func(tg *model.Target) { tg.Port = 0 })),
+		"cannot be combined":        prof(with(func(tg *model.Target) { tg.Kinds = []model.ProbeKind{model.KindUDP, model.KindTCP} })),
+		"divide 1h evenly":          prof(with(func(tg *model.Target) { tg.Interval = 7 * time.Second })),
+		"private address":           prof(with(func(tg *model.Target) { tg.Host = "127.0.0.1" })),
+		"unknown kind 6":            prof(with(func(tg *model.Target) { tg.Kinds = []model.ProbeKind{model.KindUDPJitter} })),
+		"host_overrides: unknown":   prof(with(func(tg *model.Target) { tg.HostOverrides = map[model.ProbeKind]string{model.KindUDP: "x.com"} })),
+		"probed with ICMP only":     prof(with(func(tg *model.Target) { tg.Host = model.HostGateway })),
+		"shipped name, faster host": prof(with(func(tg *model.Target) { tg.Name, tg.Interval = "Meet-STUN", 5*time.Second })),
+	}
+	lim := map[string]Limits{"below the minimum 15s": {MinIntervalSecs: 15}}
+	for want, p := range cases {
+		err := Validate(p, lim[want])
+		if want == "shipped name, faster host" {
+			want = "below the minimum 6s"
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v", want, err)
+		}
+	}
+	// At most MaxCustomUDP custom UDP targets; shipped ones do not count.
+	var many []model.Target
+	for i := range MaxCustomUDP + 1 {
+		tg := ok
+		tg.Name = fmt.Sprintf("u%d", i)
+		many = append(many, tg)
+	}
+	if err := Validate(prof(many...), Limits{}); err == nil || !strings.Contains(err.Error(), "33 UDP targets, at most 32") {
+		t.Errorf("33 UDP: %v", err)
+	}
+	if err := Validate(prof(append(many[:MaxCustomUDP], ship)...), Limits{}); err != nil {
+		t.Errorf("32 custom + 1 shipped: %v", err)
+	}
+	// Private hosts only with AllowPrivateIPs (local files).
+	lan := with(func(tg *model.Target) { tg.Host = "192.168.1.1" })
+	if err := Validate(prof(lan), Limits{AllowPrivateIPs: true}); err != nil {
+		t.Errorf("private with AllowPrivateIPs: %v", err)
+	}
+	// A --config file: tags, kinds [udp], and the limits.
+	p, err := Load(write(t, `
+extends: [default]
+add:
+  - {name: my-stun, host: stun.example.com, port: 3478, group: calls, kinds: [udp], interval: 10s, tags: [udp-path, app:mine]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tg := p.Targets[indexTarget(p.Targets, "my-stun")]; !tg.IsUDP() || tg.Interval != 10*time.Second || !slices.Equal(tg.Tags, []string{"udp-path", "app:mine"}) {
+		t.Errorf("%+v", tg)
+	}
+	if _, err := Load(write(t, "extends: [default]\nadd: [{name: s, host: stun.example.com, port: 3478, group: calls, kinds: [udp], interval: 3s}]\n")); err == nil ||
+		!strings.Contains(err.Error(), "below the minimum 6s") {
+		t.Errorf("3s: %v", err)
+	}
+	// Overriding a shipped target's host makes it custom: the 6s floor applies.
+	if _, err := Load(write(t, "extends: [default]\noverride: [{name: Meet-STUN, host: stun.example.com}]\n")); err == nil ||
+		!strings.Contains(err.Error(), "below the minimum 6s") {
+		t.Errorf("override host: %v", err)
+	}
+}
+
+func TestWithoutUDP(t *testing.T) {
+	r, _ := Builtin()
+	p, err := r.Resolve([]string{"calls"}, ResolveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := len(p.Targets)
+	WithoutUDP(p)
+	for _, tg := range p.Targets {
+		if tg.IsUDP() {
+			t.Errorf("%s left", tg.Name)
+		}
+	}
+	if len(p.Targets) != n-15 || indexGroup(p.Groups, "calls-udp") >= 0 || indexGroup(p.Groups, "calls-regions") >= 0 || indexGroup(p.Groups, "calls-apps") < 0 {
+		t.Errorf("%d targets, groups %v", len(p.Targets), p.Groups)
 	}
 }

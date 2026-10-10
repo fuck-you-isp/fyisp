@@ -3,7 +3,7 @@
 # --config file; list them with `fyisp profiles`.
 #
 # Not listed here:
-#   default    the embedded default.yml (87 targets), used when no --profile
+#   default    the embedded default.yml (91 targets), used when no --profile
 #              or --config is given
 #   <provider> every catalog file is also a profile named by its provider ID
 #              (aws, gcp, azure, hetzner, ...), unless defined below
@@ -64,7 +64,18 @@ profiles:
   # ---- services -----------------------------------------------------------
   - name: common
     description: Everyday services (calls and chat, productivity, streaming, social), without the developer services
-    select: {kinds: [service], exclude_providers: [services-dev]}
+    select: {kinds: [service], exclude_providers: [services-dev, calls-stun, twilio]}
+
+  - name: calls
+    description: Call quality - STUN over UDP to Google Meet, Cloudflare, Twilio (global and 9 regions) and the Teams relay, plus the call apps over TCP
+    select:
+      - {providers: [calls-stun, twilio]}
+      - {tags: ["app:teams", "app:meet", "app:zoom", "app:slack", "app:discord", "app:whatsapp", "app:webex"]}
+    groups: custom
+    custom_groups:
+      - {id: calls-udp, title: "Call path (UDP)", match: {providers: [calls-stun]}}
+      - {id: calls-regions, title: "Twilio STUN regions (UDP)", match: {providers: [twilio]}}
+      - {id: calls-apps, title: "Call apps (TCP)", match: {tags: ["app:teams", "app:meet", "app:zoom", "app:slack", "app:discord", "app:whatsapp", "app:webex"]}}
 
   - name: dev
     description: Developer services (code hosting, registries, package mirrors, ...)

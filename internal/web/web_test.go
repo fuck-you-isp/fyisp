@@ -671,7 +671,8 @@ func TestProfileNoHosts(t *testing.T) {
 }
 
 // TestProfileTCPOnly: with the default profile, /api/profile lists TCP as
-// the only kind of every service target, and the network path keeps ICMP.
+// the only kind of every service target but the STUN targets (UDP, with
+// their tags), and the network path keeps ICMP.
 func TestProfileTCPOnly(t *testing.T) {
 	def, err := profile.Default()
 	if err != nil {
@@ -684,9 +685,14 @@ func TestProfileTCPOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(b), &p); err != nil {
 		t.Fatal(err)
 	}
-	var path, services int
+	var path, services, udp int
 	for _, tg := range p.Targets {
 		switch {
+		case slices.Equal(tg.Kinds, []string{"udp"}):
+			udp++
+			if !slices.Contains(tg.Tags, "udp-path") || (tg.Interval != 5000 && tg.Interval != 15000) {
+				t.Errorf("%s: tags %v interval %d", tg.Name, tg.Tags, tg.Interval)
+			}
 		case tg.Layer == "":
 			services++
 			if !slices.Equal(tg.Kinds, []string{"tcp"}) || tg.Interval != 15000 {
@@ -698,8 +704,11 @@ func TestProfileTCPOnly(t *testing.T) {
 			path++
 		}
 	}
-	if services != 87 || path != 5 {
-		t.Errorf("%d services, %d path targets", services, path)
+	if services != 87 || path != 5 || udp != 4 {
+		t.Errorf("%d services, %d path targets, %d UDP targets", services, path, udp)
+	}
+	if !strings.Contains(b, `"name":"Microsoft-Teams","group":"common","kinds":["tcp"],"interval_ms":15000,"provider":"common","provider_title":"Common Services (\u003c100ms is good for audio/video calls)","tags":["app:teams"]`) {
+		t.Errorf("tags missing from /api/profile: %s", b)
 	}
 }
 
