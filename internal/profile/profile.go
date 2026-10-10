@@ -17,12 +17,19 @@
 //	path: false                 # optional: leave out the built-in "Network path" group
 //
 // Target fields: name, host, group, port (default 443), path (HTTPS only,
-// default "/"), kinds (tcp|https|icmp, default [tcp]: a TCP connect to port),
-// interval (duration, default 15s; ICMP runs at interval/3), host_overrides
-// (kind -> host), trace (true: an always-on traceroute to the target, every
-// 5s; at most MaxTraced targets). Shipped profiles (the default and the
-// catalog) use TCP only; https and icmp remain for local files that ask for
-// them (e.g. pinging a NAS).
+// default "/"), kinds (tcp|https|icmp|udp, default [tcp]: a TCP connect to
+// port), interval (duration, default 15s; ICMP runs at interval/3),
+// host_overrides (kind -> host), trace (true: an always-on traceroute to the
+// target, every 5s; at most MaxTraced targets), tags (labels such as
+// "app:teams", shown in /api/profile). Shipped profiles (the default and the
+// catalog) use TCP, plus UDP for their STUN targets; https and icmp remain
+// for local files that ask for them (e.g. pinging a NAS).
+//
+// UDP targets (kinds: [udp]) send STUN Binding Requests to a public STUN
+// server (see package probe): they need a port, take no other kind, and
+// their interval only has to divide an hour. Shipped STUN targets probe
+// every 5s (some every 15s or 30s); targets of local files need at least
+// MinUDPInterval, and a profile may have at most MaxCustomUDP of them.
 //
 // An interval must be a whole number of seconds, divisible by 3 (so the ICMP
 // interval is whole seconds too) and divide an hour evenly, so that slots
@@ -52,6 +59,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -70,6 +78,17 @@ type Limits struct {
 // MaxTraced is the most targets a profile may trace always-on.
 const MaxTraced = 20
 
+// UDP (STUN) target limits for targets that are not shipped (see
+// isShippedUDP): an interval of at least MinUDPInterval (no opt-in for
+// faster), and at most MaxCustomUDP of them.
+const (
+	MinUDPInterval = 6 * time.Second
+	MaxCustomUDP   = 32
+)
+
+// UDPInterval is the interval of a catalog STUN target that sets none.
+const UDPInterval = 5 * time.Second
+
 // DefaultInterval is the TCP/HTTPS interval of a target that sets none.
 const DefaultInterval = 15 * time.Second
 
@@ -86,6 +105,7 @@ type fileTarget struct {
 	Interval      string            `yaml:"interval"`
 	HostOverrides map[string]string `yaml:"host_overrides"`
 	Trace         *bool             `yaml:"trace"`
+	Tags          []string          `yaml:"tags"`
 }
 
 type fileProfile struct {
@@ -382,6 +402,9 @@ func (ft fileTarget) apply(t *model.Target) error {
 	if ft.Trace != nil {
 		t.Trace = *ft.Trace
 	}
+	if ft.Tags != nil {
+		t.Tags = append([]string(nil), ft.Tags...)
+	}
 	if ft.HostOverrides != nil {
 		m := map[model.ProbeKind]string{}
 		for k, h := range ft.HostOverrides {
@@ -404,8 +427,10 @@ func parseKind(s string) (model.ProbeKind, error) {
 		return model.KindTCP, nil
 	case "icmp":
 		return model.KindICMP, nil
+	case "udp":
+		return model.KindUDP, nil
 	}
-	return 0, fmt.Errorf("unknown kind %q (want https, tcp or icmp)", s)
+	return 0, fmt.Errorf("unknown kind %q (want https, tcp, icmp or udp)", s)
 }
 
 func parseKinds(ss []string) ([]model.ProbeKind, error) {
@@ -476,6 +501,15 @@ func Validate(p *model.Profile, l Limits) error {
 	if traced > MaxTraced {
 		bad("%d targets have trace: true, at most %d allowed", traced, MaxTraced)
 	}
+	customUDP := 0
+	for _, t := range p.Targets {
+		if t.IsUDP() && !isShippedUDP(t) {
+			customUDP++
+		}
+	}
+	if customUDP > MaxCustomUDP {
+		bad("%d UDP targets, at most %d allowed (besides the shipped STUN targets)", customUDP, MaxCustomUDP)
+	}
 	names := map[string]bool{}
 	for _, t := range p.Targets {
 		if err := checkName(t.Name); err != nil {
@@ -492,7 +526,7 @@ func Validate(p *model.Profile, l Limits) error {
 		}
 		special := isSpecial(t.Host)
 		for k, h := range t.HostOverrides {
-			if k < model.KindHTTPS || k > model.KindICMP {
+			if !validKind(k) || k == model.KindUDP {
 				bad("target %q: host_overrides: unknown kind %d", t.Name, k)
 			}
 			if err := checkHost(h, l.AllowPrivateIPs); err != nil {
@@ -511,12 +545,16 @@ func Validate(p *model.Profile, l Limits) error {
 		}
 		seen := map[model.ProbeKind]bool{}
 		for _, k := range t.Kinds {
-			if k < model.KindHTTPS || k > model.KindICMP {
+			if !validKind(k) {
 				bad("target %q: unknown kind %d", t.Name, k)
 			} else if seen[k] {
 				bad("target %q: kind %s listed twice", t.Name, k)
 			}
 			seen[k] = true
+		}
+		if t.IsUDP() {
+			validateUDP(t, minIv, bad)
+			continue
 		}
 		tMin := minIv
 		if special {
@@ -529,6 +567,34 @@ func Validate(p *model.Profile, l Limits) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validKind reports a kind a target may list (the UDP siblings are written
+// by KindUDP's bursts, never listed).
+func validKind(k model.ProbeKind) bool {
+	return (k >= model.KindHTTPS && k <= model.KindICMP) || k == model.KindUDP
+}
+
+// validateUDP checks a UDP (STUN) target: kinds [udp] alone, a port, and an
+// interval that divides an hour, at least MinUDPInterval (and minIv) unless
+// the target is shipped as is.
+func validateUDP(t model.Target, minIv time.Duration, bad func(string, ...any)) {
+	if len(t.Kinds) != 1 {
+		bad("target %q: kind udp cannot be combined with other kinds (use a separate target)", t.Name)
+	}
+	if t.Port <= 0 || t.Port > 65535 {
+		bad("target %q: kind udp needs a port (e.g. 3478 for STUN)", t.Name)
+	}
+	if t.Interval == 0 {
+		return // the default, 15s
+	}
+	if t.Interval < 0 || t.Interval%time.Second != 0 || 3600%int64(t.Interval/time.Second) != 0 {
+		bad("target %q: interval %s must be whole seconds and divide 1h evenly (e.g. 6s, 10s, 15s, 30s, 60s)", t.Name, t.Interval)
+		return
+	}
+	if tMin := max(minIv, MinUDPInterval); !isShippedUDP(t) && t.Interval < tMin {
+		bad("target %q: interval %s is below the minimum %s for UDP targets", t.Name, t.Interval, tMin)
+	}
 }
 
 // validInterval reports whether iv is whole seconds, divisible by 3 (ICMP
@@ -560,6 +626,49 @@ func checkName(n string) error {
 		return errors.New("name contains whitespace at the start or end, or double spaces")
 	}
 	return nil
+}
+
+// WithoutUDP removes every UDP (STUN) target (--no-udp), and groups left
+// empty.
+func WithoutUDP(p *model.Profile) {
+	n := len(p.Targets)
+	p.Targets = slices.DeleteFunc(p.Targets, func(t model.Target) bool { return t.IsUDP() })
+	if len(p.Targets) == n {
+		return
+	}
+	inUse := map[string]bool{}
+	for _, t := range p.Targets {
+		inUse[t.Group] = true
+	}
+	p.Groups = slices.DeleteFunc(p.Groups, func(g model.Group) bool { return !inUse[g.ID] })
+}
+
+// shippedUDP holds the STUN targets fyisp ships (default.yml and the
+// catalog) by name: they may probe faster than MinUDPInterval, and do not
+// count against MaxCustomUDP. A target only counts as shipped while its
+// host, port and interval are unchanged.
+var shippedUDP = sync.OnceValue(func() map[string]model.Target {
+	out := map[string]model.Target{}
+	if p, err := defaultBase(); err == nil {
+		for _, t := range p.Targets {
+			if t.IsUDP() {
+				out[t.Name] = t
+			}
+		}
+	}
+	if r, err := Builtin(); err == nil {
+		for _, ct := range r.Catalog.Targets {
+			if t := ct.toTarget("", nil); t.IsUDP() {
+				out[t.Name] = t
+			}
+		}
+	}
+	return out
+})
+
+func isShippedUDP(t model.Target) bool {
+	s, ok := shippedUDP()[t.Name]
+	return ok && s.Host == t.Host && s.Port == t.Port && s.Interval == t.Interval && len(t.HostOverrides) == 0
 }
 
 // isSpecial reports whether h is resolved from the network path.

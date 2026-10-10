@@ -25,11 +25,18 @@ var kinds = map[model.VerdictKind]kindInfo{
 	model.VerdictNoNetwork: {"No network", "This device's own connection", "#8a1c1c"},
 	model.VerdictDNS:       {"DNS problem", "Name resolution (DNS)", "#5b4bc8"},
 	model.VerdictService:   {"Some services down", "Individual services (their fault, not your ISP's)", "#b58300"},
+
+	// The call path (UDP).
+	model.VerdictUDPBlocked:  {"UDP blocked (calls)", "UDP, which calls use,", "#2f7f86"},
+	model.VerdictSTUNBlocked: {"Call ports (STUN) blocked", "The call ports (STUN)", "#4f9aa0"},
+	model.VerdictUDPDegraded: {"Call path degraded", "The UDP path calls use", "#7d8a2e"},
 }
 
-// kindOrder is the order of the summary: the ISP first.
+// kindOrder is the order of the summary: the ISP first, the call path (UDP)
+// kinds last.
 var kindOrder = []model.VerdictKind{model.VerdictISP, model.VerdictUpstream, model.VerdictLAN,
-	model.VerdictNoNetwork, model.VerdictDNS, model.VerdictService}
+	model.VerdictNoNetwork, model.VerdictDNS, model.VerdictService,
+	model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded}
 
 func kindOf(k model.VerdictKind) kindInfo {
 	if i, ok := kinds[k]; ok {
@@ -181,12 +188,23 @@ func (r *run) kindTotals() []kindTotal {
 	return out
 }
 
-// problemTime is the union of all incidents' time in the range.
+// policyKind reports a kind that describes the network's policy rather than
+// a fault (a hotel or office firewall that blocks UDP): it is listed with
+// the incidents, but left out of the headline statistics (problemTime and
+// the longest incident).
+func policyKind(k model.VerdictKind) bool {
+	return k == model.VerdictUDPBlocked || k == model.VerdictSTUNBlocked
+}
+
+// problemTime is the union of all incidents' time in the range, policy
+// kinds excepted.
 func (r *run) problemTime() time.Duration {
 	type iv struct{ a, b time.Time }
 	var ivs []iv
 	for _, in := range r.incidents {
-		ivs = append(ivs, iv{in.start, in.end})
+		if !policyKind(in.Kind) {
+			ivs = append(ivs, iv{in.start, in.end})
+		}
 	}
 	sort.Slice(ivs, func(i, j int) bool { return ivs[i].a.Before(ivs[j].a) })
 	var total time.Duration
@@ -219,8 +237,15 @@ func (r *run) summary(totals []kindTotal) (string, []string) {
 		if t.PeakLoss > 0 {
 			verb = "dropped packets"
 		}
-		if t.Kind == model.VerdictService {
+		switch t.Kind {
+		case model.VerdictService:
 			verb = "failed"
+		case model.VerdictUDPBlocked:
+			verb = "was blocked or failing"
+		case model.VerdictSTUNBlocked:
+			verb = "were blocked"
+		case model.VerdictUDPDegraded:
+			verb = "was degraded"
 		}
 		what := fmt.Sprintf("%s in %s", fmtDur(t.Dur), plural(t.Count, "incident", "incidents"))
 		var s string
@@ -242,13 +267,13 @@ func (r *run) summary(totals []kindTotal) (string, []string) {
 	} else {
 		headline = "No data: fyisp has no measurements in this range."
 	}
-	if len(r.incidents) > 0 {
-		worst := r.incidents[0]
-		for _, in := range r.incidents {
-			if in.dur() > worst.dur() {
-				worst = in
-			}
+	var worst *incident
+	for i, in := range r.incidents {
+		if !policyKind(in.Kind) && (worst == nil || in.dur() > worst.dur()) {
+			worst = &r.incidents[i]
 		}
+	}
+	if worst != nil {
 		s := fmt.Sprintf("The longest incident (%s) started %s and lasted %s",
 			kindOf(worst.Kind).Label, fmtLongTime(worst.Start), fmtDur(worst.dur()))
 		if worst.ongoing {
@@ -343,7 +368,7 @@ func ivText(set map[time.Duration]bool) string {
 func (r *run) method() []string {
 	p := r.prof
 	var services, path, anycast, traced int
-	tcp, https, icmp := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
+	tcp, https, icmp, udp := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
 	pathIcmp, anyIcmp, anyTCP := map[time.Duration]bool{}, map[time.Duration]bool{}, map[time.Duration]bool{}
 	for _, t := range p.Targets {
 		iv := t.Interval
@@ -376,6 +401,8 @@ func (r *run) method() []string {
 				https[iv] = true
 			case model.KindICMP:
 				icmp[iv/3] = true
+			case model.KindUDP:
+				udp[iv] = true
 			}
 		}
 		if t.Trace {
@@ -393,6 +420,9 @@ func (r *run) method() []string {
 	}
 	if len(icmp) > 0 {
 		parts = append(parts, "ICMP echo (ping) "+ivText(icmp))
+	}
+	if len(udp) > 0 {
+		parts = append(parts, "UDP STUN bursts (5 requests 20 ms apart, the path call audio and video use) "+ivText(udp))
 	}
 	if len(parts) > 0 {
 		s += ": " + strings.Join(parts, ", and ")

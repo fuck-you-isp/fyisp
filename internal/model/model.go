@@ -16,7 +16,24 @@ const (
 	KindICMP  ProbeKind = 3
 	// KindTrace is one hop of a traceroute: SeriesKey.Hop is the TTL (1..).
 	KindTrace ProbeKind = 4
+	// KindUDP is a burst of STUN Binding Requests (see probe.UDPBurst): the
+	// burst's median RTT, lost (ReasonTimeout) when no request was answered.
+	// A target lists only KindUDP; every burst also writes KindUDPJitter and
+	// KindUDPLoss with the same slot. The three are never written apart.
+	KindUDP ProbeKind = 5
+	// KindUDPJitter is the burst's jitter in the RTT field: the mean |ΔRTT|
+	// of consecutive answers, not measured (a gap) with fewer than 2.
+	KindUDPJitter ProbeKind = 6
+	// KindUDPLoss is the burst's loss in the RTT field, as a percentage in
+	// milliseconds: 1 ms = 1% of the burst's requests timed out (0..100).
+	KindUDPLoss ProbeKind = 7
 )
+
+// UDPKinds are the kinds every UDP burst writes, in this order.
+var UDPKinds = []ProbeKind{KindUDP, KindUDPJitter, KindUDPLoss}
+
+// IsUDP reports one of the UDP burst kinds.
+func (k ProbeKind) IsUDP() bool { return k >= KindUDP && k <= KindUDPLoss }
 
 // DefaultKinds is the kind list of a target that sets none: a TCP connect.
 // HTTPS and ICMP stay available to targets that list them (the network path
@@ -33,6 +50,12 @@ func (k ProbeKind) String() string {
 		return "icmp"
 	case KindTrace:
 		return "trace"
+	case KindUDP:
+		return "udp"
+	case KindUDPJitter:
+		return "udp_jitter"
+	case KindUDPLoss:
+		return "udp_loss"
 	}
 	return "unknown"
 }
@@ -94,10 +117,10 @@ type Target struct {
 	Name     string        `yaml:"name" json:"name"`
 	Host     string        `yaml:"host" json:"-"`
 	Group    string        `yaml:"group" json:"group"`
-	Port     int           `yaml:"port,omitempty" json:"-"` // TCP/HTTPS port, default 443
+	Port     int           `yaml:"port,omitempty" json:"-"` // TCP/HTTPS port, default 443; UDP: required
 	Path     string        `yaml:"path,omitempty" json:"-"` // HTTPS path, default "/"
 	Kinds    []ProbeKind   `yaml:"-" json:"kinds"`          // default: DefaultKinds (TCP)
-	Interval time.Duration `yaml:"-" json:"interval"`       // TCP/HTTPS interval, default 15s; ICMP runs at Interval/3
+	Interval time.Duration `yaml:"-" json:"interval"`       // TCP/HTTPS/UDP interval, default 15s; ICMP runs at Interval/3
 	// Trace runs an always-on traceroute to this target (KindTrace series).
 	Trace bool `yaml:"-" json:"trace,omitempty"`
 	// Layer is LayerGateway, LayerEdge or LayerAnycast for path targets.
@@ -115,6 +138,19 @@ type Target struct {
 	City          string `yaml:"-" json:"city,omitempty"`
 	Country       string `yaml:"-" json:"country,omitempty"`
 	Geo           string `yaml:"-" json:"geo,omitempty"`
+	// Tags are the catalog's (or a profile file's) labels, e.g. "udp-path"
+	// or "app:teams": the Calls view maps targets to apps by them.
+	Tags []string `yaml:"-" json:"tags,omitempty"`
+}
+
+// IsUDP reports a target probed with STUN bursts (its kinds are [udp]).
+func (t Target) IsUDP() bool {
+	for _, k := range t.Kinds {
+		if k == KindUDP {
+			return true
+		}
+	}
+	return false
 }
 
 // ProbeKinds returns the kinds t is probed with: Kinds, or DefaultKinds
@@ -205,6 +241,11 @@ const (
 	VerdictDNS       VerdictKind = "dns"        // path fine, name resolution failing widely
 	VerdictService   VerdictKind = "service"    // path fine, only some targets/groups unhealthy
 	VerdictNoNetwork VerdictKind = "no_network" // no default route / all layers down
+	// The call path (UDP) kinds rank below every other problem: they are
+	// only given while TCP and the network path look fine.
+	VerdictUDPBlocked  VerdictKind = "udp_blocked"  // UDP to ≥ 2 STUN providers failing, UDP 53 too
+	VerdictSTUNBlocked VerdictKind = "stun_blocked" // STUN ports failing on ≥ 2 providers, UDP 53 answers
+	VerdictUDPDegraded VerdictKind = "udp_degraded" // ≥ 2 STUN providers lossy or jittery for minutes
 )
 
 // Verdict is the current assessment. Summary is one plain-English sentence
@@ -218,6 +259,10 @@ type Verdict struct {
 	Targets []string `json:"targets,omitempty"`
 	// Evidence are the numbers behind the verdict, e.g. "gateway_loss": 0.2.
 	Evidence map[string]float64 `json:"evidence,omitempty"`
+	// Quiet marks a long-standing udp_blocked or stun_blocked verdict
+	// (blocked for hours: a hotel or office network that never allows
+	// UDP) that the UI shows as information rather than as a problem.
+	Quiet bool `json:"quiet,omitempty"`
 }
 
 // Incident is one period with a non-OK verdict. End is zero while ongoing.

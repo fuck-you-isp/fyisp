@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/netip"
 	"slices"
 	"sync"
@@ -700,4 +701,49 @@ func TestDestinationAnswersHigherTTL(t *testing.T) {
 	next()
 	smp, _, _ = sink.take()
 	checkRound(t, "shorter", smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {rtt: 3 * ms}})
+}
+
+// 40% loss on the destination's probe at its own TTL (a higher TTL then
+// reaches it) is loss at the destination: over 300 rounds, which include
+// runs of up to 8 losses in a row, the route never grows.
+func TestDestinationLossKeepsRoute(t *testing.T) {
+	f := newFakeNet("192.168.1.1", "62.1.1.1", "62.2.2.2")
+	tr, st, sink := roundTracer(t, f, Options{})
+	ctx := context.Background()
+	slot := time.Unix(1_800_000_000, 0).UTC()
+	next := func() { slot = slot.Add(5 * time.Second); tr.round(ctx, st, slot) }
+	next()
+	sink.take()
+	rng := rand.New(rand.NewPCG(1, 2))
+	run, longest, lost := 0, 0, 0
+	for i := range 300 {
+		drop := rng.Float64() < 0.4
+		f.set(func(f *fakeNet) {
+			f.silent = nil
+			if drop {
+				f.silent = map[int]bool{4: true}
+			}
+		})
+		if drop {
+			run++
+			lost++
+		} else {
+			run = 0
+		}
+		longest = max(longest, run)
+		next()
+		smp, _, ch := sink.take()
+		for _, s := range smp {
+			if s.Key.Hop > 4 {
+				t.Fatalf("round %d (%d losses in a row): a sample for hop %d", i, run, s.Key.Hop)
+			}
+		}
+		if len(ch) != 0 {
+			t.Fatalf("round %d (%d losses in a row): route changes %+v", i, run, ch)
+		}
+	}
+	if longest < growRounds/2 || longest >= growRounds {
+		t.Fatalf("longest run of losses %d (%d of 300 lost): pick a seed with a run of %d to %d", longest, lost, growRounds/2, growRounds-1)
+	}
+	t.Logf("%d of 300 destination probes lost, at most %d in a row", lost, longest)
 }

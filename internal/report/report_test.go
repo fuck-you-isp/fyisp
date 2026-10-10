@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,7 +78,8 @@ func TestStructure(t *testing.T) {
 	}
 	// The default profile: TCP connects to the services, pings on the path.
 	for _, want := range []string{
-		"fyisp measured 87 targets in 8 groups from this connection: TCP connects (time to open a connection) every 15",
+		"fyisp measured 91 targets in 9 groups from this connection: TCP connects (time to open a connection) every 15",
+		"and UDP STUN bursts (5 requests 20 ms apart, the path call audio and video use) every 5",
 		"are pinged every 1",
 		"3 public resolvers (big anycast DNS resolvers) are pinged every 5",
 	} {
@@ -225,5 +227,75 @@ func TestWriteSamples(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(html), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// The call path (UDP) kinds have their own wording, after every other kind.
+func TestCallPathIncidents(t *testing.T) {
+	f := newFixture(t, 7, 5*time.Minute)
+	at := f.to.Add(-6 * time.Hour)
+	f.incidents = append(f.incidents,
+		model.Incident{ID: 501, Start: at, End: at.Add(20 * time.Minute), Kind: model.VerdictUDPBlocked, Summary: "UDP is blocked."},
+		model.Incident{ID: 502, Start: at.Add(time.Hour), End: at.Add(70 * time.Minute), Kind: model.VerdictSTUNBlocked, Summary: "Call ports are blocked."},
+		model.Incident{ID: 503, Start: at.Add(2 * time.Hour), End: at.Add(2*time.Hour + 5*time.Minute), Kind: model.VerdictUDPDegraded, PeakLoss: 0.12, Summary: "Calls may sound choppy."},
+	)
+	html := f.build(t, f.deps(), Options{})
+	checkStatic(t, html)
+	prev := strings.Index(html, "Your ISP&#39;s network dropped packets")
+	for _, want := range []string{
+		"UDP, which calls use, was blocked or failing on 1 of 7 days (20m in 1 incident).",
+		"The call ports (STUN) were blocked on 1 of 7 days (10m in 1 incident).",
+		"The UDP path calls use was degraded on 1 of 7 days (5m in 1 incident, losing up to 12% of probes in a minute).",
+	} {
+		i := strings.Index(html, want)
+		if i < 0 {
+			t.Fatalf("report lacks %q", want)
+		}
+		if i < prev {
+			t.Errorf("%q comes too early", want)
+		}
+		prev = i
+	}
+	for _, want := range []string{"UDP blocked (calls)", "Call ports (STUN) blocked", "Call path degraded"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report lacks label %q", want)
+		}
+	}
+	for k := range kinds {
+		if !slices.Contains(kindOrder, k) {
+			t.Errorf("kind %s not in kindOrder", k)
+		}
+	}
+}
+
+// udp_blocked and stun_blocked describe the network's policy, not a fault:
+// listed, but left out of the longest incident and the problem-free share.
+// udp_degraded counts.
+func TestPolicyKindsOutOfHeadlineStats(t *testing.T) {
+	stats := regexp.MustCompile(`The longest incident \(([^)]*)\)[^.]*\.|No problem was detected during [^.;]*`)
+	build := func(extra ...model.Incident) (string, []string) {
+		f := newFixture(t, 7, 5*time.Minute)
+		f.incidents = append(f.incidents, extra...)
+		html := f.build(t, f.deps(), Options{})
+		return html, stats.FindAllString(html, -1)
+	}
+	at := newFixture(t, 7, 5*time.Minute).to.Add(-30 * time.Hour)
+	_, base := build()
+	if len(base) != 2 {
+		t.Fatalf("headline stats %q", base)
+	}
+	html, got := build(
+		model.Incident{ID: 601, Start: at, End: at.Add(20 * time.Hour), Kind: model.VerdictUDPBlocked, Summary: "UDP is blocked."},
+		model.Incident{ID: 602, Start: at.Add(21 * time.Hour), End: at.Add(29 * time.Hour), Kind: model.VerdictSTUNBlocked, Summary: "Call ports are blocked."},
+	)
+	if !slices.Equal(got, base) {
+		t.Errorf("headline stats with policy incidents %q, want %q", got, base)
+	}
+	if !strings.Contains(html, "UDP blocked (calls)") || !strings.Contains(html, "Call ports (STUN) blocked") {
+		t.Error("policy incidents not listed")
+	}
+	_, got = build(model.Incident{ID: 603, Start: at, End: at.Add(20 * time.Hour), Kind: model.VerdictUDPDegraded, PeakLoss: 0.1, Summary: "Calls may sound choppy."})
+	if len(got) != 2 || !strings.Contains(got[0], "(Call path degraded)") || got[1] == base[1] {
+		t.Errorf("headline stats with udp_degraded %q (without: %q)", got, base)
 	}
 }

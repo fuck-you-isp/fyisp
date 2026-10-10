@@ -3,9 +3,9 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[]}} TargetInfo */
 /** @typedef {{target:string,kind:string,ratio:number,now_ms:number,normal_ms:number}} SlowItem */
-/** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[]}} Verdict */
+/** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[],quiet?:boolean}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
 /** @typedef {{target:string,kind:string,interval:number,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
@@ -21,9 +21,12 @@ const RANGES = [['5m', 300], ['30m', 1800], ['1h', 3600], ['6h', 21600], ['24h',
 // a TCP connect; HTTPS and ICMP appear only where a profile asks for them
 // (the network path pings, --config files may request either).
 const KINDS = ['tcp', 'https', 'icmp'];
-const KIND_LABEL = { https: 'HTTPS', tcp: 'TCP', icmp: 'ICMP' };
-const KIND_TITLE = { tcp: 'TCP: time to open a connection', https: 'HTTPS: request sent → first response byte', icmp: 'ICMP echo (ping)' };
-const KIND_DASH = { tcp: [], https: [6, 3], icmp: [1.5, 3] };
+const KIND_LABEL = { https: 'HTTPS', tcp: 'TCP', icmp: 'ICMP', udp: 'UDP' };
+const KIND_TITLE = { tcp: 'TCP: time to open a connection', https: 'HTTPS: request sent → first response byte', icmp: 'ICMP echo (ping)', udp: 'UDP (STUN): median time to answer a burst of 5 requests' };
+const KIND_DASH = { tcp: [], https: [6, 3], icmp: [1.5, 3], udp: [] };
+// Every kind a chart can draw: the header's kinds plus UDP (STUN), which
+// only the call-path panels show.
+const CHART_KINDS = [...KINDS, 'udp'];
 const REASONS = ['timeout', 'refused', 'reset', 'unreachable', 'dns', 'tls', 'http', 'no_network', 'other'];
 const REASON_LABEL = { timeout: 'timeout', refused: 'refused', reset: 'reset', unreachable: 'unreachable', dns: 'DNS', tls: 'TLS', http: 'HTTP error', no_network: 'no network', other: 'other' };
 const REFRESH_MS = 15000;
@@ -42,7 +45,12 @@ const VERDICTS = {
   dns: { label: 'DNS problem', short: 'DNS', why: 'The network path works, but name lookups are failing widely. The DNS resolver you use (often your router\'s or your ISP\'s) is the likely culprit.' },
   service: { label: 'Some services are down', short: 'Service', why: 'Your connection is fine; only some services or regions are unhealthy. That is on their side, not yours or your ISP\'s.' },
   no_network: { label: 'No network', short: 'No network', why: 'This machine has no route to the internet: Wi-Fi off, cable unplugged, or no network configured.' },
+  udp_blocked: { label: 'UDP blocked', short: 'UDP blocked', why: 'Your connection works, but UDP, which call audio and video use, gets no answers from several independent call services, not even on port 53. A firewall on this network (or on this computer) is blocking it. Calls fall back to slower TCP relays or fail.' },
+  stun_blocked: { label: 'Call ports blocked', short: 'STUN blocked', why: 'Your connection works and UDP gets through on port 53, but the ports calls use (STUN, e.g. 3478 and 19302) get no answers from several call services. A firewall is blocking them; calls may fall back to slower relays.' },
+  udp_degraded: { label: 'Call quality degraded', short: 'Calls', why: 'Your connection looks fine for browsing, but the UDP path call audio and video use is losing packets or jittery towards several call services. Calls may sound choppy.' },
 };
+// Shown instead of the label for a long-standing block (the verdict's quiet flag).
+const QUIET_LABEL = { udp_blocked: 'This network blocks UDP', stun_blocked: 'This network blocks call ports' };
 // The network path, left to right. key is the evidence prefix (<key>_loss, <key>_rtt_ms).
 const LAYERS = [
   { id: 'gateway', key: 'gateway', label: 'Gateway', why: 'Your router: the first thing every packet goes through.' },
@@ -55,8 +63,8 @@ const LAYERS = [
 const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
 
 /**
- * Page state; everything but band lives in the URL hash. view: 'o' (Overview)
- * or 'c' (charts), null for the profile's default; focus: a target shown alone
+ * Page state; everything but band lives in the URL hash. view: 'calls' (Calls),
+ * 'o' (Overview) or 'c' (charts), null for the profile's default; focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
  * problems-only, heatmap cell and heatmap mode.
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
@@ -159,6 +167,7 @@ function themeChanged() {
   for (const p of panels) p.render();
   renderLayers();
   if (inv && state.inv) { inv.sig = ''; inv.render(); }
+  calls?.render();
 }
 
 // ---------- colours ----------
@@ -255,7 +264,7 @@ function readHash() {
   }
   fixKinds();
   const v = p.get('v');
-  state.view = v === 'o' || v === 'c' ? v : null;
+  state.view = v === 'o' || v === 'c' || v === 'calls' ? v : null;
   state.focus = p.get('f') || null;
   state.os = p.get('os') || '';
   state.oq = p.get('oq') || '';
@@ -410,6 +419,8 @@ class Panel {
    * @returns {Set<string>}
    */
   kinds() {
+    // A panel of UDP (STUN) targets only shows their UDP series.
+    if (this.targets.length && this.targets.every((t) => t.kinds.includes('udp'))) return new Set(['udp']);
     if (!this.isPath) return state.kinds;
     const avail = new Set(this.targets.flatMap((t) => t.kinds));
     const icmpOff = status && status.caps && status.caps.icmp === 'unavailable';
@@ -423,7 +434,7 @@ class Panel {
   mainKind() {
     if (this.isPath) return null;
     const kinds = this.kinds();
-    return KINDS.find((k) => kinds.has(k)) || null;
+    return KINDS.find((k) => kinds.has(k)) || (kinds.has('udp') ? 'udp' : null);
   }
   width() { return Math.max(200, this.chartEl.clientWidth); }
 
@@ -513,7 +524,7 @@ class Panel {
     let si = 1;
     for (const t of this.targets) {
       const color = seriesColor(/** @type {number} */ (this.colors.get(t.name)));
-      for (const k of KINDS) {
+      for (const k of CHART_KINDS) {
         if (!kinds.has(k) || !t.kinds.includes(k)) continue;
         const sd = byKey.get(t.name + '\0' + k) || null;
         smap.push({ si: si++, target: t.name, kind: k, role: 'mean', sd, color });
@@ -644,7 +655,7 @@ class Panel {
     const items = [];
     const sel = this.kinds();
     for (const t of this.targets) {
-      const kinds = KINDS.filter((k) => sel.has(k) && t.kinds.includes(k));
+      const kinds = CHART_KINDS.filter((k) => sel.has(k) && t.kinds.includes(k));
       if (!kinds.length) continue;
       const ss = d.series.filter((s) => s.target === t.name && kinds.includes(s.kind));
       let n = 0, lost = 0;
@@ -1004,6 +1015,13 @@ function servicesStats() {
   // The Overview hides the service panels: use its window totals instead.
   if (!ever && ov && ov.data && overviewShown()) {
     for (const r of ov.data.rows) { ever += r.n + r.lost; n += r.n; lost += r.lost; }
+  }
+  // So does Calls: use the call apps' websites.
+  if (!ever && calls && calls.live && callsShown()) {
+    for (const a of calls.live.apps) {
+      const k = a.web_samples || 0, l = Math.round(k * (a.web_loss || 0));
+      ever += k; n += k - l; lost += l;
+    }
   }
   return { ever, n, lost, loss: n + lost ? lost / (n + lost) : NaN, rtt: null };
 }
@@ -2023,11 +2041,14 @@ let bigProfile = false;
 /** @type {Overview|null} */
 let ov = null;
 
-/** The view on screen: the Overview ('o') or the chart wall ('c'). Focus is always charts. */
+/** The view on screen: Calls ('calls'), the Overview ('o') or the chart wall ('c'). Focus is always charts. */
 function currentView() {
   if (state.focus && focusPanel()) return 'c';
-  return state.view || (bigProfile ? 'o' : 'c');
+  if (state.view === 'calls' && !callsOn) return bigProfile ? 'o' : 'c';
+  return state.view || defaultView();
 }
+/** The profile's own view: Calls for the default and calls profiles (and small ones with a call path), the Overview for big ones. */
+function defaultView() { return callsOn && callsDefault ? 'calls' : bigProfile ? 'o' : 'c'; }
 function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
 /** The kind the Overview shows: the first selected of TCP, HTTPS, ICMP. */
 function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || kindsOffered[0]; }
@@ -2035,7 +2056,7 @@ function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.t
 /** Panels that are on screen and may load: the path panel always, the others per view and focus. */
 function panelShown(/** @type {Panel} */ p) {
   if (p.isPath) return true;
-  if (currentView() === 'o') return false;
+  if (currentView() !== 'c') return false;
   const fp = focusPanel();
   return !fp || fp === p;
 }
@@ -2557,6 +2578,731 @@ class Overview {
   }
 }
 
+// ---------- calls (call quality) ----------
+
+/** @typedef {{state:(string|null)[],mos:(number|null)[],rtt_ms:(number|null)[],jitter_ms:(number|null)[],loss:(number|null)[]}} CallsSeries */
+/** @typedef {{at:number,state:string,mos:number|null,rtt_ms:number|null,jitter_ms:number|null,loss:number|null}} CallsMinute */
+/** @typedef {{state:string,mos:number|null,rtt_ms:number|null,rtt_p95_ms:number|null,jitter_ms:number|null,loss:number|null,samples:number,unknown?:number,factor?:string,worst?:CallsMinute,minutes:CallsSeries}} CallsGroup */
+/** @typedef {Partial<CallsGroup> & {app:string,udp:string,region?:string,web_ms?:number|null,web_loss?:number|null,web_samples?:number}} CallsApp */
+/** @typedef {{source:string,app?:string,kind?:string,summary?:string,factor?:string}} CallsCause */
+/** @typedef {{from:number,to:number,start:number,step:number,state:string,quiet?:boolean,cause?:CallsCause,path?:CallsGroup,apps:CallsApp[]}} CallsData */
+
+const CALLS_LIVE_MS = 15000; // the top card ("updated 4 s ago")
+const CALLS_DAY_MS = 60000; // the working-hours strip and the sparklines
+const CALLS_LIVE_WINDOW = '5m';
+// Working hours, local time, Monday to Friday.
+const WORK_FROM = 9, WORK_TO = 17;
+/** Call states: the label (rows, strip) and the top card's headline. */
+/** @type {Object<string,{label:string,head:string}>} */
+const CALL_STATES = {
+  good: { label: 'Good', head: 'Good for calls' },
+  fair: { label: 'Fair', head: 'Fair for calls' },
+  poor: { label: 'Poor', head: 'Poor for calls' },
+  unusable: { label: 'Unusable', head: 'Calls will break up' },
+  blocked: { label: 'Blocked', head: 'Calls are blocked on this network' },
+  not_enough_data: { label: 'Not enough data yet', head: 'Not enough data yet' },
+  server_not_answering: { label: 'This test server isn\'t answering, not your connection', head: 'The test servers aren\'t answering, not your connection' },
+};
+const BAD_CALL = new Set(['poor', 'unusable']);
+/** @type {Object<string,string>} */
+const APP_TITLE = { teams: 'Teams', meet: 'Google Meet', zoom: 'Zoom', slack: 'Slack', discord: 'Discord', whatsapp: 'WhatsApp', webex: 'Webex' };
+// What a verdict means for a call: the top card's cause line.
+/** @type {Object<string,string>} */
+const CALL_CAUSE = {
+  lan: 'your Wi-Fi or router is dropping packets',
+  isp: 'your ISP is dropping packets',
+  upstream: 'there is trouble beyond your ISP',
+  dns: 'name lookups (DNS) are failing, so joining a call may fail',
+  no_network: 'this computer has no network connection',
+  udp_blocked: 'this network (or a firewall on this computer) blocks UDP; calls fall back to slower relays or fail',
+  stun_blocked: 'this network blocks the ports calls use (STUN); calls may fall back to slower relays',
+  udp_degraded: 'the UDP path to call services is losing packets or jittery',
+};
+// Where a problem was, per incident kind ("What happened at …?").
+/** @type {Object<string,string>} */
+const CALL_WHERE = {
+  lan: 'in your home network (Wi-Fi or router)',
+  isp: 'at your ISP edge; Wi-Fi/router fine',
+  upstream: 'beyond your ISP; Wi-Fi/router and ISP edge fine',
+  dns: 'while name lookups (DNS) were failing; the network path was fine',
+  no_network: 'with no network connection at all',
+  udp_blocked: 'while UDP was blocked on this network',
+  stun_blocked: 'while the call ports (STUN) were blocked',
+  udp_degraded: 'on the UDP path to call services; Wi-Fi/router and ISP edge fine',
+  service: 'while some services had trouble; your connection was fine',
+};
+// The incident that best explains a bad call, most specific first.
+const CALL_BLAME_ORDER = ['no_network', 'lan', 'isp', 'upstream', 'udp_blocked', 'stun_blocked', 'udp_degraded', 'dns', 'service'];
+
+/** @type {Calls|null} */
+let calls = null;
+let callsOn = false; // the profile has call-path (udp-path) or app targets
+let callsDefault = false; // Calls is the profile's default view
+
+function callsShown() { return !!calls && currentView() === 'calls' && !(state.inv && inv); }
+function callLabel(/** @type {string} */ st) { return (CALL_STATES[st] || { label: st }).label; }
+function hhmm(/** @type {number} */ ms) { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function hh(/** @type {number} */ hour) { return String(hour).padStart(2, '0'); }
+/** "steady (jitter 3 ms)", by how much the jitter is. */
+function jitterWords(/** @type {number|null|undefined} */ j) {
+  if (j == null || !isFinite(j)) return '';
+  const ms = `${fmtMs(j)} ms`;
+  if (j < 10) return `steady (jitter ${ms})`;
+  if (j < 30) return `some jitter (${ms})`;
+  return `jittery (${ms})`;
+}
+/** An Azure region as words: "swedencentral" → "Sweden Central", "eastus2" → "East US 2". */
+function regionName(/** @type {string} */ r) {
+  return r.replace(/(north|south|east|west|central)/g, ' $1 ').replace(/(\d+)/g, ' $1').trim().split(/\s+/)
+    .map((w) => (w === 'us' || w === 'uk' || w === 'uae' ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))).join(' ');
+}
+/** Today's working hours as [from, to] (ms), or null on a weekend. */
+function workHours(/** @type {number} */ now) {
+  const d = new Date(now);
+  if (d.getDay() === 0 || d.getDay() === 6) return null;
+  const a = new Date(d), b = new Date(d);
+  a.setHours(WORK_FROM, 0, 0, 0);
+  b.setHours(WORK_TO, 0, 0, 0);
+  return [a.getTime(), b.getTime()];
+}
+/** The state colour token of a call state. */
+function callColor(/** @type {string|null} */ st) {
+  switch (st) {
+    case 'good': return css('--v-ok');
+    case 'fair': return css('--v-service');
+    case 'poor': return css('--v-lan');
+    case 'unusable': return css('--v-isp');
+  }
+  return '';
+}
+/** The minute index of t in d's series (may be out of range). */
+function minuteIdx(/** @type {CallsData} */ d, /** @type {number} */ t) { return Math.floor((t - d.start) / d.step); }
+/** One minute of a group's series, or null when not scored. */
+function minuteAt(/** @type {CallsData} */ d, /** @type {CallsGroup|undefined} */ g, /** @type {number} */ i) {
+  if (!g || i < 0 || i >= g.minutes.state.length || !g.minutes.state[i]) return null;
+  const m = g.minutes;
+  return { at: d.start + i * d.step, state: /** @type {string} */ (m.state[i]), mos: m.mos[i], rtt_ms: m.rtt_ms[i], jitter_ms: m.jitter_ms[i], loss: m.loss[i] };
+}
+/**
+ * Runs of minutes in [from, to) whose state is in want, merging gaps of up
+ * to 2 minutes; each with its worst minute.
+ * @param {CallsData} d @param {CallsGroup|undefined} g @param {number} from @param {number} to @param {Set<string>} want
+ */
+function callRuns(d, g, from, to, want) {
+  /** @type {{a:number,b:number,worst:CallsMinute}[]} */
+  const runs = [];
+  if (!g) return runs;
+  for (let i = Math.max(0, minuteIdx(d, from)); i < g.minutes.state.length; i++) {
+    const m = minuteAt(d, g, i);
+    if (!m || m.at >= to || !want.has(m.state)) continue;
+    const last = runs[runs.length - 1];
+    if (last && m.at - last.b <= 2 * d.step) {
+      last.b = m.at + d.step;
+      if ((m.mos ?? 9) < (last.worst.mos ?? 9)) last.worst = m;
+    } else runs.push({ a: m.at, b: m.at + d.step, worst: m });
+  }
+  return runs;
+}
+/** The highest MOS a jitter allows (callq.JitterCapMOS): 3.9 from 30 ms, 3.5 from 50 ms, 3.0 from 100 ms. */
+function jitterCapMOS(/** @type {number} */ jit) { return jit >= 100 ? 3.0 : jit >= 50 ? 3.5 : jit >= 30 ? 3.9 : Infinity; }
+function runText(/** @type {{a:number,b:number}} */ r) { return r.b - r.a <= 60e3 ? hhmm(r.a) : `${hhmm(r.a)}–${hhmm(r.b)}`; }
+/** What made a minute bad, in words: "8% packet loss", "jitter up to 45 ms" or "a slow round trip (310 ms)". */
+function minuteWhat(/** @type {CallsMinute} */ m, /** @type {string} */ factor) {
+  if (factor === 'jitter' && m.jitter_ms != null) return `jitter up to ${fmtMs(m.jitter_ms)} ms`;
+  if (factor === 'latency' && m.rtt_ms != null) return `a slow round trip (${fmtMs(m.rtt_ms)} ms)`;
+  if (m.loss != null && m.loss > 0) return `${fmtPct(m.loss)} packet loss`;
+  if (m.jitter_ms != null && m.jitter_ms >= 30) return `jitter up to ${fmtMs(m.jitter_ms)} ms`;
+  return m.rtt_ms != null ? `a slow round trip (${fmtMs(m.rtt_ms)} ms)` : 'no answers';
+}
+/** The factor (loss, jitter, latency) that costs a minute its band, as callq.Minute.Factor: "jitter" when a jitter cap set the band. */
+function minuteFactor(/** @type {CallsMinute} */ m) {
+  if (m.mos != null && Math.abs(m.mos - jitterCapMOS(m.jitter_ms ?? 0)) < 0.005) return 'jitter';
+  const rtt = m.rtt_ms ?? 0, jit = m.jitter_ms ?? 0, loss = (m.loss ?? 0) * 100;
+  const eff = rtt / 2 + 2 * jit + 10;
+  const delay = eff < 160 ? eff / 40 : (eff - 120) / 10;
+  const lossPen = 2 * Math.min(loss, 5) + 2.5 * Math.max(loss - 5, 0);
+  const jitPen = eff > 0 ? (delay * 2 * jit) / eff : 0;
+  if (lossPen >= jitPen && lossPen >= delay - jitPen) return 'loss';
+  return jitPen >= delay - jitPen ? 'jitter' : 'latency';
+}
+
+class Calls {
+  constructor() {
+    /** @type {CallsData|null} */
+    this.live = null;
+    /** @type {CallsData|null} */
+    this.day = null;
+    this.liveAt = 0;
+    this.dayAt = 0;
+    this.liveBusy = false;
+    this.dayBusy = false;
+    this.err = '';
+    this.markAgo = 0; // the Mark button's time: minutes ago (0: now)
+    this.markBusy = false;
+    this.markErr = '';
+    /** @type {{note:Note,at:number}|null} */
+    this.marked = null;
+    /** @type {number|null} "What happened at …?": the picked time; null is the last 60 minutes */
+    this.askAt = null;
+    this.askSeq = 0;
+    /** @type {Set<string>} expanded app rows */
+    this.open = new Set();
+
+    this.dot = h('span', { class: 'cq-dot', 'aria-hidden': 'true' });
+    this.headEl = h('span', { class: 'cq-state' });
+    this.statsEl = h('span', { class: 'cq-stats' });
+    this.causeEl = h('p', { class: 'cq-cause' });
+    this.updatedEl = h('span', { class: 'cq-updated muted small' });
+    this.top = h('section', { class: 'panel cq-top', 'aria-label': 'Call quality now', 'aria-live': 'polite' },
+      h('div', { class: 'cq-line' }, this.dot, this.headEl, this.statsEl,
+        whyButton('Your call path', 'fyisp sends tiny STUN requests over UDP, the way call audio and video travel, to Google, Cloudflare and Twilio servers every few seconds. They answer from the edge nearest to you, so this measures your connection to the nearest edge, not the other people on the call.')),
+      this.causeEl,
+      h('div', { class: 'cq-meta' }, this.updatedEl));
+
+    this.markBtn = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary cq-markbtn', type: 'button', text: 'Mark a bad call', onclick: () => this.mark() }));
+    this.whenSeg = h('div', { class: 'seg sm', role: 'group', 'aria-label': 'When was the bad call?' });
+    this.markOut = h('span', { class: 'cq-marked small', 'aria-live': 'polite' });
+    this.markEl = h('div', { class: 'cq-mark', hidden: true },
+      this.markBtn, h('span', { class: 'cq-when muted small', text: 'When?' }), this.whenSeg, this.markOut);
+    // On a phone the Mark bar floats at the bottom of the screen once it
+    // has been scrolled past (never over the top card); the wrapper keeps
+    // its place in the page.
+    this.markWrap = h('div', { class: 'cq-markwrap' }, this.markEl);
+    this.floating = false;
+    new IntersectionObserver((es) => {
+      for (const e of es) this.setFloat(!e.isIntersecting && e.boundingClientRect.top < 0);
+    }).observe(this.markWrap);
+
+    this.stripSum = h('p', { class: 'cq-strip-sum' });
+    this.strip = /** @type {HTMLCanvasElement} */ (h('canvas', { class: 'cq-strip', role: 'img' }));
+    this.hours = h('div', { class: 'cq-hours', 'aria-hidden': 'true' });
+    for (let x = WORK_FROM; x <= WORK_TO; x++) this.hours.append(h('span', { text: hh(x) }));
+    const chip = (/** @type {string} */ st) => h('span', {}, h('span', { class: `chip cs-${st}` }), callLabel(st));
+    this.legend = h('div', { class: 'strip-legend cq-legend' }, chip('good'), chip('fair'), chip('poor'), chip('unusable'),
+      h('span', {}, h('span', { class: 'chip cs-none' }), 'no data'));
+    this.stripBox = h('section', { class: 'panel cq-day', 'aria-label': 'Call quality during working hours' },
+      h('div', { class: 'panel-head' }, h('h2', { text: 'Working hours' }), h('span', { class: 'meta', text: `Mon–Fri ${hh(WORK_FROM)}–${hh(WORK_TO)}, local time` })),
+      this.stripSum,
+      h('div', { class: 'cq-strip-wrap' }, this.strip),
+      this.hours,
+      this.legend);
+    this.strip.addEventListener('mousemove', (e) => this.stripHover(e));
+    this.strip.addEventListener('mouseleave', hideTip);
+    this.strip.addEventListener('click', (e) => {
+      const t = this.stripTime(e);
+      if (t != null && MODE === 'local') { this.askAt = t; this.renderAskInput(); this.ask(); }
+    });
+
+    this.askIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', 'aria-label': 'Around this time' }));
+    this.askIn.addEventListener('change', () => { const t = fromLocalInput(this.askIn.value); this.askAt = isFinite(t) ? t : null; this.ask(); });
+    this.askLast = h('button', { class: 'btn sm', type: 'button', text: 'Last 60 min', onclick: () => { this.askAt = null; this.renderAskInput(); this.ask(); } });
+    this.answer = h('p', { class: 'cq-answer', 'aria-live': 'polite' });
+    this.askLinks = h('div', { class: 'cq-links' });
+    this.askBox = h('section', { class: 'panel cq-ask', 'aria-label': 'What happened at a time' },
+      h('div', { class: 'panel-head' }, h('h2', { text: 'What happened at …?' })),
+      h('div', { class: 'cq-ask-in' }, h('label', { class: 'fld' }, h('span', { text: 'Around (±15 min)' }), this.askIn), this.askLast),
+      this.answer, this.askLinks);
+
+    this.appList = h('ul', { class: 'cq-apps-list' });
+    this.appsBox = h('section', { class: 'panel cq-apps', 'aria-label': 'Call quality by app' },
+      h('div', { class: 'panel-head' }, h('h2', { text: 'By app' }), h('span', { class: 'meta', text: 'last 5 minutes' })),
+      this.appList);
+
+    // The public link shows the top card and the strip (and public notes, above).
+    if (MODE === 'public') { this.askBox.hidden = true; this.appsBox.hidden = true; }
+    this.el = h('section', { id: 'calls', class: 'calls', 'aria-label': 'Calls', hidden: true },
+      this.top, this.markWrap, this.stripBox, this.askBox, this.appsBox);
+    new ResizeObserver(() => this.drawStrip()).observe(this.strip);
+  }
+
+  /** Floats the Mark bar (phones only, while Calls is on screen and the bar is writable). */
+  setFloat(/** @type {boolean} */ on) {
+    on = on && !this.markEl.hidden && callsShown() && matchMedia('(max-width: 767.98px)').matches;
+    if (on === this.floating) return;
+    this.markWrap.style.minHeight = on ? `${this.markEl.offsetHeight}px` : '';
+    this.floating = on;
+    this.markEl.classList.toggle('float', on);
+    document.body.classList.toggle('cq-floating', on);
+  }
+
+  /** Loads both windows now (a view switch or a refresh). */
+  refresh() { return Promise.all([this.loadLive(), this.loadDay()]); }
+
+  /** Every second: reload what is due while Calls is on screen; tick the "updated" age. */
+  tick() {
+    if (!callsShown() || document.hidden) return;
+    const now = Date.now();
+    if (now - this.liveAt >= CALLS_LIVE_MS) this.loadLive();
+    if (now - this.dayAt >= CALLS_DAY_MS) this.loadDay();
+    this.renderUpdated();
+  }
+
+  async loadLive() {
+    if (this.liveBusy) return;
+    this.liveBusy = true;
+    this.liveAt = Date.now();
+    try {
+      this.live = await fetchJSON('api/calls?' + new URLSearchParams({ from: 'now-' + CALLS_LIVE_WINDOW }));
+      this.err = '';
+    } catch (e) {
+      this.err = /** @type {Error} */ (e).message;
+      this.liveAt = Date.now() - CALLS_LIVE_MS + 5000; // retry in 5 s
+    } finally {
+      this.liveBusy = false;
+    }
+    this.renderTop();
+    this.renderMark();
+    this.renderApps();
+    renderLayers(); // the Services pill counts the call apps' websites here
+  }
+
+  /** The day window: today's working hours so far and the last hour. */
+  dayRange() {
+    const now = Date.now();
+    let from = now - 3600e3;
+    const wh = workHours(now);
+    if (wh && wh[0] < from) from = wh[0];
+    return { from: Math.floor(from / 60e3) * 60e3, to: now };
+  }
+
+  async loadDay() {
+    if (this.dayBusy) return;
+    this.dayBusy = true;
+    this.dayAt = Date.now();
+    const { from } = this.dayRange();
+    try {
+      this.day = await fetchJSON('api/calls?' + new URLSearchParams({ from: String(from), to: 'now' }));
+    } catch {
+      this.dayAt = Date.now() - CALLS_DAY_MS + 10000;
+    } finally {
+      this.dayBusy = false;
+    }
+    this.renderDay();
+    this.renderApps();
+    if (this.askAt == null) this.ask();
+  }
+
+  render() {
+    this.renderTop();
+    this.renderMark();
+    this.renderDay();
+    this.renderApps();
+  }
+
+  renderUpdated() {
+    if (!this.live) { this.updatedEl.textContent = this.err ? '' : 'Loading…'; return; }
+    const age = Math.max(0, Math.round((Date.now() - this.liveAt) / 1000));
+    this.updatedEl.textContent = this.err ? `Could not update: ${this.err}` : `updated ${age < 2 ? 'just now' : `${age} s ago`}`;
+  }
+
+  renderTop() {
+    const d = this.live;
+    this.renderUpdated();
+    if (!d) {
+      this.top.className = 'panel cq-top cs-not_enough_data';
+      this.headEl.textContent = this.err ? 'Could not load the call quality' : 'Checking your call path…';
+      this.statsEl.textContent = '';
+      this.causeEl.textContent = this.err;
+      return;
+    }
+    const st = d.state;
+    const quiet = st === 'blocked' && !!d.quiet;
+    this.top.className = `panel cq-top cs-${/^[a-z_]+$/.test(st) ? st : 'other'}${quiet ? ' quiet' : ''}`;
+    const info = CALL_STATES[st] || { label: st, head: st };
+    this.headEl.textContent = quiet ? 'This network blocks call traffic (UDP)' : info.head;
+    const p = d.path;
+    const bits = [];
+    if (p && p.samples > 0 && st !== 'blocked') {
+      if (p.rtt_ms != null) bits.push(`${fmtMs(p.rtt_ms)} ms`);
+      if (p.loss != null) bits.push(`${fmtPct(p.loss)} loss`);
+      const jw = jitterWords(p.jitter_ms);
+      if (jw) bits.push(jw);
+    }
+    this.statsEl.textContent = bits.length ? '· ' + bits.join(' · ') : '';
+    this.statsEl.title = p && p.rtt_p95_ms != null ? `Over the last 5 minutes: median round trip ${fmtMs(p.rtt_ms)} ms, p95 ${fmtMs(p.rtt_p95_ms)} ms; ${p.samples} bursts of 5 requests` : '';
+    this.causeEl.textContent = this.causeText(d);
+    this.causeEl.hidden = !this.causeEl.textContent;
+  }
+
+  /** The top card's second line: why it is not good. */
+  causeText(/** @type {CallsData} */ d) {
+    const st = d.state, c = d.cause, p = d.path;
+    if (st === 'good') return '';
+    if (st === 'not_enough_data') return 'fyisp needs a few minutes of measurements of your call path.';
+    if (st === 'server_not_answering') return 'The call-path test servers stopped answering while the rest of your connection works: that is on their side.';
+    if (st === 'blocked') {
+      const why = CALL_CAUSE[c?.kind || 'udp_blocked'];
+      return d.quiet ? `It has been this way for hours (common on hotel and office networks): ${why}.` : `Blocked: ${why}.`;
+    }
+    const label = callLabel(st);
+    if (c && c.source !== 'path' && c.kind && CALL_CAUSE[c.kind]) return `${label}: ${CALL_CAUSE[c.kind]}.`;
+    if (c && c.source === 'app') {
+      // A measured app scores worse than the path: name it (its row below says the same).
+      const a = d.apps.find((x) => x.app === c.app);
+      const name = APP_TITLE[c.app || ''] || c.app;
+      if (a && a.worst) return `${label}: ${minuteWhat(a.worst, c.factor || a.factor || '')} to ${name} (worst minute ${hhmm(a.worst.at)}).`;
+      return `${label}: ${name} scores ${label.toLowerCase()}.`;
+    }
+    if (p && p.worst) {
+      const w = p.worst;
+      return `${label}: ${minuteWhat(w, c?.factor || p.factor || '')} on your call path (worst minute ${hhmm(w.at)}).`;
+    }
+    return '';
+  }
+
+  /** The "Mark a bad call" row: local and writable only. */
+  renderMark() {
+    const on = MODE === 'local' && notesOn && canWrite();
+    this.markEl.hidden = !on;
+    if (!on) return;
+    this.whenSeg.replaceChildren(...[[0, 'now'], [15, '15 min ago'], [30, '30 min ago']].map(([m, l]) => h('button', {
+      type: 'button', text: l, 'aria-pressed': String(this.markAgo === m), onclick: () => { this.markAgo = /** @type {number} */ (m); this.renderMark(); },
+    })));
+    this.markBtn.disabled = this.markBusy;
+    this.markBtn.title = this.markAgo ? `Save a private note at ${hhmm(Date.now() - this.markAgo * 60e3)} with the call stats of that minute` : 'Save a private note 2 minutes ago with the current call stats';
+    const kids = [];
+    if (this.markErr) kids.push(h('span', { class: 'perr', text: this.markErr }));
+    else if (this.marked) {
+      const m = this.marked;
+      kids.push(h('span', { text: `Saved a private note at ${hhmm(m.at)}. ` }),
+        h('button', {
+          class: 'tbtn', type: 'button', text: 'Edit note',
+          onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect(); openNoteEditor(m.note, r.left, r.bottom); },
+        }), ' ',
+        reportsOn ? h('button', { class: 'tbtn', type: 'button', text: 'Create evidence report', onclick: () => openReportDialog({ from: m.at - 30 * 60e3, to: Math.min(Date.now(), m.at + 30 * 60e3), title: `Bad call: ${fmtWhen(m.at)}` }) }) : null);
+    }
+    this.markOut.replaceChildren(...kids);
+  }
+
+  /** The call stats at t, for a note: from the live window (now) or the day's minutes. */
+  statsAt(/** @type {number} */ t) {
+    const d = this.live;
+    if (this.markAgo === 0 && d && d.path && d.path.samples > 0) {
+      const p = d.path;
+      return { state: d.state, mos: p.mos, rtt: p.rtt_ms, jitter: p.jitter_ms, loss: p.loss };
+    }
+    const day = this.day;
+    const m = day ? minuteAt(day, day.path, minuteIdx(day, t)) : null;
+    return m ? { state: m.state, mos: m.mos, rtt: m.rtt_ms, jitter: m.jitter_ms, loss: m.loss } : null;
+  }
+
+  /** One click: a private note at now − 2 min (or the picked time) with the stats only, no addresses. */
+  async mark() {
+    if (this.markBusy) return;
+    const at = Date.now() - (this.markAgo ? this.markAgo : 2) * 60e3;
+    const s = this.statsAt(at);
+    const bits = [];
+    if (s) {
+      bits.push(callLabel(s.state));
+      if (s.mos != null) bits.push(`MOS ${s.mos.toFixed(1)}`);
+      if (s.rtt != null) bits.push(`RTT ${fmtMs(s.rtt)} ms`);
+      if (s.jitter != null) bits.push(`jitter ${fmtMs(s.jitter)} ms`);
+      if (s.loss != null) bits.push(`loss ${fmtPct(s.loss)}`);
+    }
+    const text = bits.length ? `Bad call (${bits.join(', ')})` : 'Bad call';
+    this.markBusy = true;
+    this.markErr = '';
+    this.renderMark();
+    try {
+      /** @type {Note} */
+      const note = await apiWrite('POST', 'api/annotations', { at: new Date(at).toISOString(), text, public: false });
+      this.marked = { note, at };
+      loadNotes();
+    } catch (e) {
+      this.markErr = `Could not save: ${/** @type {Error} */ (e).message}`;
+    } finally {
+      this.markBusy = false;
+    }
+    this.renderMark();
+  }
+
+  renderDay() {
+    const d = this.day;
+    const now = Date.now();
+    const wh = workHours(now);
+    this.stripBox.hidden = false;
+    if (!wh) {
+      this.stripSum.textContent = `No working hours today (Mon–Fri ${hh(WORK_FROM)}–${hh(WORK_TO)}).`;
+      this.strip.parentElement?.setAttribute('hidden', '');
+      this.hours.hidden = this.legend.hidden = true;
+      return;
+    }
+    this.strip.parentElement?.removeAttribute('hidden');
+    this.hours.hidden = this.legend.hidden = false;
+    const head = `Today ${hh(WORK_FROM)}–${hh(WORK_TO)}: `;
+    if (now < wh[0]) this.stripSum.textContent = head + `starts at ${hh(WORK_FROM)}:00.`;
+    else if (!d) this.stripSum.textContent = head + 'loading…';
+    else {
+      const to = Math.min(now, wh[1]);
+      /** @type {Object<string,number>} */
+      const n = { good: 0, fair: 0, poor: 0, unusable: 0 };
+      let scored = 0;
+      for (let t = wh[0]; t < to; t += 60e3) {
+        const m = minuteAt(d, d.path, minuteIdx(d, t));
+        if (!m) continue;
+        scored++;
+        n[m.state] = (n[m.state] || 0) + 1;
+      }
+      if (!scored) this.stripSum.textContent = head + 'not enough data yet.';
+      else {
+        const pct = (/** @type {number} */ x) => `${Math.round((100 * x) / scored)}%`;
+        // Bands that round to 0% are left out.
+        const parts = [];
+        if (Math.round((100 * n.good) / scored)) parts.push(`Good ${pct(n.good)}`);
+        if (Math.round((100 * n.fair) / scored)) parts.push(`Fair ${pct(n.fair)}`);
+        const runs = callRuns(d, d.path, wh[0], to, BAD_CALL);
+        for (const r of runs.slice(0, 3)) parts.push(`${callLabel(r.worst.state)} ${runText(r)}`);
+        if (runs.length > 3) parts.push(`+${runs.length - 3} more`);
+        this.stripSum.textContent = head + parts.join(' · ');
+      }
+    }
+    this.strip.setAttribute('aria-label', this.stripSum.textContent || '');
+    this.drawStrip();
+  }
+
+  drawStrip() {
+    const wh = workHours(Date.now());
+    const c = this.strip;
+    const W = c.clientWidth, H = 20;
+    if (!wh || !W) return;
+    const dpr = window.devicePixelRatio || 1;
+    if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+    const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const total = (wh[1] - wh[0]) / 60e3;
+    const now = Date.now();
+    g.fillStyle = css('--surface-2');
+    g.fillRect(0, 0, W, H);
+    const d = this.day;
+    const none = css('--grid');
+    for (let i = 0; i < total; i++) {
+      const t = wh[0] + i * 60e3;
+      if (t >= now) break;
+      const m = d ? minuteAt(d, d.path, minuteIdx(d, t)) : null;
+      const x0 = (i / total) * W, x1 = ((i + 1) / total) * W;
+      g.fillStyle = m ? callColor(m.state) || none : none;
+      g.fillRect(x0, m ? 0 : H - 4, Math.max(1, x1 - x0 + 0.5), m ? H : 4);
+    }
+    // Hour lines.
+    g.fillStyle = css('--page');
+    for (let x = 1; x < WORK_TO - WORK_FROM; x++) g.fillRect(Math.round((x / (WORK_TO - WORK_FROM)) * W), 0, 1, H);
+    if (now > wh[0] && now < wh[1]) {
+      g.fillStyle = css('--ink');
+      g.fillRect(Math.round(((now - wh[0]) / (wh[1] - wh[0])) * W) - 1, 0, 2, H);
+    }
+  }
+
+  /** The minute under the pointer on the strip (ms), or null. */
+  stripTime(/** @type {MouseEvent} */ e) {
+    const wh = workHours(Date.now());
+    if (!wh) return null;
+    const r = this.strip.getBoundingClientRect();
+    const f = (e.clientX - r.left) / r.width;
+    if (f < 0 || f >= 1) return null;
+    const t = wh[0] + Math.floor(f * ((wh[1] - wh[0]) / 60e3)) * 60e3;
+    return t < Date.now() ? t : null;
+  }
+
+  stripHover(/** @type {MouseEvent} */ e) {
+    const t = this.stripTime(e);
+    const d = this.day;
+    if (t == null || !d) { hideTip(); return; }
+    const m = minuteAt(d, d.path, minuteIdx(d, t));
+    const nodes = [h('div', { class: 't', text: `${hhmm(t)}–${hhmm(t + 60e3)}` })];
+    if (!m) nodes.push(h('div', { class: 'muted', text: 'Not enough data for this minute' }));
+    else {
+      const sw = h('span', { class: `chip cs-${m.state}` });
+      nodes.push(h('div', { class: 'row' }, sw, h('b', { text: callLabel(m.state) }), m.mos != null ? ` · MOS ${m.mos.toFixed(2)}` : ''));
+      nodes.push(h('div', { text: [m.rtt_ms != null ? `${fmtMs(m.rtt_ms)} ms` : '', m.loss != null ? `${fmtPct(m.loss)} loss` : '', m.jitter_ms != null ? `jitter ${fmtMs(m.jitter_ms)} ms` : ''].filter(Boolean).join(' · ') }));
+    }
+    if (MODE === 'local') nodes.push(h('div', { class: 'muted', text: 'Click: what happened at this time?' }));
+    showTip(nodes, e.clientX, e.clientY);
+  }
+
+  renderAskInput() { this.askIn.value = this.askAt == null ? '' : toLocalInput(this.askAt); }
+
+  /** "What happened at …?": one sentence naming the layer at fault, from the call minutes and the incidents. */
+  async ask() {
+    if (MODE !== 'local') return;
+    const seq = ++this.askSeq;
+    const now = Date.now();
+    const a = this.askAt == null ? now - 3600e3 : this.askAt - 15 * 60e3;
+    const b = this.askAt == null ? now : Math.min(now, this.askAt + 15 * 60e3);
+    if (!(b > a)) { this.answer.textContent = 'Pick a time in the past.'; this.askLinks.replaceChildren(); return; }
+    let d = this.day;
+    /** @type {Incident[]} */
+    let incs = [];
+    try {
+      const [cd, list] = await Promise.all([
+        d && d.from <= a + 60e3 && d.to >= b - 60e3 ? d : fetchJSON('api/calls?' + new URLSearchParams({ from: String(Math.floor(a)), to: String(Math.ceil(b)) })),
+        verdict && verdict.kind === 'unknown' ? [] : fetchJSON('api/incidents?' + new URLSearchParams({ from: String(Math.floor(a)), to: String(Math.ceil(b)) })),
+      ]);
+      d = cd;
+      incs = Array.isArray(list) ? list : [];
+    } catch (e) {
+      if (seq === this.askSeq) this.answer.textContent = `Could not load: ${/** @type {Error} */ (e).message}`;
+      return;
+    }
+    if (seq !== this.askSeq || !d) return;
+    const r = explainCalls(d, a, b, incs);
+    this.answer.className = `cq-answer cs-${r.state}`;
+    this.answer.textContent = r.text;
+    const links = [h('button', { class: 'tbtn', type: 'button', text: 'Show on the charts', onclick: () => showCallsChart(r.from - 10 * 60e3, Math.min(Date.now(), r.to + 10 * 60e3)) })];
+    if (reportsOn && canWrite()) {
+      links.push(h('button', {
+        class: 'tbtn', type: 'button', text: 'Create evidence report',
+        onclick: () => openReportDialog({ from: r.from - 30 * 60e3, to: Math.min(Date.now(), r.to + 30 * 60e3), title: `Call quality: ${fmtWhen(r.from)}` }),
+      }));
+    }
+    this.askLinks.replaceChildren(...links);
+  }
+
+  renderApps() {
+    const d = this.live;
+    if (!d) { this.appList.replaceChildren(h('li', { class: 'muted cq-app-none', text: 'Loading…' })); return; }
+    const items = [];
+    for (const app of d.apps) {
+      if (app.udp !== 'measured') continue;
+      const st = app.state || 'not_enough_data';
+      const title = APP_TITLE[app.app] || app.app;
+      const stats = [];
+      if (st !== 'blocked' && st !== 'server_not_answering' && (app.samples || 0) > 0) {
+        if (app.rtt_ms != null) stats.push(`${fmtMs(app.rtt_ms)} ms`);
+        if (app.loss != null) stats.push(`${fmtPct(app.loss)} loss`);
+      }
+      const det = /** @type {HTMLDetailsElement} */ (h('details', { class: `cq-app cs-${st}` },
+        h('summary', {},
+          h('span', { class: 'cq-app-name' }, h('b', { text: title }), app.region ? h('span', { class: 'muted', text: ` via ${regionName(app.region)}` }) : null),
+          h('span', { class: `cq-badge cs-${st}`, text: callLabel(st) }),
+          h('span', { class: 'cq-app-stats', text: stats.join(' · ') })),
+        this.appDetail(app)));
+      det.open = this.open.has(app.app);
+      det.addEventListener('toggle', () => { if (det.open) this.open.add(app.app); else this.open.delete(app.app); });
+      items.push(h('li', {}, det));
+    }
+    if (!d.apps.some((x) => x.app === 'teams') && MODE === 'local') {
+      items.push(h('li', { class: 'cq-app cq-hint' }, h('b', { text: 'Teams' }), h('span', { class: 'muted' }, ' add it with ', h('code', { text: '--profile default,calls' }))));
+    }
+    const other = d.apps.filter((x) => x.udp === 'not_measurable');
+    if (other.length) {
+      const web = other.flatMap((x) => (x.web_ms != null ? [x.web_ms] : []));
+      const reach = other.some((x) => (x.web_samples || 0) > 0);
+      const allLost = reach && other.every((x) => x.web_ms == null);
+      const webText = !reach ? '' : allLost ? ' Their websites are not answering right now.' : ` Websites reachable, ${fmtMs(median(web))} ms.`;
+      items.push(h('li', { class: 'cq-app cq-other' },
+        h('b', { text: other.map((x) => APP_TITLE[x.app] || x.app).join(', ') }),
+        h('p', { class: 'muted', text: 'These apps pick a server per meeting, so they can\'t be tested ahead of a call. If your call path is Good they usually are too.' + webText })));
+    }
+    if (!items.length) items.push(h('li', { class: 'muted cq-app-none', text: 'No call apps in this profile.' }));
+    this.appList.replaceChildren(...items);
+  }
+
+  /** An app row's expanded part: MOS, jitter, p95 and the last hour's sparkline. */
+  appDetail(/** @type {CallsApp} */ app) {
+    const facts = [];
+    if (app.mos != null) facts.push(`MOS ${app.mos.toFixed(2)} (worst minute)`);
+    if (app.jitter_ms != null) facts.push(`jitter ${fmtMs(app.jitter_ms)} ms`);
+    if (app.rtt_p95_ms != null) facts.push(`p95 ${fmtMs(app.rtt_p95_ms)} ms`);
+    facts.push(`${app.samples || 0} bursts${app.unknown ? `, ${app.unknown} failed otherwise (not counted as loss)` : ''}`);
+    const box = h('div', { class: 'cq-app-more' }, h('p', { class: 'small', text: facts.join(' · ') }));
+    const d = this.day;
+    const g = d && d.apps.find((x) => x.app === app.app);
+    if (d && g && g.minutes) {
+      const spark = /** @type {HTMLCanvasElement} */ (h('canvas', { class: 'cq-spark', role: 'img', 'aria-label': `${APP_TITLE[app.app] || app.app}: call quality per minute over the last hour` }));
+      box.append(spark, h('span', { class: 'muted small', text: 'Last hour, one bar per minute: taller is better.' }));
+      requestAnimationFrame(() => drawSpark(spark, d, /** @type {CallsGroup} */ (g)));
+    }
+    return box;
+  }
+}
+
+/** A sparkline of the last hour's per-minute MOS, coloured by state. */
+function drawSpark(/** @type {HTMLCanvasElement} */ c, /** @type {CallsData} */ d, /** @type {CallsGroup} */ g) {
+  const W = c.clientWidth || 240, H = 28;
+  const dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(W * dpr);
+  c.height = Math.round(H * dpr);
+  const ctx = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const n = 60, end = minuteIdx(d, Date.now());
+  const w = W / n;
+  for (let k = 0; k < n; k++) {
+    const m = minuteAt(d, g, end - n + 1 + k);
+    if (!m || m.mos == null) { ctx.fillStyle = css('--grid'); ctx.fillRect(k * w, H - 2, Math.max(1, w - 1), 2); continue; }
+    const bh = Math.max(2, ((m.mos - 1) / 3.5) * H);
+    ctx.fillStyle = callColor(m.state);
+    ctx.fillRect(k * w, H - bh, Math.max(1, w - 1), bh);
+  }
+}
+
+/**
+ * One sentence for [a, b): the worst stretch of bad call minutes and the layer
+ * an overlapping incident blames ("14:10–14:16: 8% packet loss at your ISP
+ * edge; Wi-Fi/router fine"), or that calls were fine.
+ * @param {CallsData} d @param {number} a @param {number} b @param {Incident[]} incs
+ * @returns {{text:string,state:string,from:number,to:number}}
+ */
+function explainCalls(d, a, b, incs) {
+  const p = d.path;
+  const span = `${hhmm(a)}–${hhmm(b)}`;
+  const overlapping = (/** @type {number} */ x, /** @type {number} */ y) => incs.filter((i) => Date.parse(i.start) < y && (i.end ? Date.parse(i.end) : Date.now()) > x);
+  const blame = (/** @type {Incident[]} */ list) => {
+    for (const k of CALL_BLAME_ORDER) { const i = list.find((x) => x.kind === k); if (i) return i; }
+    return null;
+  };
+  let scored = 0;
+  /** @type {CallsMinute|null} */
+  let worst = null;
+  for (let t = a; t < b; t += 60e3) {
+    const m = minuteAt(d, p, minuteIdx(d, t));
+    if (!m) continue;
+    scored++;
+    if (!worst || (m.mos ?? 9) < (worst.mos ?? 9)) worst = m;
+  }
+  const runs = callRuns(d, p, a, b, BAD_CALL);
+  if (runs.length) {
+    const r = runs.reduce((x, y) => ((y.worst.mos ?? 9) < (x.worst.mos ?? 9) ? y : x));
+    const inc = blame(overlapping(r.a, r.b));
+    const w = r.worst;
+    if (inc && (inc.kind === 'udp_blocked' || inc.kind === 'stun_blocked')) {
+      return { text: `${runText(r)}: ${inc.kind === 'udp_blocked' ? 'UDP was' : 'the call ports (STUN) were'} blocked on this network; calls fall back to slower relays or fail.`, state: 'blocked', from: r.a, to: r.b };
+    }
+    const where = inc ? CALL_WHERE[inc.kind] || 'while fyisp saw a problem' : 'on your call path; Wi-Fi/router and ISP edge looked fine';
+    const more = runs.length > 1 ? ` (${runs.length - 1} more bad stretch${runs.length > 2 ? 'es' : ''} in this range)` : '';
+    return { text: `${runText(r)}: ${minuteWhat(w, minuteFactor(w))} ${where}${more}.`, state: w.state, from: r.a, to: r.b };
+  }
+  const inc = blame(overlapping(a, b).filter((i) => i.kind !== 'service'));
+  if (!scored) {
+    if (inc) return { text: `${span}: no call-path measurements, but ${inc.summary.replace(/^./, (c) => c.toLowerCase())}`, state: 'not_enough_data', from: a, to: b };
+    return { text: `${span}: no call-path measurements in this range.`, state: 'not_enough_data', from: a, to: b };
+  }
+  const fair = callRuns(d, p, a, b, new Set(['fair']));
+  const w = /** @type {CallsMinute} */ (worst);
+  if (fair.length) {
+    const r = fair[0];
+    return { text: `${span}: calls were mostly fine; Fair at ${runText(r)} (${minuteWhat(r.worst, minuteFactor(r.worst))})${inc ? ' ' + CALL_WHERE[inc.kind] : ''}.`, state: 'fair', from: r.a, to: r.b };
+  }
+  const total = Math.round((b - a) / 60e3);
+  const part = scored < total * 0.8 ? ` in the ${scored} of ${total} minutes measured` : ' all along';
+  return { text: `${span}: calls would have been fine. Good${part} (worst minute ${hhmm(w.at)}, MOS ${(w.mos ?? 0).toFixed(1)}).`, state: 'good', from: a, to: b };
+}
+
+/** "Show on the charts": the charts view zoomed to [from, to], scrolled to the call-path panel. */
+function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
+  state.view = 'c';
+  state.focus = null;
+  applyView();
+  zoomTo(from, to);
+  const p = panels.find((x) => !x.isPath && x.targets.some((t) => (t.tags || []).includes('udp-path')));
+  if (!p) return;
+  requestAnimationFrame(() => {
+    const bar = $('.top');
+    const top = p.el.getBoundingClientRect().top + window.scrollY - (getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0) - 8;
+    window.scrollTo({ top: Math.max(0, top) });
+  });
+}
+
 // ---------- view switch & focus ----------
 
 const viewSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'View' });
@@ -2571,24 +3317,28 @@ function setView(/** @type {string} */ v) {
   state.focus = null;
   writeHash();
   applyView();
-  if (v === 'o') ov?.load(); else loadStale();
+  if (v === 'o') ov?.load(); else if (v === 'calls') calls?.refresh(); else loadStale();
 }
 
 function renderViewBar() {
   const v = currentView();
   viewSeg.replaceChildren(
+    callsOn ? h('button', { type: 'button', text: 'Calls', 'aria-pressed': String(v === 'calls'), title: 'Is your connection good for calls?', onclick: () => setView('calls') }) : null,
     h('button', { type: 'button', text: 'Overview', 'aria-pressed': String(v === 'o'), title: 'Every target in one table and heatmap', onclick: () => setView('o') }),
     h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }));
   const hint = /** @type {HTMLElement} */ (viewBar.lastElementChild);
   const n = panels.filter((p) => !p.isPath).length;
-  hint.textContent = v === 'o' ? `${fmtInt(allTargets.filter((t) => !t.layer).length)} targets; click a row to see its chart` : `${n} chart panel${n === 1 ? '' : 's'}`;
+  hint.textContent = v === 'calls' ? 'Measured with tiny STUN tests over UDP, the path call audio and video take'
+    : v === 'o' ? `${fmtInt(allTargets.filter((t) => !t.layer).length)} targets; click a row to see its chart` : `${n} chart panel${n === 1 ? '' : 's'}`;
 }
 
 /** Applies the view and focus to the page: which panels show, the focus bar, isolation. */
 function applyView() {
   const v = currentView();
   document.body.classList.toggle('ov-on', v === 'o');
+  document.body.classList.toggle('calls-on', v === 'calls');
   if (ov) ov.el.hidden = v !== 'o';
+  if (calls) calls.el.hidden = v !== 'calls';
   const fp = focusPanel();
   for (const p of panels) {
     p.el.classList.toggle('off-view', !panelShown(p));
@@ -2861,6 +3611,7 @@ async function refreshAll() {
     else {
       // Hidden panels (the Overview is showing, or focus) load when shown.
       await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
+        callsShown() ? /** @type {Calls} */ (calls).refresh() : null,
         ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
     }
   } finally {
@@ -2933,10 +3684,12 @@ function renderVerdict() {
   $('#outages').hidden = !on;
   if (!on || !v) return;
   const info = VERDICTS[v.kind] || { label: v.kind, short: v.kind, why: '' };
-  el.className = `verdict v-${/^[a-z_]+$/.test(v.kind) ? v.kind : 'other'}`;
+  // A long-standing UDP block is information, not an alarm.
+  const quiet = !!v.quiet && v.kind in QUIET_LABEL;
+  el.className = `verdict v-${/^[a-z_]+$/.test(v.kind) ? v.kind : 'other'}${quiet ? ' quiet' : ''}`;
   const kids = [h('div', { class: 'v-head' },
     h('span', { class: 'v-dot', 'aria-hidden': 'true' }),
-    h('span', { class: 'v-kind', text: info.label }),
+    h('span', { class: 'v-kind', text: quiet ? QUIET_LABEL[/** @type {'udp_blocked'} */ (v.kind)] : info.label }),
     info.why ? whyButton(info.label, info.why) : null)];
   kids.push(h('p', { class: 'v-summary', text: v.summary || info.why }));
   const since = v.since ? Date.parse(v.since) : NaN;
@@ -2980,8 +3733,8 @@ async function loadVerdict() {
   renderVerdict();
   renderLayers();
   if (ov && ov.data && overviewShown()) ov.renderBreadth();
-  // A new verdict usually means a new (or closed) incident.
-  if (prev != null && verdict && prev !== verdict.kind) loadIncidents();
+  // A new verdict usually means a new (or closed) incident, and a new top card.
+  if (prev != null && verdict && prev !== verdict.kind) { loadIncidents(); if (callsShown()) calls?.loadLive(); }
 }
 
 // ---------- outage log ----------
@@ -3052,6 +3805,7 @@ function updateRefreshLabel() {
 function refreshMs() { return state.inv ? INV_REFRESH_MS : REFRESH_MS; }
 
 setInterval(() => {
+  calls?.tick();
   if (document.hidden || refreshing) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   // The banner is always "now", even when zoomed; it is cheap to poll.
@@ -3296,10 +4050,15 @@ async function main() {
   const groups = [...prof.groups].sort((/** @type {Group} */ a, /** @type {Group} */ b) => Number(b.id === PATH_GROUP) - Number(a.id === PATH_GROUP));
   panels = groups.map((/** @type {Group} */ g) => new Panel(g, targets.filter((t) => t.group === g.id)));
   bigProfile = targets.filter((t) => !t.layer).length > OVERVIEW_MIN;
+  callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
+  const pathUDP = targets.filter((t) => (t.tags || []).includes('udp-path'));
+  callsDefault = callsOn && (String(prof.name || '').split(',').some((n) => n === 'default' || n === 'calls') ||
+    (pathUDP.length > 0 && targets.filter((t) => !t.layer && !pathUDP.includes(t)).length <= OVERVIEW_MIN));
   ov = new Overview();
-  // The path panel on top, then the view switch, then the Overview or the charts.
+  calls = callsOn ? new Calls() : null;
+  // The path panel on top, then the view switch, then Calls, the Overview or the charts (Calls moves above the path panel, see style.css).
   const path = panels.filter((p) => p.isPath).map((p) => p.el);
-  $('#panels').replaceChildren(...path, viewBar, focusBar, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
+  $('#panels').replaceChildren(...path, viewBar, focusBar, calls ? calls.el : '', ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
   if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {

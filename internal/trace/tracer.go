@@ -35,8 +35,12 @@ const (
 	hopRefresh         = 24 * time.Hour
 	// growRounds is how many rounds in a row the destination must answer
 	// only past its known TTL, behind silent hops, before the route counts
-	// as longer (see round).
-	growRounds = 5
+	// as longer (see round). Under heavy loss the probe at the destination's
+	// own TTL is often lost while a higher TTL reaches it: at 40% loss, 5
+	// rounds in a row happen about once every 2 minutes at a 2s interval
+	// (0.4^5 ≈ 1%), 10 rounds once every few days (0.4^10 ≈ 1e-4). A real
+	// longer route still shows within 10 rounds.
+	growRounds = 10
 )
 
 // Options configures a Tracer. Zero fields use the defaults.

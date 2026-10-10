@@ -44,7 +44,8 @@ import (
 // Trace may be nil: the trace routes then answer 404 and the UI hides the
 // Investigate view. Annotations, Reports and Baselines may be nil: their
 // routes then answer 404 and the UI hides notes, reports and "normal"
-// badges. Slow may be nil (no "slower than your normal" line).
+// badges. Slow may be nil (no "slower than your normal" line). UDP may be
+// nil (no live state of the UDP targets, e.g. the Teams relay's region).
 type Deps struct {
 	Profile func() *model.Profile
 	Store   store.Reader
@@ -63,7 +64,11 @@ type Deps struct {
 	// Slow lists targets currently slower than their normal (the verdict
 	// engine's baseline comparison), worst first.
 	Slow func() []SlowTarget
-	Log  *slog.Logger
+	// UDP reports the live state of the UDP (STUN) targets: the relay
+	// region from the name's CNAME and address-change epochs (the probe
+	// runner: probe.Runner implements probe.UDPStateSource).
+	UDP probe.UDPStateSource
+	Log *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }

@@ -51,6 +51,9 @@ func New(o Options) Runner {
 			return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
 		}
 	}
+	if o.LookupCNAME == nil {
+		o.LookupCNAME = net.DefaultResolver.LookupCNAME
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -61,17 +64,45 @@ func New(o Options) Runner {
 		o.UserAgent = defaultUserAgent
 	}
 	silenceHTTP2Noise()
-	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep, lookups: make(chan struct{}, maxLookups)}
+	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep, lookups: make(chan struct{}, maxLookups), udpTimeout: udpTimeout}
 }
 
 type runner struct {
-	o       Options
-	caps    Caps
-	sleep   func(context.Context, time.Duration) bool
-	lookups chan struct{} // semaphore: at most maxLookups lookups in flight
+	o          Options
+	caps       Caps
+	sleep      func(context.Context, time.Duration) bool
+	lookups    chan struct{} // semaphore: at most maxLookups lookups in flight
+	udpTimeout time.Duration // per STUN request (tests: shorter)
+	// udp lists the UDP targets of the running profile, for UDPState.
+	udp atomic.Pointer[[]udpTarget]
+}
+
+type udpTarget struct {
+	name string
+	host *hostState
 }
 
 func (r *runner) Caps() Caps { return r.caps }
+
+// UDPState implements UDPStateSource: nil until Run starts.
+func (r *runner) UDPState() []UDPState {
+	ts := r.udp.Load()
+	if ts == nil {
+		return nil
+	}
+	out := make([]UDPState, 0, len(*ts))
+	for _, t := range *ts {
+		st := UDPState{Target: t.name, Epoch: t.host.epoch.Load()}
+		if reg := t.host.region.Load(); reg != nil {
+			st.Region = *reg
+		}
+		if ns := t.host.changedAt.Load(); ns != 0 {
+			st.ChangedAt = time.Unix(0, ns).UTC()
+		}
+		out = append(out, st)
+	}
+	return out
+}
 
 func (r *runner) timeout(k model.ProbeKind) time.Duration {
 	switch {
@@ -111,6 +142,7 @@ type series struct {
 	sessions tls.ClientSessionCache
 	iv       time.Duration
 	phase    time.Duration
+	udp      udpSock // KindUDP: the long-lived socket
 }
 
 // Run probes every target of p until ctx is done, then returns nil. Samples
@@ -146,6 +178,7 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 		return hs
 	}
 	var all []*series
+	var udps []udpTarget
 	n := len(p.Targets)
 	for i, t := range p.Targets {
 		iv := t.Interval
@@ -176,18 +209,34 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 				}
 				s.iv = iv / 3
 				s.phase = phaseOf(i, n, s.iv, 0.25)
-			default:
+			case model.KindUDP:
+				if t.Port <= 0 {
+					continue // validated: UDP targets set a port
+				}
+				s.port = t.Port
+				s.phase = phaseOf(i, n, iv, 0.75)
+				s.host.wantCNAME = true
+				udps = append(udps, udpTarget{name: t.Name, host: s.host})
+			default: // the UDP sibling kinds are written by KindUDP's bursts
 				continue
 			}
 			all = append(all, s)
 		}
 	}
 
+	r.udp.Store(&udps)
+
 	// Resolve every host once before the first probe, then keep them fresh.
 	var wg sync.WaitGroup
 	for _, hs := range hosts {
 		wg.Add(1)
-		go func() { defer wg.Done(); r.resolve(ctx, hs) }()
+		go func() {
+			defer wg.Done()
+			r.resolve(ctx, hs)
+			if hs.wantCNAME && !hs.literal {
+				r.resolveCNAME(ctx, hs)
+			}
+		}()
 	}
 	wg.Wait()
 	for _, hs := range hosts {
@@ -203,6 +252,20 @@ func (r *runner) Run(ctx context.Context, p *model.Profile, sink model.Sink) err
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if s.key.Kind == model.KindUDP {
+				defer s.udp.close()
+				schedule(ctx, c, s.iv, s.phase, func(slot time.Time) {
+					smps, ok := r.probeUDP(ctx, s)
+					if !ok || ctx.Err() != nil {
+						return
+					}
+					for _, smp := range smps { // one slot for the three siblings
+						smp.Slot = slot
+						sink.Observe(smp)
+					}
+				})
+				return
+			}
 			schedule(ctx, c, s.iv, s.phase, func(slot time.Time) {
 				smp, ok := r.probe(ctx, s, png)
 				if !ok || ctx.Err() != nil {
@@ -449,6 +512,13 @@ type hostState struct {
 	special  string // model.HostGateway or model.HostEdge: resolved per probe from Options.Path
 	cur      atomic.Pointer[resolution]
 	onChange []func() // called when the address changes
+	// epoch counts address changes, changedAt is the last one (unix ns).
+	epoch     atomic.Uint64
+	changedAt atomic.Int64
+	// wantCNAME: a UDP target probes this host; region is the relay region
+	// from its CNAME (see cnameRegion), refreshed with every lookup.
+	wantCNAME bool
+	region    atomic.Pointer[string]
 }
 
 // resolution: ip is valid when known; err is set when the last lookup
@@ -553,6 +623,8 @@ func (r *runner) resolve(ctx context.Context, hs *hostState) {
 	hs.cur.Store(next)
 	if prev != nil && prev.ip.IsValid() && next.ip != prev.ip {
 		r.o.Log.Debug("address changed", "host", hs.name, "from", prev.ip, "to", next.ip)
+		hs.epoch.Add(1)
+		hs.changedAt.Store(time.Now().UnixNano())
 		for _, f := range hs.onChange {
 			f()
 		}
@@ -571,6 +643,10 @@ func (r *runner) resolveLoop(ctx context.Context, hs *hostState) {
 			return
 		}
 		r.resolve(ctx, hs)
+		if hs.wantCNAME {
+			// Separate from Lookup, which only returns addresses.
+			r.resolveCNAME(ctx, hs)
+		}
 	}
 }
 

@@ -52,6 +52,8 @@ type verdictJSON struct {
 	Evidence map[string]float64 `json:"evidence,omitempty"`
 	// Slow lists targets slower than their normal (Deps.Slow), worst first.
 	Slow []slowJSON `json:"slow,omitempty"`
+	// Quiet: a long-standing udp_blocked/stun_blocked, shown as information.
+	Quiet bool `json:"quiet,omitempty"`
 }
 
 // incidentJSON is one /api/incidents item. End is omitted while ongoing.
@@ -89,7 +91,7 @@ func (s *server) verdict() verdictJSON {
 		return verdictJSON{Kind: VerdictUnknown}
 	}
 	v := s.d.Verdict.Current()
-	out := verdictJSON{Kind: v.Kind, Summary: v.Summary, Targets: v.Targets, Slow: s.slow()}
+	out := verdictJSON{Kind: v.Kind, Summary: v.Summary, Targets: v.Targets, Slow: s.slow(), Quiet: v.Quiet}
 	if out.Kind == "" {
 		out.Kind = VerdictUnknown
 	}

@@ -1,0 +1,82 @@
+provider: calls-stun
+display: Call path (STUN)
+kind: service
+category: [voice]
+sources:
+  - https://knowledge.workspace.google.com/admin/meet/prepare-your-network-for-meet-meetings-and-live-streams
+  - https://developers.cloudflare.com/realtime/turn/
+  - https://developers.cloudflare.com/realtime/turn/faq/
+  - https://www.twilio.com/docs/stun-turn
+  - https://www.twilio.com/en-us/stun-turn/pricing
+  - https://learn.microsoft.com/en-us/microsoftteams/microsoft-teams-online-call-flows
+  - https://learn.microsoft.com/en-us/microsoft-365/enterprise/office-365-network-mac-perf-onboarding-tool
+notes: >-
+  Public STUN servers on the UDP path call audio and video use. fyisp sends STUN Binding
+  Requests only (RFC 5389, 20 bytes, no attributes): every 5 s a burst of 5 requests 20 ms
+  apart on one long-lived socket per target, and records the median RTT, jitter and loss.
+  Never TURN, never an allocation, no credentials. Google's stun.l.google.com is the STUN
+  server Chrome and Meet use (anycast, inside Meet's published media range; 3478 is the
+  fallback where 19302 is blocked). Cloudflare's STUN service is documented as free and
+  unlimited; its port 53 answers STUN too, which tells "STUN ports blocked" from "UDP
+  blocked". Twilio's global name is GeoDNS to the nearest of its regions (see twilio.yml).
+  The Teams Transport Relay is GeoDNS (Azure Traffic Manager), not anycast: its CNAME names
+  the Azure region it landed in, and it can switch region between lookups. It is opt-in
+  (the calls profile), not in default. Every endpoint answered 2/2 Binding Requests from a
+  Frankfurt-area vantage point on 2026-10-10.
+targets:
+  # Anycast Google edge; 3.4 ms from Frankfurt. Responses carry XOR-MAPPED-ADDRESS only.
+  - name: Meet-STUN
+    host: stun.l.google.com
+    kinds: [udp]
+    port: 19302
+    region: global
+    anycast: true
+    tags: [udp-path, app:meet]
+    verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 3.4}
+  # The same host on the standard STUN port, for networks that block 19302.
+  - name: Meet-STUN-3478
+    host: stun.l.google.com
+    kinds: [udp]
+    port: 3478
+    region: global
+    anycast: true
+    tags: [udp-path, app:meet]
+    verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 3.5}
+  # Anycast; 1.4 ms from Frankfurt (a local Cloudflare PoP).
+  - name: Cloudflare-STUN
+    host: stun.cloudflare.com
+    kinds: [udp]
+    port: 3478
+    region: global
+    anycast: true
+    tags: [udp-path]
+    verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 1.4}
+  # STUN on UDP 53: still answers where STUN ports are blocked but UDP is not.
+  - name: Cloudflare-UDP53
+    host: stun.cloudflare.com
+    kinds: [udp]
+    port: 53
+    interval: 15s
+    region: global
+    anycast: true
+    tags: [udp-path, udp-53]
+    verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 1.4}
+  # GeoDNS to the nearest Twilio region (de1 from Frankfurt, 26 ms).
+  - name: Twilio-STUN-global
+    host: global.stun.twilio.com
+    kinds: [udp]
+    port: 3478
+    region: global
+    anycast: true
+    tags: [udp-path]
+    verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 26.4}
+  # Teams Transport Relay, GeoDNS (CNAME ...<azure-region>.cloudapp.azure.com); landed in
+  # westeurope from Frankfurt, 56-59 ms. Only 3478 answers unauthenticated STUN.
+  - name: Teams-Relay
+    host: worldaz.tr.teams.microsoft.com
+    kinds: [udp]
+    port: 3478
+    region: global
+    anycast: true
+    tags: [udp-path, app:teams]
+    verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 56.2, cname: b-tr-teamsc-euwe-03.westeurope.cloudapp.azure.com}

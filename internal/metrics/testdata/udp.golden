@@ -1,0 +1,19 @@
+# HELP fyisp_probe_lost_total Probes lost, by failure reason.
+# TYPE fyisp_probe_lost_total counter
+fyisp_probe_lost_total{kind="udp",name="Cloudflare-UDP53",reason="refused"} 1
+fyisp_probe_lost_total{kind="udp",name="Twilio-STUN-global",reason="timeout"} 1
+# HELP fyisp_probe_samples_total Probes completed (successful or lost).
+# TYPE fyisp_probe_samples_total counter
+fyisp_probe_samples_total{kind="udp",name="Cloudflare-UDP53"} 1
+fyisp_probe_samples_total{kind="udp",name="Meet-STUN"} 2
+fyisp_probe_samples_total{kind="udp",name="Twilio-STUN-global"} 2
+# HELP fyisp_udp_jitter_seconds Jitter of the latest STUN burst (mean difference of consecutive round trips) in seconds; absent while the latest burst got fewer than 2 answers.
+# TYPE fyisp_udp_jitter_seconds gauge
+fyisp_udp_jitter_seconds{name="Meet-STUN",target="stun.l.google.com"} 0.003
+# HELP fyisp_udp_loss_ratio Share of the latest STUN burst's requests that timed out (0 to 1); absent after a socket error.
+# TYPE fyisp_udp_loss_ratio gauge
+fyisp_udp_loss_ratio{name="Meet-STUN",target="stun.l.google.com"} 0.2
+fyisp_udp_loss_ratio{name="Twilio-STUN-global",target="global.stun.twilio.com"} 1
+# HELP fyisp_udp_rtt_seconds Median round trip of the latest STUN burst in seconds; absent while the latest burst got no answer.
+# TYPE fyisp_udp_rtt_seconds gauge
+fyisp_udp_rtt_seconds{name="Meet-STUN",target="stun.l.google.com"} 0.022

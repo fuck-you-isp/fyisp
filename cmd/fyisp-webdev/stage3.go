@@ -24,7 +24,7 @@ const slowFor = 45 * time.Minute
 // slowSink multiplies the RTT of the slowdown targets from `since` on.
 func slowSink(inner model.Sink, since time.Time) model.Sink {
 	return model.SinkFunc(func(s model.Sample) {
-		if f, ok := slowdown[s.Key.Target]; ok && !s.Lost && !s.Slot.Before(since) {
+		if f, ok := slowdown[s.Key.Target]; ok && !s.Lost && !s.Slot.Before(since) && s.Key.Kind != model.KindUDPLoss {
 			s.RTT = time.Duration(float64(s.RTT) * f)
 		}
 		inner.Observe(s)

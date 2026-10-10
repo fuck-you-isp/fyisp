@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 )
 
@@ -48,7 +51,7 @@ func TestLoadProfileFlags(t *testing.T) {
 		}
 	}
 	c, _ := parseFlags([]string{"--no-path"})
-	if p, _ := loadProfile(c); len(p.Targets) != 87 || p.Groups[0].ID == profile.PathGroup {
+	if p, _ := loadProfile(c); len(p.Targets) != 91 || p.Groups[0].ID == profile.PathGroup {
 		t.Errorf("--no-path: %d targets", len(p.Targets))
 	}
 	c, _ = parseFlags([]string{"--profile", "nope"})
@@ -93,7 +96,7 @@ func TestCmdProfiles(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	s := out.String()
-	for _, want := range []string{"PROFILE", "default", "87", "hyperscalers", "europe", "gaming", "all", "PROVIDER"} {
+	for _, want := range []string{"PROFILE", "default", "91", "hyperscalers", "europe", "gaming", "all", "calls", "PROVIDER"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("list lacks %q:\n%s", want, s)
 		}
@@ -106,7 +109,7 @@ func TestCmdProfiles(t *testing.T) {
 	if code := cmdProfiles([]string{"default"}, &out, &errb); code != 0 {
 		t.Fatal(code)
 	}
-	if s := out.String(); !strings.Contains(s, "Profile default: 87 targets in 7 panels") || !strings.Contains(s, "dev-GitHub  github.com/robots.txt") {
+	if s := out.String(); !strings.Contains(s, "Profile default: 91 targets in 8 panels") || !strings.Contains(s, "dev-GitHub  github.com/robots.txt") {
 		t.Errorf("default:\n%s", s)
 	}
 
@@ -131,5 +134,39 @@ func TestCmdProfiles(t *testing.T) {
 	}
 	if code := cmdProfiles([]string{"--geo", "mars"}, &out, &errb); code != 2 {
 		t.Errorf("bad geo: %d", code)
+	}
+}
+
+// TestNoUDP: --no-udp drops every UDP (STUN) target from the default, a
+// named profile and a --config file, and empty groups with them.
+func TestNoUDP(t *testing.T) {
+	c, err := parseFlags([]string{"--no-udp"})
+	if err != nil || !c.noUDP {
+		t.Fatalf("%+v %v", c, err)
+	}
+	hasUDP := func(p *model.Profile) bool {
+		return slices.ContainsFunc(p.Targets, func(tg model.Target) bool { return tg.IsUDP() })
+	}
+	p, err := loadProfile(c)
+	if err != nil || hasUDP(p) || len(p.Targets) != 87+5 || slices.ContainsFunc(p.Groups, func(g model.Group) bool { return g.ID == "calls" }) {
+		t.Fatalf("default --no-udp: %v, %d targets", err, len(p.Targets))
+	}
+	c, _ = parseFlags([]string{"--profile", "calls", "--no-udp"})
+	if p, err := loadProfile(c); err != nil || hasUDP(p) || len(p.Targets) < 10 {
+		t.Fatalf("calls --no-udp: %v", err)
+	}
+	c, _ = parseFlags([]string{"--profile", "calls"})
+	if p, err := loadProfile(c); err != nil || !hasUDP(p) {
+		t.Fatalf("calls: %v", err)
+	}
+	c, _ = parseFlags([]string{"--profile", "twilio", "--no-udp"})
+	if _, err := loadProfile(c); err == nil || !strings.Contains(err.Error(), "--no-udp leaves profile twilio without targets") {
+		t.Fatalf("twilio --no-udp: %v", err)
+	}
+	f := filepath.Join(t.TempDir(), "p.yml")
+	os.WriteFile(f, []byte("extends: [default]\nadd: [{name: mine, host: stun.example.com, port: 3478, group: calls, kinds: [udp], interval: 6s}]\n"), 0o600)
+	c, _ = parseFlags([]string{"--config", f, "--no-udp"})
+	if p, err := loadProfile(c); err != nil || hasUDP(p) {
+		t.Fatalf("--config --no-udp: %v", err)
 	}
 }

@@ -1,5 +1,5 @@
-// Package probe measures targets over HTTPS, TCP and ICMP without elevated
-// privileges and reports results to a model.Sink.
+// Package probe measures targets over HTTPS, TCP, ICMP and UDP (STUN, see
+// stun.go) without elevated privileges and reports results to a model.Sink.
 package probe
 
 import (
@@ -24,7 +24,7 @@ type Caps struct {
 
 // Options configures a Runner.
 type Options struct {
-	Timeout      time.Duration // per probe; when zero: 3s for TCP/ICMP (at most the interval), 5s for HTTPS; when set: all kinds
+	Timeout      time.Duration // per probe; when zero: 3s for TCP/ICMP (at most the interval), 5s for HTTPS; when set: all kinds but UDP (always 1s per request)
 	ResolveEvery time.Duration // default 60s
 	RetryResolve time.Duration // default 10s while a host's last lookup failed
 	// Lookup resolves a hostname to IPv4 addresses (tests: a stub).
@@ -33,11 +33,15 @@ type Options struct {
 	// A host keeps its last good address when a lookup fails; after
 	// DNSFailLimit consecutive failed lookups its probes are lost with
 	// model.ReasonDNS until a lookup succeeds again.
-	Lookup    func(ctx context.Context, host string) ([]netip.Addr, error)
-	Now       func() time.Time // wall clock for slot assignment; default time.Now
-	Log       *slog.Logger     // default slog.Default()
-	UserAgent string           // HTTPS User-Agent, default "fyisp"
-	TLSConfig *tls.Config      // HTTPS client TLS config (tests: custom roots); cloned per target
+	Lookup func(ctx context.Context, host string) ([]netip.Addr, error)
+	// LookupCNAME returns a host's canonical name (tests: a stub). It runs
+	// for the hosts of UDP targets only, alongside Lookup, to report the
+	// relay region (see UDPState). Default: net.DefaultResolver.LookupCNAME.
+	LookupCNAME func(ctx context.Context, host string) (string, error)
+	Now         func() time.Time // wall clock for slot assignment; default time.Now
+	Log         *slog.Logger     // default slog.Default()
+	UserAgent   string           // HTTPS User-Agent, default "fyisp"
+	TLSConfig   *tls.Config      // HTTPS client TLS config (tests: custom roots); cloned per target
 	// Path resolves the special hosts model.HostGateway and model.HostEdge
 	// (typically netinfo.Watcher.Current), on every probe. Targets with a
 	// special host are probed over ICMP only. When Path is nil, or the

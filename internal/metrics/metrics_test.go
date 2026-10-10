@@ -458,7 +458,7 @@ func TestVerdictGauges(t *testing.T) {
 	})
 	m := scrape(t, c)
 	f := m["fyisp_verdict"]
-	if f == nil || f.typ != "gauge" || len(f.samples) != 8 {
+	if f == nil || f.typ != "gauge" || len(f.samples) != 11 {
 		t.Fatalf("fyisp_verdict: %+v", f)
 	}
 	for _, s := range f.samples {
@@ -548,5 +548,137 @@ func TestVsNormalGauge(t *testing.T) {
 	c.SetVsNormalSource(nil)
 	if m := scrape(t, c); m["fyisp_rtt_vs_normal"] != nil {
 		t.Fatal("fyisp_rtt_vs_normal after removing the source")
+	}
+}
+
+// ---- UDP (STUN bursts) ----
+
+func udpProfile() *model.Profile {
+	p := testProfile()
+	udp := []model.ProbeKind{model.KindUDP}
+	p.Targets = append(p.Targets,
+		model.Target{Name: "Meet-STUN", Host: "stun.l.google.com", Port: 19302, Kinds: udp, Tags: []string{"udp-path"}},
+		model.Target{Name: "Twilio-STUN-global", Host: "global.stun.twilio.com", Port: 3478, Kinds: udp, Tags: []string{"udp-path"}},
+		model.Target{Name: "Cloudflare-UDP53", Host: "stun.cloudflare.com", Port: 53, Kinds: udp, Tags: []string{"udp-path", "udp-53"}},
+	)
+	return p
+}
+
+// burst returns the three sibling samples of one burst, as probe.burstSamples
+// writes them: rtt 0 = no answer (timeout), jitter < 0 = not measured,
+// reason != 0 = a socket error (all three lost).
+func burst(target string, rtt, jitter time.Duration, lossPct int, reason model.Reason) []model.Sample {
+	at := time.Now()
+	key := func(k model.ProbeKind) model.SeriesKey { return model.SeriesKey{Target: target, Kind: k} }
+	out := []model.Sample{{Key: key(model.KindUDP), Slot: at, RTT: rtt}, {Key: key(model.KindUDPJitter), Slot: at, RTT: jitter},
+		{Key: key(model.KindUDPLoss), Slot: at, RTT: time.Duration(lossPct) * time.Millisecond}}
+	switch {
+	case reason != 0:
+		for i := range out {
+			out[i].RTT, out[i].Lost, out[i].Reason = 0, true, reason
+		}
+		return out
+	case rtt == 0:
+		out[0].Lost, out[0].Reason = true, model.ReasonTimeout
+	}
+	if jitter < 0 {
+		out[1].RTT, out[1].Lost, out[1].Reason = 0, true, model.ReasonGap
+	}
+	return out
+}
+
+func observeUDP(c *Collector) {
+	for _, b := range [][]model.Sample{
+		burst("Meet-STUN", 21500*time.Microsecond, 1250*time.Microsecond, 0, 0),
+		burst("Meet-STUN", 22*time.Millisecond, 3*time.Millisecond, 20, 0),
+		burst("Twilio-STUN-global", 26*time.Millisecond, -1, 80, 0), // one answer: no jitter
+		burst("Twilio-STUN-global", 0, -1, 100, 0),                  // no answer
+		burst("Cloudflare-UDP53", 0, 0, 0, model.ReasonRefused),     // socket error
+	} {
+		for _, s := range b {
+			c.Observe(s)
+		}
+	}
+}
+
+func rawScrape(t *testing.T, c *Collector) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	c.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /metrics = %d", rec.Code)
+	}
+	return rec.Body.String()
+}
+
+// familyLines returns the exposition lines (HELP, TYPE and samples) of the
+// families whose name starts with one of prefixes, in order.
+func familyLines(text string, prefixes ...string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		name := line
+		if strings.HasPrefix(line, "# HELP ") || strings.HasPrefix(line, "# TYPE ") {
+			name = strings.Fields(line)[2]
+		}
+		for _, p := range prefixes {
+			if strings.HasPrefix(name, p) {
+				b.WriteString(line + "\n")
+				break
+			}
+		}
+	}
+	return b.String()
+}
+
+// TestUDPGolden pins the UDP series byte for byte (testdata/udp.golden):
+// the latest burst's RTT, jitter and loss (absent when not measured), and
+// one sample per burst under kind "udp" (none for the siblings).
+func TestUDPGolden(t *testing.T) {
+	c := New(func() *model.Profile {
+		p := udpProfile()
+		p.Targets = p.Targets[3:] // UDP targets only: fyisp_probe_* is theirs
+		return p
+	})
+	observeUDP(c)
+	got := familyLines(rawScrape(t, c), "fyisp_udp_", "fyisp_probe_")
+	want, err := os.ReadFile("testdata/udp.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(want) {
+		t.Errorf("UDP series differ from testdata/udp.golden; got:\n%s", got)
+	}
+}
+
+// TestUDPLeavesPingUnchanged: UDP samples change nothing in ping_* (byte
+// for byte), nor in the other kinds' series.
+func TestUDPLeavesPingUnchanged(t *testing.T) {
+	icmpOnly := func(c *Collector) {
+		c.Observe(sample("Google-Meet", model.KindICMP, 1735*time.Microsecond))
+		c.Observe(lost("AWS-me-south-1", model.KindICMP, model.ReasonTimeout))
+		c.Observe(sample("TCP-only", model.KindTCP, 12*time.Millisecond))
+	}
+	a := New(udpProfile)
+	icmpOnly(a)
+	b := New(udpProfile)
+	icmpOnly(b)
+	observeUDP(b)
+	ta, tb := rawScrape(t, a), rawScrape(t, b)
+	if pa, pb := familyLines(ta, "ping_"), familyLines(tb, "ping_"); pa != pb || !strings.Contains(pa, "ping_rtt_seconds{") {
+		t.Errorf("ping_* changed by UDP samples:\n%s\nvs\n%s", pa, pb)
+	}
+	if pa, pb := familyLines(ta, "fyisp_tcp_", "fyisp_https_"), familyLines(tb, "fyisp_tcp_", "fyisp_https_"); pa != pb {
+		t.Errorf("tcp/https series changed by UDP samples:\n%s\nvs\n%s", pa, pb)
+	}
+	if strings.Contains(tb, `kind="udp_jitter"`) || strings.Contains(tb, `kind="udp_loss"`) {
+		t.Error("UDP siblings counted as probes")
+	}
+}
+
+func TestVerdictKindsComplete(t *testing.T) {
+	for _, k := range []model.VerdictKind{model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded} {
+		if !slices.Contains(verdictKinds, k) {
+			t.Errorf("verdictKinds lacks %s", k)
+		}
 	}
 }

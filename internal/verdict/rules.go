@@ -86,7 +86,9 @@ import (
 //  5. dns: ≥ 30% of the internet targets lose ≥ 20% of probes (and at
 //     least 2) to DNS.
 //  6. service: some internet targets are unhealthy.
-//  7. ok.
+//  7. udp_blocked, stun_blocked, udp_degraded: the call path (UDP) rules
+//     of udp.go.
+//  8. ok.
 //
 // Innermost lossy layer (rules 2-4). Loss on an inner link shows on every
 // layer beyond it too, and while the one-minute window fills after the
@@ -681,6 +683,11 @@ var generic = map[model.VerdictKind]string{
 	model.VerdictDNS:       "Name lookups are failing.",
 	model.VerdictService:   "Some monitored services look affected.",
 	model.VerdictNoNetwork: "This device has no working network connection.",
+
+	// The call path (UDP).
+	model.VerdictUDPBlocked:  "UDP is blocked or failing on this network: calls will fall back to slower TCP relays.",
+	model.VerdictSTUNBlocked: "Call ports (STUN) are blocked on this network: some call apps may fall back to slower relays.",
+	model.VerdictUDPDegraded: "Calls may sound choppy: the UDP path to call services is losing packets or jittery.",
 }
 
 // clean is the last guard: a summary that still looks like it carries an

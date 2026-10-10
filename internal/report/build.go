@@ -165,7 +165,8 @@ func (g *group) loss() float64 {
 }
 
 // primaryKind is the kind charted for a target: ICMP on the network path,
-// else TCP, HTTPS or ICMP, whichever it has first.
+// else TCP, HTTPS or ICMP, whichever it has first; for a UDP target its
+// bursts' median RTT (KindUDP).
 func primaryKind(t model.Target) model.ProbeKind {
 	ks := t.ProbeKinds()
 	if t.Group == profile.PathGroup && slices.Contains(ks, model.KindICMP) {

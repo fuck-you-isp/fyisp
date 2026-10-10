@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +33,11 @@ import (
 //     test CA for the "good" addresses and svc.fyisp.test, a self-signed one
 //     for badTLSAddr;
 //   - DNS on dnsAddr:53/udp: svc.fyisp.test and www.fyisp.test ->
-//     dnsTargetAddr, NXDOMAIN for everything else.
+//     dnsTargetAddr, stun.provider-a.test and stun.provider-b.test ->
+//     stunAddr, NXDOMAIN for everything else;
+//   - STUN (RFC 5389) on stunAddr, UDP ports stunPorts: a Binding Success
+//     carrying XOR-MAPPED-ADDRESS mappedAddr:mappedPort for every Binding
+//     Request (udp_test.go checks that fyisp never shows it).
 //
 // ICMP echo is answered by the kernel.
 
@@ -39,7 +45,28 @@ const (
 	responderEnv = "FYISP_NETNS_RESPONDER" // set to the directory holding the certificates
 	dnsName      = "svc.fyisp.test"
 	dnsName2     = "www.fyisp.test" // a second name for the same address (TestVerdict)
+
+	// Two STUN "providers" (different registrable domains, which is how
+	// fyisp tells providers apart), both served by the responder on stunAddr.
+	stunNameA  = "stun.provider-a.test"
+	stunNameB  = "stun.provider-b.test"
+	stunPortA  = 3478 // stun-a (provider A)
+	stunPortB  = 3479 // stun-b (provider B)
+	stunPort53 = 53   // stun-53 (provider B, tagged udp-53)
+	mappedPort = 40077
 )
+
+// mappedAddr is the "public address" the STUN responder reports.
+var (
+	mappedAddr = netip.MustParseAddr("198.51.100.77")
+	stunPorts  = []int{stunPortA, stunPortB, stunPort53}
+)
+
+// dnsRecords are the names the test resolver answers.
+var dnsRecords = map[string]netip.Addr{
+	dnsName: dnsTargetAddr, dnsName2: dnsTargetAddr,
+	stunNameA: stunAddr, stunNameB: stunAddr,
+}
 
 // writeCerts creates the test CA (ca.pem, trusted by fyisp via
 // SSL_CERT_FILE), the server certificate it signs (good.pem/good.key) and an
@@ -151,6 +178,13 @@ func runResponder(dir string) {
 		log.Fatal(err)
 	}
 	go serveDNS(pc)
+	for _, port := range stunPorts {
+		pc, err := net.ListenPacket("udp4", net.JoinHostPort(stunAddr.String(), strconv.Itoa(port)))
+		if err != nil {
+			log.Fatal(err)
+		}
+		go serveSTUN(pc)
+	}
 	fmt.Println("responder ready") // the test waits for this line
 	select {}
 }
@@ -173,7 +207,7 @@ func serveDNS(pc net.PacketConn) {
 		}
 		rh := dnsmessage.Header{ID: h.ID, Response: true, Authoritative: true, RecursionDesired: h.RecursionDesired, RecursionAvailable: true}
 		name := strings.ToLower(strings.TrimSuffix(q.Name.String(), "."))
-		known := name == dnsName || name == dnsName2
+		addr, known := dnsRecords[name]
 		if !known {
 			rh.RCode = dnsmessage.RCodeNameError
 		}
@@ -184,12 +218,41 @@ func serveDNS(pc net.PacketConn) {
 		if known && q.Type == dnsmessage.TypeA && q.Class == dnsmessage.ClassINET {
 			_ = b.StartAnswers()
 			_ = b.AResource(dnsmessage.ResourceHeader{Name: q.Name, Class: dnsmessage.ClassINET, TTL: 5},
-				dnsmessage.AResource{A: dnsTargetAddr.As4()})
+				dnsmessage.AResource{A: addr.As4()})
 		}
 		out, err := b.Finish()
 		if err != nil {
 			continue
 		}
+		_, _ = pc.WriteTo(out, from)
+	}
+}
+
+// serveSTUN answers every Binding Request on pc with a Binding Success
+// (RFC 5389) that carries XOR-MAPPED-ADDRESS mappedAddr:mappedPort, like a
+// public STUN server telling the client its public address.
+func serveSTUN(pc net.PacketConn) {
+	const cookie = 0x2112A442
+	buf := make([]byte, 1500)
+	for {
+		n, from, err := pc.ReadFrom(buf)
+		if err != nil {
+			log.Fatal(err)
+		}
+		req := buf[:n]
+		if n < 20 || binary.BigEndian.Uint16(req[0:2]) != 0x0001 || binary.BigEndian.Uint32(req[4:8]) != cookie {
+			continue
+		}
+		out := make([]byte, 20+12)
+		binary.BigEndian.PutUint16(out[0:2], 0x0101)   // Binding Success
+		binary.BigEndian.PutUint16(out[2:4], 12)       // one attribute
+		copy(out[4:20], req[4:20])                     // magic cookie, transaction ID
+		binary.BigEndian.PutUint16(out[20:22], 0x0020) // XOR-MAPPED-ADDRESS
+		binary.BigEndian.PutUint16(out[22:24], 8)
+		out[25] = 0x01 // IPv4
+		binary.BigEndian.PutUint16(out[26:28], mappedPort^(cookie>>16))
+		a := mappedAddr.As4()
+		binary.BigEndian.PutUint32(out[28:32], binary.BigEndian.Uint32(a[:])^cookie)
 		_, _ = pc.WriteTo(out, from)
 	}
 }

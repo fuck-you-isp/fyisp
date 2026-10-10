@@ -93,6 +93,7 @@ type config struct {
 	profiles      profileNames
 	geos          geoList
 	noPath        bool
+	noUDP         bool
 	openBrowser   bool
 	adminToken    string
 	allowHosts    hostList
@@ -157,6 +158,7 @@ func parseFlags(args []string) (config, error) {
 	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: default)")
 	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
+	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls when --listen is not loopback")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
@@ -285,6 +287,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	defer st.Close() // last: final save, checkpoint, release the lock
 
 	mc := metrics.New(func() *model.Profile { return prof })
+	mos := metrics.NewCallMOS(func() *model.Profile { return prof })
+	mc.Register(mos)
 	// Warm-up counts ordinary targets only (path targets may never report).
 	warm := web.Warmup{Only: map[string]bool{}}
 	for _, t := range prof.Targets {
@@ -355,6 +359,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		Share: share,
 		Log:   log,
 	}
+	deps.UDP, _ = runner.(probe.UDPStateSource)
 	localAddr := localLn.Addr().String()
 	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: c.adminToken, ExtraHosts: c.allowHosts}))
 	publicSrv := newServer(web.Public(deps, secret))
@@ -393,7 +398,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	probeDone := make(chan struct{})
 	go func() {
 		defer close(probeDone)
-		if err := runner.Run(ctx, prof, model.Fanout{st, mc, eng, &warm}); err != nil {
+		if err := runner.Run(ctx, prof, model.Fanout{st, mc, mos, eng, &warm}); err != nil {
 			log.Error("probing stopped", "err", err)
 			stop()
 		}

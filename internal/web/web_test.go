@@ -212,6 +212,24 @@ func TestPublicRoutes(t *testing.T) {
 			t.Errorf("%s %s: missing security headers: %v", c.method, c.path, hd)
 		}
 	}
+	// The Calls view's API: GET only (a fresh handler: the cases above use
+	// up the global burst).
+	h = Public(d, testSecret)
+	for i, c := range []struct {
+		method, path string
+		code         int
+	}{
+		{"GET", base + "api/calls", 200},
+		{"GET", base + "api/calls?from=now-24h&to=now", 200},
+		{"HEAD", base + "api/calls", 200},
+		{"POST", base + "api/calls", 405},
+		{"PUT", base + "api/calls", 405},
+		{"GET", base + "api/calls?kind=udp", 400},
+	} {
+		if w := do(h, c.method, c.path, pubHdr(i)); w.Code != c.code {
+			t.Errorf("%s %s = %d, want %d (%s)", c.method, c.path, w.Code, c.code, w.Body.String())
+		}
+	}
 }
 
 // portLeak matches the planted port 8443 as a number of its own (":8443",
@@ -231,7 +249,7 @@ func TestPublicRedaction(t *testing.T) {
 	base := "/s/" + testSecret + "/"
 	paths := []string{"", "api/status", "api/profile", "api/panel?group=common", "api/panel?group=lan&from=now-90d",
 		"api/verdict", "api/incidents", "api/incidents?from=now-90d", "api/incidents?from=x",
-		"api/panel.csv?group=lan", "api/overview", "api/overview?kind=icmp&from=now-90d", "api/overview?kind=x", "static/app.js", "static/style.css", "nope", "api/panel?group=bad", "api/panel?from=x"}
+		"api/panel.csv?group=lan", "api/overview", "api/overview?kind=icmp&from=now-90d", "api/overview?kind=x", "api/calls", "api/calls?from=now-90d", "api/calls?from=x", "static/app.js", "static/style.css", "nope", "api/panel?group=bad", "api/panel?from=x"}
 	check := func(p string) {
 		w := do(h, "GET", base+p, map[string]string{"Cf-Connecting-Ip": "198.51.100.7"})
 		body := w.Body.String()
@@ -250,6 +268,7 @@ func TestPublicRedaction(t *testing.T) {
 	check("api/panel?group=lan&points=77")
 	check("api/panel.csv?group=lan&points=77")
 	check("api/overview?kind=tcp&from=now-77m")
+	check("api/calls?from=now-77m")
 
 	var st map[string]any
 	w := do(h, "GET", base+"api/status", map[string]string{"Cf-Connecting-Ip": "198.51.100.8"})
@@ -671,7 +690,8 @@ func TestProfileNoHosts(t *testing.T) {
 }
 
 // TestProfileTCPOnly: with the default profile, /api/profile lists TCP as
-// the only kind of every service target, and the network path keeps ICMP.
+// the only kind of every service target but the STUN targets (UDP, with
+// their tags), and the network path keeps ICMP.
 func TestProfileTCPOnly(t *testing.T) {
 	def, err := profile.Default()
 	if err != nil {
@@ -684,9 +704,14 @@ func TestProfileTCPOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(b), &p); err != nil {
 		t.Fatal(err)
 	}
-	var path, services int
+	var path, services, udp int
 	for _, tg := range p.Targets {
 		switch {
+		case slices.Equal(tg.Kinds, []string{"udp"}):
+			udp++
+			if !slices.Contains(tg.Tags, "udp-path") || (tg.Interval != 5000 && tg.Interval != 15000) {
+				t.Errorf("%s: tags %v interval %d", tg.Name, tg.Tags, tg.Interval)
+			}
 		case tg.Layer == "":
 			services++
 			if !slices.Equal(tg.Kinds, []string{"tcp"}) || tg.Interval != 15000 {
@@ -698,8 +723,11 @@ func TestProfileTCPOnly(t *testing.T) {
 			path++
 		}
 	}
-	if services != 87 || path != 5 {
-		t.Errorf("%d services, %d path targets", services, path)
+	if services != 87 || path != 5 || udp != 4 {
+		t.Errorf("%d services, %d path targets, %d UDP targets", services, path, udp)
+	}
+	if !strings.Contains(b, `"name":"Microsoft-Teams","group":"common","kinds":["tcp"],"interval_ms":15000,"provider":"common","provider_title":"Common Services (\u003c100ms is good for audio/video calls)","tags":["app:teams"]`) {
+		t.Errorf("tags missing from /api/profile: %s", b)
 	}
 }
 

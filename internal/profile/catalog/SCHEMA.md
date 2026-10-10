@@ -17,8 +17,9 @@ notes: >-                          # why these endpoints; rate/ToS notes; caveat
 targets:
   - name: AWS-us-east-1            # globally unique; [A-Za-z0-9._-], <= 40 chars; keep existing names where they exist
     host: dynamodb.us-east-1.amazonaws.com
-    kinds: [tcp]                   # [tcp] once a TCP connect worked; [] while unreachable (kept, never probed)
-    port: 443                      # optional TCP port, default 443
+    kinds: [tcp]                   # [tcp] once a TCP connect worked; [udp] for a STUN server (see below); [] while unreachable (kept, never probed)
+    port: 443                      # optional TCP port, default 443; required for udp
+    interval: 30s                  # udp targets only: default 5s; whole seconds dividing 1h
     host_overrides:                # optional: connect to another host than `host`
       tcp: other.example.com
     region: us-east-1              # provider's own region/datacenter id
@@ -51,3 +52,41 @@ Rules for choosing endpoints:
 - Regional endpoints must really be **in** that region (not a global anycast or
   CDN front); mark anycast ones `anycast: true`.
 - Set `kinds: [tcp]` only when a TCP connect actually worked in your checks.
+
+## UDP (STUN) targets
+
+A target with `kinds: [udp]` measures the UDP path call audio and video use.
+fyisp sends **STUN Binding Requests only** (RFC 5389: 20 bytes, no
+attributes, no credentials): every `interval` (default 5 s) a burst of 5
+requests 20 ms apart on one long-lived socket, and stores the median
+round-trip time, the jitter and the loss. It never sends TURN requests,
+never allocates a relay, and never decodes the public address the server
+reports back.
+
+```yaml
+  - name: Cloudflare-STUN
+    host: stun.cloudflare.com
+    kinds: [udp]                   # alone: a UDP target has no other kind
+    port: 3478                     # required
+    interval: 5s                   # optional, default 5s; e.g. 30s for regional targets
+    region: global
+    anycast: true
+    tags: [udp-path]               # udp-path: counts for "your call path"; app:<name> maps it to an app
+    verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 1.4}
+```
+
+Rules for STUN targets:
+- **Documented public STUN servers only:** a vendor that publishes the host
+  for clients to use without credentials (Google's `stun.l.google.com`,
+  Cloudflare, Twilio) or that its own clients and network test tools use
+  unauthenticated (the Teams Transport Relay). No community STUN lists.
+- **No TURN, no relays that need credentials,** and no media ports that only
+  work inside a call.
+- `kinds: [udp]` only after a Binding Request got a Binding Success in your
+  own checks; keep checks to a few requests per endpoint.
+- `tags`: `udp-path` for every STUN target; `app:teams`, `app:meet`, ... when
+  it stands for one app's media path. TCP targets of call apps carry the same
+  `app:*` tags, which the `calls` profile selects.
+- Keep the load small: 5 tiny packets per interval. Regional targets use
+  `interval: 30s`.
+

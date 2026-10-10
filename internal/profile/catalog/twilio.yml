@@ -1,0 +1,26 @@
+provider: twilio
+display: Twilio STUN regions
+kind: service
+category: [voice]
+sources:
+  - https://www.twilio.com/docs/stun-turn
+  - https://www.twilio.com/docs/stun-turn/api
+  - https://www.twilio.com/docs/stun-turn/regions
+  - https://www.twilio.com/en-us/stun-turn/pricing
+notes: >-
+  Twilio Network Traversal Service STUN, one fixed region each (hosted on AWS EC2; the
+  documented edge names such as frankfurt.stun.twilio.com resolve to the same pools).
+  STUN is documented as free in every region. Probed with STUN Binding Requests only (no
+  TURN, no credentials), a burst of 5 every 30 s: a world map of the UDP path for calls
+  that land in another region. Every region answered 2/2 Binding Requests from a
+  Frankfurt-area vantage point on 2026-10-10.
+targets:
+  - {name: Twilio-us1, host: us1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: us1, city: Ashburn, country: US, geo: na, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 104.1}}
+  - {name: Twilio-us2, host: us2.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: us2, city: Umatilla, country: US, geo: na, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 173.1}}
+  - {name: Twilio-ie1, host: ie1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: ie1, city: Dublin, country: IE, geo: eu, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 39.5}}
+  - {name: Twilio-de1, host: de1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: de1, city: Frankfurt, country: DE, geo: eu, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 26.4}}
+  - {name: Twilio-sg1, host: sg1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: sg1, city: Singapore, country: SG, geo: as, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 257.2}}
+  - {name: Twilio-jp1, host: jp1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: jp1, city: Tokyo, country: JP, geo: as, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 262.3}}
+  - {name: Twilio-au1, host: au1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: au1, city: Sydney, country: AU, geo: oc, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 313.1}}
+  - {name: Twilio-br1, host: br1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: br1, city: Sao Paulo, country: BR, geo: sa, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 190.6}}
+  - {name: Twilio-in1, host: in1.stun.twilio.com, kinds: [udp], port: 3478, interval: 30s, region: in1, city: Mumbai, country: IN, geo: as, tags: [udp-path], verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 136.4}}

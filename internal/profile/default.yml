@@ -1,4 +1,4 @@
-# fyisp default profile: 87 targets in 7 groups (one dashboard panel each).
+# fyisp default profile: 91 targets in 8 groups (one dashboard panel each).
 # Target names are identities: renaming one starts a new time series.
 # The built-in "Network path" group (gateway, ISP edge, anycast resolvers) is
 # added in code, before these groups (see package profile).
@@ -10,6 +10,12 @@
 #
 # One target per group has `trace: true`: an always-on traceroute every 5s
 # (per-hop loss and latency, route changes).
+#
+# The "calls" group measures the UDP path call audio and video use: STUN
+# Binding Requests (`kinds: [udp]`, a burst of 5 every `interval`) to public
+# STUN servers. They are the same targets as in catalog/calls-stun.yml (a
+# test keeps them equal); the Teams relay is there too, but opt-in only
+# (`--profile default,calls`).
 name: default
 version: "1"
 
@@ -35,14 +41,17 @@ groups:
   - id: gcp
     title: "Google Cloud Platform"
     order: 7
+  - id: calls
+    title: "Call path (UDP)"
+    order: 8
 
 targets:
   # Common Services (<100ms is good for audio/video calls)
   # lens.l.google.com does not answer on TCP 443: TCP (and HTTPS, for files
   # that add it) goes to meet.google.com.
-  - {name: Google-Meet, host: lens.l.google.com, group: common, host_overrides: {https: meet.google.com, tcp: meet.google.com}}
-  - {name: Microsoft-Teams, host: teams.microsoft.com, group: common}
-  - {name: Discord, host: discord.gg, group: common, trace: true}
+  - {name: Google-Meet, host: lens.l.google.com, group: common, host_overrides: {https: meet.google.com, tcp: meet.google.com}, tags: [app:meet]}
+  - {name: Microsoft-Teams, host: teams.microsoft.com, group: common, tags: [app:teams]}
+  - {name: Discord, host: discord.gg, group: common, trace: true, tags: [app:discord]}
   # DNS
   - {name: google-dns, host: 8.8.8.8, group: dns}
   - {name: cloudflare-dns, host: 1.1.1.1, group: dns, trace: true}
@@ -134,3 +143,8 @@ targets:
   - {name: GCP-europe-north1, host: storage.europe-north1.rep.googleapis.com, group: gcp}
   - {name: GCP-europe-southwest1, host: storage.europe-southwest1.rep.googleapis.com, group: gcp}
   - {name: GCP-europe-central2, host: storage.europe-central2.rep.googleapis.com, group: gcp}
+  # Call path (UDP): STUN bursts, see catalog/calls-stun.yml
+  - {name: Meet-STUN, host: stun.l.google.com, port: 19302, group: calls, kinds: [udp], interval: 5s, tags: [udp-path, app:meet]}
+  - {name: Cloudflare-STUN, host: stun.cloudflare.com, port: 3478, group: calls, kinds: [udp], interval: 5s, tags: [udp-path]}
+  - {name: Cloudflare-UDP53, host: stun.cloudflare.com, port: 53, group: calls, kinds: [udp], interval: 15s, tags: [udp-path, udp-53]}
+  - {name: Twilio-STUN-global, host: global.stun.twilio.com, port: 3478, group: calls, kinds: [udp], interval: 5s, tags: [udp-path]}
