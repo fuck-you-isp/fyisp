@@ -1,6 +1,7 @@
 package verdict
 
 import (
+	"cmp"
 	"slices"
 	"testing"
 	"time"
@@ -297,12 +298,24 @@ func TestUDPDegraded(t *testing.T) {
 		want    bool
 		summary string
 		loss    float64
+		late    time.Duration // how late after 3 minutes of the fault it may come (default 45s)
 	}{
 		{name: "loss on 2 providers", want: true, loss: 0.2,
 			fx:      []behavior{targets(between(2*time.Minute, 0, lossy), "Meet-STUN", "Twilio-STUN-global")},
 			summary: "Calls may sound choppy: the UDP path to 2 call services shows up to 20% packet loss, while the rest of your connection looks fine."},
 		{name: "jitter on 2 providers", want: true,
 			fx:      []behavior{targets(between(2*time.Minute, 0, jittery), "Cloudflare-STUN", "Twilio-STUN-global")},
+			summary: "Calls may sound choppy: the UDP path to 2 call services shows up to 45 ms of jitter, while the rest of your connection looks fine."},
+		// Jitter that dips under the threshold for 40s every 100s: the
+		// breaks are shorter than udpPoorGrace and do not restart the clock
+		// (it fires once 3 minutes have passed outside a break).
+		{name: "jitter with short breaks", want: true, late: 2 * time.Minute,
+			fx: []behavior{targets(between(2*time.Minute, 0, func(at time.Time) outcome {
+				if at.Sub(t0)%(100*time.Second) < 40*time.Second {
+					return outcome{rtt: 30 * time.Millisecond, jitter: 2 * time.Millisecond}
+				}
+				return jittery(at)
+			}), "Cloudflare-STUN", "Twilio-STUN-global")},
 			summary: "Calls may sound choppy: the UDP path to 2 call services shows up to 45 ms of jitter, while the rest of your connection looks fine."},
 		{name: "one provider", fx: []behavior{targets(between(2*time.Minute, 0, lossy), "Meet-STUN")}},
 		{name: "one provider, 2 targets", fx: []behavior{targets(between(2*time.Minute, 0, lossy), "Cloudflare-STUN", "Cloudflare-UDP53")}},
@@ -321,7 +334,8 @@ func TestUDPDegraded(t *testing.T) {
 				return
 			}
 			at, ok := first[model.VerdictUDPDegraded]
-			if !ok || at < 2*time.Minute+udpDegradedFor || at > 2*time.Minute+udpDegradedFor+45*time.Second {
+			late := cmp.Or(c.late, 45*time.Second)
+			if !ok || at < 2*time.Minute+udpDegradedFor || at > 2*time.Minute+udpDegradedFor+late {
 				t.Fatalf("udp_degraded first at %v (%v); seen %v", at, ok, first)
 			}
 			v := h.e.Current()

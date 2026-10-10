@@ -30,7 +30,9 @@ import (
 //     verdict is marked Quiet (hotel and office networks block UDP for
 //     good); it stays Quiet until the verdict ends.
 //  2. udp_degraded: ≥ 2 providers of udp-path targets are poor, and have
-//     been for ≥ 3 minutes. A target is poor over the last minute when it
+//     been for ≥ 3 minutes (breaks shorter than a minute do not restart
+//     the 3 minutes: near a threshold, a 1-minute window dips under it now
+//     and then, and the condition would otherwise flap). A target is poor over the last minute when it
 //     has ≥ 2 measured bursts, at least one answered, and either loses
 //     ≥ 5% of its requests (the mean of its bursts' loss) or has a median
 //     burst jitter ≥ 30 ms (callq.JitterFairMs, the jitter at which the
@@ -63,7 +65,8 @@ const (
 	udpLossPoor     = 0.05               // mean burst loss that makes a target poor
 	udpJitterPoorMs = callq.JitterFairMs // median burst jitter (ms) that makes a target poor (the Calls Fair cap)
 	udpMinBursts    = 2                  // measured bursts a target needs in the window to be judged poor
-	udpDegradedFor  = 3 * time.Minute    // poor providers must stay poor this long
+	udpDegradedFor  = 3 * time.Minute    // poor providers must stay poor this long ...
+	udpPoorGrace    = time.Minute        // ... where shorter breaks do not restart it
 	tagUDPPath      = "udp-path"         // targets on the call path
 	tagUDP53        = "udp-53"           // STUN on UDP port 53
 )
@@ -186,12 +189,17 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 			nPoor++
 		}
 	}
-	if nPoor >= udpMinProviders {
+	switch {
+	case nPoor >= udpMinProviders:
 		if e.udpPoorSince.IsZero() {
 			e.udpPoorSince = now
 		}
-	} else {
-		e.udpPoorSince = time.Time{}
+		e.udpPoorGap = time.Time{}
+	case e.udpPoorSince.IsZero():
+	case e.udpPoorGap.IsZero():
+		e.udpPoorGap = now
+	case now.Sub(e.udpPoorGap) >= udpPoorGrace:
+		e.udpPoorSince, e.udpPoorGap = time.Time{}, time.Time{}
 	}
 	if j.v.Kind != model.VerdictOK {
 		return

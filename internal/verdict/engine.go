@@ -116,10 +116,12 @@ type engine struct {
 	candSince time.Time
 	okSince   time.Time // start of the current streak of ok evaluations
 
-	// udpPoorSince: since when ≥ 2 providers are poor (udp_degraded);
+	// udpPoorSince: since when ≥ 2 providers are poor (udp_degraded),
+	// udpPoorGap: since when they no longer are (reset after udpPoorGrace);
 	// blockedSince: since when the current verdict is a blocked kind
-	// (Quiet). Both zero when not.
+	// (Quiet). All zero when not.
 	udpPoorSince time.Time
+	udpPoorGap   time.Time
 	blockedSince time.Time
 
 	open      *model.Incident
