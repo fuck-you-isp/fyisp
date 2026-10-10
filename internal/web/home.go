@@ -59,9 +59,12 @@ const (
 var homeCategory = profile.HomeCategory
 
 // homeName is a target's display name: never a host.
-// homeName is a target's display name: its call app's title when it has
-// one, else its name with "-" as spaces. Never a host.
+// homeName is a target's display name: displayNames, else its call app's
+// title, else its name with "-" as spaces. Never a host.
 func homeName(t model.Target) string {
+	if n := displayNames[t.Name]; n != "" {
+		return n
+	}
 	for _, tag := range t.Tags {
 		if id, ok := strings.CutPrefix(tag, callq.TagApp); ok && appTitles[id] != "" {
 			return appTitles[id]
@@ -447,12 +450,13 @@ func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]
 	t := HomeTile{ID: id, Title: cp.tileTitle(id), Names: []string{}, Total: len(ts), Details: "#v=o&ot=" + id}
 	for _, x := range ts {
 		if len(t.Names) < homeMaxNames {
-			t.Names = append(t.Names, homeName(x))
+			n, _ := strings.CutPrefix(homeName(x), cdnPrefix) // under the Websites title, the CDN's name alone
+			t.Names = append(t.Names, n)
 		} else {
 			t.More++
 		}
 	}
-	measured, failing := 0, 0
+	measured, failing, dead := 0, 0, 0
 	var affected []string
 	for _, r := range rows {
 		switch r.State {
@@ -462,6 +466,9 @@ func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]
 			t.OK++
 		case stateFailing:
 			failing++
+			if r.N == 0 {
+				dead++ // nothing got through: not answering at all
+			}
 			affected = append(affected, names[r.Target])
 		default:
 			affected = append(affected, names[r.Target])
@@ -482,8 +489,8 @@ func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]
 		t.State = tileSlow
 	}
 	t.Level = map[string]string{tileWorking: levelGood, tileMostly: levelWarn, tileSlow: levelWarn, tileDown: levelBad, tileChecking: levelChecking}[t.State]
-	t.Label = cp.tileLabel(t.State, id == tileOther)
-	t.Note = cp.tileNote(t.State, affected, failing, measured)
+	t.Label = cp.tileLabel(t.State, id == tileOther, 2*dead >= measured)
+	t.Note = cp.tileNote(t.State, affected, failing, dead, measured)
 	return t
 }
 
@@ -1065,7 +1072,7 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 		return nil, err
 	} else if c != nil && c.Path != nil {
 		callRuns = callMinuteRuns(c, incs, cp)
-		work = workCalls(c, today, now)
+		work = workCalls(c, incs, today, now)
 	}
 
 	for d := days - 1; d >= 0; d-- {
@@ -1303,7 +1310,9 @@ func callMinuteRuns(c *callsJSON, incs []homeIncident, cp homeCopy) []HomeRun {
 }
 
 // workCalls is today's call quality in working hours so far.
-func workCalls(c *callsJSON, today, now time.Time) *HomeWorkCalls {
+// Minutes while the network blocked call traffic don't count: calls take
+// a relay then, which this can't judge.
+func workCalls(c *callsJSON, incs []homeIncident, today, now time.Time) *HomeWorkCalls {
 	if wd := today.Weekday(); wd == time.Saturday || wd == time.Sunday {
 		return nil
 	}
@@ -1312,7 +1321,7 @@ func workCalls(c *callsJSON, today, now time.Time) *HomeWorkCalls {
 	good := 0
 	for i, st := range c.Path.Minutes.State {
 		t := c.Start + int64(i)*c.Step
-		if st == "" || t < wf || t >= wt || t >= now.UnixMilli() {
+		if st == "" || t < wf || t >= wt || t >= now.UnixMilli() || blockedAt(incs, t) {
 			continue
 		}
 		w.Measured++
@@ -1418,6 +1427,13 @@ func (s *server) homeAt(ctx context.Context, at time.Time, voice string, now tim
 	} else if out.Level != levelGood {
 		out.Who = whoCallTraffic
 	}
+	if inc != nil && (inc.Kind == model.VerdictUDPBlocked || inc.Kind == model.VerdictSTUNBlocked) && callRank(worst) <= callRank(string(callq.Poor)) {
+		out.Calls, worst = callBlocked, callBlocked // the block, not the call quality
+	}
+	if !hasCallPath(prof) {
+		out.Measured = true // nothing to say about calls; the incidents answer
+		worst = ""
+	}
 	out.Headline, out.Cause = cp.atWords(out.Measured, worst, inc != nil, out.Who, out.Kind)
 	return out, nil
 }
@@ -1431,4 +1447,25 @@ func incidentRank(k model.VerdictKind) int {
 		}
 	}
 	return 99
+}
+
+// blockedAt reports a UDP or STUN block incident at t (ms).
+func blockedAt(incs []homeIncident, t int64) bool {
+	for _, in := range incs {
+		if in.Kind != model.VerdictUDPBlocked && in.Kind != model.VerdictSTUNBlocked {
+			continue
+		}
+		if t >= in.Start.UnixMilli() && (in.End.IsZero() || t < in.End.UnixMilli()) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasCallPath reports a profile with STUN targets on the call path.
+func hasCallPath(p *model.Profile) bool {
+	if p == nil {
+		return false
+	}
+	return slices.ContainsFunc(p.Targets, callq.IsCorePath)
 }

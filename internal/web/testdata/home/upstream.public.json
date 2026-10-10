@@ -1,0 +1,384 @@
+{
+  "at_5_minutes_ago": {
+    "part": "at",
+    "voice": "public",
+    "at": 1791549000000,
+    "time": 1791548700000,
+    "from": 1791547800000,
+    "to": 1791549000000,
+    "measured": true,
+    "calls": "unusable",
+    "bad_from": 1791548400000,
+    "bad_to": 1791549000000,
+    "level": "bad",
+    "who": "beyond",
+    "kind": "upstream",
+    "headline": "Calls would have broken up",
+    "cause": "The home network and the provider's nearest equipment looked fine. The problem was further out on the internet.",
+    "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
+    "fact_at": 1791548400000
+  },
+  "history_today": {
+    "part": "history",
+    "voice": "public",
+    "at": 1791549000000,
+    "tz": 120,
+    "span": "d",
+    "from": 1791496800000,
+    "to": 1791549000000,
+    "first_data": 1791030600000,
+    "days": [
+      {
+        "date": "2026-10-09",
+        "from": 1791496800000,
+        "to": 1791549000000,
+        "work_from": 1791529200000,
+        "work_to": 1791558000000,
+        "runs": [
+          {
+            "from": 1791548400000,
+            "to": 1791549000000,
+            "level": "bad",
+            "who": "beyond",
+            "kind": "upstream",
+            "label": "Further out",
+            "source": "incident",
+            "incident": 31,
+            "ongoing": true
+          }
+        ],
+        "off": []
+      }
+    ],
+    "summary": "1 problem today, further out on the internet.",
+    "counts": {
+      "problems": 1,
+      "home": 0,
+      "provider": 0,
+      "beyond": 1,
+      "dns": 0,
+      "app": 0,
+      "calltraffic": 0,
+      "offline": 0
+    },
+    "problems": [
+      {
+        "id": 31,
+        "from": 1791548400000,
+        "ongoing": true,
+        "kind": "upstream",
+        "who": "beyond",
+        "where": "Further out than the provider's first hop",
+        "peak_loss": 0.6,
+        "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
+      }
+    ],
+    "work": {
+      "measured": 330,
+      "bad": 10,
+      "good": 0.97
+    }
+  },
+  "history_week": {
+    "part": "history",
+    "voice": "public",
+    "at": 1791549000000,
+    "tz": 120,
+    "span": "w",
+    "from": 1790978400000,
+    "to": 1791549000000,
+    "first_data": 1791030600000,
+    "days": [
+      {
+        "date": "2026-10-03",
+        "from": 1790978400000,
+        "to": 1791064800000,
+        "runs": [],
+        "off": []
+      },
+      {
+        "date": "2026-10-04",
+        "from": 1791064800000,
+        "to": 1791151200000,
+        "runs": [],
+        "off": []
+      },
+      {
+        "date": "2026-10-05",
+        "from": 1791151200000,
+        "to": 1791237600000,
+        "work_from": 1791183600000,
+        "work_to": 1791212400000,
+        "runs": [],
+        "off": []
+      },
+      {
+        "date": "2026-10-06",
+        "from": 1791237600000,
+        "to": 1791324000000,
+        "work_from": 1791270000000,
+        "work_to": 1791298800000,
+        "runs": [],
+        "off": []
+      },
+      {
+        "date": "2026-10-07",
+        "from": 1791324000000,
+        "to": 1791410400000,
+        "work_from": 1791356400000,
+        "work_to": 1791385200000,
+        "runs": [],
+        "off": []
+      },
+      {
+        "date": "2026-10-08",
+        "from": 1791410400000,
+        "to": 1791496800000,
+        "work_from": 1791442800000,
+        "work_to": 1791471600000,
+        "runs": [],
+        "off": []
+      },
+      {
+        "date": "2026-10-09",
+        "from": 1791496800000,
+        "to": 1791549000000,
+        "work_from": 1791529200000,
+        "work_to": 1791558000000,
+        "runs": [
+          {
+            "from": 1791548400000,
+            "to": 1791549000000,
+            "level": "bad",
+            "who": "beyond",
+            "kind": "upstream",
+            "label": "Further out",
+            "source": "incident",
+            "incident": 31,
+            "ongoing": true
+          }
+        ],
+        "off": []
+      }
+    ],
+    "summary": "1 problem this week, further out on the internet.",
+    "counts": {
+      "problems": 1,
+      "home": 0,
+      "provider": 0,
+      "beyond": 1,
+      "dns": 0,
+      "app": 0,
+      "calltraffic": 0,
+      "offline": 0
+    },
+    "problems": [
+      {
+        "id": 31,
+        "from": 1791548400000,
+        "ongoing": true,
+        "kind": "upstream",
+        "who": "beyond",
+        "where": "Further out than the provider's first hop",
+        "peak_loss": 0.6,
+        "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
+      }
+    ],
+    "work": {
+      "measured": 330,
+      "bad": 10,
+      "good": 0.97
+    }
+  },
+  "live": {
+    "part": "live",
+    "voice": "public",
+    "at": 1791549000000,
+    "answer": {
+      "level": "bad",
+      "who": "beyond",
+      "confidence": "sure",
+      "kind": "upstream",
+      "calls": "unusable",
+      "since": 1791548400000,
+      "headline": "Calls will break up",
+      "cause": "The home network and the provider's nearest equipment look fine. The problem is further out: either the provider's links to the rest of the internet, or a wider outage.",
+      "try": [],
+      "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
+      "fact_at": 1791548700000,
+      "announce": "Calls will break up. The home network and the provider's nearest equipment look fine."
+    },
+    "path": [
+      {
+        "id": "device",
+        "label": "Monitoring device",
+        "state": "ok",
+        "words": "OK"
+      },
+      {
+        "id": "router",
+        "label": "Home router",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The router that connects the home to the internet."
+      },
+      {
+        "id": "provider",
+        "label": "Provider network",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The provider's first piece of equipment past the home router."
+      },
+      {
+        "id": "internet",
+        "label": "The wider internet",
+        "state": "bad",
+        "words": "Not answering",
+        "blamed": true,
+        "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
+      },
+      {
+        "id": "apps",
+        "label": "Apps \u0026 websites",
+        "state": "bad",
+        "words": "Most aren't answering",
+        "tooltip": "The apps and websites checked from this connection."
+      }
+    ],
+    "tiles": [
+      {
+        "id": "calls",
+        "title": "Calls",
+        "level": "bad",
+        "state": "unusable",
+        "label": "Calls will break up",
+        "names": [
+          "Teams",
+          "Google Meet",
+          "Zoom"
+        ],
+        "more": 4,
+        "affected": [
+          "Google Meet"
+        ],
+        "ok": 6,
+        "total": 7,
+        "details": "#v=calls"
+      },
+      {
+        "id": "work",
+        "title": "Work apps",
+        "level": "bad",
+        "state": "down",
+        "label": "Unreliable",
+        "note": "6 of 6 aren't loading reliably from here.",
+        "names": [
+          "Outlook",
+          "Microsoft 365",
+          "Microsoft sign-in"
+        ],
+        "more": 3,
+        "affected": [
+          "Outlook",
+          "Microsoft 365",
+          "Microsoft sign-in",
+          "Gmail",
+          "Google Docs",
+          "Google Drive"
+        ],
+        "ok": 0,
+        "total": 6,
+        "details": "#v=o\u0026ot=work"
+      },
+      {
+        "id": "web",
+        "title": "Websites",
+        "level": "bad",
+        "state": "down",
+        "label": "Unreliable",
+        "note": "5 of 5 aren't loading reliably from here.",
+        "names": [
+          "Cloudflare",
+          "Akamai",
+          "Fastly"
+        ],
+        "more": 2,
+        "affected": [
+          "websites using Cloudflare",
+          "websites using Akamai",
+          "websites using Fastly",
+          "websites using Amazon CloudFront",
+          "websites using Google"
+        ],
+        "ok": 0,
+        "total": 5,
+        "details": "#v=o\u0026ot=web"
+      }
+    ],
+    "calls": {
+      "state": "unusable",
+      "delay": "short",
+      "dropouts": "frequent",
+      "smoothness": "uneven",
+      "words": "Delay short · Dropouts frequent · Smoothness uneven",
+      "worst_at": 1791548700000
+    },
+    "apps": [
+      {
+        "app": "teams",
+        "title": "Teams",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Calls use the same call path (Breaking up)."
+      },
+      {
+        "app": "meet",
+        "title": "Google Meet",
+        "level": "bad",
+        "state": "unusable",
+        "label": "Breaking up"
+      },
+      {
+        "app": "zoom",
+        "title": "Zoom",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Zoom picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "slack",
+        "title": "Slack",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Slack picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "discord",
+        "title": "Discord",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Discord picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "whatsapp",
+        "title": "WhatsApp",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "WhatsApp picks a server when each meeting starts, so it can't be tested ahead of time."
+      },
+      {
+        "app": "webex",
+        "title": "Webex",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Webex picks a server when each meeting starts, so it can't be tested ahead of time."
+      }
+    ]
+  }
+}

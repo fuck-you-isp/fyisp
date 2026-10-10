@@ -1,0 +1,124 @@
+package web
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"flag"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/web/homescen"
+)
+
+var update = flag.Bool("update", false, "rewrite the golden files of TestHomeGolden")
+
+// TestHomeGolden pins every Home scenario (internal/web/homescen, the same
+// ones fyisp-webdev -home serves) in both voices: the live answer, today,
+// the week, and "what happened 5 minutes ago". The files under
+// testdata/home are where the copy is reviewed; rewrite them with
+// go test ./internal/web -run TestHomeGolden -update.
+func TestHomeGolden(t *testing.T) {
+	for _, name := range homescen.Names {
+		sc, err := homescen.Build(name, homeNow, homeNow.Location())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, voice := range []string{voiceYou, voicePublic} {
+			d := Deps{Profile: func() *model.Profile { return sc.Profile }, Store: sc.Store, Verdict: sc.Verdict,
+				Status: func() Status { return Status{} }}
+			s := newServer(d, voice == voicePublic, "")
+			s.now = func() time.Time { return homeNow }
+			ctx := context.Background()
+			live, err := s.homeLive(ctx, voice, homeNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hp := homeParams{part: "history", voice: voice, tz: 120}
+			hp.span = "d"
+			today, err := s.homeHistory(ctx, hp, homeNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hp.span = "w"
+			week, err := s.homeHistory(ctx, hp, homeNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			at, err := s.homeAt(ctx, homeNow.Add(-5*time.Minute), voice, homeNow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := json.MarshalIndent(map[string]any{"live": live, "history_today": today, "history_week": week, "at_5_minutes_ago": at}, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, '\n')
+			checkGoldenCopy(t, name+"."+voice, voice, got)
+			path := filepath.Join("testdata", "home", name+"."+voice+".json")
+			if *update {
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, got, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				continue
+			}
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("%v (run with -update)", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("%s differs from the golden file; run go test ./internal/web -run TestHomeGolden -update and review the diff", path)
+			}
+		}
+	}
+}
+
+// copyKeys are the JSON fields that hold Home's words.
+var copyKeys = map[string]bool{"headline": true, "cause": true, "hint": true, "fact": true, "announce": true, "try": true,
+	"label": true, "note": true, "words": true, "line": true, "tooltip": true, "summary": true, "where": true, "title": true}
+
+// checkGoldenCopy runs the copy of a golden response through the
+// banned-word rules of TestHomeCopyWords.
+func checkGoldenCopy(t *testing.T, name, voice string, b []byte) {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	your := regexp.MustCompile(`\b[Yy]our\b`)
+	var walk func(key string, v any)
+	walk = func(key string, v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, y := range x {
+				walk(k, y)
+			}
+		case []any:
+			for _, y := range x {
+				walk(key, y)
+			}
+		case string:
+			if !copyKeys[key] {
+				return
+			}
+			if voice == voicePublic && your.MatchString(x) {
+				t.Errorf("%s: public %s says your: %q", name, key, x)
+			}
+			if key == "try" {
+				x = strings.ReplaceAll(x, "DNS", "")
+			}
+			if m := bannedOnHome.FindString(strings.ReplaceAll(x, "(DNS)", "")); m != "" {
+				t.Errorf("%s: %s %q says %q", name, key, x, m)
+			}
+		}
+	}
+	walk("", v)
+}
