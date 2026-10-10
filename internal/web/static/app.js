@@ -14,7 +14,7 @@ import {
   meta, MODE, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, adminHeader, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText,
+  hideTip, whyButton, addAdmin, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText,
   useStatus,
 } from './core.js';
 import { Home } from './home.js';
@@ -1129,7 +1129,7 @@ class Investigate {
     const t = targetInfo(this.target);
     if (MODE !== 'local' || !t || t.trace || this.poking || document.hidden) return;
     if (status && status.controls === 'disabled') {
-      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started without --admin-token';
+      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started with --admin-token=off';
       this.renderStatus();
       return;
     }
@@ -1143,7 +1143,7 @@ class Investigate {
     this.lastPoke = Date.now();
     /** @type {Record<string,string>} */
     const headers = { 'X-FYISP-Token': TOKEN };
-    if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+    addAdmin(headers);
     try {
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
       if (target !== this.target) return;
@@ -3039,8 +3039,12 @@ class Calls {
       det.addEventListener('toggle', () => { if (det.open) this.open.add(app.app); else this.open.delete(app.app); });
       items.push(h('li', {}, det));
     }
-    if (!d.apps.some((x) => x.app === 'teams') && MODE === 'local') {
-      items.push(h('li', { class: 'cq-app cq-hint' }, h('b', { text: 'Teams' }), h('span', { class: 'muted' }, ' add it with ', h('code', { text: '--profile default,calls' }))));
+    // Apps whose own call server is not measured (Teams without its opt-in relay): their calls take the call path.
+    for (const app of d.apps.filter((x) => x.udp === 'shared')) {
+      const st = d.path ? d.path.state : 'not_enough_data';
+      const web = (app.web_samples || 0) === 0 ? '' : app.web_ms == null ? ' Its website is not answering right now.' : ` Website reachable, ${fmtMs(app.web_ms)} ms.`;
+      items.push(h('li', { class: 'cq-app cq-other' }, h('b', { text: APP_TITLE[app.app] || app.app }),
+        h('p', { class: 'muted', text: `Calls use your call path (${callLabel(st)}).${web}` })));
     }
     const other = d.apps.filter((x) => x.udp === 'not_measurable');
     if (other.length) {
@@ -3763,10 +3767,35 @@ function renderTools() {
   el.hidden = !kids.length;
 }
 
+/** Takes the token of an "open this link" URL (#admin=…) out of the address bar and history entry. */
+function takeAdminFragment() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const t = p.get('admin');
+  if (t == null) return '';
+  p.delete('admin');
+  const rest = p.toString();
+  history.replaceState(history.state, '', location.pathname + location.search + (rest ? '#' + rest : ''));
+  return t;
+}
+
+/** Exchanges the link's admin token for the HttpOnly session cookie. @param {string} t */
+async function adminLogin(t) {
+  try {
+    await fetchJSON('api/admin/session', { method: 'POST', headers: { 'X-FYISP-Token': TOKEN, 'X-FYISP-Admin': t } }, 1);
+    try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ }
+  } catch (e) {
+    adminLinkErr = /** @type {any} */ (e).status === 403
+      ? 'This link is not valid any more. Open the newest link from fyisp\'s log.'
+      : 'Could not use this link: ' + /** @type {any} */ (e).message;
+  }
+}
+/** Why an "open this link" URL did not work (shown as a notice). */
+let adminLinkErr = '';
+
 async function shareAction(/** @type {'start'|'stop'} */ what) {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
-  if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+  addAdmin(headers);
   try {
     const r = await fetchJSON(`api/share/${what}`, { method: 'POST', headers }, 1);
     status.share = r.share;
@@ -3821,7 +3850,7 @@ function renderShare() {
       kids.push(h('span', { class: 'muted', text: sh.phase === 'starting' ? 'Creating public link…' : sh.phase === 'reconnecting' ? 'Reconnecting public link…' : `Sharing: ${sh.phase}` }));
       if (!disabled) kids.push(h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => shareAction('stop') }));
   }
-  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started without --admin-token' }));
+  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started with --admin-token=off' }));
   el.replaceChildren(...kids);
 }
 
@@ -3829,6 +3858,7 @@ function renderNotices() {
   const el = $('#notices');
   const out = [];
   if (!status) { el.replaceChildren(); return; }
+  if (adminLinkErr) out.push(h('div', { class: 'notice danger' }, adminLinkErr));
   if (status.targets && status.ready < status.targets) {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));
   }
@@ -3880,6 +3910,7 @@ async function main() {
   mqLight.addEventListener('change', () => { applyTheme(storageGet('fyisp-theme')); themeChanged(); });
   // Taps elsewhere close a tooltip opened by tapping (touch screens have no hover).
   document.addEventListener('click', hideTip);
+  const adminTok = takeAdminFragment();
   readHash();
   const log = /** @type {HTMLDetailsElement} */ ($('#outages'));
   log.open = state.log;
@@ -3905,6 +3936,7 @@ async function main() {
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
   renderShare();
+  if (adminTok && MODE === 'local') await adminLogin(adminTok);
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
   if (st) statusAt = Date.now();

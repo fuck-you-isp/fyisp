@@ -333,6 +333,9 @@ func TestProfileMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A --config target: no catalog metadata.
+	p.Groups = append(p.Groups, model.Group{ID: "home", Title: "Home", Order: 99})
+	p.Targets = append(p.Targets, model.Target{Name: "nas", Host: "nas.example", Group: "home", Kinds: []model.ProbeKind{model.KindTCP}, Interval: 15 * time.Second})
 	now := time.Now()
 	_, d, _ := fixture(t, now)
 	d.Profile = func() *model.Profile { return p }
@@ -368,9 +371,13 @@ func TestProfileMetadata(t *testing.T) {
 			v.City != "Newark" || v.Country != "US" || v.Geo != "na" {
 			t.Errorf("%s Linode-us-east %+v", tc.name, v)
 		}
-		// A default-profile target: its group is its provider, no geo.
-		if v := byName["DevTunnel-UkSouth"]; v.Provider != "devtunnels" || v.ProviderTitle != "DevTunnels" || v.Geo != "" || v.ProviderKind != "" {
-			t.Errorf("%s DevTunnel-UkSouth %+v", tc.name, v)
+		// A default-profile target carries its catalog entry's metadata.
+		if v := byName["M365-Login"]; v.Provider != "services-productivity" || v.ProviderKind != "service" || v.Geo != "global" || v.City != "" {
+			t.Errorf("%s M365-Login %+v", tc.name, v)
+		}
+		// A target outside the catalog: its group is its provider, no geo.
+		if v := byName["nas"]; v.Provider != "home" || v.ProviderTitle != "Home" || v.Geo != "" || v.ProviderKind != "" {
+			t.Errorf("%s nas %+v", tc.name, v)
 		}
 		for _, ts := range pj.Targets {
 			if ts.Layer != "" && (ts.Provider != "" || ts.Geo != "") {

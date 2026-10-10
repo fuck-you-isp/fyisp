@@ -199,10 +199,16 @@ export function adminHeader() {
   let t = null;
   try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
   if (!t) {
-    t = window.prompt('Admin token (--admin-token) for sharing, notes and reports:') || '';
+    t = window.prompt('Admin token for sharing, notes and reports (or open the link from fyisp\'s log):') || '';
     try { if (t) sessionStorage.setItem('fyisp-admin', t); } catch { /* ignore */ }
   }
   return t;
+}
+
+/** Adds X-FYISP-Admin when controls need the admin token and no session cookie carries it. @param {Record<string,string>} headers */
+export function addAdmin(headers) {
+  const status = statusOf();
+  if (status && status.controls === 'admin' && !status.admin) headers['X-FYISP-Admin'] = adminHeader();
 }
 
 /** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] */
@@ -211,7 +217,7 @@ export async function apiWrite(method, url, body) {
   const headers = { 'X-FYISP-Token': TOKEN };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const status = statusOf();
-  if (status && status.controls === 'admin') headers['X-FYISP-Admin'] = adminHeader();
+  addAdmin(headers);
   try {
     return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
   } catch (e) {
@@ -221,7 +227,7 @@ export async function apiWrite(method, url, body) {
   }
 }
 
-/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind without --admin-token. */
+/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind with --admin-token=off. */
 export function canWrite() { const status = statusOf(); return MODE === 'local' && !!status && status.controls !== 'disabled'; }
 
 /** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */

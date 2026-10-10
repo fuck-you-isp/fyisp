@@ -155,12 +155,12 @@ func parseFlags(args []string) (config, error) {
 	fs.BoolVar(&c.ephemeral, "ephemeral", false, "keep data in a temporary directory deleted on exit")
 	fs.StringVar(&retention, "retention", "90d", "how long to keep data (max 90d), e.g. 14d or 48h")
 	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]` or other named profiles")
-	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: default)")
+	fs.Var(&c.profiles, "profile", "target `profiles` to measure, comma-separated (a union), e.g. aws,europe; see `fyisp profiles` (default: $FYISP_PROFILE, else default)")
 	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls when --listen is not loopback")
+	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, sharing) when --listen is not loopback; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
@@ -192,7 +192,17 @@ func parseFlags(args []string) (config, error) {
 	if c.configPath != "" && (len(c.profiles) > 0 || len(c.geos) > 0) {
 		return c, fmt.Errorf("--config and --profile/--geo are mutually exclusive: use `extends: [%s]` in the file", strings.Join(c.profiles, ", "))
 	}
+	envProfiles(&c.profiles, c.configPath)
 	return c, nil
+}
+
+// envProfiles fills in profiles from FYISP_PROFILE (for container and NAS
+// templates, where an environment variable is easier to set than an
+// argument) unless --profile or --config was given: the flags win.
+func envProfiles(p *profileNames, configPath string) {
+	if v := os.Getenv("FYISP_PROFILE"); v != "" && len(*p) == 0 && configPath == "" {
+		_ = p.Set(v)
+	}
 }
 
 // hostList is --allow-host: Host header values, repeatable or comma-separated.
@@ -361,7 +371,11 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	localAddr := localLn.Addr().String()
-	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: c.adminToken, ExtraHosts: c.allowHosts}))
+	adminTok, adminStored, err := resolveAdminToken(c.adminToken, localAddr, dir)
+	if err != nil {
+		return err
+	}
+	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}))
 	publicSrv := newServer(web.Public(deps, secret))
 	serve := func(name string, s *http.Server, ln net.Listener) {
 		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -385,13 +399,23 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		log.Warn("ICMP probes disabled", "hint", caps.ICMPHint)
 	}
 	fmt.Fprintf(os.Stderr, "\n  Dashboard:  %s\n\n", localURL)
+	openURL := localURL
+	if adminStored {
+		// The generated token, every start (like Jupyter), so a recreated
+		// container on the same volume can still show it. Reading the log
+		// already takes as much access as reading the data directory.
+		link := adminLink(localURL, adminTok)
+		log.Info("open this link once in your browser to use notes, reports and sharing", "url", link)
+		fmt.Fprintf(os.Stderr, "  To use notes, reports and sharing, open this link once:\n  %s\n\n", link)
+		openURL = link
+	}
 	if c.share {
 		if err := share.Start(ctx); err != nil {
 			log.Warn("could not start the public link", "err", err)
 		}
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {
-		openBrowser(localURL)
+		openBrowser(openURL)
 	}
 
 	// Probing, persistence and retention.

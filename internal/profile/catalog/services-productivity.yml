@@ -8,12 +8,14 @@ sources:
   - https://knowledge.workspace.google.com/admin/meet/prepare-your-network-for-meet-meetings-and-live-streams
 notes: >-
   Main user-facing entrypoints of common work SaaS. Microsoft 365 uses
-  outlook.office365.com (Exchange Online, endpoint set 1, category Optimize) and the M365
-  portal; SharePoint/OneDrive (also Optimize) is tenant-specific (<tenant>.sharepoint.com)
-  and is left out. Google Workspace apps share Google's front ends, so Gmail/Docs/Drive
-  mostly measure the same GFE path. Every endpoint is an anycast, CDN or geo-DNS front (no
-  fixed location). robots.txt keeps responses to a few hundred bytes to ~2 KB; 301/302
-  answers have empty bodies. Verified from Hetzner Helsinki on 2026-09-27.
+  outlook.office365.com (Exchange Online, endpoint set 1, category Optimize), the M365
+  portal, and login.microsoftonline.com, the Entra ID sign-in every M365 app needs (a TCP
+  connect only: never a sign-in or token request). SharePoint/OneDrive (also Optimize) is
+  tenant-specific (<tenant>.sharepoint.com) and is left out. Google Workspace apps share
+  Google's front ends, so Gmail/Docs/Drive mostly measure the same GFE path. Every endpoint
+  is an anycast, CDN or geo-DNS front (no fixed location). robots.txt keeps responses to a
+  few hundred bytes to ~2 KB; 301/302 answers have empty bodies. Verified from Hetzner
+  Helsinki on 2026-09-27 (M365-Login from the Frankfurt area on 2026-10-10).
 targets:
   # Exchange Online 'Optimize' endpoint (ID 1); ICMP answered by some front-end IPs and not
   # others, so not recorded. From Helsinki: TCP connect 52 ms.
@@ -22,7 +24,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [email]
+    tags: [email, home:work]
     verified:
       date: 2026-09-27
       icmp: false
@@ -37,13 +39,30 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [office]
+    tags: [office, home:work]
     verified:
       date: 2026-09-27
       icmp: true
       tcp: true
       https: 302
       bytes: 0
+  # Microsoft Entra ID sign-in (endpoint set ID 56, "Allow, Required"): Teams, Outlook,
+  # OneDrive and the M365 web apps all sign in here, so when it is unreachable every
+  # Microsoft 365 app fails at once. Traffic Manager GeoDNS (CNAME chain ends in
+  # *.aadg.akadns.net) to regional front ends. Measured with a TCP connect only (handshake,
+  # then close): no TLS, no HTTP request, no sign-in or token request, no account or
+  # tenant. 3/3 TCP connects from a Frankfurt-area host; HTTPS / answers 302.
+  - name: M365-Login
+    host: login.microsoftonline.com
+    kinds: [tcp]
+    region: global
+    anycast: true
+    tags: [auth, home:work]
+    verified:
+      date: 2026-10-10
+      tcp: true
+      tcp_connects: 3/3
+      rtt_ms: 57
   # From Helsinki: ping 3 ms / TCP connect 5 ms.
   - name: Google-Gmail
     host: mail.google.com
@@ -51,7 +70,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [email]
+    tags: [email, home:work]
     verified:
       date: 2026-09-27
       icmp: true
@@ -65,7 +84,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [office]
+    tags: [office, home:work]
     verified:
       date: 2026-09-27
       icmp: true
@@ -79,7 +98,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [storage]
+    tags: [storage, home:work]
     verified:
       date: 2026-09-27
       icmp: true

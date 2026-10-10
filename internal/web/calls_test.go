@@ -243,12 +243,24 @@ func TestCallsGood(t *testing.T) {
 		t.Errorf("zoom %+v", z)
 	}
 
-	// Without the opt-in Teams relay there is no Teams row (the UI says
-	// how to add it).
+	// Without the opt-in Teams relay, Teams is a "shared" row: its calls
+	// take the call path, its website is measured, and it never changes
+	// the top state.
 	_, d, _ = callsFixture(t, now, false, nil)
 	c, _ = getCalls(t, Local(d, LocalOptions{Addr: "127.0.0.1:3000"}), "/api/calls", localHdr)
-	if c.app("teams") >= 0 || c.app("meet") < 0 || c.State != "good" {
-		t.Errorf("without the relay: %+v", c.Apps)
+	i := c.app("teams")
+	if i < 0 || c.app("meet") < 0 || c.State != "good" {
+		t.Fatalf("without the relay: %+v", c.Apps)
+	}
+	if tm := c.Apps[i]; tm.UDP != "shared" || tm.State != "" || tm.WebSamples == 0 || tm.WebMs == nil || *tm.WebMs != 24 {
+		t.Errorf("teams without the relay: %+v", tm)
+	}
+	apps = nil
+	for _, a := range c.Apps {
+		apps = append(apps, a.App+":"+a.UDP)
+	}
+	if !slices.Equal(apps, []string{"teams:shared", "meet:measured", "zoom:not_measurable", "discord:not_measurable"}) {
+		t.Errorf("apps without the relay: %v", apps)
 	}
 }
 

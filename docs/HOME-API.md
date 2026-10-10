@@ -84,7 +84,7 @@ Unknown parameters return 400, like the other routes.
 | `reachable` | good | Reachable | – |
 | `not_answering` | warn | Not answering | – |
 
-### Tile states (`work`, `streaming`, `web`, `other`)
+### Tile states (`work`, `web`, `other`)
 
 | State | `level` | Label | Rule |
 |---|---|---|---|
@@ -98,17 +98,17 @@ Unknown parameters return 400, like the other routes.
 
 ### Tiles
 
-Tiles come in a fixed order: `calls`, `work`, `streaming`, `web`, `other`. A tile with no targets is left out. Categories come from `profile.HomeCategory(target)`:
+Tiles come in a fixed order: `calls`, `work`, `web`, `other`. A tile with no targets is left out. Categories come from `profile.HomeCategory(target)` (`internal/profile/home.go`):
 - `calls`: `udp-path` STUN targets and call apps' TCP targets (`app:*`);
-- `work`, `streaming`, `web`: the `home:*` catalog tags;
+- `work`, `web`: the `home:work` and `home:web` tags, else the productivity provider (work) or a CDN or the streaming provider (web);
 - otherwise `other`.
 
 The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 
 **Relevance rule:**
-- A `service` verdict changes the answer only if one of its targets is in a `calls`, `work`, `streaming` or `web` tile.
-- When only `other` targets are affected, the answer stays `good` and `other.line` carries a muted line ("1 other service isn't answering from here").
-- **Exception:** when the profile has no targets in the four Home tiles (e.g. `--profile clouds`), the `other` tile *is* the user's set. It then escalates like any tile, and the answer follows it: `warn` "Some services aren't answering", or `bad` when it is `down`.
+- A `service` verdict changes the answer only if one of its targets is in a `calls`, `work` or `web` tile, and then only as much as the tiles it touches: a call app always makes it `warn`; one target of a tile that is `mostly` working leaves the answer `good` with `answer.hint` naming it ("M365 Outlook isn't answering from here. That's most likely a problem on their side.").
+- When only `other` targets are affected, the answer stays `good` and `other.line` carries a muted line ("1 other service isn't working well from here."). The `other` tile is shown whenever the profile has such targets (e.g. `--profile default,aws`), but it never raises the answer.
+- **Exception:** when the profile has no targets in the Home tiles (e.g. `--profile clouds`), the `other` tile *is* the user's set. It then escalates like any tile, and the answer follows it: `warn` "Some services aren't answering", or `bad` when it is `down`.
 
 ## `part=live`
 
@@ -146,13 +146,11 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
     { "id": "calls", "title": "Calls", "level": "bad", "state": "poor", "label": "Calls may be choppy",
       "names": ["Meet", "Teams", "Zoom"], "more": 4, "ok": 6, "total": 7, "details": "#v=calls" },
     { "id": "work", "title": "Work apps", "level": "warn", "state": "mostly", "label": "Mostly working",
-      "note": "Outlook isn't answering from here.",
-      "names": ["Outlook", "Microsoft 365", "Gmail"], "more": 3, "affected": ["Outlook"],
+      "note": "M365 Outlook isn't answering from here. That's usually a problem on their side.",
+      "names": ["M365 Outlook", "M365 Portal", "M365 Login"], "more": 3, "affected": ["M365 Outlook"],
       "ok": 5, "total": 6, "details": "#v=o&oq=home:work" },
-    { "id": "streaming", "title": "Streaming", "level": "good", "state": "working", "label": "Working",
-      "names": ["YouTube", "Netflix", "Spotify"], "more": 2, "ok": 5, "total": 5, "details": "#v=o&oq=home:streaming" },
     { "id": "web", "title": "Websites", "level": "good", "state": "working", "label": "Working",
-      "names": ["Cloudflare", "Akamai", "Fastly"], "more": 2, "ok": 5, "total": 5, "details": "#v=o&oq=home:web" }
+      "names": ["CDN Cloudflare", "CDN Akamai", "CDN Fastly"], "more": 2, "ok": 5, "total": 5, "details": "#v=o&oq=home:web" }
   ],
   "other": null,                     // or { "affected": 1, "total": 84, "line": "1 other service isn't answering from here." }
   "calls": {
@@ -175,7 +173,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 ```
 
 **Notes:**
-- `names` and `affected` are **display names**: the target's `label:` when the profile sets one, else the app title, else the target name with `-` replaced by a space. They are never hosts.
+- `names` and `affected` are **display names**: the target name with `-` replaced by a space ("M365 Outlook", "CDN Cloudflare"); for the calls tile, the app titles ("Teams", "Google Meet"). They are never hosts.
 - `fact` is set only when the call path or an app had a scored bad minute in the last 5 minutes. It never holds a time: show `fact_at` in the viewer's locale.
 - `since` is the verdict's `since`, or the first minute of the current bad call run.
 - `calls` is omitted when the profile has no `udp-path` targets; the Calls tile then has only web-reachable apps, and its state is `reachable` or `not_answering`.
@@ -314,8 +312,8 @@ None of these may appear in any copy field: STUN, UDP, TCP, ICMP, anycast, MOS, 
 | `warming` | checking; steps half done; tiles checking; no history yet |
 | `wifi` | `lan`, likely; calls choppy |
 | `isp` | `isp`, sure; calls choppy; ongoing incident; week with 2 provider problems |
-| `upstream` | `upstream`; work and streaming down |
-| `one-app-down` | `service` on Outlook: work `mostly`; answer stays good with a note |
+| `upstream` | `upstream`; work apps and websites down |
+| `one-app-down` | `service` on M365 Outlook: work `mostly`; answer stays good, with the tile note |
 | `calls-choppy` | `udp_degraded`: only the call path is bad |
 | `udp-blocked` | quiet `udp_blocked`: `info`, calls tile blocked |
 | `no-network` | offline |

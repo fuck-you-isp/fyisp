@@ -56,7 +56,10 @@ Code signing is planned: free Windows signing through the [SignPath Foundation](
 
 ```sh
 docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
+docker logs fyisp 2>&1 | grep -m1 -o 'http://[^ "]*#admin=[0-9a-f]*'
 ```
+
+Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`) once in your browser. It turns on *Mark a bad call*, notes, reports and sharing for that browser; see [Controls under Docker](#controls-under-docker) below.
 
 Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The container runs as an unprivileged user (65532) from a `scratch` image and keeps its data in the `/data` volume. `-p 3000:3000` makes the UI reachable from your network; use `-p 127.0.0.1:3000:3000` to keep it on this machine. ICMP works without extra capabilities on Docker 20.10+, which allows unprivileged ping sockets inside containers.
 
@@ -67,12 +70,21 @@ fyisp options go **after the image name** (the image already sets `--data-dir=/d
 docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --share
 docker logs fyisp 2>&1 | grep 'public link ready'
 
-# Or turn sharing on and off from the UI: set an admin token
-docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --admin-token "$(openssl rand -hex 16)"
-docker inspect fyisp --format '{{join .Args " "}}'   # shows the token again
+# Keep the dashboard read-only for everyone (no notes, reports or share buttons)
+docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --admin-token=off
 ```
 
-Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. That is why its *Create public link* / *Stop sharing* buttons are off by default and the UI says *Share controls disabled*. `--share` still starts the link at startup without them. With `--admin-token`, the buttons come back and the browser asks for the token once per tab. If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
+#### Controls under Docker
+
+Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. Changes (*Mark a bad call*, notes, reports, *Create public link* / *Stop sharing*) therefore need an admin token. On first start fyisp generates one, keeps it in the data volume (`/data/admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
+
+- Open the link once per browser. The page swaps the token for a cookie that only this dashboard sees and removes it from the address bar. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers. Looking at the dashboard needs no token.
+- Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`.
+- To sign every browser out, delete the token and restart; a new link is logged: `docker run --rm -v fyisp:/data busybox rm /data/admin-token && docker restart fyisp`.
+- `--admin-token=<your own>` uses that token instead (the browser asks for it, or open `http://…:3000/#admin=<token>`). `--admin-token=off` disables changes entirely; `--share` still starts the public link at startup.
+- The dashboard is plain HTTP: someone who can watch your network traffic could copy the cookie, as with any HTTP login. Keep it on a network you trust, or use `-p 127.0.0.1:3000:3000`.
+
+If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
 
 **Use host networking on Linux for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
 

@@ -28,9 +28,9 @@ notes: >-
   front: that measures the path to the vendor edge nearest you, which is what users
   experience, not a fixed location. Signal, WhatsApp-Chat, Google/Teams media hosts and
   Telegram DCs do not speak HTTP(S) with a public CA on 443, so only TCP/ICMP are
-  recorded. Google-Meet keeps default.yml's host (lens.l.google.com, ICMP only);
-  default.yml pairs it with host_overrides https/tcp -> meet.google.com, which this schema
-  cannot express - Google-Meet-Web covers that. FaceTime relays are not addressable;
+  recorded. Google-Meet keeps the old default's host (lens.l.google.com, ICMP only, so
+  its name keeps its history), with host_overrides https/tcp -> meet.google.com: its TCP
+  connect goes to the same front as Google-Meet-Web's. FaceTime relays are not addressable;
   iCloud-Gateway (Apple-operated) is the closest stand-in. Verified from a Hetzner
   Helsinki vantage point on 2026-09-27 with 3 pings, 1 TCP connect and 1 GET per target.
 targets:
@@ -42,7 +42,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video, app:zoom]
+    tags: [voice, video, app:zoom, home:calls]
     verified:
       date: 2026-09-27
       icmp: true
@@ -50,20 +50,19 @@ targets:
       https: 200
       bytes: 2005
   # Meet media/TURN front (74.125.250.0/24 Workspace media range); ICMP only - no TCP 443
-  # listener. default.yml pairs it with host_overrides https/tcp -> meet.google.com. From
+  # listener, so host_overrides send HTTPS/TCP to meet.google.com. From
   # Helsinki: ping 1 ms.
   - name: Google-Meet
     host: lens.l.google.com
     kinds: [tcp]
-    # lens.l.google.com only answers ping; HTTPS/TCP go to meet.google.com
-    # (same as default.yml).
+    # lens.l.google.com only answers ping; HTTPS/TCP go to meet.google.com.
     host_overrides:
       https: meet.google.com
       tcp: meet.google.com
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video, media, app:meet]
+    tags: [voice, video, media, app:meet, home:calls]
     verified:
       date: 2026-09-27
       icmp: true
@@ -113,7 +112,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, signaling, app:teams]
+    tags: [voice, video, signaling, app:teams, home:calls]
     verified:
       date: 2026-09-27
       icmp: true
@@ -166,7 +165,7 @@ targets:
     path: /u2c/api/v1/ping
     region: global
     anycast: true
-    tags: [voice, video, signaling, app:webex]
+    tags: [voice, video, signaling, app:webex, home:calls]
     verified:
       date: 2026-09-27
       icmp: false
@@ -180,7 +179,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat, app:slack]
+    tags: [chat, app:slack, home:calls]
     verified:
       date: 2026-09-27
       icmp: false
@@ -208,7 +207,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, chat, app:discord]
+    tags: [voice, chat, app:discord, home:calls]
     verified:
       date: 2026-09-27
       icmp: true
@@ -251,7 +250,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat, voice, app:whatsapp]
+    tags: [chat, voice, app:whatsapp, home:calls]
     verified:
       date: 2026-09-27
       icmp: true

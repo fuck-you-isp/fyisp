@@ -98,10 +98,10 @@ type HomeNode struct {
 	Tooltip string `json:"tooltip,omitempty"`
 }
 
-// HomeTile is one of Calls, Work apps, Streaming, Websites and Other
+// HomeTile is one of Calls, Work apps, Websites and Other
 // services. Tiles without targets are left out.
 type HomeTile struct {
-	ID    string `json:"id"` // calls | work | streaming | web | other
+	ID    string `json:"id"` // calls | work | web | other (profile.HomeCategory)
 	Title string `json:"title"`
 	Level string `json:"level"`
 	// State: for calls the call state (good, fair, poor, unusable,

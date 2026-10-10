@@ -17,7 +17,7 @@ import (
 
 // slowdown is the synthetic "evening slowdown": these targets run slower
 // than their normal for the last 45 minutes of the backfill and live.
-var slowdown = map[string]float64{"AWS-us-east-1": 2.4, "dev-GitHub": 1.8, "Discord": 1.6}
+var slowdown = map[string]float64{"M365-Outlook": 2.4, "CDN-Akamai": 1.8, "Discord": 1.6}
 
 const slowFor = 45 * time.Minute
 
@@ -157,7 +157,7 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px;border-bott
 		fmt.Fprintf(&b, `<tr><td>%s – %s</td><td><span class="tag">%s</span></td><td>%s</td><td>%.0f%%</td></tr>`,
 			tf(in.Start), end, esc(string(in.Kind)), esc(in.Summary), in.PeakLoss*100)
 	}
-	b.WriteString(`</table><h2>Latency (AWS-us-east-1, TCP)</h2>`)
+	b.WriteString(`</table><h2>Latency (M365-Outlook, TCP)</h2>`)
 	b.WriteString(f.sparkline(ctx, o.From, o.To))
 	b.WriteString(`<h2>Notes</h2><ul>`)
 	notes, _ := f.notes.Annotations(ctx, o.From, o.To, o.Redact)
@@ -177,7 +177,7 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px;border-bott
 
 // sparkline draws one series as an inline SVG polyline.
 func (f *fakeReports) sparkline(ctx context.Context, from, to time.Time) string {
-	res, err := f.st.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{{Target: "AWS-us-east-1", Kind: model.KindTCP}}, From: from, To: to, MaxPoints: 300})
+	res, err := f.st.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{{Target: "M365-Outlook", Kind: model.KindTCP}}, From: from, To: to, MaxPoints: 300})
 	if err != nil || len(res.Series) == 0 {
 		return `<p class="m">No data.</p>`
 	}

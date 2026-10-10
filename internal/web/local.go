@@ -24,9 +24,12 @@ type LocalOptions struct {
 	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an Addr whose
 	// host is unspecified or a non-loopback IP (--listen 192.168.1.10:3000).
 	// Then any IP-literal Host is allowed (DNS rebinding needs a hostname),
-	// and the POST routes are disabled unless AdminToken is set.
+	// and the POST routes are disabled unless AdminToken is set (fyisp
+	// generates one unless --admin-token=off).
 	PublicBind bool
-	// AdminToken, if set, must be sent as X-FYISP-Admin on POST routes.
+	// AdminToken, if set, must be sent as X-FYISP-Admin on POST routes, or
+	// as the session cookie that POST /api/admin/session sets in exchange
+	// for it (the "open this link" URL in the logs).
 	AdminToken string
 	// CSRFToken overrides the random per-process token (tests only).
 	CSRFToken string
@@ -37,6 +40,10 @@ const (
 	HeaderCSRF  = "X-FYISP-Token"
 	HeaderAdmin = "X-FYISP-Admin"
 )
+
+// adminCookieMaxAge is the session cookie's lifetime (browsers cap it at
+// 400 days). Changing the admin token revokes every session at once.
+const adminCookieMaxAge = 400 * 24 * 3600
 
 type localHandler struct {
 	*server
@@ -51,7 +58,8 @@ type localHandler struct {
 // Local returns the owner's handler: the UI at /, the API under /api/,
 // /metrics, and the write routes (POST /api/share/start|stop, POST
 // /api/investigate, POST/PUT/DELETE /api/annotations[/{id}] and
-// /api/reports[/{id}]), all behind controlAllowed.
+// /api/reports[/{id}]), all behind controlAllowed, and POST/DELETE
+// /api/admin/session, which exchanges the admin token for a cookie.
 func Local(d Deps, o LocalOptions) http.Handler {
 	tok := o.CSRFToken
 	if tok == "" {
@@ -146,6 +154,9 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/investigate":
 		h.serveInvestigate(w, r)
 		return
+	case "/api/admin/session":
+		h.serveAdminSession(w, r)
+		return
 	}
 	if rest, ok := strings.CutPrefix(p, "/api/annotations"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
 		h.serveNotes(w, r, strings.TrimPrefix(rest, "/"))
@@ -173,7 +184,8 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSON(w, r, http.StatusOK, localStatus{Status: h.rawStatus(r.Context()), Mode: "local", Controls: h.controls})
+		writeJSON(w, r, http.StatusOK, localStatus{Status: h.rawStatus(r.Context()), Mode: "local", Controls: h.controls,
+			Admin: h.controls == "admin" && h.adminOK(r)})
 		return
 	}
 	h.serveGET(w, r, rt, rel)
@@ -228,7 +240,7 @@ func tokenEqual(got, want string) bool {
 // refusal and returns false.
 func (h *localHandler) controlAllowed(w http.ResponseWriter, r *http.Request, what string) bool {
 	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from the network (--listen) and --admin-token is not set")
+		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from the network (--listen) and fyisp was started with --admin-token=off")
 		return false
 	}
 	if !sameOrigin(r) {
@@ -239,11 +251,72 @@ func (h *localHandler) controlAllowed(w http.ResponseWriter, r *http.Request, wh
 		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
 		return false
 	}
-	if h.opts.AdminToken != "" && !tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
+	if h.opts.AdminToken != "" && !h.adminOK(r) {
 		writeErr(w, r, http.StatusForbidden, "admin token required")
 		return false
 	}
 	return true
+}
+
+// adminCookie is the session cookie's name. Cookies are shared by every
+// port of a host, so the port keeps two dashboards on one host apart.
+func (h *localHandler) adminCookie() string {
+	if h.port == "" || h.port == "0" {
+		return "fyisp_admin"
+	}
+	return "fyisp_admin_" + h.port
+}
+
+// adminOK reports whether r carries the admin token, as X-FYISP-Admin or
+// as the session cookie.
+func (h *localHandler) adminOK(r *http.Request) bool {
+	if tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
+		return true
+	}
+	c, err := r.Cookie(h.adminCookie())
+	return err == nil && tokenEqual(c.Value, h.opts.AdminToken)
+}
+
+// serveAdminSession: POST exchanges the admin token (X-FYISP-Admin, taken
+// by the page from the link's #admin= fragment, which never reaches a
+// server log or a Referer) for an HttpOnly, SameSite=Strict cookie; DELETE
+// clears it. Both need the usual same-origin and CSRF checks.
+func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		w.Header().Set("Allow", "POST, DELETE")
+		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if len(r.URL.RawQuery) > 0 {
+		writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
+		return
+	}
+	if h.opts.AdminToken == "" {
+		writeErr(w, r, http.StatusNotFound, "no admin token is set")
+		return
+	}
+	if !sameOrigin(r) {
+		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
+		return
+	}
+	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
+		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
+		return
+	}
+	c := &http.Cookie{Name: h.adminCookie(), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode}
+	if r.Method == http.MethodDelete {
+		c.MaxAge = -1
+		http.SetCookie(w, c)
+		writeJSON(w, r, http.StatusOK, map[string]any{"admin": false})
+		return
+	}
+	if !tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
+		writeErr(w, r, http.StatusForbidden, "this admin link is not valid (any more)")
+		return
+	}
+	c.Value, c.MaxAge = h.opts.AdminToken, adminCookieMaxAge
+	http.SetCookie(w, c)
+	writeJSON(w, r, http.StatusOK, map[string]any{"admin": true})
 }
 
 func (h *localHandler) serveShare(w http.ResponseWriter, r *http.Request, start bool) {
