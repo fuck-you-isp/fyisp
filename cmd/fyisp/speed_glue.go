@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/metrics"
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
@@ -87,7 +89,7 @@ func checkSpeedFlags(c *config) error {
 // newSpeed sets up the speed tests: the scheduler (always present, so the
 // Details choice and Test now work; it only tests when a mode is on), the
 // load tap and the windows the mask uses.
-func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, error) {
+func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, error) {
 	cat, err := speedtest.Builtin()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("speed test catalog: %w", err)
@@ -102,6 +104,13 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 		}
 	}
 	o.Load = speedtest.NewLoadTap(prof, nil)
+	// Latency under load (ISP edge and gateway), the connection type and
+	// the handoff network, from the network path.
+	o.Path = func() (netip.Addr, netip.Addr) { p := path(); return p.Gateway, p.Edge }
+	o.OpenPinger = func() (speedtest.LoadPinger, error) { return probe.OpenPinger() }
+	o.Conn = func() string { return netinfo.ConnType(path().Iface) }
+	hf := &speedtest.HandoffFinder{Edge: func() netip.Addr { return path().Edge }}
+	o.Handoff = hf.Handoff
 	sm := metrics.NewSpeed()
 	mc.Register(sm)
 	o.OnResult = sm.Observe

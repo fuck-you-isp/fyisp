@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"math/rand/v2"
 	"sync"
 	"time"
@@ -72,7 +73,14 @@ func (f *fakeSpeed) result(at time.Time, reg speedtest.Region, trigger string) m
 	t.DownBps, t.UpBps = pf(down), pf(up)
 	t.DownRetrans, t.UpRetrans = pi(int64(f.r.IntN(400))), pi(int64(f.r.IntN(60)))
 	t.IdleGatewayMs, t.LoadedGatewayMs = pf(1+f.r.Float64()), pf(8+20*f.r.Float64())
-	t.IdleCallMs, t.LoadedCallMs = pf(12+3*f.r.Float64()), pf(40+60*f.r.Float64())
+	ls := func(p50, spread, loss float64) *model.LoadStats {
+		return &model.LoadStats{N: 60, Lost: int(loss * 60), Loss: math.Round(loss*1000) / 1000, P50Ms: math.Round(p50*10) / 10, P95Ms: math.Round((p50+spread)*10) / 10}
+	}
+	t.Latency = &model.SpeedLatency{
+		Edge:    model.LoadPhases{Idle: ls(8+2*f.r.Float64(), 3, 0), Down: ls(20+30*f.r.Float64(), 40, 0), Up: ls(60+120*f.r.Float64(), 150, 0.05*f.r.Float64())},
+		Gateway: model.LoadPhases{Idle: ls(1+f.r.Float64(), 1, 0), Down: ls(2+3*f.r.Float64(), 4, 0), Up: ls(2+3*f.r.Float64(), 4, 0)},
+	}
+	t.Conn = model.ConnWired
 	return t
 }
 

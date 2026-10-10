@@ -28,7 +28,12 @@
 // Speed tests (--speedtests), one row per test, oldest first; bits per
 // second and milliseconds, empty when not measured or unknown:
 //
-//	id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms
+//	id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,
+//	conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,
+//	gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms
+//
+// (one line). Latency under load: ISP edge and gateway RTT percentiles in
+// ms, lost probes counted as 1 s; loss is a fraction.
 //
 // The SQLite format holds the same columns in a table named samples (raw;
 // ts is the column ts_utc, lost is NULL when not measured) or summary_1h;
@@ -98,7 +103,9 @@ var (
 	// SpeedTestHeader: start and end in TimeFormat; outcome ok, busy (the
 	// server ran another test: not a slow result), unreachable or failed.
 	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "port", "attempts", "down_bps", "up_bps",
-		"down_retrans", "up_retrans", "idle_gateway_ms", "loaded_gateway_ms", "idle_call_ms", "loaded_call_ms"}
+		"down_retrans", "up_retrans", "idle_gateway_ms", "loaded_gateway_ms",
+		"conn", "handoff_asn", "isp_asn", "edge_idle_p50_ms", "edge_idle_loss", "edge_down_p50_ms", "edge_down_p95_ms", "edge_down_loss",
+		"edge_up_p50_ms", "edge_up_p95_ms", "edge_up_loss", "gw_down_p50_ms", "gw_down_p95_ms", "gw_up_p50_ms", "gw_up_p95_ms"}
 )
 
 // Run exports to o.Output, or as CSV to stdout when o.Output is "" or "-".
@@ -240,9 +247,36 @@ func WriteSpeedTests(ctx context.Context, sr SpeedTestReader, w io.Writer, from,
 		return err
 	}
 	for _, t := range ts {
-		if err := cw.Write([]string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
+		row := []string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
 			t.Trigger, t.Outcome, t.Region, t.Server, fb(t.Fallback), strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
-			i(t.DownRetrans), i(t.UpRetrans), f(t.IdleGatewayMs), f(t.LoadedGatewayMs), f(t.IdleCallMs), f(t.LoadedCallMs)}); err != nil {
+			i(t.DownRetrans), i(t.UpRetrans), f(t.IdleGatewayMs), f(t.LoadedGatewayMs)}
+		var lat model.SpeedLatency
+		if t.Latency != nil {
+			lat = *t.Latency
+		}
+		st := func(x *model.LoadStats, part string) string {
+			if x == nil {
+				return ""
+			}
+			v := map[string]float64{"p50": x.P50Ms, "p95": x.P95Ms, "loss": x.Loss}[part]
+			return f(&v)
+		}
+		as := func(v uint32) string {
+			if v == 0 {
+				return ""
+			}
+			return strconv.FormatUint(uint64(v), 10)
+		}
+		var h model.Handoff
+		if t.Handoff != nil {
+			h = *t.Handoff
+		}
+		row = append(row, t.Conn, as(h.ASN), as(h.ISPASN),
+			st(lat.Edge.Idle, "p50"), st(lat.Edge.Idle, "loss"),
+			st(lat.Edge.Down, "p50"), st(lat.Edge.Down, "p95"), st(lat.Edge.Down, "loss"),
+			st(lat.Edge.Up, "p50"), st(lat.Edge.Up, "p95"), st(lat.Edge.Up, "loss"),
+			st(lat.Gateway.Down, "p50"), st(lat.Gateway.Down, "p95"), st(lat.Gateway.Up, "p50"), st(lat.Gateway.Up, "p95"))
+		if err := cw.Write(row); err != nil {
 			return err
 		}
 	}

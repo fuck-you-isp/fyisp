@@ -338,7 +338,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version, Path: ni.Current})
 	// Speed tests: probes that overlap a test are masked (stored as not
 	// measured) before every sink; the load tap sees them first.
-	speed, tap, windows, err := newSpeed(c, prof, st, mc, log)
+	speed, tap, windows, err := newSpeed(c, prof, st, mc, ni.Current, log)
 	if err != nil {
 		return err
 	}

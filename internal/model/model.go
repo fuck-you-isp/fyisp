@@ -378,10 +378,60 @@ type SpeedTest struct {
 	// Retransmits of the sending side, nil when unknown.
 	DownRetrans *int64 `json:"down_retrans"`
 	UpRetrans   *int64 `json:"up_retrans"`
-	// Latency under load: median RTT to the gateway and the call path in
-	// the 2 minutes before the test (idle) and during it (loaded).
+	// Median RTT to the gateway in the 2 minutes before the test (idle) and
+	// the worse of its download and upload medians (loaded): Latency.Gateway
+	// in short, kept for the v0.7 API.
 	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
 	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
-	IdleCallMs      *float64 `json:"idle_call_ms"`
-	LoadedCallMs    *float64 `json:"loaded_call_ms"`
+	// Latency under load at the ISP edge (the WAN queue) and the gateway
+	// (the home network): nil when neither was probed.
+	Latency *SpeedLatency `json:"latency"`
+	// Conn is the connection type of the interface the test ran on:
+	// ConnWired, ConnWiFi or ConnUnknown.
+	Conn string `json:"conn"`
+	// Handoff is the first network outside the user's ISP on the path to
+	// the server; nil when unknown.
+	Handoff *Handoff `json:"handoff"`
+}
+
+// Connection types (SpeedTest.Conn).
+const (
+	ConnWired   = "wired"
+	ConnWiFi    = "wifi"
+	ConnUnknown = "unknown"
+)
+
+// SpeedLatency is the latency under load of a speed test, per layer.
+type SpeedLatency struct {
+	Edge    LoadPhases `json:"edge"`
+	Gateway LoadPhases `json:"gateway"`
+}
+
+// LoadPhases is one layer's RTT in the 2 minutes before the test (Idle) and
+// during its download and upload; nil with fewer than 3 probes.
+type LoadPhases struct {
+	Idle *LoadStats `json:"idle"`
+	Down *LoadStats `json:"down"`
+	Up   *LoadStats `json:"up"`
+}
+
+// LoadStats summarises the ICMP probes of one layer over one phase. A lost
+// probe counts as loss and, in the percentiles, as an RTT of the probe's
+// timeout: it is never dropped (under heavy bufferbloat most probes time
+// out, and the survivors alone would understate it).
+type LoadStats struct {
+	N     int     `json:"n"`    // probes
+	Lost  int     `json:"lost"` // of N
+	Loss  float64 `json:"loss"` // Lost/N
+	P50Ms float64 `json:"p50_ms"`
+	P95Ms float64 `json:"p95_ms"`
+}
+
+// Handoff is where the path to a speed test server leaves the user's ISP:
+// the first traceroute hop whose ASN is not the ISP's.
+type Handoff struct {
+	ASN    uint32    `json:"asn"`
+	Name   string    `json:"name"`
+	ISPASN uint32    `json:"isp_asn"`
+	At     time.Time `json:"at"` // when the traceroute ran
 }

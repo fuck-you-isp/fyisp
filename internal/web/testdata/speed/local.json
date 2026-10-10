@@ -7,15 +7,62 @@
  "interval_s": 900,
  "latest": {
   "attempts": 2,
+  "conn": "wired",
   "down_bps": 141000000,
   "down_retrans": 8,
   "end": 1791637668000,
   "fallback": false,
+  "handoff": {
+   "asn": 3356,
+   "at": "2026-10-10T13:07:30Z",
+   "isp_asn": 3320,
+   "name": "LEVEL3"
+  },
   "id": 288,
-  "idle_call_ms": 14.2,
   "idle_gateway_ms": 1.1,
   "label": "Leaseweb New York",
-  "loaded_call_ms": 61,
+  "latency": {
+   "edge": {
+    "down": {
+     "loss": 0,
+     "lost": 0,
+     "n": 60,
+     "p50_ms": 24,
+     "p95_ms": 61.5
+    },
+    "idle": {
+     "loss": 0,
+     "lost": 0,
+     "n": 40,
+     "p50_ms": 8.2,
+     "p95_ms": 9.9
+    },
+    "up": {
+     "loss": 0.052,
+     "lost": 3,
+     "n": 58,
+     "p50_ms": 140,
+     "p95_ms": 1000
+    }
+   },
+   "gateway": {
+    "down": {
+     "loss": 0,
+     "lost": 0,
+     "n": 60,
+     "p50_ms": 9.8,
+     "p95_ms": 14
+    },
+    "idle": {
+     "loss": 0,
+     "lost": 0,
+     "n": 40,
+     "p50_ms": 1.1,
+     "p95_ms": 1.9
+    },
+    "up": null
+   }
+  },
   "loaded_gateway_ms": 9.8,
   "outcome": "ok",
   "port": 5208,

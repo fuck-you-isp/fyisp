@@ -152,10 +152,19 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
   "down_bps": 182345678,          // |null when not measured
   "up_bps": 38123456,             // |null
   "down_retrans": 112, "up_retrans": null,      // |null when unknown
-  "idle_gateway_ms": 1.1, "loaded_gateway_ms": 9.8,   // |null: router RTT 2 min before / during
-  "idle_call_ms": 14.2, "loaded_call_ms": 61.0        // |null: call path (STUN) before / during
+  "idle_gateway_ms": 1.1, "loaded_gateway_ms": 9.8,   // |null: latency.gateway in short (idle p50; the worse of down/up p50)
+  "latency": {                    // |null: latency under load, see below
+    "edge":    {"idle": Stats, "down": Stats, "up": Stats},   // the ISP edge: behind the line's queue
+    "gateway": {"idle": Stats, "down": Stats, "up": Stats}    // the router: the home network
+  },
+  "conn": "wired",                // "wired" | "wifi" | "unknown": the interface the test ran on
+  "handoff": {"asn": 3356, "name": "LEVEL3", "isp_asn": 3320, "at": 1760090000000}   // local only, |null
 }
 ```
+
+**Latency under load.** Bufferbloat sits in the queue at the line's bottleneck (the modem's upload buffer, the ISP's CMTS, OLT or BNG), past the router: the ISP edge (the first hop past the router) is behind it, the router's LAN address is not. During each direction fyisp pings both every 150 ms (1 s timeout). `idle` is the 2 minutes before the test, from the continuous probes. Each `Stats` is `{"n": 60, "lost": 3, "loss": 0.05, "p50_ms": 140, "p95_ms": 1000}`, or `null` with fewer than 3 probes. **A lost probe counts as loss and, in `p50_ms`/`p95_ms`, as 1000 ms**: under heavy bloat most probes time out, so a p95 of 1000 means "at least 1 s". The edge is missing when it can't be found from here (`edge` phases null).
+
+**Handoff** (local only): the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`). Same-metro servers that share it share a path. `null` when unknown (no public hops with an ASN, or the path stays in your ISP's network).
 
 **Outcomes.**
 - `busy`: every port tried, and every server of the chain within the slot's budget, was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
@@ -251,9 +260,9 @@ These give the latest result per region and server, set after every test:
 |---|---|---|
 | `fyisp_speed_download_bits_per_second` | `region`, `server` | gauge (`region` empty outside mode regions) |
 | `fyisp_speed_upload_bits_per_second` | `region`, `server` | gauge |
-| `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`gateway`, `call`), `load` (`idle`, `loaded`) | gauge |
+| `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`edge`, `gateway`), `load` (`idle`, `download`, `upload`) | gauge (median; lost probes count as 1 s) |
 | `fyisp_speed_tests_total` | `region`, `server`, `outcome` | counter |
 
 ## Export
 
-`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms`.
+`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.

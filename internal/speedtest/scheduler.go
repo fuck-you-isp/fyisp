@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net"
+	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
@@ -93,7 +94,18 @@ type Options struct {
 	Interval time.Duration
 	Store    Store
 	Windows  *Windows // marked for every test (masking)
-	Load     *LoadTap // nil: no latency under load
+	Load     *LoadTap // idle latency before each test; nil: none
+	// Path returns the gateway and the ISP edge (netinfo); OpenPinger the
+	// ICMP pinger (probe.OpenPinger). With both, each direction of a test
+	// pings them every LoadEvery (latency under load, see load.go).
+	Path       func() (gateway, edge netip.Addr)
+	OpenPinger func() (LoadPinger, error)
+	// Conn returns the connection type (model.ConnWired, ...) of the
+	// interface tests use; nil: unknown.
+	Conn func() string
+	// Handoff returns where the path to host leaves the user's ISP
+	// (HandoffFinder.Handoff); nil: not recorded.
+	Handoff func(ctx context.Context, host string) (*model.Handoff, error)
 	// Ping returns the ICMP RTT to a host (probe.PingOnce); nil or failing:
 	// TCP connect time to port 80, 443, then the server's first iperf3 port.
 	Ping func(ctx context.Context, host string) (time.Duration, error)
@@ -103,10 +115,11 @@ type Options struct {
 	Now      func() time.Time
 
 	// Tests: the iperf3 run, the RTT check, the sleep and the random source.
-	run   func(ctx context.Context, c Config) (Result, error)
-	rtt   func(ctx context.Context, host string, port int) (time.Duration, error)
-	sleep func(ctx context.Context, d time.Duration) bool
-	rand  *rand.Rand
+	run       func(ctx context.Context, c Config) (Result, error)
+	loadEvery time.Duration // default LoadEvery
+	rtt       func(ctx context.Context, host string, port int) (time.Duration, error)
+	sleep     func(ctx context.Context, d time.Duration) bool
+	rand      *rand.Rand
 }
 
 // target is one slot's test: a region (or none) and the servers to try.
@@ -177,6 +190,9 @@ func New(o Options) *Scheduler {
 	}
 	if o.run == nil {
 		o.run = Run
+	}
+	if o.loadEvery <= 0 {
+		o.loadEvery = LoadEvery
 	}
 	if o.rtt == nil {
 		ping := o.Ping
@@ -563,14 +579,23 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
 	}
 	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
+	lr := s.loadRun()
+	if lr != nil {
+		defer lr.p.Close()
+	}
+	t.Conn = model.ConnUnknown
+	if s.o.Conn != nil {
+		t.Conn = s.o.Conn()
+	}
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)
+	var used Server
 	for i, sv := range tg.chain {
 		if i > 0 && s.o.Now().Sub(t.Start) >= SlotBudget {
 			break
 		}
-		t.Server, t.Fallback, t.Port = sv.ID, i > 0, 0
-		s.testServer(sctx, sv, &t)
+		t.Server, t.Fallback, t.Port, used = sv.ID, i > 0, 0, sv
+		s.testServer(sctx, sv, &t, lr)
 		if t.Outcome == model.SpeedOK || t.DownBps != nil || sctx.Err() != nil {
 			break // measured (a failed upload keeps the download), or out of time
 		}
@@ -580,18 +605,48 @@ func (s *Scheduler) runTarget(ctx context.Context, tg target, trigger string) {
 	if ctx.Err() != nil {
 		return // shutting down: not a result
 	}
-	if l := s.o.Load; l != nil {
-		set := func(layer string, from, to time.Time, into **float64) {
-			if v, ok := l.Median(layer, from, to); ok {
-				*into = &v
+	if t.Latency = latency(s.o.Load, lr, win.Start); t.Latency != nil {
+		g := t.Latency.Gateway
+		if g.Idle != nil {
+			t.IdleGatewayMs = &g.Idle.P50Ms
+		}
+		for _, x := range []*model.LoadStats{g.Down, g.Up} {
+			if x != nil && (t.LoadedGatewayMs == nil || x.P50Ms > *t.LoadedGatewayMs) {
+				t.LoadedGatewayMs = &x.P50Ms
 			}
 		}
-		set(LayerGateway, win.Start.Add(-idleWindow), win.Start, &t.IdleGatewayMs)
-		set(LayerGateway, win.Start, win.End, &t.LoadedGatewayMs)
-		set(LayerCall, win.Start.Add(-idleWindow), win.Start, &t.IdleCallMs)
-		set(LayerCall, win.Start, win.End, &t.LoadedCallMs)
+	}
+	if s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && used.Host != "" {
+		hctx, cancel := context.WithTimeout(ctx, handoffBudget)
+		h, err := s.o.Handoff(hctx, used.Host)
+		cancel()
+		if err != nil {
+			s.o.Log.Debug("speed test: handoff traceroute failed", "server", used.ID, "err", err)
+		}
+		t.Handoff = h
 	}
 	s.save(ctx, &t)
+}
+
+// handoffBudget bounds one handoff traceroute (after the test's window).
+const handoffBudget = 10 * time.Second
+
+// loadRun opens the pinger for one test's latency under load; nil without
+// Path or OpenPinger, or when neither address is known.
+func (s *Scheduler) loadRun() *loadRun {
+	if s.o.Path == nil || s.o.OpenPinger == nil {
+		return nil
+	}
+	gw, edge := s.o.Path()
+	if !gw.IsValid() && !edge.IsValid() {
+		return nil
+	}
+	p, err := s.o.OpenPinger()
+	if err != nil {
+		s.o.Log.Debug("speed test: no ICMP for latency under load", "err", err)
+		return nil
+	}
+	return &loadRun{p: p, gw: gw, edge: edge, every: s.o.loadEvery}
 }
 
 func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) {
@@ -615,8 +670,9 @@ func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest) {
 
 func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
 
-// testServer runs download then upload against sv.
-func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest) {
+// testServer runs download then upload against sv, probing latency under
+// load during each direction (lr nil: none).
+func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest, lr *loadRun) {
 	port := 0
 	for _, dir := range []Direction{Download, Upload} {
 		s.setRun(dir.String(), sv.ID)
@@ -624,7 +680,18 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			t.Outcome = model.SpeedFailed
 			return
 		}
+		var stop func() [2][]loadSample
+		if lr != nil {
+			stop = lr.probe(ctx)
+		}
 		res, p, attempts, outcome := s.direction(ctx, sv, dir, port, t.Start)
+		if stop != nil {
+			if smp := stop(); dir == Download {
+				lr.down = smp
+			} else {
+				lr.up = smp
+			}
+		}
 		t.Attempts += attempts
 		if p != 0 {
 			t.Port, port = p, p

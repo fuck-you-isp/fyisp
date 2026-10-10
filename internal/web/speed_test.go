@@ -124,7 +124,11 @@ func newFakeSpeedEvery(step time.Duration) *fakeSpeed {
 				up := down / 10
 				re := int64(i % 40)
 				t.DownBps, t.UpBps, t.DownRetrans = &down, &up, &re
-				t.IdleGatewayMs, t.LoadedGatewayMs, t.IdleCallMs, t.LoadedCallMs = ms(1.1), ms(9.8), ms(14.2), ms(61)
+				t.IdleGatewayMs, t.LoadedGatewayMs, t.Conn = ms(1.1), ms(9.8), model.ConnWired
+				t.Latency = &model.SpeedLatency{
+					Edge:    model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8.2, P95Ms: 9.9}, Down: &model.LoadStats{N: 60, P50Ms: 24, P95Ms: 61.5}, Up: &model.LoadStats{N: 58, Lost: 3, Loss: 0.052, P50Ms: 140, P95Ms: 1000}},
+					Gateway: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 1.1, P95Ms: 1.9}, Down: &model.LoadStats{N: 60, P50Ms: 9.8, P95Ms: 14}}}
+				t.Handoff = &model.Handoff{ASN: 3356, Name: "LEVEL3", ISPASN: 3320, At: t.Start}
 			}
 			f.tests = append(f.tests, t)
 		}

@@ -14,7 +14,10 @@ func TestSpeedTests(t *testing.T) {
 	defer s.Close()
 	f, r, ms := 4.12e8, int64(112), 1.5
 	full := model.SpeedTest{Start: now.Add(-time.Hour), End: now.Add(-time.Hour + 33*time.Second), Trigger: "schedule", Outcome: model.SpeedOK,
-		Region: "uk", Server: "Clouvider-London", Port: 5203, Attempts: 2, DownBps: &f, UpBps: &f, DownRetrans: &r, IdleGatewayMs: &ms, LoadedGatewayMs: &ms, IdleCallMs: &ms, LoadedCallMs: &ms}
+		Region: "uk", Server: "Clouvider-London", Port: 5203, Attempts: 2, DownBps: &f, UpBps: &f, DownRetrans: &r, IdleGatewayMs: &ms, LoadedGatewayMs: &ms,
+		Conn: model.ConnWired, Latency: &model.SpeedLatency{Edge: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8.2, P95Ms: 9.9},
+			Up: &model.LoadStats{N: 58, Lost: 3, Loss: 0.052, P50Ms: 140, P95Ms: 1000}}},
+		Handoff: &model.Handoff{ASN: 3356, Name: "LEVEL3", ISPASN: 3320, At: now.Add(-2 * time.Hour).Truncate(time.Millisecond)}}
 	busy := model.SpeedTest{Start: now.Add(-30 * time.Minute), End: now.Add(-30*time.Minute + 6*time.Second), Trigger: "manual", Outcome: model.SpeedBusy,
 		Region: "eu-central", Server: "Eranium-Amsterdam", Fallback: true, Port: 5207, Attempts: 3}
 	old := model.SpeedTest{Start: now.Add(-95 * 24 * time.Hour), End: now.Add(-95 * 24 * time.Hour), Trigger: "schedule", Outcome: model.SpeedUnreachable}

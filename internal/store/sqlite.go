@@ -202,6 +202,17 @@ CREATE TABLE speedtests(
 );
 CREATE INDEX speedtests_start ON speedtests(start_ms);
 `,
+	// v6 (fyisp v0.7): latency under load at the ISP edge and the gateway
+	// (JSON, model.SpeedLatency), the connection type and the handoff
+	// network. The v5 call-path columns are no longer written.
+	`
+ALTER TABLE speedtests ADD COLUMN latency_json TEXT;
+ALTER TABLE speedtests ADD COLUMN conn         TEXT NOT NULL DEFAULT '';
+ALTER TABLE speedtests ADD COLUMN handoff_asn  INT;
+ALTER TABLE speedtests ADD COLUMN handoff_name TEXT;
+ALTER TABLE speedtests ADD COLUMN isp_asn      INT;
+ALTER TABLE speedtests ADD COLUMN handoff_ms   INT;
+`,
 }
 
 // SchemaVersion is the schema version this build writes.

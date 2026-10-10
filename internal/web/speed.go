@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -137,8 +138,11 @@ type speedTestJSON struct {
 	UpRetrans       *int64   `json:"up_retrans"`
 	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
 	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
-	IdleCallMs      *float64 `json:"idle_call_ms"`
-	LoadedCallMs    *float64 `json:"loaded_call_ms"`
+	// Latency under load at the ISP edge and the gateway; Conn the
+	// connection type; Handoff (local only) the first network past the ISP.
+	Latency *model.SpeedLatency `json:"latency"`
+	Conn    string              `json:"conn"`
+	Handoff *model.Handoff      `json:"handoff,omitempty"`
 }
 
 // speedNames maps server IDs to their public ID and label.
@@ -204,13 +208,13 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		Server: ref.ID, Label: ref.Label, Fallback: t.Fallback, Attempts: t.Attempts,
 		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans,
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10),
-		IdleCallMs: roundP(t.IdleCallMs, 10), LoadedCallMs: roundP(t.LoadedCallMs, 10)}
+		Latency: t.Latency, Conn: cmp.Or(t.Conn, model.ConnUnknown)}
 	if t.Region != "" {
 		r := t.Region
 		j.Region = &r
 	}
 	if !n.public {
-		j.Port = t.Port
+		j.Port, j.Handoff = t.Port, t.Handoff
 	}
 	return j
 }

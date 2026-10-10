@@ -342,7 +342,8 @@ Please don't run modes more often than every 15 minutes against these servers. F
 - download and upload speed;
 - TCP retransmits;
 - the region, the server used, and whether it was a fallback;
-- **latency under load**: your router's and your call path's round-trip time in the 2 minutes before the test and during it. A big jump is bufferbloat, the reason calls break while someone uploads.
+- **latency under load**: the round-trip time to your ISP's first router (behind your line's queue) and to your own router, in the 2 minutes before the test and during its download and upload, pinged every 150 ms; lost pings count. A big jump at the ISP's router is bufferbloat, the reason calls break while someone uploads; a jump at your own router is your home network (often Wi-Fi).
+- **connection type** (wired or Wi-Fi, Linux) and, locally, **the first network past your ISP** on the way to each server (a traceroute at most once a day per server).
 
 Details → Speed shows:
 - a heatmap of regions × hour of day, each cell compared to that region's own best;

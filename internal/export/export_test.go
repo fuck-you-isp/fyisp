@@ -440,7 +440,11 @@ func TestSpeedTests(t *testing.T) {
 	re := int64(12)
 	for _, x := range []model.SpeedTest{
 		{Start: t0, End: t0.Add(23 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, Region: "uk", Server: "Clouvider-London", Port: 5203, Attempts: 2,
-			DownBps: &down, UpBps: &up, DownRetrans: &re, LoadedGatewayMs: &ms},
+			DownBps: &down, UpBps: &up, DownRetrans: &re, LoadedGatewayMs: &ms, Conn: model.ConnWiFi,
+			Latency: &model.SpeedLatency{Edge: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8.2, P95Ms: 9.9},
+				Down: &model.LoadStats{N: 60, P50Ms: 24, P95Ms: 61.5}, Up: &model.LoadStats{N: 58, Lost: 3, Loss: 0.052, P50Ms: 140, P95Ms: 1000}},
+				Gateway: model.LoadPhases{Down: &model.LoadStats{N: 60, P50Ms: 1.4, P95Ms: 3}}},
+			Handoff: &model.Handoff{ASN: 3356, Name: "LEVEL3", ISPASN: 3320, At: t0}},
 		{Start: t0.Add(15 * time.Minute), End: t0.Add(15*time.Minute + 6*time.Second), Trigger: "schedule", Outcome: model.SpeedBusy, Region: "eu-central", Server: "Eranium-Amsterdam", Fallback: true, Port: 5209, Attempts: 3},
 	} {
 		if err := s.SaveSpeedTest(ctx, &x); err != nil {
@@ -459,9 +463,13 @@ func TestSpeedTests(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := strings.Join([]string{
-		"id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms,idle_call_ms,loaded_call_ms",
-		"1,2026-09-01T00:00:00.000Z,2026-09-01T00:00:23.000Z,schedule,ok,uk,Clouvider-London,0,5203,2,412345678.5,40000000,12,,,9.8,,",
-		"2,2026-09-01T00:15:00.000Z,2026-09-01T00:15:06.000Z,schedule,busy,eu-central,Eranium-Amsterdam,1,5209,3,,,,,,,,",
+		"id,start,end,trigger,outcome,region,server,fallback,port,attempts,down_bps,up_bps,down_retrans,up_retrans,idle_gateway_ms,loaded_gateway_ms," +
+			"conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss," +
+			"gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms",
+		"1,2026-09-01T00:00:00.000Z,2026-09-01T00:00:23.000Z,schedule,ok,uk,Clouvider-London,0,5203,2,412345678.5,40000000,12,,,9.8," +
+			"wifi,3356,3320,8.2,0,24,61.5,0,140,1000,0.052,1.4,3,,",
+		"2,2026-09-01T00:15:00.000Z,2026-09-01T00:15:06.000Z,schedule,busy,eu-central,Eranium-Amsterdam,1,5209,3,,,,,,," +
+			",,,,,,,,,,,,,,",
 	}, "\n") + "\n"
 	if buf.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", buf.String(), want)
