@@ -12,6 +12,7 @@
     "provider": 2,
     "services": 0
   },
+  "coverage": 0.55,
   "days": [
     {
       "date": "2026-10-03",

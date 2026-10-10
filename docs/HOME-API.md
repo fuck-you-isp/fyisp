@@ -348,6 +348,7 @@ The share link's report is `part=history&span=w` in the public voice; the route 
   - `confidence` (`likely` for home and provider; history never claims more);
   - `text`, a short past-tense sentence, the same as its runs';
   - `peak_loss` and `details`.
+- **`coverage`** (0 to 1): the share of the period that was measured, i.e. after `first_data` and not in an `off` span ("Measured 82% of the week").
 - **`summary`, `counts`, `known` and `days`,** as for the owner, in the third person.
 
 `internal/web/testdata/home/report.<scenario>.json` pins it through the public route (TestHomePublicReportGolden), which also checks that no host, address, region or evidence appears.
