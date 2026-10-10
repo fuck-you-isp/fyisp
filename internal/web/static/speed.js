@@ -9,14 +9,15 @@
 
 import { h, fetchJSON, apiWrite, canWrite, dialog, MODE } from './core.js';
 import { clock } from './home.js';
+import { SpeedMap } from './speedmap.js';
 
 /** @typedef {{id:string,label:string,provider:string,city:string,country:string,geo:string,region:string,rtt_ms:number|null,picked:boolean,custom:boolean}} SpeedServer */
 /** @typedef {{hour:number,n:number,down_median_bps:number|null,up_median_bps:number|null,down_norm:number|null}} SpeedHour */
 /** @typedef {{text:string,level:string,hours:number[],drop:number}} SpeedPattern */
 /** @typedef {{id:string,label:string,latest_at:number|null,n:number,busy:number,unreachable:number,failed:number,fallback:number,down_median_bps:number|null,down_p10_bps:number|null,up_median_bps:number|null,up_p10_bps:number|null,best_down_bps:number|null,dip:SpeedPattern|null,hours:SpeedHour[],fallback_share_24h?:number,fallback_note?:string}} SpeedRow */
-/** @typedef {{id:number,start:number,end:number,trigger:string,outcome:string,region:string|null,server:string,label:string,fallback:boolean,attempts:number,down_bps:number|null,up_bps:number|null,idle_gateway_ms:number|null,loaded_gateway_ms:number|null,idle_call_ms:number|null,loaded_call_ms:number|null}} SpeedTest */
+/** @typedef {{id:number,start:number,end:number,trigger:string,outcome:string,region:string|null,server:string,label:string,fallback:boolean,attempts:number,down_bps:number|null,up_bps:number|null,down_retrans:number|null,up_retrans:number|null,idle_gateway_ms:number|null,loaded_gateway_ms:number|null,idle_call_ms:number|null,loaded_call_ms:number|null}} SpeedTest */
 /** @typedef {{started:number,expected_end:number,direction:string,server:{id:string,label:string}|null,region:string|null}} SpeedRunning */
-/** @typedef {{at:number,tz:number,days:number,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,masked_share_24h:number,next_at:number|null,next:{region:string|null,server:string}|null,running:SpeedRunning|null,servers:SpeedServer[],regions:{id:string,title:string,chain:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null}} SpeedSummary */
+/** @typedef {{at:number,tz:number,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,masked_share_24h:number,next_at:number|null,next:{region:string|null,server:string}|null,running:SpeedRunning|null,servers:SpeedServer[],regions:{id:string,title:string,chain:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null}} SpeedSummary */
 
 // Seconds a test fills the line in each direction (a 1 s ramp-up, then 3 to 8 s), and a whole test with its pauses.
 const DIR_S = 6, TEST_S = 15;
@@ -24,7 +25,7 @@ const MONTH_S = 30 * 86400;
 
 /** The mode's name and one sentence. "nearby" and "nearest" are the same radio, whichever the server offers. */
 const MODES = {
-  regions: { name: 'Around the world', rec: true },
+  regions: { name: 'Around the world', def: true },
   nearby: { name: 'Near me, more often' },
   nearest: { name: 'Near me, more often' },
   custom: { name: 'My own servers' },
@@ -63,7 +64,9 @@ function speedError(e) {
 }
 
 export class Speed {
-  constructor() {
+  /** @param {import('./speedmap.js').SpeedHost} host */
+  constructor(host) {
+    this.host = host;
     /** @type {SpeedSummary|null} */
     this.d = null;
     this.err = '';
@@ -88,15 +91,18 @@ export class Speed {
     this.headEl = h('div', { class: 'sp-head' });
     this.progEl = h('div', { class: 'sp-prog', hidden: true });
     this.bodyEl = h('div', { class: 'sp-body' });
+    this.map = new SpeedMap(host);
     this.el = h('section', { id: 'speed', class: 'speed', 'aria-label': 'Speed tests', hidden: true },
-      this.say, this.headEl, this.progEl, this.bodyEl);
+      this.say, this.headEl, this.progEl, this.bodyEl, this.map.el);
   }
 
   /** Re-reads the summary (Details' refresh, every 30 s at most when idle). */
   async refresh() {
     const seq = ++this.seq;
     try {
-      const d = /** @type {SpeedSummary} */ (await fetchJSON('api/speed?' + new URLSearchParams({ days: '7', tz: String(-new Date().getTimezoneOffset()) })));
+      const q = new URLSearchParams({ days: String(this.host.days()), tz: String(-new Date().getTimezoneOffset()) });
+      if (this.host.nofb()) q.set('exclude_fallback', '1');
+      const d = /** @type {SpeedSummary} */ (await fetchJSON('api/speed?' + q));
       if (seq !== this.seq) return;
       this.d = d;
       this.err = '';
@@ -205,10 +211,9 @@ export class Speed {
     const providers = [...new Set(d.servers.filter((s) => !s.custom).map((s) => s.provider))];
     const who = providers.length > 3 ? `${providers.slice(0, 3).join(', ')} and others` : providers.join(' and ');
     const est = this.perTest;
-    const per10 = monthBytes(d, 'regions', 10e6 / 8 * DIR_S);
     const data = est != null
       ? `Your test used about ${bytes(est)}. ${modeName(this.pickMode)} would use about ${bytes(monthBytes(d, this.pickMode, est))} a month.`
-      : `Uses a lot of data. About ${bytes(per10)} a month for every 10 Mbit/s of download plus upload: a 100/20 connection uses about ${bytes(per10 * 12)}.`;
+      : 'Uses a lot of data. With tests around the world, a month uses about:';
     const tph = testsPerHour(d, this.pickMode);
     const busyMin = tph * TEST_S / 60;
     const radios = modes.map((m) => {
@@ -217,7 +222,7 @@ export class Speed {
       return h('div', { class: 'sp-radio' },
         h('input', { type: 'radio', name: 'sp-mode', id, value: m, checked: m === this.pickMode, disabled: !!d.set_by_flag, onchange: () => { this.pickMode = m; this.renderHead(); refocusRadio(m); } }),
         h('label', { for: id },
-          h('b', { text: MODES[/** @type {'regions'} */ (m)].name + (MODES[/** @type {'regions'} */ (m)].rec ? ' (recommended)' : '') }),
+          h('b', { text: MODES[/** @type {'regions'} */ (m)].name + (MODES[/** @type {'regions'} */ (m)].def ? ' (the default)' : '') }),
           h('span', { class: 'sp-radio-text', text: modeSentence(d, m) }),
           gb ? h('span', { class: 'sp-gb', text: gb }) : null));
     });
@@ -228,7 +233,7 @@ export class Speed {
       h('details', { class: 'sp-before', open: true },
         h('summary', { text: on ? 'What it costs' : 'Before you turn this on' }),
         h('ul', { class: 'sp-disc' },
-          h('li', {}, h('span', { text: data }), ' ',
+          h('li', {}, h('span', { text: data }), est == null ? dataTable() : '', ' ',
             can && !this.estimating ? h('button', { class: 'btn sm', type: 'button', text: est != null ? 'Estimate again' : 'Estimate for my connection', onclick: () => this.estimate() }) : null,
             this.estimating ? h('span', { class: 'muted', text: 'Testing (about 20 seconds)…' }) : null),
           h('li', { text: `Your line is busy about ${fmtMinutes(busyMin)} each hour, in ${Math.round(tph)} short bursts (about ${Math.max(1, Math.round(busyMin / 60 * 100))}% of the time).` }),
@@ -398,7 +403,11 @@ export class Speed {
 
   renderBody() {
     const d = this.d;
-    if (!d || (!d.enabled && !d.latest) || this.panel === 'setup') { this.bodyEl.replaceChildren(); return; }
+    const evidence = !!d && !!d.latest && this.panel !== 'setup';
+    this.map.el.hidden = !evidence;
+    if (evidence) this.map.render(/** @type {SpeedSummary} */ (d));
+    if (!d || (!d.enabled && !d.latest) || this.panel === 'setup') { this.bodyEl.replaceChildren(); this.bodyEl.hidden = true; return; }
+    this.bodyEl.hidden = false;
     const t = d.latest;
     const lines = [];
     if (t) {
@@ -412,6 +421,15 @@ export class Speed {
     }
     this.bodyEl.replaceChildren(...lines);
   }
+}
+
+/** The owner's data figures for the default schedule, before any test of this line. */
+function dataTable() {
+  return h('table', { class: 'sp-data' },
+    h('caption', { class: 'muted small', text: 'A full test of every server, when you ask for one, uses about 8 GB.' }),
+    h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Your connection' }), h('th', { scope: 'col', class: 'num', text: 'Data a month' }))),
+    h('tbody', {}, ...[['25 Mbit/s', 'about 150 GB'], ['100 Mbit/s', 'about 600 GB'], ['Fast lines (500 Mbit/s and up)', 'about 1.3 TB']]
+      .map(([a, b]) => h('tr', {}, h('th', { scope: 'row', text: a }), h('td', { class: 'num', text: b })))));
 }
 
 /** replaceChildren, skipping the parts that don't apply. @param {Element} el @param {(Node|null)[]} kids */

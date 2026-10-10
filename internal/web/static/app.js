@@ -71,14 +71,15 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
 
 /**
  * Page state; everything but band lives in the URL hash. view: 'h' (Home),
- * 'calls' (Calls), 'o' (Overview) or 'c' (charts), null for Home; focus: a target shown alone
+ * 'calls' (Calls), 'o' (Overview), 'c' (charts) or 'speed' (Speed), null for Home; focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
- * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter.
+ * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter;
+ * sr/sd/snf: Speed's selected row, span in days and "leave out backup servers".
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string, sr:string, sd:number, snf:boolean}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '' };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '', sr: '', sd: 7, snf: false };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -210,6 +211,11 @@ function readHash() {
   state.oc = p.get('oc') || '';
   const om = p.get('om');
   state.om = om === 'r' || om === 'ms' ? om : '';
+  // Speed: the selected row ('r:<region>' or 's:<server>'), the span, backup servers left out.
+  const sr = p.get('sr');
+  state.sr = sr && /^[rs]:[A-Za-z0-9._:-]{1,80}$/.test(sr) ? sr : '';
+  state.sd = p.get('sd') === '30' ? 30 : 7;
+  state.snf = p.get('snf') === '1';
 }
 /** The last hash the page applied (hashchange and popstate both fire on Back). */
 let lastHash = '';
@@ -236,6 +242,9 @@ function hashString() {
   if (state.op) p.set('op', '1');
   if (state.oc) p.set('oc', state.oc);
   if (state.om) p.set('om', state.om);
+  if (state.sr) p.set('sr', state.sr);
+  if (state.sd === 30) p.set('sd', '30');
+  if (state.snf) p.set('snf', '1');
   return '#' + p.toString();
 }
 function writeHash() {
@@ -4190,7 +4199,15 @@ async function main() {
   callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
   ov = new Overview();
   calls = callsOn ? new Calls() : null;
-  speed = await speedAvailable() ? new Speed() : null;
+  speed = await speedAvailable() ? new Speed({
+    sel: () => state.sr,
+    setSel: (v) => { state.sr = v; writeHash(); },
+    days: () => state.sd,
+    setDays: (n) => { state.sd = n; writeHash(); speed?.refresh(); },
+    nofb: () => state.snf,
+    setNofb: (b) => { state.snf = b; writeHash(); speed?.refresh(); },
+    refresh: () => speed?.refresh(),
+  }) : null;
   // The view switch, then Calls, the network path, the Overview or the charts: DOM order is visual order.
   const path = panels.filter((p) => p.isPath).map((p) => p.el);
   $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', speed ? speed.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
