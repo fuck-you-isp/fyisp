@@ -27,8 +27,9 @@ import (
 //   - nothing stands out, or not enough data yet.
 //
 // Confidence tiers: "points to" with ≥ 7 days, full coverage and a wired
-// connection; "most likely" with 5-6 days or Wi-Fi/unknown; "early sign"
-// with 3-4 days. A household caveat is added on Wi-Fi, or when the router's
+// connection; "most likely" with ≥ 5 days and full coverage (every dip
+// hour tested ≥ 3 times across ≥ 2 providers); "early sign" otherwise
+// (3-4 days, or partial coverage). A household caveat is added on Wi-Fi, or when the router's
 // own delay under load rises nearly as much as the provider's.
 
 // Finding cases.
@@ -100,6 +101,18 @@ func FindFinding(in FindingInput) Finding {
 		f.TextPublic, f.Evidence = f.Text, fmt.Sprintf("Based on %s so far.", plural(len(tests), "test", "tests"))
 		return f
 	}
+	// From here Days is the span the tests cover, in whole days: 4 days of
+	// tests touch 5 dates, and the tiers must not count the partial ones.
+	first, last := tests[0].Start, tests[0].Start
+	for _, t := range tests {
+		if t.Start.Before(first) {
+			first = t.Start
+		}
+		if t.Start.After(last) {
+			last = t.Start
+		}
+	}
+	f.Days = min(f.Days, max(1, int(math.Ceil(last.Sub(first).Hours()/24))))
 	f.Evidence = fmt.Sprintf("Based on %s over %s.", plural(len(tests), "test", "tests"), plural(f.Days, "day", "days"))
 	if f.thin(in, tests) {
 		return f
@@ -446,7 +459,7 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 	switch {
 	case f.Days >= 7 && full && wired:
 		f.Tier = TierPointsTo
-	case f.Days >= 5:
+	case f.Days >= 5 && full:
 		f.Tier = TierMostLikely
 	default:
 		f.Tier = TierEarly
