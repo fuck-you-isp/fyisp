@@ -36,11 +36,11 @@ Add fyisp options at the end, e.g. `... ))) --profile streaming`. `run.ps1` does
 
 ### What you see: Home and Details
 
-<!-- Screenshot placeholder: docs/img/home.png (Home, desktop, light), from cq-ui's pr4c set. -->
+![fyisp Home: one answer, the path from your router to the internet, tiles for calls, work apps and websites, and today's timeline](docs/img/home.png)
 
 **Home** opens first. It answers one question, *is my internet OK for calls and work?*, in plain words, without numbers:
 
-- **The answer card**: one sentence (*Your internet is fine for calls and work*, *Calls may be choppy*), the chain *Your router → Your provider → The internet → Apps & websites* with a mark on the link that is most likely at fault, *What does this mean?* and, when something is wrong, *What you can try*.
+- **The answer card**: one sentence (*Your internet is fine*, *Your internet provider is having trouble*, *No internet connection*), the chain *Your router → Your provider → The internet → Apps & websites* with a mark on the link that is most likely at fault, *What does this mean?* and, when something is wrong, *What you can try*.
 - **Mark a bad call**: one click saves "now" (with Undo) and says what fyisp saw at that minute, including when your connection looked fine and the problem was more likely the app or the other person's connection. *Was it earlier?* picks another time.
 - **Tiles** for *Calls*, *Work apps* and *Websites* (and *Other services* when you measure more): *Working*, *Slow*, *Not working*, or for calls *Good*, *Some glitches*, *Choppy*, *Breaking up*, *Blocked*. A tile names the one app that fails, e.g. *Zoom isn't answering*.
 - **When was it bad?**: today or this week, block by block, with a sentence such as *2 rough patches this week, both most likely your internet provider*. Time when fyisp wasn't running is hatched and never counted as bad.
