@@ -32,8 +32,12 @@ func TestStockServer(t *testing.T) {
 		if d == Download && r.Retransmits < 0 {
 			t.Errorf("download: no retransmit count from the server")
 		}
+		time.Sleep(time.Second)
 	}
-	// Busy: start one test, then try a second while it runs.
+	// Busy: start one test, then try a second while it runs. (iperf3 -s
+	// closes its listener for a moment after each test: connects in that
+	// window are refused, hence the pauses.)
+	time.Sleep(time.Second)
 	first := make(chan error, 1)
 	go func() {
 		_, err := Run(ctx, Config{Addr: addr, Direction: Download, Duration: 3 * time.Second, Streams: 2})
