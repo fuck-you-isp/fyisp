@@ -210,8 +210,12 @@ export function dialog(o) {
       h('h2', { id: 'dlg-t', text: o.title }),
       o.text ? h('p', { class: 'dlg-text', text: o.text }) : null,
       ...(o.fields || []),
+      // Only the primary button submits: Enter in a field (implicit submission) must pick it, never Cancel.
       h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }),
-        ...o.buttons.map((b) => h('button', { class: `btn${b.primary ? ' primary' : ' ghost'}${b.danger ? ' danger' : ''}`, value: b.value, text: b.label }))));
+        ...o.buttons.map((b) => h('button', {
+          class: `btn${b.primary ? ' primary' : ' ghost'}${b.danger ? ' danger' : ''}`, value: b.value, text: b.label,
+          type: b.primary ? 'submit' : 'button', onclick: b.primary ? null : () => dlg.close(b.value),
+        }))));
     dlg.append(form);
     dlg.addEventListener('close', () => { resolve(dlg.returnValue || ''); dlg.remove(); });
     document.body.append(dlg);
@@ -254,10 +258,19 @@ export async function adminHeader() {
   return t;
 }
 
-/** Adds X-FYISP-Admin when controls need the admin token and no session cookie carries it. @param {Record<string,string>} headers */
+/**
+ * Adds X-FYISP-Admin when controls need the admin token and no session
+ * cookie carries it. Resolves false when the token is needed but none was
+ * given (the dialog was cancelled): the caller must not send the request.
+ * @param {Record<string,string>} headers
+ */
 export async function addAdmin(headers) {
   const status = statusOf();
-  if (status && status.controls === 'admin' && !status.admin) headers['X-FYISP-Admin'] = await adminHeader();
+  if (!(status && status.controls === 'admin' && !status.admin)) return true;
+  const t = await adminHeader();
+  if (!t) return false;
+  headers['X-FYISP-Admin'] = t;
+  return true;
 }
 
 /** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] */
@@ -266,7 +279,7 @@ export async function apiWrite(method, url, body) {
   const headers = { 'X-FYISP-Token': TOKEN };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const status = statusOf();
-  await addAdmin(headers);
+  if (!await addAdmin(headers)) throw Object.assign(new Error('the admin token is needed'), { status: 0 });
   try {
     return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
   } catch (e) {
