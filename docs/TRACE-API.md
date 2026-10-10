@@ -17,12 +17,12 @@ There is no body. The checks are:
 | Same origin (`Origin` / `Sec-Fetch-Site`) | yes | yes |
 | `X-FYISP-CSRF` (page meta) | yes | — (the public page has none) |
 | Admin token | **no** | — |
-| Per-client limit (`Cf-Connecting-Ip`) | — | 1 new start per 30 s, 10 per hour (only starts that happen count) |
+| Per-client limit (`Cf-Connecting-Ip`; IPv6 per /64) | — | 1 new start per 30 s, 10 per hour (only starts that happen count; a full limiter table refuses new clients) |
 | Slots | any of the 4 | at most 3 of the 4: the owner always has one |
 | Restarting a finished target | at once | after a 5-minute cooldown |
 
 **Request rules:**
-- Exactly one `target` parameter and nothing else, with no body (bodies are capped at 1 KiB and refused).
+- Exactly one `target` parameter and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
 - Only profile target names are accepted; never a host or an address.
 - At most 4 traces run at once, shared by both listeners.
 - Every response has `Cache-Control: no-store`.

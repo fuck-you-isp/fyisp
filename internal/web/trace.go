@@ -859,6 +859,12 @@ func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) stri
 		writeInvErr(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", 0)
 		return ""
 	}
+	// No body: refused by its declared length or chunking before reading,
+	// and anything that still arrives (at most investigateBodyMax is read).
+	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "this request takes no body", 0)
+		return ""
+	}
 	if n, _ := io.Copy(io.Discard, http.MaxBytesReader(w, r.Body, investigateBodyMax)); n > 0 {
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "this request takes no body", 0)
 		return ""
@@ -926,10 +932,26 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 }
 
 // startLimiter limits new public trace starts per client. Only starts that
-// happened count: a refused one (cooldown, no slot) does not.
+// happened count: a refused one (cooldown, no slot) does not. Clients are
+// grouped by address: IPv4 /32, IPv6 /64 (one home's prefix). The map is
+// bounded: when full, expired entries are pruned and new clients refused
+// until there is room again.
 type startLimiter struct {
-	mu sync.Mutex
-	m  map[string][]time.Time // client -> starts in the last hour
+	mu  sync.Mutex
+	m   map[string][]time.Time // client group -> starts in the last hour
+	max int                    // capacity (0: startLimiterMax)
+}
+
+// startLimiterMax bounds the number of client groups remembered.
+const startLimiterMax = 4096
+
+// limitKey groups a client key: an IPv6 address by its /64.
+func limitKey(key string) string {
+	if a, err := netip.ParseAddr(key); err == nil && a.Is6() && !a.Is4In6() {
+		p, _ := a.Prefix(64)
+		return p.String()
+	}
+	return key
 }
 
 // recent returns key's starts in the last hour. mu is held.
@@ -945,8 +967,15 @@ func (l *startLimiter) recent(key string, now time.Time) []time.Time {
 
 // check reports whether key may start a trace at now, or how long to wait.
 func (l *startLimiter) check(key string, now time.Time) (bool, time.Duration) {
+	key = limitKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if _, known := l.m[key]; !known && len(l.m) >= l.capacity() {
+		l.pruneLocked(now)
+		if len(l.m) >= l.capacity() {
+			return false, PublicInvestigateEvery // full: no new clients for now
+		}
+	}
 	ts := l.recent(key, now)
 	switch {
 	case len(ts) > 0 && now.Sub(ts[len(ts)-1]) < PublicInvestigateEvery:
@@ -957,12 +986,34 @@ func (l *startLimiter) check(key string, now time.Time) (bool, time.Duration) {
 	return true, 0
 }
 
-// record counts a start by key at now.
+func (l *startLimiter) capacity() int {
+	if l.max > 0 {
+		return l.max
+	}
+	return startLimiterMax
+}
+
+// pruneLocked drops clients without a start in the last hour. mu is held.
+func (l *startLimiter) pruneLocked(now time.Time) {
+	for k := range l.m {
+		if ts := l.recent(k, now); len(ts) == 0 {
+			delete(l.m, k)
+		} else {
+			l.m[k] = ts
+		}
+	}
+}
+
+// record counts a start by key at now (check said yes just before).
 func (l *startLimiter) record(key string, now time.Time) {
+	key = limitKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.m == nil || len(l.m) > 4096 {
-		l.m = map[string][]time.Time{} // bounded: forget everyone rather than grow
+	if l.m == nil {
+		l.m = map[string][]time.Time{}
+	}
+	if _, known := l.m[key]; !known && len(l.m) >= l.capacity() {
+		return // full: check refuses new clients; never grow past the bound
 	}
 	l.m[key] = append(l.recent(key, now), now)
 }

@@ -75,6 +75,7 @@ func (h *publicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(hd)
 	hd.Set("X-Robots-Tag", "noindex, nofollow")
 	if !h.lim.allow(clientKey(r), h.now()) {
+		hd.Set("Cache-Control", "no-store")
 		hd.Set("Retry-After", "1")
 		writeErr(w, r, http.StatusTooManyRequests, "too many requests")
 		return
@@ -137,6 +138,7 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 // browser POST carries Origin https://<that host> (TestLiveSameOrigin in
 // internal/tunnel checks this on a real tunnel).
 func (h *publicHandler) servePublicInvestigate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store") // every response, errors included
 	target := h.investigateRequest(w, r)
 	if target == "" {
 		return

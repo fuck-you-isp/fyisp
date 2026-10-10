@@ -48,10 +48,13 @@ safeguards are:
   public link;
 - the per-router probe cap is unchanged;
 - public starts are same-origin only (checked behind a real quick tunnel) and
-  limited per client by `Cf-Connecting-Ip` (1 per 30 s, 10 per hour), on top
-  of the public rate limits; that key is trustworthy because the public
-  origin listens on 127.0.0.1 only;
-- the route takes exactly one `target` parameter and no body, is never
+  limited per client by `Cf-Connecting-Ip` (IPv4 per address, IPv6 per /64;
+  1 per 30 s, 10 per hour), on top of the public rate limits; that key is
+  trustworthy because the public origin listens on 127.0.0.1 only; when the
+  limiter's table is full it prunes, then refuses new clients rather than
+  forgetting everyone;
+- the route takes exactly one `target` parameter and no body (a declared
+  length, chunking or anything read is refused), is never
   cached, and its responses carry only the trace's state (target name,
   rounds, times); hop addresses stay redacted as on every public trace view;
 - client addresses are never logged.

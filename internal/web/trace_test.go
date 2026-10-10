@@ -564,10 +564,15 @@ func TestPublicInvestigate(t *testing.T) {
 		"other parameter": {"POST", base + "?target=Alpha&host=8.8.8.8", hdr("1.1.1.1"), "", 400, "bad_request"},
 		"a body":          {"POST", base + "?target=Alpha", hdr("1.1.1.1"), `{"target":"Alpha","host":"8.8.8.8"}`, 400, "bad_request"},
 		"a big body":      {"POST", base + "?target=Alpha", hdr("1.1.1.1"), strings.Repeat("x", 4<<10), 400, "bad_request"},
+		"chunked":         {"POST", base + "?target=Alpha", hdr("1.1.1.1"), "chunked", 400, "bad_request"},
 		"GET":             {"GET", base + "?target=Alpha", hdr("1.1.1.1"), "", 405, "method_not_allowed"},
 		"bad secret":      {"POST", "/s/" + strings.Repeat("0", len(testSecret)) + "/api/investigate?target=Alpha", hdr("1.1.1.1"), "", 404, ""},
 	} {
 		r := httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))
+		if c.body == "chunked" { // no declared length: Transfer-Encoding: chunked
+			r = httptest.NewRequest(c.method, c.path, strings.NewReader(""))
+			r.ContentLength, r.TransferEncoding = -1, []string{"chunked"}
+		}
 		for k, v := range c.hdr {
 			if k == "Host" {
 				r.Host = v
@@ -663,5 +668,49 @@ func TestPublicInvestigate(t *testing.T) {
 	}
 	if codes["200"] != PublicInvestigatePerHour || codes["429rate_limited"] != 2 {
 		t.Errorf("per hour: %v", codes)
+	}
+}
+
+// TestStartLimiter: IPv6 clients are grouped by /64, IPv4 by address; a
+// full limiter prunes, then refuses new clients rather than forgetting
+// everyone.
+func TestStartLimiter(t *testing.T) {
+	now := time.Now()
+	var l startLimiter
+	start := func(key string) bool {
+		ok, _ := l.check(key, now)
+		if ok {
+			l.record(key, now)
+		}
+		return ok
+	}
+	if !start("2001:db8:1:2::1") || start("2001:db8:1:2:ffff::9") {
+		t.Error("one /64 is one client")
+	}
+	if !start("2001:db8:1:3::1") {
+		t.Error("another /64 is another client")
+	}
+	if !start("192.0.2.1") || !start("192.0.2.2") || start("192.0.2.1") {
+		t.Error("IPv4: one address, one client")
+	}
+	full := startLimiter{max: 2}
+	ok := func(key string, at time.Time) bool {
+		ok, _ := full.check(key, at)
+		if ok {
+			full.record(key, at)
+		}
+		return ok
+	}
+	if !ok("192.0.2.1", now) || !ok("192.0.2.2", now) {
+		t.Fatal("room for two")
+	}
+	if ok("192.0.2.3", now) {
+		t.Error("full: a new client got in")
+	}
+	if len(full.m) != 2 {
+		t.Errorf("full limiter grew or forgot: %d", len(full.m))
+	}
+	if !ok("192.0.2.3", now.Add(time.Hour+time.Minute)) || len(full.m) != 1 {
+		t.Errorf("after an hour the expired clients are pruned and a new one fits: %d", len(full.m))
 	}
 }

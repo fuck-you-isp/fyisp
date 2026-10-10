@@ -94,13 +94,15 @@ docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data 
 
 #### Controls under Docker
 
-Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. Changes (*Mark a bad call*, notes, reports, *Create public link* / *Stop sharing*) therefore need an admin token. Starting a trace (*Investigate*) doesn't: anyone who can open the dashboard may trace a profile target, for at most 250 rounds. On first start fyisp generates one, keeps it in the data volume (`/data/admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
+Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. Changes (*Mark a bad call*, notes, reports, *Create public link* / *Stop sharing*) therefore need an admin token. On first start fyisp generates one, keeps it in the data volume (`/data/admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
 
 - Open the link once per browser. The page swaps the token for a cookie that only this dashboard sees and removes it from the address bar. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers. Looking at the dashboard needs no token.
 - Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`.
 - To sign every browser out, delete the token and restart; a new link is logged: `docker run --rm -v fyisp:/data busybox rm /data/admin-token && docker restart fyisp`.
 - `--admin-token=<your own>` uses that token instead (the browser asks for it, or open `http://…:3000/#admin=<token>`). `--admin-token=off` disables changes entirely; `--share` still starts the public link at startup.
 - The dashboard is plain HTTP: someone who can watch your network traffic could copy the cookie, as with any HTTP login. Keep it on a network you trust, or use `-p 127.0.0.1:3000:3000`.
+
+Starting a trace (*Investigate*) needs no admin token: anyone who can open the dashboard may trace a profile target, for at most 250 rounds.
 
 If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
 
@@ -408,7 +410,7 @@ Sharing is **off by default**. Start it with *Make a report* on Home, the share 
 
 - fyisp opens a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) from inside the process (no `cloudflared` install, no Cloudflare account) and prints a link like `https://<random-words>.trycloudflare.com/s/<secret>/`.
 - **What is public:** the report, the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, and requests are rate-limited.
-- **People with your link can start a trace** (*Investigate*) of your profile's targets, and nothing else. It is the one thing the public link can change. Only targets in your profile can be traced, never a host or address of the visitor's choosing. Each trace runs 250 rounds (about 10 minutes) and stops by itself, at most 4 run at once (yours included), and each visitor can start one every 30 seconds and 10 an hour. The hops it shows are redacted like the rest of the public link.
+- **People with your link can start a trace** (*Investigate*) of your profile's targets, and nothing else. It is the one thing the public link can change. Only targets in your profile can be traced, never a host or address of the visitor's choosing. Each trace runs 250 rounds (about 10 minutes) and stops by itself. At most 4 run at once, and visitors can hold at most 3 of them, so you always have one. Each visitor can start one every 30 seconds and 10 an hour, and a target whose trace just finished can be traced again from the link only after 5 minutes. The hops it shows are redacted like the rest of the public link.
 - **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
 - The tunnel tries QUIC (UDP port 7844) first and switches to HTTP/2 over TCP port 443 after about 30 seconds if UDP is blocked. Force one with `--share-protocol quic` or `--share-protocol http2`.
 - The link is random. It changes when fyisp restarts, or when the tunnel has to be re-created after 5 minutes without a connection. The browser on your machine always opens `127.0.0.1`, never the public link.
