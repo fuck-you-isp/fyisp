@@ -57,7 +57,7 @@ func TestSpeedFlags(t *testing.T) {
 	if err != nil || tap == nil || w == nil {
 		t.Fatal(err)
 	}
-	if st := s.State(); len(st.Servers) != 45 || len(st.Regions) != 19 || len(st.Custom) != 0 || s.SweepSize() != 45 {
+	if st := s.State(); len(st.Servers) != 45 || len(st.Regions) != 19 || len(st.Custom) != 0 {
 		t.Errorf("%d servers, %d regions", len(st.Servers), len(st.Regions))
 	}
 	cfg, _ = parseFlags([]string{"--speedtest-server", "iperf.example.net:5201"})

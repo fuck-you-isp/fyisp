@@ -23,12 +23,12 @@ Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and n
 | HTTP | `code` |
 |---|---|
 | 400 | `bad_request` |
-| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token, admin token or page token) |
+| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
 | 409 | `conflict` |
 | 421 | `unknown_host` |
-| 429 | `queue_full` (with `retry_after` and `queue`), or `rate_limited` (with `retry_after`) |
+| 429 | `queue_full`; `rate_limited`, `budget_exhausted`, `time_cap` and `cooldown` (with `retry_after`, the last three with `resets_at`) |
 | 503 | `unavailable` (retry after `Retry-After`) |
 
 ## Nullables
@@ -97,21 +97,26 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
   "pattern": { ...Pattern },      // |null: a clear time-of-day dip of all scheduled tests' scores pooled (fallback tests left out)
   "finding": { ...Finding },      // what a dip points to
   "coverage": [ {"hour": 0, "n": 4, "providers": 2} ],   // 24 entries: scheduled ok tests and providers per local hour, in the span
-  "under_load": { ...UnderLoad }
+  "under_load": { ...UnderLoad },
+  "edge_hours": [                 // |null without an ISP edge target: the access network's control
+    {"hour": 21, "n": 28, "rtt_ms": 30.2, "loss": 0.01}   // 24 local hours: idle RTT to the ISP edge (median over days of the hour's mean; tests are masked out) and loss over 30 days; rtt_ms and loss |null when n is 0
+  ]
 }
 ```
 
 ### Running
 
+The queue's running entry in short (the full entry is in `part=queue`):
+
 ```jsonc
 {
   "entry": 17,                    // the queue entry
-  "kind": "test",                 // "test" | "sweep" | "scheduled"
+  "kind": "single",               // "single" | "sweep" | "scheduled"
   "started": 1760104790000,
-  "expected_end": 1760104810000,  // an estimate (20 s a test; a sweep: 20 s × the servers left); a test can run up to 45 s
-  "step": "download",             // "picking" (nearby: RTT checks) | "download" | "upload"
+  "expected_end": 1760104810000,  // the queue's estimate; a test can run up to 45 s
+  "direction": "download",        // "picking" (nearby: RTT checks) | "download" | "upload"
   "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null while picking
-  "index": 1, "total": 1          // a sweep: the server being tested, 1-based, of total
+  "step": 1, "steps": 1           // a sweep: the server under test, 1-based, of steps
 }
 ```
 
@@ -209,14 +214,15 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
   "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
   "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],
   "servers": [],                  // case server: the server
+  "network": "AS3356 LEVEL3",     // omitempty, local wording only: the first network past the ISP the slow tests share (handoff)
   "drop": 0.4, "up": false,
   "days": 9, "tests": 648         // days and scored scheduled tests behind it
 }
 ```
 
 The cases:
-- `isp`: every region dips at the same hours with every provider. The ISP edge's idle RTT by hour is the access-network control: it says whether the slowdown is in the provider's local network or further in.
-- `provider`: only one provider's servers dip, in more than one region.
+- `isp`: every region dips at the same hours with every provider (a provider that stays flat rules it out). The cross-destination comparison is the main signal; the ISP edge's idle RTT by hour (`edge_hours`) only supports it when it rises at those hours. A flat edge proves nothing: lines with active queue management keep it flat while congested.
+- `provider`: only one provider's servers dip, in more than one region; or (`network` set, `providers` several) only the servers reached through one network past the ISP (the tests' `handoff`) dip, the others stay flat. `text_public` never names the network.
 - `route`: only one region dips, whichever provider.
 - `server`: only one server.
 
@@ -244,8 +250,8 @@ The latency under load over the span: per layer, the median over tests.
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep"
-  "manual": false,                // not "schedule": never in rows, patterns or the finding
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | from the share link "public" | "public_sweep"
+  "on_demand": false,             // not "schedule": never in rows, patterns or the finding
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed"
   "region": "us-east",            // |null when the test was for no region
   "server": "Leaseweb-NewYork", "label": "Leaseweb New York", "display": "US East · Leaseweb, New York",
@@ -261,16 +267,19 @@ The latency under load over the span: per layer, the median over tests.
   "score": 0.94, "up_score": 0.97,             // |null: against the server's baseline
   "bytes": 146800640,             // data used, both directions, ramp-up included
   "down_retrans": 112, "up_retrans": null,     // |null when unknown
-  "idle_gateway_ms": 1.1, "loaded_gateway_ms": 1.5,   // |null: router RTT before / worse direction's median during
-  "connection": "wired",          // omitempty: "wired" | "wifi" | "unknown"
-  "latency": {                    // omitempty: by layer
-    "edge": {"idle_ms": 8.2,
-             "down": {"p50_ms": 21, "p90_ms": 34, "sent": 30, "lost": 1},
-             "up": {"p50_ms": 48, "p90_ms": 90, "sent": 25, "lost": 0}},
-    "gateway": { … }
-  }
+  "idle_gateway_ms": 1.1, "loaded_gateway_ms": 1.5,   // |null: latency.gateway in short (idle p50; the worse of down/up p50)
+  "latency": {                    // |null: latency under load, see below
+    "edge":    {"idle": Stats, "down": Stats, "up": Stats},   // the ISP edge: behind the line's queue
+    "gateway": {"idle": Stats, "down": Stats, "up": Stats}    // the router: the home network
+  },
+  "conn": "wired",                // "wired" | "wifi" | "unknown": the interface the test ran on
+  "handoff": {"asn": 3356, "name": "LEVEL3", "isp_asn": 3320, "at": 1760090000000}   // local only, |null
 }
 ```
+
+**Latency under load.** Bufferbloat sits in the queue at the line's bottleneck (the modem's upload buffer, the ISP's CMTS, OLT or BNG), past the router: the ISP edge (the first hop past the router) is behind it, the router's LAN address is not. During each direction fyisp pings both every 150 ms (1 s timeout). `idle` is the 2 minutes before the test, from the continuous probes. Each `Stats` is `{"n": 60, "lost": 3, "loss": 0.05, "p50_ms": 140, "p95_ms": 1000}`, or `null` with fewer than 3 probes. **A lost probe counts as loss and, in `p50_ms`/`p95_ms`, as 1000 ms**: under heavy bloat most probes time out, so a p95 of 1000 means "at least 1 s". On lines with active queue management (fq_codel, CAKE) the edge stays flat even when the line is congested.
+
+**Handoff** (local only): the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`). `null` when unknown.
 
 **Outcomes.**
 - `busy`: every port and server tried within the slot's budget was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
@@ -291,7 +300,7 @@ One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An 
   "kind": "region",               // "region" | "server"
   "row": { ...Row },
   "tests": [ ...Test ],           // every test in the span (any trigger), oldest first, the newest 5000 at most
-  "windows": [ {"start": ..., "end": ...} ]
+  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner | public
 }
 ```
 
@@ -300,99 +309,151 @@ For compare, make one request per row (up to 4).
 ## `GET api/speed?part=windows&from=...&to=...`
 
 ```json
-{"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000}]}
+{"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "public"}]}
 ```
 
 `from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples that ran inside a window, or within 2 s after it, are stored as "not measured", so charts show a gap. The verdict, call minutes, Home and history never count them, and history never calls them "fyisp wasn't running".
 
 ## The queue
 
-Scheduled slots, Test now and sweeps share one process-wide queue, and one entry runs at a time:
-- The owner's entries (local listener) wait ahead of scheduled slots and visitors' entries (share link). A running entry is never pre-empted.
-- An equivalent waiting entry is returned instead of a new one: the same kind and target. Sweeps are all equivalent.
-- Visitors are keyed by `Cf-Connecting-Ip`, with IPv6 grouped by /64. Each visitor may have 1 waiting entry, and at most 3 visitors' sweeps wait at once. Beyond that the answer is `429 queue_full`.
-- A scheduled slot that waited more than 10 minutes is dropped, and slots never stack up.
-- A sweep tests every catalog server once (45), with the normal test and byte cap, and is stored with trigger `sweep`.
+Every test goes through one process-wide queue, and exactly one runs at a time:
+- **Test now:** one server, a region's chain, or the nearest servers.
+- **Sweep:** every catalog server and the user's own servers, one test each, about 45.
+- **Scheduled slots:** a slot is enqueued when it falls due. It is **dropped** if it is still waiting 10 minutes later, and a slot already waiting is never stacked.
+
+The order is by class, FIFO within each: the owner's entries (the local dashboard) first, then schedule slots, then the share link's. Nothing interrupts the running test. A public sweep **yields** between its tests whenever an owner entry or a schedule slot is waiting, and then resumes at the head of the share link's entries. Schedule slots therefore never starve behind public sweeps.
+
+There is no cooldown. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
+
+**The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
+
+**The share link has a data budget:** at most `--speedtest-public-budget` (default 10 GB) over a rolling 24 hours.
+- It counts every byte the share link's tests put on the wire: every attempt, the ramp-up, and tests that were cut short.
+- It is saved across restarts.
+- Once spent:
+  - new share-link requests get 429 `budget_exhausted` with `resets_at`, the moment enough use ages out;
+  - waiting share-link entries are dropped when their turn comes;
+  - a running share-link sweep stops after its current test.
+- The owner and the schedule are never limited by it.
+
+**The share link has test-time caps.** Probes are masked during every test, so its tests may keep the line under test for at most:
+- 10 minutes in any hour;
+- 60 minutes in any 24 hours.
+
+A new public sweep can start at the earliest 30 minutes after the last one ended (429 `cooldown` with `resets_at`); one already waiting stays waiting until then while other entries go by, and its `est_start` says when. The end time is saved, so a restart doesn't reset the gap. Single tests are not affected. Test time is charged while a test runs, every 15 s, and counts whether the test finishes, fails or is cancelled. A capped share link gets 429 `time_cap` with `resets_at`. Visitors therefore can't blank out the monitoring.
+
+### `GET api/speed?part=queue`
+
+In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It's cheap; poll every 3 s.
+
+```jsonc
+{
+  "at": 1760104800000,
+  "max_waiting": 12,            // the share link's waiting entries, in all
+  "full": false,                // the share link can't add any now
+  "sweeps_full": false,         // 3 share-link sweeps are waiting
+  "mine": 17,                   // |null: the viewer's newest waiting or running entry (share link: this visitor; local: the owner)
+  "running": { ...Entry },      // |null
+  "waiting": [ { ...Entry } ],  // in run order
+  "last_sweep": { ...Entry },   // |null: the last finished sweep
+  "public_enabled": true,       // the owner lets the share link queue tests
+  "public_start": true,         // the share link may start one now: enabled, budget and test time left, room in the queue (show its button only then)
+  "budget": {                   // the share link's rolling 24-hour data budget
+    "limit_bytes": 50000000000, "used_bytes": 1200000000, "remaining_bytes": 48800000000,
+    "resets_at": null,          // |null: when spent, when enough use ages out
+    "time_hour_s": 240, "time_day_s": 960,          // the share link's test time in the last hour and day
+    "time_hour_max_s": 600, "time_day_max_s": 3600,
+    "time_resets_at": null,     // |null: when a capped one frees up
+    "sweep_available_at": null  // |null: a public sweep ran recently; the next from then
+  }
+}
+```
 
 ### Entry
 
 ```jsonc
 {
   "id": 17,
-  "kind": "test",                 // "test" | "sweep" | "scheduled"
-  "who": "you",                   // "you" (this listener's owner, or this visitor) | "someone" | "scheduled"
-  "state": "waiting",             // "waiting" | "running" | "done" | "cancelled" | "dropped"
-  "position": 1,                  // 1 = next; 0 when running or finished
-  "label": "US East",             // the target's title or label; "Nearest servers"; "All servers"
-  "target": "us-east",            // omitempty: the region or server id (custom-N on the share link)
-  "requested_at": 1760104790000,
-  "started_at": null, "finished_at": null,     // |null
-  "est_start": 1760104810000, "est_end": 1760104830000,   // |null: estimates (20 s a test)
-  "progress": { ...Running },     // omitempty: while running
-  "results": [                    // omitempty: sweeps, one per server, in order
-    {"server": "Clouvider-London", "label": "Clouvider London", "display": "UK · Clouvider, London",
-     "region": "uk", "provider": "Clouvider",  // region |null
-     "status": "done",            // "waiting" | "testing" | "done" | "busy" | "unreachable" | "failed"
-     "direction": "upload",       // omitempty: while testing
-     "down_bps": 412000000, "up_bps": 41000000, "down_short": false, "up_short": false,   // bps |null
-     "at": 1760104795000}         // |null
+  "kind": "sweep",              // "single" | "sweep" | "scheduled"
+  "who": "you",                 // "you" | "someone" | "scheduled": relative to the viewer; never an address
+  "origin": "owner",            // local only: "owner" | "public" | "scheduled"
+  "state": "running",           // "waiting" | "running" | "done" | "cancelled" | "dropped"
+  "target": {"id": "us-east", "label": "US East"},   // |null: the nearest servers, a sweep, or a slot
+  "position": 0,                // waiting: 1 is next; otherwise 0
+  "enqueued_at": 1760104700000,
+  "started_at": 1760104790000,  // |null
+  "finished_at": null,          // |null
+  "est_start": 1760104790000,   // estimates at about 20 s per test; once finished, the real times
+  "est_finish": 1760105690000,
+  "step": 3, "steps": 45,       // "server 3 of 45"; a single is 1 of 1
+  "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null: running only
+  "direction": "download",      // |null: running only ("picking" | "download" | "upload")
+  "tests": [412, 413],          // the stored tests so far
+  "wait_reason": null,          // waiting: "cooldown" = a share-link sweep held until est_start (30 min after the last one); else null
+  "results": [                  // a sweep's servers in order (part=entry and part=sweep only)
+    {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "status": "ok", "test": 412,
+     "down_bps": 412000000, "up_bps": 38000000},
+    {"server": {"id": "OVH-Erith", "label": "OVH Erith"}, "status": "busy", "test": 413, "down_bps": null, "up_bps": null},
+    {"server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"}, "status": "testing", "test": null, "down_bps": null, "up_bps": null},
+    {"server": {"id": "Clouvider-NewYork", "label": "Clouvider New York"}, "status": "waiting", "test": null, "down_bps": null, "up_bps": null}
   ]
 }
 ```
 
-### `GET api/speed?part=queue`
+`results[].status` is `waiting`, `testing`, the stored outcome (`ok`, `busy`, `unreachable`, `failed`), or `skipped` (cancelled mid-test). `down_bps` and `up_bps` are set for `ok` only.
 
-`{"at": ..., "running": Entry|null, "waiting": [Entry…], "last_sweep": Entry|null}`
+On the share link, `who` is `you` only for that visitor's own entries; everyone else's, the owner's included, are `someone`. Locally, the owner's are `you` and the share link's are `someone`. Targets and servers use the share link's ids (`custom-1`), and no host, port or address appears.
 
-### `GET api/speed?part=running`
+### `GET api/speed?part=entry&id=<id>`
 
-A light poll: `{"at": ..., "running": Running|null}`.
+One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
-### `GET api/speed?part=entry&id=<id>` and `?part=sweep[&id=<id>]`
+### `GET api/speed?part=sweep`
 
-- `entry`: `{"at": ..., "entry": Entry}` for a waiting, running or recently finished entry; otherwise 404.
-- `sweep`: `{"at": ..., "sweep": Entry|null}`. Without `id` it gives the last finished or cancelled sweep (`null` before any); with `id` that sweep, or 404.
+`{"at": ..., "running": { ...Entry } | null, "entry": { ...Entry } | null, "tests": [ ...Test ]}`: `running` is a sweep under way, with its results so far; `entry` and `tests` are the last finished sweep.
 
-### `POST api/speed/run` and `POST api/speed/sweep`
+### `POST api/speed/run?kind=single[&id=<server or region id>]` or `?kind=sweep`
 
-```
-POST api/speed/run
-{"server": "us-east"}            // optional: a server or region id (custom-N accepted); omitted: the nearest servers
-POST api/speed/sweep              // no body
-```
+"Test now" (no `id`: the nearest servers) or a sweep. There is no body; `kind` defaults to `single`. The share link's own-server ids (`custom-1`) are accepted.
 
-Responses:
-- `202 {"entry": Entry}`: queued; it may already be running;
-- `200 {"entry": Entry, "duplicate": true}`: an equivalent entry was already waiting;
-- `429 {"error", "code": "queue_full", "retry_after": 60, "queue": {...}}`;
-- `404` for an unknown id;
-- `400` for any other body field or a query parameter.
+The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the same requester (the owner, or the same share-link visitor) already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
 
-Protections:
-- **Local**: same origin, the page's CSRF token in `X-FYISP-Token`, and the admin token (`X-FYISP-Admin`) or session when one is set. Otherwise `403`.
-- **Share link**: no admin token. It needs the same origin (`Origin` or `Sec-Fetch-Site` matching the host) and the shared page's own token in `X-FYISP-Token`; the page carries it like the local CSRF token. Otherwise `403`. A per-visitor rate of 1 request per 10 s, burst 3, gives `429 rate_limited` with `retry_after: 10`.
+**Local:** the same protections as notes:
+- same origin;
+- `X-FYISP-Token`;
+- the admin token or session cookie when one is set.
 
-Both work in every mode, `off` included.
+It works in every mode, `off` included.
 
-### `DELETE api/speed/queue/<id>` (local only)
+**Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
+- **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
+- **Budget:** 429 `budget_exhausted` (data) or `time_cap` (test time) with `resets_at` (ms) and `retry_after` once either is spent.
+- **Sweep gap:** 429 `cooldown` with `resets_at` and `retry_after` for a sweep within 30 minutes of the last public one.
+- **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
+- **Queue limits (429 `queue_full`, its `error` says which):**
+  - one waiting entry per visitor;
+  - at most 3 waiting share-link sweeps;
+  - at most 12 waiting share-link entries in all.
+- **Start limit (429 `rate_limited`, with `retry_after`):** per visitor, 1 new entry per 30 s and 10 per hour. Visitors are `Cf-Connecting-Ip`, with IPv6 grouped by /64. A duplicate or a refused request doesn't count.
 
-Cancels a waiting entry, or stops the running one (nothing is stored for a cancelled test). Responses: `200 {"cancelled": 17}`, or `404`. It uses the same protections as config.
+### `POST api/speed/cancel?id=<id>` or `?public=1` (local only)
 
-### `POST api/speed/queue/clear?who=public|all` (local only)
-
-Cancels the visitors' waiting entries (`public`) or every waiting entry (`all`, the default). Response: `200 {"cancelled": 2}`.
+These use the same protections as notes (admin-gated):
+- `id`: cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
+- `public=1` (the owner's "cancel queue"): cancels every waiting share-link entry. It returns `200 {"cancelled": 3}`.
 
 ## `POST api/speed/config` (local only)
 
 ```
 POST api/speed/config
-{"mode": "regions", "extra": ["canada"]}
+{"mode": "regions", "extra": ["canada"]}   // and/or
+{"public": true}               // let the share link queue tests (saved; --speedtest-public sets it at start)
 ```
 
-- `200 {"mode": "regions", "next_at": 1760104920000}`, with `next_at` null for `off`.
-- `400` for a mode not in `modes`, an unknown region in `extra`, or a body with any other field.
+- `200 {"mode": "regions", "next_at": 1760104920000, "public": true, "limits": {"budget_bytes": 10000000000, "time_hour_max_s": 600, "time_day_max_s": 3600}}`, with the fields it changed; `next_at` is null for `off`. `limits` comes with `public`: the share link's caps, for the toggle's confirmation (the same values as part=queue `budget`).
+- `400` for a mode not in `modes`, an unknown region in `extra` (or `extra` without `mode`), for neither field, or for any other field.
 
-The choice and `extra` are saved and survive restarts. A `--speedtest…` flag on the command line overrides them at start (`set_by_flag`). Switching to a mode schedules the first test about 2 minutes later.
+`extra` is the opt-in regions (mode `regions`) or extra far regions (mode `nearby`). The choices are saved and survive restarts. A `--speedtest…` flag on the command line overrides them at start (`set_by_flag`). Switching to a mode schedules the first test about 2 minutes later.
 
 ## `GET api/status`
 
@@ -426,9 +487,8 @@ These give the latest result per region and server, set after every test:
 | `fyisp_speed_download_bits_per_second` | `region`, `server` | gauge (`region` empty for tests for no region) |
 | `fyisp_speed_upload_bits_per_second` | `region`, `server` | gauge |
 | `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`edge`, `gateway`), `load` (`idle`, `download`, `upload`) | gauge: median RTT |
-| `fyisp_speed_loaded_probes_lost_ratio` | `region`, `server`, `layer`, `load` (`download`, `upload`) | gauge |
 | `fyisp_speed_tests_total` | `region`, `server`, `outcome` | counter |
 
 ## Export
 
-`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,connection,idle_gateway_ms,loaded_gateway_ms,idle_edge_ms,down_edge_p50_ms,down_edge_p90_ms,down_edge_lost,up_edge_p50_ms,up_edge_p90_ms,up_edge_lost`.
+`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,idle_gateway_ms,loaded_gateway_ms,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.

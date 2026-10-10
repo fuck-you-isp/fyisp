@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -84,12 +83,6 @@ const (
 // ErrMode is a mode this install does not offer, or an unknown region.
 var ErrMode = errors.New("unknown speed test mode")
 
-// ErrUnknown is an unknown server or region ID.
-var ErrUnknown = errors.New("no such server or region")
-
-// running is process-wide: two schedulers (tests) never run tests at once.
-var running atomic.Bool
-
 // Store keeps results and settings (*store.SQLite).
 type Store interface {
 	SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error
@@ -136,8 +129,14 @@ type Options struct {
 	Ping func(ctx context.Context, host string) (time.Duration, error)
 	// OnResult is called after every saved test (metrics).
 	OnResult func(model.SpeedTest)
-	Log      *slog.Logger
-	Now      func() time.Time
+	// Public (--speedtest-public), when set, is whether the share link may
+	// queue tests at start; otherwise the saved Details choice, else off.
+	// PublicBudget is its bytes per rolling 24 hours (default
+	// DefaultPublicBudget).
+	Public       *bool
+	PublicBudget int64
+	Log          *slog.Logger
+	Now          func() time.Time
 	// Fake replaces the network (cmd/fyisp-webdev and the web tests).
 	Fake *Fake
 
@@ -153,9 +152,10 @@ type Options struct {
 // server RTT check (nil: the real ones); a nonzero Seed fixes the random
 // choices (the install's seed, the jitter).
 type Fake struct {
-	Run  func(ctx context.Context, c Config) (Result, error)
-	RTT  func(ctx context.Context, host string, port int) (time.Duration, error)
-	Seed uint64
+	Run   func(ctx context.Context, c Config) (Result, error)
+	RTT   func(ctx context.Context, host string, port int) (time.Duration, error)
+	Sleep func(ctx context.Context, d time.Duration) bool // nil: real pauses
+	Seed  uint64
 }
 
 // target is one slot's or request's test.
@@ -177,7 +177,7 @@ func (t target) row() string {
 type Scheduler struct {
 	o    Options
 	wake chan struct{}
-	q    queue
+	q    *Queue
 
 	mu         sync.Mutex
 	mode       Mode
@@ -188,6 +188,7 @@ type Scheduler struct {
 	cycleStart time.Time
 	slot       int
 	next       time.Time // the next slot; zero when off
+	cur        *live     // the test running: its direction and server
 	picked     []string  // mode nearby: the picked servers, by ID
 	far        string    // mode nearby: the automatic far region
 	pickedAt   time.Time
@@ -245,7 +246,7 @@ func New(o Options) *Scheduler {
 		o.Now = time.Now
 	}
 	if f := o.Fake; f != nil {
-		o.run, o.rtt = f.Run, f.RTT
+		o.run, o.rtt, o.sleep = f.Run, f.RTT, f.Sleep
 		if f.Seed != 0 {
 			o.rand = rand.New(rand.NewPCG(f.Seed, f.Seed))
 		}
@@ -276,7 +277,12 @@ func New(o Options) *Scheduler {
 	}
 	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff,
 		extra: slices.Clone(o.Extra), seed: o.rand.Uint32()}
-	s.q.notify = s.poke
+	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Live: s.live, Log: o.Log, Now: o.Now,
+		Public: o.Public, PublicBudget: o.PublicBudget}
+	if o.Store != nil {
+		qo.Settings = o.Store
+	}
+	s.q = NewQueue(qo)
 	return s
 }
 
@@ -498,34 +504,36 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		}
 	}
 	s.warn(mode)
-	var wg sync.WaitGroup
-	defer wg.Wait()
+	qdone := make(chan struct{})
+	go func() {
+		defer close(qdone)
+		s.q.Run(ctx)
+	}()
+	defer func() { <-qdone }()
 	for {
 		now := s.o.Now()
 		s.mu.Lock()
 		wait := time.Hour
 		if !s.next.IsZero() {
 			if wait = s.next.Sub(now); wait <= 0 {
-				plan := s.planLocked(s.mode)
-				late := now.Sub(s.next) > s.spacingLocked(s.mode)/2
-				if s.slot < len(plan) && !late {
+				// Every due slot goes into the queue, late ones too: the
+				// queue drops a slot that waits ScheduledStale, and never
+				// stacks two. The slot times themselves never move.
+				var tg *target
+				if plan := s.planLocked(s.mode); s.slot < len(plan) {
 					t := plan[s.slot]
+					tg = &t
+				}
+				s.advanceLocked()
+				wait = 0
+				if tg != nil {
 					s.mu.Unlock()
-					_, _, _ = s.q.add(&Entry{Kind: KindScheduled, Who: WhoScheduled, Target: t.row(), slot: &t}, now)
+					s.q.EnqueueScheduled(s.slotJob(*tg))
 					s.mu.Lock()
 				}
-				s.advanceLocked() // a late slot is skipped: later ones never move
-				wait = 0
 			}
 		}
 		s.mu.Unlock()
-		if e := s.q.pop(now); e != nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				s.runEntry(ctx, e)
-			}()
-		}
 		if wait <= 0 {
 			continue
 		}
@@ -533,11 +541,6 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			t.Stop()
-			s.q.mu.Lock()
-			if r := s.q.running; r != nil && r.cancel != nil {
-				r.cancel()
-			}
-			s.q.mu.Unlock()
 			return nil
 		case <-s.wake:
 		case <-t.C:
@@ -546,38 +549,9 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
-// Enqueue queues "Test now" (kind KindTest, id a server or region ID, ""
-// for the nearest servers) or a sweep (KindSweep). who is WhoOwner or
-// WhoVisitor (client is the visitor's key). It returns the entry, or an
-// equivalent waiting one (dup).
-func (s *Scheduler) Enqueue(kind, id, who, client string) (Entry, bool, error) {
-	if kind == KindTest && id != "" {
-		if _, ok := s.server(id); !ok {
-			if _, ok := s.region(id); !ok {
-				return Entry{}, false, ErrUnknown
-			}
-		}
-	}
-	if kind == KindSweep {
-		id = ""
-	}
-	return s.q.add(&Entry{Kind: kind, Who: who, Client: client, Target: id}, s.o.Now())
-}
-
-// Queue is a snapshot of the queue.
-func (s *Scheduler) Queue() QueueState { return s.q.snapshot() }
-
-// QueueEntry is one entry by ID (waiting, running or recently finished).
-func (s *Scheduler) QueueEntry(id int64) (Entry, bool) { return s.q.entry(id) }
-
-// Cancel cancels a waiting entry or stops the running one (the owner).
-func (s *Scheduler) Cancel(id int64) error { return s.q.cancel(id, s.o.Now()) }
-
-// ClearQueue cancels every waiting entry of who ("" = all).
-func (s *Scheduler) ClearQueue(who string) int { return s.q.clear(who, s.o.Now()) }
-
-// SweepSize is the servers a sweep tests: the whole catalog.
-func (s *Scheduler) SweepSize() int { return len(s.o.Catalog.Servers) }
+// Queue is the speed-test queue: every test, scheduled or on demand, runs
+// through it, one at a time.
+func (s *Scheduler) Queue() *Queue { return s.q }
 
 func (s *Scheduler) server(id string) (Server, bool) {
 	if sv, ok := s.o.Catalog.Server(id); ok {

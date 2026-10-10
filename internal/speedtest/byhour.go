@@ -20,9 +20,6 @@ import (
 // MinPerHour is the tests an hour needs for its medians.
 const MinPerHour = 3
 
-// Scheduled reports a test of the schedule (not Test now or a sweep).
-func Scheduled(t model.SpeedTest) bool { return t.Trigger == "schedule" }
-
 // HourCell is one local hour of day of a row (a region or a server).
 type HourCell struct {
 	Hour      int `json:"hour"`
@@ -91,7 +88,7 @@ func Summarize(tests []model.SpeedTest, tz time.Duration) Stats {
 	}
 	var newestOK time.Time
 	for _, t := range tests {
-		if !Scheduled(t) {
+		if t.OnDemand() {
 			continue
 		}
 		if st.LatestAt == nil || t.Start.After(*st.LatestAt) {
@@ -178,7 +175,7 @@ func HourMedians(tests []model.SpeedTest, tz time.Duration, up bool) [24]float64
 		if up {
 			sc = t.ScoreUp
 		}
-		if !Scheduled(t) || t.Outcome != model.SpeedOK || sc == nil || t.CappedByServer {
+		if t.OnDemand() || t.Outcome != model.SpeedOK || sc == nil || t.CappedByServer {
 			continue
 		}
 		h := t.Start.Add(tz).UTC().Hour()
@@ -315,4 +312,16 @@ func PooledPattern(tests []model.SpeedTest, tz time.Duration) *Pattern {
 		}
 	}
 	return FindDip(HourMedians(keep, tz, false), false)
+}
+
+// Scheduled keeps the schedule's tests: patterns and per-row hours leave
+// on-demand tests (Test now, sweeps) out.
+func Scheduled(tests []model.SpeedTest) []model.SpeedTest {
+	var out []model.SpeedTest
+	for _, t := range tests {
+		if !t.OnDemand() {
+			out = append(out, t)
+		}
+	}
+	return out
 }

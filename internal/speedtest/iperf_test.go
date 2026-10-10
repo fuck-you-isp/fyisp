@@ -26,6 +26,7 @@ type fakeServer struct {
 	results serverResults
 	cookies []string // control cookie, then each stream's
 	recv    int64
+	moved   int64 // every byte sent or received on data streams, over every test
 	err     error
 	wg      sync.WaitGroup
 }
@@ -162,7 +163,7 @@ func (f *fakeServer) session(c net.Conn) {
 	reverse := p["reverse"] == true
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
-	var recv [16]int64
+	var recv, sent [16]int64
 	for i, s := range streams {
 		wg.Add(1)
 		go func() {
@@ -181,7 +182,9 @@ func (f *fakeServer) session(c net.Conn) {
 						if f.mode == "ramp" { // slow start: full rate after 500 ms
 							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(500*time.Millisecond)))
 						}
-						if _, err := s.Write(buf[:max(n, 1)]); err != nil {
+						k, err := s.Write(buf[:max(n, 1)])
+						sent[i] += int64(k)
+						if err != nil {
 							return
 						}
 					}
@@ -231,6 +234,9 @@ func (f *fakeServer) session(c net.Conn) {
 	}
 	f.mu.Lock()
 	f.results, f.recv = cr, total
+	for i := range streams {
+		f.moved += recv[i] + sent[i]
+	}
 	f.mu.Unlock()
 	writeJSON(c, srv)
 	c.Write([]byte{stateDisplayResults})
@@ -251,6 +257,9 @@ func TestDownload(t *testing.T) {
 	}
 	// 3 streams × 64 KiB per 10 ms = 19.7 MB/s; the ramp-up is left out.
 	want := 3 * float64(64<<10) * 100 * 8
+	if r.WireBytes <= r.Bytes { // the ramp-up is on the wire too
+		t.Errorf("wire bytes %d, measured %d", r.WireBytes, r.Bytes)
+	}
 	if bps := r.BitsPerSecond(); bps < want*0.7 || bps > want*1.3 || r.Elapsed < 1400*time.Millisecond || r.Elapsed > 1700*time.Millisecond {
 		t.Errorf("%.1f Mbit/s (want ~%.1f) over %v", bps/1e6, want/1e6, r.Elapsed)
 	}

@@ -190,7 +190,6 @@ CREATE TABLE speedtests(
 	server          TEXT NOT NULL,
 	fallback        INT  NOT NULL DEFAULT 0,
 	fallback_level  TEXT NOT NULL DEFAULT 'none',
-	entry           INT  NOT NULL DEFAULT 0,
 	capped_server   INT  NOT NULL DEFAULT 0,
 	down_short      INT  NOT NULL DEFAULT 0,
 	up_short        INT  NOT NULL DEFAULT 0,

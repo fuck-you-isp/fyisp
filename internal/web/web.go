@@ -54,6 +54,9 @@ type Deps struct {
 	Share   ShareControl
 	Verdict VerdictSource // the verdict engine (internal/verdict.Engine)
 	Trace   TraceSource   // per-hop stats, routes and on-demand traces
+	// Investigations is shared by the local and public handlers so that
+	// MaxInvestigations holds across both; nil gives each its own.
+	Investigations *Investigations
 	// Annotations keeps timeline notes (store.AnnotationStore).
 	Annotations AnnotationStore
 	// Reports builds and keeps evidence reports (report.Builder plus

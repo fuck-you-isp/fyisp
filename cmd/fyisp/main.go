@@ -96,6 +96,8 @@ type config struct {
 	noPath        bool
 	noUDP         bool
 	speed         speedFlag
+	speedPublic   optBool  // --speedtest-public: unset leaves the Details choice
+	speedBudget   byteSize // --speedtest-public-budget
 	speedServer   string
 	openBrowser   bool
 	adminToken    string
@@ -163,6 +165,8 @@ func parseFlags(args []string) (config, error) {
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
 	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (9 regions, each hourly), --speedtest=nearby (3 nearby providers and 1 far region, every 15m), --speedtest=regions,add=canada, --speedtest=nearby,far=us-west, every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
+	fs.Var(&c.speedPublic, "speedtest-public", "let people with the share link queue speed tests (default: the Details setting, off)")
+	fs.Var(&c.speedBudget, "speedtest-public-budget", "data the share link's speed tests may use per rolling 24 hours, e.g. 50GB or 500MB")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor when all are your own")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
 	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, sharing) when --listen is not loopback; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
@@ -352,6 +356,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	if err != nil {
 		return err
 	}
+	// The public origin must stay loopback-only: only the in-process tunnel
+	// may reach it, which is what makes its per-client limits' key
+	// (Cf-Connecting-Ip, set by Cloudflare's edge) trustworthy.
 	publicLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -382,9 +389,10 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			}
 			return out
 		},
-		Trace: newWebTrace(st, tr, prof),
-		Share: share,
-		Log:   log,
+		Trace:          newWebTrace(st, tr, prof),
+		Investigations: web.NewInvestigations(), // one set for both listeners
+		Share:          share,
+		Log:            log,
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed

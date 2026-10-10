@@ -59,15 +59,30 @@ servers:
 // US East slower, both 40% slower from 19:00 to 23:00 UTC with either
 // provider; the UK on its fallback most of the last day; a manual test
 // against the own server now and then; a busy test every 50th. The clock
-// stands still, so nothing is scheduled; queued tests run until release
-// is closed (or they are cancelled).
+// stands still, so nothing is scheduled; each queued test's direction takes
+// a token (or runs once release is closed), until it is cancelled.
 type speedRig struct {
 	s       *speedtest.Scheduler
 	st      *speedtest.MemStore
 	release chan struct{}
+	tokens  chan struct{}
+}
+
+// rigOpts: the share link's opt-in and budget, the bytes each direction
+// moves, and noRun to leave the queue stopped (entries stay waiting).
+type rigOpts struct {
+	public bool
+	budget int64
+	wire   int64
+	noRun  bool
 }
 
 func newSpeedRig(t *testing.T, step time.Duration) *speedRig {
+	t.Helper()
+	return newSpeedRigWith(t, step, rigOpts{})
+}
+
+func newSpeedRigWith(t *testing.T, step time.Duration, ro rigOpts) *speedRig {
 	t.Helper()
 	ctx := context.Background()
 	cat := speedCatalog(t)
@@ -75,7 +90,10 @@ func newSpeedRig(t *testing.T, step time.Duration) *speedRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &speedRig{st: &speedtest.MemStore{}, release: make(chan struct{})}
+	g := &speedRig{st: &speedtest.MemStore{}, release: make(chan struct{}), tokens: make(chan struct{}, 100)}
+	if ro.wire == 0 {
+		ro.wire = 240e6
+	}
 	g.st.SetSetting(ctx, speedtest.SettingKey, "regions")
 	g.st.SetSetting(ctx, "speedtest_seed", "7")
 	f := func(v float64) *float64 { return &v }
@@ -126,21 +144,27 @@ func newSpeedRig(t *testing.T, step time.Duration) *speedRig {
 		}
 	}
 	g.s = speedtest.New(speedtest.Options{Catalog: cat, Custom: custom, Store: g.st, Now: func() time.Time { return speedNow },
+		Public: &ro.public, PublicBudget: ro.budget,
 		Fake: &speedtest.Fake{Seed: 1,
 			Run: func(ctx context.Context, c speedtest.Config) (speedtest.Result, error) {
 				select {
 				case <-ctx.Done():
 					return speedtest.Result{}, ctx.Err()
 				case <-g.release:
+				case <-g.tokens:
 				}
-				return speedtest.Result{Direction: c.Direction, Bytes: 200e6, Elapsed: 4 * time.Second, Streams: 8, TotalBytes: 240e6}, nil
+				return speedtest.Result{Direction: c.Direction, Bytes: 200e6, Elapsed: 4 * time.Second, Streams: 8, TotalBytes: ro.wire, WireBytes: ro.wire}, nil
 			},
+			Sleep: func(ctx context.Context, _ time.Duration) bool { return ctx.Err() == nil },
 			RTT: func(_ context.Context, host string, _ int) (time.Duration, error) {
 				if strings.Contains(host, "lon") {
 					return 9 * time.Millisecond, nil
 				}
 				return 80 * time.Millisecond, nil
 			}}})
+	if ro.noRun {
+		return g
+	}
 	rctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() { g.s.Run(rctx); close(done) }()
@@ -248,7 +272,7 @@ func TestSpeedSummary(t *testing.T) {
 		!strings.Contains(s.UnderLoad.Text[1], "rises from 8 ms to 48 ms while uploading (+40 ms): noticeable on calls") {
 		t.Errorf("under load %+v", s.UnderLoad)
 	}
-	if len(s.PerServer) != 5 || s.Latest == nil || s.Servers[0].Host == "" || s.Servers[0].Ports != "5200-5209" || s.Servers[0].Capacity == nil ||
+	if len(s.PerServer) != 4 || s.Latest == nil || s.Servers[0].Host == "" || s.Servers[0].Ports != "5200-5209" || s.Servers[0].Capacity == nil ||
 		*s.Servers[0].Capacity != 10000 || s.Servers[0].Display != "UK · Clouvider, London" {
 		t.Errorf("servers: %d per server, latest %v, %+v", len(s.PerServer), s.Latest, s.Servers[0])
 	}
@@ -285,7 +309,7 @@ func TestSpeedSummary(t *testing.T) {
 	}
 	one = speedOneJSON{}
 	json.Unmarshal(do(pub, "GET", speedPub+"/api/speed?server=custom-1&days=30", nil).Body.Bytes(), &one)
-	if one.Kind != "server" || one.Row.ID != "custom-1" || len(one.Tests) == 0 || one.Tests[0].Server != "custom-1" || one.Tests[0].Port != 0 || !one.Tests[0].Manual {
+	if one.Kind != "server" || one.Row.ID != "custom-1" || len(one.Tests) == 0 || one.Tests[0].Server != "custom-1" || one.Tests[0].Port != 0 || !one.Tests[0].OnDemand {
 		t.Errorf("public custom server: %+v", one.Row)
 	}
 	if w := do(pub, "GET", speedPub+"/api/speed?server=192.168.1.20:5201", nil); w.Code != 404 {
@@ -318,7 +342,7 @@ func TestSpeedSummary(t *testing.T) {
 	if len(w.Windows) < 4 || w.Windows[0].End-w.Windows[0].Start != 18000 {
 		t.Errorf("windows %+v", w.Windows)
 	}
-	if r := do(loc, "GET", "/api/speed?part=sweep", speedHost); r.Code != 200 || !strings.Contains(r.Body.String(), `"sweep":null`) {
+	if r := do(loc, "GET", "/api/speed?part=sweep", speedHost); r.Code != 200 || !strings.Contains(r.Body.String(), `"entry":null`) {
 		t.Errorf("no sweep yet: %d %s", r.Code, r.Body.String())
 	}
 	// features.speed, and without a source every speed route is 404.
@@ -357,161 +381,343 @@ func speedSend(h http.Handler, method, target, body string, hdr map[string]strin
 	return w
 }
 
-func decodeEntry(t *testing.T, w *httptest.ResponseRecorder) speedPostJSON {
-	t.Helper()
-	var p speedPostJSON
-	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil {
-		t.Fatalf("%d %s", w.Code, w.Body.String())
-	}
-	return p
+func speedVisitor(ip string) map[string]string {
+	return map[string]string{"Host": "x.trycloudflare.com", "Origin": "https://x.trycloudflare.com", "Sec-Fetch-Site": "same-origin", "Cf-Connecting-Ip": ip}
 }
 
-// TestSpeedQueue: Test now and sweeps on both listeners share one queue;
-// equivalent requests return the waiting entry; a visitor may have one
-// waiting entry; the owner cancels and clears.
-func TestSpeedQueue(t *testing.T) {
-	g := newSpeedRig(t, 5*time.Hour)
-	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
+type speedRunResp struct {
+	Entry     speedEntryJSON
+	Duplicate bool
+	Code      string
+}
+
+// TestSpeedWrites: the owner's Test now, sweeps and cancels (the queue is
+// stopped: entries wait).
+func TestSpeedWrites(t *testing.T) {
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{noRun: true})
+	loc, _, d := speedHandlers(t, g, LocalOptions{})
 	good := speedPOSTHeaders()
-	// The owner's test runs at once (the fake network holds it).
-	w := speedSend(loc, "POST", "/api/speed/run", `{"server": "us-east"}`, good)
-	first := decodeEntry(t, w)
-	if w.Code != 202 || first.Entry.Who != "you" || first.Entry.Kind != "test" || first.Entry.Label != "US East" || first.Entry.Target != "us-east" {
-		t.Fatalf("run: %d %s", w.Code, w.Body.String())
+	run := func(path string) (int, speedRunResp) {
+		w := do(loc, "POST", path, good)
+		var r speedRunResp
+		json.Unmarshal(w.Body.Bytes(), &r)
+		return w.Code, r
 	}
-	waitUntil(t, func() bool { return g.s.Queue().Running != nil })
-	var run struct{ Running *speedRunning }
-	json.Unmarshal(do(loc, "GET", "/api/speed?part=running", speedHost).Body.Bytes(), &run)
-	if run.Running == nil || run.Running.Entry != first.Entry.ID || run.Running.Kind != "test" || run.Running.ExpectedEnd <= run.Running.Started {
-		t.Errorf("running %+v", run.Running)
+	if c, r := run("/api/speed/run?id=us-east"); c != 202 || r.Duplicate || r.Entry.Kind != "single" || r.Entry.Target == nil ||
+		r.Entry.Target.ID != "us-east" || r.Entry.Target.Label != "US East" || r.Entry.Who != "you" || r.Entry.State != "waiting" || r.Entry.Position != 1 {
+		t.Fatalf("run: %d %+v", c, r)
 	}
-	// Waiting, then the same again: the waiting entry.
-	w = speedSend(loc, "POST", "/api/speed/run", `{"server": "Leaseweb-London"}`, good)
-	second := decodeEntry(t, w)
-	if w.Code != 202 || second.Entry.Position != 1 || second.Entry.EstStart == nil || second.Entry.State != speedtest.StateWaiting {
-		t.Errorf("second: %d %s", w.Code, w.Body.String())
+	if c, r := run("/api/speed/run?kind=single&id=us-east"); c != 202 || !r.Duplicate || r.Entry.ID != 1 {
+		t.Errorf("duplicate: %d %+v", c, r)
 	}
-	w = speedSend(loc, "POST", "/api/speed/run", `{"server": "Leaseweb-London"}`, good)
-	if p := decodeEntry(t, w); w.Code != 200 || !p.Duplicate || p.Entry.ID != second.Entry.ID {
-		t.Errorf("duplicate: %d %s", w.Code, w.Body.String())
+	if c, r := run("/api/speed/run"); c != 202 || r.Duplicate || r.Entry.Target != nil || r.Entry.Position != 2 {
+		t.Errorf("nearest: %d %+v", c, r)
 	}
-	// Visitors on the share link: same origin and the page's token.
-	vis := map[string]string{"Host": "share.example", "Origin": "https://share.example", "Sec-Fetch-Site": "same-origin", HeaderCSRF: pub.token,
-		"Cf-Connecting-Ip": "2001:db8:1:2:3::9"}
-	for name, hdr := range map[string]map[string]string{
-		"no token":     {"Host": "share.example", "Origin": "https://share.example", "Cf-Connecting-Ip": "198.51.100.1"},
-		"cross-origin": {"Host": "share.example", "Origin": "https://evil.example", HeaderCSRF: pub.token, "Cf-Connecting-Ip": "198.51.100.1"},
-		"wrong token":  {"Host": "share.example", "Origin": "https://share.example", HeaderCSRF: "tok123", "Cf-Connecting-Ip": "198.51.100.1"},
-	} {
-		if w := speedSend(pub, "POST", speedPub+"/api/speed/sweep", "", hdr); w.Code != 403 {
-			t.Errorf("%s: %d", name, w.Code)
+	if c, r := run("/api/speed/run?kind=sweep"); c != 202 || r.Entry.Kind != "sweep" || r.Entry.Steps != 6 || r.Entry.Origin != "owner" {
+		t.Errorf("sweep: %d %+v", c, r)
+	}
+	for _, p := range []string{"/api/speed/run?kind=sweep&id=us-east", "/api/speed/run?kind=fast", "/api/speed/run?id=a&id=b", "/api/speed/run?server=x"} {
+		if c, _ := run(p); c != 400 {
+			t.Errorf("%s: %d", p, c)
 		}
 	}
-	w = speedSend(pub, "POST", speedPub+"/api/speed/sweep", "", vis)
-	sweep := decodeEntry(t, w)
-	if w.Code != 202 || sweep.Entry.Who != "you" || sweep.Entry.Kind != "sweep" || sweep.Entry.Label != "All servers" || sweep.Entry.Position != 2 {
-		t.Errorf("public sweep: %d %s", w.Code, w.Body.String())
+	if c, _ := run("/api/speed/run?id=Nope"); c != 404 {
+		t.Errorf("unknown id: %d", c)
 	}
-	// The same /64: one waiting entry per visitor.
-	vis2 := map[string]string{}
-	for k, v := range vis {
-		vis2[k] = v
+	// Cancel (admin-gated like notes): an entry, then the share link's.
+	if w := do(loc, "POST", "/api/speed/cancel?id=2", good); w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"cancelled"`) {
+		t.Errorf("cancel: %d %s", w.Code, w.Body.String())
 	}
-	vis2["Cf-Connecting-Ip"] = "2001:db8:1:2:ffff::1"
-	w = speedSend(pub, "POST", speedPub+"/api/speed/run", `{"server": "custom-1"}`, vis2)
-	var full struct {
-		Code       string
-		RetryAfter int `json:"retry_after"`
-		Queue      speedQueueJSON
+	if w := do(loc, "POST", "/api/speed/cancel?public=1", good); w.Code != 200 || !strings.Contains(w.Body.String(), `"cancelled":0`) {
+		t.Errorf("clear public: %d %s", w.Code, w.Body.String())
 	}
-	json.Unmarshal(w.Body.Bytes(), &full)
-	if w.Code != 429 || full.Code != "queue_full" || full.RetryAfter == 0 || len(full.Queue.Waiting) != 2 || full.Queue.Waiting[1].Who != "you" ||
-		full.Queue.Waiting[0].Who != "someone" || strings.Contains(w.Body.String(), "2001:db8") {
-		t.Errorf("queue full: %d %s", w.Code, w.Body.String())
+	for _, p := range []string{"/api/speed/cancel", "/api/speed/cancel?id=x", "/api/speed/cancel?id=1&public=1"} {
+		if w := do(loc, "POST", p, good); w.Code != 400 {
+			t.Errorf("%s: %d", p, w.Code)
+		}
 	}
-	// Another visitor's own-server test, by its public id.
-	vis2["Cf-Connecting-Ip"] = "203.0.113.5"
-	w = speedSend(pub, "POST", speedPub+"/api/speed/run", `{"server": "custom-1"}`, vis2)
-	if p := decodeEntry(t, w); w.Code != 202 || p.Entry.Target != "custom-1" || p.Entry.Label != "Your server" {
-		t.Errorf("public custom: %d %s", w.Code, w.Body.String())
-	}
-	// The share link's rate: 3 a client at once.
-	for range 3 {
-		w = speedSend(pub, "POST", speedPub+"/api/speed/run", `{"server": "uk"}`, vis2)
-	}
-	if w.Code != 429 || !strings.Contains(w.Body.String(), `"code":"rate_limited"`) {
-		t.Errorf("rate: %d %s", w.Code, w.Body.String())
-	}
-	if w := speedSend(pub, "DELETE", speedPub+"/api/speed/queue/1", "", vis); w.Code != 404 {
-		t.Errorf("public cancel: %d", w.Code)
-	}
-	// The queue as the owner sees it: no client keys.
-	var q speedQueueJSON
-	b := do(loc, "GET", "/api/speed?part=queue", speedHost).Body.String()
-	json.Unmarshal([]byte(b), &q)
-	if q.Running == nil || q.Running.Progress == nil || len(q.Waiting) != 3 || q.Waiting[0].Who != "you" || q.Waiting[1].Who != "someone" ||
-		strings.Contains(b, "2001:db8") || strings.Contains(b, "203.0.113") {
-		t.Errorf("queue %s", b)
-	}
-	// Clear the visitors', cancel the owner's waiting one, then the running one.
-	if w := speedSend(loc, "POST", "/api/speed/queue/clear?who=public", "", good); w.Code != 200 || !strings.Contains(w.Body.String(), `"cancelled":2`) {
-		t.Errorf("clear: %d %s", w.Code, w.Body.String())
-	}
-	if w := speedSend(loc, "DELETE", fmt.Sprintf("/api/speed/queue/%d", second.Entry.ID), "", good); w.Code != 200 {
-		t.Errorf("cancel waiting: %d %s", w.Code, w.Body.String())
-	}
-	if w := speedSend(loc, "DELETE", fmt.Sprintf("/api/speed/queue/%d", first.Entry.ID), "", good); w.Code != 200 {
-		t.Errorf("cancel running: %d %s", w.Code, w.Body.String())
-	}
-	waitUntil(t, func() bool { e, _ := g.s.QueueEntry(first.Entry.ID); return e.State == speedtest.StateCancelled })
-	if w := speedSend(loc, "DELETE", "/api/speed/queue/999", "", good); w.Code != 404 {
+	if w := do(loc, "POST", "/api/speed/cancel?id=99", good); w.Code != 404 {
 		t.Errorf("cancel unknown: %d", w.Code)
 	}
-	var e struct{ Entry speedEntry }
-	json.Unmarshal(do(loc, "GET", fmt.Sprintf("/api/speed?part=entry&id=%d", sweep.Entry.ID), speedHost).Body.Bytes(), &e)
-	if e.Entry.State != speedtest.StateCancelled {
-		t.Errorf("cleared sweep %+v", e.Entry)
-	}
-	// A sweep runs every server once, then reads back as the last sweep.
-	close(g.release)
-	w = speedSend(loc, "POST", "/api/speed/sweep", "", good)
-	sw := decodeEntry(t, w)
-	waitUntil(t, func() bool { x, _ := g.s.QueueEntry(sw.Entry.ID); return x.State == speedtest.StateDone })
-	var last struct{ Sweep *speedEntry }
-	json.Unmarshal(do(pub, "GET", speedPub+"/api/speed?part=sweep", nil).Body.Bytes(), &last)
-	if last.Sweep == nil || last.Sweep.ID != sw.Entry.ID || len(last.Sweep.Results) != 5 || last.Sweep.Who != "someone" || last.Sweep.Results[0].DownBps == nil {
-		t.Fatalf("last sweep %+v", last.Sweep)
-	}
-	// Bad requests.
-	for _, c := range []struct {
-		method, path, body string
-		code               int
-	}{
-		{"POST", "/api/speed/run", `{"server": "Nope"}`, 404},
-		{"POST", "/api/speed/run", `{"id": "uk"}`, 400},
-		{"POST", "/api/speed/run?id=uk", ``, 400},
-		{"POST", "/api/speed/sweep", `{"server": "uk"}`, 400},
-		{"GET", "/api/speed/run", ``, 405},
-		{"POST", "/api/speed/queue/1", ``, 405},
-		{"POST", "/api/speed/queue/clear?who=me", ``, 400},
-		{"POST", "/api/speed/nope", ``, 404},
-	} {
-		if w := speedSend(loc, c.method, c.path, c.body, good); w.Code != c.code {
-			t.Errorf("%s %s %s: %d %s", c.method, c.path, c.body, w.Code, w.Body.String())
+	bad := map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://evil.com", HeaderCSRF: "tok123"}
+	for _, p := range []string{"/api/speed/run", "/api/speed/cancel?id=1"} {
+		if w := do(loc, "POST", p, bad); w.Code != 403 {
+			t.Errorf("%s cross-origin: %d", p, w.Code)
 		}
 	}
-	bad := map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://evil.com", HeaderCSRF: "tok123"}
-	if w := speedSend(loc, "POST", "/api/speed/run", "", bad); w.Code != 403 {
-		t.Errorf("cross-origin: %d", w.Code)
+	if w := do(loc, "GET", "/api/speed/run", good); w.Code != 405 {
+		t.Errorf("GET run: %d", w.Code)
+	}
+	// An admin token is required when set.
+	adm := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123", AdminToken: "sekrit"})
+	if w := do(adm, "POST", "/api/speed/run", good); w.Code != 403 {
+		t.Errorf("without admin token: %d", w.Code)
+	}
+	var s speedJSON
+	json.Unmarshal(do(adm, "GET", "/api/speed", speedHost).Body.Bytes(), &s)
+	if s.Configurable {
+		t.Error("configurable without the admin token")
+	}
+	withAdm := map[string]string{"X-FYISP-Admin": "sekrit"}
+	for k, v := range good {
+		withAdm[k] = v
+	}
+	if w := do(adm, "POST", "/api/speed/run?id=uk", withAdm); w.Code != 202 {
+		t.Errorf("with admin token: %d %s", w.Code, w.Body.String())
+	}
+	// The share link has its own run route; never config or cancel.
+	pub := Public(d, "0123456789abcdef0123456789abcdef")
+	for _, p := range []string{"/api/speed/config", "/api/speed/cancel?id=1"} {
+		if w := do(pub, "POST", speedPub+p, nil); w.Code != 404 && w.Code != 405 {
+			t.Errorf("share link %s: %d", p, w.Code)
+		}
+	}
+}
+
+// TestSpeedPublicQueue: the share link queues tests and sweeps (same
+// origin, no body, per-visitor caps and start limits, never cached), sees
+// "you" for its own entries and "someone" for everyone else's, and never
+// an address, a host or another visitor's key.
+func TestSpeedPublicQueue(t *testing.T) {
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{public: true, noRun: true})
+	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
+	now := speedNow
+	pub.now = func() time.Time { return now }
+	post := func(path string, hdr map[string]string) (*httptest.ResponseRecorder, speedRunResp) {
+		w := do(pub, "POST", speedPub+path, hdr)
+		var r speedRunResp
+		json.Unmarshal(w.Body.Bytes(), &r)
+		if cc := w.Header().Get("Cache-Control"); cc != "no-store" {
+			t.Errorf("%s: Cache-Control %q", path, cc)
+		}
+		return w, r
+	}
+	for name, c := range map[string]struct {
+		path string
+		hdr  map[string]string
+		code int
+		ec   string
+	}{
+		"cross-origin": {"/api/speed/run", map[string]string{"Host": "x.trycloudflare.com", "Origin": "https://evil.com", "Cf-Connecting-Ip": "1.1.1.1"}, 403, "forbidden"},
+		"bad kind":     {"/api/speed/run?kind=all", speedVisitor("1.1.1.1"), 400, "bad_request"},
+		"sweep and id": {"/api/speed/run?kind=sweep&id=us-east", speedVisitor("1.1.1.1"), 400, "bad_request"},
+		"other param":  {"/api/speed/run?host=8.8.8.8", speedVisitor("1.1.1.1"), 400, "bad_request"},
+		"unknown id":   {"/api/speed/run?id=8.8.8.8", speedVisitor("1.1.1.1"), 404, "not_found"},
+		"local id":     {"/api/speed/run?id=192.168.1.20:5201", speedVisitor("1.1.1.1"), 404, "not_found"},
+	} {
+		if w, r := post(c.path, c.hdr); w.Code != c.code || r.Code != c.ec {
+			t.Errorf("%s: %d %q (%s)", name, w.Code, r.Code, w.Body.String())
+		}
+	}
+	if w := do(pub, "GET", speedPub+"/api/speed/run", speedVisitor("1.1.1.1")); w.Code != 405 {
+		t.Errorf("GET run: %d", w.Code)
+	}
+	if w := speedSend(pub, "POST", speedPub+"/api/speed/run", "kind=sweep", speedVisitor("1.1.1.1")); w.Code != 400 {
+		t.Errorf("body: %d", w.Code)
+	}
+	// A sweep from visitor 1, a single (own server, by its public id) from 2.
+	if w, r := post("/api/speed/run?kind=sweep", speedVisitor("1.1.1.1")); w.Code != 202 || r.Duplicate || r.Entry.Who != "you" || r.Entry.Kind != "sweep" {
+		t.Fatalf("sweep: %d %+v", w.Code, r)
+	}
+	if w, r := post("/api/speed/run?id=custom-1", speedVisitor("2.2.2.2")); w.Code != 202 || r.Entry.Target == nil || r.Entry.Target.ID != "custom-1" {
+		t.Fatalf("own server: %d %s", w.Code, w.Body.String())
+	}
+	if w, r := post("/api/speed/run?kind=sweep", speedVisitor("1.1.1.1")); w.Code != 202 || !r.Duplicate {
+		t.Errorf("again: %d %+v", w.Code, r)
+	}
+	// One waiting entry per visitor; IPv6 visitors per /64.
+	if w, r := post("/api/speed/run?id=us-east", speedVisitor("1.1.1.1")); w.Code != 429 || r.Code != "queue_full" {
+		t.Errorf("second entry: %d %+v", w.Code, r)
+	}
+	if w, _ := post("/api/speed/run?id=us-east", speedVisitor("2001:db8:1:2::1")); w.Code != 202 {
+		t.Errorf("v6: %d", w.Code)
+	}
+	if w, r := post("/api/speed/run?id=Leaseweb-NewYork", speedVisitor("2001:db8:1:2::99")); w.Code != 429 || r.Code != "queue_full" {
+		t.Errorf("same /64: %d %+v", w.Code, r)
+	}
+	// The owner goes first.
+	lw := do(loc, "POST", "/api/speed/run?id=Leaseweb-NewYork", speedPOSTHeaders())
+	var lr speedRunResp
+	json.Unmarshal(lw.Body.Bytes(), &lr)
+	if lw.Code != 202 || lr.Entry.Position != 1 || lr.Entry.Who != "you" {
+		t.Errorf("owner: %d %+v", lw.Code, lr)
+	}
+	// The start limit: after the owner clears the share link's entries, a
+	// visitor can't start again at once.
+	if w := do(loc, "POST", "/api/speed/cancel?public=1", speedPOSTHeaders()); w.Code != 200 || !strings.Contains(w.Body.String(), `"cancelled":3`) {
+		t.Errorf("clear: %d %s", w.Code, w.Body.String())
+	}
+	if w, r := post("/api/speed/run?id=us-east", speedVisitor("1.1.1.1")); w.Code != 429 || r.Code != "rate_limited" || w.Header().Get("Retry-After") == "" {
+		t.Errorf("start limit: %d %+v", w.Code, r)
+	}
+	now = now.Add(31 * time.Second)
+	if w, _ := post("/api/speed/run?id=us-east", speedVisitor("1.1.1.1")); w.Code != 202 {
+		t.Errorf("after 30 s: %d", w.Code)
+	}
+	// The queue as each viewer sees it.
+	get := func(h http.Handler, path string, hdr map[string]string) (string, speedQueueJSON) {
+		w := do(h, "GET", path, hdr)
+		var q speedQueueJSON
+		json.Unmarshal(w.Body.Bytes(), &q)
+		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("%s: %d %q", path, w.Code, w.Header().Get("Cache-Control"))
+		}
+		return w.Body.String(), q
+	}
+	body, q1 := get(pub, speedPub+"/api/speed?part=queue", speedVisitor("1.1.1.1"))
+	if len(q1.Waiting) != 2 || q1.Waiting[0].Who != "someone" || q1.Waiting[1].Who != "you" || q1.Mine == nil || *q1.Mine != q1.Waiting[1].ID || q1.Full {
+		t.Errorf("visitor 1: %s", body)
+	}
+	_, q3 := get(pub, speedPub+"/api/speed?part=queue", speedVisitor("3.3.3.3"))
+	if q3.Mine != nil || q3.Waiting[1].Who != "someone" {
+		t.Errorf("visitor 3: %+v", q3)
+	}
+	for _, leak := range []string{"1.1.1.1", "2001:db8", "192.168.1.20", "leaseweb.net", "clouvider.net", "visitor", `"origin"`} {
+		if strings.Contains(body, leak) {
+			t.Errorf("public queue shows %q: %s", leak, body)
+		}
+	}
+	lbody, ql := get(loc, "/api/speed?part=queue", speedHost)
+	if ql.Waiting[0].Who != "you" || ql.Waiting[1].Who != "someone" || ql.Waiting[1].Origin != "public" || strings.Contains(lbody, "1.1.1.1") {
+		t.Errorf("owner's view: %s", lbody)
+	}
+	if w := do(pub, "GET", fmt.Sprintf("%s/api/speed?part=entry&id=%d", speedPub, q1.Waiting[1].ID), speedVisitor("1.1.1.1")); w.Code != 200 || !strings.Contains(w.Body.String(), `"who":"you"`) {
+		t.Errorf("entry: %d %s", w.Code, w.Body.String())
+	}
+	if w := do(pub, "GET", speedPub+"/api/speed?part=entry&id=999", speedVisitor("1.1.1.1")); w.Code != 404 {
+		t.Errorf("unknown entry: %d", w.Code)
+	}
+	if w := do(pub, "GET", speedPub+"/api/speed?part=sweep", speedVisitor("1.1.1.1")); w.Code != 200 || !strings.Contains(w.Body.String(), `"entry":null`) {
+		t.Errorf("sweep: %d %s", w.Code, w.Body.String())
+	}
+	if w := do(pub, "GET", speedPub+"/api/speed?part=queue&id=1", speedVisitor("1.1.1.1")); w.Code != 400 {
+		t.Errorf("id outside part=entry: %d", w.Code)
+	}
+}
+
+// TestSpeedPublicOptInBudget: the share link's tests are an owner opt-in
+// (403 disabled; the Details toggle turns them on), and spend a 24-hour
+// data budget counted on the wire (429 budget_exhausted with resets_at).
+func TestSpeedPublicOptInBudget(t *testing.T) {
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 5e9, wire: 1.5e9})
+	close(g.release)
+	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
+	queue := func(h http.Handler, path string, hdr map[string]string) speedQueueJSON {
+		var q speedQueueJSON
+		json.Unmarshal(do(h, "GET", path, hdr).Body.Bytes(), &q)
+		return q
+	}
+	w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", speedVisitor("1.1.1.1"))
+	if w.Code != 403 || !strings.Contains(w.Body.String(), `"code":"disabled"`) || w.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("off: %d %s", w.Code, w.Body.String())
+	}
+	if q := queue(pub, speedPub+"/api/speed?part=queue", speedVisitor("1.1.1.1")); q.PublicStart || q.PublicEnabled {
+		t.Errorf("off: %+v", q)
+	}
+	cw := speedSend(loc, "POST", "/api/speed/config", `{"public": true}`, speedPOSTHeaders())
+	if cw.Code != 200 || !strings.Contains(cw.Body.String(), `"public":true`) || !strings.Contains(cw.Body.String(), `"time_hour_max_s":600`) {
+		t.Fatalf("toggle: %d %s", cw.Code, cw.Body.String())
+	}
+	for i, ip := range []string{"1.1.1.1", "2.2.2.2"} {
+		if w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", speedVisitor(ip)); w.Code != 202 {
+			t.Fatalf("start %d: %d %s", i, w.Code, w.Body.String())
+		}
+		waitUntil(t, func() bool { return queue(loc, "/api/speed?part=queue", speedHost).Budget.UsedBytes >= int64(i+1)*3e9 })
+	}
+	q := queue(pub, speedPub+"/api/speed?part=queue", speedVisitor("3.3.3.3"))
+	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 5e9 || q.Budget.UsedBytes != 6e9 || q.Budget.RemainingBytes != 0 || q.Budget.ResetsAt == nil {
+		t.Errorf("spent: %+v", q)
+	}
+	w = do(pub, "POST", speedPub+"/api/speed/run?kind=sweep", speedVisitor("3.3.3.3"))
+	var e struct {
+		Code       string
+		ResetsAt   int64 `json:"resets_at"`
+		RetryAfter int   `json:"retry_after"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &e)
+	if w.Code != 429 || e.Code != "budget_exhausted" || e.ResetsAt != *q.Budget.ResetsAt || e.RetryAfter <= 0 || w.Header().Get("Retry-After") == "" {
+		t.Errorf("budget: %d %s", w.Code, w.Body.String())
+	}
+	ts, _ := g.st.SpeedTests(context.Background(), speedNow.Add(-time.Minute), speedNow.Add(time.Minute))
+	if n := len(ts); n == 0 || ts[n-1].Trigger != "public" || ts[n-1].Origin() != "public" {
+		t.Errorf("stored %+v", ts)
+	}
+}
+
+// TestSweepResults: a running sweep lists each server with its status and
+// the results so far.
+func TestSweepResults(t *testing.T) {
+	g := newSpeedRig(t, 5*time.Hour)
+	for range 4 { // two servers, both directions
+		g.tokens <- struct{}{}
+	}
+	loc, _, _ := speedHandlers(t, g, LocalOptions{})
+	w := do(loc, "POST", "/api/speed/run?kind=sweep", speedPOSTHeaders())
+	var started struct{ Entry speedEntryJSON }
+	if json.Unmarshal(w.Body.Bytes(), &started); w.Code != 202 {
+		t.Fatalf("start: %d %s", w.Code, w.Body.String())
+	}
+	var e speedEntryJSON
+	waitUntil(t, func() bool {
+		e = speedEntryJSON{}
+		json.Unmarshal(do(loc, "GET", fmt.Sprintf("/api/speed?part=entry&id=%d", started.Entry.ID), speedHost).Body.Bytes(), &e)
+		return len(e.Results) == 6 && e.Results[2].Status == "testing"
+	})
+	want := []string{"ok", "ok", "testing", "waiting", "waiting", "waiting"}
+	for i, r := range e.Results {
+		if r.Status != want[i] || r.Server.ID == "" || r.Server.Label == "" || r.Display == "" {
+			t.Errorf("result %d: %+v, want %s", i, r, want[i])
+		}
+	}
+	if r := e.Results[0]; r.Test == nil || r.DownBps == nil || *r.DownBps != 400e6 || r.Region == nil || r.Provider == "" {
+		t.Errorf("ok result: %+v", r)
+	}
+	var sw struct{ Running *speedEntryJSON }
+	json.Unmarshal(do(loc, "GET", "/api/speed?part=sweep", speedHost).Body.Bytes(), &sw)
+	if sw.Running == nil || len(sw.Running.Results) != 6 {
+		t.Errorf("part=sweep running: %+v", sw.Running)
+	}
+	var run struct{ Running *speedRunning }
+	json.Unmarshal(do(loc, "GET", "/api/speed?part=running", speedHost).Body.Bytes(), &run)
+	if run.Running == nil || run.Running.Kind != "sweep" || run.Running.Step != 3 || run.Running.Steps != 6 || run.Running.Server == nil {
+		t.Errorf("running %+v", run.Running)
+	}
+}
+
+// TestQueueRefusals: every share-link refusal's code and fields.
+func TestQueueRefusals(t *testing.T) {
+	now := speedNow
+	for _, tc := range []struct {
+		err    error
+		status int
+		want   []string
+	}{
+		{speedtest.ErrPublicDisabled, 403, []string{`"code":"disabled"`}},
+		{&speedtest.QueueFullError{Reason: "the queue is full"}, 429, []string{`"code":"queue_full"`}},
+		{&speedtest.BudgetError{ResetsAt: now.Add(time.Hour)}, 429, []string{`"code":"budget_exhausted"`, `"resets_at":`, `"retry_after":3600`}},
+		{&speedtest.BudgetError{ResetsAt: now.Add(time.Minute), Time: true}, 429, []string{`"code":"time_cap"`, `"resets_at":`, `"retry_after":60`}},
+		{&speedtest.SweepWaitError{Until: now.Add(30 * time.Minute)}, 429, []string{`"code":"cooldown"`, `"resets_at":`, `"retry_after":1800`}},
+	} {
+		w := httptest.NewRecorder()
+		if !queueRefused(w, httptest.NewRequest("POST", "/", nil), tc.err, now) || w.Code != tc.status {
+			t.Errorf("%v: %d", tc.err, w.Code)
+		}
+		for _, x := range tc.want {
+			if !strings.Contains(w.Body.String(), x) {
+				t.Errorf("%v: %s lacks %s", tc.err, w.Body.String(), x)
+			}
+		}
+	}
+	if queueRefused(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil), nil, now) {
+		t.Error("nil refused")
 	}
 }
 
 func TestSpeedConfig(t *testing.T) {
 	g := newSpeedRig(t, 5*time.Hour)
-	loc, _, d := speedHandlers(t, g, LocalOptions{})
-	good := speedPOSTHeaders()
+	loc, _, _ := speedHandlers(t, g, LocalOptions{})
 	cfg := func(body string) *httptest.ResponseRecorder {
-		return speedSend(loc, "POST", "/api/speed/config", body, good)
+		return speedSend(loc, "POST", "/api/speed/config", body, speedPOSTHeaders())
 	}
 	if w := cfg(`{"mode": "off"}`); w.Code != 200 || g.s.State().Mode != "off" || !strings.Contains(w.Body.String(), `"next_at":null`) {
 		t.Errorf("off: %d %s", w.Code, w.Body.String())
@@ -527,29 +733,14 @@ func TestSpeedConfig(t *testing.T) {
 	if v, _, _ := g.st.Setting(context.Background(), speedtest.SettingKey); v != "regions" {
 		t.Errorf("saved %q", v)
 	}
-	if w := cfg(`{"mode": "nearby"}`); w.Code != 200 || g.s.State().Mode != "nearby" {
+	if w := cfg(`{"mode": "nearby", "public": true}`); w.Code != 200 || g.s.State().Mode != "nearby" || !g.s.Queue().PublicEnabled() {
 		t.Errorf("nearby: %d %s", w.Code, w.Body.String())
 	}
-	for _, body := range []string{``, `{}`, `{"mode": true}`, `{"mode": "fast"}`, `{"enabled": true}`, `{"mode": "off", "x": 1}`, `{"mode": "regions", "extra": ["mars"]}`} {
+	for _, body := range []string{``, `{}`, `{"mode": true}`, `{"mode": "fast"}`, `{"enabled": true}`, `{"mode": "off", "x": 1}`,
+		`{"mode": "regions", "extra": ["mars"]}`, `{"extra": ["canada"]}`, `{"mode": "nearest"}`} {
 		if w := cfg(body); w.Code != 400 {
 			t.Errorf("%q: %d", body, w.Code)
 		}
-	}
-	// An admin token is required when set.
-	adm := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123", AdminToken: "sekrit"})
-	if w := speedSend(adm, "POST", "/api/speed/run", "", good); w.Code != 403 {
-		t.Errorf("without admin token: %d", w.Code)
-	}
-	json.Unmarshal(do(adm, "GET", "/api/speed", speedHost).Body.Bytes(), &s)
-	if s.Configurable {
-		t.Error("configurable without the admin token")
-	}
-	withAdm := map[string]string{"X-FYISP-Admin": "sekrit"}
-	for k, v := range good {
-		withAdm[k] = v
-	}
-	if w := speedSend(adm, "POST", "/api/speed/run", "", withAdm); w.Code != 202 {
-		t.Errorf("with admin token: %d %s", w.Code, w.Body.String())
 	}
 }
 

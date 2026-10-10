@@ -36,23 +36,61 @@ its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
 Scaleway and others; the README lists them) and to servers you name with
 `--speedtest-server`, and to no one else. The catalog is built into the
 binary and never fetched. Those servers see your public IP address. Each test
-moves at most 200 MB.
-
-The mode choice, cancelling and clearing the queue are write actions behind
-the same protections as notes (same origin, CSRF token, admin token). "Test
-now" and "Test all servers" are also open to share-link visitors, so anyone
-with the link can make your line run speed tests. Those requests need the
-same origin and a token served with the shared page, are rate-limited per
-visitor (by `Cf-Connecting-Ip`, IPv6 by /64), and wait in the one queue: one
-waiting request per visitor, at most 3 waiting sweeps, the owner's requests
-first, one test at a time. Stop sharing to close it. The share link shows
-server labels (provider and city) but never hosts, addresses or ports, shows
-your own servers only as "Your server", and never shows visitors' addresses
-or data use.
+moves at most 200 MB. Once a day per server, fyisp traceroutes the path to
+it to name the first network past your ISP (shown locally only). "Test now", sweeps, cancelling and the
+mode choice are write actions behind the same protections as notes (same
+origin, CSRF token, admin token). Only if the owner turns it on
+(`--speedtest-public` or the Details toggle; off by default), people with
+the share link may queue a test or a sweep of every server (`POST
+/s/<secret>/api/speed/run`), but never change the mode or cancel anything.
+Their tests may transfer at most `--speedtest-public-budget` (default 10 GB)
+per rolling 24 hours, counted from every byte on the wire (all attempts,
+ramp-up included) and kept across restarts. Because probes are masked
+during a test, the share link's tests may also keep the line under test at
+most 10 minutes per hour and 60 per day, a public sweep can start only 30
+minutes after the last one, and a public sweep yields to the owner's and
+scheduled tests between servers. Visitors can't blank out the monitoring. Every test waits in one queue and
+exactly one runs at a time: the owner's tests first, then scheduled ones, then
+the share link's. The share link's
+entries are capped: one waiting entry per visitor, 3 waiting sweeps and 12
+waiting entries in all. Each visitor (`Cf-Connecting-Ip`, IPv6 per /64)
+may start 1 per 30 s and 10 per hour. That route is same-origin only,
+takes only `kind` and `id` and no body, and is never cached. The share link
+shows server labels (provider and city) but never hosts, addresses or ports,
+shows your own servers only as "Your server", and shows the queue's other
+entries only as "someone".
 
 The public share link hides the STUN target names and the Teams relay region
 (the Azure region fyisp's relay lookup landed in, which hints at where you
 are), along with the other redactions listed in the README.
+
+On-demand traces (*Investigate*) can be started by anyone who can open the
+dashboard, without the admin token, and by anyone with the share link: `POST
+/s/<secret>/api/investigate` is the public listener's only write route. The
+safeguards are:
+
+- only the profile's target names are accepted, never a host or address;
+- each trace stops by itself after 250 rounds (about 10 minutes); re-posting
+  doesn't extend it;
+- at most 4 run at once, shared by the local and public listeners, of which
+  public starts may hold 3 (the owner always has a slot);
+- a target finished less than 5 minutes ago can't be restarted from the
+  public link;
+- the per-router probe cap is unchanged;
+- public starts are same-origin only (checked behind a real quick tunnel) and
+  limited per client by `Cf-Connecting-Ip` (IPv4 per address, IPv6 per /64;
+  1 per 30 s, 10 per hour), on top of the public rate limits; that key is
+  trustworthy because the public origin listens on 127.0.0.1 only; when the
+  limiter's table is full it prunes, then refuses new clients rather than
+  forgetting everyone;
+- the route takes exactly one `target` parameter and no body (a declared
+  length, chunking or anything read is refused), is never
+  cached, and its responses carry only the trace's state (target name,
+  rounds, times); hop addresses stay redacted as on every public trace view;
+- client addresses are never logged.
+
+The local route keeps the Host allowlist, the same-origin check and the CSRF
+token.
 
 
 In scope, for example:
@@ -61,7 +99,8 @@ In scope, for example:
   meant to be public: private addresses, settings, local-only endpoints,
   unpublished reports or notes;
 - bypasses of the local dashboard's protections (Host allowlist, CSRF,
-  `--admin-token`);
+  `--admin-token`), or of the on-demand trace safeguards above (tracing
+  anything but a profile target, more than 4 at once, past 250 rounds);
 - ways for a remote party to make fyisp run commands, read or write files, or
   exhaust memory or disk;
 - supply-chain issues in the release process (launchers, checksums, images).

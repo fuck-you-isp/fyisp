@@ -87,7 +87,7 @@ func FindFinding(in FindingInput) Finding {
 	var tests []model.SpeedTest
 	days := map[string]bool{}
 	for _, t := range in.Tests {
-		if Scheduled(t) && t.Outcome == model.SpeedOK && t.ScoreDown != nil {
+		if !t.OnDemand() && t.Outcome == model.SpeedOK && t.ScoreDown != nil {
 			tests = append(tests, t)
 			days[t.Start.Add(in.TZ).UTC().Format("2006-01-02")] = true
 		}
@@ -574,7 +574,7 @@ const (
 func HomeLine(f Finding, tests []model.SpeedTest, tz time.Duration, now time.Time) *HomeSpeed {
 	var n, ok int
 	for _, t := range tests {
-		if Scheduled(t) && !t.Start.Before(now.Add(-24*time.Hour)) {
+		if !t.OnDemand() && !t.Start.Before(now.Add(-24*time.Hour)) {
 			n++
 			if t.Outcome == model.SpeedOK {
 				ok++
@@ -599,7 +599,7 @@ func HomeLine(f Finding, tests []model.SpeedTest, tz time.Duration, now time.Tim
 	// The dip hours' slow end (p10) decides the impact.
 	var down, up []float64
 	for _, t := range tests {
-		if Scheduled(t) && t.Outcome == model.SpeedOK && !t.Fallback && slices.Contains(f.Hours, t.Start.Add(tz).UTC().Hour()) {
+		if !t.OnDemand() && t.Outcome == model.SpeedOK && !t.Fallback && slices.Contains(f.Hours, t.Start.Add(tz).UTC().Hour()) {
 			if t.DownBps != nil {
 				down = append(down, *t.DownBps)
 			}

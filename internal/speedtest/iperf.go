@@ -127,7 +127,11 @@ type Config struct {
 // Result is one direction's measurement.
 type Result struct {
 	Direction Direction
-	Bytes     int64         // bytes received over the measured window (all streams)
+	Bytes     int64 // bytes received over the measured window (all streams)
+	// WireBytes is every byte of the data phase on the wire, ramp-up and
+	// the time after the window included (all streams; set even when the
+	// test fails): what a data budget must count.
+	WireBytes int64
 	Elapsed   time.Duration // the measured window, without the omitted ramp-up
 	// Retransmits summed over the streams, -1 when unknown (the sender's
 	// TCP_INFO: the server's for downloads, ours on Linux for uploads).
@@ -199,10 +203,25 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer stop()
 
 	r, err := t.run(ctx, &res)
+	t.close() // the streams stop: their counters are final
 	if ctx.Err() != nil {
+		res.WireBytes = t.wire()
 		return res, ctx.Err()
 	}
+	r.WireBytes = t.wire()
 	return r, err
+}
+
+// wire is the data phase's bytes so far, over every stream.
+func (t *test) wire() int64 {
+	t.mu.Lock()
+	counts := t.counts
+	t.mu.Unlock()
+	var n int64
+	for i := range counts {
+		n += counts[i].Load()
+	}
+	return n
 }
 
 type test struct {
@@ -214,7 +233,8 @@ type test struct {
 	streams []net.Conn
 	closed  bool
 
-	moved  atomic.Int64 // bytes of every stream, against MaxBytes
+	counts []atomic.Int64 // per stream, the whole data phase (mu: the slice)
+	moved  atomic.Int64   // bytes of every stream, against MaxBytes
 	capped atomic.Bool
 }
 
@@ -287,6 +307,9 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	// The data phase. Counters are per stream; the window starts after the
 	// omitted ramp-up.
 	counts := make([]atomic.Int64, len(t.streams))
+	t.mu.Lock()
+	t.counts = counts
+	t.mu.Unlock()
 	var done atomic.Bool
 	var wg sync.WaitGroup
 	for i, s := range t.streams {

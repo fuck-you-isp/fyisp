@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net"
 	"slices"
@@ -29,56 +30,103 @@ func ParseExtra(s string) Extra {
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
-// runEntry runs a queue entry: a test, a sweep or a scheduled slot.
-func (s *Scheduler) runEntry(ctx context.Context, e *Entry) {
-	defer s.q.done(e, s.o.Now())
-	if !running.CompareAndSwap(false, true) {
-		return // another scheduler in this process (tests only)
-	}
-	defer running.Store(false)
-	ectx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	s.q.update(e, func(e *Entry) { e.cancel = cancel })
-	switch e.Kind {
+// resolve turns a queue request into its tests (QueueOptions.Resolve): a
+// sweep is every server once (the catalog, then own servers); single is
+// one server, a region's rotated chain, or ("") the nearest servers.
+func (s *Scheduler) resolve(kind Kind, id string) ([]Job, error) {
+	switch kind {
 	case KindSweep:
-		servers := s.o.Catalog.Servers
-		s.q.update(e, func(e *Entry) {
-			e.Results = nil
-			for _, sv := range servers {
-				e.Results = append(e.Results, SweepResult{Server: sv.ID, Status: "waiting"})
-			}
-		})
-		for i, sv := range servers {
-			if ectx.Err() != nil {
-				return
-			}
-			s.q.update(e, func(e *Entry) {
-				e.Progress = Progress{Step: "download", Server: sv.ID, Index: i + 1, Total: len(servers)}
-				e.Results[i].Status = "testing"
-			})
-			t := s.runSteps(ectx, e, "", []Step{{Server: sv, Level: FallbackNone}}, "sweep")
-			s.q.update(e, func(e *Entry) {
-				r := &e.Results[i]
-				if t == nil {
-					r.Status = "waiting"
-					return
-				}
-				r.Status, r.DownBps, r.UpBps, r.DownShort, r.UpShort, r.At = t.Outcome, t.DownBps, t.UpBps, t.DownShort, t.UpShort, t.Start
-				if t.Outcome == model.SpeedOK {
-					r.Status = "done"
-				}
-				r.Direction = ""
-			})
+		var out []Job
+		for _, sv := range s.o.Catalog.Servers {
+			out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
 		}
-	case KindTest:
-		region, steps := s.resolveTest(ectx, e.Target)
-		s.runSteps(ectx, e, region, steps, "manual")
-	case KindScheduled:
-		if e.slot != nil {
-			region, steps := s.resolveSlot(ectx, *e.slot)
-			s.runSteps(ectx, e, region, steps, "schedule")
+		for _, sv := range s.o.Custom {
+			if _, ok := s.o.Catalog.Server(sv.ID); !ok {
+				out = append(out, s.slotJob(target{server: sv.ID, nearby: -1}))
+			}
+		}
+		return out, nil
+	case KindSingle:
+		if id != "" {
+			if _, ok := s.server(id); !ok {
+				if _, ok := s.region(id); !ok {
+					return nil, ErrUnknownID
+				}
+			}
+		}
+		j := Job{steps: func(ctx context.Context) (string, []Step) { return s.resolveTest(ctx, id) }}
+		if sv, ok := s.server(id); ok {
+			j.Chain = []Server{sv}
+		} else if r, ok := s.region(id); ok {
+			j.Region = r.ID
+			for _, st := range r.Chain(s.o.Catalog, s.o.Now(), s.seedNow()) {
+				j.Chain = append(j.Chain, st.Server)
+			}
+		}
+		return []Job{j}, nil
+	}
+	return nil, fmt.Errorf("speed test queue: kind %q", kind)
+}
+
+// slotJob is a scheduled slot's (or one server's) job: its servers are
+// resolved when it runs (the rotation is the hour's then).
+func (s *Scheduler) slotJob(t target) Job {
+	j := Job{Region: t.region, steps: func(ctx context.Context) (string, []Step) { return s.resolveSlot(ctx, t) }}
+	if sv, ok := s.server(t.server); ok {
+		j.Chain = []Server{sv}
+	} else if r, ok := s.region(t.region); ok {
+		for _, st := range r.Chain(s.o.Catalog, s.o.Now(), s.seedNow()) {
+			j.Chain = append(j.Chain, st.Server)
 		}
 	}
+	return j
+}
+
+// execJob runs one queued test (QueueOptions.Exec): the stored test's ID,
+// whether it was saved, and the bytes on the wire, every attempt's.
+func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool, int64) {
+	region, steps := j.Region, []Step(nil)
+	if j.steps != nil {
+		region, steps = j.steps(ctx)
+	} else {
+		for i, sv := range j.Chain {
+			lvl := FallbackNone
+			if i > 0 {
+				lvl = FallbackSameMetro
+			}
+			steps = append(steps, Step{Server: sv, Level: lvl})
+		}
+	}
+	t, saved, bytes := s.runSteps(ctx, region, steps, trigger)
+	if t == nil {
+		return 0, false, bytes
+	}
+	return t.ID, saved, bytes
+}
+
+// live is the running test's direction and server and its expected end
+// (QueueOptions.Live).
+type live struct {
+	dir, server string
+	end         time.Time
+}
+
+func (s *Scheduler) live() (string, string, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cur == nil {
+		return "", "", time.Time{}
+	}
+	return s.cur.dir, s.cur.server, s.cur.end
+}
+
+func (s *Scheduler) setLive(dir, server string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cur == nil {
+		s.cur = &live{end: s.o.Now().Add(EstJob)}
+	}
+	s.cur.dir, s.cur.server = dir, server
 }
 
 // resolveTest is Test now's servers: one server, a region's chain, or the
@@ -146,15 +194,24 @@ func (s *Scheduler) resolveSlot(ctx context.Context, t target) (string, []Step) 
 }
 
 // runSteps runs one test over a chain: the servers in order until one
-// measures, within SlotBudget. It saves and returns the result; nil when
-// cancelled (the owner, or shutdown): not a result.
-func (s *Scheduler) runSteps(ctx context.Context, e *Entry, region string, steps []Step, trigger string) *model.SpeedTest {
-	t := model.SpeedTest{Trigger: trigger, Region: region, Outcome: model.SpeedUnreachable, FallbackLevel: FallbackNone, Entry: e.ID}
+// measures, within SlotBudget. It saves and returns the result (and
+// whether it was stored) and the bytes on the wire; nil when cancelled
+// (the owner, or shutdown): not a result.
+func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, trigger string) (*model.SpeedTest, bool, int64) {
+	defer func() {
+		s.mu.Lock()
+		s.cur = nil
+		s.mu.Unlock()
+	}()
+	s.setLive("picking", "")
+	t := model.SpeedTest{Trigger: trigger, Region: region, Outcome: model.SpeedUnreachable, FallbackLevel: FallbackNone}
+	if ctx.Err() != nil {
+		return nil, false, 0
+	}
 	if len(steps) == 0 {
 		now := s.o.Now()
 		t.Start, t.End = now, now
-		s.save(ctx, &t, Extra{})
-		return &t
+		return &t, s.save(ctx, &t, Extra{}), 0
 	}
 	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
@@ -175,7 +232,7 @@ func (s *Scheduler) runSteps(ctx context.Context, e *Entry, region string, steps
 			break
 		}
 		t.Server, t.FallbackLevel, t.Fallback, t.Port, used = st.Server.ID, st.Level, st.Level != FallbackNone, 0, st.Server
-		s.testServer(sctx, e, st.Server, &t, &x, lr)
+		s.testServer(sctx, st.Server, &t, &x, lr)
 		if t.Outcome == model.SpeedOK || t.DownBps != nil || sctx.Err() != nil {
 			break // measured (a failed upload keeps the download), or out of time
 		}
@@ -183,7 +240,7 @@ func (s *Scheduler) runSteps(ctx context.Context, e *Entry, region string, steps
 	t.End = s.o.Now()
 	win := s.o.Windows.End(t.End)
 	if ctx.Err() != nil {
-		return nil // cancelled or shutting down: not a result
+		return nil, false, t.Bytes // cancelled or shutting down: not a result
 	}
 	if t.Latency = latency(s.o.Load, s.o.Windows, lr, win.Start); t.Latency != nil {
 		g := t.Latency.Gateway
@@ -205,8 +262,8 @@ func (s *Scheduler) runSteps(ctx context.Context, e *Entry, region string, steps
 		}
 		t.Handoff = h
 	}
-	s.save(ctx, &t, x)
-	return &t
+	saved := s.save(ctx, &t, x)
+	return &t, saved, t.Bytes
 }
 
 // handoffBudget bounds one handoff traceroute (after the test's window).
@@ -230,7 +287,8 @@ func (s *Scheduler) loadRun() *loadRun {
 	return &loadRun{p: p, gw: gw, edge: edge, every: s.o.loadEvery}
 }
 
-func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest, x Extra) {
+// save stores t (it reports whether it did), logs and reports it.
+func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest, x Extra) bool {
 	if b, err := json.Marshal(x); err == nil && x != (Extra{}) {
 		t.Extra = string(b)
 	}
@@ -242,9 +300,12 @@ func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest, x Extra) {
 		}
 	}
 	s.score(ctx, t)
+	saved := false
 	if s.o.Store != nil {
 		if err := s.o.Store.SaveSpeedTest(ctx, t); err != nil {
 			s.o.Log.Warn("speed test: saving the result failed", "err", err)
+		} else {
+			saved = true
 		}
 	}
 	args := []any{"region", t.Region, "server", t.Server, "fallback", t.FallbackLevel, "outcome", t.Outcome, "attempts", t.Attempts, "trigger", t.Trigger}
@@ -258,6 +319,7 @@ func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest, x Extra) {
 	if s.o.OnResult != nil {
 		s.o.OnResult(*t)
 	}
+	return saved
 }
 
 // Baseline rules: the p90 of the server's first-choice scheduled ok tests
@@ -319,18 +381,10 @@ func (s *Scheduler) score(ctx context.Context, t *model.SpeedTest) {
 
 // testServer runs download then upload against sv.
 // It probes latency under load during each direction (lr nil: none).
-func (s *Scheduler) testServer(ctx context.Context, e *Entry, sv Server, t *model.SpeedTest, x *Extra, lr *loadRun) {
+func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest, x *Extra, lr *loadRun) {
 	port := 0
 	for i, dir := range []Direction{Download, Upload} {
-		s.q.update(e, func(e *Entry) {
-			e.Progress.Step, e.Progress.Server = dir.String(), sv.ID
-			if e.Progress.Total == 0 {
-				e.Progress.Index, e.Progress.Total = 1, 1
-			}
-			if e.Kind == KindSweep && e.Progress.Index > 0 {
-				e.Results[e.Progress.Index-1].Direction = dir.String()
-			}
-		})
+		s.setLive(dir.String(), sv.ID)
 		if port != 0 && !s.o.sleep(ctx, relisten) {
 			t.Outcome = model.SpeedFailed
 			return
@@ -339,7 +393,7 @@ func (s *Scheduler) testServer(ctx context.Context, e *Entry, sv Server, t *mode
 		if lr != nil {
 			stop = lr.probe(ctx)
 		}
-		res, p, attempts, outcome := s.direction(ctx, sv, dir, port, t.Start)
+		res, p, attempts, outcome, wire := s.direction(ctx, sv, dir, port, t.Start)
 		if stop != nil {
 			if smp := stop(); dir == Download {
 				lr.down = smp
@@ -352,7 +406,7 @@ func (s *Scheduler) testServer(ctx context.Context, e *Entry, sv Server, t *mode
 			t.Port, port = p, p
 		}
 		t.Outcome = outcome
-		t.Bytes += res.TotalBytes
+		t.Bytes += wire
 		if outcome != model.SpeedOK {
 			return
 		}
@@ -378,7 +432,8 @@ func (s *Scheduler) testServer(ctx context.Context, e *Entry, sv Server, t *mode
 // MaxAttempts and within the slot's budget. A single-port server gets one
 // try. A timeout or DNS failure (ErrUnreachable) and protocol errors end
 // it at once.
-func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time) (Result, int, int, string) {
+// wire is every attempt's bytes on the wire.
+func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time) (res Result, used, attempts int, outcome string, wire int64) {
 	tried := map[int]bool{}
 	tries := MaxAttempts
 	if sv.SinglePort() {
@@ -389,26 +444,28 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 			port = s.randomPort(sv, tried)
 		}
 		tried[port] = true
-		res, err := s.o.run(ctx, Config{
+		var err error
+		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
 			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes,
 		})
+		wire += max(res.WireBytes, res.TotalBytes, res.Bytes)
 		switch {
 		case err == nil:
-			return res, port, attempt, model.SpeedOK
+			return res, port, attempt, model.SpeedOK, wire
 		case ctx.Err() != nil:
-			return res, port, attempt, model.SpeedFailed
+			return res, port, attempt, model.SpeedFailed, wire
 		case errors.Is(err, ErrUnreachable):
-			return res, port, attempt, model.SpeedUnreachable
+			return res, port, attempt, model.SpeedUnreachable, wire
 		case !errors.Is(err, ErrBusy) && !errors.Is(err, ErrRefused):
 			s.o.Log.Debug("speed test failed", "server", sv.ID, "port", port, "direction", dir.String(), "err", err)
-			return res, port, attempt, model.SpeedFailed
+			return res, port, attempt, model.SpeedFailed, wire
 		}
 		if attempt >= tries || s.o.Now().Sub(slotStart)+AttemptGap >= SlotBudget || !s.o.sleep(ctx, AttemptGap) {
 			if errors.Is(err, ErrRefused) {
-				return res, port, attempt, model.SpeedUnreachable
+				return res, port, attempt, model.SpeedUnreachable, wire
 			}
-			return res, port, attempt, model.SpeedBusy
+			return res, port, attempt, model.SpeedBusy, wire
 		}
 	}
 }

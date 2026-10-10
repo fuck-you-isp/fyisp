@@ -102,6 +102,8 @@ Inside a container fyisp listens on all interfaces, so anyone on your network co
 - `--admin-token=<your own>` uses that token instead (the browser asks for it, or open `http://…:3000/#admin=<token>`). `--admin-token=off` disables changes entirely; `--share` still starts the public link at startup.
 - The dashboard is plain HTTP: someone who can watch your network traffic could copy the cookie, as with any HTTP login. Keep it on a network you trust, or use `-p 127.0.0.1:3000:3000`.
 
+Starting a trace (*Investigate*) needs no admin token: anyone who can open the dashboard may trace a profile target, for at most 250 rounds.
+
 If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
 
 **Use host networking on Linux for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
@@ -301,7 +303,7 @@ The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch r
 
 ## Speed tests
 
-fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" runs one test right away, and "Test all servers" tests every server in the catalog once, in any mode.
+fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" queues one test, and "Test all servers" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
 
 ```sh
 fyisp --speedtest                                  # mode regions: 9 regions, each once an hour
@@ -340,9 +342,9 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 - Then it moves to another provider in the same city, then to a nearby city. Single-port servers (Hurricane Electric) are never retried. If nothing answers, it records **"server busy"**, never a slow result.
 - A slot never uses more than about 30 seconds and never delays the next one.
 
-**One test at a time.** Scheduled tests, Test now and sweeps share one queue. Your own requests go ahead of visitors' to the share link; a running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
+**One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones, then the share link's. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
-**Share link.** Visitors to the share link can press Test now or Test all servers too. Each visitor may have one request waiting, and at most 3 sweeps wait at once. Visitors cannot cancel; you can cancel any request, or clear all of the visitors', from Details.
+**Share link.** Only if you turn it on (`--speedtest-public` or the toggle in Details → Speed; off by default), visitors to the share link can queue Test now or Test all servers too, within a data budget and time caps: see [Sharing a public link](#sharing-a-public-link---share) below.
 
 Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
 
@@ -475,7 +477,14 @@ or carry on without ICMP: the services and the anycast resolvers are still measu
 Sharing is **off by default**. Start it with *Make a report* on Home, the share controls in Details, or `fyisp --share`; fyisp then prints exactly what becomes public. The link opens on the report: Home in the third person (*Internet quality report*, with times in absolute form and the time zone), with Details one click away.
 
 - fyisp opens a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) from inside the process (no `cloudflared` install, no Cloudflare account) and prints a link like `https://<random-words>.trycloudflare.com/s/<secret>/`.
-- **What is public:** the report, the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, no write routes, and requests are rate-limited.
+- **What is public:** the report, the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, and requests are rate-limited.
+- **People with your link can start a trace** (*Investigate*) of your profile's targets, and nothing else. It is the one thing the public link can change. Only targets in your profile can be traced, never a host or address of the visitor's choosing. Each trace runs 250 rounds (about 10 minutes) and stops by itself. At most 4 run at once, and visitors can hold at most 3 of them, so you always have one. Each visitor can start one every 30 seconds and 10 an hour, and a target whose trace just finished can be traced again from the link only after 5 minutes. The hops it shows are redacted like the rest of the public link.
+- **People with your link can queue a speed test** (one server, or a sweep of every server), **only if you turn this on** (`--speedtest-public` or the toggle in Details → Speed; off by default). Tests wait in one queue and run one at a time: yours first, then the scheduled ones, then the link's.
+  - Each visitor can have one waiting and start one every 30 seconds (10 an hour).
+  - At most 3 sweeps and 12 tests from the link wait at once.
+  - The link's tests may use at most 10 GB in any 24 hours (`--speedtest-public-budget`, e.g. `--speedtest-public-budget=50GB`), and keep your line busy at most 10 minutes an hour and 60 minutes a day; a full sweep from the link waits 30 minutes after the last one. Then the link says when it can test again.
+  - A sweep from the link pauses between servers whenever one of your tests or a scheduled one is waiting.
+  - You can cancel or clear them in Details → Speed.
 - **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
 - The tunnel tries QUIC (UDP port 7844) first and switches to HTTP/2 over TCP port 443 after about 30 seconds if UDP is blocked. Force one with `--share-protocol quic` or `--share-protocol http2`.
 - The link is random. It changes when fyisp restarts, or when the tunnel has to be re-created after 5 minutes without a connection. The browser on your machine always opens `127.0.0.1`, never the public link.
@@ -489,7 +498,7 @@ The services are measured with TCP only, so `ping_*` now covers the Network path
 
 UDP (STUN) targets never feed `ping_*`. Each burst counts once in `fyisp_probe_samples_total{kind="udp"}` (and `fyisp_probe_lost_total{kind="udp"}` when nothing answered); the latest burst's values are `fyisp_udp_rtt_seconds{name,target}` (median round trip), `fyisp_udp_jitter_seconds` and `fyisp_udp_loss_ratio` (0 to 1), each absent while the latest burst did not measure it.
 
-Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{region,server}` and `fyisp_speed_upload_bits_per_second{region,server}`, both from the latest test against that server that measured them (`region` is empty outside mode `regions`). They also add `fyisp_speed_loaded_rtt_seconds{region,server,layer,load}`: the median RTT to your provider's first router (`layer="edge"`) or the gateway (`layer="gateway"`), before the test (`load="idle"`) and during each direction (`load="download"`, `load="upload"`), and `fyisp_speed_loaded_probes_lost_ratio{region,server,layer,load}`, the share of those probes that got no answer. `fyisp_speed_tests_total{region,server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable` or `failed`.
+Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{region,server}` and `fyisp_speed_upload_bits_per_second{region,server}`, both from the latest test against that server that measured them (`region` is empty outside mode `regions`). They also add `fyisp_speed_loaded_rtt_seconds{region,server,layer,load}`: the median RTT to your provider's first router (`layer="edge"`) or the gateway (`layer="gateway"`), before the test (`load="idle"`) and during each direction (`load="download"`, `load="upload"`); a lost probe counts as 1 s. `fyisp_speed_tests_total{region,server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable` or `failed`.
 
 `fyisp_call_mos{app}` is the call-quality score the Calls view shows (MOS, 1 to 4.5; 4.0 and up is good, 3.6 fair, 3.1 poor, below that unusable): the worst minute of the last 5 minutes. `app="path"` is your call path, and `app="meet"` and `app="teams"` are the measured apps (Teams only with the `calls` profile). Each is absent until its STUN servers have 10 bursts in the window. With `--no-udp` there are no `fyisp_udp_*` or `fyisp_call_mos` series.
 

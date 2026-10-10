@@ -363,7 +363,7 @@ type SpeedTest struct {
 	ID      int64     `json:"id"`
 	Start   time.Time `json:"start"`
 	End     time.Time `json:"end"`
-	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now) or "sweep"
+	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now), "sweep", or from the share link "public" or "public_sweep"
 	Outcome string    `json:"outcome"`
 	// Region is the catalog region the test was for ("" outside mode
 	// regions); Server the server actually used: a catalog ID, or host:port
@@ -394,8 +394,6 @@ type SpeedTest struct {
 	Handoff *Handoff `json:"handoff"`
 	// FallbackLevel is "none", "same_metro" or "nearby_city".
 	FallbackLevel string `json:"fallback_level"`
-	// Entry is the queue entry that ran the test (a sweep's tests share it).
-	Entry int64 `json:"entry"`
 	// CappedByServer: a direction measured within 10% of the server's
 	// published link capacity (the server, not the line, set the limit).
 	CappedByServer bool `json:"capped_by_server"`
@@ -456,4 +454,27 @@ type Handoff struct {
 	Name   string    `json:"name"`
 	ISPASN uint32    `json:"isp_asn"`
 	At     time.Time `json:"at"` // when the traceroute ran
+}
+
+// OnDemand reports a test someone asked for (Test now, a sweep) rather than
+// a schedule slot: patterns leave these out (they cluster at the hours
+// people look, and sweeps hit every server at once).
+func (t SpeedTest) OnDemand() bool {
+	switch t.Trigger {
+	case "manual", "sweep", "public", "public_sweep":
+		return true
+	}
+	return false
+}
+
+// Origin is who asked for the test: "scheduled", "owner" or "public" (the
+// share link).
+func (t SpeedTest) Origin() string {
+	switch t.Trigger {
+	case "manual", "sweep":
+		return "owner"
+	case "public", "public_sweep":
+		return "public"
+	}
+	return "scheduled"
 }

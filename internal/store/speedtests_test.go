@@ -15,7 +15,7 @@ func TestSpeedTests(t *testing.T) {
 	f, r, ms := 4.12e8, int64(112), 1.5
 	sc := 0.93
 	full := model.SpeedTest{Start: now.Add(-time.Hour), End: now.Add(-time.Hour + 33*time.Second), Trigger: "schedule", Outcome: model.SpeedOK,
-		FallbackLevel: "none", Entry: 7, CappedByServer: true, DownShort: true, DownSecs: 0.8, UpSecs: 3.1, Bytes: 140 << 20, ScoreDown: &sc, Extra: `{"ramp_ms":[400,300]}`,
+		FallbackLevel: "none", CappedByServer: true, DownShort: true, DownSecs: 0.8, UpSecs: 3.1, Bytes: 140 << 20, ScoreDown: &sc, Extra: `{"ramp_ms":[400,300]}`,
 		Region: "uk", Server: "Clouvider-London", Port: 5203, Attempts: 2, DownBps: &f, UpBps: &f, DownRetrans: &r, IdleGatewayMs: &ms, LoadedGatewayMs: &ms,
 		Conn: model.ConnWired, Latency: &model.SpeedLatency{Edge: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8.2, P95Ms: 9.9},
 			Up: &model.LoadStats{N: 58, Lost: 3, Loss: 0.052, P50Ms: 140, P95Ms: 1000}}},

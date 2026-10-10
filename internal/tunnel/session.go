@@ -275,6 +275,11 @@ func buildConfig(ctx context.Context, qt *quickTunnel, originURL, proto string, 
 	}
 
 	// An http.Handler cannot be plugged in: the origin must be a URL.
+	//
+	// Never set OriginRequest.HTTPHostHeader: the public listener's
+	// same-origin check (web.sameOrigin, guarding POST /s/<secret>/api/
+	// investigate) relies on cloudflared passing the visitor's Host (the
+	// trycloudflare hostname) through unchanged. TestLiveSameOrigin checks it.
 	rules, err := ingress.ParseIngress(&config.Configuration{
 		Ingress: []config.UnvalidatedIngressRule{{Service: originURL}},
 	})

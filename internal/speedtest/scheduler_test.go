@@ -118,29 +118,23 @@ func (h *harness) setRun(f func(c Config, n int) (Result, error)) {
 	h.mu.Unlock()
 }
 
-// entry queues and runs one entry synchronously; it returns the tests it
-// saved.
-func (h *harness) entry(t *testing.T, e *Entry) []model.SpeedTest {
+// job runs one job synchronously, as the queue would; it returns the tests
+// it saved.
+func (h *harness) job(t *testing.T, j Job, trigger string) []model.SpeedTest {
 	t.Helper()
 	n := len(h.st.tests)
-	if _, _, err := h.s.q.add(e, h.clock()); err != nil {
-		t.Fatal(err)
-	}
-	p := h.s.q.pop(h.clock())
-	if p == nil {
-		t.Fatal("nothing to run")
-	}
-	h.s.runEntry(context.Background(), p)
+	h.s.execJob(context.Background(), j, trigger)
 	return h.st.tests[n:]
 }
 
-// slot runs the scheduled slot of a region or server.
 // region runs one scheduled slot of region id.
 func (h *harness) region(t *testing.T, id string) model.SpeedTest {
 	t.Helper()
 	return h.slot(t, target{region: id})
 }
 
+// slot runs the scheduled slot of a region or server (none: the first
+// nearby pick).
 func (h *harness) slot(t *testing.T, tg target) model.SpeedTest {
 	t.Helper()
 	if tg.region == "" && tg.server == "" {
@@ -148,7 +142,7 @@ func (h *harness) slot(t *testing.T, tg target) model.SpeedTest {
 	} else {
 		tg.nearby = -1
 	}
-	ts := h.entry(t, &Entry{Kind: KindScheduled, Who: WhoScheduled, Target: tg.row(), slot: &tg})
+	ts := h.job(t, h.s.slotJob(tg), "schedule")
 	if len(ts) != 1 {
 		t.Fatalf("%d tests", len(ts))
 	}

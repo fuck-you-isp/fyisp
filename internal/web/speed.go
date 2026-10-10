@@ -28,13 +28,9 @@ type SpeedSource interface {
 	State() speedtest.State
 	SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
 	SetMode(ctx context.Context, m speedtest.Mode, extra []string) (time.Time, error)
+	// Queue is the speed-test queue (Test now, sweeps, schedule slots).
+	Queue() *speedtest.Queue
 	MaskedShare(d time.Duration) float64
-	Enqueue(kind, id, who, client string) (speedtest.Entry, bool, error)
-	Queue() speedtest.QueueState
-	QueueEntry(id int64) (speedtest.Entry, bool)
-	Cancel(id int64) error
-	ClearQueue(who string) int
-	SweepSize() int
 	Catalog() *speedtest.Catalog
 	BytesSince(ctx context.Context, t time.Time) (int64, error)
 }
@@ -44,12 +40,9 @@ const (
 	SpeedTTL = 30 * time.Second // the share link's cache of summaries
 	// fallbackNote is the share of a region's tests on a fallback server
 	// (last 24 h) above which the row gets a note.
-	fallbackNote = 0.5
-	// Share link POSTs (Test now, sweeps): per client, on top of the
-	// queue's own limits.
-	speedPostRate, speedPostBurst = 1.0 / 10, 3
-	speedTestsCap                 = 5000 // tests in one row view
-	defaultTestBytes              = 150 << 20
+	fallbackNote     = 0.5
+	speedTestsCap    = 5000 // tests in one row view
+	defaultTestBytes = 150 << 20
 )
 
 // ---------- JSON ----------
@@ -103,8 +96,9 @@ type speedRow struct {
 }
 
 type speedWindow struct {
-	Start int64 `json:"start"`
-	End   int64 `json:"end"`
+	Start  int64  `json:"start"`
+	End    int64  `json:"end"`
+	Origin string `json:"origin"` // scheduled | owner | public (the share link)
 }
 
 // speedTestJSON is one test. Ports and hosts are local only; own servers
@@ -113,8 +107,8 @@ type speedTestJSON struct {
 	ID              int64    `json:"id"`
 	Start           int64    `json:"start"`
 	End             int64    `json:"end"`
-	Trigger         string   `json:"trigger"` // schedule, manual, sweep
-	Manual          bool     `json:"manual"`  // not part of the time-of-day patterns
+	Trigger         string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep
+	OnDemand        bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
 	Outcome         string   `json:"outcome"`
 	Region          *string  `json:"region"`
 	Server          string   `json:"server"`
@@ -147,54 +141,17 @@ type speedTestJSON struct {
 	Handoff *model.Handoff      `json:"handoff,omitempty"`
 }
 
+// speedRunning is the test running now (summary and part=running): the
+// queue's running entry in short.
 type speedRunning struct {
-	Entry       int64     `json:"entry"`
-	Kind        string    `json:"kind"`
+	Entry       uint64    `json:"entry"`
+	Kind        string    `json:"kind"` // single | sweep | scheduled
 	Started     int64     `json:"started"`
 	ExpectedEnd int64     `json:"expected_end"`
-	Step        string    `json:"step"` // picking, download, upload
+	Direction   string    `json:"direction"` // picking, download, upload
 	Server      *speedRef `json:"server"`
-	Index       int       `json:"index"`
-	Total       int       `json:"total"`
-}
-
-type speedEntry struct {
-	ID          int64              `json:"id"`
-	Kind        string             `json:"kind"` // test, sweep, scheduled
-	Who         string             `json:"who"`  // you, someone, scheduled
-	State       string             `json:"state"`
-	Position    int                `json:"position"` // 1 = next, 0 = running or finished
-	Label       string             `json:"label"`
-	Target      string             `json:"target,omitempty"`
-	RequestedAt int64              `json:"requested_at"`
-	StartedAt   *int64             `json:"started_at"`
-	FinishedAt  *int64             `json:"finished_at"`
-	EstStart    *int64             `json:"est_start"`
-	EstEnd      *int64             `json:"est_end"`
-	Progress    *speedRunning      `json:"progress,omitempty"`
-	Results     []speedSweepResult `json:"results,omitempty"`
-}
-
-type speedSweepResult struct {
-	Server    string   `json:"server"`
-	Label     string   `json:"label"`
-	Display   string   `json:"display"`
-	Region    *string  `json:"region"`
-	Provider  string   `json:"provider"`
-	Status    string   `json:"status"`
-	Direction string   `json:"direction,omitempty"`
-	DownBps   *float64 `json:"down_bps"`
-	UpBps     *float64 `json:"up_bps"`
-	DownShort bool     `json:"down_short"`
-	UpShort   bool     `json:"up_short"`
-	At        *int64   `json:"at"`
-}
-
-type speedQueueJSON struct {
-	At        int64        `json:"at"`
-	Running   *speedEntry  `json:"running"`
-	Waiting   []speedEntry `json:"waiting"`
-	LastSweep *speedEntry  `json:"last_sweep"`
+	Step        int       `json:"step"` // a sweep: the server under test, 1-based, of steps
+	Steps       int       `json:"steps"`
 }
 
 type speedPlan struct {
@@ -364,7 +321,7 @@ func ms(t time.Time) *int64 {
 
 func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	ref, display, provider, city := n.server(t.Server)
-	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, Manual: !speedtest.Scheduled(t),
+	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, OnDemand: t.OnDemand(),
 		Outcome: t.Outcome, Server: ref.ID, Label: ref.Label, Display: display, Provider: provider, City: city,
 		Fallback: t.Fallback, FallbackLevel: t.FallbackLevel, Attempts: t.Attempts,
 		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownShort: t.DownShort, UpShort: t.UpShort,
@@ -392,8 +349,8 @@ type speedParams struct {
 	days, tz        int
 	excludeFallback bool
 	row             string
-	entry           int64
 	from, to        time.Time
+	entry           uint64 // part=entry
 	key             string
 }
 
@@ -401,6 +358,9 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 	p := speedParams{part: q.Get("part"), days: 7}
 	if err := checkParams(q, "part", "days", "tz", "from", "to", "exclude_fallback", "server", "region", "row", "id"); err != nil {
 		return p, err
+	}
+	if q.Has("id") && p.part != "entry" {
+		return p, badReq("id is for part=entry")
 	}
 	only := func(part string, names ...string) error {
 		for _, n := range names {
@@ -480,25 +440,23 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 			return p, badReq("range longer than %d days", int(MaxRange/(24*time.Hour)))
 		}
 		p.key = "speedw\x00" + fk + "\x00" + tk
-	case "running", "queue":
+	case "running":
 		if err := only(p.part, "days", "tz", "exclude_fallback", "server", "region", "row", "from", "to", "id"); err != nil {
 			return p, err
 		}
-	case "sweep", "entry":
-		if err := only(p.part, "days", "tz", "exclude_fallback", "server", "region", "row", "from", "to"); err != nil {
+	case "queue", "sweep", "entry":
+		if err := only("summary or windows", "days", "tz", "exclude_fallback", "server", "region", "row", "from", "to"); err != nil {
 			return p, err
 		}
-		if s := q.Get("id"); s != "" {
-			id, err := strconv.ParseInt(s, 10, 64)
-			if err != nil || id <= 0 {
-				return p, badReq("bad id %q", s)
+		if p.part == "entry" {
+			id, err := strconv.ParseUint(q.Get("id"), 10, 64)
+			if err != nil || len(q["id"]) != 1 {
+				return p, badReq("part=entry needs one id")
 			}
 			p.entry = id
-		} else if p.part == "entry" {
-			return p, badReq("id is required")
 		}
 	default:
-		return p, badReq("bad part %q: want summary, windows, running, queue, sweep or entry", p.part)
+		return p, badReq("bad part %q: want summary, windows, running, queue, entry or sweep", p.part)
 	}
 	return p, nil
 }
@@ -517,34 +475,16 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
+	switch p.part {
+	case "queue", "entry", "sweep":
+		s.serveSpeedQueue(w, r, p, now)
+		return
+	}
 	st := s.d.Speed.State()
 	names := newSpeedNames(st, s.d.Speed.Catalog(), s.public)
-	me := s.requester(r)
-	switch p.part {
-	case "running":
+	if p.part == "running" {
+		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, r, http.StatusOK, map[string]any{"at": now.UnixMilli(), "running": s.speedRunning(names)})
-		return
-	case "queue":
-		writeJSON(w, r, http.StatusOK, s.speedQueue(names, me, now))
-		return
-	case "sweep", "entry":
-		var e speedtest.Entry
-		ok := false
-		if p.entry > 0 {
-			e, ok = s.d.Speed.QueueEntry(p.entry)
-		} else if ls := s.d.Speed.Queue().LastSweep; ls != nil {
-			e, ok = *ls, true
-		}
-		if !ok || (p.part == "sweep" && e.Kind != speedtest.KindSweep) {
-			if p.part == "sweep" && p.entry == 0 {
-				writeJSON(w, r, http.StatusOK, map[string]any{"at": now.UnixMilli(), "sweep": nil})
-				return
-			}
-			writeErr(w, r, http.StatusNotFound, "no such entry")
-			return
-		}
-		j := s.speedEntry(e, names, me, 0, time.Time{})
-		writeJSON(w, r, http.StatusOK, map[string]any{"at": now.UnixMilli(), p.part: j})
 		return
 	}
 	if p.part == "summary" && p.row != "" {
@@ -578,138 +518,28 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// requester is who asks: "" for the owner (local), the client key on the
-// share link.
-func (s *server) requester(r *http.Request) string {
-	if !s.public {
-		return ""
-	}
-	return publicClient(r)
-}
-
-// publicClient is a share-link visitor's key: Cf-Connecting-Ip, IPv6
-// grouped by /64.
-func publicClient(r *http.Request) string {
-	k := clientKey(r)
-	if i := strings.IndexByte(k, ':'); i >= 0 { // IPv6: the first four groups
-		parts := strings.SplitN(k, ":", 5)
-		if len(parts) >= 4 {
-			return strings.Join(parts[:4], ":") + "::/64"
-		}
-	}
-	return k
-}
-
 func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
 	out := []speedWindow{}
 	for _, t := range ts {
 		if !t.End.Before(from) && t.End.After(t.Start) {
-			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli()})
+			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: t.Origin()})
 		}
 	}
 	return out
 }
 
 func (s *server) speedRunning(names speedNames) *speedRunning {
-	q := s.d.Speed.Queue()
-	if q.Running == nil {
+	e := s.d.Speed.Queue().State().Running
+	if e == nil {
 		return nil
 	}
-	return s.runningOf(*q.Running, names)
-}
-
-func (s *server) runningOf(e speedtest.Entry, names speedNames) *speedRunning {
-	r := &speedRunning{Entry: e.ID, Kind: e.Kind, Started: e.StartedAt.UnixMilli(), Step: e.Progress.Step,
-		Index: e.Progress.Index, Total: e.Progress.Total}
-	left := speedtest.EstSweepStep
-	if e.Kind == speedtest.KindSweep && e.Progress.Total > 0 {
-		left = time.Duration(e.Progress.Total-e.Progress.Index+1) * speedtest.EstSweepStep
-	}
-	r.ExpectedEnd = s.now().Add(left).UnixMilli()
-	if !e.StartedAt.IsZero() && e.Kind != speedtest.KindSweep {
-		r.ExpectedEnd = e.StartedAt.Add(speedtest.EstSweepStep).UnixMilli()
-	}
-	if e.Progress.Server != "" {
-		ref := names.ref(e.Progress.Server)
+	r := &speedRunning{Entry: e.ID, Kind: string(e.Kind), Started: e.Started.UnixMilli(), ExpectedEnd: e.EstFinish.UnixMilli(),
+		Direction: cmp.Or(e.Direction, "picking"), Step: e.Step, Steps: e.Steps}
+	if e.Server != "" {
+		ref := names.ref(e.Server)
 		r.Server = &ref
 	}
-	if r.Step == "" {
-		r.Step = "picking"
-	}
 	return r
-}
-
-func (s *server) speedEntry(e speedtest.Entry, names speedNames, me string, pos int, estStart time.Time) speedEntry {
-	j := speedEntry{ID: e.ID, Kind: e.Kind, State: e.State, Position: pos, RequestedAt: e.RequestedAt.UnixMilli(),
-		StartedAt: ms(e.StartedAt), FinishedAt: ms(e.FinishedAt)}
-	switch {
-	case e.Who == speedtest.WhoScheduled:
-		j.Who = "scheduled"
-	case (e.Who == speedtest.WhoOwner && !s.public) || (e.Who == speedtest.WhoVisitor && s.public && e.Client == me):
-		j.Who = "you"
-	default:
-		j.Who = "someone"
-	}
-	switch {
-	case e.Kind == speedtest.KindSweep:
-		j.Label = "All servers"
-	case e.Target == "":
-		j.Label = "Nearest servers"
-	default:
-		if t, ok := names.regions[e.Target]; ok {
-			j.Label, j.Target = t, e.Target
-		} else {
-			ref := names.ref(e.Target)
-			j.Label, j.Target = ref.Label, ref.ID
-		}
-	}
-	if !estStart.IsZero() {
-		j.EstStart = ms(estStart)
-		est := speedtest.EstSweepStep
-		if e.Kind == speedtest.KindSweep {
-			est = time.Duration(s.d.Speed.SweepSize()) * speedtest.EstSweepStep
-		}
-		j.EstEnd = ms(estStart.Add(est))
-	}
-	if e.State == speedtest.StateRunning {
-		j.Progress = s.runningOf(e, names)
-		j.EstEnd = &j.Progress.ExpectedEnd
-	}
-	for _, x := range e.Results {
-		ref, display, provider, _ := names.server(x.Server)
-		res := speedSweepResult{Server: ref.ID, Label: ref.Label, Display: display, Provider: provider, Status: x.Status, Direction: x.Direction,
-			DownBps: roundP(x.DownBps, 1), UpBps: roundP(x.UpBps, 1), DownShort: x.DownShort, UpShort: x.UpShort, At: ms(x.At)}
-		if reg := names.inReg[x.Server]; reg != "" {
-			res.Region = &reg
-		}
-		j.Results = append(j.Results, res)
-	}
-	return j
-}
-
-func (s *server) speedQueue(names speedNames, me string, now time.Time) speedQueueJSON {
-	q := s.d.Speed.Queue()
-	out := speedQueueJSON{At: now.UnixMilli(), Waiting: []speedEntry{}}
-	at := now
-	if q.Running != nil {
-		e := s.speedEntry(*q.Running, names, me, 0, time.Time{})
-		out.Running = &e
-		if e.EstEnd != nil {
-			at = time.UnixMilli(*e.EstEnd)
-		}
-	}
-	for i, w := range q.Waiting {
-		e := s.speedEntry(w, names, me, i+1, at)
-		out.Waiting = append(out.Waiting, e)
-		if e.EstEnd != nil {
-			at = time.UnixMilli(*e.EstEnd)
-		}
-	}
-	if q.LastSweep != nil {
-		e := s.speedEntry(*q.LastSweep, names, me, 0, time.Time{})
-		out.LastSweep = &e
-	}
-	return out
 }
 
 func strPtr(s string) *string {
@@ -771,6 +601,9 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	var span, last24 []model.SpeedTest
 	var avgBytes []float64
 	for _, t := range all {
+		if t.OnDemand() {
+			continue // rows and patterns are the schedule's (latest still shows every test)
+		}
 		if !t.Start.Before(now.Add(-24 * time.Hour)) {
 			last24 = append(last24, t)
 		}
@@ -801,7 +634,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	note := func(row *speedRow, title string) {
 		var n, fb int
 		for _, t := range last24 {
-			if t.Region == row.ID && t.Outcome == model.SpeedOK && speedtest.Scheduled(t) {
+			if t.Region == row.ID && t.Outcome == model.SpeedOK && !t.OnDemand() {
 				n++
 				if t.Fallback {
 					fb++
@@ -993,7 +826,7 @@ func speedCoverage(ts []model.SpeedTest, tz time.Duration, cat *speedtest.Catalo
 		out[h].Hour, provs[h] = h, map[string]bool{}
 	}
 	for _, t := range ts {
-		if !speedtest.Scheduled(t) || t.Outcome != model.SpeedOK {
+		if t.OnDemand() || t.Outcome != model.SpeedOK {
 			continue
 		}
 		h := t.Start.Add(tz).UTC().Hour()
@@ -1198,134 +1031,46 @@ func (s *server) speedHome(ctx context.Context, now time.Time, tz time.Duration,
 	return line
 }
 
-// ---------- POST ----------
-
-type speedPostJSON struct {
-	Entry     speedEntry `json:"entry"`
-	Duplicate bool       `json:"duplicate,omitempty"`
-}
-
-// enqueueSpeed queues a test or sweep for who (client: the visitor key) and
-// answers 202 with the entry, 200 with an equivalent waiting one, or 429
-// queue_full.
-func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, kind, id, who, client string) {
-	names := newSpeedNames(s.d.Speed.State(), s.d.Speed.Catalog(), s.public)
-	if id != "" {
-		id = names.resolve(id)
-	}
-	e, dup, err := s.d.Speed.Enqueue(kind, id, who, client)
-	switch {
-	case errors.Is(err, speedtest.ErrQueueFull):
-		w.Header().Set("Retry-After", "60")
-		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": err.Error(), "code": "queue_full", "retry_after": 60,
-			"queue": s.speedQueue(names, client, s.now())})
-		return
-	case errors.Is(err, speedtest.ErrUnknown):
-		writeErr(w, r, http.StatusNotFound, err.Error())
-		return
-	case err != nil:
-		writeErr(w, r, http.StatusServiceUnavailable, "could not queue the test")
-		return
-	}
-	pos := 0
-	at := time.Time{}
-	q := s.speedQueue(names, client, s.now())
-	for _, x := range q.Waiting {
-		if x.ID == e.ID {
-			pos = x.Position
-			if x.EstStart != nil {
-				at = time.UnixMilli(*x.EstStart)
-			}
-		}
-	}
-	code := http.StatusAccepted
-	if dup {
-		code = http.StatusOK
-	}
-	writeJSON(w, r, code, speedPostJSON{Entry: s.speedEntry(e, names, client, pos, at), Duplicate: dup})
-}
-
-// readSpeedBody decodes a small JSON body (empty is fine) into v.
-func readSpeedBody(r *http.Request, v any) error {
-	b, err := io.ReadAll(io.LimitReader(r.Body, 1<<10))
-	if err != nil {
-		return err
-	}
-	if len(strings.TrimSpace(string(b))) == 0 {
-		return nil
-	}
-	d := json.NewDecoder(strings.NewReader(string(b)))
-	d.DisallowUnknownFields()
-	return d.Decode(v)
-}
-
-// serveSpeedPOST answers the owner's (local) speed routes:
-//
-//	POST   api/speed/run      {"server": "<server or region id>"} (optional)
-//	POST   api/speed/sweep
-//	POST   api/speed/config   {"mode": "...", "extra": [...]}
-//	DELETE api/speed/queue/<id>
-//	POST   api/speed/queue/clear?who=public
-func (h *localHandler) serveSpeedPOST(w http.ResponseWriter, r *http.Request, rest string) {
+// speedPOST checks a speed-test write: a source, POST, only the allowed
+// parameters, and the same protections as notes.
+func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params ...string) bool {
 	if h.d.Speed == nil {
 		notFound(w, r)
-		return
+		return false
 	}
-	switch {
-	case rest == "run" || rest == "sweep" || rest == "config" || rest == "queue/clear":
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", "POST")
-			writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
-			return
-		}
-	case strings.HasPrefix(rest, "queue/"):
-		if r.Method != http.MethodDelete {
-			w.Header().Set("Allow", "DELETE")
-			writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
-			return
-		}
-	default:
-		notFound(w, r)
-		return
-	}
-	params := []string{}
-	if rest == "queue/clear" {
-		params = []string{"who"}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
+		return false
 	}
 	if err := checkParams(r.URL.Query(), params...); err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
+		return false
+	}
+	return h.controlAllowed(w, r, "speed tests")
+}
+
+// serveSpeedConfig answers POST api/speed/config {"mode", "extra",
+// "public"}.
+func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) {
+	if !h.speedPOST(w, r) {
 		return
 	}
-	if !h.controlAllowed(w, r, "speed tests") {
+	var body struct {
+		Mode   *string  `json:"mode"`
+		Extra  []string `json:"extra"`  // opt-in (regions) or far (nearby) regions
+		Public *bool    `json:"public"` // the share link may queue tests
+	}
+	d := json.NewDecoder(io.LimitReader(r.Body, 1<<10))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Public == nil) || (body.Mode == nil && body.Extra != nil) {
+		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]} and/or {"public": true or false}`)
 		return
 	}
-	switch rest {
-	case "run":
-		var body struct {
-			Server string `json:"server"`
-		}
-		if err := readSpeedBody(r, &body); err != nil {
-			writeErr(w, r, http.StatusBadRequest, `want {"server": "<id>"} or no body`)
-			return
-		}
-		h.enqueueSpeed(w, r, speedtest.KindTest, body.Server, speedtest.WhoOwner, "")
-	case "sweep":
-		if err := readSpeedBody(r, &struct{}{}); err != nil {
-			writeErr(w, r, http.StatusBadRequest, "no body expected")
-			return
-		}
-		h.enqueueSpeed(w, r, speedtest.KindSweep, "", speedtest.WhoOwner, "")
-	case "config":
-		var body struct {
-			Mode  *string  `json:"mode"`
-			Extra []string `json:"extra"`
-		}
-		if err := readSpeedBody(r, &body); err != nil || body.Mode == nil {
-			writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]}`)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+	defer cancel()
+	out := map[string]any{}
+	if body.Mode != nil {
 		next, err := h.d.Speed.SetMode(ctx, speedtest.Mode(*body.Mode), body.Extra)
 		if errors.Is(err, speedtest.ErrMode) {
 			writeErr(w, r, http.StatusBadRequest, err.Error())
@@ -1335,70 +1080,21 @@ func (h *localHandler) serveSpeedPOST(w http.ResponseWriter, r *http.Request, re
 			h.storeErr(w, r, "save the speed test setting", err)
 			return
 		}
-		writeJSON(w, r, http.StatusOK, map[string]any{"mode": *body.Mode, "next_at": ms(next)})
-	case "queue/clear":
-		who := r.URL.Query().Get("who")
-		switch who {
-		case "public":
-			who = speedtest.WhoVisitor
-		case "", "all":
-			who = ""
-		default:
-			writeErr(w, r, http.StatusBadRequest, "who: public or all")
+		out["mode"], out["next_at"] = *body.Mode, nil
+		if !next.IsZero() {
+			out["next_at"] = next.UnixMilli()
+		}
+	}
+	if body.Public != nil {
+		if err := h.d.Speed.Queue().SetPublic(ctx, *body.Public); err != nil {
+			h.storeErr(w, r, "save the speed test setting", err)
 			return
 		}
-		writeJSON(w, r, http.StatusOK, map[string]any{"cancelled": h.d.Speed.ClearQueue(who)})
-	default:
-		id, err := strconv.ParseInt(strings.TrimPrefix(rest, "queue/"), 10, 64)
-		if err != nil || id <= 0 {
-			writeErr(w, r, http.StatusNotFound, "not found")
-			return
-		}
-		if err := h.d.Speed.Cancel(id); err != nil {
-			writeErr(w, r, http.StatusNotFound, err.Error())
-			return
-		}
-		writeJSON(w, r, http.StatusOK, map[string]any{"cancelled": id})
+		// The limits the confirmation shows (also in part=queue budget).
+		limit, _, _ := h.d.Speed.Queue().Budget()
+		out["public"], out["limits"] = *body.Public, map[string]int64{"budget_bytes": limit,
+			"time_hour_max_s": int64(speedtest.PublicTimePerHour / time.Second),
+			"time_day_max_s":  int64(speedtest.PublicTimePerDay / time.Second)}
 	}
-}
-
-// serveSpeedPublicPOST answers the share link's Test now and sweep: no
-// admin token, but same origin, the page's token, a per-client rate and
-// the queue's visitor limits.
-func (h *publicHandler) serveSpeedPublicPOST(w http.ResponseWriter, r *http.Request, rest string) {
-	if h.d.Speed == nil || (rest != "run" && rest != "sweep") {
-		notFound(w, r)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if len(r.URL.RawQuery) > 0 {
-		writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
-		return
-	}
-	if !sameOrigin(r) || !tokenEqual(r.Header.Get(HeaderCSRF), h.token) {
-		writeErr(w, r, http.StatusForbidden, "this request must come from the shared page")
-		return
-	}
-	client := publicClient(r)
-	if !h.speedLim.allow(client, h.now()) {
-		w.Header().Set("Retry-After", "10")
-		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": "too many requests", "code": "rate_limited", "retry_after": 10})
-		return
-	}
-	var body struct {
-		Server string `json:"server"`
-	}
-	if err := readSpeedBody(r, &body); err != nil || (rest == "sweep" && body.Server != "") {
-		writeErr(w, r, http.StatusBadRequest, `want {"server": "<id>"} or no body`)
-		return
-	}
-	kind := speedtest.KindTest
-	if rest == "sweep" {
-		kind = speedtest.KindSweep
-	}
-	h.enqueueSpeed(w, r, kind, body.Server, speedtest.WhoVisitor, client)
+	writeJSON(w, r, http.StatusOK, out)
 }
