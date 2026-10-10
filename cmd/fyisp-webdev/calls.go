@@ -84,9 +84,9 @@ type callsVerdict struct {
 func (c callsVerdict) Current() model.Verdict {
 	if c.mode == callsPoor {
 		return model.Verdict{Kind: model.VerdictUDPDegraded, Since: c.start.Add(-10 * time.Minute),
-			Summary:  "Calls may sound choppy: the UDP path to 4 call services shows up to 20% packet loss and up to 45 ms of jitter, while the rest of your connection looks fine.",
-			Targets:  []string{"Meet-STUN", "Cloudflare-STUN", "Twilio-STUN-global", "Teams-Relay"},
-			Evidence: map[string]float64{"udp_providers": 4, "udp_poor_providers": 4, "udp_loss": 0.2, "udp_jitter_ms": 45, "loss": 0.2}}
+			Summary:  "Calls may sound choppy: the UDP path to 3 call services shows up to 20% packet loss and up to 45 ms of jitter, while the rest of your connection looks fine.",
+			Targets:  []string{"Meet-STUN", "Cloudflare-STUN", "Twilio-STUN-global"},
+			Evidence: map[string]float64{"udp_providers": 3, "udp_poor_providers": 3, "udp_loss": 0.2, "udp_jitter_ms": 45, "loss": 0.2}}
 	}
 	if c.mode == callsBlocked {
 		return model.Verdict{Kind: model.VerdictUDPBlocked, Since: c.start.Add(-10 * time.Minute),

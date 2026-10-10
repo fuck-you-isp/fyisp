@@ -21,8 +21,8 @@ import (
 // transit), then the destination's cloud. Hop 5 drops ~25% of replies all
 // the time (ICMP rate limiting: the loss does not continue), and every 20
 // minutes, plus during the backfilled ISP outage, hops 3.. lose packets all
-// the way to the destination (real loss). Google-Meet's route changed 12
-// minutes before start, Cloudflare-anycast's during the backfill.
+// the way to the destination (real loss). Microsoft-Teams' route changed 12
+// minutes before start, the Cloudflare resolver's during the backfill.
 type fakeTrace struct {
 	st    *store.Fake
 	start time.Time
@@ -36,7 +36,7 @@ type fakeTrace struct {
 	info    map[netip.Addr]model.HopInfo
 }
 
-var tracedTargets = []string{"Cloudflare-anycast", "Google-anycast", "Quad9-anycast", "Google-Meet", "AWS-us-east-1", "Hetzner-Falkenstein", "dev-GitHub"}
+var tracedTargets = []string{"Cloudflare DNS 1.1.1.1", "Google DNS 8.8.8.8", "Quad9 DNS 9.9.9.9", "Microsoft-Teams", "CDN-Cloudflare"}
 
 type fhop struct {
 	ip    string
@@ -72,13 +72,11 @@ type cloud struct {
 }
 
 var clouds = map[string]cloud{
-	"Cloudflare-anycast":  {13335, "CLOUDFLARENET", []string{"172.71.144.3", "162.158.60.1", "172.68.188.2", "1.1.1.1"}, "one.one.one.one", 14},
-	"Google-anycast":      {15169, "GOOGLE", []string{"108.170.242.225", "142.251.65.143", "108.170.243.1", "8.8.8.8"}, "dns.google", 15},
-	"Quad9-anycast":       {19281, "QUAD9-AS-1", []string{"74.63.18.10", "74.63.18.66", "74.63.18.90", "9.9.9.9"}, "dns9.quad9.net", 17},
-	"Google-Meet":         {64510, "EXAMPLE-CLOUD-A", []string{"192.0.2.101", "192.0.2.102", "192.0.2.103", "192.0.2.104"}, "meet.cloud-a.example", 16},
-	"AWS-us-east-1":       {64511, "EXAMPLE-CLOUD-B", []string{"192.0.2.111", "192.0.2.112", "192.0.2.113", "192.0.2.114"}, "", 71},
-	"Hetzner-Falkenstein": {64502, "EXAMPLE-HOSTING", []string{"192.0.2.121", "192.0.2.122", "192.0.2.123", "192.0.2.124"}, "server.hosting.example", 158},
-	"dev-GitHub":          {64503, "EXAMPLE-CODEHOST", []string{"192.0.2.131", "192.0.2.132", "192.0.2.133", "192.0.2.134"}, "lb.code-host.example", 68},
+	"Cloudflare DNS 1.1.1.1": {13335, "CLOUDFLARENET", []string{"172.71.144.3", "162.158.60.1", "172.68.188.2", "1.1.1.1"}, "one.one.one.one", 14},
+	"Google DNS 8.8.8.8":     {15169, "GOOGLE", []string{"108.170.242.225", "142.251.65.143", "108.170.243.1", "8.8.8.8"}, "dns.google", 15},
+	"Quad9 DNS 9.9.9.9":      {19281, "QUAD9-AS-1", []string{"74.63.18.10", "74.63.18.66", "74.63.18.90", "9.9.9.9"}, "dns9.quad9.net", 17},
+	"Microsoft-Teams":        {64510, "EXAMPLE-CLOUD-A", []string{"192.0.2.101", "192.0.2.102", "192.0.2.103", "192.0.2.104"}, "teams.cloud-a.example", 16},
+	"CDN-Cloudflare":         {64511, "EXAMPLE-CDN", []string{"192.0.2.111", "192.0.2.112", "192.0.2.113", "192.0.2.114"}, "", 12},
 }
 
 func cloudFor(target string) cloud {
@@ -122,9 +120,9 @@ func newFakeTrace(st *store.Fake, start time.Time, backfill time.Duration) *fake
 			From: f.routeVia(target, false), To: f.routeVia(target, true), FirstDiff: 8})
 	}
 	if backfill > 0 {
-		chg(1, "Cloudflare-anycast", start.Add(-backfill*4/10))
+		chg(1, "Cloudflare DNS 1.1.1.1", start.Add(-backfill*4/10))
 	}
-	chg(2, "Google-Meet", start.Add(-12*time.Minute))
+	chg(2, "Microsoft-Teams", start.Add(-12*time.Minute))
 	if backfill > 0 {
 		for _, n := range tracedTargets {
 			f.write(n, start.Add(-backfill), start)
