@@ -59,8 +59,14 @@ function resultWord(t) {
   if (t.outcome === 'busy') return 'Server busy';
   if (t.outcome === 'unreachable') return 'Didn’t answer';
   if (t.outcome === 'failed') return 'Didn’t finish';
-  return t.fallback ? 'Backup server' : 'OK';
+  const bits = [t.fallback_level === 'nearby_city' ? 'Backup city ◤' : t.fallback ? 'Backup server ◤' : 'OK'];
+  if (t.capped_by_server) bits.push('limited by server ⊘');
+  return bits.join(' · ');
 }
+/** A reading that hit the 100 MB cap is a lower bound. @param {number|null} b @param {boolean|undefined} short */
+function atLeast(b, short) { return b == null ? '—' : (short ? '≥ ' : '') + mb(b).replace(' Mbit/s', ''); }
+/** "8 → 21 ms (+13)" for one layer of a test's latency. @param {import('./speed.js').SpeedLat|undefined} idle @param {import('./speed.js').SpeedLat|undefined} load */
+function lat(idle, load) { return idle && load ? `${Math.round(idle.p50_ms)} → ${Math.round(load.p50_ms)} ms${load.loss ? `, ${Math.round(load.loss * 100)}% lost` : ''}` : 'not known'; }
 
 export class SpeedMap {
   /** @param {SpeedHost} host */
@@ -109,21 +115,25 @@ export class SpeedMap {
 
   renderFound() {
     const d = /** @type {SpeedSummary} */ (this.d);
-    const ok = d.per_region.reduce((s, r) => s + r.n, 0);
-    const bad = d.per_region.reduce((s, r) => s + r.busy + r.unreachable + r.failed, 0);
-    const filled = d.per_region.reduce((s, r) => s + r.hours.filter((x) => x.n >= 3).length, 0);
-    // The server's sentence; until it has one, plain facts about how far along the data is.
-    const text = d.pattern ? `${d.pattern.text} Around ${hourRange(d.pattern.hours)}.`
+    const rows = d.rows && d.rows.length ? d.rows : d.per_region;
+    const ok = rows.reduce((s, r) => s + r.n, 0);
+    const bad = rows.reduce((s, r) => s + r.busy + r.unreachable + r.failed, 0);
+    const filled = rows.reduce((s, r) => s + r.hours.filter((x) => x.n >= 3).length, 0);
+    // The server's finding (tiers, localisation, caveats); without one, plain facts about how far along the data is.
+    const f = d.finding;
+    const text = f && f.text ? f.text
+      : d.pattern ? `${d.pattern.text} Around ${hourRange(d.pattern.hours)}.`
       : !ok ? 'No tests yet. The first results show here a few minutes after a test.'
-        : filled < d.per_region.length * 12 ? 'We need about 3 days of tests to compare times of day. The grid below fills in as tests run.'
+        : filled < rows.length * 12 ? 'We need about 3 days of tests to compare times of day. The grid below fills in as tests run.'
           : 'No time of day stands out.';
-    const notes = d.per_region.filter((r) => r.fallback_note).map((r) => h('li', { text: /** @type {string} */ (r.fallback_note) }));
+    const notes = rows.filter((r) => r.note).map((r) => h('li', { text: /** @type {string} */ (r.note) }));
     const failing = ok + bad >= 20 && bad / (ok + bad) >= 0.3;
-    const unreachable = d.per_region.reduce((s, r) => s + r.unreachable, 0);
+    const unreachable = rows.reduce((s, r) => s + r.unreachable, 0);
     this.foundEl.replaceChildren(
       h('h2', { id: 'sp-found-h', text: 'What we found' }),
       h('p', { class: 'sp-found-text', text }),
-      ok ? h('p', { class: 'muted small', text: `Based on ${ok.toLocaleString()} test${ok === 1 ? '' : 's'} over ${d.days} days${d.exclude_fallback ? ', without backup servers' : ''}.` }) : '',
+      f && f.evidence ? h('p', { class: 'muted small', text: f.evidence })
+        : ok ? h('p', { class: 'muted small', text: `Based on ${ok.toLocaleString()} test${ok === 1 ? '' : 's'} over ${d.days} days${d.exclude_fallback ? ', without backup servers' : ''}.` }) : '',
       failing ? h('p', { class: 'notice warn', text: unreachable > bad * 0.8
         ? 'Tests can’t reach most servers. Something on this network may be blocking them (a firewall or VPN).'
         : `Many tests couldn’t run (${bad.toLocaleString()} of ${(ok + bad).toLocaleString()}). Usually the public servers were busy. Patterns may take longer to show.` }) : '',
@@ -137,13 +147,19 @@ export class SpeedMap {
   /** Rows on screen: regions, or servers under their region. @returns {{group:string, row:SpeedRow, key:string}[]} */
   mapRows() {
     const d = /** @type {SpeedSummary} */ (this.d);
-    if (this.rows === 'regions') return d.per_region.map((r) => ({ group: '', row: r, key: 'r:' + r.id }));
-    const where = new Map();
-    for (const rg of d.regions) for (const id of rg.chain) if (!where.has(id)) where.set(id, rg.title);
-    const order = [...d.regions.map((r) => r.title), 'Other'];
+    // The schedule's own rows (regions, or the nearby servers), else every region.
+    if (this.rows === 'regions') {
+      const rows = d.rows && d.rows.length ? d.rows : d.per_region;
+      return rows.map((r) => ({ group: '', row: r, key: (r.kind === 'server' ? 's:' : 'r:') + r.id }));
+    }
+    const srv = new Map(d.servers.map((x) => [x.id, x]));
+    const title = new Map(d.regions.map((r) => [r.id, r.title]));
+    const where = (/** @type {string} */ id) => { const x = srv.get(id); return (x && x.region && title.get(x.region)) || (x && x.area) || 'Other'; };
+    const order = [...d.regions.map((r) => r.title)];
+    const rank = (/** @type {string} */ g) => { const i = order.indexOf(g); return i < 0 ? order.length + (g === 'Other' ? 1 : 0) : i; };
     return [...d.per_server]
-      .map((r) => ({ group: where.get(r.id) || 'Other', row: r, key: 's:' + r.id }))
-      .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+      .map((r) => ({ group: where(r.id), row: r, key: 's:' + r.id }))
+      .sort((a, b) => rank(a.group) - rank(b.group) || a.group.localeCompare(b.group));
   }
 
   /**
@@ -153,17 +169,21 @@ export class SpeedMap {
    */
   cell(r, hrs) {
     const up = this.dir === 'up';
-    const bestUp = Math.max(0, ...r.hours.filter((x) => x.n >= 3 && x.up_median_bps != null).map((x) => /** @type {number} */ (x.up_median_bps)));
-    let worst = null, bps = null, n = 0;
+    // Mbit/s colours against the row's best hour, so a far row isn't dark for being far.
+    const best = Math.max(0, ...r.hours.filter((x) => x.n >= 3).map((x) => /** @type {number} */ ((up ? x.up_median_bps : x.down_median_bps) || 0)));
+    let worst = null, bps = null, n = 0, fb = 0, failed = 0;
     for (const hr of hrs) {
       const x = r.hours[hr];
       if (!x) continue;
       n += x.n;
-      const v = up ? (x.up_median_bps != null && bestUp ? x.up_median_bps / bestUp : null) : x.down_norm;
+      fb += x.n_fallback || 0;
+      failed += x.n_failed || 0;
+      const b = up ? x.up_median_bps : x.down_median_bps;
+      const v = this.unit === 'mbps' ? (b != null && best ? b / best : null) : up ? x.up_score_median : x.score_median;
       // The worst hour of a block speaks for it.
-      if (v != null && (worst == null || v < worst)) { worst = v; bps = up ? x.up_median_bps : x.down_median_bps; }
+      if (v != null && (worst == null || v < worst)) { worst = v; bps = b; }
     }
-    return { v: worst, bps, n };
+    return { v: worst, bps, n, fb, failed };
   }
 
   renderMap() {
@@ -179,7 +199,7 @@ export class SpeedMap {
         type: 'button', text: l, 'aria-pressed': String(v === cur), onclick: () => { if (v !== cur) set(v); },
       })));
     const controls = h('div', { class: 'sp-ctl' },
-      seg('Rows', [['regions', 'Regions'], ['servers', 'Servers']], this.rows, (v) => { this.rows = /** @type {'regions'} */ (v); this.cur = [0, 0]; this.renderMap(); }),
+      seg('Rows', [['regions', d.mode === 'nearby' || d.mode === 'nearest' ? 'Nearby' : d.mode === 'custom' ? 'Your servers' : 'Regions'], ['servers', 'Every server']], this.rows, (v) => { this.rows = /** @type {'regions'} */ (v); this.cur = [0, 0]; this.renderMap(); }),
       seg('Span', [['7', '7 days'], ['30', '30 days']], String(this.host.days()), (v) => this.host.setDays(Number(v))),
       seg('Show', [['pct', '% of normal'], ['mbps', 'Mbit/s']], this.unit, (v) => { this.unit = /** @type {'pct'} */ (v); this.renderMap(); this.renderRow(); }),
       seg('Direction', [['down', 'Download'], ['up', 'Upload']], this.dir, (v) => { this.dir = /** @type {'down'} */ (v); this.renderMap(); this.renderRow(); }),
@@ -203,11 +223,11 @@ export class SpeedMap {
       const tr = h('tr', { class: x.key === sel ? 'sel' : '', 'aria-selected': String(x.key === sel) },
         h('th', { scope: 'row', class: 'sp-rl' }, h('button', { type: 'button', class: 'sp-rb', tabindex: '-1', text: label, title: `Show ${label}`, onclick: () => this.select(x.key) })));
       cols.forEach((c, j) => {
-        const { v, bps, n } = this.cell(x.row, c);
+        const { v, bps, n, fb, failed } = this.cell(x.row, c);
         const at = phone ? `${hourLong(c[0])} to ${hourLong((c[2] + 1) % 24)}` : hourLong(c[0]);
         let cls = 'sp-c', name;
         const val = this.unit === 'pct' ? (v != null ? pct(v) : '') : (bps != null ? String(Math.round(bps / 1e6)) : '');
-        if (!n) { cls += ' none'; name = `${label}, ${at}: no tests yet`; } else if (v == null) {
+        if (!n && failed) { cls += ' none fail'; name = `${label}, ${at}: no result, the server was busy or didn’t answer`; } else if (!n) { cls += ' none'; name = `${label}, ${at}: no tests yet`; } else if (v == null) {
           cls += ' few';
           name = `${label}, ${at}: filling in, ${n} test${n === 1 ? '' : 's'} so far`;
         } else {
@@ -215,10 +235,12 @@ export class SpeedMap {
           cls += ' ' + c2;
           name = `${label}, ${at}: ${this.unit === 'pct' ? pct(v) + ' of normal' : mb(bps)}, ${n} tests, ${word}`;
         }
+        if (fb && n) { cls += ' fb'; name += `, ${fb} on a backup server`; }
         if (dip.has(c[0])) cls += ' dip';
         const td = h('td', { class: cls, 'aria-label': name, tabindex: i === ci && j === cj ? '0' : '-1', 'data-i': String(i), 'data-j': String(j) },
           this.numbers && val ? h('span', { 'aria-hidden': 'true', text: val }) : null,
-          !this.numbers && n && v == null ? h('span', { class: 'sp-dot', 'aria-hidden': 'true' }) : null);
+          !this.numbers && n && v == null ? h('span', { class: 'sp-dot', 'aria-hidden': 'true' }) : null,
+          !this.numbers && !n && failed ? h('span', { class: 'sp-x', 'aria-hidden': 'true', text: '×' }) : null);
         tr.append(td);
       });
       body.push(tr);
@@ -238,7 +260,9 @@ export class SpeedMap {
       ...(this.numbers ? [] : [
         ...[['b1', '90% or more'], ['b2', '75–89%'], ['b3', '60–74%'], ['b4', '40–59%'], ['b5', 'under 40%']].map(([c, l]) => h('span', {}, h('i', { class: `sp-sw sp-c ${c}` }), l)),
         h('span', {}, h('i', { class: 'sp-sw sp-c few' }, h('span', { class: 'sp-dot' })), 'filling in (under 3 tests)'),
-        h('span', {}, h('i', { class: 'sp-sw sp-c none' }), 'no tests yet')]),
+        h('span', {}, h('i', { class: 'sp-sw sp-c none' }), 'no tests yet'),
+        h('span', {}, h('i', { class: 'sp-sw sp-c none fail' }, h('span', { class: 'sp-x', text: '×' })), 'no result (server busy)'),
+        h('span', {}, h('i', { class: 'sp-sw sp-c b1 fb' }), 'includes backup servers')]),
       dip.size ? h('span', {}, h('i', { class: 'sp-sw sp-dipmark' }), `slower hours: ${hourRange(/** @type {SpeedSummary} */ (d).pattern?.hours || [])}`) : null);
     this.mapEl.replaceChildren(
       h('div', { class: 'sp-sec-head' }, h('h2', { id: 'sp-map-h', text: phone ? 'Speed by time of day' : 'Speed by hour of day' }),
@@ -324,7 +348,7 @@ export class SpeedMap {
     const isRegion = v.kind === 'region';
     const servers = new Map(d.servers.map((s) => [s.id, s]));
     // Shapes and colours by server, in the region's chain order, then as they appear.
-    const chain = isRegion ? (d.regions.find((x) => x.id === r.id)?.chain || []) : [r.id];
+    const chain = isRegion ? (d.regions.find((x) => x.id === r.id)?.servers || r.servers || []) : [r.id];
     const ids = [...new Set([...chain, ...v.tests.map((t) => t.server)])];
     const look = new Map(ids.map((id, i) => [id, { shape: SHAPES[i % SHAPES.length], color: css(`--s${(i % 8) + 1}`) || '#3987e5' }]));
     const best = r.best_down_bps || 0;
@@ -334,6 +358,8 @@ export class SpeedMap {
       const b = this.dir === 'up' ? t.up_bps : t.down_bps;
       if (b == null) return null;
       if (this.unit === 'mbps') return b / 1e6;
+      const sc = this.dir === 'up' ? t.up_score : t.score;
+      if (sc != null) return sc;
       const n = this.dir === 'up' ? bestUp : best;
       return n ? b / n : null;
     };
@@ -343,8 +369,8 @@ export class SpeedMap {
       const lk = look.get(t.server) || { shape: 'circle', color: '#888' };
       return { t, hx: dt.getHours() + dt.getMinutes() / 60, y: /** @type {number} */ (val(t)), ...lk };
     });
-    const line = this.dir === 'down' && this.unit === 'pct'
-      ? r.hours.map((x) => (x.down_norm != null ? { x: x.hour + 0.5, y: x.down_norm } : null))
+    const line = this.unit === 'pct'
+      ? r.hours.map((x) => { const v = this.dir === 'up' ? x.up_score_median : x.score_median; return v != null ? { x: x.hour + 0.5, y: v } : null; })
       : r.hours.map((x) => {
         const b = this.dir === 'up' ? x.up_median_bps : x.down_median_bps;
         if (b == null) return null;
@@ -378,8 +404,9 @@ export class SpeedMap {
     this.rowEl.replaceChildren(
       h('div', { class: 'sp-sec-head' },
         h('h2', { id: 'sp-row-h', text: r.label }),
-        h('span', { class: 'muted small', text: isRegion ? chain.map((id) => servers.get(id)?.label || id).join(' · ') : (servers.get(r.id)?.region || '') })),
-      r.fallback_note ? h('p', { class: 'notice warn', text: r.fallback_note }) : '',
+        h('span', { class: 'muted small', text: isRegion ? chain.map((id) => servers.get(id)?.label || id).join(' · ') : (servers.get(r.id)?.display || '') })),
+      r.why ? h('p', { class: 'muted small', text: `Tested because: ${r.why}` }) : '',
+      r.note ? h('p', { class: 'notice warn', text: r.note }) : '',
       h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}` }),
       h('div', { class: 'sp-chart' }, byHour),
       legend,
@@ -387,19 +414,19 @@ export class SpeedMap {
       h('h3', { text: `Over the last ${d.days} days` }),
       h('div', { class: 'sp-chart short' }, overDays),
       isRegion ? this.compareNodes(v, servers, look, dipHours) : '',
-      this.loadNodes(v),
+      this.loadNodes(),
       this.testNodes(v, servers));
   }
 
   /** The by-hour chart in words. @param {SpeedRow} r @param {number[]} dipHours */
   chartSummary(r, dipHours) {
-    const vals = r.hours.filter((x) => x.down_norm != null);
+    const vals = r.hours.filter((x) => x.score_median != null);
     if (!vals.length) return `${r.label}: not enough tests yet to show speed by hour.`;
-    const dipV = vals.filter((x) => dipHours.includes(x.hour)).map((x) => /** @type {number} */ (x.down_norm));
-    const rest = vals.filter((x) => !dipHours.includes(x.hour)).map((x) => /** @type {number} */ (x.down_norm));
+    const dipV = vals.filter((x) => dipHours.includes(x.hour)).map((x) => /** @type {number} */ (x.score_median));
+    const rest = vals.filter((x) => !dipHours.includes(x.hour)).map((x) => /** @type {number} */ (x.score_median));
     const a = median(rest), b = median(dipV);
     if (dipV.length && a != null && b != null) return `${r.label}, download as % of normal by hour: about ${pct(a)} most of the day, ${pct(b)} from ${hourRange(dipHours)}.`;
-    return `${r.label}, download as % of normal by hour: about ${pct(/** @type {number} */ (median(vals.map((x) => /** @type {number} */ (x.down_norm)))))} through the day.`;
+    return `${r.label}, download as % of normal by hour: about ${pct(/** @type {number} */ (median(vals.map((x) => /** @type {number} */ (x.score_median)))))} through the day.`;
   }
 
   /**
@@ -415,7 +442,7 @@ export class SpeedMap {
       if (t.outcome !== 'ok' || t.down_bps == null) continue;
       const hr = new Date(t.start).getHours();
       const e = by.get(t.server) || { day: [], dip: [] };
-      (dipHours.includes(hr) ? e.dip : e.day).push(t.down_bps / best);
+      (dipHours.includes(hr) ? e.dip : e.day).push(t.score != null ? t.score : t.down_bps / best);
       by.set(t.server, e);
     }
     const rows = [...by.entries()].filter(([, e]) => e.day.length >= 3);
@@ -442,23 +469,11 @@ export class SpeedMap {
       h('ul', {}, ...items));
   }
 
-  /** Delay under load, in sentences. @param {SpeedView} v */
-  loadNodes(v) {
-    const ok = v.tests.filter((t) => t.outcome === 'ok');
-    const m = (/** @type {'idle_call_ms'|'loaded_call_ms'|'idle_gateway_ms'|'loaded_gateway_ms'} */ k) => median(ok.map((t) => t[k]).filter((x) => x != null).map(Number));
-    const ic = m('idle_call_ms'), lc = m('loaded_call_ms'), ig = m('idle_gateway_ms'), lg = m('loaded_gateway_ms');
-    const lines = [];
-    if (ic != null && lc != null) {
-      const up = lc - ic;
-      const word = up < 30 ? 'barely changes' : up <= 100 ? 'noticeable on calls' : 'enough to break up calls while someone downloads';
-      lines.push(h('li', { text: up < 30 ? `Call delay barely changes: ${Math.round(ic)} ms idle, ${Math.round(lc)} ms during a test.` : `Call delay rises from ${Math.round(ic)} ms to ${Math.round(lc)} ms (+${Math.round(up)} ms): ${word}.` }));
-    }
-    if (ig != null && lg != null) {
-      const home = ic != null && lc != null && lc - ic > 20 && lg - ig >= (lc - ic) * 0.7;
-      lines.push(h('li', { text: `Router delay rises from ${Math.round(ig)} ms to ${Math.round(lg)} ms: ${home ? 'most of that delay is inside your home, often Wi-Fi.' : 'your home network keeps up.'}` }));
-    }
-    if (!lines.length) return '';
-    return h('div', { class: 'sp-load' }, h('h3', { text: 'Under load (while a test runs)' }), h('ul', {}, ...lines));
+  /** Delay under load: the server's sentences over every test in the span. */
+  loadNodes() {
+    const u = /** @type {SpeedSummary} */ (this.d).under_load;
+    if (!u || !u.text || !u.text.length) return '';
+    return h('div', { class: 'sp-load' }, h('h3', { text: 'Under load (while a test runs)' }), h('ul', {}, ...u.text.map((t) => h('li', { text: t }))));
   }
 
   /** The tests, newest first: a table on desktop, cards on a phone. @param {SpeedView} v @param {Map<string,any>} servers */
@@ -476,18 +491,21 @@ export class SpeedMap {
           ...[['Attempts', String(t.attempts)],
             MODE === 'local' && /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
             ['Retransmits', t.down_retrans != null || t.up_retrans != null ? `${t.down_retrans ?? '—'} down, ${t.up_retrans ?? '—'} up` : 'not known'],
-            ['Test length', `${Math.round((t.end - t.start) / 1000)} s`],
-            ['Router delay', t.idle_gateway_ms != null ? `${Math.round(t.idle_gateway_ms)} → ${Math.round(/** @type {number} */ (t.loaded_gateway_ms))} ms` : 'not known'],
-            ['Call delay', t.idle_call_ms != null ? `${Math.round(t.idle_call_ms)} → ${Math.round(/** @type {number} */ (t.loaded_call_ms))} ms` : 'not known'],
+            ['Test length', t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up${t.down_short || t.up_short ? ' (hit the 100 MB cap)' : ''}` : `${Math.round((t.end - t.start) / 1000)} s`],
+            t.bytes ? ['Data', `${Math.round(t.bytes / 1e6)} MB`] : null,
+            ['Delay through your provider', t.latency?.edge ? `${lat(t.latency.edge.idle, t.latency.edge.down)} downloading; ${lat(t.latency.edge.idle, t.latency.edge.up)} uploading` : 'not known'],
+            ['Router delay', t.latency?.gateway ? `${lat(t.latency.gateway.idle, t.latency.gateway.down)} downloading` : t.idle_gateway_ms != null ? `${Math.round(t.idle_gateway_ms)} → ${Math.round(/** @type {number} */ (t.loaded_gateway_ms))} ms` : 'not known'],
+            t.conn && t.conn !== 'unknown' ? ['Connection', t.conn === 'wifi' ? 'Wi-Fi' : 'cable'] : null,
+            MODE === 'local' && t.handoff ? ['Handed off to', `${t.handoff.name} (AS${t.handoff.asn})`] : null,
             t.fallback && t.region ? ['Why a backup', fallbackWhy(d, t)] : null]
             .filter((x) => !!x).flatMap((x) => [h('dt', { text: /** @type {string[]} */ (x)[0] }), h('dd', { text: /** @type {string[]} */ (x)[1] })])));
       return h('tr', { class: bad ? 'bad' : '' },
         h('td', { class: 'when', 'data-k': 'When', text: `${new Date(t.start).toLocaleDateString([], { weekday: 'short' })} ${clock(t.start)}` }),
         h('td', { 'data-k': 'Region', text: regionTitle(t.region) }),
-        h('td', { 'data-k': 'Server', text: t.label + (t.fallback ? ' ◤' : '') }),
-        h('td', { class: 'num', 'data-k': 'Down', text: t.down_bps != null ? mb(t.down_bps).replace(' Mbit/s', '') : '—' }),
-        h('td', { class: 'num', 'data-k': 'Up', text: t.up_bps != null ? mb(t.up_bps).replace(' Mbit/s', '') : '—' }),
-        h('td', { class: 'num', 'data-k': '% of normal', text: best && t.down_bps != null && !bad ? pct(t.down_bps / best) : '—' }),
+        h('td', { 'data-k': 'Server', text: t.label }),
+        h('td', { class: 'num', 'data-k': 'Down', text: atLeast(t.down_bps, t.down_short) }),
+        h('td', { class: 'num', 'data-k': 'Up', text: atLeast(t.up_bps, t.up_short) }),
+        h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));
     });
@@ -552,7 +570,7 @@ export class SpeedMap {
 /** "Leaseweb London was busy, so Clouvider London ran it." @param {SpeedSummary} d @param {SpeedTest} t */
 function fallbackWhy(d, t) {
   const rg = d.regions.find((r) => r.id === t.region);
-  const first = rg && d.servers.find((s) => s.id === rg.chain[0]);
+  const first = rg && d.servers.find((s) => s.id === rg.servers[0]);
   return first ? `${first.label} was busy or didn’t answer, so ${t.label} ran it.` : 'The first choice was busy.';
 }
 

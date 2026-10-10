@@ -4205,7 +4205,10 @@ async function main() {
   callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
   ov = new Overview();
   calls = callsOn ? new Calls() : null;
-  speed = await speedAvailable() ? new Speed({
+  // features.speed says it at once; older builds without it are probed.
+  const hasSpeed = prof.features && typeof prof.features.speed === 'boolean' ? prof.features.speed : await speedAvailable();
+  if (!hasSpeed) speedOn = false;
+  speed = hasSpeed ? new Speed({
     sel: () => state.sr,
     setSel: (v) => { state.sr = v; writeHash(); },
     days: () => state.sd,

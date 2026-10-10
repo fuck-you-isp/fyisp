@@ -374,9 +374,9 @@ export class SpeedQueue {
     const d = this.host.summary();
     const servers = new Map((d ? d.servers : []).map((x) => [x.id, x]));
     const region = new Map();
-    for (const rg of d ? d.regions : []) for (const id of rg.chain) if (!region.has(id)) region.set(id, rg.title);
+    for (const rg of d ? d.regions : []) for (const id of rg.servers) if (!region.has(id)) region.set(id, rg.title);
     // A server outside the 9 test regions goes under its continent ("North America"), not one big "Other".
-    const rows = tests.map((t) => ({ t, region: region.get(t.server) || servers.get(t.server)?.region || 'Other', provider: servers.get(t.server)?.provider || '' }));
+    const rows = tests.map((t) => ({ t, region: region.get(t.server) || servers.get(t.server)?.area || 'Other', provider: servers.get(t.server)?.provider || '' }));
     const med = (/** @type {number[]} */ v) => { const s = [...v].sort((a, b) => a - b); return s.length ? (s.length % 2 ? s[s.length >> 1] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
     const groupBars = (/** @type {'region'|'provider'} */ key, /** @type {string} */ title) => {
       const by = new Map();
