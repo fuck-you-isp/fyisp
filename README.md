@@ -4,8 +4,8 @@ Single-binary internet quality monitor: probes hyperscalers &amp; popular servic
 
 fyisp ("F\*\*\* You ISP") measures how well your connection reaches AWS, Azure, Google Cloud, Cloudflare, GitHub, video-call services and more, so you can show your ISP where the problem is. It replaces the old [docker-compose stack](https://github.com/fuck-you-isp/docker-compose) (network_exporter + Prometheus + Grafana + cloudflared) with one static binary:
 
-- **Probes** every target with a TCP connect every 15s, and pings your own path (router, your ISP's first hop, three anycast resolvers), without admin rights.
-- **Stores every sample for 90 days** in a local SQLite file (about 250 MB), including *why* a probe failed: timeout, refused, reset, unreachable, DNS, no network.
+- **Probes** every target with a TCP connect every 15s, pings your own path (router, your ISP's first hop, three anycast resolvers), and measures the UDP path calls use with tiny STUN requests ([Call quality](#call-quality)), without admin rights.
+- **Stores every sample for 90 days** in a local SQLite file (about 300 MB), including *why* a probe failed: timeout, refused, reset, unreachable, DNS, no network.
 - **Shows charts** at <http://127.0.0.1:3000>. Failures are gaps coloured by reason, never a fake 0 ms.
 - **Shares a public, read-only, redacted link** if you ask it to (`--share`).
 - **No telemetry.** fyisp only talks to the probe targets, your DNS resolver and, only while sharing, Cloudflare.
@@ -120,9 +120,83 @@ A new problem must hold for about 10 seconds before it is shown, and the verdict
 
 The layers come from the built-in **Network path** group, shown first: the *Gateway* and the *ISP edge* (found automatically from the routing table and a short traceroute; pinged every second) and three public anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9; ICMP and TCP). A profile passed with `--config` keeps this group unless it sets `path: false` at the top level (`--no-path` does the same for `--profile`); without it fyisp can still tell `dns`, `service` and `upstream` apart, but not `lan` from `isp`.
 
+## Call quality
+
+Call audio and video travel over UDP, and a TCP connect says little about them. fyisp therefore also measures the UDP path with tiny STUN requests, the same kind of packet a call app sends before every call, and answers two questions: *is my connection good for calls right now?* and *why did my call at 14:14 go bad?*
+
+### The Calls view
+
+**Calls | Overview | Charts** switches view. Calls opens first with `default` and `calls` (alone or combined with other profiles); other profiles open on the charts, or on the Overview when they are large.
+
+- **The top card** gives one answer, e.g. *● Good for calls · 32 ms · 0% loss · steady*, refreshed every few seconds with *updated 4 s ago*: the pre-call check. It is the worst of the path verdict (it never says Good while the banner shows an ISP outage, and it names that cause inline), the UDP verdicts below, your call path's score and the measured apps' scores. When it is not Good it says why, e.g. *Poor: 8% loss on your call path (worst minute 14:12)*.
+- **Working hours**: a strip for Mon–Fri 09–17 local time, coloured per minute (good, fair, poor, unusable, no data), with a summary such as *Today 09–17: Good 92% · Poor 14:10–14:16*. Click a minute to ask about it.
+- **What happened at …?**: pick a time (the default is the last 60 minutes) and get one sentence about the 15 minutes either side of it that names the layer at fault, e.g. *14:10–14:16: 8% loss at your ISP edge; Wi-Fi/router fine*. It uses the outage log, so it blames layers the same way the verdicts do. It links to the charts and to *Create evidence report*.
+- **By app**, over the last 5 minutes: Teams and Meet each get a state, round trip and loss; expanding a row shows the MOS, jitter, p95 round trip and the last hour. Zoom, Slack, Discord, WhatsApp and Webex share one row (see below) that says whether their websites are reachable over TCP.
+- **Mark a bad call**: one click saves a **private** note at 2 minutes ago with the call stats of that moment (state, MOS, round trip, jitter, loss; no addresses). *When?* moves it to 15 or 30 minutes ago. The note can be edited, and *Create evidence report* builds a report around it. On a phone the button sticks to the bottom of the screen.
+
+A STUN server that stops answering while the others still answer is shown as *This test server isn't answering, not your connection*. After a start the view says *Not enough data yet* until 10 bursts have been measured.
+
+The public link (`--share`) shows only the top card, the working-hours strip and public notes: no app rows, no Teams relay region, no target names, and no Mark button.
+
+### How it is measured
+
+- Every STUN target gets **one long-lived UDP socket**, as a real call does (one address and port pair, so there is no new NAT mapping per sample). It is reopened only when the server's address changes or after an error.
+- Each sample is a **burst of 5 STUN Binding Requests, 20 ms apart** (RFC 5389, 20 bytes each, no attributes; never TURN, never credentials). Bursts run every 5 seconds per target, every 15 s for Cloudflare on port 53 and every 30 s for the Twilio regions.
+- A burst records the **median round trip**, the **in-burst jitter** (the mean difference between consecutive round trips, close to what a call's jitter buffer sees) and **loss**: requests not answered within 1 s. Only timeouts count as loss. A refused port or a failed DNS lookup is *unknown*, never loss. `--timeout` does not apply to UDP.
+- A burst never spans an address change, so a Teams relay switching region is never counted as jitter.
+- Each one-minute bucket is scored on its own, and a window is judged by its **worst minute**: a 5-minute mean would hide a 30-second stall.
+
+### The score
+
+A simplified ITU-T G.107 E-model turns round trip, jitter and loss into an R factor, and R into a mean opinion score (MOS, 1 to 4.5):
+
+```
+delay = rtt/2 + 2·jitter + 10                              (one way, ms)
+R     = 93.2 − delay/40            (delay < 160 ms)
+R     = 93.2 − (delay − 120)/10    (delay ≥ 160 ms)
+R    −= 2.0 per % loss up to 5 %, then 2.5 per % above     (R clamped to 0..100)
+MOS   = 1 + 0.035·R + 7·10⁻⁶·R·(R − 60)·(100 − R)
+```
+
+The loss penalty is softer than G.711's tables because Opus forward error correction and packet-loss concealment (Meet, Teams) hide some loss. The bands are G.107's user-satisfaction bands:
+
+| Band | MOS | R |
+|---|---|---|
+| Good | 4.0 and up | about 80 and up |
+| Fair | 3.6 to 4.0 | 70–80 |
+| Poor | 3.1 to 3.6 | 60–70 |
+| Unusable | below 3.1 | below 60 |
+
+*Your call path* combines the anycast and GeoDNS STUN servers (Google, Cloudflare, Twilio global): each minute takes the median of the servers' round trip, jitter and loss, so one bad server does not make the path bad.
+
+### Which apps are measured
+
+| App | Measured over | Profile |
+|---|---|---|
+| Google Meet | `stun.l.google.com:19302`, the STUN server Chrome and Meet use (also `:3478` in `calls`, for networks that block 19302) | `default`, `calls` |
+| Microsoft Teams | `worldaz.tr.teams.microsoft.com:3478`, the Teams Transport Relay that Teams clients use | **opt-in**: `--profile default,calls` (or `--profile calls`) |
+| Zoom, Slack, Discord, WhatsApp, Webex | not measurable | |
+
+Zoom, Slack (Amazon Chime), Discord, WhatsApp and Webex hand out a media server per meeting, only after you sign in, and those servers ignore STUN without that session. They can't be tested ahead of a call; if your call path is Good, they usually are too. fyisp still checks their websites over TCP.
+
+The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch region between lookups; the local view shows where it landed (*via Sweden Central*). It is opt-in because Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)). The Calls view shows how to add it.
+
+### Verdicts, metrics and the off switch
+
+- **Verdicts.** `udp_blocked`, `stun_blocked` and `udp_degraded` (see [Whose fault is it?](#whose-fault-is-it-verdicts)) fire only when the path and TCP are healthy and at least two independent STUN providers agree, so a single dead STUN server never raises one. After 6 hours a blocked verdict turns quiet: it is shown as information (*It has been this way for hours (common on hotel and office networks)*), and the Calls rows say *Blocked*, not *Unusable*. UDP loss never feeds the main verdict or a service's loss.
+- **Metrics.** `fyisp_udp_rtt_seconds`, `fyisp_udp_jitter_seconds` and `fyisp_udp_loss_ratio` per STUN target, and `fyisp_call_mos{app}`; see [Prometheus metrics](#prometheus-metrics).
+- **`--no-udp`** leaves out every STUN target and hides the Calls view. Nothing else changes.
+
+### Limits
+
+- **Anycast targets measure the path to the nearest edge.** Google and Cloudflare answer from a data centre near you, not from the meeting's media server or the other people on the call. Most call problems are on your own connection, which is exactly that path; a problem beyond the provider's edge is not seen.
+- **Idle probes miss bufferbloat.** Calls often break when the link is busy (an upload, a backup, someone streaming), because queues only fill under load. fyisp's probes are tiny and see a quiet link, so a call can be bad while the strip is green. Mark the call, and compare with the TCP charts at that time.
+- **IPv4 only.** STUN is measured over IPv4; a call that goes over IPv6 takes a path fyisp doesn't measure.
+- The score is a model, not the app's own rating: expect it to agree on the band, not the decimal.
+
 ## What to measure (profiles)
 
-By default fyisp measures 91 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud, plus four public STUN servers (Google Meet, Cloudflare on ports 3478 and 53, Twilio) that measure the UDP path call audio and video use: a burst of 5 tiny STUN Binding Requests every 5 seconds each (15 s on port 53), with round-trip time, jitter and loss. `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does; fyisp never stores the address the server reports back. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
+By default fyisp measures 91 targets: common call services, DNS resolvers, dev tunnels, a few dev services, AWS, Hetzner and Google Cloud, plus four public STUN servers (Google Meet, Cloudflare on ports 3478 and 53, Twilio) that measure the UDP path call audio and video use: a burst of 5 tiny STUN Binding Requests every 5 seconds each (15 s on port 53), with round-trip time, jitter and loss. `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `--profile` picks others from the built-in **target catalog** (one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand):
 
 ```sh
 fyisp profiles                       # list the profiles, with target and panel counts
@@ -148,7 +222,18 @@ Target names are identities (a name keeps its history): when a profile is combin
 
 There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count. Per 100 targets: about 0.4% of one CPU core, 0.7 KB/s of download and 1.3 KB/s of upload (a TCP connect sends more small packets than it receives).
 
-Since every service is probed with a TCP connect only, measured on 2026-09-27 (Linux amd64, Docker; 4 minutes after a 1-minute warm-up, from `/metrics` `process_*` counters; the Network path group included):
+With the call-quality STUN targets (v0.5), measured on 2026-10-10 (Linux amd64, Docker, Frankfurt area; the three profiles ran side by side for 17 minutes; CPU, memory and traffic from `/metrics` `process_*` counters over the last 8.6 minutes, after an 8-minute warm-up; the Network path group included):
+
+| Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
+|---|---:|---:|---:|---:|---:|---:|
+| `default` | 91 + 5 (4 STUN) | 2.4% | 77 MB | 1.7 / 2.0 KB/s | 10 GB | 0.29 GB |
+| `default --no-udp` | 87 + 5 | 2.3% | 78 MB | 1.5 / 1.9 KB/s | 9 GB | 0.28 GB |
+| `calls` | 31 + 5 (15 STUN) | 0.6% | 60 MB | 0.9 / 0.8 KB/s | 4.5 GB | 0.07 GB |
+
+- The 4 STUN targets of `default` add about 0.2 KB/s down and 0.1 KB/s up (about 0.6 GB a month), about 10 MB of disk over 90 days (+4%), and no CPU or memory difference beyond the noise between two runs.
+- Disk is extrapolated from the stored data, not from the file size, because a 17-minute database is mostly empty 16 KB pages. The method: take the compressed sample blobs of the two partial hours the run covered (10.8 and 6.1 minutes), fit bytes = per-hour overhead + rate × minutes, and take that at 60 minutes, then add one hour of summaries, × 2,160 hours. A full hour compresses better than the fitted line, so this errs high; SQLite's page and index overhead adds a few percent on top.
+
+The rows below measure TCP-only probing, before the STUN targets. They were measured on 2026-09-27 (Linux amd64, Docker; 4 minutes after a 1-minute warm-up, from `/metrics` `process_*` counters; the Network path group included; no disk figures):
 
 | Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month |
 |---|---:|---:|---:|---:|---:|
@@ -218,7 +303,7 @@ Sharing is **off by default**. Start it with `fyisp --share` or the *Share* butt
 
 - fyisp opens a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) from inside the process (no `cloudflared` install, no Cloudflare account) and prints a link like `https://<random-words>.trycloudflare.com/s/<secret>/`.
 - **What is public:** the charts and their read-only data API, under a random 128-bit secret path. Nothing else exists on the public side: no `/metrics`, no settings, no sharing controls, no write routes, and requests are rate-limited.
-- **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side.
+- **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).
 - The tunnel tries QUIC (UDP port 7844) first and switches to HTTP/2 over TCP port 443 after about 30 seconds if UDP is blocked. Force one with `--share-protocol quic` or `--share-protocol http2`.
 - The link is random. It changes when fyisp restarts, or when the tunnel has to be re-created after 5 minutes without a connection. The browser on your machine always opens `127.0.0.1`, never the public link.
 - Quick tunnels are a free Cloudflare service meant for testing and demos. They come with no uptime guarantee, are rate-limited, and are subject to [Cloudflare's terms](https://www.cloudflare.com/website-terms/). fyisp is not affiliated with Cloudflare.
@@ -230,6 +315,8 @@ The local listener serves `/metrics` (never on the public link). ICMP results us
 The services are measured with TCP only, so `ping_*` now covers the Network path (`Gateway`, `ISP edge` and the three anycast resolvers) plus any ICMP targets of your own `--config` file. The services' latency is `fyisp_tcp_rtt_seconds{name,target}` (the latest connect time) and their loss is `fyisp_probe_lost_total{kind="tcp"}` over `fyisp_probe_samples_total{kind="tcp"}`; point old-stack panels and alerts that used `ping_*` for services at those. fyisp never fills `ping_*` from TCP results: a connect time is not an echo reply. `fyisp_https_rtt_seconds` exists only for `--config` targets that ask for HTTPS.
 
 UDP (STUN) targets never feed `ping_*`. Each burst counts once in `fyisp_probe_samples_total{kind="udp"}` (and `fyisp_probe_lost_total{kind="udp"}` when nothing answered); the latest burst's values are `fyisp_udp_rtt_seconds{name,target}` (median round trip), `fyisp_udp_jitter_seconds` and `fyisp_udp_loss_ratio` (0 to 1), each absent while the latest burst did not measure it.
+
+`fyisp_call_mos{app}` is the call-quality score the Calls view shows (MOS, 1 to 4.5; 4.0 and up is good, 3.6 fair, 3.1 poor, below that unusable): the worst minute of the last 5 minutes. `app="path"` is your call path, and `app="meet"` and `app="teams"` are the measured apps (Teams only with the `calls` profile). Each is absent until its STUN servers have 10 bursts in the window. With `--no-udp` there are no `fyisp_udp_*` or `fyisp_call_mos` series.
 
 ## Where data lives, and uninstalling
 

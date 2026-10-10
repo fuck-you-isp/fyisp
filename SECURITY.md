@@ -15,7 +15,25 @@ few days and will keep you updated until a fix is released.
 
 Only the latest release receives security fixes.
 
-## Scope
+## What leaves your machine
+
+fyisp has no telemetry. It talks to its probe targets, your DNS resolver and,
+only while sharing, Cloudflare's quick tunnel. Every probe target, TCP or UDP,
+sees your public IP address, as any website you visit does.
+
+The STUN servers fyisp measures calls with (Google, Cloudflare, Twilio and,
+with the `calls` profile, Microsoft Teams) are no different: they see your
+public IP address and the time of each request. A STUN answer also contains
+your public address as the server sees it (XOR-MAPPED-ADDRESS); fyisp's parser
+skips that attribute without decoding it, keeps no raw datagrams, and never
+stores, logs or exports the address (a test checks samples, the API, metrics,
+reports and logs for it). Socket errors are stored only as a reason code,
+never as text that could contain an address. `--no-udp` turns STUN off.
+
+The public share link hides the STUN target names and the Teams relay region
+(the Azure region fyisp's relay lookup landed in, which hints at where you
+are), along with the other redactions listed in the README.
+
 
 In scope, for example:
 
