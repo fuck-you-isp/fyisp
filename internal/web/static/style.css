@@ -1070,3 +1070,16 @@ body.home-on #reports, body.home-on #panels, body.home-on .foot, body.home-on #i
   body.public.home-on .top { flex-wrap: wrap; }
   body.public h1 { font-size: 17px; }
 }
+
+/* ---------- Details: footer help and glossary ---------- */
+.foot { gap: 6px; color: var(--ink-2); }
+.foot-help summary { cursor: pointer; min-height: 24px; color: var(--ink); font-weight: 600; }
+.foot-help ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.foot-help dl { margin: 6px 0 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; max-width: 72em; }
+.foot-help dt { font-weight: 600; color: var(--ink); }
+.foot-help dd { margin: 0; }
+abbr.gl { text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
+@media (max-width: 767.98px) {
+  .foot-help dl { grid-template-columns: minmax(0, 1fr); }
+  .foot-help dd { margin-bottom: 6px; }
+}
