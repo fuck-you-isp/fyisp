@@ -336,6 +336,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	if err != nil {
 		return err
 	}
+	// The public origin must stay loopback-only: only the in-process tunnel
+	// may reach it, which is what makes its per-client limits' key
+	// (Cf-Connecting-Ip, set by Cloudflare's edge) trustworthy.
 	publicLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err

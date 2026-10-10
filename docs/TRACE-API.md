@@ -17,9 +17,18 @@ There is no body. The checks are:
 | Same origin (`Origin` / `Sec-Fetch-Site`) | yes | yes |
 | `X-FYISP-CSRF` (page meta) | yes | — (the public page has none) |
 | Admin token | **no** | — |
-| Per-client limit (`Cf-Connecting-Ip`) | — | 1 new start per 30 s, 10 per hour |
+| Per-client limit (`Cf-Connecting-Ip`; IPv6 per /64) | — | 1 new start per 30 s, 10 per hour (only starts that happen count; a full limiter table refuses new clients) |
+| Slots | any of the 4 | at most 3 of the 4: the owner always has one |
+| Restarting a finished target | at once | after a 5-minute cooldown |
 
-Only profile target names are accepted (404 otherwise); never a host or an address. At most 4 traces run at once, shared by both listeners.
+**Request rules:**
+- Exactly one `target` parameter and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
+- Only profile target names are accepted; never a host or an address.
+- At most 4 traces run at once, shared by both listeners.
+- Every response has `Cache-Control: no-store`.
+- Logs name the target and the error, never the client.
+
+**Same origin behind the tunnel:** cloudflared passes the visitor's Host (the trycloudflare hostname) to the loopback origin unchanged, along with Origin and Sec-Fetch-Site, and Cloudflare's edge sets `Cf-Connecting-Ip`. This was checked on a real quick tunnel by `TestLiveSameOrigin` in `internal/tunnel`. The public origin binds 127.0.0.1 only, which is what makes `Cf-Connecting-Ip` trustworthy as the per-client key.
 
 **What a POST does:**
 - **Trace running:** returns its state. It doesn't extend the trace or reset the count, and it isn't counted against the per-client limit.
@@ -34,13 +43,19 @@ Only profile target names are accepted (404 otherwise); never a host or an addre
 
 `state` is `running` or `finished`; `finished_at` (ms) is present when finished.
 
-**Errors:**
-- 400: missing or extra parameters.
-- 403: cross-origin, or a missing or bad CSRF token (local).
-- 404: unknown target, or tracing unavailable.
-- 405: not POST.
-- 429 with `Retry-After`: more than 4 running ("too many on-demand traces running"), or the per-client limit.
-- 500: the tracer failed. The local listener includes the reason; the share link doesn't.
+**Errors:** `{"error": "<words for people>", "code": "<stable>", "retry_after": <seconds, with Retry-After>}`. Match on `code`, never on the words.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `bad_request` | a parameter other than one `target`, or a body |
+| 403 | `forbidden` | cross-origin; local: missing or bad `X-FYISP-Token` |
+| 404 | `unknown_target` | not a profile target name |
+| 404 | `unavailable` | tracing is not available |
+| 405 | `method_not_allowed` | not POST |
+| 429 | `busy` | no free slot (4 in all, 3 for the share link) |
+| 429 | `rate_limited` | share link: this client's start limit (`retry_after`) |
+| 429 | `cooldown` | share link: this target finished less than 5 minutes ago (`retry_after`) |
+| 500 | `failed` | the tracer failed (the local listener adds the reason) |
 
 ## Progress
 
