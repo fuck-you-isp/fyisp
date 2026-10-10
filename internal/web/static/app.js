@@ -18,6 +18,7 @@ import {
   useStatus,
 } from './core.js';
 import { Home } from './home.js';
+import { Report } from './report.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
 
@@ -3165,7 +3166,7 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
 
 // ---------- Home and the Home | Details switch ----------
 
-/** @type {Home|null} */
+/** Home, or on the share link the report. @type {Home|Report|null} */
 let home = null;
 /** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
 let onNav = () => {};
@@ -3176,7 +3177,7 @@ function renderViewNav() {
   const v = currentView();
   const nav = $('#viewnav');
   nav.replaceChildren(
-    h('button', { type: 'button', text: 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
+    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
     h('button', { type: 'button', text: 'Details', 'aria-current': v !== 'h' ? 'page' : null, onclick: () => { if (currentView() === 'h') openDetails(''); } }));
 }
 
@@ -3238,7 +3239,7 @@ function applyView() {
   const v = currentView();
   document.body.classList.toggle('home-on', v === 'h');
   if (home) home.el.hidden = v !== 'h';
-  if (v !== 'h') document.title = 'Details · fyisp';
+  if (v !== 'h') document.title = MODE === 'public' ? 'Details · Internet quality report' : 'Details · fyisp';
   renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
@@ -3811,7 +3812,7 @@ function renderShare() {
   const badge = $('#mode-badge');
   if (MODE === 'public') {
     badge.hidden = false;
-    badge.textContent = 'Public view · read-only';
+    badge.textContent = 'Shared view (read-only)';
     el.replaceChildren();
     return;
   }
@@ -3989,7 +3990,13 @@ async function main() {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
-  home = new Home({
+  if (MODE === 'public') {
+    const r = new Report();
+    r.openDetails = openDetails;
+    home = r;
+    $('h1').textContent = 'Internet quality report';
+    document.body.classList.add('public');
+  } else home = new Home({
     span: () => state.hw,
     setSpan: (s) => { state.hw = s; writeHash(); },
     openDetails,
