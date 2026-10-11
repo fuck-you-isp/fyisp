@@ -71,6 +71,12 @@ const (
 	SweepUnreachable = 3
 	// SlotMaxBytes caps a whole test, every server and retry included.
 	SlotMaxBytes = 2 * MaxBytes
+	// BackstopBytes is where a direction is cut with an RST whatever the
+	// server does (Backstop(MaxBytes): MaxBytes + 5%).
+	BackstopBytes = MaxBytes + MaxBytes/20
+	// TestMaxBytes bounds one test's data, every server and retry included,
+	// against any server: what a share-link test needs free.
+	TestMaxBytes = 2 * BackstopBytes
 	// EstTestTime is a typical test (both directions, adaptive): the
 	// planned share of time under test is slots × EstTestTime / interval.
 	EstTestTime = 15 * time.Second
