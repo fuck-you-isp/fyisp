@@ -273,7 +273,7 @@ The latency under load over the span: per layer, the median over tests.
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | from the share link "public" | "public_sweep"
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | from the share link "public" | "public_sweep"; always "test" on the share link
   "on_demand": false,             // not "schedule": never in rows, patterns or the finding
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed" | "cancelled"
   "region": "us-east",            // |null when the test was for no region
@@ -330,7 +330,7 @@ One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An 
   "kind": "region",               // "region" | "server"
   "row": { ...Row },
   "tests": [ ...Test ],           // every test in the span (any trigger), oldest first, the newest 5000 at most
-  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner | public
+  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner | public; always "test" on the share link
 }
 ```
 

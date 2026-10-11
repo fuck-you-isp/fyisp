@@ -110,7 +110,7 @@ type speedRow struct {
 type speedWindow struct {
 	Start  int64  `json:"start"`
 	End    int64  `json:"end"`
-	Origin string `json:"origin"` // scheduled | owner | public (the share link)
+	Origin string `json:"origin"` // scheduled | owner | public (the share link); "test" on the share link, which never tells tests apart
 }
 
 // speedTestJSON is one test. Ports and hosts are local only; own servers
@@ -119,7 +119,7 @@ type speedTestJSON struct {
 	ID             int64    `json:"id"`
 	Start          int64    `json:"start"`
 	End            int64    `json:"end"`
-	Trigger        string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep
+	Trigger        string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep; "test" on the share link
 	OnDemand       bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
 	Outcome        string   `json:"outcome"`
 	Region         *string  `json:"region"`
@@ -362,6 +362,8 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	j.Latency, j.Conn = t.Latency, cmp.Or(t.Conn, model.ConnUnknown)
 	if !n.public {
 		j.Port, j.Handoff = t.Port, t.Handoff
+	} else {
+		j.Trigger = "test" // the share link never tells tests apart
 	}
 	return j
 }
@@ -536,7 +538,7 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
-			return jsonCached(map[string]any{"at": now.UnixMilli(), "windows": speedWindows(ts, p.from)})
+			return jsonCached(map[string]any{"at": now.UnixMilli(), "windows": speedWindows(ts, p.from, s.public)})
 		}
 		out, err := s.speedSummary(ctx, p, st, names, now)
 		if err != nil {
@@ -547,11 +549,17 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
+// speedWindows are the tests' windows from from; public: every origin is
+// "test" (the share link never says whose test it was).
+func speedWindows(ts []model.SpeedTest, from time.Time, public bool) []speedWindow {
 	out := []speedWindow{}
 	for _, t := range ts {
 		if !t.End.Before(from) && t.End.After(t.Start) {
-			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: t.Origin()})
+			o := t.Origin()
+			if public {
+				o = "test"
+			}
+			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: o})
 		}
 	}
 	return out
@@ -1067,7 +1075,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 			out.Row.Scheduled, out.Row.Why = true, r.Why
 		}
 	}
-	out.Windows = speedWindows(ts, from)
+	out.Windows = speedWindows(ts, from, s.public)
 	if s.public {
 		out.Row.publicWording()
 	}

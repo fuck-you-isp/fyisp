@@ -327,7 +327,7 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		w := edge.worst
 		lead := "Your ISP's network is dropping packets: "
 		if gw.known {
-			lead += "the router is fine, the first hop past it loses " + pct(edge.loss()) + "."
+			lead += "the router looks fine, the first hop past it loses " + pct(edge.loss()) + "."
 		} else {
 			lead += "the first hop past your router loses " + pct(edge.loss()) + "."
 		}
@@ -335,7 +335,7 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		if edge.loss() < lossBad && w != nil && w.spike {
 			s = "Your ISP's network is slow: "
 			if gw.known {
-				s += "the router is fine, but the first hop past it "
+				s += "the router looks fine, but the first hop past it "
 			} else {
 				s += "the first hop past your router "
 			}

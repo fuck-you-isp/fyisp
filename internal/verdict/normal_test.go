@@ -114,7 +114,7 @@ func TestLongTermLatency(t *testing.T) {
 		{
 			name: "edge slower than its normal",
 			fx:   []behavior{layer(model.LayerEdge, rtt(90*time.Millisecond))},
-			kind: model.VerdictISP, summary: "Your ISP's network is slow: the router is fine, but the first hop past it is 11× slower than your normal (90 ms vs 8 ms).",
+			kind: model.VerdictISP, summary: "Your ISP's network is slow: the router looks fine, but the first hop past it is 11× slower than your normal (90 ms vs 8 ms).",
 		},
 		{
 			name: "anycast slower than its normal",

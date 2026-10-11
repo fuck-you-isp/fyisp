@@ -262,7 +262,7 @@
   "score": 0.94,
   "server": "Leaseweb-NewYork",
   "start": 1791639000000,
-  "trigger": "schedule",
+  "trigger": "test",
   "up_bps": 14100000,
   "up_retrans": null,
   "up_s": 3.2,
