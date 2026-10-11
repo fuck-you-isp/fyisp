@@ -163,15 +163,7 @@ h1 { font-size: 18px; margin: 0; letter-spacing: 0.01em; white-space: nowrap; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.share { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.share input {
-  width: min(360px, 60vw); padding: 4px 8px; border-radius: 6px;
-  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
-}
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.on { background: #0ca30c; }
-.dot.busy { background: #fab219; }
-.dot.err { background: #d03b3b; }
 
 .notices { display: flex; flex-direction: column; gap: 6px; padding: 8px 16px 0; }
 .notice {
@@ -855,7 +847,7 @@ summary:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible, 
 .btn.theme { min-width: 36px; min-height: 32px; font-size: 16px; line-height: 1; }
 /* Home shows only the brand, the switch and the theme button. */
 body.home-on #ranges, body.home-on #kinds, body.home-on #tools, body.home-on #refresh, body.home-on #profile-badge,
-body.home-on #share, body.home-on #notices, body.home-on #verdict, body.home-on #outages, body.home-on #notes,
+body.home-on #notices, body.home-on #verdict, body.home-on #outages, body.home-on #notes,
 body.home-on #reports, body.home-on #panels, body.home-on .foot, body.home-on #inv { display: none !important; }
 /* Speed has its own spans: the chart ranges and probe kinds don't apply. */
 body.speed-on #ranges, body.speed-on #kinds { display: none; }
@@ -1042,42 +1034,6 @@ body.speed-on #ranges, body.speed-on #kinds { display: none; }
   .ho-node { border-radius: 10px; }
 }
 
-/* ---------- the public report (report.js) ---------- */
-.rp-head p { margin: 0 0 4px; }
-.rp-zone { font-weight: 600; color: var(--ink); }
-.rp-kicker { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: none; }
-.rp-period { margin: 6px 0 0; color: var(--ink-2); }
-.rp-sides { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.rp-side { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--page); }
-.rp-side .rp-n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.rp-side.some { border-color: color-mix(in srgb, var(--v-isp) 45%, var(--border)); }
-.rp-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
-.rp-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--ink-2); padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.rp-table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.rp-table tr:last-child td { border-bottom: 0; }
-.rp-table tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.rp-when { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.rp-where { font-weight: 600; }
-.rp-what { min-width: 16em; }
-.rp-foot { font-size: 14px; }
-@media (max-width: 767.98px) {
-  .rp-sides { grid-template-columns: minmax(0, 1fr); }
-  /* The table becomes cards. */
-  .rp-table thead { display: none; }
-  .rp-table, .rp-table tbody, .rp-table tr, .rp-table td { display: block; }
-  .rp-table tr { padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .rp-table td { padding: 2px 0; border: 0; }
-  .rp-table td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--ink-2); }
-  .rp-when { white-space: normal; }
-  .rp-what { min-width: 0; }
-}
-
-@media (max-width: 767.98px) {
-  /* The report's longer title and badge: let the header wrap. */
-  body.public.home-on .top { flex-wrap: wrap; }
-  body.public h1 { font-size: 17px; }
-}
-
 /* ---------- Details: footer help and glossary ---------- */
 .foot { gap: 6px; color: var(--ink-2); }
 .foot-help summary { cursor: pointer; min-height: 24px; color: var(--ink); font-weight: 600; }
@@ -1090,10 +1046,6 @@ abbr.gl { text-decoration: underline dotted; text-underline-offset: 2px; cursor:
   .foot-help dl { grid-template-columns: minmax(0, 1fr); }
   .foot-help dd { margin-bottom: 6px; }
 }
-
-/* The report's day rows carry the date ("Wed 7 Oct"). */
-.report .ho-row { grid-template-columns: 6.6em minmax(0, 1fr); }
-@media (max-width: 767.98px) { .report .ho-row { grid-template-columns: 5.4em minmax(0, 1fr); } .report .ho-day { font-size: 12px; } }
 
 /* ---------- tokens: contrast and a lightness-ordered call-state palette ----------
    --c-good … --c-bad step in lightness (light: darker as it gets worse; dark:
@@ -1290,7 +1242,6 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-q li.you .sp-q-who { font-weight: 600; color: var(--ink); }
 .sp-q-who, .sp-q-when { color: var(--ink-2); }
 .sp-sweep .sp-go-row { margin-top: 10px; }
-.sp-pub { margin-top: 8px; }
 .sp-flag { margin: 14px 0 8px !important; font-size: 13px; color: var(--ink-2); }
 .sp-flag b { color: var(--ink); }
 .sp-sw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin-bottom: 10px; }
@@ -1311,76 +1262,15 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
   .sp-sw-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* The report's "Speed through the day" (speedreport.js) */
-.rp-speed h3 { margin: 14px 0 6px; font-size: 14px; }
-.rp-speed-t { width: 100%; }
-.rp-speed-t .num { text-align: right; font-variant-numeric: tabular-nums; }
-.rp-speed-t tr.sub th { font-weight: 400; padding-left: 14px; }
-.rp-speed-worst, .rp-speed-ev { margin: 0; padding-left: 20px; }
-.rp-speed-ev { color: var(--ink-2); font-size: 13px; }
-
-.sp-live h3 { margin: 14px 0 6px; font-size: 14px; }
-.sp-live-list { list-style: none; margin: 0; padding: 0; columns: 3 260px; column-gap: 24px; font-size: 12px; }
-.sp-live-list li { break-inside: avoid; display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto; gap: 6px; padding: 2px 0; }
-.sp-live-list li.st-waiting, .sp-live-list li.st-cancelled, .sp-live-list li.st-skipped { color: var(--ink-2); }
-.sp-live-list li.st-testing { font-weight: 600; }
-.sp-live-m { text-align: center; }
-.sp-live-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sp-live-v { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-.sp-c.fb::after { content: ""; position: absolute; left: 0; top: 0; border-top: 7px solid var(--ink-2); border-right: 7px solid transparent; border-top-left-radius: 3px; }
-.sp-x { position: absolute; right: 2px; top: -1px; font-size: 11px; color: var(--ink-2); }
-.sp-used { white-space: nowrap; }
-
-.sp-st tr.skipped th, .sp-st tr.skipped td { color: var(--ink-2); }
-.sp-skip { white-space: nowrap; }
-
-.sp-kicker { margin: 6px 0 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-2); }
-.sp-found-x { margin: 6px 0 0; padding-left: 20px; color: var(--ink-2); font-size: 13px; max-width: 75ch; }
-
-.sp-hint { display: block; font-size: 12px; color: var(--ink-2); }
-.sp-sw-bars h4 { margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
-@media (max-width: 767.98px) {
-  /* Every-row and full-test tables become cards: the name, then each value with its label. */
-  .sp-st thead { display: none; }
-  .sp-st, .sp-st tbody { display: block; }
-  .sp-st tr { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 8px 0; border-bottom: 1px solid var(--grid); }
-  .sp-st th, .sp-st td { border: 0; padding: 0; text-align: left !important; white-space: normal !important; }
-  .sp-st tbody th { flex: 1 1 100%; font-weight: 600; }
-  .sp-st td[data-k]::before { content: attr(data-k) ": "; color: var(--ink-2); font-size: 11px; }
-  .sp-st td.sp-skip { margin-left: auto; }
-}
-
-/* Touch targets: at least 24 px for the heatmap's row names, its controls and the checkbox. */
-.sp-rb { display: inline-flex; align-items: center; min-height: 24px; }
-.sp-ctl .seg.sm button { min-height: 28px; }
-.sp-check input { width: 20px; height: 20px; margin: 0; }
-.sp-check { min-height: 28px; }
-
 .sp-tt td.sp-nc { color: var(--ink-2); font-size: 12px; }
 
-/* Speed-test windows in the chart legends: a solid grey tick; a share-link visitor's, a dashed blue outline. */
+/* Speed-test windows in the chart legends: a solid grey tick. */
 .chip.sp-tick { width: 12px; height: 4px; background: var(--muted); border-radius: 0; }
 .sp-toggle { cursor: pointer; }
 .sp-toggle.off { opacity: 0.55; }
 .sp-toggle:hover { opacity: 1; text-decoration: underline; }
-.chip.sp-tick.pub { background: transparent; border: 1.5px dashed var(--accent); height: 6px; }
 
 .sp-tf { display: block; font-size: 11px; line-height: 1.25; color: var(--ink-2); white-space: normal; }
 
-.rp-speed-cap { caption-side: top; text-align: left; padding: 0 0 4px; }
-@media (max-width: 767.98px) {
-  /* The speed card's table stays a table on a phone (the problems table above becomes cards). */
-  .rp-speed-t { display: table; font-size: 12px; }
-  .rp-speed-t thead { display: table-header-group; }
-  .rp-speed-t tbody { display: table-row-group; }
-  .rp-speed-t tr { display: table-row; padding: 0; }
-  .rp-speed-t th, .rp-speed-t td { display: table-cell; padding: 5px 4px; border-bottom: 1px solid var(--border); }
-  .rp-speed-t th { font-size: 11px; }
-  .rp-speed-cap { display: table-caption; }
-}
-/* Jumps (a block picked on the timeline, "What happened at…") land below Home's and the report's sticky header. */
+/* Jumps (a block picked on the timeline, "What happened at…") land below Home's sticky header. */
 body.home-on .home section, body.home-on .home tr, body.home-on .home h2 { scroll-margin-top: 72px; }
-@media (max-width: 767.98px) {
-  body.public.home-on .home section, body.public.home-on .home tr, body.public.home-on .home h2 { scroll-margin-top: 100px; }
-}

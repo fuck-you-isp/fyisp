@@ -4,11 +4,11 @@
 // test. Once on, a header with the mode, the next test, Test now (with a
 // server picker) and Turn off; tests wait their turn in one queue
 // (speedqueue.js). Every write goes through the same gate as notes and
-// share; the share link is read-only unless the owner lets it start tests.
+// reports.
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, fetchShared, apiWrite, canWrite, dialog, MODE, tzParam, zoneSuffix } from './core.js';
+import { h, fetchJSON, fetchShared, apiWrite, canWrite, dialog, tzParam } from './core.js';
 import { clock } from './home.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
@@ -19,7 +19,7 @@ import { SpeedQueue } from './speedqueue.js';
 /** @typedef {{id:string,kind:string,label:string,why?:string,note?:string,scheduled?:boolean,servers?:string[],server_now?:string,latest_at:number|null,n:number,busy:number,unreachable:number,failed:number,fallback:number,fallback_share?:number,fallback_share_24h?:number,capped_by_server?:number,down_median_bps:number|null,down_p10_bps:number|null,up_median_bps:number|null,up_p10_bps:number|null,best_down_bps:number|null,score_median?:number|null,learning?:boolean,dip:SpeedPattern|null,up_dip?:SpeedPattern|null,hours:SpeedHour[]}} SpeedRow */
 /** @typedef {{n:number,lost:number,loss:number,p50_ms:number,p95_ms:number}} SpeedLat */
 /** @typedef {{id:number,start:number,end:number,trigger:string,on_demand?:boolean,outcome:string,region:string|null,server:string,label:string,display?:string,provider?:string,city?:string,fallback:boolean,fallback_level?:string,attempts:number,down_bps:number|null,up_bps:number|null,down_short?:boolean,up_short?:boolean,capped_by_budget?:boolean,down_s?:number,up_s?:number,capped_by_server?:boolean,score?:number|null,up_score?:number|null,bytes?:number,down_retrans:number|null,up_retrans:number|null,idle_gateway_ms:number|null,loaded_gateway_ms:number|null,conn?:string,handoff?:{asn:number,name:string,isp_asn:number},latency?:{edge?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat},gateway?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat}},port?:number}} SpeedTest */
-/** @typedef {{case:string,tier?:string,text:string,text_public:string,evidence:string,caveat?:string,caveat_public?:string,hours:number[],drop:number,days:number,tests:number,regions:string[],providers:string[],network?:string,regions_judged?:number,providers_judged?:number,far_regions?:string[],slow_days?:number,day_count?:number,far_evening?:boolean,bridged?:boolean}} SpeedFinding */
+/** @typedef {{case:string,tier?:string,text:string,evidence:string,caveat?:string,hours:number[],drop:number,days:number,tests:number,regions:string[],providers:string[],network?:string,regions_judged?:number,providers_judged?:number,far_regions?:string[],slow_days?:number,day_count?:number,far_evening?:boolean,bridged?:boolean}} SpeedFinding */
 /** @typedef {{entry?:number,kind?:string,started:number,expected_end:number,direction:string,server:{id:string,label:string}|null,step?:number,steps?:number}} SpeedRunning */
 /** @typedef {{at:number,tz:number,tz_name?:string,owner_tz?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,masked_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{layers:any[],text:string[]}|null}} SpeedSummary */
 
@@ -167,12 +167,6 @@ export class Speed {
     const d = this.d;
     if (!d) {
       this.headEl.replaceChildren(h('p', { class: 'muted', text: this.err || 'Loading…' }));
-      return;
-    }
-    if (MODE === 'public') {
-      this.headEl.replaceChildren(h('p', { class: 'sp-state' }, d.enabled
-        ? `Speed tests: on · ${modeName(d.mode)} · ${every(d.interval_s)}`
-        : 'Speed tests are off on this connection.'));
       return;
     }
     if (!d.enabled || this.panel === 'setup') {
@@ -392,7 +386,7 @@ export class Speed {
       const region = t.region ? d.regions.find((r) => r.id === t.region)?.title : '';
       const res = t.outcome === 'ok' ? `${mbps(t.down_bps)} down, ${mbps(t.up_bps)} up`
         : t.outcome === 'busy' ? 'server busy' : t.outcome === 'unreachable' ? 'didn’t answer' : t.outcome === 'cancelled' ? 'cancelled' : 'didn’t finish';
-      lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)}${zoneSuffix()} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
+      lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
     }
     if (d.enabled && d.masked_share_24h > 0) {
       lines.push(h('p', { class: 'muted small', text: `Tests filled the line ${Math.max(1, Math.round(d.masked_share_24h * 100))}% of the last 24 hours. Those seconds aren’t counted on the other charts.` }));
