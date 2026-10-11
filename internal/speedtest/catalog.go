@@ -44,9 +44,9 @@ import (
 // PortMin..PortMax, each running one test at a time.
 type Server struct {
 	ID       string // identity of its stored results
-	Label    string // public-safe: provider and city
+	Label    string // provider and city
 	Provider string // display name
-	Host     string // local only: never on the share link
+	Host     string
 	PortMin  int
 	PortMax  int
 	City     string
