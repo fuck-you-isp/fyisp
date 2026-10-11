@@ -8,7 +8,7 @@
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, dialog, MODE, tzParam, zoneSuffix } from './core.js';
+import { h, fetchJSON, fetchShared, apiWrite, canWrite, dialog, MODE, tzParam, zoneSuffix } from './core.js';
 import { clock } from './home.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
@@ -107,7 +107,7 @@ export class Speed {
     try {
       const q = new URLSearchParams({ days: String(this.host.days()), tz: tzParam() });
       if (this.host.nofb()) q.set('exclude_fallback', '1');
-      const d = /** @type {SpeedSummary} */ (await fetchJSON('api/speed?' + q));
+      const d = /** @type {SpeedSummary} */ (await fetchShared('api/speed?' + q));
       if (seq !== this.seq) return;
       this.d = d;
       this.err = '';
@@ -274,7 +274,7 @@ export class Speed {
       d.next_at = r.next_at;
       this.panel = 'idle';
       this.result = '';
-      this.note = mode === 'off' ? 'Off. Results so far are kept.' : `On: ${modeName(r.mode)}. The first test runs in about ${r.next_at ? fmtMinutes(Math.max(1, (r.next_at - Date.now()) / 60e3)) : 'a few minutes'}.`;
+      this.note = mode === 'off' ? 'Off. Results so far are kept.' : `On: ${modeName(r.mode)}. ${firstTest(r.next_at, false)}`;
     } catch (e) {
       this.note = speedError(e);
     }
@@ -408,6 +408,15 @@ function dataTable() {
     h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Your connection' }), h('th', { scope: 'col', class: 'num', text: 'Data a month' }))),
     h('tbody', {}, ...[['25 Mbit/s', 'about 150 GB'], ['100 Mbit/s', 'about 600 GB'], ['Fast lines (500 Mbit/s and up)', 'about 1.3 TB']]
       .map(([a, b]) => h('tr', {}, h('th', { scope: 'row', text: a }), h('td', { class: 'num', text: b })))));
+}
+
+/** When the first test after turning on runs, in whole minutes (never "½ minute"). @param {number|null|undefined} at @param {boolean} running */
+export function firstTest(at, running) {
+  if (running) return 'The first test is running now.';
+  if (!at) return 'The first test starts within the hour.';
+  const m = Math.round((at - Date.now()) / 60e3);
+  if ((at - Date.now()) < 60e3) return 'The first test starts in under a minute.';
+  return `The first test starts at about ${clock(at)} (in ${m} minute${m === 1 ? '' : 's'}).`;
 }
 
 /** replaceChildren, skipping the parts that don't apply. @param {Element} el @param {(Node|null)[]} kids */

@@ -591,6 +591,7 @@ textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent);
 .dlg::backdrop { background: rgba(0, 0, 0, 0.45); }
 .dlg h2 { margin: 0; font-size: 17px; }
 .dlg p { margin: 0; }
+.dlg-body { display: flex; flex-direction: column; gap: 8px; max-width: 60ch; }
 
 @media (max-width: 767.98px) {
   .n-row { grid-template-columns: auto minmax(0, 1fr) auto; }
@@ -1360,3 +1361,9 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-ctl .seg.sm button { min-height: 28px; }
 .sp-check input { width: 20px; height: 20px; margin: 0; }
 .sp-check { min-height: 28px; }
+
+.sp-tt td.sp-nc { color: var(--ink-2); font-size: 12px; }
+
+/* Speed-test windows in the chart legends: a solid grey tick; a share-link visitor's, a dashed blue outline. */
+.chip.sp-tick { width: 12px; height: 4px; background: var(--muted); border-radius: 0; }
+.chip.sp-tick.pub { background: transparent; border: 1.5px dashed var(--accent); height: 6px; }

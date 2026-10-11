@@ -6,14 +6,15 @@
 // cancel any entry and clear the share link's. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, MODE, zoneSuffix } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, dialog, MODE, zoneSuffix } from './core.js';
 import { clock, when } from './home.js';
+import { readingCell, lowerBound } from './speedmap.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
 /** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[],wait_reason?:string|null,stopped_reason?:string|null}} QueueEntry */
 /** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
-/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
+/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,public_off_reason?:string|null,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean, started:()=>void}} QueueHost */
 
@@ -32,6 +33,25 @@ function pausedUntil(at, time = false) {
 }
 /** A full test from the link waits 30 minutes after the last one. @param {number} at */
 function nextSweep(at) { return at ? `The next full test from this link can start at ${when(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
+// A full test: seconds per server, with the pause between tests.
+const SWEEP_S = 26;
+// The most one test can move: 100 MB per direction plus the backstop's margin (A1).
+const TEST_MAX = 210e6;
+
+/** One test's bytes on this line: the latest test's when known, else the cap. @param {SpeedSummary|null} d */
+function perTestBytes(d) {
+  const b = d && d.latest && d.latest.outcome === 'ok' ? d.latest.bytes || 0 : 0;
+  return b > 1e6 ? Math.min(b, TEST_MAX) : 200e6;
+}
+/** "2.1 GB" and "10 GB" the same way on both sides of an "of": one decimal under 10 GB. @param {number} b */
+function gbBoth(b) {
+  const g = Math.max(0, b) / 1e9;
+  return `${g < 10 ? g.toFixed(1).replace(/\.0$/, '') : Math.round(g)} GB`;
+}
+
+/** "150 MB", "1.5 GB". @param {number} b */
+function mbWord(b) { return b < 1e9 ? `${Math.round(b / 1e6)} MB` : `${(b / 1e9).toFixed(1).replace(/\.0$/, '')} GB`; }
+
 /** "12 GB". @param {number} b */
 function gb(b) { return b >= 1e9 ? `${Math.round(b / 1e9)} GB` : `${Math.max(0, Math.round(b / 1e6))} MB`; }
 
@@ -70,7 +90,8 @@ function queueError(e) {
     case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), b.budget === 'time');
     case 'time_cap': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), true);
     case 'cooldown': case 'sweep_cooldown': return nextSweep(Number(b.resets_at || b.available_at) || (s ? Date.now() + s * 1000 : 0));
-    case 'disabled': return 'The owner of this connection hasn’t turned on tests from this link.';
+    case 'disabled': if (b.reason === 'budget_too_small') return 'Tests from this link are off: the owner’s daily allowance is smaller than one test.';
+      return 'The owner of this connection hasn’t turned on tests from this link.';
     case 'not_found': return 'That test isn’t in the queue any more.';
     case 'forbidden': return MODE === 'public' ? 'Tests can’t be started from this link.' : 'Speed tests can only be changed from the device running fyisp.';
   }
@@ -97,6 +118,8 @@ export class SpeedQueue {
     /** @type {{key:string,asc:boolean}} */
     this.sort = { key: 'region', asc: true };
     this.scrolled = false;
+    /** @type {string|null} the disabled button's reason last said; null before the first render */
+    this.lastWhy = null;
 
     this.el = h('section', { class: 'sp-queue', 'aria-labelledby': 'sp-q-h', hidden: true });
     this.sweepEl = h('section', { id: 'sp-sweep', class: 'sp-sweep', 'aria-labelledby': 'sp-sw-h' });
@@ -182,7 +205,52 @@ export class SpeedQueue {
       if (this.note) this.host.say(this.note);
     }
     await this.load();
-    /** @type {HTMLElement|null} */ (this.el.querySelector('.sp-mine-t'))?.focus();
+    // A full test lands on the queue's heading; a single test on its own status line.
+    /** @type {HTMLElement|null} */ (kind === 'sweep' ? document.getElementById('sp-q-h') : this.el.querySelector('.sp-mine-t'))?.focus();
+  }
+
+  /**
+   * "Test every server": what it costs, then [Cancel] [Test N servers]. Cancel
+   * is focused first and sends nothing; the server's checks still decide.
+   */
+  async confirmSweep() {
+    const d = this.host.summary();
+    const q = this.q;
+    const servers = d ? d.servers : [];
+    const n = servers.filter((x) => !x.skipped).length || 45;
+    const skipped = servers.filter((x) => x.skipped).length;
+    const per = perTestBytes(d);
+    const total = per * n;
+    const mins = Math.max(1, Math.round(n * SWEEP_S / 60));
+    const p = (/** @type {string} */ t) => h('p', { text: t });
+    /** @type {Node[]} */
+    const body = [p(`One test on each of the ${n} servers, one after another.${MODE === 'local' && skipped ? ` ${skipped === 1 ? '1 server you skipped won’t be tested.' : `${skipped} servers you skipped won’t be tested.`}` : ''}`)];
+    body.push(p(`Takes about ${mins} minute${mins === 1 ? '' : 's'} and uses about ${gbBoth(total)} of data.`));
+    if (MODE === 'public') {
+      body.push(p('The owner’s line is busy most of that time, so their calls may stutter.'));
+      const b = q && q.budget;
+      if (b) {
+        body.push(p(`This uses the owner’s shared allowance: ${gbBoth(b.used_bytes)} of ${gbBoth(b.limit_bytes)} used in the last 24 hours.`));
+        if (b.remaining_bytes < total) {
+          // Each step starts only while a whole test (TEST_MAX) still fits; each then uses about one test's bytes.
+          const fit = b.remaining_bytes < TEST_MAX ? 0 : Math.min(n, Math.floor((b.remaining_bytes - TEST_MAX) / per) + 1);
+          body.push(h('p', {}, h('b', { text: `About ${gbBoth(b.remaining_bytes)} is left, so the test will stop partway (after about ${fit} of ${n} servers).` })));
+        }
+      }
+      body.push(p('If the owner needs the line, your sweep pauses between servers and carries on afterwards.'));
+    } else {
+      body.push(p('Your line is busy most of that time, so calls may stutter.'));
+    }
+    body.push(p('The results are a snapshot. They don’t change the hourly pattern.'));
+    if (MODE === 'local' && d && !d.enabled) body.push(p('Speed tests are off. This runs once and doesn’t turn them on.'));
+    const v = await dialog({
+      title: 'Test every server now?',
+      body,
+      buttons: [{ label: 'Cancel', value: 'cancel' }, { label: n === 1 ? 'Test 1 server' : `Test ${n} servers`, value: 'ok', primary: true }],
+      safe: true,
+    });
+    if (v === 'ok') { await this.start('sweep', '', 'sweep'); return; }
+    /** @type {HTMLElement|null} */ (this.sweepEl.querySelector('.sp-go'))?.focus();
   }
 
   /** @param {number} id */
@@ -339,23 +407,30 @@ export class SpeedQueue {
   renderSweep() {
     const d = this.host.summary();
     const q = this.q;
-    const n = d ? d.servers.length : 45;
+    const tooSmall = !!q && q.public_off_reason === 'budget_too_small';
     const mineSweep = q && [q.running, ...q.waiting].some((e) => e && e.kind === 'sweep' && e.who === 'you');
     const can = this.canStart();
     const start = can
       ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test every server', disabled: !!mineSweep || (MODE === 'public' && (!!q?.sweeps_full || (q?.budget?.sweep_available_at || 0) > Date.now())),
-        onclick: () => this.start('sweep', '', 'sweep') })
+        'aria-describedby': 'sp-sw-why', onclick: () => this.confirmSweep() })
       : null;
     const why = mineSweep ? 'Your full test is in the queue above.' : MODE === 'public' ? this.publicWhy() : !can ? 'Speed tests can only be started from the device running fyisp.' : '';
+    // A new reason is said once; the visible text next to the button stays.
+    if (why && why !== this.lastWhy && this.lastWhy != null) this.host.say(why);
+    this.lastWhy = why;
+    const n = d ? d.servers.filter((x) => !x.skipped).length || d.servers.length : 45;
     const s = this.sweep;
     this.sweepEl.replaceChildren(...[
       h('h2', { id: 'sp-sw-h', text: 'Test every server now' }),
       MODE === 'local' && q && q.public_enabled != null ? h('label', { class: 'sp-check sp-pub' },
-        h('input', { type: 'checkbox', id: 'sp-pub', checked: !!q.public_enabled, disabled: !canWrite(), onchange: (/** @type {Event} */ ev) => this.setPublic(/** @type {HTMLInputElement} */ (ev.target).checked) }),
+        h('input', { type: 'checkbox', id: 'sp-pub', checked: !!q.public_enabled && !tooSmall, disabled: !canWrite() || tooSmall, 'aria-describedby': tooSmall ? 'sp-pub-off' : null,
+          onchange: (/** @type {Event} */ ev) => this.setPublic(/** @type {HTMLInputElement} */ (ev.target).checked) }),
         h('span', {}, 'Let people with your share link start full tests',
           h('span', { class: 'sp-hint', text: `They share a ${q.budget ? gb(q.budget.limit_bytes) : '10 GB'} daily allowance. Off by default.` }))) : null,
-      h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${Math.round(n * 26 / 60)} minutes and about 8 GB of data. The results are a snapshot, kept apart from the hourly pattern.` }),
-      h('div', { class: 'sp-go-row' }, start, why ? h('span', { class: 'muted small', text: why }) : null),
+      // An allowance smaller than one test turns share-link tests off (A1): say so, never raise it.
+      MODE === 'local' && tooSmall ? h('p', { id: 'sp-pub-off', class: 'sp-note', text: `Off: the daily allowance (${q?.budget ? mbWord(q.budget.limit_bytes) : 'set'}) is smaller than one test (about 210 MB). Raise it to at least 210 MB to allow tests from your share link.` }) : null,
+      h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${Math.max(1, Math.round(n * SWEEP_S / 60))} minutes and about ${gbBoth(perTestBytes(d) * n)} of data. The results are a snapshot, kept apart from the hourly pattern.` }),
+      h('div', { class: 'sp-go-row' }, start, why ? h('span', { id: 'sp-sw-why', class: 'muted small', text: why }) : null),
       this.budgetLine(),
       MODE === 'local' && this.note && this.el.hidden ? h('p', { class: 'sp-note', text: this.note }) : null,
       s && s.running && s.running.results ? this.liveNodes(s.running) : null,
@@ -378,7 +453,7 @@ export class SpeedQueue {
         case 'busy': return 'server busy';
         case 'unreachable': return 'didn’t answer';
         case 'failed': return 'didn’t finish';
-        case 'skipped': return 'not tested';
+        case 'skipped': return e.stopped_reason === 'cancelled' ? 'not reached (test cancelled)' : 'not reached';
         default: return 'waiting';
       }
     };
@@ -451,8 +526,8 @@ export class SpeedQueue {
         h('tbody', {}, ...sorted.map((r) => h('tr', { class: r.t.outcome === 'ok' ? '' : 'bad' },
           h('td', { 'data-k': 'Region', text: r.region }),
           h('th', { scope: 'row', text: r.t.label }),
-          h('td', { class: 'num', 'data-k': 'Down', text: reading(r.t, 'down') }),
-          h('td', { class: 'num', 'data-k': 'Up', text: reading(r.t, 'up') }),
+          readingCell('Down', r.t.down_bps, lowerBound(r.t, 'down'), true),
+          readingCell('Up', r.t.up_bps, lowerBound(r.t, 'up'), true),
           h('td', { 'data-k': 'Result', text: resultWord(r.t) })))))));
   }
 }
@@ -463,16 +538,11 @@ function mbit(b) {
   const m = b / 1e6;
   return m >= 1000 ? `${(m / 1000).toFixed(1)} Gbit/s` : `${m < 10 ? m.toFixed(1) : Math.round(m)} Mbit/s`;
 }
-/** A reading that hit the per-direction byte cap is a lower bound: "≥ 940 Mbit/s (short test)". @param {any} t @param {'down'|'up'} dir */
-function reading(t, dir) {
-  const b = t[`${dir}_bps`];
-  return b != null && t[`${dir}_short`] ? `≥ ${mbit(b)} (short test)` : mbit(b);
-}
 /** @param {SpeedTest} t */
 function resultWord(t) {
   if (t.outcome === 'busy') return 'Server busy';
   if (t.outcome === 'unreachable') return 'Didn’t answer';
   if (t.outcome === 'failed') return 'Didn’t finish';
-  if (t.outcome === 'cancelled') return 'Cancelled';
+  if (t.outcome === 'cancelled') return t.down_bps != null ? `Cancelled after download (${mbit(t.down_bps)} down)` : 'Cancelled';
   return 'OK';
 }
