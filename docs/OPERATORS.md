@@ -4,7 +4,7 @@ fyisp is a home internet monitor. If a user turns its speed tests on (they are o
 
 **What you will see:**
 - stock iperf3 TCP tests over IPv4: 8 streams, download (reverse) then upload;
-- up to 10 seconds each way (3 to 10 seconds measured after a ramp-up of at most 1 second), with a hard stop 2 seconds later whatever happens; the client ends the test early with TEST_END; tests that someone starts from a fyisp share link also stop at 100 MB each way;
+- each direction runs for 3 to 10 seconds once the rate is steady (plus up to 1 second of ramp-up), at the user's line rate. On a 1 Gbit/s line that is up to about 1.4 GB each way per test; see the table in [IPERF3-TERMS.md](IPERF3-TERMS.md#data-per-test). Tests started from a share link are the same, within the share link's time limits. A hard stop 2 seconds after that ends a direction whatever happens; the client ends the test early with TEST_END;
 - the control cookie starts with `fyisp` (visible in `iperf3 -s --debug`);
 - one test at a time per install, from the user's home connection.
 

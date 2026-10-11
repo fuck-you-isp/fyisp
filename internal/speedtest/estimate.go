@@ -22,10 +22,6 @@ const (
 	// MethodWhole: no tick qualified (or no per-tick counts: uploads
 	// outside Linux), so the v0.7.0 window.
 	MethodWhole = "whole"
-	// MethodWindow: not capped by bytes, but measured for the whole
-	// Duration without levelling off early (time-capped): the adaptive
-	// window as measured, a lower bound when it was still rising.
-	MethodWindow = "window"
 )
 
 // estimate is a capped direction's steady rate.

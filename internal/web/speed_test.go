@@ -69,11 +69,10 @@ type speedRig struct {
 	tokens  chan struct{}
 }
 
-// rigOpts: the share link's opt-in and budget, the bytes each direction
-// moves, and noRun to leave the queue stopped (entries stay waiting).
+// rigOpts: the share link's opt-in, the bytes each direction moves, and
+// noRun to leave the queue stopped (entries stay waiting).
 type rigOpts struct {
 	public bool
-	budget int64
 	wire   int64
 	noRun  bool
 }
@@ -145,7 +144,7 @@ func newSpeedRigWith(t *testing.T, step time.Duration, ro rigOpts) *speedRig {
 		}
 	}
 	g.s = speedtest.New(speedtest.Options{Catalog: cat, Custom: custom, Store: g.st, Now: func() time.Time { return speedNow },
-		Public: &ro.public, PublicBudget: ro.budget,
+		Public: &ro.public,
 		Fake: &speedtest.Fake{Seed: 1,
 			Run: func(ctx context.Context, c speedtest.Config) (speedtest.Result, error) {
 				select {
@@ -637,11 +636,11 @@ func speedQueueOf(t *testing.T, pub *publicHandler, hdr map[string]string) (stri
 	return w.Body.String(), q
 }
 
-// TestSpeedPublicOptInBudget: the share link's tests are an owner opt-in
-// (403 disabled; the Details toggle turns them on), and spend a 24-hour
-// data budget counted on the wire (429 budget_exhausted with resets_at).
-func TestSpeedPublicOptInBudget(t *testing.T) {
-	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 500e6, wire: 90e6})
+// TestSpeedPublicOptIn: the share link's tests are an owner opt-in (403
+// disabled; the Details toggle turns them on), limited by test time only:
+// no data budget, no byte cap.
+func TestSpeedPublicOptIn(t *testing.T) {
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{wire: 90e6})
 	close(g.release)
 	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
 	queue := func(h http.Handler, path string, hdr map[string]string) speedQueueJSON {
@@ -657,7 +656,8 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 		t.Errorf("off: %+v", q)
 	}
 	cw := speedSend(loc, "POST", "/api/speed/config", `{"public": true}`, speedPOSTHeaders())
-	if cw.Code != 200 || !strings.Contains(cw.Body.String(), `"public":true`) || !strings.Contains(cw.Body.String(), `"time_hour_max_s":600`) {
+	if cw.Code != 200 || !strings.Contains(cw.Body.String(), `"public":true`) || !strings.Contains(cw.Body.String(), `"time_hour_max_s":600`) ||
+		strings.Contains(cw.Body.String(), "budget_bytes") {
 		t.Fatalf("toggle: %d %s", cw.Code, cw.Body.String())
 	}
 	for i, ip := range []string{"1.1.1.1", "2.2.2.2"} {
@@ -665,56 +665,22 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 			t.Fatalf("start %d: %d %s", i, w.Code, w.Body.String())
 		}
 		waitUntil(t, func() bool {
-			return queue(loc, "/api/speed?part=queue", speedHost).Budget.UsedBytes >= int64(i+1)*180e6
+			ts, _ := g.st.SpeedTests(context.Background(), speedNow.Add(-time.Minute), speedNow.Add(time.Minute))
+			n := 0
+			for _, x := range ts {
+				if x.Trigger == "public" {
+					n++
+				}
+			}
+			return n > i
 		})
 	}
 	q := queue(pub, speedPub+"/api/speed?part=queue", speedVisitor("3.3.3.3"))
-	// 140 MB left: less than a whole test (210 MB), so no more start.
-	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 500e6 || q.Budget.UsedBytes != 360e6 || q.Budget.RemainingBytes != 140e6 ||
-		q.Budget.TestMaxBytes != 210e6 || q.Budget.FitsTests != 0 || q.Budget.ResetsAt == nil || q.PublicOffReason != nil {
-		t.Errorf("spent: %+v", q)
+	if !q.PublicStart || !q.PublicEnabled || q.Budget.TimeHourMaxS != 600 {
+		t.Errorf("after two: %+v", q)
 	}
-	w = do(pub, "POST", speedPub+"/api/speed/run?kind=sweep", speedVisitor("3.3.3.3"))
-	var e struct {
-		Code       string
-		ResetsAt   int64 `json:"resets_at"`
-		RetryAfter int   `json:"retry_after"`
-	}
-	json.Unmarshal(w.Body.Bytes(), &e)
-	if w.Code != 429 || e.Code != "budget_exhausted" || e.ResetsAt != *q.Budget.ResetsAt || e.RetryAfter <= 0 || w.Header().Get("Retry-After") == "" {
-		t.Errorf("budget: %d %s", w.Code, w.Body.String())
-	}
-	ts, _ := g.st.SpeedTests(context.Background(), speedNow.Add(-time.Minute), speedNow.Add(time.Minute))
-	if n := len(ts); n == 0 || ts[n-1].Trigger != "public" || ts[n-1].Origin() != "public" {
-		t.Errorf("stored %+v", ts)
-	}
-}
-
-// TestSpeedPublicBudgetTooSmall: a budget under one test (150 MB < 210 MB)
-// turns the share link's tests off: 403 disabled with reason
-// budget_too_small, and part=queue says why.
-func TestSpeedPublicBudgetTooSmall(t *testing.T) {
-	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 150e6})
-	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
-	if cw := speedSend(loc, "POST", "/api/speed/config", `{"public": true}`, speedPOSTHeaders()); cw.Code != 200 {
-		t.Fatalf("toggle: %d %s", cw.Code, cw.Body.String())
-	}
-	w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", speedVisitor("1.1.1.1"))
-	var e struct{ Code, Reason string }
-	if json.Unmarshal(w.Body.Bytes(), &e); w.Code != 403 || e.Code != "budget_too_small" || e.Reason != "budget_too_small" {
-		t.Errorf("run: %d %s", w.Code, w.Body.String())
-	}
-	for _, v := range []struct {
-		h    http.Handler
-		path string
-		hdr  map[string]string
-	}{{loc, "/api/speed?part=queue", speedHost}, {pub, speedPub + "/api/speed?part=queue", speedVisitor("1.1.1.1")}} {
-		var q speedQueueJSON
-		json.Unmarshal(do(v.h, "GET", v.path, v.hdr).Body.Bytes(), &q)
-		if q.PublicStart || !q.PublicEnabled || q.PublicOffReason == nil || *q.PublicOffReason != "budget_too_small" ||
-			q.Budget.LimitBytes != 150e6 || q.Budget.TestMaxBytes != 210e6 || q.Budget.FitsTests != 0 {
-			t.Errorf("%s: %+v", v.path, q)
-		}
+	if raw := do(loc, "GET", "/api/speed?part=queue", speedHost).Body.String(); strings.Contains(raw, "bytes") {
+		t.Errorf("a data budget in part=queue: %s", raw)
 	}
 }
 
@@ -920,8 +886,7 @@ func TestQueueRefusals(t *testing.T) {
 	}{
 		{speedtest.ErrPublicDisabled, 403, []string{`"code":"disabled"`}},
 		{&speedtest.QueueFullError{Reason: "the queue is full"}, 429, []string{`"code":"queue_full"`}},
-		{&speedtest.BudgetError{ResetsAt: now.Add(time.Hour)}, 429, []string{`"code":"budget_exhausted"`, `"resets_at":`, `"retry_after":3600`}},
-		{&speedtest.BudgetError{ResetsAt: now.Add(time.Minute), Time: true}, 429, []string{`"code":"time_cap"`, `"resets_at":`, `"retry_after":60`}},
+		{&speedtest.BudgetError{ResetsAt: now.Add(time.Minute)}, 429, []string{`"code":"time_cap"`, `"resets_at":`, `"retry_after":60`}},
 		{&speedtest.SweepWaitError{Until: now.Add(30 * time.Minute)}, 429, []string{`"code":"cooldown"`, `"resets_at":`, `"retry_after":1800`}},
 	} {
 		w := httptest.NewRecorder()

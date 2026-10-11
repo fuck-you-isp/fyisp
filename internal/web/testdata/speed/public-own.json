@@ -2,7 +2,6 @@
  "at": 1791655200000,
  "bytes_24h": 0,
  "bytes_month": 0,
- "bytes_per_test": 150000000,
  "configurable": false,
  "connection": {
   "source": "detected",
@@ -154,6 +153,7 @@
  "latest": {
   "attempts": 1,
   "bytes": 150000000,
+  "cap": "bytes",
   "capped_by_budget": false,
   "capped_by_server": false,
   "city": "",

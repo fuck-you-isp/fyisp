@@ -327,8 +327,7 @@ fyisp --speedtest-server Leaseweb-Tokyo,OVH-Sydney                 # chosen cata
 **What is sent, to whom.** Each test is an iperf3 test over IPv4, built into fyisp, so nothing has to be installed:
 - download, then upload, each with 8 parallel TCP streams;
 - the ramp-up (until the speed stops rising, at most 1 second) is left out;
-- then 3 to 10 seconds are measured, stopping as soon as the speed is steady (a second within 5% of the one before): up to 10 seconds each way, whatever the data;
-- tests someone starts from your share link also stop at 100 MB each way, since they spend your share-link allowance.
+- then 3 to 10 seconds are measured, stopping once the speed has levelled off and held steady for 3 seconds (a second within 5% of the one before): up to 10 seconds each way, whatever the data; tests started from your share link are the same.
 
 The servers are public iperf3 servers run by hosting companies and volunteers: Leaseweb (16), OVH (12), Clouvider (9), InterServer (3), Hurricane Electric, Scaleway, Eranium, Uztelecom and Edgoo. All 45 are listed with their sources in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), with the regions in `regions.yml`. The list is built into fyisp and changes only with a release. Like every probe target, they see your public IP address.
 
@@ -356,7 +355,7 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 
 **One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones, then the share link's. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
-**Share link.** Only if you turn it on (`--speedtest-public` or the toggle in Details → Speed; off by default), visitors to the share link can queue Test now or Test every server too, within a data budget and time caps: see [Sharing a public link](#sharing-a-public-link---share) below.
+**Share link.** Only if you turn it on (`--speedtest-public` or the toggle in Details → Speed; off by default), visitors to the share link can queue Test now or Test every server too, within time caps: see [Sharing a public link](#sharing-a-public-link---share) below.
 
 Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
 
@@ -494,7 +493,7 @@ Sharing is **off by default**. Start it with *Make a report* on Home, the share 
 - **People with your link can queue a speed test** (one server, or a sweep of every server), **only if you turn this on** (`--speedtest-public` or the toggle in Details → Speed; off by default). Tests wait in one queue and run one at a time: yours first, then the scheduled ones, then the link's.
   - Each visitor can have one waiting and start one every 30 seconds (10 an hour).
   - At most 3 sweeps and 12 tests from the link wait at once.
-  - The link's tests may use at most 10 GB in any 24 hours (`--speedtest-public-budget`, e.g. `--speedtest-public-budget=50GB`); a test from the share link starts only when a whole test (up to 210 MB) still fits in what's left, and a budget under 210 MB turns them off (fyisp still starts and logs a warning; the link answers `budget_too_small`). They also keep your line busy for at most 10 minutes an hour and 60 minutes a day; a full sweep from the link waits 30 minutes after the last one. Then the link says when it can test again.
+  - The link's tests are limited by time, not data: they keep your line busy for at most 10 minutes an hour and 60 minutes a day, and a full sweep from the link waits 30 minutes after the last one. Then the link says when it can test again. (`--speedtest-public-budget` from v0.7.1 is accepted and ignored, with a warning.)
   - A sweep from the link pauses between servers whenever one of your tests or a scheduled one is waiting.
   - You can cancel or clear them in Details → Speed.
 - **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).

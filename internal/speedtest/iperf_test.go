@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"net/netip"
 	"strings"
@@ -221,6 +222,9 @@ func (f *fakeServer) session(c net.Conn) {
 						n := len(buf)
 						if f.mode == "ramp" { // slow start: full rate after 500 ms
 							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(500*time.Millisecond)))
+						}
+						if f.mode == "slowramp" { // a far path's slow start: full rate after 2.5 s
+							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(2500*time.Millisecond)))
 						}
 						if f.mode == "climb" { // still speeding up, faster and faster, until 2 s
 							x := min(1, float64(time.Since(t0))/float64(2*time.Second))
@@ -494,9 +498,9 @@ func TestByteCap(t *testing.T) {
 	}
 }
 
-// TestAdaptiveRamp: the ramp-up ends when a 100 ms tick stops rising (here
-// after ~500 ms of slow start), not after a fixed second; without
-// MinDuration it is Omit.
+// TestAdaptiveRamp: the ramp-up's end is decided after the fact, where
+// the rate levels off (here after ~500 ms of slow start), not after a
+// fixed second, adaptive or not.
 func TestAdaptiveRamp(t *testing.T) {
 	f := newFakeServer(t, "ramp")
 	cfg := quick(f.addr(), Download)
@@ -513,8 +517,8 @@ func TestAdaptiveRamp(t *testing.T) {
 		t.Errorf("%.1f Mbit/s, want ~%.1f: the ramp leaked into the window", bps/1e6, want/1e6)
 	}
 	cfg.MinDuration, cfg.Duration = 0, 1500*time.Millisecond
-	if r, _ := Run(context.Background(), cfg); r.Ramp < time.Second || r.Ramp > 1200*time.Millisecond {
-		t.Errorf("fixed ramp %v", r.Ramp)
+	if r, _ := Run(context.Background(), cfg); r.Ramp < 400*time.Millisecond || r.Ramp > 900*time.Millisecond {
+		t.Errorf("not adaptive: ramp %v", r.Ramp)
 	}
 }
 
@@ -768,9 +772,6 @@ func TestBackstop(t *testing.T) {
 	if lim := Backstop(cfg.MaxBytes); r.WireBytes < lim || r.WireBytes > lim+2<<20 {
 		t.Errorf("wire %d, backstop %d", r.WireBytes, lim)
 	}
-	if Backstop(MaxBytes) != BackstopBytes || TestMaxBytes != 210_000_000 {
-		t.Error("constants")
-	}
 }
 
 // TestTimeBackstop: without a byte cap, a server that ignores TEST_END is
@@ -797,8 +798,30 @@ func TestTimeCapped(t *testing.T) {
 	}{{"", false}, {"climb", true}} {
 		f := newFakeServer(t, c.mode)
 		r, err := Run(context.Background(), quick(f.addr(), Download))
-		if err != nil || r.CappedByBytes || r.RateMethod != MethodWindow || r.LowerBound != c.lb {
+		if err != nil || r.CappedByBytes || r.RateMethod != MethodPeak90 || r.LowerBound != c.lb {
 			t.Errorf("%q: %v %+v", c.mode, err, r)
+		}
+	}
+}
+
+// TestEarlyStopWaitsForPlateau: the adaptive early stop needs the ticks to
+// have levelled off and MinDuration since the first tick near the peak: a
+// slow ramp (a far path's slow start, 2.5 s) runs on past it, and the rate
+// comes from the plateau; a level near server stops after 3 to 5 s.
+func TestEarlyStopWaitsForPlateau(t *testing.T) {
+	for _, c := range []struct {
+		mode     string
+		min, max time.Duration
+	}{{"slowramp", 5 * time.Second, 9 * time.Second}, {"", 3 * time.Second, 5500 * time.Millisecond}} {
+		f := newFakeServer(t, c.mode)
+		cfg := quick(f.addr(), Download)
+		cfg.Duration, cfg.MinDuration, cfg.Omit = 10*time.Second, 3*time.Second, time.Second
+		t0 := time.Now()
+		r, err := Run(context.Background(), cfg)
+		el := time.Since(t0)
+		full := float64(3*f.rate) * 100 // bytes/s: 3 streams, f.rate per 10 ms
+		if err != nil || r.LowerBound || el < c.min || el > c.max || math.Abs(float64(r.Bytes)/r.Elapsed.Seconds()/full-1) > 0.15 {
+			t.Errorf("%q: %v after %v: %+v (%.3g of %.3g B/s)", c.mode, err, el, r, float64(r.Bytes)/r.Elapsed.Seconds(), full)
 		}
 	}
 }

@@ -148,6 +148,7 @@ type speedTestJSON struct {
 	CancelledBy     string   `json:"cancelled_by,omitempty"`    // a cancelled test: "owner" when the owner stopped it
 	DownLBCounted   bool     `json:"down_lb_counted,omitempty"` // a lower bound that reached normal: counted as normal
 	UpLBCounted     bool     `json:"up_lb_counted,omitempty"`
+	Cap             string   `json:"cap"` // the limit the test ran under: "time" (10 s each way, v0.7.2) or "bytes" (100 MB each way, earlier rows)
 	DownRampCapped  bool     `json:"down_ramp_capped,omitempty"`
 	UpRampCapped    bool     `json:"up_ramp_capped,omitempty"`
 	RateMethod      string   `json:"rate_method,omitempty"`
@@ -212,12 +213,11 @@ type speedUnderLoad struct {
 // speedJSON is api/speed?part=summary.
 type speedJSON struct {
 	At              int64              `json:"at"`
-	TZ              int                `json:"tz"`                       // minutes east of UTC now
-	TZName          string             `json:"tz_name"`                  // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
-	ZoneLabel       string             `json:"zone_label"`               // the zone used, printable: "EDT (UTC−4)", "UTC"
-	BytesPerTest    int64              `json:"bytes_per_test,omitempty"` // the median data of this line's scheduled tests (30 days)
-	SweepBytes      int64              `json:"sweep_bytes"`              // "Test every server": its estimated data (see sweepBytes)
-	SweepServers    int                `json:"sweep_servers"`            // the servers it tests (skipped ones left out)
+	TZ              int                `json:"tz"`            // minutes east of UTC now
+	TZName          string             `json:"tz_name"`       // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
+	ZoneLabel       string             `json:"zone_label"`    // the zone used, printable: "EDT (UTC−4)", "UTC"
+	SweepBytes      int64              `json:"sweep_bytes"`   // "Test every server": its estimated data (see sweepBytes)
+	SweepServers    int                `json:"sweep_servers"` // the servers it tests (skipped ones left out)
 	Days            int                `json:"days"`
 	ExcludeFallback bool               `json:"exclude_fallback"`
 	Mode            speedtest.Mode     `json:"mode"`
@@ -383,6 +383,10 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
 	j.DownLowerBound, j.UpLowerBound = speedtest.LowerBounds(&t)
 	j.DownRampCapped, j.UpRampCapped = j.DownLowerBound, j.UpLowerBound
+	j.Cap = "bytes"
+	if strings.Contains(t.Extra, `"cap":"time"`) {
+		j.Cap = "time"
+	}
 	if t.Outcome == model.SpeedCancelled {
 		j.CancelledBy = speedtest.ParseExtra(t.Extra).CancelledBy
 	}
@@ -712,7 +716,6 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	perTest := float64(defaultTestBytes)
 	if len(avgBytes) > 0 {
 		perTest = callq.Median(avgBytes)
-		out.BytesPerTest = int64(perTest)
 	}
 	out.SweepBytes, out.SweepServers = sweepBytes(st, all)
 	for _, pl := range st.Plans {
@@ -1265,8 +1268,7 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		// The limits the confirmation shows (also in part=queue budget).
-		limit, _, _ := h.d.Speed.Queue().Budget()
-		out["public"], out["limits"] = *body.Public, map[string]int64{"budget_bytes": limit,
+		out["public"], out["limits"] = *body.Public, map[string]int64{
 			"time_hour_max_s": int64(speedtest.PublicTimePerHour / time.Second),
 			"time_day_max_s":  int64(speedtest.PublicTimePerDay / time.Second)}
 	}

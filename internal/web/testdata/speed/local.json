@@ -2,7 +2,6 @@
  "at": 1791655200000,
  "bytes_24h": 1174405120,
  "bytes_month": 13065256960,
- "bytes_per_test": 146800640,
  "configurable": true,
  "connection": {
   "source": "detected",
@@ -198,6 +197,7 @@
  "latest": {
   "attempts": 1,
   "bytes": 146800640,
+  "cap": "bytes",
   "capped_by_budget": false,
   "capped_by_server": false,
   "city": "New York",
