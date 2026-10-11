@@ -106,14 +106,14 @@ function resultWord(t) {
  * @param {SpeedTest} t @param {'down'|'up'} dir
  */
 export function lowerBound(t, dir) { return /** @type {any} */ (t)[`${dir}_lower_bound`] === true; }
-const LB_MORE = 'Still speeding up when it reached its 100 MB limit, so the speed was at least this. It isn’t used for this server’s normal, and it only counts toward the time-of-day pattern when it already matches the normal.';
+const LB_MORE = 'Still speeding up when it reached its 100 MB limit, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.';
 /** A server or region left out because most tests to it end while still speeding up (A2). */
-const TOO_FAST = 'Too fast to measure from this far within the 100 MB limit.';
+const TOO_FAST = 'Too fast to measure from here';
 /** @param {SpeedRow} r @param {boolean} region */
 function tooFastWhy(r, region) {
-  // The server decides (too_fast); the words never name its threshold.
-  return region ? `None of the servers in ${r.label} has enough full-speed tests across the day to know its normal, so the region is left out of the time-of-day pattern.`
-    : `There aren’t enough full-speed tests to ${r.label} across the day to know its normal, so it’s left out of the time-of-day pattern.`;
+  // The plan's strings (§A2); the server decides which rows are too fast.
+  return region ? `Every server in ${r.label} is too fast to measure from here within the 100 MB limit.`
+    : `Most tests to ${r.label} reached their 100 MB limit while still speeding up, so they can’t show when ${MODE === 'public' ? 'the' : 'this'} line slows down. It’s left out of the time-of-day pattern.`;
 }
 /**
  * A reading's cell. "≥" only on lower bounds and only when the column mixes
@@ -129,7 +129,18 @@ export function readingCell(k, b, lb, mark) {
     lb ? h('span', { class: 'sr-only', text: 'at least ' }) : null, v);
 }
 /** "8 → 21 ms (+13)" for one layer of a test's latency. @param {import('./speed.js').SpeedLat|undefined} idle @param {import('./speed.js').SpeedLat|undefined} load */
-function lat(idle, load) { return idle && load ? `${Math.round(idle.p50_ms)} → ${Math.round(load.p50_ms)} ms${load.loss ? `, ${Math.round(load.loss * 100)}% lost` : ''}` : 'not known'; }
+function lat(idle, load) {
+  if (!load) return 'not known';
+  const lost = load.loss ? `, ${Math.round(load.loss * 100)}% lost` : '';
+  // Fewer than 20 idle probes (or fyisp had just started): no "before" to compare with.
+  return idle ? `${Math.round(idle.p50_ms)} → ${Math.round(load.p50_ms)} ms${lost}` : `${Math.round(load.p50_ms)} ms (not measured before the test)${lost}`;
+}
+/** "Lumen (AS3356), where they meet at DE-CIX (an internet exchange)"; a path that ends at the exchange names only the exchange. @param {any} ho */
+function handoffWords(ho) {
+  const via = ho.via ? `${ho.via} (an internet exchange)` : '';
+  if (!ho.asn) return via ? `through ${via}` : 'not known';
+  return `${ho.name} (AS${ho.asn})${via ? `, where they meet at ${via}` : ''}`;
+}
 
 export class SpeedMap {
   /** @param {SpeedHost} host */
@@ -476,7 +487,7 @@ export class SpeedMap {
         h('h2', { id: 'sp-row-h', text: r.label }),
         h('span', { class: 'muted small', text: isRegion ? chain.map((id) => servers.get(id)?.label || id).join(' · ') : (servers.get(r.id)?.display || '') })),
       r.why ? h('p', { class: 'muted small', text: `Tested because: ${r.why}` }) : '',
-      /** @type {any} */ (r).too_fast ? h('p', { class: 'sp-note' }, h('b', { text: `${TOO_FAST} ` }), tooFastWhy(r, isRegion)) : '',
+      /** @type {any} */ (r).too_fast ? h('p', { class: 'sp-note' }, h('b', { text: `${TOO_FAST}. ` }), tooFastWhy(r, isRegion)) : '',
       r.note ? h('p', { class: 'notice warn', text: r.note }) : '',
       h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}${r.learning && this.unit === 'pct' ? ' (learning: its normal isn’t known yet)' : ''}` }),
       h('div', { class: 'sp-chart' }, byHour),
@@ -585,7 +596,7 @@ export class SpeedMap {
             ['Delay through your provider', t.latency?.edge ? `${lat(t.latency.edge.idle, t.latency.edge.down)} downloading; ${lat(t.latency.edge.idle, t.latency.edge.up)} uploading` : 'not known'],
             ['Router delay', t.latency?.gateway ? `${lat(t.latency.gateway.idle, t.latency.gateway.down)} downloading` : t.idle_gateway_ms != null ? `${Math.round(t.idle_gateway_ms)} → ${Math.round(/** @type {number} */ (t.loaded_gateway_ms))} ms` : 'not known'],
             t.conn && t.conn !== 'unknown' ? ['Connection', t.conn === 'wifi' ? 'Wi-Fi' : 'cable'] : null,
-            MODE === 'local' && t.handoff ? ['Handed off to', `${t.handoff.name} (AS${t.handoff.asn})`] : null,
+            MODE === 'local' && t.handoff ? ['Handed off to', handoffWords(t.handoff)] : null,
             t.fallback && t.region ? ['Why a backup', fallbackWhy(d, t)] : null]
             .filter((x) => !!x).flatMap((x) => [h('dt', { text: /** @type {string[]} */ (x)[0] }), h('dd', { text: /** @type {string[]} */ (x)[1] })])));
       return h('tr', { class: bad ? 'bad' : '' },
@@ -594,10 +605,9 @@ export class SpeedMap {
         h('td', { 'data-k': 'Server', text: t.label }),
         readingCell('Down', t.down_bps, lbDown, !cd.all),
         readingCell('Up', t.up_bps, lbUp, !cu.all),
-        // A lower bound is "at least normal" when it already matches the normal, else "not counted": never a slow result.
-        // A lower bound is "at least normal" when it already matches the normal, else "not counted": never slow.
+        // A lower bound always counts as at least normal (max(score, 1)): never slow.
         lbDown && !bad ? h('td', { class: 'num sp-nc', 'data-k': '% of normal', title: LB_MORE },
-          t.score != null && t.score >= 1 ? 'at least normal' : 'not counted', h('span', { class: 'sr-only', text: `: ${LB_MORE}` }))
+          'at least normal', h('span', { class: 'sr-only', text: `: ${LB_MORE}` }))
           : h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));
