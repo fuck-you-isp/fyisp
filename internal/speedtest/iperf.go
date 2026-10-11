@@ -709,7 +709,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			} else if a := ackedSum(); a >= 0 {
 				endBytes = a
 			}
-			e = peak90(cum[:len(cum)-1], ats[:len(ats)-1], end, endBytes, t.maxRTT())
+			e = peak90(cum[:len(cum)-1], ats[:len(ats)-1], end, endBytes, t.pathRTT())
 		}
 		res.RateMethod, res.LowerBound = e.method, e.lowerBound
 		if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
@@ -718,7 +718,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 				ms[i] = float64(a.Microseconds()) / 1000
 			}
 			slog.Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
-				"rtt_ms", float64(t.maxRTT().Microseconds())/1000, "method", e.method, "lower_bound", e.lowerBound)
+				"rtt_ms", float64(t.pathRTT().Microseconds())/1000, "method", e.method, "lower_bound", e.lowerBound)
 		}
 		if e.method == MethodPeak90 {
 			res.Bytes, res.Elapsed, res.Ramp = e.bytes, e.win, e.start
@@ -729,19 +729,29 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	return per, nil
 }
 
-// maxRTT is the largest smoothed RTT over the streams (TCP_INFO), else
-// the control connection's connect time.
-func (t *test) maxRTT() time.Duration {
+// pathRTT is the path's idle RTT, for the estimator's smoothing: a
+// loaded srtt includes queueing, and a standing queue paces packets
+// rather than bunching them per RTT.
+func (t *test) pathRTT() time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	var r time.Duration
+	var srtt []time.Duration
 	for _, s := range t.streams {
-		r = max(r, tcpRTT(s))
+		srtt = append(srtt, tcpRTT(s))
 	}
-	if r <= 0 {
-		r = t.dialRTT
+	return idleRTT(t.dialRTT, srtt)
+}
+
+// idleRTT is the smallest known of the connect time and the streams'
+// smoothed RTTs (0: none known).
+func idleRTT(dial time.Duration, srtt []time.Duration) time.Duration {
+	r := dial
+	for _, x := range srtt {
+		if x > 0 && (r <= 0 || x < r) {
+			r = x
+		}
 	}
-	return r
+	return max(r, 0)
 }
 
 // tcpCounters is stream i's retransmits and bytes acked so far (upload),
