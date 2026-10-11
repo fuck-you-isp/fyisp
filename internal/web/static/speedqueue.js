@@ -14,7 +14,7 @@ import { readingCell, lowerBound } from './speedmap.js';
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
 /** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[],wait_reason?:string|null,stopped_reason?:string|null}} QueueEntry */
 /** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
-/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,public_off_reason?:string|null,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
+/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,public_off_reason?:string|null,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null,test_max_bytes?:number,fits_tests?:number}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean, started:()=>void}} QueueHost */
 
@@ -90,6 +90,7 @@ function queueError(e) {
     case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), b.budget === 'time');
     case 'time_cap': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), true);
     case 'cooldown': case 'sweep_cooldown': return nextSweep(Number(b.resets_at || b.available_at) || (s ? Date.now() + s * 1000 : 0));
+    case 'budget_too_small': return 'Tests from this link are off: the owner’s daily allowance is smaller than one test.';
     case 'disabled': if (b.reason === 'budget_too_small') return 'Tests from this link are off: the owner’s daily allowance is smaller than one test.';
       return 'The owner of this connection hasn’t turned on tests from this link.';
     case 'not_found': return 'That test isn’t in the queue any more.';
@@ -232,8 +233,11 @@ export class SpeedQueue {
       if (b) {
         body.push(p(`This uses the owner’s shared allowance: ${gbBoth(b.used_bytes)} of ${gbBoth(b.limit_bytes)} used in the last 24 hours.`));
         if (b.remaining_bytes < total) {
-          // Each step starts only while a whole test (TEST_MAX) still fits; each then uses about one test's bytes.
-          const fit = b.remaining_bytes < TEST_MAX ? 0 : Math.min(n, Math.floor((b.remaining_bytes - TEST_MAX) / per) + 1);
+          // Each step starts only while a whole test (test_max_bytes) still fits; each then uses about one test's bytes.
+          // The server's fits_tests is the guaranteed minimum.
+          const max = b.test_max_bytes || TEST_MAX;
+          const est = b.remaining_bytes < max ? 0 : Math.min(n, Math.floor((b.remaining_bytes - max) / per) + 1);
+          const fit = Math.max(b.fits_tests || 0, est);
           body.push(h('p', {}, h('b', { text: `About ${gbBoth(b.remaining_bytes)} is left, so the test will stop partway (after about ${fit} of ${n} servers).` })));
         }
       }
@@ -428,7 +432,7 @@ export class SpeedQueue {
         h('span', {}, 'Let people with your share link start full tests',
           h('span', { class: 'sp-hint', text: `They share a ${q.budget ? gb(q.budget.limit_bytes) : '10 GB'} daily allowance. Off by default.` }))) : null,
       // An allowance smaller than one test turns share-link tests off (A1): say so, never raise it.
-      MODE === 'local' && tooSmall ? h('p', { id: 'sp-pub-off', class: 'sp-note', text: `Off: the daily allowance (${q?.budget ? mbWord(q.budget.limit_bytes) : 'set'}) is smaller than one test (about 210 MB). Raise it to at least 210 MB to allow tests from your share link.` }) : null,
+      MODE === 'local' && tooSmall ? h('p', { id: 'sp-pub-off', class: 'sp-note', text: `Off: the daily allowance (${q?.budget ? mbWord(q.budget.limit_bytes) : 'set'}) is smaller than one test (about ${mbWord(q?.budget?.test_max_bytes || TEST_MAX)}). Raise it to at least ${mbWord(q?.budget?.test_max_bytes || TEST_MAX)} to allow tests from your share link.` }) : null,
       h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${Math.max(1, Math.round(n * SWEEP_S / 60))} minutes and about ${gbBoth(perTestBytes(d) * n)} of data. The results are a snapshot, kept apart from the hourly pattern.` }),
       h('div', { class: 'sp-go-row' }, start, why ? h('span', { id: 'sp-sw-why', class: 'muted small', text: why }) : null),
       this.budgetLine(),
