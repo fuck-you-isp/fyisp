@@ -591,8 +591,7 @@ export class SpeedMap {
       const x = /** @type {any} */ (t);
       const shortWin = !lbDown && !lbUp && (t.down_short || t.up_short) && x.win_ms ? `short test (${(x.win_ms / 1000).toFixed(1)} s)` : '';
       const cancelled = t.outcome === 'cancelled'
-        ? (MODE === 'local' && x.cancelled_by === 'owner' ? `Stopped by you at ${clock(t.end)}.`
-          : MODE === 'local' && x.cancelled_by === 'visitor' ? `Stopped at ${clock(t.end)} by the person who asked for it.` : `Cancelled at ${clock(t.end)}.`) : '';
+        ? (MODE === 'local' && x.cancelled_by === 'owner' ? `Stopped by you at ${clock(t.end)}.` : `Cancelled at ${clock(t.end)}.`) : '';
       const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More', 'aria-label': `More about the ${clock(t.start)} test (${t.label})` }),
         h('dl', {},
           ...[cancelled ? ['Cancelled', cancelled] : null,
