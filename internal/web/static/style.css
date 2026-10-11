@@ -1381,3 +1381,8 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
   .rp-speed-t th { font-size: 11px; }
   .rp-speed-cap { display: table-caption; }
 }
+/* Jumps (a block picked on the timeline, "What happened at…") land below Home's and the report's sticky header. */
+body.home-on .home section, body.home-on .home tr, body.home-on .home h2 { scroll-margin-top: 72px; }
+@media (max-width: 767.98px) {
+  body.public.home-on .home section, body.public.home-on .home tr, body.public.home-on .home h2 { scroll-margin-top: 100px; }
+}
