@@ -151,8 +151,8 @@ export class SpeedReport {
           : d.connection && d.connection.type === 'wired' ? `The measuring device is connected by cable${d.connection.source === 'user' ? ' (as the owner said)' : ''}.` : 'How the measuring device is connected (cable or Wi-Fi) isn’t known.' }),
         h('li', { text: `Tests went to ${plural(rows.length, 'region')} and ${plural(providers.size, 'hosting provider')}.${bad ? ` ${bad.toLocaleString()} couldn’t run, usually because the server was busy.` : ''}` }),
         h('li', { text: 'Speeds are what this device got from public test servers. They are not a measure of the plan’s advertised speed.' }),
-        h('li', { text: `Each test downloads, then uploads, for a few seconds with 8 connections. “% of normal” compares each test with the same server’s usual top speed.${allLB ? ' On this line every test reached its 100 MB limit, so speeds are lower limits.' : ''}` }),
-        anyTooFast ? h('li', { text: 'Servers that this line reaches faster than a 100 MB test can measure are left out of the time-of-day comparison.' }) : '',
+        h('li', { text: `Each test downloads, then uploads, for a few seconds with 8 connections. “% of normal” compares each test with the same server’s usual top speed.${allLB ? ' On this line every test was still speeding up when its 10 seconds ran out, so speeds are lower limits.' : ''}` }),
+        anyTooFast ? h('li', { text: 'Servers that this line reaches faster than a 10-second test can measure are left out of the time-of-day comparison.' }) : '',
         h('li', { text: 'Seconds when tests ran are left out of the connection-quality record above.' })));
   }
 }

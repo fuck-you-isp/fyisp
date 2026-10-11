@@ -1258,11 +1258,6 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-st tr.sel th { box-shadow: inset 3px 0 0 var(--accent); }
 .sp-sort { all: unset; cursor: pointer; }
 .sp-sort:focus-visible { outline: 2px solid var(--accent); }
-.sp-data { border-collapse: collapse; margin: 6px 0 2px; font-size: 13px; }
-.sp-data th, .sp-data td { padding: 2px 14px 2px 0; text-align: left; font-weight: 400; }
-.sp-data .num { text-align: right; font-variant-numeric: tabular-nums; }
-.sp-data thead th { color: var(--ink-2); font-size: 12px; }
-.sp-data caption { caption-side: bottom; text-align: left; padding-top: 4px; }
 @media (max-width: 999.98px) {
   .sp-hm .sp-corner { width: 84px; }
   .sp-c { height: 30px; }
