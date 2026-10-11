@@ -139,9 +139,10 @@
   "caveat": "Wi-Fi, or other people at home using the internet heavily at those hours, can look the same.",
   "caveat_public": "Wi-Fi, or people in the home using the internet heavily at those hours, can look the same.",
   "day_count": 24,
-  "days": 30,
+  "days": 31,
   "drop": 0.4,
-  "evidence": "Based on 279 tests over 30 days; each evening hour was tested at least 11 times across 2 providers. Slower on 24 of 24 evenings.",
+  "evidence": "Based on 279 tests on 31 days between Thu 10 Sep and Sat 10 Oct; each evening hour was tested at least 11 times across 2 providers. Slower on 24 of 24 evenings.",
+  "evidence_public": "Based on 279 tests on 31 days; each evening hour was tested at least 11 times across 2 providers. Slower on 24 of 24 evenings.",
   "hours": [
    21,
    22,
@@ -160,6 +161,26 @@
   "regions_judged": 2,
   "servers": [],
   "slow_days": 24,
+  "slowest": [
+   {
+    "display": "UK · Clouvider, London",
+    "median_bps": 240000000,
+    "pct": 60,
+    "usual_bps": 400000000
+   },
+   {
+    "display": "UK · Leaseweb, London",
+    "median_bps": 240000000,
+    "pct": 60,
+    "usual_bps": 400000000
+   },
+   {
+    "display": "US East · Clouvider, New York",
+    "median_bps": 90000000,
+    "pct": 60,
+    "usual_bps": 150000000
+   }
+  ],
   "tests": 279,
   "text": "Every region slows from about 9 pm to 1 am, with every provider we could test: tests read about 40% below the same servers' usual results. That points to your internet provider's own network.",
   "text_public": "Every region slows from about 9 pm to 1 am, with every provider tested: tests read about 40% below the same servers' usual results. That points to the internet provider's own network.",

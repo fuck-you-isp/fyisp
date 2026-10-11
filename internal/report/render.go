@@ -387,6 +387,10 @@ const pageTmpl = `<!doctype html>
 {{- with .Finding}}
 <p><strong>{{.Text}}</strong> {{.Evidence}}{{if .Caveat}} {{.Caveat}}{{end}}</p>
 {{- end}}
+{{- if .Slowest}}
+<h3>{{.SlowestHead}}</h3>
+<ul class="slowest">{{range .Slowest}}<li aria-label="{{.Aria}}">{{.Text}}</li>{{end}}</ul>
+{{- end}}
 {{- if .Ask}}
 <p class="ask"><strong>What to ask your provider:</strong> {{.Ask}}</p>
 {{- end}}

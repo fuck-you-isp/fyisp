@@ -333,6 +333,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		b: report.New(report.Deps{
 			Profile: func() *model.Profile { return prof }, Store: st, Trace: st,
 			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, SpeedTests: st.SpeedTests, Version: version,
+			Zone: func(ctx context.Context) *time.Location { return speedtest.StoredZone(ctx, st) },
 		}),
 		ReportStore: st,
 	}
