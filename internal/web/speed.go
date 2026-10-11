@@ -145,7 +145,6 @@ type speedTestJSON struct {
 	// download if capped, else the upload) was measured.
 	DownLowerBound  bool     `json:"down_lower_bound,omitempty"`
 	UpLowerBound    bool     `json:"up_lower_bound,omitempty"`
-	CancelledBy     string   `json:"cancelled_by,omitempty"` // a cancelled test: "owner" | "visitor" (unknown: omitted)
 	DownRampCapped  bool     `json:"down_ramp_capped,omitempty"`
 	UpRampCapped    bool     `json:"up_ramp_capped,omitempty"`
 	RateMethod      string   `json:"rate_method,omitempty"`
@@ -210,10 +209,8 @@ type speedUnderLoad struct {
 // speedJSON is api/speed?part=summary.
 type speedJSON struct {
 	At              int64              `json:"at"`
-	TZ              int                `json:"tz"`                       // minutes east of UTC now
-	TZName          string             `json:"tz_name"`                  // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
-	ZoneLabel       string             `json:"zone_label"`               // the zone used, printable: "EDT (UTC−4)", "UTC"
-	BytesPerTest    int64              `json:"bytes_per_test,omitempty"` // the median data of this line\'s scheduled tests (30 days)
+	TZ              int                `json:"tz"`      // minutes east of UTC now
+	TZName          string             `json:"tz_name"` // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
 	Days            int                `json:"days"`
 	ExcludeFallback bool               `json:"exclude_fallback"`
 	Mode            speedtest.Mode     `json:"mode"`
@@ -363,9 +360,6 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
 	j.DownLowerBound, j.UpLowerBound = speedtest.LowerBounds(&t)
 	j.DownRampCapped, j.UpRampCapped = j.DownLowerBound, j.UpLowerBound
-	if t.Outcome == model.SpeedCancelled {
-		j.CancelledBy = speedtest.ParseExtra(t.Extra).CancelledBy
-	}
 	if t.DownShort || t.UpShort {
 		x := speedtest.ParseExtra(t.Extra)
 		i := 0
@@ -460,7 +454,7 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 		if ids > 1 || len(p.row) > 64 {
 			return p, badReq("one of row, server or region")
 		}
-		p.key = p.summaryKey()
+		p.key = fmt.Sprintf("speed\x00%d\x00%s\x00%v\x00%s", p.days, p.zone.key, p.excludeFallback, p.row)
 	case "windows":
 		if err := only("windows", "days", "tz", "exclude_fallback", "server", "region", "row", "id"); err != nil {
 			return p, err
@@ -524,13 +518,6 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.public {
 		s.d.Speed.NoteZone(p.zone.name)
-	} else if oz := s.d.Speed.State().OwnerZone; oz != "" && p.part == "summary" {
-		// The share link reads the owner's hours of day, whatever zone the
-		// visitor's browser is in (the report's times are the owner's).
-		if z, err := parseZone(oz, now); err == nil {
-			p.zone, p.tz = z, z.min
-			p.key = p.summaryKey()
-		}
 	}
 	switch p.part {
 	case "queue", "entry", "sweep":
@@ -617,7 +604,7 @@ func strPtr(s string) *string {
 
 func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.State, names speedNames, now time.Time) (*speedJSON, error) {
 	cat := s.d.Speed.Catalog()
-	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), ZoneLabel: speedtest.ZoneLabel(p.zone.loc, now), Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
+	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
 		Enabled: st.Mode != speedtest.ModeOff, SetByFlag: st.SetByFlag, Extra: append([]string{}, st.Extra...),
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
@@ -690,7 +677,6 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	perTest := float64(defaultTestBytes)
 	if len(avgBytes) > 0 {
 		perTest = callq.Median(avgBytes)
-		out.BytesPerTest = int64(perTest)
 	}
 	for _, pl := range st.Plans {
 		out.Plans = append(out.Plans, speedPlan{Mode: pl.Mode, TestsPerHour: math.Round(pl.TestsPerHour*100) / 100,
@@ -783,15 +769,13 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	}
 	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, Loc: tz, Catalog: cat, EdgeIdle: edgeIdle(out.EdgeHours), From: from, To: now})
 	for i, x := range out.Finding.Slowest {
-		var ref speedRef
-		ref, out.Finding.Slowest[i].Display, _, _ = names.server(x.Server)
-		out.Finding.Slowest[i].Ref = ref.ID
+		_, out.Finding.Slowest[i].Display, _, _ = names.server(x.Server)
 	}
 	out.Coverage = speedCoverage(span, tz, cat)
 	out.UnderLoad = speedUnderLoadOf(span)
 	if s.public { // the share link's wording: a visitor's line is not "yours"
 		out.Finding.Text, out.Finding.Caveat = out.Finding.TextPublic, out.Finding.CaveatPublic
-		out.Finding.Evidence, out.Finding.DaysNote = out.Finding.EvidencePublic, out.Finding.DaysNotePublic // no dates
+		out.Finding.Evidence, out.Finding.Coverage = out.Finding.EvidencePublic, out.Finding.CoveragePublic // no dates
 		out.Finding.Network, out.Finding.Via = "", ""                                                       // no networks or exchanges by name
 		if out.Pattern != nil {
 			out.Pattern.Text = publicWording.Replace(out.Pattern.Text)
@@ -1240,11 +1224,6 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 
 // zoneLabel is the IANA name the hours are in: the parameter's, or the
 // server's own for no tz (its TZ, else "Local"), "" for a fixed offset.
-// summaryKey is a summary's cache key.
-func (p speedParams) summaryKey() string {
-	return fmt.Sprintf("speed\x00%d\x00%s\x00%v\x00%s", p.days, p.zone.key, p.excludeFallback, p.row)
-}
-
 func zoneLabel(z zoneParam) string {
 	if z.name != "" || z.loc != time.Local {
 		return z.name

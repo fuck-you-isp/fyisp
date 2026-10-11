@@ -743,27 +743,6 @@ func OwnerZone(name string) *time.Location {
 	return time.Local
 }
 
-// ZoneLabel names loc at t: "EDT (UTC−4)", "UTC+5:30" when it has no
-// abbreviation, "UTC".
-func ZoneLabel(loc *time.Location, t time.Time) string {
-	name, off := t.In(loc).Zone()
-	if off == 0 && (name == "UTC" || name == "GMT" || name == "") {
-		return "UTC"
-	}
-	sign := "+"
-	if off < 0 {
-		sign, off = "−", -off
-	}
-	utc := fmt.Sprintf("UTC%s%d", sign, off/3600)
-	if m := off % 3600 / 60; m != 0 {
-		utc += fmt.Sprintf(":%02d", m)
-	}
-	if name == "" || name[0] == '+' || name[0] == '-' {
-		return utc
-	}
-	return name + " (" + utc + ")"
-}
-
 // StoredZone is OwnerZone of the zone saved in st (the report's zone).
 func StoredZone(ctx context.Context, st interface {
 	Setting(ctx context.Context, key string) (string, bool, error)

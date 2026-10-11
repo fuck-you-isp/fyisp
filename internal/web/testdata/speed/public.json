@@ -2,7 +2,6 @@
  "at": 1791655200000,
  "bytes_24h": 0,
  "bytes_month": 0,
- "bytes_per_test": 146800640,
  "configurable": false,
  "connection": {
   "source": "detected",
@@ -166,25 +165,19 @@
    {
     "display": "UK · Clouvider, London",
     "median_bps": 240000000,
-    "n": 11,
-    "pct": 0.6,
-    "server": "Clouvider-London",
+    "pct": 60,
     "usual_bps": 400000000
    },
    {
     "display": "UK · Leaseweb, London",
     "median_bps": 240000000,
-    "n": 11,
-    "pct": 0.6,
-    "server": "Leaseweb-London",
+    "pct": 60,
     "usual_bps": 400000000
    },
    {
     "display": "US East · Clouvider, New York",
     "median_bps": 90000000,
-    "n": 12,
-    "pct": 0.6,
-    "server": "Clouvider-NewYork",
+    "pct": 60,
     "usual_bps": 150000000
    }
   ],
@@ -3421,6 +3414,5 @@
    "The router's delay rises from 1 to 2 ms: the home network keeps up."
   ]
  },
- "warning": null,
- "zone_label": "UTC+2"
+ "warning": null
 }

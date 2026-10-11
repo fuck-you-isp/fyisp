@@ -85,13 +85,11 @@ type Finding struct {
 	First time.Time `json:"-"`
 	Last  time.Time `json:"-"`
 	// EvidencePublic is Evidence without dates (the share link and report
-	// keep the owner's start date out). DaysNote says why fewer days than
-	// the window's are covered (owner voice; DaysNotePublic without the
-	// date). EarlyNote is the early tier's sentence.
+	// keep the owner's start date out). Coverage says why fewer than 7
+	// days are covered (owner voice; CoveragePublic without the date).
 	EvidencePublic string `json:"evidence_public,omitempty"`
-	DaysNote       string `json:"days_note,omitempty"`
-	DaysNotePublic string `json:"-"`
-	EarlyNote      string `json:"early_note,omitempty"`
+	Coverage       string `json:"coverage,omitempty"`
+	CoveragePublic string `json:"coverage_public,omitempty"`
 	// Slowest is the servers slowest in the dip's hours (see slowest);
 	// the caller sets their Display.
 	Slowest []SlowServer `json:"slowest,omitempty"`
@@ -124,8 +122,8 @@ type FindingInput struct {
 	// EdgeIdle is the ISP edge's idle RTT median (ms) per local hour (NaN:
 	// unknown): the access-network control.
 	EdgeIdle [24]float64
-	// From and To are the window (zero From: no DaysNote). When the tests
-	// cover fewer of its days, DaysNote says why.
+	// From and To are the window (zero From: no Coverage). When the tests
+	// cover fewer of its days, Coverage says why.
 	From, To time.Time
 }
 
@@ -217,12 +215,10 @@ func FindFinding(in FindingInput) (f Finding) {
 // SlowServer is one of the servers slowest in the dip's hours.
 type SlowServer struct {
 	Server    string  `json:"-"`       // its ID (local)
-	Ref       string  `json:"server"`  // its public-safe ID, set by the caller
 	Display   string  `json:"display"` // its public-safe name, set by the caller
-	Pct       float64 `json:"pct"`     // its dip hours' median over its usual (0.52)
+	Pct       int     `json:"pct"`     // its dip hours' median, % of its usual
 	MedianBps float64 `json:"median_bps"`
 	UsualBps  float64 `json:"usual_bps"` // its median outside the dip hours
-	N         int     `json:"n"`         // its results in the dip hours
 }
 
 // MaxSlowest is the most servers Finding.Slowest lists.
@@ -269,11 +265,11 @@ func (f *Finding) slowest(in FindingInput, tests []model.SpeedTest) {
 		if usual <= 0 || m >= usual {
 			continue
 		}
-		list = append(list, SlowServer{Server: sv, Pct: math.Round(m/usual*100) / 100, MedianBps: math.Round(m), UsualBps: math.Round(usual), N: len(v)})
+		list = append(list, SlowServer{Server: sv, Pct: int(m/usual*100 + 0.5), MedianBps: math.Round(m), UsualBps: math.Round(usual)})
 	}
 	slices.SortFunc(list, func(a, b SlowServer) int {
 		if a.Pct != b.Pct {
-			return cmp.Compare(a.Pct, b.Pct)
+			return a.Pct - b.Pct
 		}
 		return strings.Compare(a.Server, b.Server)
 	})
@@ -1074,7 +1070,7 @@ func (f *Finding) evidence(minTests, minProv int) {
 	f.EvidencePublic = fmt.Sprintf("Based on %s on %s; %s", plural(f.Tests, "test", "tests"), days, each)
 	var more string
 	if f.Tier == TierEarly {
-		f.EarlyNote = fmt.Sprintf("Early: %s of tests. A week gives a clearer picture.", days)
+		more += fmt.Sprintf(" Early: %s of tests. A week gives a clearer picture.", days)
 	}
 	if f.DayCount > 0 {
 		more += fmt.Sprintf(" Slower on %d of %s.", f.SlowDays, plural(f.DayCount, p, p+"s"))
@@ -1109,12 +1105,12 @@ func (f *Finding) coverage(in FindingInput, tests []model.SpeedTest) {
 		return
 	}
 	if f.First.Sub(in.From) > 24*time.Hour {
-		f.DaysNote = fmt.Sprintf("Speed tests started on %s, so this covers %s, not %d.", dayName(f.First, in.Loc), plural(d, "day", "days"), w)
-		f.DaysNotePublic = fmt.Sprintf("This covers %s, not %d.", plural(d, "day", "days"), w)
+		f.Coverage = fmt.Sprintf("Speed tests started on %s, so this covers %s, not %d.", dayName(f.First, in.Loc), plural(d, "day", "days"), w)
+		f.CoveragePublic = fmt.Sprintf("This covers %s, not %d.", plural(d, "day", "days"), w)
 		return
 	}
-	f.DaysNote = fmt.Sprintf("Tests ran on %d of the last %d days.", d, w)
-	f.DaysNotePublic = f.DaysNote
+	f.Coverage = fmt.Sprintf("Tests ran on %d of the last %d days.", d, w)
+	f.CoveragePublic = f.Coverage
 }
 
 func slowVerb(up bool) string {
