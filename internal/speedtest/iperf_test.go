@@ -20,7 +20,7 @@ import (
 // protocol, as iperf_server_api.c runs it. mode picks a misbehaviour.
 type fakeServer struct {
 	ln   net.Listener
-	mode string // "", "busy", "close", "error", "terminate", "stall"
+	mode string // "", "busy", "close", "error", "terminate", "stall", "deaf" (ignores TEST_END, keeps sending)
 	rate int    // bytes per 10 ms per stream when sending (downloads)
 
 	mu      sync.Mutex
@@ -87,7 +87,7 @@ func newFakeServer(t *testing.T, mode string) *fakeServer {
 func (f *fakeServer) addr() string { return f.ln.Addr().String() }
 
 func (f *fakeServer) fail(err error) {
-	if f.mode == "stall" {
+	if f.mode == "stall" || f.mode == "deaf" {
 		return // the client gives up on purpose
 	}
 	f.mu.Lock()
@@ -244,6 +244,10 @@ func (f *fakeServer) session(c net.Conn) {
 	}
 	var st [1]byte
 	_, err = io.ReadFull(c, st[:])
+	if f.mode == "deaf" { // sends on until the client cuts the streams
+		wg.Wait()
+		return
+	}
 	if f.mode == "slowend" { // a far server: TEST_END takes a while to act on
 		time.Sleep(40 * time.Millisecond)
 	}
@@ -738,4 +742,25 @@ func TestBytesHonest(t *testing.T) {
 			t.Errorf("wire %d, err %v", r.WireBytes, err)
 		}
 	})
+}
+
+// TestBackstop: a server that ignores TEST_END and keeps sending is cut
+// with an RST once the bytes received reach Backstop, at once rather than
+// after the control connection's timeout; a complete window still counts.
+func TestBackstop(t *testing.T) {
+	f := newFakeServer(t, "deaf")
+	f.rate = 256 << 10
+	cfg := quick(f.addr(), Download)
+	cfg.MaxBytes = 1 << 20 // small, so the receive buffers alone pass the backstop
+	t0 := time.Now()
+	r, err := Run(context.Background(), cfg)
+	if err != nil || !r.Overrun || !r.CappedByBytes || r.Bytes <= 0 || time.Since(t0) > stepTimeout/2 {
+		t.Fatalf("%v after %v: %+v", err, time.Since(t0), r)
+	}
+	if lim := Backstop(cfg.MaxBytes); r.WireBytes < lim || r.WireBytes > lim+2<<20 {
+		t.Errorf("wire %d, backstop %d", r.WireBytes, lim)
+	}
+	if Backstop(MaxBytes) != BackstopBytes || TestMaxBytes != 210_000_000 {
+		t.Error("constants")
+	}
 }
