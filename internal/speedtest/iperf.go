@@ -301,6 +301,12 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer stop()
 
 	r, err := t.run(ctx, &res)
+	if err != nil && ctx.Err() == nil && t.measured.Load() {
+		// The client ended the direction, but the server didn't end the test
+		// (it ignored TEST_END, or its results never came): the window is
+		// the client's own, so it stands; the streams are cut.
+		t.overrun.Store(true)
+	}
 	if t.overrun.Load() {
 		// The measurement stands when the window was complete (only the
 		// server's retransmits are lost); else the run failed.
@@ -310,7 +316,7 @@ func Run(ctx context.Context, c Config) (Result, error) {
 			err = ErrOverrun
 		}
 	}
-	if err != nil {
+	if err != nil || r.Overrun {
 		t.abort() // nothing more to send: drop what is queued
 	}
 	t.close() // the streams stop: their counters are final
@@ -391,11 +397,12 @@ type test struct {
 	// stopAt is where a download stops reading: MaxBytes less what is
 	// still in flight then (see inflightSlack), so the total that arrives
 	// stays within MaxBytes.
-	stopAt  atomic.Int64
-	dialRTT time.Duration // the control connection's connect time: the RTT without TCP_INFO
-	capped  atomic.Bool
-	capAt   atomic.Int64 // when capped (UnixNano)
-	overrun atomic.Bool  // the backstop cut the run
+	stopAt   atomic.Int64
+	dialRTT  time.Duration // the control connection's connect time: the RTT without TCP_INFO
+	capped   atomic.Bool
+	capAt    atomic.Int64 // when capped (UnixNano)
+	measured atomic.Bool  // the data phase ended with a complete window
+	overrun  atomic.Bool  // the backstop cut the run
 }
 
 func (t *test) close() { t.shut(false) }
@@ -526,6 +533,7 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	if err != nil {
 		return *res, err
 	}
+	t.measured.Store(true)
 
 	if err := t.write([]byte{stateTestEnd}); err != nil {
 		return *res, err

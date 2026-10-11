@@ -411,6 +411,9 @@ func TestGuardBoundaries(t *testing.T) {
 func TestOldCappedRows(t *testing.T) {
 	c := findingCatalog(t)
 	ts := synth(c, 9, func(string, int) float64 { return 1 }, "wired") // new, uncapped, flat
+	for i := range ts {
+		ts[i].Extra = `{"cap":"time"}`
+	}
 	old := synth(c, 9, func(_ string, h int) float64 {
 		if evening(h) {
 			return 0.5 // slow start in the window, not the line
@@ -476,5 +479,32 @@ func TestBaselineAfterTimeCap(t *testing.T) {
 	}
 	if d, _, ok := Baseline(old, "S", at); !ok || d != 50e6 {
 		t.Errorf("old uncapped: %v %v", d, ok)
+	}
+}
+
+// TestOldScoresAfterUpgrade: on a server with 100 MB rows, the stored
+// scores of its rows from before v0.7.2 are left out of the patterns and
+// the rows' stats, as Baseline leaves the rows out; a server without
+// such rows keeps them.
+func TestOldScoresAfterUpgrade(t *testing.T) {
+	at := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	sc := 0.999
+	row := func(sv string, i int, short bool, x string) model.SpeedTest {
+		d := 900e6
+		return model.SpeedTest{Server: sv, Region: "r", Trigger: "schedule", Outcome: model.SpeedOK, FallbackLevel: FallbackNone,
+			Start: at.Add(-time.Duration(i) * time.Hour), DownBps: &d, DownShort: short, ScoreDown: &sc, Extra: x}
+	}
+	var fast, slow []model.SpeedTest
+	for i := range 48 {
+		fast = append(fast, row("F", i, i%2 == 0, `{"ramp_ms":[500,500],"rate_method":["peak90",""]}`))
+		slow = append(slow, row("S", i, false, `{"ramp_ms":[500,500]}`))
+	}
+	fast = append(fast, row("F", 0, false, `{"cap":"time","rate_method":["peak90","peak90"]}`)) // unscored yet
+	fast[len(fast)-1].ScoreDown = nil
+	if st := Summarize(fast, nil); st.Score != nil {
+		t.Errorf("old scores on a byte-capped server: %v", *st.Score)
+	}
+	if st := Summarize(slow, nil); st.Score == nil {
+		t.Error("an uncapped server's old scores left out")
 	}
 }
