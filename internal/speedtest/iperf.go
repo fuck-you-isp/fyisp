@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"net/netip"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -710,6 +712,14 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			e = peak90(cum[:len(cum)-1], ats[:len(ats)-1], end, endBytes, t.maxRTT())
 		}
 		res.RateMethod, res.LowerBound = e.method, e.lowerBound
+		if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
+			ms := make([]float64, len(ats))
+			for i, a := range ats {
+				ms[i] = float64(a.Microseconds()) / 1000
+			}
+			slog.Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
+				"rtt_ms", float64(t.maxRTT().Microseconds())/1000, "method", e.method, "lower_bound", e.lowerBound)
+		}
 		if e.method == MethodPeak90 {
 			res.Bytes, res.Elapsed, res.Ramp = e.bytes, e.win, e.start
 		} else if rampCapped {
