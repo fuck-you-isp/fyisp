@@ -28,10 +28,19 @@ function median(/** @type {number[]} */ v) {
 function blockLabel(/** @type {number} */ a, /** @type {number} */ b) { return `${hourName(a)} to ${hourName(b % 24)}`; }
 /** "1 day", "3 days". @param {number} n @param {string} word */
 function plural(n, word) { return `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`; }
-/** "UTC+2" from minutes east, when the server sends no zone name. @param {number} tz */
+/** "UTC+2" from minutes east. @param {number} tz */
 function zoneOf(tz) {
   const a = Math.abs(tz || 0), hh = Math.floor(a / 60), mm = a % 60;
   return !tz ? 'UTC' : `UTC${tz < 0 ? '−' : '+'}${hh}${mm ? ':' + String(mm).padStart(2, '0') : ''}`;
+}
+/** "EDT (UTC−4)" for an IANA zone now; just "UTC+2" where the zone has no short name. @param {string|undefined} name @param {number} tz minutes east, the fallback */
+function zoneLabel(name, tz) {
+  const off = zoneOf(tz);
+  if (!name) return off;
+  try {
+    const short = new Intl.DateTimeFormat('en-US', { timeZone: name, timeZoneName: 'short' }).formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value || '';
+    return short && !/^(GMT|UTC)/.test(short) ? `${short} (${off})` : off;
+  } catch { return off; }
 }
 function hourName(/** @type {number} */ hr) { return new Date(2000, 0, 1, hr).toLocaleTimeString([], { hour: 'numeric' }); }
 
@@ -40,13 +49,21 @@ export class SpeedReport {
     /** @type {SpeedSummary|null} */
     this.d = null;
     this.off = false;
+    /** The owner's zone, once the server names it: later loads ask in it straight away. */
+    this.ownerTz = '';
     this.el = h('section', { class: 'ho-time rp-speed', 'aria-labelledby': 'rp-speed-h', hidden: true });
   }
 
   async load() {
     if (this.off) return;
     try {
-      this.d = /** @type {SpeedSummary} */ (await fetchShared('api/speed?' + new URLSearchParams({ days: '7', tz: tzParam() })));
+      // Times of day are the owner's (B2): ask in owner_tz, learned from the first answer.
+      let d = /** @type {any} */ (await fetchShared('api/speed?' + new URLSearchParams({ days: '7', tz: this.ownerTz || tzParam() })));
+      if (d.owner_tz && d.owner_tz !== (this.ownerTz || tzParam())) {
+        this.ownerTz = d.owner_tz;
+        d = await fetchShared('api/speed?' + new URLSearchParams({ days: '7', tz: this.ownerTz }));
+      }
+      this.d = /** @type {SpeedSummary} */ (d);
     } catch (e) {
       if (/** @type {any} */ (e).status === 404) this.off = true;
       return;
@@ -84,23 +101,17 @@ export class SpeedReport {
     const inChain = new Set(d.regions.filter((r) => r.default !== false).flatMap((r) => r.servers));
     const providers = new Set(d.servers.filter((s) => inChain.has(s.id)).map((s) => s.provider));
     const f = d.finding || null;
-    const x = /** @type {any} */ (d);
-    // The owner's zone (B2): the server names it; every time of day carries it.
-    const zone = x.zone_label || zoneOf(d.tz);
+    // The owner's zone (B2); every time of day carries it.
+    const zone = zoneLabel(d.owner_tz || d.tz_name, d.tz);
     const hrs = (/** @type {number[]} */ h2) => `${hourRange(h2)} ${zone}`;
     const drop = d.pattern ? Math.round(d.pattern.drop * 100) : 0;
     const text = f && f.text_public ? f.text_public : d.pattern
       ? `Downloads were about ${drop}% slower from ${hrs(dip)} than at other times of day, across the test servers.`
       : 'Download speed was about the same at every time of day.';
     const pct = (/** @type {number|null} */ v) => (v == null ? '—' : `${Math.round(v * 100)}%`);
-    const days = f ? f.days : d.days;
-    const fx = /** @type {any} */ (f || {});
-    // Fewer than 7 days: the server's sentence (it knows when tests started), else the gap form.
-    const daysNote = fx.days_note || (f && days > 0 && days < 7 ? `Tests ran on ${plural(days, 'day')} of the last 7.` : '');
-    const earlyNote = f && f.tier === 'early_sign' ? (fx.early_note || `Early: ${plural(days, 'day')} of tests. A week gives a clearer picture.${f.slow_days && f.day_count && !/Slower on \d/.test(f.evidence || '') ? ` Slower on ${f.slow_days} of ${plural(f.day_count, 'evening')}.` : ''}`) : '';
     // B3: up to 3 servers by name, in the server's order; hidden when none qualify.
     /** @type {{display:string,pct:number,median_bps:number,usual_bps:number}[]} */
-    const slowest = Array.isArray(fx.slowest) ? fx.slowest.slice(0, 3) : [];
+    const slowest = f && Array.isArray(/** @type {any} */ (f).slowest) ? /** @type {any} */ (f).slowest.slice(0, 3) : [];
     const allLB = rows.length > 0 && rows.every((r) => r.n > 0 && (/** @type {any} */ (r).n_lower_bound || 0) >= r.n);
     const anyTooFast = rows.some((r) => /** @type {any} */ (r).too_fast);
     const blockName = lines.find((l) => !l.sub && dip.length && dip[0] >= l.a && dip[0] < l.b)?.short || '';
@@ -108,8 +119,6 @@ export class SpeedReport {
       h('h2', { id: 'rp-speed-h', text: 'Speed through the day' }),
       h('p', { class: 'ho-summary', text }),
       f ? findingExtras(d, f, true) : '',
-      earlyNote ? h('p', { class: 'ho-muted', text: earlyNote }) : '',
-      daysNote ? h('p', { class: 'ho-muted', text: daysNote }) : '',
       h('table', { class: 'rp-table rp-speed-t' },
         h('caption', { class: 'ho-muted rp-speed-cap', text: `Times in ${zone}.` }),
         h('thead', {}, h('tr', {},
@@ -128,12 +137,14 @@ export class SpeedReport {
       slowest.length ? h('div', {}, h('h3', { text: `Slowest servers from ${hrs(dip)}` }),
         h('ul', { class: 'rp-speed-worst' }, ...slowest.map((w) => {
           const name = String(w.display).replace(/ · /g, ', ');
-          return h('li', { 'aria-label': `${name}: ${Math.round(w.pct * 100)}% of its usual result, median ${Math.round(w.median_bps / 1e6)} versus usual ${Math.round(w.usual_bps / 1e6)} megabits per second` },
-            `${w.display}: ${Math.round(w.pct * 100)}% of its usual result (median ${Math.round(w.median_bps / 1e6)} vs usual ${Math.round(w.usual_bps / 1e6)} Mbit/s)`);
+          return h('li', { 'aria-label': `${name}: ${Math.round(w.pct)}% of its usual result, median ${Math.round(w.median_bps / 1e6)} versus usual ${Math.round(w.usual_bps / 1e6)} megabits per second` },
+            `${w.display}: ${Math.round(w.pct)}% of its usual result (median ${Math.round(w.median_bps / 1e6)} vs usual ${Math.round(w.usual_bps / 1e6)} Mbit/s)`);
         }))) : '',
       h('h3', { text: 'About this evidence' }),
       h('ul', { class: 'rp-speed-ev' },
+        // The server's evidence (dateless on the share link) and, when fewer days than the window, its coverage line.
         f && f.evidence ? h('li', { text: f.evidence }) : '',
+        f && /** @type {any} */ (f).coverage ? h('li', { text: /** @type {any} */ (f).coverage }) : '',
         h('li', { text: d.connection && d.connection.type === 'wifi' ? 'The measuring device used Wi-Fi, which can itself slow down in the evening. A test over a cable would be stronger evidence.'
           : d.connection && d.connection.type === 'wired' ? `The measuring device is connected by cable${d.connection.source === 'user' ? ' (as the owner said)' : ''}.` : 'How the measuring device is connected (cable or Wi-Fi) isn’t known.' }),
         h('li', { text: `Tests went to ${plural(rows.length, 'region')} and ${plural(providers.size, 'hosting provider')}.${bad ? ` ${bad.toLocaleString()} couldn’t run, usually because the server was busy.` : ''}` }),
