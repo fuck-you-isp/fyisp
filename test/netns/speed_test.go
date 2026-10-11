@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -30,6 +31,7 @@ import (
 //	access            the download rate drops for everyone: every server dips
 //	one-path          only the path to one server is congested: only it dips
 //	busy-failed       busy and failing servers: busy/failed, never a speed
+//	fast-evening-cut  2 Gbit/s: capped tests' rate method and lower bounds; a 30% cut; the finding says isp
 //
 // Every scenario also checks the masking: the verdict stays ok during the
 // tests, no incident is logged and Home's "not running" spans stay empty.
@@ -138,6 +140,12 @@ func TestSpeed(t *testing.T) {
 		h.checkMasking(t)
 	})
 
+	// fast-evening-cut: a 2 Gbit/s line (speedfast_test.go).
+	t.Run("fast-evening-cut", func(t *testing.T) {
+		parallel(t)
+		fastEveningCut(t)
+	})
+
 	t.Run("busy-failed", func(t *testing.T) {
 		parallel(t)
 		h := newSpeedLab(t, func(h *harness) { h.lineRate(t, "100mbit") })
@@ -168,6 +176,7 @@ type speedLab struct {
 	*harness
 	started time.Time
 	csrf    string
+	dataDir string // "" with --ephemeral
 
 	mu    sync.Mutex
 	kinds []string // verdict kinds seen while watching
@@ -176,17 +185,32 @@ type speedLab struct {
 }
 
 func newSpeedLab(t *testing.T, shape func(h *harness)) *speedLab {
+	return newSpeedLabData(t, shape, nil)
+}
+
+// newSpeedLabData is newSpeedLab with a data directory that data (if not
+// nil) fills before fyisp starts; nil runs --ephemeral.
+func newSpeedLabData(t *testing.T, shape func(h *harness), data func(dir string)) *speedLab {
 	h := newVerdictHarness(t)
 	shape(h)
 	var servers []string
 	for _, a := range iperfAddrs {
 		servers = append(servers, net4(a, iperfPorts[0]))
 	}
+	store, dataDir := []string{"--ephemeral"}, ""
+	if data != nil {
+		dir := filepath.Join(h.dir, "data")
+		h.mkdirOwned(t, dir, 0o700)
+		data(dir)
+		h.run(t, "chown", "-R", fmt.Sprintf("%d:%d", runUID, runUID), dir)
+		store = []string{"--data-dir", dir}
+		dataDir = dir
+	}
 	start := time.Now()
-	fy := h.startFyisp(t, "--ephemeral", "--speedtest-server", strings.Join(servers, ","))
+	fy := h.startFyisp(t, append(store, "--speedtest-server", strings.Join(servers, ","))...)
 	h.waitReady(t, fy)
 	h.stopAtEnd(t, fy)
-	l := &speedLab{harness: h, started: start, stop: make(chan struct{}), done: make(chan struct{})}
+	l := &speedLab{harness: h, started: start, dataDir: dataDir, stop: make(chan struct{}), done: make(chan struct{})}
 	l.waitVerdict(t, "ok", 120*time.Second)
 	m := regexp.MustCompile(`<meta name="fyisp-token" content="([^"]+)">`).FindSubmatch(h.get(t, "/"))
 	if m == nil {
@@ -255,8 +279,13 @@ type speedTestAPI struct {
 	Server  string   `json:"server"`
 	DownBps *float64 `json:"down_bps"`
 	UpBps   *float64 `json:"up_bps"`
-	Conn    string   `json:"conn"`
-	Latency *struct {
+	// Capped at 100 MB, and still speeding up there (lower bounds).
+	DownShort      bool   `json:"down_short"`
+	UpShort        bool   `json:"up_short"`
+	DownLowerBound bool   `json:"down_lower_bound"`
+	UpLowerBound   bool   `json:"up_lower_bound"`
+	Conn           string `json:"conn"`
+	Latency        *struct {
 		Edge    speedPhases `json:"edge"`
 		Gateway speedPhases `json:"gateway"`
 	} `json:"latency"`
@@ -282,6 +311,9 @@ func (l *speedLab) speedTest(t *testing.T, srv netip.Addr) speedTestAPI {
 		Latest  *speedTestAPI   `json:"latest"`
 	}
 	read := func() {
+		// A fresh value each time: Unmarshal into the old Latest would keep
+		// fields the new JSON omits (omitempty flags).
+		s.Running, s.Latest = nil, nil
 		if err := json.Unmarshal(l.get(t, "/api/speed"), &s); err != nil {
 			t.Fatal(err)
 		}
