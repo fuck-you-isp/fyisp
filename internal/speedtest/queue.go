@@ -174,7 +174,7 @@ func (e *BudgetError) Error() string {
 	if e.Time {
 		return "tests from the share link have used their time for now"
 	}
-	return "the share link's daily test budget is used up"
+	return "not enough of the share link's daily test allowance is left for another test"
 }
 
 // SweepWaitError: a public sweep ran recently; the next may start at
