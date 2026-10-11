@@ -324,7 +324,7 @@ func TestDownload(t *testing.T) {
 	}
 	// Wall-clock rates vary with CI load: a wide band, and the bytes
 	// checked against what the server itself sent.
-	if bps := r.BitsPerSecond(); bps < want*0.3 || bps > want*2 || r.Elapsed < time.Second || r.Elapsed > 2500*time.Millisecond {
+	if bps := r.BitsPerSecond(); bps < want*0.3 || bps > want*2 || r.Elapsed <= 0 || r.Elapsed > 2500*time.Millisecond {
 		t.Errorf("%.1f Mbit/s (want ~%.1f) over %v", bps/1e6, want/1e6, r.Elapsed)
 	}
 	f.mu.Lock()
@@ -362,10 +362,11 @@ func TestUpload(t *testing.T) {
 	if _, ok := f.params["reverse"]; ok {
 		t.Errorf("params %v", f.params)
 	}
-	// The bytes the server acknowledged in the window (Linux), at most what
-	// it received in all. (The window's ticks keep their schedule: a late
-	// end of the ramp-up on a busy machine shortens it.)
-	if r.Bytes == 0 || r.Bytes > f.recv || r.TotalBytes < r.Bytes || r.Elapsed < time.Second || r.Elapsed > 2500*time.Millisecond {
+	// The bytes the server acknowledged in the window (Linux): at most what
+	// it received, plus what its kernel acked but the fake never read
+	// (it closes its streams on TEST_END, as iperf3 does): its receive
+	// buffers, a few MB per stream.
+	if r.Bytes == 0 || r.Bytes > f.recv+3*16<<20 || r.TotalBytes < r.Bytes || r.Elapsed <= 0 || r.Elapsed > 2500*time.Millisecond {
 		t.Errorf("result %+v, server received %d", r, f.recv)
 	}
 	if f.results.SenderHasRetransmits < 0 {

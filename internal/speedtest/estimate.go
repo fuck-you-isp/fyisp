@@ -329,8 +329,21 @@ func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
 	}
 	out := slices.Clone(ts)
 	fast := tooFast(ts, loc)
+	// A server with 100 MB rows (before v0.7.2) has no normal until
+	// BaselineMin time-capped rows exist (Baseline): its older rows'
+	// stored scores are left out too, so it doesn't look normal and then
+	// go quiet.
+	byteCapped := map[string]bool{}
+	for i := range ts {
+		if (ts[i].DownShort || ts[i].UpShort) && !timeCapped(&ts[i]) {
+			byteCapped[ts[i].Server] = true
+		}
+	}
 	for i := range out {
 		t := &out[i]
+		if byteCapped[t.Server] && !timeCapped(t) {
+			t.ScoreDown, t.ScoreUp = nil, nil
+		}
 		if fast[0][t.Server] {
 			t.ScoreDown = nil
 		}
@@ -343,6 +356,9 @@ func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
 	}
 	return out
 }
+
+// timeCapped reports a test run under the time cap (v0.7.2 and later).
+func timeCapped(t *model.SpeedTest) bool { return strings.Contains(t.Extra, `"cap":"time"`) }
 
 // atLeastNormal is a lower bound's score: 1 (normal) when it reaches
 // normal, else none (left out).

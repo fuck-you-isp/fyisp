@@ -197,3 +197,37 @@ func TestQueueChargesTheWindow(t *testing.T) {
 		t.Errorf("charged %v, want 11 + 5 s (the tail counted once)", st.TimeHour)
 	}
 }
+
+// TestDeafServerRealConfig: with the scheduler's own config (the early
+// stop at 3 s or more, then TEST_END), a server that ignores TEST_END and
+// never sends its results still gives a result: the client's windows
+// stand, the streams are cut, and the test is time-bounded.
+func TestDeafServerRealConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("about 20 s")
+	}
+	f := newFakeServer(t, "deaf")
+	host, port, _ := net.SplitHostPort(f.addr())
+	p, _ := strconv.Atoi(port)
+	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: true}
+	st := &MemStore{}
+	var cfgs []Config
+	s := New(Options{Catalog: &Catalog{byID: map[string]int{}}, Custom: []Server{sv}, Store: st, Log: slog.New(slog.DiscardHandler),
+		Fake: &Fake{Run: func(ctx context.Context, c Config) (Result, error) {
+			cfgs = append(cfgs, c)
+			return Run(ctx, c)
+		}}})
+	t0 := time.Now()
+	id, saved, _ := s.execJob(context.Background(), s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
+	el := time.Since(t0)
+	ts, _ := st.SpeedTests(context.Background(), time.Time{}, time.Now().Add(time.Hour))
+	if !saved || id == 0 || len(ts) != 1 || ts[0].Outcome != model.SpeedOK || ts[0].DownBps == nil || ts[0].UpBps == nil {
+		t.Fatalf("after %v: %+v", el, ts)
+	}
+	if c := cfgs[0]; c.MinDuration != MinMeasure || c.Duration != MaxMeasure || c.Backstop != TimeBackstop {
+		t.Errorf("not the scheduler's config: %+v", c)
+	}
+	if el > 2*DirTimeout+relisten {
+		t.Errorf("took %v", el)
+	}
+}
