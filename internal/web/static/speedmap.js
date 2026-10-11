@@ -111,9 +111,9 @@ const LB_MORE = 'Still speeding up when it reached its 100 MB limit, so the spee
 const TOO_FAST = 'Too fast to measure from here';
 /** @param {SpeedRow} r @param {boolean} region */
 function tooFastWhy(r, region) {
-  // The plan's strings (§A2); the server decides which rows are too fast.
-  return region ? `Every server in ${r.label} is too fast to measure from here within the 100 MB limit.`
-    : `Most tests to ${r.label} reached their 100 MB limit while still speeding up, so they can’t show when ${MODE === 'public' ? 'the' : 'this'} line slows down. It’s left out of the time-of-day pattern.`;
+  // The server decides (too_fast); the words never name its threshold.
+  return region ? `None of the servers in ${r.label} has enough full-speed tests across the day to know its normal, so the region is left out of the time-of-day pattern.`
+    : `There aren’t enough full-speed tests to ${r.label} across the day to know its normal, so it’s left out of the time-of-day pattern.`;
 }
 /**
  * A reading's cell. "≥" only on lower bounds and only when the column mixes
