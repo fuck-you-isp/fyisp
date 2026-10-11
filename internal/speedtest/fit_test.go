@@ -6,6 +6,9 @@ import (
 	"errors"
 	"log/slog"
 	"math/rand/v2"
+	"net"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -292,4 +295,71 @@ func (a *atomicTime) add(d time.Duration) {
 	a.mu.Lock()
 	a.t = a.t.Add(d)
 	a.mu.Unlock()
+}
+
+// TestFitDeafServerWithinBudget: real tests through the scheduler against
+// a server that ignores TEST_END and keeps sending (the backstop cuts it):
+// each test charges at most TestMaxBytes, and the share link's charges
+// never pass the budget; a visitor whose test no longer fits is dropped.
+func TestFitDeafServerWithinBudget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("moves about 1 GB over loopback")
+	}
+	f := newFakeServer(t, "deaf")
+	f.rate = 1 << 20
+	host, port, _ := net.SplitHostPort(f.addr())
+	p, _ := strconv.Atoi(port)
+	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: true}
+	s := New(Options{Catalog: &Catalog{Servers: []Server{sv}, byID: map[string]int{"Local": 0}}})
+	on := true
+	var limit int64 = 2*TestMaxBytes + 100e6 // room for two whole tests, not three
+	q := NewQueue(QueueOptions{Public: &on, PublicBudget: limit, Exec: s.execJob, Live: s.live, Log: slog.New(slog.DiscardHandler),
+		Resolve: func(Kind, string) ([]Job, error) { return []Job{{Chain: []Server{sv}}}, nil }})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	var es []Entry
+	for _, v := range []string{"v1", "v2", "v3", "v4"} {
+		e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "Local", Who: WhoPublic, Visitor: v})
+		if err != nil {
+			t.Fatalf("%s: %v", v, err)
+		}
+		es = append(es, e)
+	}
+	deadline := time.Now().Add(3 * time.Minute)
+	for st := q.State(); st.Running != nil || len(st.Waiting) > 0; st = q.State() {
+		if time.Now().After(deadline) {
+			t.Fatalf("not idle: %+v", st)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	q.mu.Lock()
+	ledger := slices.Clone(q.ledger)
+	q.mu.Unlock()
+	var sum, most int64
+	for _, u := range ledger {
+		if u.Bytes > TestMaxBytes {
+			t.Errorf("one test charged %d bytes, over %d", u.Bytes, TestMaxBytes)
+		}
+		sum, most = sum+u.Bytes, max(most, u.Bytes)
+	}
+	t.Logf("charged %d of %d; the largest test %d", sum, limit, most)
+	if sum > limit || most <= MaxBytes {
+		t.Errorf("charged %d of %d; the largest test %d (the deaf server should push past %d)", sum, limit, most, int64(MaxBytes))
+	}
+	ran, dropped := 0, 0
+	for _, e := range es {
+		switch x, _ := q.Get(e.ID); x.State {
+		case StateDone:
+			ran++
+		case StateDropped:
+			dropped++
+			if x.StopCode != "budget_exhausted" {
+				t.Errorf("dropped %+v", x)
+			}
+		}
+	}
+	if ran != 2 || dropped != 2 {
+		t.Errorf("ran %d, dropped %d; want 2 and 2", ran, dropped)
+	}
 }
