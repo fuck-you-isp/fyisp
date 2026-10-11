@@ -102,31 +102,21 @@ function resultWord(t) {
 }
 /**
  * A lower bound: the direction was still speeding up when it reached its
- * limit (A2, *_lower_bound: 10 seconds for scheduled and owner tests, 100 MB for
- * the share link's), so the speed was at least this.
+ * 10 seconds (A2, *_lower_bound), so the speed was at least this.
  * @param {SpeedTest} t @param {'down'|'up'} dir
  */
 export function lowerBound(t, dir) { return /** @type {any} */ (t)[`${dir}_lower_bound`] === true; }
 /**
- * The limit a test stopped at, in words: scheduled and owner tests run up to
- * 10 seconds each way; a share-link visitor's stop at 100 MB each way.
+ * When the test stopped: every test runs up to 10 seconds each way. Older
+ * rows that stopped at the old data limit (down_short / up_short) say so
+ * neutrally.
  * @param {SpeedTest} t
  */
-function limitWord(t) {
-  const x = /** @type {any} */ (t);
-  const bytes = x.limit ? x.limit === 'bytes' : t.trigger === 'public' || t.trigger === 'public_sweep';
-  return bytes ? 'its 100 MB limit' : 'its 10 seconds';
-}
+function stopWords(t) { return t.down_short || t.up_short ? 'when the test stopped' : 'when its 10 seconds ran out'; }
 /** @param {SpeedTest} t */
-function lbMore(t) {
-  const lim = limitWord(t);
-  return `Still speeding up when ${lim === 'its 10 seconds' ? 'its 10 seconds ran out' : `it reached ${lim}`}, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.`;
-}
+function lbMore(t) { return `Still speeding up ${stopWords(t)}, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.`; }
 /** @param {SpeedTest} t */
-function lbOut(t) {
-  const lim = limitWord(t);
-  return `This test was still speeding up when ${lim === 'its 10 seconds' ? 'its 10 seconds ran out' : `it reached ${lim}`}, so it shows only a lower limit and isn’t used in the time-of-day pattern.`;
-}
+function lbOut(t) { return `This test was still speeding up ${stopWords(t)}, so it shows only a lower limit and isn’t used in the time-of-day pattern.`; }
 /** A server or region left out because most tests to it end while still speeding up (A2). */
 const TOO_FAST = 'Too fast to measure from here';
 /** @param {SpeedRow} r @param {boolean} region */
@@ -618,7 +608,7 @@ export class SpeedMap {
             ['Attempts', String(t.attempts)],
             MODE === 'local' && /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
             ['Retransmits', t.down_retrans != null || t.up_retrans != null ? `${t.down_retrans ?? '—'} down, ${t.up_retrans ?? '—'} up` : 'not known'],
-            ['Test length', shortWin || (t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up${t.down_short || t.up_short ? ' (hit the 100 MB cap)' : ''}` : `${Math.round((t.end - t.start) / 1000)} s`)],
+            ['Test length', shortWin || (t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up` : `${Math.round((t.end - t.start) / 1000)} s`)],
             t.bytes ? ['Data', `${Math.round(t.bytes / 1e6)} MB`] : null,
             ['Delay through your provider', t.latency?.edge ? `${lat(t.latency.edge.idle, t.latency.edge.down)} downloading; ${lat(t.latency.edge.idle, t.latency.edge.up)} uploading` : 'not known'],
             ['Router delay', t.latency?.gateway ? `${lat(t.latency.gateway.idle, t.latency.gateway.down)} downloading` : t.idle_gateway_ms != null ? `${Math.round(t.idle_gateway_ms)} → ${Math.round(/** @type {number} */ (t.loaded_gateway_ms))} ms` : 'not known'],
@@ -645,9 +635,9 @@ export class SpeedMap {
           type: 'button', text: /** @type {string} */ (l), 'aria-pressed': String(this.problems === p), onclick: () => { this.problems = /** @type {boolean} */ (p); this.shown = 15; this.renderRow(); },
         })))),
       // One note above the table: all lower bounds, or a mix.
-      // Scheduled and owner tests run up to 10 seconds each way; only a share-link visitor's stop at 100 MB.
+      // Every test runs up to 10 seconds each way.
       cd.all || cu.all ? h('p', { class: 'muted small', text: `${MODE === 'public' ? 'The' : 'Your'} line is faster than these tests can fully measure in 10 seconds each way. Treat the numbers as ‘at least’.` })
-        : cd.some || cu.some ? h('p', { class: 'muted small', text: `≥ means the test was still speeding up when it stopped (after 10 seconds, or 100 MB for a test ${MODE === 'public' ? 'started from this link' : 'from your share link'}), so the speed was at least this.` }) : '',
+        : cd.some || cu.some ? h('p', { class: 'muted small', text: '≥ means the test was still speeding up when it stopped, so the speed was at least this.' }) : '',
       rows.length ? h('table', { class: 'sp-tt' },
         h('thead', {}, h('tr', {}, ...['When', 'Region', 'Server', cd.all ? 'Down (Mbit/s, at least)' : 'Down (Mbit/s)', cu.all ? 'Up (Mbit/s, at least)' : 'Up (Mbit/s)', '% of normal', 'Result', ''].map((x, i) => h('th', { scope: 'col', class: i >= 3 && i <= 5 ? 'num' : '', text: x })))),
         h('tbody', {}, ...rows)) : h('p', { class: 'muted', text: this.problems ? 'No problems in this span.' : 'No tests in this span yet.' }),

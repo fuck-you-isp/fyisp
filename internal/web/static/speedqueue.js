@@ -14,7 +14,7 @@ import { readingCell, lowerBound } from './speedmap.js';
 /** @typedef {import('./speed.js').SpeedTest} SpeedTest */
 /** @typedef {{id:number,kind:string,who:string,state:string,target:{id:string,label:string}|null,position:number,enqueued_at:number,started_at:number|null,finished_at:number|null,est_start:number,est_finish:number,step:number,steps:number,server:{id:string,label:string}|null,direction:string|null,tests:number[],origin?:string,results?:SweepResult[],wait_reason?:string|null,stopped_reason?:string|null}} QueueEntry */
 /** @typedef {{server:{id:string,label:string},status:string,test?:number,down_bps?:number|null,up_bps?:number|null}} SweepResult */
-/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,public_off_reason?:string|null,budget?:{limit_bytes:number,used_bytes:number,remaining_bytes:number,resets_at:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null,test_max_bytes?:number,fits_tests?:number}}} QueueState */
+/** @typedef {{at:number,max_waiting:number,full:boolean,sweeps_full:boolean,mine:number|null,running:QueueEntry|null,waiting:QueueEntry[],last_sweep:QueueEntry|null,public_enabled?:boolean,public_start?:boolean,speed_on?:boolean,budget?:{resets_at?:number|null,time_hour_s?:number,time_day_s?:number,time_hour_max_s?:number,time_day_max_s?:number,time_resets_at?:number|null,sweep_available_at?:number|null}}} QueueState */
 /** @typedef {{t:SpeedTest,region:string,provider:string}} SwRow */
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean, started:()=>void}} QueueHost */
 
@@ -26,43 +26,19 @@ function inAbout(/** @type {number} */ ms) {
   const m = Math.round(ms / 60e3);
   return m < 1 ? 'in under a minute' : `in about ${m} minute${m === 1 ? '' : 's'}`;
 }
-/** "Tests from this link are paused until 3:12 PM", and why: the data allowance, or time (tests slow the line). @param {number} at @param {boolean} [time] */
-function pausedUntil(at, time = false, left = -1) {
-  // The allowance may not be at 0: a test starts only when a whole one still fits.
-  const why = time ? 'they slow the line while they run'
-    : left > 0 ? `not enough of today’s allowance is left for another test (${mbWord(left)} left)` : 'the day’s data allowance is used up';
+/** "Tests from this link are paused until 3:12 PM: they slow the line while they run." @param {number} at */
+function pausedUntil(at) {
+  const why = 'they slow the line while they run';
   return at ? `Tests from this link are paused until ${when(at)}: ${why}.` : `Tests from this link are paused for now: ${why}.`;
 }
 /** A full test from the link waits 30 minutes after the last one. @param {number} at */
 function nextSweep(at) { return at ? `The next full test from this link can start at ${when(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
-// A full test: seconds per server, with the pause between tests.
+// A full test: seconds per server, with the pause between tests. Each test runs up to 10 seconds each way.
 const SWEEP_S = 26;
-// The most a share-link test can move: 100 MB per direction plus the backstop's margin (A1).
-// The owner's and the schedule's tests stop after 10 seconds each way instead, with no byte cap.
-const TEST_MAX = 210e6;
+const TEST_S = 20;
+/** "14 minutes", "1 minute". @param {number} s seconds */
+function minWords(s) { const m = Math.max(1, Math.round(s / 60)); return `${m} minute${m === 1 ? '' : 's'}`; }
 
-/** One test's bytes on this line: the latest test's when known, else the cap. @param {SpeedSummary|null} d */
-function perTestBytes(d) {
-  // The server's median over 30 days, else the latest ok test. A share-link test is capped at TEST_MAX
-  // (worst case 200 MB when unknown); the owner's runs 10 seconds, so without a figure its size is unknown (0).
-  const med = d && /** @type {any} */ (d).bytes_per_test;
-  const b = med > 1e6 ? med : d && d.latest && d.latest.outcome === 'ok' ? d.latest.bytes || 0 : 0;
-  if (MODE === 'public') return b > 1e6 ? Math.min(b, TEST_MAX) : 200e6;
-  return b > 1e6 ? b : 0;
-}
-/** "uses about 9 GB of data", or, for the owner's run before any test, that it depends on the line. @param {number} total */
-function dataWords(total) { return total > 0 ? `uses about ${gbBoth(total)} of data` : 'uses an amount of data that depends on your line’s speed'; }
-/** "2.1 GB" and "10 GB" the same way on both sides of an "of": one decimal under 10 GB. @param {number} b */
-function gbBoth(b) {
-  const g = Math.max(0, b) / 1e9;
-  return `${g < 10 ? g.toFixed(1).replace(/\.0$/, '') : Math.round(g)} GB`;
-}
-
-/** "150 MB", "1.5 GB". @param {number} b */
-function mbWord(b) { return b < 1e9 ? `${Math.round(b / 1e6)} MB` : `${(b / 1e9).toFixed(1).replace(/\.0$/, '')} GB`; }
-
-/** "12 GB". @param {number} b */
-function gb(b) { return b >= 1e9 ? `${Math.round(b / 1e9)} GB` : `${Math.max(0, Math.round(b / 1e6))} MB`; }
 
 /** Why a full test ended early, or ''. @param {QueueEntry} e */
 function stoppedWhy(e) {
@@ -88,7 +64,7 @@ function whoWord(e) {
   return MODE === 'public' ? 'someone else' : 'someone on your share link';
 }
 /** Why a start or cancel failed, from the API's code. @param {any} e */
-function queueError(e, /** @type {number} */ left = -1) {
+function queueError(e) {
   const b = e.body || {};
   const s = Number(b.retry_after) || Number(e.retryAfter) || 0;
   switch (b.code) {
@@ -96,12 +72,9 @@ function queueError(e, /** @type {number} */ left = -1) {
     case 'speed_off': return 'Speed tests are off on this connection right now.';
     case 'skipped': return 'The owner skipped that server.';
     case 'rate_limited': return `You’ve asked for several tests recently. Try again ${s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while'}.`;
-    case 'budget_exhausted': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), b.budget === 'time', left);
-    case 'time_cap': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0), true);
+    case 'time_cap': return pausedUntil(Number(b.resets_at) || (s ? Date.now() + s * 1000 : 0));
     case 'cooldown': case 'sweep_cooldown': return nextSweep(Number(b.resets_at || b.available_at) || (s ? Date.now() + s * 1000 : 0));
-    case 'budget_too_small': return 'Tests from this link are off: the owner’s daily allowance is smaller than one test.';
-    case 'disabled': if (b.reason === 'budget_too_small') return 'Tests from this link are off: the owner’s daily allowance is smaller than one test.';
-      return 'The owner of this connection hasn’t turned on tests from this link.';
+    case 'disabled': return 'The owner of this connection hasn’t turned on tests from this link.';
     case 'not_found': return 'That test isn’t in the queue any more.';
     case 'forbidden': return MODE === 'public' ? 'Tests can’t be started from this link.' : 'Speed tests can only be changed from the device running fyisp.';
   }
@@ -211,7 +184,7 @@ export class SpeedQueue {
       const where = e.state === 'running' ? 'It’s starting now.' : `You’re #${e.position}, it starts ${inAbout(e.est_start - Date.now())}.`;
       this.host.say(r.duplicate ? `You already asked for this. ${where}` : `${what(e)} added. ${where}`);
     } catch (e) {
-      this.note = queueError(e, this.q?.budget?.remaining_bytes ?? -1);
+      this.note = queueError(e);
       if (this.note) this.host.say(this.note);
     }
     await this.load();
@@ -229,26 +202,20 @@ export class SpeedQueue {
     const servers = d ? d.servers : [];
     const n = servers.filter((x) => !x.skipped).length || 45;
     const skipped = servers.filter((x) => x.skipped).length;
-    const per = perTestBytes(d);
-    const total = per * n;
     const mins = Math.max(1, Math.round(n * SWEEP_S / 60));
     const p = (/** @type {string} */ t) => h('p', { text: t });
     /** @type {Node[]} */
     const body = [p(`One test on each of the ${n} servers, one after another.${MODE === 'local' && skipped ? ` ${skipped === 1 ? '1 server you skipped won’t be tested.' : `${skipped} servers you skipped won’t be tested.`}` : ''}`)];
-    body.push(p(`Takes about ${mins} minute${mins === 1 ? '' : 's'} and ${dataWords(total)}.`));
+    body.push(p(`Takes about ${mins} minute${mins === 1 ? '' : 's'}: each test runs up to 10 seconds each way.`));
     if (MODE === 'public') {
       body.push(p('The owner’s line is busy most of that time, so their calls may stutter.'));
+      // The share link's test time this hour (the server's caps; it stops the run when they're reached).
       const b = q && q.budget;
-      if (b) {
-        body.push(p(`This uses the owner’s shared allowance: ${gbBoth(b.used_bytes)} of ${gbBoth(b.limit_bytes)} used in the last 24 hours.`));
-        if (b.remaining_bytes < total) {
-          // Each step starts only while a whole test (test_max_bytes) still fits; each then uses about one test's bytes.
-          // The server's fits_tests is the guaranteed minimum.
-          const max = b.test_max_bytes || TEST_MAX;
-          const est = b.remaining_bytes < max ? 0 : Math.min(n, Math.floor((b.remaining_bytes - max) / per) + 1);
-          const fit = Math.max(b.fits_tests || 0, est);
-          body.push(h('p', {}, h('b', { text: `About ${gbBoth(b.remaining_bytes)} is left, so the test will stop partway (after about ${fit} of ${n} servers).` })));
-        }
+      if (b && b.time_hour_max_s) {
+        const left = Math.max(0, Math.min(b.time_hour_max_s - (b.time_hour_s || 0), (b.time_day_max_s || Infinity) - (b.time_day_s || 0)));
+        body.push(p(`Tests from this link can run for up to ${minWords(b.time_hour_max_s)} an hour; ${minWords(left)} ${left < 90 ? 'is' : 'are'} left now.`));
+        const fit = Math.floor(left / TEST_S);
+        if (fit < n) body.push(h('p', {}, h('b', { text: `So the run will stop partway (after about ${fit} of ${n} servers).` })));
       }
       body.push(p('If the owner needs the line, your sweep pauses between servers and carries on afterwards.'));
     } else {
@@ -292,33 +259,21 @@ export class SpeedQueue {
       return q?.sweeps_full ? 'Three full tests are already waiting. Try again later.' : '';
     }
     if (q.speed_on === false) return 'Speed tests are off on this connection right now.';
-    if (q.public_off_reason === 'budget_too_small') return 'Tests from this link are off: the owner’s daily allowance is smaller than one test.';
     if (!q.public_enabled) return 'Only the owner of this connection can start tests here.';
     const b = q.budget;
-    const timeCap = !!b && !!b.time_resets_at && ((b.time_hour_s || 0) >= (b.time_hour_max_s || Infinity) || (b.time_day_s || 0) >= (b.time_day_max_s || Infinity));
-    // No whole test fits in what's left (A1): paused, even with some allowance left. resets_at is when the later of the two clears.
-    if (b && (b.fits_tests === 0 || b.remaining_bytes < (b.test_max_bytes || TEST_MAX))) return pausedUntil(b.resets_at || 0, false, b.remaining_bytes);
-    if (timeCap && b) return pausedUntil(b.time_resets_at || 0, true);
+    const timeCap = !!b && ((b.time_hour_s || 0) >= (b.time_hour_max_s || Infinity) || (b.time_day_s || 0) >= (b.time_day_max_s || Infinity));
+    if (timeCap && b) return pausedUntil(b.time_resets_at || b.resets_at || 0);
     return 'The test queue is full right now. Try again later.';
   }
 
-  /** The share link's data allowance: for the owner always, for visitors while tests are allowed. */
+  /** The share link's test time: for the owner always, for visitors while tests are allowed. */
   budgetLine() {
     const q = this.q;
-    // Off because the allowance is smaller than one test: the off sentence says so (owner: under the toggle; visitor: next to the button).
-    if (!q || !q.budget || !q.public_enabled || q.public_off_reason === 'budget_too_small') return null;
+    if (!q || !q.budget || !q.public_enabled || !q.budget.time_hour_max_s) return null;
     const b = q.budget;
     // "8 s", "4 min": a single test is seconds, so minutes alone would read 0.
     const dur = (/** @type {number|undefined} */ x) => ((x || 0) < 60 ? `${Math.round(x || 0)} s` : `${Math.round((x || 0) / 60)} min`);
-    const time = b.time_hour_max_s ? ` Testing time: ${dur(b.time_hour_s)} of ${dur(b.time_hour_max_s)} this hour, ${dur(b.time_day_s)} of ${dur(b.time_day_max_s)} today.` : '';
-    const again = `${b.resets_at ? ` They can start again ${when(b.resets_at)}.` : ''}${MODE === 'local' ? ' Your own tests aren’t limited.' : ''}`;
-    if (b.remaining_bytes <= 0) {
-      return h('p', { class: 'muted small', text: `Share-link tests: daily limit reached (${gbBoth(b.used_bytes)} of ${gbBoth(b.limit_bytes)}).${again}` });
-    }
-    if (b.fits_tests === 0 || b.remaining_bytes < (b.test_max_bytes || TEST_MAX)) {
-      return h('p', { class: 'muted small', text: `Share-link tests: ${gbBoth(b.used_bytes)} of ${gbBoth(b.limit_bytes)} used; not enough is left for another test (${mbWord(b.remaining_bytes)} left).${again}` });
-    }
-    return h('p', { class: 'muted small', text: `Share-link tests: ${gbBoth(b.used_bytes)} of ${gbBoth(b.limit_bytes)} used in the last 24 hours.${time}` });
+    return h('p', { class: 'muted small', text: `Share-link tests: ${dur(b.time_hour_s)} of ${dur(b.time_hour_max_s)} of testing this hour, ${dur(b.time_day_s)} of ${dur(b.time_day_max_s)} today.${MODE === 'local' ? ' Your own tests aren’t limited.' : ''}` });
   }
 
   /**
@@ -330,7 +285,7 @@ export class SpeedQueue {
     try {
       const r = await apiWrite('POST', 'api/speed/config', { public: on }, 'Changing who can start tests needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
       const l = r && r.limits;
-      const limits = l ? ` They share up to ${gb(l.budget_bytes)} a day, and at most ${Math.round(l.time_hour_max_s / 60)} minutes of testing an hour and ${Math.round(l.time_day_max_s / 60)} a day.` : '';
+      const limits = l ? ` They share at most ${minWords(l.time_hour_max_s)} of testing an hour and ${minWords(l.time_day_max_s)} a day.` : '';
       this.note = on ? `People with your share link can now start tests.${limits}` : 'Tests from the share link are off. Their waiting requests were removed.';
       this.host.say(this.note);
     } catch (e) { this.note = queueError(e); if (this.note) this.host.say(this.note); }
@@ -428,7 +383,6 @@ export class SpeedQueue {
   renderSweep() {
     const d = this.host.summary();
     const q = this.q;
-    const tooSmall = !!q && q.public_off_reason === 'budget_too_small';
     const mineSweep = q && [q.running, ...q.waiting].some((e) => e && e.kind === 'sweep' && e.who === 'you');
     const can = this.canStart();
     const start = can
@@ -445,13 +399,11 @@ export class SpeedQueue {
     this.sweepEl.replaceChildren(...[
       h('h2', { id: 'sp-sw-h', text: 'Test every server now' }),
       MODE === 'local' && q && q.public_enabled != null ? h('label', { class: 'sp-check sp-pub' },
-        h('input', { type: 'checkbox', id: 'sp-pub', checked: !!q.public_enabled && !tooSmall, disabled: !canWrite() || tooSmall, 'aria-describedby': tooSmall ? 'sp-pub-off' : null,
+        h('input', { type: 'checkbox', id: 'sp-pub', checked: !!q.public_enabled, disabled: !canWrite(),
           onchange: (/** @type {Event} */ ev) => this.setPublic(/** @type {HTMLInputElement} */ (ev.target).checked) }),
         h('span', {}, 'Let people with your share link start full tests',
-          h('span', { class: 'sp-hint', text: `They share a ${q.budget ? gb(q.budget.limit_bytes) : '10 GB'} daily allowance. Off by default.` }))) : null,
-      // An allowance smaller than one test turns share-link tests off (A1): say so, never raise it.
-      MODE === 'local' && tooSmall ? h('p', { id: 'sp-pub-off', class: 'sp-note', text: `Off: the daily allowance (${q?.budget ? mbWord(q.budget.limit_bytes) : 'set'}) is smaller than one test (about ${mbWord(q?.budget?.test_max_bytes || TEST_MAX)}). Raise it to at least ${mbWord(q?.budget?.test_max_bytes || TEST_MAX)} to allow tests from your share link.` }) : null,
-      h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${mins} minute${mins === 1 ? '' : 's'}; it ${dataWords(perTestBytes(d) * n)}. The results are a snapshot, kept apart from the hourly pattern.` }),
+          h('span', { class: 'sp-hint', text: `${q.budget && q.budget.time_hour_max_s ? `They share up to ${minWords(q.budget.time_hour_max_s)} of testing an hour. ` : ''}Off by default.` }))) : null,
+      h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another, up to 10 seconds each way: about ${mins} minute${mins === 1 ? '' : 's'}. The results are a snapshot, kept apart from the hourly pattern.` }),
       h('div', { class: 'sp-go-row' }, start, why ? h('span', { id: 'sp-sw-why', class: 'muted small', text: why }) : null),
       this.budgetLine(),
       MODE === 'local' && this.note && this.el.hidden ? h('p', { class: 'sp-note', text: this.note }) : null,

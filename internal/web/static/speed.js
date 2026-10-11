@@ -404,7 +404,7 @@ export class Speed {
 /** The owner's data figures for the default schedule, before any test of this line. */
 function dataTable() {
   return h('table', { class: 'sp-data' },
-    h('caption', { class: 'muted small', text: 'A full test of every server, when you ask for one, uses about 8 GB.' }),
+    h('caption', { class: 'muted small', text: 'A full test of every server, when you ask for one, runs each test for up to 10 seconds each way.' }),
     h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Your connection' }), h('th', { scope: 'col', class: 'num', text: 'Data a month' }))),
     h('tbody', {}, ...[['25 Mbit/s', 'about 150 GB'], ['100 Mbit/s', 'about 600 GB'], ['Fast lines (500 Mbit/s and up)', 'about 1.3 TB']]
       .map(([a, b]) => h('tr', {}, h('th', { scope: 'row', text: a }), h('td', { class: 'num', text: b })))));
