@@ -66,7 +66,7 @@ func TestSpeedSection(t *testing.T) {
 		"1346 speed tests ran in this range: 1311 measured, 35 found the test servers busy (not counted as slow).",
 		"Of these, 1 started by hand and 1 started from the share link; the rest were scheduled.",
 		"Pooled over every server, tests read about 50% lower from 7–11 pm UTC than the same servers",
-		"after a ramp-up of up to 1 second and at most 100 MB each way",
+		"after a ramp-up of up to 1 second and up to 10 seconds measured each way (tests started from the share link stop at 100 MB each way)",
 		"Connection: of 1311 measured tests, 1310 wired, 1 on a link of unknown type.",
 		"Delay to the provider",
 		"8 ms idle, 21 ms while downloading (95th percentile 34 ms, 0.0% lost), 48 ms while uploading (95th percentile 90 ms, 4.0% lost).",

@@ -194,7 +194,9 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 		on := c.speedPublic.on
 		o.Public = &on
 	}
-	o.PublicBudget = int64(c.speedBudget)
+	if c.speedBudget > 0 {
+		log.Warn("ignored: --speedtest-public-budget (share-link tests are limited by time, not data)")
+	}
 	o.Skip = speedSkips(&c)
 	o.Load = speedtest.NewLoadTap(prof, nil)
 	// Latency under load (ISP edge and gateway), the connection type and

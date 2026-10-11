@@ -3,6 +3,7 @@ package speedtest
 import (
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -202,18 +203,23 @@ func rising(sm []float64, w int) bool {
 
 // rateUse reports whether a direction (0 down, 1 up) is a lower bound.
 func rateUse(short bool, x *Extra, i int) bool {
-	if !short {
-		return false
-	}
-	if x.RateMethod[i] == "" { // v0.7.0
+	switch {
+	case x.RateMethod[i] != "":
+		return x.LowerBound[i]
+	case short: // v0.7.0
 		return x.RampMs[i] == 0
 	}
-	return x.LowerBound[i]
+	return false
+}
+
+// mayBound reports whether t may have a lower bound (capped, or flagged).
+func mayBound(t *model.SpeedTest) bool {
+	return t.DownShort || t.UpShort || strings.Contains(t.Extra, "lower_bound")
 }
 
 // LowerBounds reports which of t's directions are lower bounds.
 func LowerBounds(t *model.SpeedTest) (down, up bool) {
-	if !t.DownShort && !t.UpShort {
+	if !mayBound(t) {
 		return false, false
 	}
 	x := ParseExtra(t.Extra)
@@ -312,7 +318,7 @@ func tooFast(ts []model.SpeedTest, loc *time.Location) [2]map[string]bool {
 // above), hours local to loc; ts is not changed (and is returned as is
 // when nothing was capped).
 func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
-	if !slices.ContainsFunc(ts, func(t model.SpeedTest) bool { return t.DownShort || t.UpShort }) {
+	if !slices.ContainsFunc(ts, func(t model.SpeedTest) bool { return mayBound(&t) }) {
 		return ts
 	}
 	out := slices.Clone(ts)

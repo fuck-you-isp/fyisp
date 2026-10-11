@@ -78,13 +78,13 @@ func TestStockAdaptive(t *testing.T) {
 		time.Sleep(time.Second)
 		ad, err := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second})
 		time.Sleep(time.Second)
-		capped, err2 := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second, MaxBytes: MaxBytes})
+		capped, err2 := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second, MaxBytes: 100_000_000})
 		if err2 != nil {
 			t.Fatalf("%s capped: %v", d, err2)
 		}
 		t.Logf("%s: capped at 100 MB: %.0f Mbit/s over %v after a %v ramp, %d bytes arrived or written in all, capped=%v", d,
 			capped.BitsPerSecond()/1e6, capped.Elapsed.Round(time.Millisecond), capped.Ramp.Round(time.Millisecond), capped.WireBytes, capped.CappedByBytes)
-		if capped.WireBytes > MaxBytes+setupOverhead {
+		if capped.WireBytes > 100_000_000+setupOverhead {
 			t.Errorf("%s: %d bytes: over the 100 MB cap", d, capped.WireBytes)
 		}
 		if err != nil {
@@ -117,7 +117,7 @@ func TestLiveSession(t *testing.T) {
 	}
 	full := os.Getenv("FYISP_LIVE_FULL") == "1"
 	for _, d := range []Direction{Download, Upload} {
-		c := Config{Direction: d, Timeout: DirTimeout, Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: MaxBytes}
+		c := Config{Direction: d, Timeout: DirTimeout, Duration: MaxMeasure, MinDuration: MinMeasure, Backstop: TimeBackstop}
 		if full {
 			c = Config{Direction: d, Omit: time.Second, Duration: 9 * time.Second}
 		}

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -398,88 +396,6 @@ func TestQueuePublicOptIn(t *testing.T) {
 	}
 }
 
-// TestQueueBudget: the share link's tests spend a rolling 24-hour budget
-// of bytes actually transferred, kept across restarts; past it, requests
-// are refused until enough use ages out, waiting entries are dropped, and
-// a sweep stops. The owner is never limited by it.
-func TestQueueBudget(t *testing.T) {
-	set := &memSettings{}
-	withBudget := func(o *QueueOptions) { o.Settings, o.PublicBudget = set, 500e6 }
-	q, f := newQueueHarness(t, withBudget)
-	f.bytes.Store(150e6)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { q.Run(ctx); close(done) }()
-	run := func(r Request) Entry {
-		t.Helper()
-		e, _, err := q.Enqueue(r)
-		if err != nil {
-			t.Fatalf("%+v: %v", r, err)
-		}
-		<-f.started
-		f.release <- struct{}{}
-		waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateDone })
-		return e
-	}
-	start := time.Unix(0, f.now.Load())
-	run(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v1"})
-	f.advance(time.Hour)
-	if _, used, resets := q.Budget(); used != 150e6 || !resets.IsZero() {
-		t.Errorf("after one: %d %v", used, resets)
-	}
-	// A sweep stops before a test that wouldn't fit whole (500 - 300 < 210
-	// MB): one test, not three.
-	sw, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v2"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	<-f.started
-	f.release <- struct{}{}
-	waitFor(t, func() bool { x, _ := q.Get(sw.ID); return x.State == StateDone })
-	if x, _ := q.Get(sw.ID); len(x.Tests) != 1 || x.Stopped != StopLimit || x.StopCode != "budget_exhausted" || x.ResetsAt.IsZero() {
-		t.Errorf("sweep past the budget: %+v", x)
-	}
-	limit, used, resets := q.Budget()
-	if limit != 500e6 || used != 300e6 || !resets.Equal(start.Add(24*time.Hour)) {
-		t.Errorf("spent: %d %d %v (start %v)", limit, used, resets, start)
-	}
-	var be *BudgetError
-	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v3"}); !errors.As(err, &be) || !be.ResetsAt.Equal(resets) {
-		t.Errorf("refused: %v", err)
-	}
-	if _, err := q.Admit(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v3"}); !errors.As(err, &be) {
-		t.Errorf("Admit: %v", err)
-	}
-	run(Request{Kind: KindSingle, Target: "C", Who: WhoOwner}) // the owner is not limited
-	cancel()
-	<-done
-	// Kept across a restart.
-	q2, f2 := newQueueHarness(t, withBudget)
-	f2.now.Store(f.now.Load())
-	q2.load(context.Background())
-	if _, used, resets := q2.Budget(); used != 300e6 || resets.IsZero() {
-		t.Errorf("restored: %d %v", used, resets)
-	}
-	// A waiting share-link entry is dropped when its turn comes past the
-	// budget (it got in before).
-	q2.mu.Lock()
-	q2.nextID++
-	q2.waiting = append(q2.waiting, &qentry{Entry: Entry{ID: q2.nextID, Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v9", State: StateWaiting, JobTests: []int64{0}}, jobs: []Job{{}}})
-	q2.mu.Unlock()
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	done2 := make(chan struct{})
-	go func() { q2.Run(ctx2); close(done2) }()
-	waitFor(t, func() bool { x, ok := q2.Get(1); return ok && x.State == StateDropped })
-	cancel2()
-	<-done2
-	// 24 hours after the first test (the sweep's ran an hour later), it
-	// ages out: room again.
-	f2.advance(23*time.Hour + 30*time.Minute)
-	if _, used, resets := q2.Budget(); used != 150e6 || !resets.IsZero() {
-		t.Errorf("aged: %d %v", used, resets)
-	}
-}
-
 // TestQueueScheduledAheadOfPublic: a schedule slot queued behind public
 // sweeps runs next: the running public sweep yields after its current
 // test, then resumes ahead of the other public sweeps.
@@ -552,7 +468,7 @@ func TestQueuePublicTime(t *testing.T) {
 	run(Request{Kind: KindSingle, Target: "B", Who: WhoPublic, Visitor: "v2"})
 	run(Request{Kind: KindSingle, Target: "C", Who: WhoPublic, Visitor: "v3"}) // 12 min in the hour
 	var be *BudgetError
-	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v4"}); !errors.As(err, &be) || !be.Time ||
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v4"}); !errors.As(err, &be) ||
 		!be.ResetsAt.Equal(first.Finished.Add(time.Hour)) {
 		t.Fatalf("hour cap: %v (%+v)", err, be)
 	}
@@ -581,7 +497,7 @@ func TestQueuePublicTime(t *testing.T) {
 		q.ledger = append(q.ledger, usage{At: time.Unix(0, f.now.Load()).Add(-time.Duration(20-i*2) * time.Hour), Dur: 10 * time.Minute})
 	}
 	q.mu.Unlock()
-	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "C", Who: WhoPublic, Visitor: "v7"}); !errors.As(err, &be) || !be.Time {
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "C", Who: WhoPublic, Visitor: "v7"}); !errors.As(err, &be) {
 		t.Errorf("day cap: %v", err)
 	}
 }
@@ -837,47 +753,6 @@ func TestQueueCancelledSweepIsLast(t *testing.T) {
 		t.Errorf("last sweep %+v", l)
 	}
 	f.release <- struct{}{}
-}
-
-// TestBudgetChargesTheWire: a share-link test against a real (fake) iperf3
-// server charges the budget at least every byte the server moved, both
-// directions, ramp-up included.
-func TestBudgetChargesTheWire(t *testing.T) {
-	f := newFakeServer(t, "")
-	f.rate = 32 << 10
-	host, port, _ := net.SplitHostPort(f.addr())
-	p, _ := strconv.Atoi(port)
-	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: true} // catalog servers must be public
-	s := New(Options{Catalog: &Catalog{Servers: []Server{sv}, byID: map[string]int{"Local": 0}}})
-	on := true
-	q := NewQueue(QueueOptions{Public: &on, Exec: s.execJob, Live: s.live,
-		Resolve: func(Kind, string) ([]Job, error) { return []Job{{Chain: []Server{sv}}}, nil }})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go q.Run(ctx)
-	e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "Local", Who: WhoPublic, Visitor: "v"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		if x, _ := q.Get(e.ID); x.State == StateDone {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("test did not finish")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	f.mu.Lock()
-	moved := f.moved
-	f.mu.Unlock()
-	if _, used, _ := q.Budget(); moved == 0 || used < moved {
-		t.Errorf("budget charged %d bytes, the server moved %d", used, moved)
-	}
-	if st := q.State(); st.TimeHour <= 0 {
-		t.Errorf("no test time charged: %+v", st)
-	}
 }
 
 // TestTriggerOrigin: the stored trigger keeps who asked, so windows can say
