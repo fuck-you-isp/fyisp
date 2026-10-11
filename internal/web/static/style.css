@@ -1327,7 +1327,7 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-live h3 { margin: 14px 0 6px; font-size: 14px; }
 .sp-live-list { list-style: none; margin: 0; padding: 0; columns: 3 260px; column-gap: 24px; font-size: 12px; }
 .sp-live-list li { break-inside: avoid; display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto; gap: 6px; padding: 2px 0; }
-.sp-live-list li.st-waiting { color: var(--ink-2); }
+.sp-live-list li.st-waiting, .sp-live-list li.st-cancelled, .sp-live-list li.st-skipped { color: var(--ink-2); }
 .sp-live-list li.st-testing { font-weight: 600; }
 .sp-live-m { text-align: center; }
 .sp-live-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
