@@ -145,6 +145,7 @@ type speedTestJSON struct {
 	// download if capped, else the upload) was measured.
 	DownLowerBound  bool     `json:"down_lower_bound,omitempty"`
 	UpLowerBound    bool     `json:"up_lower_bound,omitempty"`
+	CancelledBy     string   `json:"cancelled_by,omitempty"`    // a cancelled test: "owner" when the owner stopped it
 	DownLBCounted   bool     `json:"down_lb_counted,omitempty"` // a lower bound that reached normal: counted as normal
 	UpLBCounted     bool     `json:"up_lb_counted,omitempty"`
 	DownRampCapped  bool     `json:"down_ramp_capped,omitempty"`
@@ -364,6 +365,9 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
 	j.DownLowerBound, j.UpLowerBound = speedtest.LowerBounds(&t)
 	j.DownRampCapped, j.UpRampCapped = j.DownLowerBound, j.UpLowerBound
+	if t.Outcome == model.SpeedCancelled {
+		j.CancelledBy = speedtest.ParseExtra(t.Extra).CancelledBy
+	}
 	j.DownLBCounted = speedtest.LowerBoundCounted(t.ScoreDown, j.DownLowerBound)
 	j.UpLBCounted = speedtest.LowerBoundCounted(t.ScoreUp, j.UpLowerBound)
 	if t.DownShort || t.UpShort {
@@ -783,7 +787,9 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	}
 	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, Loc: tz, Catalog: cat, EdgeIdle: edgeIdle(out.EdgeHours), From: from, To: now})
 	for i, x := range out.Finding.Slowest {
-		_, out.Finding.Slowest[i].Display, _, _ = names.server(x.Server)
+		var ref speedRef
+		ref, out.Finding.Slowest[i].Display, _, _ = names.server(x.Server)
+		out.Finding.Slowest[i].Ref = ref.ID
 	}
 	out.Coverage = speedCoverage(span, tz, cat)
 	out.UnderLoad = speedUnderLoadOf(span)

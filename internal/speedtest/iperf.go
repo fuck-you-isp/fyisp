@@ -91,6 +91,10 @@ var (
 	ErrOverrun = errors.New("iperf3 server kept sending past the byte cap")
 )
 
+// ErrCancelledByOwner is the cause (context.WithCancelCause) of the owner's
+// cancel, so a cancelled test's row says who stopped it.
+var ErrCancelledByOwner = errors.New("cancelled by the owner")
+
 // ServerError is an iperf3 SERVER_ERROR or SERVER_TERMINATE.
 type ServerError struct {
 	Code, Errno int32 // iperf3 i_errno and errno; 0 for SERVER_TERMINATE
