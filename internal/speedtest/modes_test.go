@@ -432,9 +432,10 @@ func TestCancelAtCompletion(t *testing.T) {
 	h.s.o.Store = st
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { // runs after the test, before the save
+	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { return nil, nil }
+	h.s.o.HandoffCached = func(string) (*model.Handoff, bool) { // runs after the test, before the save
 		cancel()
-		return nil, nil
+		return nil, false
 	}
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
@@ -450,7 +451,8 @@ func TestCancelAtCompletion(t *testing.T) {
 	// A cancel during the test still stores its cancelled row, with a
 	// store that refuses cancelled contexts.
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	h.s.o.Handoff = nil
+	h.s.bg.Wait()
+	h.s.o.Handoff, h.s.o.HandoffCached = nil, nil
 	h.setRun(func(c Config, n int) (Result, error) {
 		cancel2()
 		return Result{}, context.Canceled
@@ -517,4 +519,142 @@ type dialedConn struct {
 func (c *dialedConn) Close() error {
 	c.once.Do(func() { c.open.Add(-1) })
 	return c.Conn.Close()
+}
+
+// TestEarlyFirstTest: turning tests on (or changing the mode) runs the
+// first test 2 minutes later, an extra run of the next grid slot; the grid
+// then goes on, never two tests closer than half a spacing. A restart, or
+// turning on what is already on, stays on the grid.
+func TestEarlyFirstTest(t *testing.T) {
+	for _, phase := range []time.Duration{0, 37 * time.Second, 3*time.Minute + 11*time.Second, 6 * time.Minute, 29 * time.Minute} {
+		h := newHarness(t, Options{})
+		h.now = h.now.Add(phase)
+		ctx := context.Background()
+		on := h.clock()
+		next, err := h.s.SetMode(ctx, ModeRegions, nil)
+		if err != nil || next.Sub(on) != firstDelay || !h.s.State().Next.Equal(next) {
+			t.Fatalf("phase %v: next %v after turning on at %v (%v)", phase, next, on, err)
+		}
+		h.s.mu.Lock()
+		sp := h.s.spacingLocked(ModeRegions)
+		grid := func(at time.Time) bool { // on the install's grid, up to the cycle's jitter
+			off := at.Sub(h.s.cycleStart) % sp
+			return off == 0
+		}
+		var runs []time.Time
+		var slots []int
+		now := on
+		for len(runs) < 25 {
+			tg, wait := h.s.dueLocked(now)
+			if tg != nil {
+				runs = append(runs, now)
+				slots = append(slots, h.s.slot)
+			}
+			if wait > 0 {
+				now = now.Add(wait)
+			}
+		}
+		if !h.s.next.IsZero() && !grid(h.s.next) {
+			t.Errorf("phase %v: off the grid afterwards: %v", phase, h.s.next)
+		}
+		h.s.mu.Unlock()
+		for i := 1; i < len(runs); i++ {
+			if d := runs[i].Sub(runs[i-1]); d < sp/2 {
+				t.Errorf("phase %v: tests %d and %d %v apart (spacing %v)", phase, i-1, i, d, sp)
+			}
+		}
+		// Turning on what is already on changes nothing.
+		h.s.mu.Lock()
+		before := h.s.next
+		h.s.mu.Unlock()
+		if n, _ := h.s.SetMode(ctx, ModeRegions, nil); !n.Equal(before) {
+			t.Errorf("phase %v: on again moved the next test: %v -> %v", phase, before, n)
+		}
+	}
+	// A restart: the first test is the grid's, at least firstDelay away.
+	h := newHarness(t, Options{})
+	h.now = h.now.Add(3 * time.Minute)
+	h.s.mu.Lock()
+	h.s.mode = ModeRegions
+	h.s.restartLocked(h.clock())
+	next, base := h.s.next, h.s.cycleBase
+	sp := h.s.spacingLocked(ModeRegions)
+	h.s.mu.Unlock()
+	if next.Sub(h.clock()) < firstDelay || next.Sub(base)%sp != 0 {
+		t.Errorf("restart: next %v, cycle %v", next, base)
+	}
+}
+
+// TestDeferredHandoff: the daily handoff traceroute runs after the test is
+// saved, never in its way or the queue's; it fills the row in later, one
+// at a time, to the address the test dialled, and ends on shutdown.
+func TestDeferredHandoff(t *testing.T) {
+	h := newHarness(t, Options{})
+	h.setRun(func(c Config, n int) (Result, error) {
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
+	})
+	release := make(chan struct{})
+	var running, peak atomic.Int32
+	var hosts []string
+	var mu sync.Mutex
+	h.s.o.Handoff = func(ctx context.Context, host string) (*model.Handoff, error) {
+		n := running.Add(1)
+		defer running.Add(-1)
+		if n > peak.Load() {
+			peak.Store(n)
+		}
+		mu.Lock()
+		hosts = append(hosts, host)
+		mu.Unlock()
+		select { // a slow traceroute
+		case <-release:
+			return &model.Handoff{ASN: 6939, Name: "HURRICANE", ISPASN: 64500}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Second):
+			return nil, errors.New("too slow")
+		}
+	}
+	t0 := time.Now()
+	id, saved, _ := h.s.execJob(context.Background(), h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
+	id2, _, _ := h.s.execJob(context.Background(), h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
+	if !saved || id == 0 || id2 == 0 || time.Since(t0) > time.Second {
+		t.Fatalf("saved %v %d %d after %v", saved, id, id2, time.Since(t0))
+	}
+	ts, _ := h.st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
+	if len(ts) != 2 || ts[0].Handoff != nil {
+		t.Fatalf("saved before the traceroute: %+v", ts)
+	}
+	close(release)
+	waitFor(t, func() bool {
+		ts, _ := h.st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
+		return ts[0].Handoff != nil && ts[0].Handoff.ASN == 6939
+	})
+	h.s.bg.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	if peak.Load() != 1 || len(hosts) != 1 || hosts[0] != "198.51.100.7" {
+		t.Errorf("traceroutes: at most %d at once, to %v", peak.Load(), hosts)
+	}
+	// A cached answer is taken at once, without a traceroute.
+	h.s.o.HandoffCached = func(host string) (*model.Handoff, bool) { return &model.Handoff{ASN: 1299, Name: "TWELVE99"}, true }
+	if r := h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), "manual"); len(r) != 1 || r[0].Handoff == nil || r[0].Handoff.ASN != 1299 {
+		t.Errorf("cached: %+v", r)
+	}
+	// Shutdown ends a traceroute that's running.
+	h2 := newHarness(t, Options{})
+	h2.setRun(func(c Config, n int) (Result, error) {
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
+	})
+	h2.s.o.Handoff = func(ctx context.Context, _ string) (*model.Handoff, error) { <-ctx.Done(); return nil, ctx.Err() }
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { h2.s.Run(ctx); close(done) }()
+	h2.s.execJob(context.Background(), h2.s.slotJob(target{server: "Near", nearby: -1}), "manual")
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error("shutdown waited for the traceroute")
+	}
 }

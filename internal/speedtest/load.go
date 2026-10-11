@@ -123,7 +123,7 @@ func latency(tap *LoadTap, w *Windows, lr *loadRun, start time.Time) *model.Spee
 	var l model.SpeedLatency
 	for i, ph := range []*model.LoadPhases{&l.Gateway, &l.Edge} {
 		if tap != nil {
-			ph.Idle = tap.Stats([]string{LayerGateway, LayerEdge}[i], start.Add(-idleWindow), start, w)
+			ph.Idle = tap.Idle([]string{LayerGateway, LayerEdge}[i], start, w)
 		}
 		if lr != nil {
 			ph.Down, ph.Up = statsOf(lr.down[i]), statsOf(lr.up[i])

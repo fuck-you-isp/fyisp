@@ -458,6 +458,9 @@ type Handoff struct {
 	Name   string    `json:"name"`
 	ISPASN uint32    `json:"isp_asn"`
 	At     time.Time `json:"at"` // when the traceroute ran
+	// Via is the internet exchange the path crossed to reach ASN (local
+	// only; not stored: the handoff is re-traced daily).
+	Via string `json:"via,omitempty"`
 }
 
 // OnDemand reports a test someone asked for (Test now, a sweep) rather than

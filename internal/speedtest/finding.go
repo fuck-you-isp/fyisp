@@ -66,9 +66,12 @@ type Finding struct {
 	Providers    []string `json:"providers"` // provider names involved
 	Servers      []string `json:"servers"`   // server IDs involved (case server)
 	// Network is the first network past the ISP that the slow tests share
-	// (case provider: e.g. "AS3356 LEVEL3"), from the tests' handoff
-	// traceroutes; "" when unknown or not shared. Local wording only.
+	// (case provider: e.g. "LEVEL3 (AS3356)"), from the tests' handoff
+	// traceroutes; "" when unknown or not shared. Via is the internet
+	// exchange they meet at, when the traceroutes crossed one. Local
+	// wording only.
 	Network string  `json:"network,omitempty"`
+	Via     string  `json:"via,omitempty"`
 	Drop    float64 `json:"drop"`
 	Up      bool    `json:"up"`   // about uploads
 	Days    int     `json:"days"` // days with scored scheduled tests
@@ -470,7 +473,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 			if len(regs) >= 2 && compared {
 				set(CaseProvider)
 				f.Providers, f.Regions = []string{pv}, regs
-				f.Network = sharedHandoff(byProvider[pv])
+				f.Network, f.Via = sharedHandoff(byProvider[pv]), sharedVia(byProvider[pv])
 				f.FarEvening = closeZones(in.Catalog, regs)
 				f.group = byProvider[pv]
 				return true
@@ -489,7 +492,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 			if regs := regionsOf(byNet[k]); len(provs) >= 2 && len(regs) >= 2 {
 				slices.Sort(provs)
 				set(CaseProvider)
-				f.Providers, f.Regions, f.Network = provs, regs, k
+				f.Providers, f.Regions, f.Network, f.Via = provs, regs, k, sharedVia(byNet[k])
 				f.FarEvening = closeZones(in.Catalog, regs)
 				f.group = byNet[k]
 				return true
@@ -624,7 +627,8 @@ func closeZones(c *Catalog, regions []string) bool {
 	return slices.Max(offs)-slices.Min(offs) < 3*3600
 }
 
-// handoffKey names a test's handoff network ("AS3356 LEVEL3"); "" unknown.
+// handoffKey names a test's handoff network ("LEVEL3 (AS3356)"); ""
+// unknown.
 func handoffKey(t model.SpeedTest) string {
 	h := t.Handoff
 	if h == nil || h.ASN == 0 {
@@ -633,7 +637,37 @@ func handoffKey(t model.SpeedTest) string {
 	if h.Name == "" {
 		return fmt.Sprintf("AS%d", h.ASN)
 	}
-	return fmt.Sprintf("AS%d %s", h.ASN, h.Name)
+	return fmt.Sprintf("%s (AS%d)", h.Name, h.ASN)
+}
+
+// sharedVia is the internet exchange most of ts (≥ 80% of those with a
+// handoff) crossed, else "".
+func sharedVia(ts []model.SpeedTest) string {
+	n := map[string]int{}
+	known := 0
+	for _, t := range ts {
+		if t.Handoff != nil {
+			known++
+			if t.Handoff.Via != "" {
+				n[t.Handoff.Via]++
+			}
+		}
+	}
+	for k, c := range n {
+		if c*5 >= known*4 {
+			return k
+		}
+	}
+	return ""
+}
+
+// meetAt is the wording for where the ISP meets a network at an internet
+// exchange ("" without one).
+func meetAt(via string) string {
+	if via == "" {
+		return ""
+	}
+	return ", where they meet at " + via + " (an internet exchange)"
 }
 
 // sharedHandoff is the handoff network of most of ts (≥ 80%), else "".
@@ -803,12 +837,17 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		if len(f.Providers) > 1 { // grouped by the network past the ISP
 			claim = fmt.Sprintf("Only servers reached through one network (%s; %s) %s from about %s; the others we could test stay normal.",
 				joinAnd(f.Providers), joinAnd(regs), slowVerb(f.Up), when)
-			who, whoPublic = "the link between your internet provider and "+f.Network, "the link between the internet provider and that network"
+			who, whoPublic = "the link between your internet provider and "+f.Network+meetAt(f.Via), "the link between the internet provider and that network"
 		} else {
 			claim = fmt.Sprintf("Only %s servers %s from about %s (%s); other providers we could test there stay normal.", f.Providers[0], slowVerb(f.Up), when, joinAnd(regs))
 			who, whoPublic = "the link between your internet provider and "+f.Providers[0], "the link between the internet provider and "+f.Providers[0]
-			if f.Network != "" {
+			switch {
+			case f.Network != "" && f.Via != "":
+				who = "the link between your internet provider and " + f.Network + meetAt(f.Via)
+			case f.Network != "":
 				who += " (reached through " + f.Network + ")"
+			case f.Via != "": // the traceroutes end at the exchange: the peer isn't known
+				who = "the route through " + f.Via + " (an internet exchange) to these servers"
 			}
 		}
 		if f.FarEvening {

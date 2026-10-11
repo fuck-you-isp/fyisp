@@ -24,6 +24,18 @@ func (m *MemStore) SaveSpeedTest(_ context.Context, t *model.SpeedTest) error {
 	return nil
 }
 
+// SetSpeedHandoff implements HandoffStore.
+func (m *MemStore) SetSpeedHandoff(_ context.Context, id int64, h *model.Handoff) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.tests {
+		if m.tests[i].ID == id {
+			m.tests[i].Handoff = h
+		}
+	}
+	return nil
+}
+
 // SpeedTests implements Store (in saving order).
 func (m *MemStore) SpeedTests(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 	m.mu.Lock()

@@ -34,6 +34,7 @@ func (f *fakeHops) Close() error { return nil }
 var testASN = map[string]asn.Info{
 	"62.1.1.1": {ASN: 3320, Owner: "DTAG"}, "62.1.2.2": {ASN: 3320, Owner: "DTAG"},
 	"4.69.1.1": {ASN: 3356, Owner: "LEVEL3"}, "5.79.1.1": {ASN: 60781, Owner: "LEASEWEB-NL-AMS-01"},
+	"80.81.192.10": {ASN: 6695, Owner: "DECIX-RS-AS"}, // a DE-CIX Frankfurt LAN address
 }
 
 func testLookup(a netip.Addr) asn.Info { return testASN[a.String()] }
@@ -80,5 +81,35 @@ func TestHandoff(t *testing.T) {
 				t.Error("no new traceroute after a day")
 			}
 		})
+	}
+}
+
+// TestHandoffIX: an internet exchange's hop is looked through to the peer
+// behind it, and kept as Via; a path that ends at it has no peer.
+func TestHandoffIX(t *testing.T) {
+	edge := netip.MustParseAddr("62.1.1.1")
+	path := func(hops ...string) []netip.Addr {
+		var out []netip.Addr
+		for _, h := range hops {
+			a, _ := netip.ParseAddr(h)
+			out = append(out, a)
+		}
+		return out
+	}
+	h := handoffOf(path("192.168.1.1", "62.1.1.1", "62.1.2.2", "80.81.192.10", "5.79.1.1"), edge, testLookup)
+	if h == nil || h.ASN != 60781 || h.Via != "DE-CIX" || h.ISPASN != 3320 {
+		t.Errorf("through DE-CIX: %+v", h)
+	}
+	h = handoffOf(path("192.168.1.1", "62.1.1.1", "62.1.2.2", "80.81.192.10", "", ""), edge, testLookup)
+	if h == nil || h.ASN != 0 || h.Via != "DE-CIX" {
+		t.Errorf("ends at DE-CIX: %+v", h)
+	}
+	if h = handoffOf(path("192.168.1.1", "62.1.1.1", "4.69.1.1"), edge, testLookup); h == nil || h.Via != "" || h.ASN != 3356 {
+		t.Errorf("no exchange: %+v", h)
+	}
+	for asn, name := range ixASNs {
+		if asn == 0 || name == "" {
+			t.Errorf("ixASNs %d %q", asn, name)
+		}
 	}
 }

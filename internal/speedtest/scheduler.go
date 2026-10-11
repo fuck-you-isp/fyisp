@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -104,6 +106,12 @@ type Store interface {
 	SetSetting(ctx context.Context, key, value string) error
 }
 
+// HandoffStore is a Store that can fill in a saved test's handoff later
+// (a deferred traceroute). It updates only a row that still exists.
+type HandoffStore interface {
+	SetSpeedHandoff(ctx context.Context, id int64, h *model.Handoff) error
+}
+
 // Settings keys.
 const (
 	SettingKey   = "speedtest_mode"
@@ -138,8 +146,12 @@ type Options struct {
 	// interface tests use; nil: unknown.
 	Conn func() string
 	// Handoff returns where the path to host leaves the user's ISP
-	// (HandoffFinder.Handoff); nil: not recorded.
-	Handoff func(ctx context.Context, host string) (*model.Handoff, error)
+	// (HandoffFinder.Handoff); nil: not recorded. HandoffCached is its
+	// answer without a traceroute, when it has a recent one: a test takes
+	// that at once; otherwise the traceroute runs after the test is saved,
+	// and fills its row in later.
+	Handoff       func(ctx context.Context, host string) (*model.Handoff, error)
+	HandoffCached func(host string) (*model.Handoff, bool)
 	// Ping returns the ICMP RTT to a host (probe.PingOnce); nil or failing:
 	// TCP connect time to port 80, 443, then the server's first iperf3 port.
 	Ping func(ctx context.Context, host string) (time.Duration, error)
@@ -199,6 +211,13 @@ type Scheduler struct {
 	wake chan struct{}
 	q    *Queue
 
+	// The deferred handoff traceroute: at most one at a time, ended on
+	// shutdown (Run waits for it).
+	bgCtx   context.Context
+	bgStop  context.CancelFunc
+	bg      sync.WaitGroup
+	tracing atomic.Bool
+
 	mu           sync.Mutex
 	mode         Mode
 	setByFlag    bool
@@ -206,6 +225,7 @@ type Scheduler struct {
 	seed         uint32
 	cycleBase    time.Time // the cycle's start on the install's grid, without jitter
 	cycleStart   time.Time
+	skipBefore   time.Time // after an early test: grid slots before this are skipped
 	slot         int
 	next         time.Time            // the next slot; zero when off
 	cur          *live                // the test running: its direction and server
@@ -217,6 +237,7 @@ type Scheduler struct {
 	far          string               // mode nearby: the automatic far region
 	pickedAt     time.Time
 	rtts         map[string]time.Duration
+	vias         map[string]model.Handoff // server -> latest handoff with a Via
 }
 
 // Row is a scheduled row of the current mode (a region or a server).
@@ -263,6 +284,9 @@ type State struct {
 	Servers      []ServerState
 	Regions      []Region
 	Custom       []string // custom server IDs
+	// Vias is each server's latest handoff that crossed an internet
+	// exchange (Handoff.Via; in memory only, local only).
+	Vias map[string]model.Handoff
 }
 
 // New returns a Scheduler; Run drives it.
@@ -305,6 +329,7 @@ func New(o Options) *Scheduler {
 	}
 	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff,
 		extra: slices.Clone(o.Extra), seed: o.rand.Uint32(), skip: map[string]bool{}, busyRun: map[string]int{}, rest: map[string]time.Time{}}
+	s.bgCtx, s.bgStop = context.WithCancel(context.Background())
 	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Pause: s.pause, EstSweepPause: MaskTail + SweepGap, Live: s.live, Log: o.Log, Now: o.Now,
 		Public: o.Public, PublicBudget: o.PublicBudget}
 	if o.Store != nil {
@@ -416,7 +441,7 @@ func (s *Scheduler) phase(iv time.Duration) time.Duration {
 // phase; the first test is the first slot at least firstDelay away, so
 // idle RTTs exist before it.
 func (s *Scheduler) restartLocked(now time.Time) {
-	s.slot, s.next = 0, time.Time{}
+	s.slot, s.next, s.skipBefore = 0, time.Time{}, time.Time{}
 	n := len(s.planLocked(s.mode))
 	if n == 0 {
 		return
@@ -436,6 +461,45 @@ func (s *Scheduler) restartLocked(now time.Time) {
 		}
 		base = base.Add(iv)
 	}
+}
+
+// dueLocked takes the slot due at now (nil: none) and moves on; wait is
+// the time to the next one (0: look again now). Every due slot goes into
+// the queue, late ones too: the queue drops a slot that waits
+// ScheduledStale, and never stacks two. The slot times themselves never
+// move.
+func (s *Scheduler) dueLocked(now time.Time) (*target, time.Duration) {
+	if s.next.IsZero() {
+		return nil, time.Hour
+	}
+	if wait := s.next.Sub(now); wait > 0 {
+		return nil, wait
+	}
+	var tg *target
+	if plan := s.planLocked(s.mode); s.slot < len(plan) {
+		t := plan[s.slot]
+		t.at = s.cycleBase.Add(time.Duration(s.slot) * s.IntervalFor(s.mode) / time.Duration(len(plan)))
+		tg = &t
+	}
+	s.advanceLocked()
+	for !s.next.IsZero() && s.next.Before(s.skipBefore) {
+		s.advanceLocked() // too close to an early test
+	}
+	return tg, 0
+}
+
+// earlyLocked, after an explicit turn-on or mode change (never a
+// restart), brings the first test to firstDelay from now: an extra run of
+// the next grid slot (its rotation stays its nominal time's). The grid
+// then goes on from the slot after it, skipping any slot less than half a
+// spacing after the early test, so no two tests are closer than that.
+func (s *Scheduler) earlyLocked(now time.Time) {
+	early := now.Add(firstDelay)
+	if s.next.IsZero() || !s.next.After(early) {
+		return
+	}
+	s.next = early
+	s.skipBefore = early.Add(s.spacingLocked(s.mode) / 2)
 }
 
 // advanceLocked moves to the next slot. A new cycle starts at the next
@@ -543,31 +607,14 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		s.q.Run(ctx)
 	}()
 	defer func() { <-qdone }()
+	defer func() { s.bgStop(); s.bg.Wait() }()
 	for {
-		now := s.o.Now()
 		s.mu.Lock()
-		wait := time.Hour
-		if !s.next.IsZero() {
-			if wait = s.next.Sub(now); wait <= 0 {
-				// Every due slot goes into the queue, late ones too: the
-				// queue drops a slot that waits ScheduledStale, and never
-				// stacks two. The slot times themselves never move.
-				var tg *target
-				if plan := s.planLocked(s.mode); s.slot < len(plan) {
-					t := plan[s.slot]
-					t.at = s.cycleBase.Add(time.Duration(s.slot) * s.IntervalFor(s.mode) / time.Duration(len(plan)))
-					tg = &t
-				}
-				s.advanceLocked()
-				wait = 0
-				if tg != nil {
-					s.mu.Unlock()
-					s.q.EnqueueScheduled(s.slotJob(*tg))
-					s.mu.Lock()
-				}
-			}
-		}
+		tg, wait := s.dueLocked(s.o.Now())
 		s.mu.Unlock()
+		if tg != nil {
+			s.q.EnqueueScheduled(s.slotJob(*tg))
+		}
 		if wait <= 0 {
 			continue
 		}
@@ -638,6 +685,7 @@ func (s *Scheduler) SetMode(ctx context.Context, m Mode, extra []string) (time.T
 	}
 	if changed {
 		s.restartLocked(s.o.Now())
+		s.earlyLocked(s.o.Now())
 	}
 	next := s.next
 	s.mu.Unlock()
@@ -655,7 +703,7 @@ func (s *Scheduler) State() State {
 	load := s.planLoadLocked(s.mode)
 	st := State{Mode: s.mode, Modes: s.Modes(), SetByFlag: s.setByFlag, Extra: slices.Clone(s.extra),
 		Interval: s.IntervalFor(s.mode), Spacing: s.spacingLocked(s.mode), PlannedShare: load.Share,
-		Regions: s.o.Catalog.Regions, Next: s.next}
+		Regions: s.o.Catalog.Regions, Next: s.next, Vias: maps.Clone(s.vias)}
 	if s.mode == ModeOff {
 		st.PlannedShare = 0
 	}

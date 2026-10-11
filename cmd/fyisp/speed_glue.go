@@ -203,7 +203,7 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 	o.OpenPinger = func() (speedtest.LoadPinger, error) { return probe.OpenPinger() }
 	o.Conn = func() string { return netinfo.ConnType(path().Iface) }
 	hf := &speedtest.HandoffFinder{Edge: func() netip.Addr { return path().Edge }}
-	o.Handoff = hf.Handoff
+	o.Handoff, o.HandoffCached = hf.Handoff, hf.Cached
 	sm := metrics.NewSpeed()
 	mc.Register(sm)
 	o.OnResult = sm.Observe
