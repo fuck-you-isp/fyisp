@@ -148,6 +148,15 @@ func TestStillRising(t *testing.T) {
 		{"cut down", []float64{1.63, 1.18, 1.42, 1.35, 1.31}, 0, false},
 		{"1G down", []float64{1.25, 0.85, 0.96, 0.97, 0.99, 1.0, 0.97}, 0, false},
 		{"1G up", []float64{1.27, 0.95, 0.87, 1.06, 0.94, 0.95}, 0, false},
+		// htb bursts on the real 1G uploads (r4, r5, r7), and steady rises
+		// (net-isp's amendment; a first tick prepended).
+		{"1G up r4", []float64{1, 0.74, 0.95, 1.14, 0.97}, 0, false},
+		{"1G up r5", []float64{1, 0.74, 0.86, 1.17, 1.00}, 0, false},
+		{"1G up r7", []float64{1, 0.86, 0.84, 1.18, 0.94}, 0, false},
+		{"rise 0.2-0.95", []float64{0.1, 0.2, 0.4, 0.6, 0.8, 0.95}, 0, true},
+		{"rise 0.3-0.9", []float64{0.1, 0.3, 0.5, 0.7, 0.9}, 0, true},
+		{"rise 0.5-1", []float64{0.1, 0.5, 0.7, 0.85, 1.0}, 0, true},
+		{"rise 0.6-1", []float64{0.1, 0.6, 0.8, 0.9, 1.0}, 0, true},
 		{"far down", []float64{0.01, 0.02, 0, 0.04, 0.07, 0, 0.15, 0.3, 0, 0.59, 1.19, 0}, 150 * time.Millisecond, true},
 		{"far up", []float64{0, 0.01, 0.01, 0.01, 0.04, 0, 0.07, 0.15, 0, 0.3, 0.59, 0, 1.19, 1.27, 1.01}, 150 * time.Millisecond, true},
 	} {
