@@ -5,7 +5,7 @@ The record of the public iperf3 servers fyisp's speed tests use, what fyisp send
 ## What fyisp sends
 
 - **Protocol:** stock iperf3 over TCP, IPv4 only: the control connection, then 8 data streams, download (reverse mode) then upload. The control cookie starts with `fyisp`, so the tests can be told apart in a server's debug log.
-- **Per test:** each direction runs until its rate levels off and holds steady, from 3 up to 10 seconds measured, at most about 11 seconds each way, ramp-up included. The client ends the test (TEST_END), which stock servers accept. This applies to every test, including those started from a share link. A hard stop (an RST) 2 seconds after the time is up ends a direction whatever the server does.
+- **Per test:** each direction runs until its rate levels off and holds steady, from 3 up to 10 seconds measured, at most about 11 seconds each way, ramp-up included. The client ends the test (TEST_END), which stock servers accept. This applies to every test. A hard stop (an RST) 2 seconds after the time is up ends a direction whatever the server does.
 - **One at a time:** an install never runs two tests at once, against any server.
 - **Busy servers:** a busy or refusing port gets at most 2 more ports, 2 seconds apart (single-port servers: none), then fyisp moves to another provider. A server busy 3 scheduled tests in a row is left alone for 6 hours.
 - **From where:** the user's own connection; the server sees the user's public IP address.
@@ -20,7 +20,7 @@ Speed tests are **off by default**. Once a user turns them on:
 | `regions` (the default) | each region once an hour, rotating between the region's providers: one test every 2 to 3 hours per server in a 2- or 3-provider region, hourly for a single-server region (East Asia, and some opt-in regions) |
 | `nearby` | 3 nearby servers and 1 far region, each every 15 minutes |
 | `custom` | the servers the user names, at most every 15 minutes (catalog servers) |
-| Test now / Test every server | on demand: one test, or one test of every server; from the share link only if its owner allows it, within the time caps below |
+| Test now / Test every server | on demand, by the install's owner only: one test, or one test of every server |
 
 The interval can't go below 15 minutes per region or server for catalog servers.
 
@@ -49,30 +49,6 @@ Notes:
 - about 66 GB a day for a single-server region (24 tests).
 
 Typical early-stopped tests are about 40% of these figures.
-
-## Share-link tests
-
-If the owner allows it, visitors to a share link can start tests too. They are limited by time only:
-- at most 10 minutes of testing an hour;
-- at most 60 minutes a day;
-- at least 30 minutes between "test every server" sweeps.
-
-A test moves what the line carries while it runs. So the worst case is the line rate for the whole allowance, spread over whichever catalog servers the tests reach (a sweep visits every server once):
-
-| User's line (each way) | Worst case per hour (10 min) | Worst case per day (60 min) |
-|---|---|---|
-| 100 Mbit/s | 7.5 GB | 45 GB |
-| 300 Mbit/s | 22.5 GB | 135 GB |
-| 500 Mbit/s | 37.5 GB | 225 GB |
-| 1 Gbit/s | 75 GB | 450 GB |
-| 2.5 Gbit/s | 190 GB | 1.1 TB |
-| 10 Gbit/s | 750 GB | 4.5 TB |
-
-How to read the table:
-- It assumes the line runs at full rate in one direction for the whole allowance. Because download and upload alternate, the same figure covers a symmetric line's two directions combined.
-- An asymmetric line moves less, since its upload half runs at the upload rate.
-- Setup, the pauses between directions and busy servers count against the time but move no data, so real use is lower.
-- These figures come on top of the scheduled tests in "Data per test".
 
 ## Operators
 

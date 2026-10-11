@@ -6,7 +6,7 @@
 # arguments. Nothing is installed; the download is deleted when fyisp exits.
 #
 #   curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/download/<version>/run.sh | sh
-#   curl ... | sh -s -- --share          # pass arguments to fyisp
+#   curl ... | sh -s -- --speedtest      # pass arguments to fyisp
 #
 # Environment:
 #   FYISP_BASE_URL  download from here instead of the GitHub release (must be

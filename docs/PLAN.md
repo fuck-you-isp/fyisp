@@ -1,5 +1,7 @@
 # Plan: FYISP v0.1, a single Go binary (`fyisp`)
 
+> **Historical plan.** The share link it describes (`--share`, the Cloudflare quick tunnel, the public listener and everything served on it) was removed in v0.8.0; see the README's "Sharing" and "Upgrading to v0.8.0".
+
 ## Context
 FYISP ("F*** You ISP") measures how well a home connection reaches hyperscalers and popular services, so people can prove their ISP is at fault. Today it runs as 4 containers (`docker-compose.yml`):
 - `syepes/network_exporter` pinging 87 targets with ICMP every 3s
@@ -194,6 +196,8 @@ The prototype binary is 6.4 MB before the tunnel is added.
   - **Redaction:** no LAN IPs, gateway, hostname, username, paths or version build info. Tested with golden files.
 
 ### Tunnel (`internal/tunnel`, cloudflared pinned to `2026.9.3`)
+*Removed in v0.8.0 with the share link.*
+
 - **Off by default.** Start it with `--share` or the local UI button. When it starts, fyisp prints what will be public.
 - **Module setup:**
   - Copy cloudflared's `replace` lines for quic-go, urfave/cli and yaml.v3. Skip the `golang_client` typo.
