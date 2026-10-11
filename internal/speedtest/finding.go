@@ -149,8 +149,8 @@ func FindFinding(in FindingInput) (f Finding) {
 	}
 	if out > 0 && out == len(servers) && len(rawDays) >= MinDays {
 		f = Finding{Case: CaseTooFast, Days: len(rawDays), Tests: rawN, Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{},
-			Text:       "Your line is too fast for these tests to compare times of day: most tests reach their 100 MB limit while still speeding up.",
-			TextPublic: "The line is too fast for these tests to compare times of day: most tests reach their 100 MB limit while still speeding up."}
+			Text:       "Your line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up.",
+			TextPublic: "The line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up."}
 		f.Evidence = fmt.Sprintf("Based on %s on %s.", plural(rawN, "test", "tests"), plural(len(rawDays), "day", "days"))
 		f.EvidencePublic = f.Evidence
 		return f

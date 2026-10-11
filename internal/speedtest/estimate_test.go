@@ -62,6 +62,12 @@ func TestPeak90(t *testing.T) {
 	if e = run(6e6, 9.5e6, 10e6, 9.8e6); e.lowerBound || e.method != MethodPeak90 {
 		t.Errorf("[0.6 0.95 1.0 0.98]: %+v", e)
 	}
+	if e = run(6e6, 9.4e6, 10e6, 9.8e6); e.lowerBound {
+		t.Errorf("[0.6 0.94 1 0.98]: %+v", e)
+	}
+	if e = run(5e6, 9.1e6, 10e6, 10e6); e.lowerBound {
+		t.Errorf("[0.5 0.91 1 1]: %+v", e)
+	}
 	if e = run(4e6, 7e6, 9e6, 10e6); !e.lowerBound {
 		t.Errorf("[0.4 0.7 0.9 1.0]: %+v", e)
 	}
@@ -109,6 +115,12 @@ func TestEstimateRun(t *testing.T) {
 // of the true rate); evenings read eve of it and are never lower bounds.
 // Scores are computed in time order against Baseline, as saving does.
 func capFixture(c *Catalog, days int, lb func(h int, r *rand.Rand) bool, lbX, eve float64) []model.SpeedTest {
+	return capFixtureEve(c, days, lb, lbX, eve, 0)
+}
+
+// capFixtureEve is capFixture with a share eveLB of the evenings lower
+// bounds too (reading lbX of the evening's rate).
+func capFixtureEve(c *Catalog, days int, lb func(h int, r *rand.Rand) bool, lbX, eve, eveLB float64) []model.SpeedTest {
 	r := rand.New(rand.NewPCG(3, 4))
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	var ts []model.SpeedTest
@@ -118,6 +130,8 @@ func capFixture(c *Catalog, days int, lb func(h int, r *rand.Rand) bool, lbX, ev
 				at := start.Add(time.Duration(d*24+h)*time.Hour + time.Duration(i)*20*time.Minute)
 				rate, isLB := 1e9, false
 				switch {
+				case evening(h) && eveLB > 0 && r.Float64() < eveLB:
+					rate, isLB = rate*eve*lbX, true
 				case evening(h):
 					rate *= eve
 				case lb(h, r):
@@ -208,6 +222,16 @@ func TestFastLineGuard(t *testing.T) {
 	t.Logf("80%% at random: %.0f%% lower bounds: %s", 100*lbShare(ts), f.Case)
 	if f.Case != CaseTooFast {
 		t.Errorf("80%% at random (%.0f%%): %s: %s", 100*lbShare(ts), f.Case, f.Text)
+	}
+	// Lower bounds in the evenings too (net-isp): below normal they are
+	// left out, so the evening's real 0.6 still shows.
+	for _, eveLB := range []float64{0.5, 0.7} {
+		ts := capFixtureEve(c, 14, share(0.5), 0.85, 0.6, eveLB)
+		f := FindFinding(FindingInput{Tests: ts, Catalog: c})
+		t.Logf("evening lower bounds %.0f%%: %s, drop %.2f", 100*eveLB, f.Case, f.Drop)
+		if f.Case != CaseISP || math.Abs(f.Drop-0.4) > 0.05 {
+			t.Errorf("evening lower bounds %.0f%%: %s %.2f: %s", 100*eveLB, f.Case, f.Drop, f.Text)
+		}
 	}
 	// Some servers out: judged over the others, and said so.
 	ts = capFixture(c, 14, func(int, *rand.Rand) bool { return false }, 0.85, 0.6)
