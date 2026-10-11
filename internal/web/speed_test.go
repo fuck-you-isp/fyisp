@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -226,6 +227,10 @@ func TestSpeedGolden(t *testing.T) {
 			if l := strings.ReplaceAll(strings.ToLower(string(got)), "your server", ""); strings.Contains(l, "your") {
 				i := strings.Index(l, "your")
 				t.Errorf("public speed JSON addresses the viewer: …%s…", l[max(0, i-80):min(len(l), i+40)])
+			}
+			// It never tells tests apart, nor names networks or exchanges.
+			if m := regexp.MustCompile(`"public"|public_sweep|"manual"|"sweep"|"via"|DE-CIX|AS[0-9]|"network"`).FindString(string(got)); m != "" {
+				t.Errorf("public speed JSON has %s", m)
 			}
 		}
 		path := filepath.Join("testdata", "speed", name+".json")
@@ -970,5 +975,20 @@ func TestWithVia(t *testing.T) {
 	}
 	if got := withVia(ts, st, true); got[0].Handoff.Via != "" {
 		t.Error("the share link got the exchange")
+	}
+}
+
+// TestSpeedWindowsOrigin: the share link's windows never say whose test
+// it was; the owner's do.
+func TestSpeedWindowsOrigin(t *testing.T) {
+	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	ts := []model.SpeedTest{{Start: at, End: at.Add(10 * time.Second), Trigger: "public"}, {Start: at.Add(time.Hour), End: at.Add(time.Hour + 9*time.Second), Trigger: "schedule"}}
+	if w := speedWindows(ts, at.Add(-time.Hour), false); len(w) != 2 || w[0].Origin != "public" || w[1].Origin != "scheduled" {
+		t.Errorf("local %+v", w)
+	}
+	for _, w := range speedWindows(ts, at.Add(-time.Hour), true) {
+		if w.Origin != "test" {
+			t.Errorf("public %+v", w)
+		}
 	}
 }
