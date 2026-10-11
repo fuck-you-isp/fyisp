@@ -56,23 +56,6 @@ func (s *SQLite) SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error {
 	return nil
 }
 
-// SetSpeedHandoff fills in a saved test's handoff (a traceroute that ran
-// after the save). A row retention already removed stays removed.
-func (s *SQLite) SetSpeedHandoff(ctx context.Context, id int64, h *model.Handoff) error {
-	if s.lock == nil {
-		return errors.New("store: read-only")
-	}
-	if h == nil {
-		return nil
-	}
-	_, err := s.db.w.ExecContext(ctx, `UPDATE speedtests SET handoff_asn = ?, handoff_name = ?, isp_asn = ?, handoff_ms = ? WHERE id = ?`,
-		int64(h.ASN), h.Name, int64(h.ISPASN), h.At.UnixMilli(), id)
-	if err != nil {
-		return fmt.Errorf("store: save speed test handoff: %w", err)
-	}
-	return nil
-}
-
 // SpeedTests returns the tests that started in [from, to], oldest first.
 func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 	rows, err := s.db.r.QueryContext(ctx, `SELECT id, start_ms, end_ms, trigger, outcome, region, server, fallback, port, attempts,

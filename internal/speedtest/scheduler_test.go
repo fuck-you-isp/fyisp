@@ -119,13 +119,11 @@ func (h *harness) setRun(f func(c Config, n int) (Result, error)) {
 }
 
 // job runs one job synchronously, as the queue would; it returns the tests
-// it saved (with their deferred handoffs).
+// it saved.
 func (h *harness) job(t *testing.T, j Job, trigger string) []model.SpeedTest {
 	t.Helper()
-	h.s.bg.Wait()
 	n := len(h.st.tests)
 	h.s.execJob(context.Background(), j, trigger)
-	h.s.bg.Wait() // a deferred handoff traceroute fills its row in
 	return h.st.tests[n:]
 }
 

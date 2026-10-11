@@ -292,6 +292,13 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 			x.Bridged = true
 		}
 	}
+	// The handoff of the first server, before the window (never during a
+	// test, nor in the next one's way); its test then dials that address.
+	steps = slices.Clone(steps)
+	pre, preH := s.handoffFor(ctx, &steps[0].Server)
+	if ctx.Err() != nil {
+		return nil, false, 0 // shut down or cancelled before the test
+	}
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)
 	var used Server
@@ -341,54 +348,60 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 			}
 		}
 	}
-	trace := s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && ip.IsValid()
-	if trace && s.o.HandoffCached != nil {
-		if h, ok := s.o.HandoffCached(ip.String()); ok {
-			t.Handoff, trace = h, false
-			s.noteVia(used.ID, h)
+	if s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && ip.IsValid() {
+		switch {
+		case ip == pre:
+			t.Handoff = preH
+		case s.o.HandoffCached != nil: // a fallback server: only a recent answer
+			if h, ok := s.o.HandoffCached(ip.String()); ok {
+				t.Handoff = h
+				s.noteVia(used.ID, h)
+			}
 		}
 	}
 	saved := s.save(ctx, &t, x)
-	if trace && t.ID != 0 {
-		s.deferHandoff(t.ID, ip, used.ID)
-	}
 	return &t, saved, t.Bytes
 }
 
-// deferHandoff runs the handoff traceroute after the test is saved (never
-// between a test and its save, nor in the queue's way) and fills in its
-// row. It goes to the address the test used, already resolved and checked
-// (never a fresh lookup of the name); at most one runs at a time (another
-// test of the server will trace next time), and shutdown ends it.
-func (s *Scheduler) deferHandoff(id int64, ip netip.Addr, server string) {
-	if !s.tracing.CompareAndSwap(false, true) {
-		return
+// handoffFor resolves and checks sv's address once (its test then dials
+// it: sv.Host becomes the address) and finds the handoff on the path to
+// it: a recent answer at once, else a traceroute bounded by handoffBudget
+// (none on timeout). Nothing without Options.Handoff, or when the name
+// doesn't resolve to an address the server may have (the test reports
+// that).
+func (s *Scheduler) handoffFor(ctx context.Context, sv *Server) (netip.Addr, *model.Handoff) {
+	if s.o.Handoff == nil {
+		return netip.Addr{}, nil
 	}
-	trace := s.o.Handoff
-	s.bg.Add(1)
-	go func() {
-		defer s.bg.Done()
-		defer s.tracing.Store(false)
-		ctx, cancel := context.WithTimeout(s.bgCtx, handoffBudget)
-		h, err := trace(ctx, ip.String())
-		cancel()
-		if err != nil || h == nil {
-			if err != nil {
-				s.o.Log.Debug("speed test: handoff traceroute failed", "server", server, "err", err)
-			}
-			return
+	c := Config{Addr: net.JoinHostPort(sv.Host, "1"), Check: sv.check, Lookup: s.o.lookup}
+	c.defaults()
+	rctx, cancel := context.WithTimeout(ctx, pickTimeout)
+	ap, err := c.resolve(rctx)
+	cancel()
+	if err != nil {
+		return netip.Addr{}, nil
+	}
+	ip := ap.Addr()
+	sv.Host = ip.String()
+	if s.o.HandoffCached != nil {
+		if h, ok := s.o.HandoffCached(ip.String()); ok {
+			s.noteVia(sv.ID, h)
+			return ip, h
 		}
-		s.noteVia(server, h)
-		hs, ok := s.o.Store.(HandoffStore)
-		if !ok || s.bgCtx.Err() != nil {
-			return
-		}
-		sctx, cancel := storeCtx(s.bgCtx)
-		defer cancel()
-		if err := hs.SetSpeedHandoff(sctx, id, h); err != nil {
-			s.o.Log.Debug("speed test: saving the handoff failed", "server", server, "err", err)
-		}
-	}()
+	}
+	bound := s.o.handoffIn
+	if bound <= 0 {
+		bound = handoffBudget
+	}
+	hctx, cancel := context.WithTimeout(ctx, bound)
+	defer cancel()
+	h, err := s.o.Handoff(hctx, ip.String())
+	if err != nil {
+		s.o.Log.Debug("speed test: handoff traceroute failed", "server", sv.ID, "err", err)
+		return ip, nil
+	}
+	s.noteVia(sv.ID, h)
+	return ip, h
 }
 
 // saveCancelled stores a cancelled test: its window (Start, End), server,
@@ -434,7 +447,7 @@ func (s *Scheduler) noteVia(server string, h *model.Handoff) {
 	s.vias[server] = *h
 }
 
-// handoffBudget bounds one handoff traceroute (after the test is saved).
+// handoffBudget bounds one handoff traceroute (before the test's window).
 const handoffBudget = 10 * time.Second
 
 // loadRun opens the pinger for one test's latency under load; nil without

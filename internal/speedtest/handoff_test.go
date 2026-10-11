@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
+	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo/hops"
 )
 
@@ -111,5 +112,15 @@ func TestHandoffIX(t *testing.T) {
 		if asn == 0 || name == "" {
 			t.Errorf("ixASNs %d %q", asn, name)
 		}
+	}
+}
+
+// TestNetKey: one peer met at two exchanges is two links.
+func TestNetKey(t *testing.T) {
+	a := model.SpeedTest{Handoff: &model.Handoff{ASN: 3356, Name: "LEVEL3", Via: "DE-CIX"}}
+	b := model.SpeedTest{Handoff: &model.Handoff{ASN: 3356, Name: "LEVEL3", Via: "AMS-IX"}}
+	c := model.SpeedTest{Handoff: &model.Handoff{ASN: 3356, Name: "LEVEL3"}}
+	if netKey(a) == netKey(b) || netKey(a) == netKey(c) || netKey(c) != "LEVEL3 (AS3356)" || netKey(model.SpeedTest{}) != "" {
+		t.Errorf("%q %q %q", netKey(a), netKey(b), netKey(c))
 	}
 }
