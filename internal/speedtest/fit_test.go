@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -161,5 +162,38 @@ func TestQueueOwnerCancelCause(t *testing.T) {
 				t.Errorf("rows %+v, want one cancelled by %q", ts, c.want)
 			}
 		})
+	}
+}
+
+// TestQueueChargesTheWindow: a share-link test cut short is masked past its
+// end (the abort tail); its time is charged to the window's end, and the
+// next test is charged from there on, so no second is counted twice.
+func TestQueueChargesTheWindow(t *testing.T) {
+	var winEnd atomic.Int64
+	q, f := newQueueHarness(t, func(o *QueueOptions) {
+		o.WindowEnd = func() time.Time { return time.Unix(0, winEnd.Load()) }
+	})
+	f.step.Store(int64(8 * time.Second))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	run := func(v string, tail time.Duration) {
+		t.Helper()
+		e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-f.started
+		winEnd.Store(time.Unix(0, f.now.Load()).Add(8*time.Second + tail).UnixNano()) // the window ends tail past the test
+		f.release <- struct{}{}
+		waitFor(t, func() bool { x, _ := q.Get(e.ID); return !x.Finished.IsZero() })
+	}
+	run("v1", 3*time.Second) // cut short: 8 s run, 3 s tail
+	if st := q.State(); st.TimeHour != 11*time.Second {
+		t.Fatalf("charged %v, want the 11 s window", st.TimeHour)
+	}
+	run("v2", 0) // starts at once, inside v1's tail: charged from the tail's end
+	if st := q.State(); st.TimeHour != 16*time.Second {
+		t.Errorf("charged %v, want 11 + 5 s (the tail counted once)", st.TimeHour)
 	}
 }
