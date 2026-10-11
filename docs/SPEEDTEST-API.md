@@ -1,6 +1,6 @@
 # Speed tests: API contract (fyisp v0.7)
 
-iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs download, then upload: 8 TCP streams, a ramp-up that is left out (decided afterwards, where the rate levels off), then at least 3 s and up to 10 s: a direction stops early only once its rate has levelled off, at least 3 s have passed since it first came near its peak, and a second is within 5% of the one before. A hard stop (an RST) 2 s after the 11 s ends it whatever the server does. There is no byte cap, for any test (rows from before v0.7.2 stopped at 100 MB each way).
+iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs download, then upload: 8 TCP streams, a ramp-up that is left out (decided afterwards, where the rate levels off), then at least 3 s and up to 10 s: a direction stops early only once its rate has levelled off, at least 3 s have passed since it first came near its peak, and a second is within 5% of the one before. So a direction runs at most about 11 s, ramp-up included; a hard stop (an RST) 2 s after that ends it whatever the server does. There is no byte cap, for any test (rows from before v0.7.2 stopped at 100 MB each way).
 
 Modes:
 - **`off`**, the default.

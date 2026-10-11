@@ -36,7 +36,7 @@ its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
 Scaleway and others; the README lists them) and to servers you name with
 `--speedtest-server`, and to no one else. The catalog is built into the
 binary and never fetched. Those servers see your public IP address. Each test
-runs up to 10 seconds each way (plus a ramp-up of at most 1 second), with
+runs at most about 11 seconds each way, ramp-up included, with
 no byte cap; share-link tests are the same, within their time caps. Once a day per server, fyisp traceroutes the path to
 it to name the first network past your ISP (shown locally only). "Test now", sweeps, cancelling and the
 mode choice are write actions behind the same protections as notes (same
