@@ -428,7 +428,7 @@ One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
 ### `GET api/speed?part=sweep`
 
-`{"at": ..., "running": { ...Entry } | null, "entry": { ...Entry } | null, "tests": [ ...Test ]}`: `running` is a sweep under way, with its results so far; `entry` and `tests` are the last finished sweep.
+`{"at": ..., "running": { ...Entry } | null, "entry": { ...Entry } | null, "tests": [ ...Test ]}`: `running` is a sweep under way, with its results so far; `entry` and `tests` are the last sweep that ended, whether it ran every server, stopped early, or was cancelled (`stopped_reason` says which; servers it never reached are `skipped`).
 
 ### `POST api/speed/run?kind=single[&id=<server or region id>]` or `?kind=sweep`
 

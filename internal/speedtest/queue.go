@@ -602,6 +602,12 @@ func (q *Queue) insertLocked(e *qentry) {
 // finishLocked moves e to the finished entries in state st.
 func (q *Queue) finishLocked(e *qentry, st string, now time.Time) {
 	e.State, e.Finished, e.cancel = st, now, nil
+	if st == StateCancelled && e.Stopped == "" {
+		e.Stopped = StopCancelled
+	}
+	if e.Kind == KindSweep && !e.Started.IsZero() {
+		q.lastSweep = e // done, stopped early, cancelled or dropped part-way: its results so far stay readable
+	}
 	q.finished[e.ID] = e
 	for id, f := range q.finished {
 		if now.Sub(f.Finished) >= KeepFinished {
@@ -616,7 +622,7 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 	defer q.mu.Unlock()
 	now := q.o.Now()
 	if e := q.running; e != nil && e.ID == id {
-		e.State = StateCancelled // the runner finishes it once the test returns
+		e.State, e.Stopped = StateCancelled, StopCancelled // the runner finishes it once the test returns
 		if e.cancel != nil {
 			e.cancel()
 		}
@@ -681,6 +687,7 @@ func (q *Queue) Run(ctx context.Context) {
 			}
 			q.waiting = slices.Delete(q.waiting, i, i+1)
 			if e.Who == WhoPublic && q.publicLocked(now) != nil {
+				e.Stopped = StopLimit
 				q.finishLocked(e, StateDropped, now) // turned off, or the budget ran out while it waited
 				e = nil
 				continue
@@ -824,9 +831,6 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 	q.running = nil
 	now := q.o.Now()
 	q.finishLocked(e, st, now)
-	if e.Kind == KindSweep && st == StateDone {
-		q.lastSweep = e
-	}
 	if e.Kind == KindSweep && e.Who == WhoPublic {
 		q.sweepEnd = now
 	}

@@ -802,6 +802,42 @@ func TestQueueStoppedReason(t *testing.T) {
 	}
 }
 
+// TestQueueCancelledSweepIsLast: a sweep cancelled while running, or while
+// paused for another test, is the last sweep, with its reason.
+func TestQueueCancelledSweepIsLast(t *testing.T) {
+	q, f := newQueueHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	// Running: cancelled during its second test.
+	sw, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	<-f.started
+	f.release <- struct{}{}
+	<-f.started
+	x, _ := q.Cancel(sw.ID)
+	if x.Stopped != StopCancelled {
+		t.Errorf("the cancel's answer: stopped %q", x.Stopped)
+	}
+	waitFor(t, func() bool { x, _ := q.Get(sw.ID); return !x.Finished.IsZero() })
+	if l := q.State().LastSweep; l == nil || l.ID != sw.ID || l.Ran != 2 || l.Stopped != StopCancelled || len(l.Tests) != 1 {
+		t.Fatalf("last sweep %+v", l)
+	}
+	// Paused: a public sweep yields to the owner's test, then is cancelled
+	// while it waits.
+	pub, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v1"})
+	<-f.started
+	q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner})
+	f.release <- struct{}{}
+	<-f.started // the owner's test; the sweep waits
+	if x, _ := q.Cancel(pub.ID); x.State != StateCancelled {
+		t.Fatalf("paused sweep: %+v", x)
+	}
+	if l := q.State().LastSweep; l == nil || l.ID != pub.ID || l.Ran != 1 || l.Stopped != StopCancelled {
+		t.Errorf("last sweep %+v", l)
+	}
+	f.release <- struct{}{}
+}
+
 // TestBudgetChargesTheWire: a share-link test against a real (fake) iperf3
 // server charges the budget at least every byte the server moved, both
 // directions, ramp-up included.
