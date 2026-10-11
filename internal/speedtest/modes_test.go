@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -376,6 +377,9 @@ func TestCancelMasksUntilStreamsClose(t *testing.T) {
 	if len(ts) != 1 || ts[0].Outcome != model.SpeedCancelled || ts[0].DownBps != nil || ts[0].Server != sv.ID || ts[0].End.Before(ret.Add(AbortTail)) {
 		t.Fatalf("stored %+v", ts)
 	}
+	if ts[0].Bytes <= 0 {
+		t.Errorf("the cancelled row's bytes: %d", ts[0].Bytes)
+	}
 	if st := Summarize(ts, nil); st.N != 0 || st.Failed != 0 || st.Busy != 0 {
 		t.Errorf("a cancelled test counted: %+v", st)
 	}
@@ -456,4 +460,61 @@ func TestCancelAtCompletion(t *testing.T) {
 	if len(ts) != 2 || ts[1].Outcome != model.SpeedCancelled {
 		t.Errorf("cancelled: %+v", ts)
 	}
+}
+
+// TestAtMostNineConnections: one test never holds more than Streams+1
+// connections to a server, across download, the relisten pause, a busy
+// retry and upload (counted by the client's dialler and by the server).
+func TestAtMostNineConnections(t *testing.T) {
+	f := newFakeServer(t, "")
+	host, port, _ := net.SplitHostPort(f.addr())
+	p, _ := strconv.Atoi(port)
+	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p + 5, Custom: true, LAN: true}
+	var open, peak atomic.Int32
+	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		c, err := d.DialContext(ctx, network, f.addr()) // every port is the fake
+		if err != nil {
+			return nil, err
+		}
+		n := open.Add(1)
+		for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+		}
+		return &dialedConn{Conn: c, open: &open}, nil
+	}
+	var runs []Direction
+	s := New(Options{Catalog: &Catalog{byID: map[string]int{}}, Custom: []Server{sv}, Store: &MemStore{},
+		Fake: &Fake{
+			Run: func(ctx context.Context, c Config) (Result, error) {
+				if c.Direction == Upload && !slices.Contains(runs, Upload) {
+					f.busyNext.Store(1) // the upload's first port is busy
+				}
+				runs = append(runs, c.Direction)
+				c.Dial, c.Streams = dial, 8
+				c.Duration, c.MinDuration, c.Omit = 300*time.Millisecond, 0, 100*time.Millisecond
+				return Run(ctx, c)
+			},
+			Sleep: func(ctx context.Context, _ time.Duration) bool { return ctx.Err() == nil },
+		}})
+	id, saved, _ := s.execJob(context.Background(), s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
+	if !saved || id == 0 || !slices.Equal(runs, []Direction{Download, Upload, Upload}) {
+		t.Fatalf("saved %v, runs %v", saved, runs)
+	}
+	if peak.Load() > 9 || f.peak.Load() > 9 || peak.Load() < 9 {
+		t.Errorf("at most %d open (client), %d (server); want 9", peak.Load(), f.peak.Load())
+	}
+	if open.Load() != 0 {
+		t.Errorf("%d connections left open", open.Load())
+	}
+}
+
+type dialedConn struct {
+	net.Conn
+	open *atomic.Int32
+	once sync.Once
+}
+
+func (c *dialedConn) Close() error {
+	c.once.Do(func() { c.open.Add(-1) })
+	return c.Conn.Close()
 }
