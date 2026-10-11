@@ -26,19 +26,17 @@ const (
 )
 
 // fastEveningCut: on a 2 Gbit/s line every direction reaches the 100 MB
-// cap within half a second. The steady-rate estimator (A2) must measure
-// such a direction from where its rate levels off (rate method peak90) and
-// store a lower bound exactly when it was still speeding up at the cap;
-// the API's flags must be the stored ones. Measured in the lab: the near
-// server's download levels off at about 2 Gbit/s; its upload is often a
-// lower bound (100 MB is about four 100 ms ticks, and a first tick still
-// ramping up leaves fewer than 3 at 90% of the peak); the far server (150 ms
-// RTT) levels off at about 950 Mbit/s, window-limited, so not a lower
-// bound. Under load the near download can be a lower bound too, so at
-// 2 Gbit/s only the method, the rate and the stored/API agreement are
-// asserted. A 30% cut of the line's download (to 1.4 Gbit/s, about six
-// ticks) must read as about 30% less, from the plateau, not as a lower
-// bound; and at 1 Gbit/s neither direction is a lower bound.
+// cap within half a second. The steady-rate estimator must measure such a
+// direction from where its rate levels off (rate method peak90) and store a
+// lower bound only when it was still speeding up at the cap; the API's
+// flags must be the stored ones. On this line (htb, whose bursts make the
+// bytes per 100 ms tick swing by a third at 2 Gbit/s while the ticks
+// themselves are on time) the near server's directions, the 30% download
+// cut (1.4 Gbit/s) and a 1 Gbit/s line all level off: never a lower bound,
+// within about 10% of the shaped rate (9 of 9 runs on release/v0.7.1
+// ce3b7fc; the assertion allows 12%).
+// The far server (150 ms RTT) is window-limited at about 950 Mbit/s down
+// and still speeding up over its RTT-scaled smoothing window: a lower bound.
 //
 // The finding needs days of scheduled tests, so the store is seeded with
 // 9 days of hourly tests against the built-in catalog's regions before
@@ -60,6 +58,7 @@ func fastEveningCut(t *testing.T) {
 			tc("filter", "add", "dev", x.dev, "parent", "1:", "protocol", "ip", "prio", "1", "u32",
 				"match", "ip", x.peer, iperfB.String()+"/32", "flowid", "1:20")
 		}
+		h.env = append(h.env, "FYISP_TICKS=1") // per-tick log of capped directions (fyisp-1.log)
 	}, func(dir string) { seedFastHistory(t, dir, 9) })
 
 	type result struct {
@@ -92,26 +91,33 @@ func fastEveningCut(t *testing.T) {
 		}
 	}
 
-	// Near server, full rate: capped both ways, measured from the plateau.
-	// At 2 Gbit/s 100 MB lasts about four 100 ms ticks, so a direction whose
-	// first tick was still ramping up is a lower bound by design (fewer than
-	// 3 ticks at 90% of the peak); the download, received here and fastest
-	// to ramp, levels off.
-	near := run("near", iperfA)
-	consistent("near", near)
-	for i, dir := range []string{"down", "up"} {
-		bps := []*float64{near.api.DownBps, near.api.UpBps}[i]
-		if near.method[i] != speedtest.MethodPeak90 || *bps < 0.8*fastRate || *bps > 1.05*fastRate {
-			t.Errorf("near %s: %.0f Mbit/s by %q, want about %.0f from the plateau", dir, *bps/1e6, near.method[i], fastRate/1e6)
+	// levelled checks a capped direction measured from its plateau: rate
+	// method peak90, not a lower bound, within 12% of the shaped rate (of 80
+	// measured, the lowest was 10.05% below, a 2 Gbit/s upload, and the
+	// highest 7.8% above, a 1 Gbit/s upload over an htb burst).
+	levelled := func(name string, r result, i int, want float64) {
+		t.Helper()
+		bps := []*float64{r.api.DownBps, r.api.UpBps}[i]
+		dir := []string{"down", "up"}[i]
+		if r.method[i] != speedtest.MethodPeak90 || r.lower[i] || *bps < 0.88*want || *bps > 1.12*want {
+			t.Errorf("%s %s: %.0f Mbit/s by %q, lower bound %v; want about %.0f, from the plateau, not a lower bound",
+				name, dir, *bps/1e6, r.method[i], r.lower[i], want/1e6)
 		}
 	}
-	if near.lower[0] || near.lower[1] {
-		t.Logf("near at 2 Gbit/s: lower bound %v/%v (allowed: about four ticks to the cap)", near.lower[0], near.lower[1])
-	}
 
-	// Far server (150 ms): its rate and flags as measured, consistently.
+	// Near server, full rate: capped both ways, levelled off.
+	near := run("near", iperfA)
+	consistent("near", near)
+	levelled("near", near, 0, fastRate)
+	levelled("near", near, 1, fastRate)
+
+	// Far server (150 ms): its window-limited download is still speeding
+	// up at the cap over its RTT-scaled smoothing, so a lower bound.
 	far := run("far", iperfB)
 	consistent("far", far)
+	if !far.lower[0] {
+		t.Errorf("far down: %.0f Mbit/s, not a lower bound; want one at 150 ms", *far.api.DownBps/1e6)
+	}
 
 	// The evening cut: the line's download drops 30%; the near server reads
 	// about 30% less, measured from the plateau, not a lower bound.
@@ -119,26 +125,18 @@ func fastEveningCut(t *testing.T) {
 		"rate", rate(fastRate*(1-fastCut)), "burst", "4mb", "cburst", "4mb")
 	cut := run("near, cut", iperfA)
 	consistent("near, cut", cut)
-	ratio := *cut.api.DownBps / *near.api.DownBps
-	if ratio < 1-fastCut-0.1 || ratio > 1-fastCut+0.1 || cut.method[0] != speedtest.MethodPeak90 || cut.lower[0] || cut.api.DownLowerBound {
-		t.Errorf("near after a %.0f%% cut: x%.2f (%.0f -> %.0f Mbit/s), rate method %q, lower bound %v/%v; want about x%.1f from the plateau",
-			100*fastCut, ratio, *near.api.DownBps/1e6, *cut.api.DownBps/1e6, cut.method[0], cut.lower[0], cut.api.DownLowerBound, 1-fastCut)
-	}
+	levelled("near, cut", cut, 0, fastRate*(1-fastCut))
+	levelled("near, cut", cut, 1, fastRate)
 
-	// At 1 Gbit/s the cap leaves about eight ticks: a near server's
-	// directions level off and are never lower bounds.
+	// At 1 Gbit/s: the same.
 	for _, x := range []struct{ ns, dev string }{{l.isp, "i0"}, {l.gw, "g1"}} {
 		l.nsRun(t, x.ns, "tc", "class", "change", "dev", x.dev, "parent", "1:", "classid", "1:10", "htb",
 			"rate", rate(fastRate/2), "burst", "4mb", "cburst", "4mb")
 	}
 	slow := run("near, 1 Gbit/s", iperfA)
 	consistent("near, 1 Gbit/s", slow)
-	for i, dir := range []string{"down", "up"} {
-		bps := []*float64{slow.api.DownBps, slow.api.UpBps}[i]
-		if slow.method[i] != speedtest.MethodPeak90 || slow.lower[i] || *bps < 0.4*fastRate || *bps > 0.53*fastRate {
-			t.Errorf("near at 1 Gbit/s %s: %.0f Mbit/s by %q, lower bound %v; want about 1000 from the plateau, not a lower bound", dir, *bps/1e6, slow.method[i], slow.lower[i])
-		}
-	}
+	levelled("near, 1 Gbit/s", slow, 0, fastRate/2)
+	levelled("near, 1 Gbit/s", slow, 1, fastRate/2)
 
 	// The finding over the seeded days: the ISP, at the cut's hours.
 	var s struct {

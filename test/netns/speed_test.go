@@ -44,6 +44,7 @@ func TestSpeed(t *testing.T) {
 			h.nsRun(t, h.isp, "tc", "qdisc", "add", "dev", "i0", "root", "tbf", "rate", "50mbit", "burst", "32kb", "limit", "6250000") // 1 s
 			h.nsRun(t, h.gw, "tc", "qdisc", "add", "dev", "g1", "root", "tbf", "rate", "20mbit", "burst", "32kb", "limit", "2500000")  // 1 s
 		})
+		h.waitIdle(t)
 		r := h.speedTest(t, iperfA)
 		l := r.latency(t)
 		e, g := l.Edge, l.Gateway
@@ -92,6 +93,7 @@ func TestSpeed(t *testing.T) {
 				h.nsRun(t, x.ns, "tc", "qdisc", "add", "dev", x.dev, "parent", "1:10", "fq_codel")
 			}
 		})
+		h.waitIdle(t)
 		r := h.speedTest(t, iperfA)
 		e := r.latency(t).Edge
 		for _, x := range []struct {
@@ -242,6 +244,17 @@ func newSpeedLabData(t *testing.T, shape func(h *harness), data func(dir string)
 	}()
 	t.Cleanup(func() { close(l.stop); <-l.done })
 	return l
+}
+
+// waitIdle waits until a test has idle latency to compare with: the
+// first 2 minutes after fyisp starts are never idle (path discovery and
+// the first traceroutes), and the idle stats need 20 samples (the ISP edge
+// and the gateway are pinged every second).
+func (l *speedLab) waitIdle(t *testing.T) {
+	if d := time.Until(l.started.Add(2*time.Minute + 30*time.Second)); d > 0 {
+		t.Logf("waiting %s for idle latency samples", d.Round(time.Second))
+		time.Sleep(d)
+	}
 }
 
 func net4(a netip.Addr, port int) string { return a.String() + ":" + strconv.Itoa(port) }

@@ -475,8 +475,9 @@ func (h *harness) restart(t *testing.T) {
 type harness struct {
 	dir     string // 0755 work dir: binary, profile, certificates, resolv.conf
 	bin     string
-	profile string // the --config file fyisp runs with (default profile.yml)
-	out     string // evidence directory, may be ""
+	profile string   // the --config file fyisp runs with (default profile.yml)
+	env     []string // extra environment for fyisp (e.g. FYISP_TICKS=1)
+	out     string   // evidence directory, may be ""
 	client  *http.Client
 	started time.Time
 	runs    int // fyisp processes started (names their logs)
@@ -796,6 +797,7 @@ func (h *harness) startFyispOn(t *testing.T, addr string, args ...string) *fyisp
 		"TMPDIR=" + filepath.Join(h.dir, "tmp"),
 		"SSL_CERT_FILE=" + filepath.Join(h.dir, "ca.pem"),
 	}
+	cmd.Env = append(cmd.Env, h.env...)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {
