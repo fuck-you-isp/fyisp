@@ -37,17 +37,21 @@ function pausedUntil(at, time = false, left = -1) {
 function nextSweep(at) { return at ? `The next full test from this link can start at ${when(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
 // A full test: seconds per server, with the pause between tests.
 const SWEEP_S = 26;
-// The most one test can move: 100 MB per direction plus the backstop's margin (A1).
+// The most a share-link test can move: 100 MB per direction plus the backstop's margin (A1).
+// The owner's and the schedule's tests stop after 10 seconds each way instead, with no byte cap.
 const TEST_MAX = 210e6;
 
 /** One test's bytes on this line: the latest test's when known, else the cap. @param {SpeedSummary|null} d */
 function perTestBytes(d) {
-  // The server's median over 30 days, else the latest ok test, else the cap.
+  // The server's median over 30 days, else the latest ok test. A share-link test is capped at TEST_MAX
+  // (worst case 200 MB when unknown); the owner's runs 10 seconds, so without a figure its size is unknown (0).
   const med = d && /** @type {any} */ (d).bytes_per_test;
-  if (med > 1e6) return Math.min(med, TEST_MAX);
-  const b = d && d.latest && d.latest.outcome === 'ok' ? d.latest.bytes || 0 : 0;
-  return b > 1e6 ? Math.min(b, TEST_MAX) : 200e6;
+  const b = med > 1e6 ? med : d && d.latest && d.latest.outcome === 'ok' ? d.latest.bytes || 0 : 0;
+  if (MODE === 'public') return b > 1e6 ? Math.min(b, TEST_MAX) : 200e6;
+  return b > 1e6 ? b : 0;
 }
+/** "uses about 9 GB of data", or, for the owner's run before any test, that it depends on the line. @param {number} total */
+function dataWords(total) { return total > 0 ? `uses about ${gbBoth(total)} of data` : 'uses an amount of data that depends on your line’s speed'; }
 /** "2.1 GB" and "10 GB" the same way on both sides of an "of": one decimal under 10 GB. @param {number} b */
 function gbBoth(b) {
   const g = Math.max(0, b) / 1e9;
@@ -231,7 +235,7 @@ export class SpeedQueue {
     const p = (/** @type {string} */ t) => h('p', { text: t });
     /** @type {Node[]} */
     const body = [p(`One test on each of the ${n} servers, one after another.${MODE === 'local' && skipped ? ` ${skipped === 1 ? '1 server you skipped won’t be tested.' : `${skipped} servers you skipped won’t be tested.`}` : ''}`)];
-    body.push(p(`Takes about ${mins} minute${mins === 1 ? '' : 's'} and uses about ${gbBoth(total)} of data.`));
+    body.push(p(`Takes about ${mins} minute${mins === 1 ? '' : 's'} and ${dataWords(total)}.`));
     if (MODE === 'public') {
       body.push(p('The owner’s line is busy most of that time, so their calls may stutter.'));
       const b = q && q.budget;
@@ -447,7 +451,7 @@ export class SpeedQueue {
           h('span', { class: 'sp-hint', text: `They share a ${q.budget ? gb(q.budget.limit_bytes) : '10 GB'} daily allowance. Off by default.` }))) : null,
       // An allowance smaller than one test turns share-link tests off (A1): say so, never raise it.
       MODE === 'local' && tooSmall ? h('p', { id: 'sp-pub-off', class: 'sp-note', text: `Off: the daily allowance (${q?.budget ? mbWord(q.budget.limit_bytes) : 'set'}) is smaller than one test (about ${mbWord(q?.budget?.test_max_bytes || TEST_MAX)}). Raise it to at least ${mbWord(q?.budget?.test_max_bytes || TEST_MAX)} to allow tests from your share link.` }) : null,
-      h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${mins} minute${mins === 1 ? '' : 's'} and about ${gbBoth(perTestBytes(d) * n)} of data. The results are a snapshot, kept apart from the hourly pattern.` }),
+      h('p', { class: 'sp-lead', text: `One test on each of the ${n} servers, one after another: about ${mins} minute${mins === 1 ? '' : 's'}; it ${dataWords(perTestBytes(d) * n)}. The results are a snapshot, kept apart from the hourly pattern.` }),
       h('div', { class: 'sp-go-row' }, start, why ? h('span', { id: 'sp-sw-why', class: 'muted small', text: why }) : null),
       this.budgetLine(),
       MODE === 'local' && this.note && this.el.hidden ? h('p', { class: 'sp-note', text: this.note }) : null,
