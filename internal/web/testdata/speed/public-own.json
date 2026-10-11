@@ -1,0 +1,1714 @@
+{
+ "at": 1791655200000,
+ "bytes_24h": 0,
+ "bytes_month": 0,
+ "bytes_per_test": 150000000,
+ "configurable": false,
+ "connection": {
+  "source": "detected",
+  "type": "unknown"
+ },
+ "coverage": [
+  {
+   "hour": 0,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 1,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 2,
+   "n": 7,
+   "providers": 1
+  },
+  {
+   "hour": 3,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 4,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 5,
+   "n": 5,
+   "providers": 1
+  },
+  {
+   "hour": 6,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 7,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 8,
+   "n": 6,
+   "providers": 1
+  },
+  {
+   "hour": 9,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 10,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 11,
+   "n": 5,
+   "providers": 1
+  },
+  {
+   "hour": 12,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 13,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 14,
+   "n": 5,
+   "providers": 1
+  },
+  {
+   "hour": 15,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 16,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 17,
+   "n": 6,
+   "providers": 1
+  },
+  {
+   "hour": 18,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 19,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 20,
+   "n": 5,
+   "providers": 1
+  },
+  {
+   "hour": 21,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 22,
+   "n": 0,
+   "providers": 0
+  },
+  {
+   "hour": 23,
+   "n": 6,
+   "providers": 1
+  }
+ ],
+ "days": 7,
+ "edge_hours": null,
+ "enabled": true,
+ "exclude_fallback": false,
+ "extra": [],
+ "finding": {
+  "case": "not_enough_data",
+  "days": 8,
+  "drop": 0,
+  "evidence": "Based on 45 tests on 8 days.",
+  "evidence_public": "Based on 45 tests on 8 days.",
+  "hours": [],
+  "providers": [],
+  "regions": [],
+  "servers": [],
+  "tests": 45,
+  "text": "Still learning: 8 of 24 hours of the day have enough tests so far. More tests are needed: about 5 more days.",
+  "text_public": "Still learning: 8 of 24 hours of the day have enough tests so far. More tests are needed: about 5 more days.",
+  "up": false
+ },
+ "interval_s": 900,
+ "latest": {
+  "attempts": 1,
+  "bytes": 150000000,
+  "capped_by_budget": false,
+  "capped_by_server": false,
+  "city": "",
+  "conn": "unknown",
+  "display": "Your server",
+  "down_bps": 500000000,
+  "down_retrans": null,
+  "down_s": 4,
+  "down_short": false,
+  "end": 1791644412000,
+  "fallback": false,
+  "fallback_level": "none",
+  "id": 56,
+  "idle_gateway_ms": null,
+  "label": "Your server",
+  "latency": null,
+  "loaded_gateway_ms": null,
+  "on_demand": false,
+  "outcome": "ok",
+  "provider": "Your server",
+  "region": null,
+  "score": 1,
+  "server": "custom-1",
+  "start": 1791644400000,
+  "trigger": "test",
+  "up_bps": 50000000,
+  "up_retrans": null,
+  "up_s": 3,
+  "up_score": 1,
+  "up_short": false
+ },
+ "masked_share_24h": 0,
+ "mode": "custom",
+ "modes": [
+  "off",
+  "regions",
+  "nearby",
+  "custom"
+ ],
+ "next_at": 1791655320000,
+ "next_row": "custom-1",
+ "pattern": null,
+ "per_region": [
+  {
+   "best_down_bps": null,
+   "busy": 0,
+   "capped_by_server": 0,
+   "dip": null,
+   "down_median_bps": null,
+   "down_p10_bps": null,
+   "failed": 0,
+   "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": null,
+   "hours": [
+    {
+     "down_median_bps": null,
+     "hour": 0,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 1,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 2,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 3,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 4,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 5,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 6,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 7,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 8,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 9,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 10,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 11,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 12,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 13,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 14,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 15,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 16,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 17,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 18,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 19,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 20,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 21,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 22,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 23,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    }
+   ],
+   "id": "uk",
+   "kind": "region",
+   "label": "UK",
+   "latest_at": null,
+   "learning": false,
+   "n": 0,
+   "note": null,
+   "scheduled": false,
+   "score_median": null,
+   "server_now": "",
+   "servers": [
+    "Clouvider-London",
+    "Leaseweb-London"
+   ],
+   "unreachable": 0,
+   "up_dip": null,
+   "up_median_bps": null,
+   "up_p10_bps": null
+  },
+  {
+   "best_down_bps": null,
+   "busy": 0,
+   "capped_by_server": 0,
+   "dip": null,
+   "down_median_bps": null,
+   "down_p10_bps": null,
+   "failed": 0,
+   "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": null,
+   "hours": [
+    {
+     "down_median_bps": null,
+     "hour": 0,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 1,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 2,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 3,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 4,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 5,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 6,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 7,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 8,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 9,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 10,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 11,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 12,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 13,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 14,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 15,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 16,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 17,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 18,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 19,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 20,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 21,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 22,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 23,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    }
+   ],
+   "id": "us-east",
+   "kind": "region",
+   "label": "US East",
+   "latest_at": null,
+   "learning": false,
+   "n": 0,
+   "note": null,
+   "scheduled": false,
+   "score_median": null,
+   "server_now": "",
+   "servers": [
+    "Leaseweb-NewYork",
+    "Clouvider-NewYork",
+    "Leaseweb-Washington"
+   ],
+   "unreachable": 0,
+   "up_dip": null,
+   "up_median_bps": null,
+   "up_p10_bps": null
+  }
+ ],
+ "per_server": [
+  {
+   "best_down_bps": 500000000,
+   "busy": 6,
+   "capped_by_server": 0,
+   "dip": null,
+   "down_median_bps": 500000000,
+   "down_p10_bps": 300000000,
+   "failed": 0,
+   "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": null,
+   "hours": [
+    {
+     "down_median_bps": null,
+     "hour": 0,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 1,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 2,
+     "n": 7,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 7
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 3,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 4,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 5,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 6,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 7,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 8,
+     "n": 6,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 6
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 9,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 10,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 11,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 12,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 13,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 14,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 15,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 16,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 17,
+     "n": 6,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 6
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 18,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 19,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 20,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 21,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 22,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 300000000,
+     "hour": 23,
+     "n": 6,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": 0.6,
+     "servers": {
+      "custom-1": 6
+     },
+     "up_median_bps": 30000000,
+     "up_score_median": 0.6
+    }
+   ],
+   "id": "custom-1",
+   "kind": "server",
+   "label": "Your server",
+   "latest_at": 1791644400000,
+   "learning": false,
+   "n": 45,
+   "note": null,
+   "scheduled": true,
+   "score_median": 1,
+   "server_now": "custom-1",
+   "servers": [
+    "custom-1"
+   ],
+   "unreachable": 0,
+   "up_dip": null,
+   "up_median_bps": 50000000,
+   "up_p10_bps": 30000000
+  }
+ ],
+ "planned_share": 0.017,
+ "plans": [
+  {
+   "est_gb_month": 216,
+   "mode": "regions",
+   "share": 0.008,
+   "tests_per_hour": 2
+  },
+  {
+   "est_gb_month": 1728,
+   "mode": "nearby",
+   "share": 0.067,
+   "tests_per_hour": 16
+  },
+  {
+   "est_gb_month": 432,
+   "mode": "custom",
+   "share": 0.017,
+   "tests_per_hour": 4
+  }
+ ],
+ "regions": [
+  {
+   "default": true,
+   "id": "uk",
+   "nearby": [],
+   "providers": [
+    "Clouvider",
+    "Leaseweb"
+   ],
+   "servers": [
+    "Clouvider-London",
+    "Leaseweb-London"
+   ],
+   "title": "UK"
+  },
+  {
+   "default": true,
+   "id": "us-east",
+   "nearby": [
+    "Leaseweb-Washington"
+   ],
+   "providers": [
+    "Leaseweb",
+    "Clouvider"
+   ],
+   "servers": [
+    "Leaseweb-NewYork",
+    "Clouvider-NewYork"
+   ],
+   "title": "US East"
+  },
+  {
+   "default": false,
+   "id": "us-mid-atlantic",
+   "nearby": [],
+   "providers": [
+    "Leaseweb"
+   ],
+   "servers": [
+    "Leaseweb-Washington"
+   ],
+   "title": "US Mid-Atlantic"
+  }
+ ],
+ "rows": [
+  {
+   "best_down_bps": 500000000,
+   "busy": 6,
+   "capped_by_server": 0,
+   "dip": null,
+   "down_median_bps": 500000000,
+   "down_p10_bps": 300000000,
+   "failed": 0,
+   "fallback": 0,
+   "fallback_share": 0,
+   "fallback_share_24h": null,
+   "hours": [
+    {
+     "down_median_bps": null,
+     "hour": 0,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 1,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 2,
+     "n": 7,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 7
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 3,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 4,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 5,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 6,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 7,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 8,
+     "n": 6,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 6
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 9,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 10,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 11,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 12,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 13,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 14,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 15,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 16,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 17,
+     "n": 6,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 6
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 18,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 19,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 500000000,
+     "hour": 20,
+     "n": 5,
+     "n_capped": 0,
+     "n_failed": 1,
+     "n_fallback": 0,
+     "score_median": 1,
+     "servers": {
+      "custom-1": 5
+     },
+     "up_median_bps": 50000000,
+     "up_score_median": 1
+    },
+    {
+     "down_median_bps": null,
+     "hour": 21,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": null,
+     "hour": 22,
+     "n": 0,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": null,
+     "servers": {},
+     "up_median_bps": null,
+     "up_score_median": null
+    },
+    {
+     "down_median_bps": 300000000,
+     "hour": 23,
+     "n": 6,
+     "n_capped": 0,
+     "n_failed": 0,
+     "n_fallback": 0,
+     "score_median": 0.6,
+     "servers": {
+      "custom-1": 6
+     },
+     "up_median_bps": 30000000,
+     "up_score_median": 0.6
+    }
+   ],
+   "id": "custom-1",
+   "kind": "server",
+   "label": "Your server",
+   "latest_at": 1791644400000,
+   "learning": false,
+   "n": 45,
+   "note": null,
+   "scheduled": true,
+   "score_median": 1,
+   "server_now": "custom-1",
+   "servers": [
+    "custom-1"
+   ],
+   "unreachable": 0,
+   "up_dip": null,
+   "up_median_bps": 50000000,
+   "up_p10_bps": 30000000
+  }
+ ],
+ "running": null,
+ "servers": [
+  {
+   "area": "Europe",
+   "capacity_mbps": 10000,
+   "city": "London",
+   "country": "GB",
+   "custom": false,
+   "display": "UK · Clouvider, London",
+   "geo": "eu",
+   "id": "Clouvider-London",
+   "label": "Clouvider London",
+   "metro": "london",
+   "picked": false,
+   "provider": "Clouvider",
+   "region": "uk",
+   "rest_until": null,
+   "rtt_ms": null,
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
+  },
+  {
+   "area": "North America",
+   "capacity_mbps": null,
+   "city": "New York",
+   "country": "US",
+   "custom": false,
+   "display": "US East · Clouvider, New York",
+   "geo": "na",
+   "id": "Clouvider-NewYork",
+   "label": "Clouvider New York",
+   "metro": "new-york",
+   "picked": false,
+   "provider": "Clouvider",
+   "region": "us-east",
+   "rest_until": null,
+   "rtt_ms": null,
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
+  },
+  {
+   "area": "Europe",
+   "capacity_mbps": null,
+   "city": "London",
+   "country": "GB",
+   "custom": false,
+   "display": "UK · Leaseweb, London",
+   "geo": "eu",
+   "id": "Leaseweb-London",
+   "label": "Leaseweb London",
+   "metro": "london",
+   "picked": false,
+   "provider": "Leaseweb",
+   "region": "uk",
+   "rest_until": null,
+   "rtt_ms": null,
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
+  },
+  {
+   "area": "North America",
+   "capacity_mbps": null,
+   "city": "New York",
+   "country": "US",
+   "custom": false,
+   "display": "US East · Leaseweb, New York",
+   "geo": "na",
+   "id": "Leaseweb-NewYork",
+   "label": "Leaseweb New York",
+   "metro": "new-york",
+   "picked": false,
+   "provider": "Leaseweb",
+   "region": "us-east",
+   "rest_until": null,
+   "rtt_ms": null,
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
+  },
+  {
+   "area": "North America",
+   "capacity_mbps": null,
+   "city": "Washington",
+   "country": "US",
+   "custom": false,
+   "display": "US East · Leaseweb, Washington",
+   "geo": "na",
+   "id": "Leaseweb-Washington",
+   "label": "Leaseweb Washington",
+   "metro": "washington",
+   "picked": false,
+   "provider": "Leaseweb",
+   "region": "us-east",
+   "rest_until": null,
+   "rtt_ms": null,
+   "single_port": false,
+   "skip_locked": false,
+   "skipped": false
+  },
+  {
+   "area": "",
+   "capacity_mbps": null,
+   "city": "",
+   "country": "",
+   "custom": true,
+   "display": "Your server",
+   "geo": "",
+   "id": "custom-1",
+   "label": "Your server",
+   "metro": "",
+   "picked": false,
+   "provider": "Your server",
+   "region": null,
+   "rest_until": null,
+   "rtt_ms": null,
+   "single_port": true,
+   "skip_locked": false,
+   "skipped": false
+  }
+ ],
+ "set_by_flag": false,
+ "spacing_s": 900,
+ "tz": 120,
+ "tz_name": "",
+ "under_load": {
+  "layers": [],
+  "text": []
+ },
+ "warning": null,
+ "zone_label": "UTC+2"
+}

@@ -448,7 +448,7 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
 }
 ```
 
-`results[].status` is `waiting`, `testing`, the stored outcome (`ok`, `busy`, `unreachable`, `failed`), or `skipped`: cancelled mid-test, or never reached because the sweep stopped early (see `stopped_reason`). A finished sweep never shows `waiting`. `down_bps` and `up_bps` are set for `ok` only.
+`results[].status` is `waiting`, `testing`, the stored outcome (`ok`, `busy`, `unreachable`, `failed`), `cancelled` (the server whose test a cancel stopped mid-run), or `skipped` (never reached because the sweep stopped early: see `stopped_reason`). A finished sweep never shows `waiting`. `down_bps` and `up_bps` are set for `ok` only.
 
 On the share link, `who` is `you` only for that visitor's own entries; everyone else's, the owner's included, are `someone`. Locally, the owner's are `you` and the share link's are `someone`. Targets and servers use the share link's ids (`custom-1`), and no host, port or address appears.
 

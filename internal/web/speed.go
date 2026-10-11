@@ -328,6 +328,22 @@ func (n speedNames) server(id string) (ref speedRef, display, provider, city str
 
 func (n speedNames) ref(id string) speedRef { r, _, _, _ := n.server(id); return r }
 
+// pubID is a server or row id as the viewer may see it: on the share link
+// the owner's own servers (configured or removed since) are custom-N or
+// "custom", never a host or port; catalog servers and regions are as they
+// are.
+func (n speedNames) pubID(id string) string {
+	if !n.public || id == "" || n.regions[id] != "" {
+		return id
+	}
+	if n.cat != nil {
+		if _, ok := n.cat.Server(id); ok {
+			return id
+		}
+	}
+	return n.ref(id).ID
+}
+
 // resolve maps a requested (public or local) ID to the stored one.
 func (n speedNames) resolve(id string) string {
 	for local, k := range n.custom {
@@ -626,7 +642,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
 		MaskedShare24h: math.Round(s.d.Speed.MaskedShare(24*time.Hour)*1000) / 1000,
-		NextAt:         ms(st.Next), OwnerTZ: st.OwnerZone, NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
+		NextAt:         ms(st.Next), OwnerTZ: st.OwnerZone, NextRow: strPtr(names.pubID(st.NextRow)), Running: s.speedRunning(names),
 		Rows: []speedRow{}, PerRegion: []speedRow{}, PerServer: []speedRow{}, Servers: []speedServerJSON{}, Regions: []speedRegionJSON{},
 		Connection: speedConnection{Type: "unknown", Source: "detected"}}
 	if !s.public {
@@ -729,7 +745,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		if !r.Default && !isSched && len(byRegion[r.ID]) == 0 {
 			continue
 		}
-		row := speedRowOf(r.ID, "region", r.Title, byRegion[r.ID], tz)
+		row := speedRowOf(r.ID, "region", r.Title, byRegion[r.ID], tz, names)
 		row.Servers = append(slices.Clone(r.Servers), r.Nearby...)
 		row.Scheduled, row.Why = isSched, sr.Why
 		note(&row, r.Title)
@@ -742,7 +758,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 			continue
 		}
 		ref := names.ref(sv.ID)
-		row := speedRowOf(ref.ID, "server", ref.Label, ts, tz)
+		row := speedRowOf(ref.ID, "server", ref.Label, ts, tz, names)
 		row.Servers = []string{ref.ID}
 		row.Scheduled, row.Why = isSched, sr.Why
 		out.PerServer = append(out.PerServer, row)
@@ -892,8 +908,20 @@ func (r *speedRow) publicWording() {
 var publicWording = strings.NewReplacer("your provider's", "the provider's", "your line", "the line", "your modem", "the modem", "your daytime", "the daytime", "your usual", "the usual", "your provider", "the internet provider",
 	"Your router's", "The router's", "your home", "the home")
 
-func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz *time.Location) speedRow {
+func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz *time.Location, names speedNames) speedRow {
 	row := speedRow{ID: id, Kind: kind, Label: label, Stats: speedtest.Summarize(ts, tz)}
+	// The stats name the servers that answered: public ids on the share link.
+	row.ServerNow = names.pubID(row.ServerNow)
+	for i, h := range row.Hours {
+		if len(h.Servers) == 0 {
+			continue
+		}
+		m := make(map[string]int, len(h.Servers))
+		for id, k := range h.Servers {
+			m[names.pubID(id)] += k
+		}
+		row.Hours[i].Servers = m
+	}
 	if row.Stats.LatestAt != nil {
 		row.LatestAt = ms(*row.Stats.LatestAt)
 	}
@@ -1104,7 +1132,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 	for _, t := range ts[max(0, len(ts)-speedTestsCap):] {
 		out.Tests = append(out.Tests, names.test(t))
 	}
-	out.Row = speedRowOf(id, out.Kind, label, ts, p.zone.loc)
+	out.Row = speedRowOf(id, out.Kind, label, ts, p.zone.loc, names)
 	out.Row.Servers = servers
 	for _, r := range st.Rows {
 		if r.ID == id || names.ref(r.ID).ID == id {

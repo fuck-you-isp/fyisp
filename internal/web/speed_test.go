@@ -718,6 +718,109 @@ func TestSpeedPublicBudgetTooSmall(t *testing.T) {
 	}
 }
 
+// newOwnServerRig: mode custom on one own server (10.77.66.55:5333) with a
+// week of scheduled tests on it, so the summary's rows, hours, server_now
+// and next_row all name it.
+func newOwnServerRig(t *testing.T) *speedRig {
+	t.Helper()
+	ctx := context.Background()
+	cat := speedCatalog(t)
+	custom, err := speedtest.Custom(ownServer, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &speedRig{st: &speedtest.MemStore{}, release: make(chan struct{}), tokens: make(chan struct{}, 100)}
+	g.st.SetSetting(ctx, speedtest.SettingKey, "custom")
+	f := func(v float64) *float64 { return &v }
+	i := 0
+	for at := speedNow.Add(-7 * 24 * time.Hour); at.Before(speedNow); at = at.Add(3 * time.Hour) {
+		i++
+		x := model.SpeedTest{Start: at, End: at.Add(12 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, Server: ownServer,
+			Port: 5333, Attempts: 1, FallbackLevel: speedtest.FallbackNone, DownSecs: 4, UpSecs: 3, Bytes: 150e6}
+		switch {
+		case i%9 == 4:
+			x.Outcome, x.Bytes = model.SpeedBusy, 0
+		case i%11 == 6:
+			x.Outcome, x.Trigger, x.Bytes = model.SpeedCancelled, "manual", 40e6
+		default:
+			sc := 1.0
+			if h := at.Hour(); h >= 19 && h <= 22 {
+				sc = 0.6
+			}
+			down, up := 500e6*sc, 50e6*sc
+			x.DownBps, x.UpBps, x.ScoreDown, x.ScoreUp = &down, &up, f(sc), f(sc)
+		}
+		g.st.SaveSpeedTest(ctx, &x)
+	}
+	on := true
+	g.s = speedtest.New(speedtest.Options{Catalog: cat, Custom: custom, Store: g.st, Now: func() time.Time { return speedNow }, Public: &on})
+	if _, err := g.s.SetMode(ctx, speedtest.ModeCustom, nil); err != nil {
+		t.Fatal(err)
+	}
+	return g
+}
+
+const ownServer = "10.77.66.55:5333"
+
+// TestSpeedPublicOwnServer: the share link never names the owner's own
+// server (no host, no port) in any of its responses: it is custom-1 in the
+// rows, their hours, server_now, next_row, the tests, the queue and the
+// windows. Locally it keeps its address. The public summary is pinned in
+// testdata/speed/public-own.json (-update).
+func TestSpeedPublicOwnServer(t *testing.T) {
+	g := newOwnServerRig(t)
+	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
+	// Locally the fields name it, so the share link's checks below mean something.
+	l := do(loc, "GET", "/api/speed?days=7&tz=120", speedHost).Body.String()
+	for _, want := range []string{`"next_row":"` + ownServer + `"`, `"server_now":"` + ownServer + `"`, `"` + ownServer + `":`} {
+		if !strings.Contains(l, want) {
+			t.Errorf("local summary lacks %s", want)
+		}
+	}
+	if w := do(pub, "POST", speedPub+"/api/speed/run?id=custom-1", speedVisitor("1.1.1.1")); w.Code != 202 {
+		t.Fatalf("public run: %d %s", w.Code, w.Body.String())
+	}
+	leak := regexp.MustCompile(`10\.77\.66\.55|5333`)
+	for _, path := range []string{
+		"/api/speed?days=7&tz=120", "/api/speed?days=30", "/api/speed?server=custom-1&days=7", "/api/speed?server=custom-1&days=30&tz=120",
+		"/api/speed?part=windows&from=now-7d&to=now", "/api/speed?part=queue", "/api/speed?part=sweep", "/api/speed?part=running",
+		"/api/speed?part=entry&id=1", "/api/home?part=live&voice=public", "/api/home?part=history&span=w&voice=public", fmt.Sprintf("/api/home?part=at&at=%d&voice=public", speedNow.Add(-time.Hour).UnixMilli()),
+	} {
+		w := do(pub, "GET", speedPub+path, speedVisitor("1.1.1.1"))
+		if w.Code != 200 {
+			t.Errorf("%s: %d %s", path, w.Code, w.Body.String())
+			continue
+		}
+		if m := leak.FindStringIndex(w.Body.String()); m != nil {
+			b := w.Body.String()
+			t.Errorf("%s names the own server: …%s…", path, b[max(0, m[0]-80):min(len(b), m[1]+20)])
+		}
+	}
+	p := do(pub, "GET", speedPub+"/api/speed?days=7&tz=120", nil).Body.String()
+	for _, want := range []string{`"next_row":"custom-1"`, `"server_now":"custom-1"`, `"custom-1":`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("public summary lacks %s", want)
+		}
+	}
+	var v any
+	json.Unmarshal([]byte(p), &v)
+	got, _ := json.MarshalIndent(v, "", " ")
+	got = append(got, '\n')
+	path := filepath.Join("testdata", "speed", "public-own.json")
+	if *update {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%v (run with -update)", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("%s differs from the golden file; run go test ./internal/web -run TestSpeedPublicOwnServer -update and review the diff", path)
+	}
+}
+
 // TestSweepResults: a running sweep lists each server with its status and
 // the results so far.
 func TestSweepResults(t *testing.T) {
@@ -796,7 +899,7 @@ func TestSweepCancelledStaysReadable(t *testing.T) {
 	if e.ID != started.Entry.ID || e.State != "cancelled" || e.StoppedReason == nil || *e.StoppedReason != "cancelled" || sw.Running != nil {
 		t.Fatalf("part=sweep: %+v (running %+v)", e, sw.Running)
 	}
-	want := []string{"ok", "ok", "skipped", "skipped", "skipped", "skipped"}
+	want := []string{"ok", "ok", "cancelled", "skipped", "skipped", "skipped"}
 	for i, r := range e.Results {
 		if r.Status != want[i] {
 			t.Errorf("result %d: %s, want %s", i, r.Status, want[i])

@@ -139,6 +139,9 @@ type Entry struct {
 	// CancelledBy: "owner" when the owner cancelled it (Cancel,
 	// ClearPublic, turning the share link off); "" otherwise (shutdown).
 	CancelledBy string
+	// Cut: the job (1-based) a cancel stopped mid-test, without a result;
+	// 0 when none was.
+	Cut int
 }
 
 // Why an entry stopped early (Entry.Stopped).
@@ -919,6 +922,8 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		if saved {
 			e.Tests = append(e.Tests, id)
 			e.JobTests[i] = id
+		} else if ctx.Err() != nil {
+			e.Cut = i + 1
 		}
 		q.mu.Unlock()
 		if e.Who == WhoPublic {
