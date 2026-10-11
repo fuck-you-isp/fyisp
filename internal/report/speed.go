@@ -34,6 +34,9 @@ type speedView struct {
 	// link (the rest were scheduled); Origins says so, "" when all were.
 	Owner, Public int
 	Origins       string
+	// TooFast: some rows are too fast to measure from here (the method
+	// note says they're left out).
+	TooFast bool
 }
 
 type slowRow struct{ Text, Aria string }
@@ -221,7 +224,7 @@ func (r *run) speedSection() *speedView {
 	if cat != nil {
 		f := speedtest.FindFinding(speedtest.FindingInput{Tests: r.speed, Catalog: cat, Loc: loc, From: r.from, To: r.to})
 		switch f.Case {
-		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed:
+		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed, speedtest.CaseTooFast:
 			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (times in " + v.Zone + ")."
 			f.Caveat = f.CaveatPublic
 			if r.o.Redact { // the share link's rules: no start date, no networks by name
@@ -299,8 +302,9 @@ func (r *run) speedSection() *speedView {
 				worst, worstDrop = name, st.Dip.Drop
 			}
 		}
-		if st.TooFast && st.Dip == nil { // its downloads are "at least" values
-			row.Dip = "Too fast to measure from this far within the 100 MB limit."
+		if st.TooFast { // the coverage guard: out of the patterns
+			row.Dip = "Too fast to measure from here"
+			v.TooFast = true
 		}
 		var trouble []string
 		if st.Busy > 0 {

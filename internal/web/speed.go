@@ -137,11 +137,18 @@ type speedTestJSON struct {
 	DownShort      bool     `json:"down_short"`
 	UpShort        bool     `json:"up_short"`
 	CappedByBudget bool     `json:"capped_by_budget"` // either direction hit the 100 MB cap: show "≥ X"
-	// DownLowerBound and UpLowerBound: still speeding up at the cap, so the
-	// speed was at least this. Its score never reads as slow: at or above
-	// 1 it is "at least normal", below it "not counted".
+	// DownLowerBound and UpLowerBound: still speeding up at the cap (or a
+	// v0.7.0 result capped in its ramp-up), so the speed was at least
+	// this. It counts as at least normal in the patterns, never slow.
+	// DownRampCapped and UpRampCapped are the same flags (the acceptance
+	// script's names). RateMethod and WinMs: how the capped direction (the
+	// download if capped, else the upload) was measured.
 	DownLowerBound  bool     `json:"down_lower_bound,omitempty"`
 	UpLowerBound    bool     `json:"up_lower_bound,omitempty"`
+	DownRampCapped  bool     `json:"down_ramp_capped,omitempty"`
+	UpRampCapped    bool     `json:"up_ramp_capped,omitempty"`
+	RateMethod      string   `json:"rate_method,omitempty"`
+	WinMs           float64  `json:"win_ms,omitempty"`
 	DownSecs        float64  `json:"down_s"`
 	UpSecs          float64  `json:"up_s"`
 	CappedByServer  bool     `json:"capped_by_server"`
@@ -352,6 +359,15 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		Bytes: t.Bytes, DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans,
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
 	j.DownLowerBound, j.UpLowerBound = speedtest.LowerBounds(&t)
+	j.DownRampCapped, j.UpRampCapped = j.DownLowerBound, j.UpLowerBound
+	if t.DownShort || t.UpShort {
+		x := speedtest.ParseExtra(t.Extra)
+		i := 0
+		if !t.DownShort {
+			i = 1
+		}
+		j.RateMethod, j.WinMs = x.RateMethod[i], x.WinMs[i]
+	}
 	if j.FallbackLevel == "" {
 		j.FallbackLevel = speedtest.FallbackNone
 	}
