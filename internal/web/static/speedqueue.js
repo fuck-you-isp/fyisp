@@ -471,11 +471,13 @@ export class SpeedQueue {
         case 'busy': return 'server busy';
         case 'unreachable': return 'didn’t answer';
         case 'failed': return 'didn’t finish';
+        case 'cancelled': return 'cancelled'; // the server whose test the cancel stopped mid-run
         case 'skipped': return e.stopped_reason === 'cancelled' ? 'not reached (test cancelled)' : 'not reached';
         default: return 'waiting';
       }
     };
-    const mark = { ok: '✓', testing: '●', busy: '×', unreachable: '×', failed: '×', skipped: '–', waiting: '○' };
+    // A cancelled test is neutral, like one never reached: never ×.
+    const mark = { ok: '✓', testing: '●', busy: '×', unreachable: '×', failed: '×', cancelled: '–', skipped: '–', waiting: '○' };
     return h('div', { class: 'sp-live' },
       h('h3', { text: `${e.who === 'you' ? 'Your' : 'A'} full test: ${done} of ${res.length} servers done` }),
       h('ol', { class: 'sp-live-list' }, ...res.map((r) => h('li', { class: 'st-' + r.status },
