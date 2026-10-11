@@ -85,6 +85,10 @@ var (
 	// that port right now. A stock iperf3 server closes its listener for a
 	// moment after every test, so another port (or a retry) may work.
 	ErrRefused = errors.New("iperf3 connection refused")
+	// ErrOverrun: a download reached the backstop (the server kept sending
+	// past the byte cap) before its window was complete, and was cut with
+	// an RST.
+	ErrOverrun = errors.New("iperf3 server kept sending past the byte cap")
 )
 
 // ServerError is an iperf3 SERVER_ERROR or SERVER_TERMINATE.
@@ -153,6 +157,10 @@ type Result struct {
 	Ramp          time.Duration // the ramp-up left out
 	IP            netip.Addr    // the address the test ran against
 	TotalBytes    int64         // every byte moved, ramp-up included (data use)
+	// Overrun: the server kept sending past the cap and the run was cut at
+	// the backstop (after a complete window; else the run fails with
+	// ErrOverrun).
+	Overrun bool
 }
 
 // BitsPerSecond is the throughput.
@@ -270,6 +278,15 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer stop()
 
 	r, err := t.run(ctx, &res)
+	if t.overrun.Load() {
+		// The measurement stands when the window was complete (only the
+		// server's retransmits are lost); else the run failed.
+		r, err = res, nil
+		r.Overrun = true
+		if !res.CappedByBytes || res.Elapsed <= 0 {
+			err = ErrOverrun
+		}
+	}
 	if err != nil {
 		t.abort() // nothing more to send: drop what is queued
 	}
@@ -354,6 +371,7 @@ type test struct {
 	stopAt  atomic.Int64
 	dialRTT time.Duration // the control connection's connect time: the RTT without TCP_INFO
 	capped  atomic.Bool
+	overrun atomic.Bool // the backstop cut the run
 }
 
 func (t *test) close() { t.shut(false) }
@@ -470,6 +488,10 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 			}
 		}()
 	}
+	if t.c.Direction == Download && t.c.MaxBytes > 0 {
+		t.wg.Add(1)
+		go t.backstop()
+	}
 	per, err := t.dataPhase(counts, res)
 	done.Store(true)
 	if err != nil {
@@ -516,7 +538,7 @@ func (t *test) idle(deadline time.Time) error {
 			return t.stateErr(int8(b[0]))
 		}
 		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() {
+		if errors.As(err, &ne) && ne.Timeout() || t.capped.Load() { // capped: the backstop may have closed it
 			continue
 		}
 		return fmt.Errorf("control connection: %w", err)
@@ -659,6 +681,49 @@ func (t *test) count(n *atomic.Int64, k int) {
 func (t *test) capNow() {
 	if t.capped.CompareAndSwap(false, true) {
 		_ = t.ctrl.SetReadDeadline(time.Now()) // end the current wait now
+	}
+}
+
+// backstopEvery is how often a download's received bytes are checked
+// against the backstop.
+const backstopEvery = 5 * time.Millisecond
+
+// Backstop is where a download is cut with an RST, whatever the server
+// does: the run's cap plus 5%.
+func Backstop(maxBytes int64) int64 { return maxBytes + maxBytes/20 }
+
+// backstop watches a download's bytes received (the kernel's count where
+// known, read or still buffered; else what was read): at the stop point
+// the test is capped as when the reads reach it, and a server that ignores
+// TEST_END or keeps sending is aborted once they reach Backstop.
+func (t *test) backstop() {
+	defer t.wg.Done()
+	limit := Backstop(t.c.MaxBytes)
+	tk := time.NewTicker(backstopEvery)
+	defer tk.Stop()
+	for range tk.C {
+		t.mu.Lock()
+		if t.closed {
+			t.mu.Unlock()
+			return
+		}
+		var n int64
+		for i, s := range t.streams {
+			k := tcpReceived(s)
+			if i < len(t.counts) {
+				k = max(k, t.counts[i].Load())
+			}
+			n += k
+		}
+		t.mu.Unlock()
+		if n >= t.stopAt.Load() {
+			t.capNow()
+		}
+		if n >= limit {
+			t.overrun.Store(true)
+			t.abort()
+			return
+		}
 	}
 }
 

@@ -579,6 +579,9 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 		w := max(res.WireBytes, res.TotalBytes, res.Bytes)
 		wire += w
 		*left -= w
+		if res.Overrun || errors.Is(err, ErrOverrun) {
+			s.o.Log.Info("speed test: the server kept sending past the byte cap; cut", "server", sv.ID, "direction", dir.String())
+		}
 		switch {
 		case err == nil:
 			return res, port, attempt, model.SpeedOK, wire
