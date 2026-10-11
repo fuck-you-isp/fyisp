@@ -768,8 +768,12 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 	}
 	// Traces need no admin token on a LAN listener without one, but where
 	// there is one (a network listener, a tunnel via --allow-host) they
-	// do: they cost the line and the routers on the path.
+	// do: they cost the line and the routers on the path. Through
+	// --allow-host without a token (--admin-token=off) they are off.
 	switch {
+	case h.controls == "disabled" && len(h.opts.ExtraHosts) > 0:
+		writeInvErr(w, r, http.StatusForbidden, "forbidden", "on-demand traces are disabled: the dashboard is reachable through --allow-host and fyisp was started with --admin-token=off", 0)
+		return
 	case h.controls == "enabled" && proxied(r):
 		writeInvErr(w, r, http.StatusForbidden, "forbidden", errProxied, 0)
 		return

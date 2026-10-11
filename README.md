@@ -487,14 +487,14 @@ fyisp report --redact --from 2026-10-01 --to 2026-10-08 --title "Outage evidence
 
 A redacted report leaves out private addresses (LAN, gateway, CGNAT), masks your provider's first hop to /24, hides reverse DNS for the first public hops, and includes only the notes you marked *Include in redacted reports*. Without `--redact` a report is for you: it has every address and note.
 
-**Live access** (to let your IT team watch the dashboard, say) is up to you: run a tunnel or a reverse proxy to the local dashboard, for example `cloudflared tunnel --url http://127.0.0.1:3000` or `tailscale serve 3000`, and add its host name with `--allow-host`:
+**Live access** (to let your IT team watch the dashboard, say) is up to you: run a tunnel or a reverse proxy to the local dashboard, for example a [cloudflared named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel run`, with a host name you choose) or `tailscale serve 3000`, and add its host name with `--allow-host`. A quick tunnel (`cloudflared tunnel --url …`) gets a new random name on every run, so it can't be named ahead of time:
 
 ```sh
 fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 ```
 
 - Anyone who can open that address sees the **whole dashboard as you do**: every address, host name, note and report, not a redacted view. For people outside your household, send a redacted report instead.
-- Any `--allow-host` turns the **admin token** on, even when fyisp listens on 127.0.0.1 only: fyisp logs an "open this link" URL with it at every start (see [Controls under Docker](#controls-under-docker)), and changes and traces need it. That includes you on this machine, through `127.0.0.1` too: open the link once per browser.
+- Any `--allow-host` turns the **admin token** on, even when fyisp listens on 127.0.0.1 only: fyisp logs an "open this link" URL with it at every start (see [Controls under Docker](#controls-under-docker)), and changes and traces need it. That includes you on this machine, through `127.0.0.1` too: open the link once per browser. With `--admin-token=off` as well, changes and traces are off for everyone.
 - A dashboard without an admin token (loopback `--listen`, no `--allow-host`) refuses changes and traces that come through a proxy or tunnel (requests with `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`): set `--allow-host` or `--admin-token` for one that rewrites the `Host` header to `127.0.0.1`.
 
 ## Upgrading to v0.8.0

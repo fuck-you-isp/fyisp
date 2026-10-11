@@ -213,7 +213,7 @@ func (s *server) listNotes(w http.ResponseWriter, r *http.Request) {
 
 // serveNotes answers /api/annotations and /api/annotations/{id} on the
 // local listener: GET lists, POST adds, PUT replaces, DELETE removes.
-// Writes need the share controls' protections (see controlAllowed).
+// Writes need the write routes' protections (see controlAllowed).
 func (h *localHandler) serveNotes(w http.ResponseWriter, r *http.Request, rest string) {
 	if h.d.Annotations == nil {
 		writeErr(w, r, http.StatusNotFound, "notes are not available")

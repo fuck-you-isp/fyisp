@@ -128,3 +128,25 @@ func TestAdminSession(t *testing.T) {
 		t.Errorf("loopback = %d", w.Code)
 	}
 }
+
+// TestAllowHostWithoutToken: --allow-host with --admin-token=off on a
+// loopback listener. A tunnel or forwarder (ssh -R, socat, tailscale serve
+// tcp:) sets no proxy header, so the controls must be off, not enabled:
+// through the extra name and through 127.0.0.1 alike.
+func TestAllowHostWithoutToken(t *testing.T) {
+	h, fc := localHandlerFor(t, LocalOptions{Addr: "127.0.0.1:3000", ExtraHosts: []string{"fyisp.example.com"}})
+	for _, host := range []string{"fyisp.example.com", "127.0.0.1:3000"} {
+		hdr := map[string]string{"Host": host, "Origin": "https://" + host, "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123"}
+		var st localStatus
+		_ = json.Unmarshal(do(h, "GET", "/api/status", hdr).Body.Bytes(), &st)
+		if st.Controls != "disabled" {
+			t.Errorf("%s: controls = %q, want disabled", host, st.Controls)
+		}
+		if w := do(h, "DELETE", "/api/annotations/1", hdr); w.Code != 403 || !strings.Contains(w.Body.String(), "--allow-host") {
+			t.Errorf("%s: control = %d %s, want 403", host, w.Code, w.Body.String())
+		}
+	}
+	if fc.n != 0 {
+		t.Errorf("%d controls used", fc.n)
+	}
+}

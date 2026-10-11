@@ -1116,7 +1116,7 @@ func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params 
 }
 
 // serveSpeedConfig answers POST api/speed/config {"mode", "extra",
-// "public"}.
+// "skip"}.
 func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r) {
 		return

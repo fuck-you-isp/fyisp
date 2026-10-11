@@ -220,9 +220,9 @@ var removedFlags = map[string]string{
 const shareRemoved = `fyisp no longer publishes a public link.
   To show someone your connection, send them a report:
     fyisp report --redact -o report.html   (or "Create report" in the dashboard)
-  For live access, run your own tunnel or reverse proxy to the dashboard, e.g.
-    cloudflared tunnel --url http://127.0.0.1:3000   or   tailscale serve 3000
-  and start fyisp with --allow-host=<its host name>: the dashboard then
+  For live access, run your own named tunnel or reverse proxy to the
+  dashboard (a cloudflared named tunnel, tailscale serve 3000, nginx) and
+  start fyisp with --allow-host=<its host name>: the dashboard then
   requires the admin token for its controls. See the README's "Sharing"`
 
 // removedFlagErr turns the flag package's "flag provided but not defined"
@@ -418,7 +418,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		return err
 	}
 	if c.adminToken == adminTokenOff && len(c.allowHosts) > 0 && isLoopbackAddr(localAddr) {
-		log.Warn("--admin-token=off with --allow-host: dashboard controls are disabled for every browser, this one included")
+		log.Warn("--admin-token=off with --allow-host: dashboard controls and on-demand traces are disabled for every browser, this one included")
 	}
 	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}))
 	serve := func(name string, s *http.Server, ln net.Listener) {

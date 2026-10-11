@@ -17,6 +17,9 @@ type LocalOptions struct {
 	Addr string
 	// ExtraHosts are additional allowed Host header values, e.g.
 	// "fyisp.lan:3000" or "fyisp.lan" (any port). Compared case-insensitively.
+	// They mean the dashboard is reached from elsewhere (a proxy, a
+	// tunnel), whatever Addr is: without AdminToken the POST routes and
+	// on-demand traces are then disabled.
 	ExtraHosts []string
 	// PublicBind reports that the listener accepts non-loopback clients
 	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an Addr whose
@@ -87,7 +90,9 @@ func Local(d Deps, o LocalOptions) http.Handler {
 	switch {
 	case o.AdminToken != "":
 		h.controls = "admin"
-	case h.opts.PublicBind:
+	case h.opts.PublicBind || len(o.ExtraHosts) > 0:
+		// Reachable from elsewhere, and no token (--admin-token=off):
+		// a tunnel or forwarder need not set any proxy header.
 		h.controls = "disabled"
 	default:
 		h.controls = "enabled"
@@ -268,7 +273,7 @@ func tokenEqual(got, want string) bool {
 // refusal and returns false.
 func (h *localHandler) controlAllowed(w http.ResponseWriter, r *http.Request, what string) bool {
 	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from the network (--listen) and fyisp was started with --admin-token=off")
+		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from elsewhere (--listen or --allow-host) and fyisp was started with --admin-token=off")
 		return false
 	}
 	if h.controls == "enabled" && proxied(r) {

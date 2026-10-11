@@ -420,6 +420,8 @@ func TestInvestigate(t *testing.T) {
 		{LocalOptions{Addr: "0.0.0.0:3000", CSRFToken: "tok123"}, lan, 200},
 		{LocalOptions{Addr: "0.0.0.0:3000", CSRFToken: "tok123", AdminToken: testAdmin}, lan, 403},
 		{LocalOptions{Addr: "0.0.0.0:3000", CSRFToken: "tok123", AdminToken: testAdmin}, with(map[string]string{"Host": "192.168.1.5:3000", "Origin": "http://192.168.1.5:3000", HeaderAdmin: testAdmin}), 200},
+		// --allow-host with --admin-token=off: off, proxy headers or not.
+		{LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123", ExtraHosts: []string{"fyisp.example.com"}}, good, 403},
 		// Loopback without a token, through a proxy that rewrote Host.
 		{LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"}, with(map[string]string{"X-Forwarded-For": "203.0.113.9"}), 403},
 	} {
