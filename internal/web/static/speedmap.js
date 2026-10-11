@@ -122,6 +122,13 @@ function tooFastWhy(r, region) {
  * its header); the mark is hidden from screen readers, which hear "at least".
  * @param {string} k @param {number|null} b @param {boolean} lb @param {boolean} mark
  */
+/** Whether a lower bound counts as at least normal: the server's *_lb_counted, else (an older server) a score of 1 or more. @param {SpeedTest} t @param {'down'|'up'} dir */
+function lbCounted(t, dir) {
+  const v = /** @type {any} */ (t)[`${dir}_lb_counted`];
+  if (v !== undefined) return v === true;
+  const sc = dir === 'up' ? t.up_score : t.score;
+  return sc != null && sc >= 1;
+}
 /** The "% of normal" cell of a lower bound: "at least normal", or "not counted", muted either way. @param {boolean} atLeast */
 function lbCell(atLeast) {
   const why = atLeast ? LB_MORE : LB_OUT;
@@ -594,7 +601,7 @@ export class SpeedMap {
       const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More', 'aria-label': `More about the ${clock(t.start)} test (${t.label})` }),
         h('dl', {},
           ...[cancelled ? ['Cancelled', cancelled] : null,
-            lbDown || lbUp ? ['Speed', lbDown && !(t.score != null && t.score >= 1) ? LB_OUT : LB_MORE] : null,
+            lbDown || lbUp ? ['Speed', lbDown && !lbCounted(t, 'down') ? LB_OUT : LB_MORE] : null,
             ['Attempts', String(t.attempts)],
             MODE === 'local' && /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
             ['Retransmits', t.down_retrans != null || t.up_retrans != null ? `${t.down_retrans ?? '—'} down, ${t.up_retrans ?? '—'} up` : 'not known'],
@@ -612,8 +619,8 @@ export class SpeedMap {
         h('td', { 'data-k': 'Server', text: t.label }),
         readingCell('Down', t.down_bps, lbDown, !cd.all),
         readingCell('Up', t.up_bps, lbUp, !cu.all),
-        // A lower bound counts as at least normal only when its score is 1 or more; below that it's left out: never slow.
-        lbDown && !bad ? lbCell(t.score != null && t.score >= 1)
+        // A lower bound counts as at least normal only when the server says so (down_lb_counted); otherwise it's left out: never slow.
+        lbDown && !bad ? lbCell(lbCounted(t, 'down'))
           : h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));
