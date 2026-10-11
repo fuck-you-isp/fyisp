@@ -355,6 +355,7 @@ There is no cooldown for the owner or for single tests; the only wait is the 30-
   - waiting share-link entries are dropped when their turn comes (`state: "dropped"`, `stopped_reason: "limit"`, `stopped_code`, `resets_at`);
   - a share-link sweep stops before the test that wouldn't fit (`stopped_reason: "limit"`); the tests it ran stay.
 - When several limits block (the data, the test time, a sweep's 30-minute gap), the refusal is the one that clears **last**, and its `resets_at` (and `retry_after`) is when a retry will be admitted.
+- `resets_at` is exact when recorded usage has to age out. When the only thing in the way is a **running** share-link test (it holds a whole test's bytes until its real bytes are charged at its end), `resets_at` is an **estimate**: about when that test ends (a typical test's length from now). A retry then may still get `budget_exhausted` if the charged bytes leave too little, this time with an exact `resets_at`.
 - **A budget under 210 MB** turns the share link's tests off: fyisp starts as usual and logs one warning (`share-link speed tests are off: the budget (150 MB) is below the 210 MB one test needs`), the link answers 403 `budget_too_small`, and part=queue has `public_off_reason: "budget_too_small"`. The budget is never raised for you.
 - The owner and the schedule are never limited by it.
 
