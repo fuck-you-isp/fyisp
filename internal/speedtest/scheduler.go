@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -106,12 +105,6 @@ type Store interface {
 	SetSetting(ctx context.Context, key, value string) error
 }
 
-// HandoffStore is a Store that can fill in a saved test's handoff later
-// (a deferred traceroute). It updates only a row that still exists.
-type HandoffStore interface {
-	SetSpeedHandoff(ctx context.Context, id int64, h *model.Handoff) error
-}
-
 // Settings keys.
 const (
 	SettingKey   = "speedtest_mode"
@@ -150,9 +143,9 @@ type Options struct {
 	Conn func() string
 	// Handoff returns where the path to host leaves the user's ISP
 	// (HandoffFinder.Handoff); nil: not recorded. HandoffCached is its
-	// answer without a traceroute, when it has a recent one: a test takes
-	// that at once; otherwise the traceroute runs after the test is saved,
-	// and fills its row in later.
+	// answer without a traceroute, when it has a recent one. When neither
+	// is cached, the traceroute runs before the test's window, bounded
+	// (see handoffFor).
 	Handoff       func(ctx context.Context, host string) (*model.Handoff, error)
 	HandoffCached func(host string) (*model.Handoff, bool)
 	// Ping returns the ICMP RTT to a host (probe.PingOnce); nil or failing:
@@ -177,6 +170,8 @@ type Options struct {
 	rtt       func(ctx context.Context, host string, port int) (time.Duration, error)
 	sleep     func(ctx context.Context, d time.Duration) bool
 	rand      *rand.Rand
+	lookup    func(ctx context.Context, host string) ([]netip.Addr, error) // the handoff's resolution (nil: the system resolver)
+	handoffIn time.Duration                                                // the handoff traceroute's bound (default handoffBudget)
 }
 
 // Fake stands in for the network: Run for the iperf3 run, RTT for the
@@ -213,13 +208,6 @@ type Scheduler struct {
 	o    Options
 	wake chan struct{}
 	q    *Queue
-
-	// The deferred handoff traceroute: at most one at a time, ended on
-	// shutdown (Run waits for it).
-	bgCtx   context.Context
-	bgStop  context.CancelFunc
-	bg      sync.WaitGroup
-	tracing atomic.Bool
 
 	mu           sync.Mutex
 	mode         Mode
@@ -335,7 +323,6 @@ func New(o Options) *Scheduler {
 	}
 	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff,
 		extra: slices.Clone(o.Extra), seed: o.rand.Uint32(), skip: map[string]bool{}, busyRun: map[string]int{}, rest: map[string]time.Time{}}
-	s.bgCtx, s.bgStop = context.WithCancel(context.Background())
 	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Pause: s.pause, EstSweepPause: MaskTail + SweepGap, Live: s.live, Log: o.Log, Now: o.Now,
 		Public: o.Public, PublicBudget: o.PublicBudget}
 	if o.Store != nil {
@@ -616,7 +603,6 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		s.q.Run(ctx)
 	}()
 	defer func() { <-qdone }()
-	defer func() { s.bgStop(); s.bg.Wait() }()
 	for {
 		s.mu.Lock()
 		tg, wait := s.dueLocked(s.o.Now())

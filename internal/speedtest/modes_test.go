@@ -278,17 +278,22 @@ func TestSlotCap(t *testing.T) {
 // used (resolved and checked), never a fresh lookup of the name.
 func TestHandoffAddress(t *testing.T) {
 	h := newHarness(t, Options{})
-	ip := netip.MustParseAddr("198.51.100.7")
+	ip := netip.MustParseAddr("203.0.114.7")
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: ip}, nil
 	})
+	h.s.o.lookup = func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{ip}, nil }
 	var asked []string
 	h.s.o.Handoff = func(_ context.Context, host string) (*model.Handoff, error) {
 		asked = append(asked, host)
 		return &model.Handoff{ASN: 174}, nil
 	}
-	if ts := h.slot(t, target{server: "Near"}); ts.Handoff == nil || len(asked) != 1 || asked[0] != "198.51.100.7" {
+	ts := h.slot(t, target{server: "Near"})
+	if ts.Handoff == nil || len(asked) != 1 || asked[0] != "203.0.114.7" {
 		t.Errorf("asked %v, handoff %+v", asked, ts.Handoff)
+	}
+	if host, _ := hostPort(h.calls[len(h.calls)-1]); host != "203.0.114.7" {
+		t.Errorf("the test dialled %s, not the traced address", host)
 	}
 }
 
@@ -451,7 +456,6 @@ func TestCancelAtCompletion(t *testing.T) {
 	// A cancel during the test still stores its cancelled row, with a
 	// store that refuses cancelled contexts.
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	h.s.bg.Wait()
 	h.s.o.Handoff, h.s.o.HandoffCached = nil, nil
 	h.setRun(func(c Config, n int) (Result, error) {
 		cancel2()
@@ -585,77 +589,39 @@ func TestEarlyFirstTest(t *testing.T) {
 	}
 }
 
-// TestDeferredHandoff: the daily handoff traceroute runs after the test is
-// saved, never in its way or the queue's; it fills the row in later, one
-// at a time, to the address the test dialled, and ends on shutdown.
-func TestDeferredHandoff(t *testing.T) {
+// TestHandoffBeforeWindow: the handoff traceroute runs before the test's
+// window (never during a test, nor after it in the next one's way),
+// bounded: on timeout the test goes ahead with no handoff. A shutdown
+// during it saves nothing.
+func TestHandoffBeforeWindow(t *testing.T) {
+	ip := netip.MustParseAddr("203.0.114.7")
 	h := newHarness(t, Options{})
+	h.s.o.lookup = func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{ip}, nil }
 	h.setRun(func(c Config, n int) (Result, error) {
-		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: ip}, nil
 	})
-	release := make(chan struct{})
-	var running, peak atomic.Int32
-	var hosts []string
-	var mu sync.Mutex
+	var during []bool // a window open while it traced
 	h.s.o.Handoff = func(ctx context.Context, host string) (*model.Handoff, error) {
-		n := running.Add(1)
-		defer running.Add(-1)
-		if n > peak.Load() {
-			peak.Store(n)
-		}
-		mu.Lock()
-		hosts = append(hosts, host)
-		mu.Unlock()
-		select { // a slow traceroute
-		case <-release:
-			return &model.Handoff{ASN: 6939, Name: "HURRICANE", ISPASN: 64500}, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(5 * time.Second):
-			return nil, errors.New("too slow")
-		}
+		now := h.clock()
+		during = append(during, h.s.o.Windows.Overlaps(now, now) || len(h.calls) > 0)
+		return &model.Handoff{ASN: 6939, Name: "HURRICANE", ISPASN: 64500}, nil
 	}
+	if ts := h.slot(t, target{server: "Near"}); ts.Handoff == nil || ts.Handoff.ASN != 6939 || len(during) != 1 || during[0] {
+		t.Errorf("handoff %+v, traced during a test %v", ts.Handoff, during)
+	}
+	// The bound: a traceroute that never answers is given up on.
+	h.s.o.handoffIn = 50 * time.Millisecond
+	h.s.o.Handoff = func(ctx context.Context, _ string) (*model.Handoff, error) { <-ctx.Done(); return nil, ctx.Err() }
 	t0 := time.Now()
-	id, saved, _ := h.s.execJob(context.Background(), h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
-	id2, _, _ := h.s.execJob(context.Background(), h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
-	if !saved || id == 0 || id2 == 0 || time.Since(t0) > time.Second {
-		t.Fatalf("saved %v %d %d after %v", saved, id, id2, time.Since(t0))
+	if ts := h.slot(t, target{server: "Near"}); ts.Handoff != nil || ts.Outcome != model.SpeedOK || time.Since(t0) > 2*time.Second {
+		t.Errorf("timed out: %+v after %v", ts.Handoff, time.Since(t0))
 	}
-	ts, _ := h.st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
-	if len(ts) != 2 || ts[0].Handoff != nil {
-		t.Fatalf("saved before the traceroute: %+v", ts)
-	}
-	close(release)
-	waitFor(t, func() bool {
-		ts, _ := h.st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
-		return ts[0].Handoff != nil && ts[0].Handoff.ASN == 6939
-	})
-	h.s.bg.Wait()
-	mu.Lock()
-	defer mu.Unlock()
-	if peak.Load() != 1 || len(hosts) != 1 || hosts[0] != "198.51.100.7" {
-		t.Errorf("traceroutes: at most %d at once, to %v", peak.Load(), hosts)
-	}
-	// A cached answer is taken at once, without a traceroute.
-	h.s.o.HandoffCached = func(host string) (*model.Handoff, bool) { return &model.Handoff{ASN: 1299, Name: "TWELVE99"}, true }
-	if r := h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), "manual"); len(r) != 1 || r[0].Handoff == nil || r[0].Handoff.ASN != 1299 {
-		t.Errorf("cached: %+v", r)
-	}
-	// Shutdown ends a traceroute that's running.
-	h2 := newHarness(t, Options{})
-	h2.setRun(func(c Config, n int) (Result, error) {
-		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
-	})
-	h2.s.o.Handoff = func(ctx context.Context, _ string) (*model.Handoff, error) { <-ctx.Done(); return nil, ctx.Err() }
+	// A shutdown during the traceroute: no test, no row.
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { h2.s.Run(ctx); close(done) }()
-	h2.s.execJob(context.Background(), h2.s.slotJob(target{server: "Near", nearby: -1}), "manual")
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Error("shutdown waited for the traceroute")
+	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { cancel(); return nil, context.Canceled }
+	n, calls := len(h.st.tests), len(h.calls)
+	if id, saved, _ := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "schedule"); id != 0 || saved || len(h.st.tests) != n || len(h.calls) != calls {
+		t.Errorf("shut down while tracing: saved %v, %d rows, %d runs", saved, len(h.st.tests)-n, len(h.calls)-calls)
 	}
 }
 

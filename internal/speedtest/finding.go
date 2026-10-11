@@ -501,7 +501,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 	region := func(t model.SpeedTest) string { return t.Region }
 	provider := func(t model.SpeedTest) string { return providerOf(in.Catalog, t.Server) }
 	byRegion, byProvider := group(noFallback, region), group(noFallback, provider)
-	byServer, byNet := group(noFallback, func(t model.SpeedTest) string { return t.Server }), group(noFallback, handoffKey)
+	byServer, byNet := group(noFallback, func(t model.SpeedTest) string { return t.Server }), group(noFallback, netKey)
 	nearRows, nearProv := group(nearTests, GroupKey), group(nearTests, provider)
 
 	var cands []*Pattern
@@ -619,7 +619,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 			if regs := regionsOf(byNet[k]); len(provs) >= 2 && len(regs) >= 2 {
 				slices.Sort(provs)
 				set(CaseProvider)
-				f.Providers, f.Regions, f.Network, f.Via = provs, regs, k, sharedVia(byNet[k])
+				f.Providers, f.Regions, f.Network, f.Via = provs, regs, handoffKey(byNet[k][0]), sharedVia(byNet[k])
 				f.FarEvening = closeZones(in.Catalog, regs)
 				f.group = byNet[k]
 				return true
@@ -765,6 +765,16 @@ func handoffKey(t model.SpeedTest) string {
 		return fmt.Sprintf("AS%d", h.ASN)
 	}
 	return fmt.Sprintf("%s (AS%d)", h.Name, h.ASN)
+}
+
+// netKey groups tests by their handoff network and the exchange they meet
+// it at: one peer reached at two exchanges is two links ("" unknown).
+func netKey(t model.SpeedTest) string {
+	k := handoffKey(t)
+	if k != "" && t.Handoff.Via != "" {
+		k += " via " + t.Handoff.Via
+	}
+	return k
 }
 
 // sharedVia is the internet exchange most of ts (≥ 80% of those with a
