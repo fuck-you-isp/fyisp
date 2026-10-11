@@ -46,9 +46,10 @@
 10. **C1** is now **ENV defaults plus a bare ENTRYPOINT**. `report` and `export` stay read-only.
 11. **New B10:** "≥" only on ramp-capped results, with the column-header form when all are (ux-content M8, net-isp, go-review).
 12. **Addenda** (the lead's rulings after the reviews):
-    - **A2 scoring (FINAL):** net-isp's share-based hybrid, per server over 14 days.
-      - Under 20% ramp-capped: the baseline comes from uncapped rows, and capped rows count as "at least normal" (`max(score, 1.0)`).
-      - 20% or more: "too fast to measure from here", out of the finding and the by-hour stats.
+    - **A2 scoring (FINAL, amended 2026-10-11 after net-isp's implementation review):** a coverage guard, per server over 14 days.
+      - The server is "too fast to measure from here" (out of the finding and the by-hour stats) when its baseline rows (those without `*_lower_bound`) cover **fewer than 12 distinct local hours**, or **more than 50% of them fall within any 6-hour window**.
+      - Otherwise the baseline comes from those rows, and lower-bound rows count as "at least normal" (`max(score, 1.0)`).
+      - This replaces the 20% share: the share rule also threw away a correctly detected 42%-capped case, and net-isp's probe showed the coverage guard passes all four fixture cases (0/17/42% → `isp`, 83% → `too_fast`).
       - All servers out: case `too_fast`.
       - `max(p90, capped lower bounds)` is dropped (it depends on RTT).
     - **The ramp-capped flag** is decoded once in the store. v0.7.0 rows with `down_short && ramp_ms == 0` count as ramp-capped, rather than being skipped as in the draft.
@@ -133,7 +134,7 @@
 - **Other cases:** no qualifying tick gives `rate_method: "whole"`, flagged; non-Linux uploads use the v0.7.0 method, with `rate_method: "whole"`.
 - **Capped after the ramp** (a plateau was seen before the cap): a **valid rate**, scored normally (see B10 for its wording).
 
-**Scoring: net-isp's share-based hybrid** (FINAL; the lead's ruling, 2026-10-11).
+**Scoring: net-isp's share-based hybrid** (superseded: the "share decides" test below is replaced by the coverage guard in the Addenda above; the rest still applies. API field names are `down_lower_bound` / `up_lower_bound`, not "ramp_capped").
 - **The share decides.** For each server, take the **share** of its scheduled rows in the last 14 days that are ramp-capped (per direction).
 - **Under 20% ramp-capped:**
   - `Baseline()` (the p90) is built from the **non-ramp-capped** rows, with the existing minimum-n rules;
@@ -582,7 +583,7 @@ All PRs go into `release/v0.7.1`. Merge them in this order; work can start in pa
   - the 2 Gbit evening-cut fixture;
   - `finding_test` with near dips and far ramp-capped results (`isp`);
   - **net-isp's fixtures**: over 20% capped gives "too fast to measure from here" (never "nothing", never a baseline from evening-only rows); 10% capped finds the dip;
-  - the share thresholds (19% scored, 20% too fast, all too fast gives case `too_fast`);
+  - the coverage-guard thresholds (11 vs 12 hours, 50% vs 51% within 6 hours; all too fast gives case `too_fast`);
   - v0.7.0 rows decoded as ramp-capped from `down_short && ramp_ms == 0`.
 - **A4:** peak accepted-not-closed ≤ 9.
 - **A5:** turn-on, mode change, restart, the grid hand-over (≥ `spacing/2`), and idle samples < 20 giving missing.
@@ -626,7 +627,7 @@ All PRs go into `release/v0.7.1`. Merge them in this order; work can start in pa
 8. **On a fast line** (the RC host's own ~1 Gbit, or the netns 2 Gbit stand-in):
    - tests show `rate_method: "peak90"`;
    - ramp-capped far servers show "at least normal" and "≥" (or the "at least" header);
-   - a server with 20% or more ramp-capped results says "Too fast to measure from here" and is out of the finding;
+   - a server whose uncapped rows fail the coverage guard (under 12 local hours, or over 50% within 6 hours) says "Too fast to measure from here" and is out of the finding;
    - the all-capped table has the "at least" headers (A2, B10).
 9. **Details charts:** the legend entries; the blue dashed tick appears only on the owner's view (B5).
 10. **Report card** (webdev `-backfill 72h`, with the owner's browser zone America/New_York):
