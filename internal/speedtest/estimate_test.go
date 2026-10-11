@@ -149,6 +149,29 @@ func TestFarPlateau(t *testing.T) {
 	}
 }
 
+// TestWrittenFirstTick: uploads counted by bytes written (no TCP_INFO)
+// see the first tick fill the send buffers (about 32 MB for 8 streams):
+// the window starts at tick 1 or later, so it doesn't overstate the rate.
+func TestWrittenFirstTick(t *testing.T) {
+	const tk = 100 * time.Millisecond
+	const rate = 125e6 // bytes/s
+	var cum []int64
+	var at []time.Duration
+	c := int64(32 << 20) // the send buffers, filled in the first tick
+	for i := range 30 {
+		c += int64(rate * tk.Seconds())
+		cum, at = append(cum, c), append(at, time.Duration(i+1)*tk)
+	}
+	end := at[len(at)-1]
+	got := func(e estimate) float64 { return float64(e.bytes) / e.win.Seconds() }
+	if e := peak90From(1, cum, at, end, cum[len(cum)-1], 0); e.lowerBound || math.Abs(got(e)/rate-1) > 0.01 {
+		t.Errorf("from tick 1: %+v, %.4g B/s", e, got(e))
+	}
+	if e := peak90(cum, at, end, cum[len(cum)-1], 0); got(e)/rate < 1.05 {
+		t.Errorf("from tick 0 the burst should show (the test tests nothing): %.4g B/s", got(e))
+	}
+}
+
 // TestStillRising: net-isp's vectors (rates per tick, as a share of the
 // line rate) and cq-netns's real series from a shaped lab line (Gbit/s).
 func TestStillRising(t *testing.T) {

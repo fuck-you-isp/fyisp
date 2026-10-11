@@ -640,7 +640,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			timeCapped = true
 			break
 		}
-		if adaptive && k%int(time.Second/tick) == 0 && t.steady(cum, ats) {
+		if adaptive && k%int(time.Second/tick) == 0 && t.steady(cum, ats, t.c.Direction == Upload && !acked) {
 			break
 		}
 	}
@@ -688,7 +688,11 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			}
 		}
 	}
-	e := peak90(ticks, at, end, endBytes, t.pathRTT())
+	from := 0
+	if t.c.Direction == Upload && !acked {
+		from = 1 // written bytes: the first tick fills the send buffers
+	}
+	e := peak90From(from, ticks, at, end, endBytes, t.pathRTT())
 	capped := res.CappedByBytes || timeCapped // an early stop has levelled off
 	res.RateMethod = e.method
 	if e.method == MethodPeak90 {
@@ -717,7 +721,9 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 // far have levelled off (stillRising says no, over the idle RTT), at
 // least MinDuration has passed since the first smoothed tick at 90% of the
 // peak, and the last second is within Stable of the one before.
-func (t *test) steady(cum []int64, at []time.Duration) bool {
+// written: the bytes are written, not acked, so the first tick (filling
+// the send buffers) neither counts toward the plateau nor starts its clock.
+func (t *test) steady(cum []int64, at []time.Duration, written bool) bool {
 	k := len(cum)
 	per := int(time.Second / tick)
 	if k < 2*per+1 {
@@ -735,9 +741,13 @@ func (t *test) steady(cum []int64, at []time.Duration) bool {
 	if stillRising(r, t.pathRTT()) {
 		return false
 	}
-	sm := median3(r)
+	skip := 0
+	if written {
+		skip = 1
+	}
+	sm := median3(r)[skip:]
 	p := slices.Max(sm)
-	f := slices.IndexFunc(sm, func(v float64) bool { return v >= 0.9*p })
+	f := skip + slices.IndexFunc(sm, func(v float64) bool { return v >= 0.9*p })
 	var from time.Duration
 	if f > 0 {
 		from = at[f-1]
