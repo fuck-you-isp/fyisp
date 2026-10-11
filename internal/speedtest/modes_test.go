@@ -255,22 +255,47 @@ func TestScheduleThroughQueue(t *testing.T) {
 	}
 }
 
-// TestSlotCap: SlotMaxBytes holds over a slot's retries and servers: each
-// attempt gets what is left, and none starts once it is spent.
+// TestSlotCap: a share-link test's SlotMaxBytes holds over a slot's
+// retries and servers: each attempt gets what is left, and none starts
+// once it is spent. The schedule's and the owner's tests have no byte cap,
+// only the time cap and its backstop.
 func TestSlotCap(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{WireBytes: 150 << 20}, ErrBusy // busy, after moving data
 	})
-	h.slot(t, target{server: "Near"})
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.calls) != 2 || h.calls[0].MaxBytes != MaxBytes || h.calls[1].MaxBytes != SlotMaxBytes-150<<20 {
-		var caps []int64
-		for _, c := range h.calls {
-			caps = append(caps, c.MaxBytes)
+	caps := func() []int64 {
+		var c []int64
+		for _, x := range h.calls {
+			c = append(c, x.MaxBytes)
 		}
-		t.Errorf("%d attempts, caps %v", len(h.calls), caps)
+		return c
+	}
+	h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), "public")
+	h.mu.Lock()
+	if len(h.calls) != 2 || h.calls[0].MaxBytes != MaxBytes || h.calls[1].MaxBytes != SlotMaxBytes-150<<20 {
+		t.Errorf("public: %d attempts, caps %v", len(h.calls), caps())
+	}
+	h.calls = nil
+	h.mu.Unlock()
+	for _, trigger := range []string{"schedule", "manual", "sweep"} {
+		h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), trigger)
+		h.mu.Lock()
+		for _, c := range h.calls {
+			if c.MaxBytes != 0 || c.Backstop != TimeBackstop || c.Duration != MaxMeasure {
+				t.Errorf("%s: %+v", trigger, c)
+			}
+		}
+		if len(h.calls) != MaxAttempts {
+			t.Errorf("%s: %d attempts, caps %v", trigger, len(h.calls), caps())
+		}
+		h.calls = nil
+		h.mu.Unlock()
+	}
+	// The slot's hard cap holds an attempt started at SlotBudget: both
+	// directions to their backstops and the pause between them.
+	if SlotCap < SlotBudget+2*DirTimeout+relisten || DirTimeout < TimeBackstop || TimeBackstop != MaxOmit+MaxMeasure+2*time.Second {
+		t.Errorf("SlotCap %v, DirTimeout %v, TimeBackstop %v", SlotCap, DirTimeout, TimeBackstop)
 	}
 }
 

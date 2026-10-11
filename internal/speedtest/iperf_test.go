@@ -222,6 +222,10 @@ func (f *fakeServer) session(c net.Conn) {
 						if f.mode == "ramp" { // slow start: full rate after 500 ms
 							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(500*time.Millisecond)))
 						}
+						if f.mode == "climb" { // still speeding up, faster and faster, until 2 s
+							x := min(1, float64(time.Since(t0))/float64(2*time.Second))
+							n = int(float64(n) * x * x * x * x)
+						}
 						k, err := s.Write(buf[:max(n, 1)])
 						sent[i] += int64(k)
 						f.out.Add(int64(k))
@@ -766,5 +770,35 @@ func TestBackstop(t *testing.T) {
 	}
 	if Backstop(MaxBytes) != BackstopBytes || TestMaxBytes != 210_000_000 {
 		t.Error("constants")
+	}
+}
+
+// TestTimeBackstop: without a byte cap, a server that ignores TEST_END is
+// cut with an RST at the time backstop, not left to the control
+// connection's timeout; the complete window still counts.
+func TestTimeBackstop(t *testing.T) {
+	f := newFakeServer(t, "deaf")
+	cfg := quick(f.addr(), Download)
+	cfg.Backstop = 2500 * time.Millisecond // the window ends at 2 s
+	t0 := time.Now()
+	r, err := Run(context.Background(), cfg)
+	if el := time.Since(t0); err != nil || !r.Overrun || r.CappedByBytes || r.Elapsed <= 0 || el > stepTimeout || el < cfg.Backstop {
+		t.Fatalf("%v after %v: %+v", err, el, r)
+	}
+}
+
+// TestTimeCapped: an uncapped direction measured for its whole Duration
+// is a lower bound when still rising (the same rule as a byte-capped
+// one), a valid rate when level.
+func TestTimeCapped(t *testing.T) {
+	for _, c := range []struct {
+		mode string
+		lb   bool
+	}{{"", false}, {"climb", true}} {
+		f := newFakeServer(t, c.mode)
+		r, err := Run(context.Background(), quick(f.addr(), Download))
+		if err != nil || r.CappedByBytes || r.RateMethod != MethodWindow || r.LowerBound != c.lb {
+			t.Errorf("%q: %v %+v", c.mode, err, r)
+		}
 	}
 }

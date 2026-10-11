@@ -305,8 +305,11 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)
 	var used Server
-	var ip netip.Addr // the address the measuring server was dialled at (checked)
-	left := int64(SlotMaxBytes)
+	var ip netip.Addr        // the address the measuring server was dialled at (checked)
+	left := int64(noByteCap) // the owner's tests and the schedule: the time cap only
+	if trigger == "public" || trigger == "public_sweep" {
+		left = SlotMaxBytes // the share link's: the owner's allowance
+	}
 	for i, st := range steps {
 		if i > 0 && s.o.Now().Sub(t.Start) >= SlotBudget {
 			break
@@ -538,7 +541,7 @@ func Baseline(ts []model.SpeedTest, server string, at time.Time) (down, up float
 			continue
 		}
 		var x Extra // capped directions: v0.7.0 ones and lower bounds stay out
-		if t.DownShort || t.UpShort {
+		if mayBound(&t) {
 			x = ParseExtra(t.Extra)
 		}
 		if t.DownBps != nil && baselineRate(t.DownShort, &x, 0) {
@@ -624,7 +627,7 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			re = &r
 		}
 		x.RampMs[i] = round2(float64(res.Ramp) / float64(time.Millisecond))
-		if res.CappedByBytes {
+		if res.RateMethod != "" { // capped by bytes, or by time
 			x.RateMethod[i], x.LowerBound[i] = res.RateMethod, res.LowerBound
 			x.WinMs[i] = round2(float64(res.Elapsed) / float64(time.Millisecond))
 		}
@@ -635,6 +638,17 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			t.UpBps, t.UpRetrans, t.UpShort, t.UpSecs = &bps, re, res.CappedByBytes, secs
 		}
 	}
+}
+
+// noByteCap is a slot's "bytes left" without a byte cap.
+const noByteCap = math.MaxInt64
+
+// capBytes is a direction's byte cap from the slot's bytes left (0: none).
+func capBytes(left int64) int64 {
+	if left == noByteCap {
+		return 0
+	}
+	return min(MaxBytes, left)
 }
 
 // direction runs one direction: first on port (0: a random one), then,
@@ -662,11 +676,13 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 		var err error
 		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: min(MaxBytes, *left), Check: sv.check, Log: s.o.Log,
+			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: capBytes(*left), Backstop: TimeBackstop, Check: sv.check, Log: s.o.Log,
 		})
 		w := max(res.WireBytes, res.TotalBytes, res.Bytes)
 		wire += w
-		*left -= w
+		if *left != noByteCap {
+			*left -= w
+		}
 		if res.Overrun || errors.Is(err, ErrOverrun) {
 			s.o.Log.Info("speed test: the server kept sending past the byte cap; cut", "server", sv.ID, "direction", dir.String())
 		}

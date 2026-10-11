@@ -56,21 +56,30 @@ const (
 	RepickEvery    = 24 * time.Hour // nearby servers by RTT
 	MaxAttempts    = 3              // per server: busy or refused tries another port (not on a single-port server)
 	AttemptGap     = 2 * time.Second
-	DirTimeout     = 15 * time.Second // one direction, connect to results
-	// SlotBudget: no new attempt or fallback server after this much of a
-	// slot; SlotCap is the hard limit of one slot.
-	SlotBudget = 25 * time.Second
-	SlotCap    = 45 * time.Second
 	// MinMeasure..MaxMeasure is the adaptive measured time per direction,
-	// after an adaptive ramp-up of at most 1 s.
+	// after an adaptive ramp-up of at most MaxOmit: the time cap (the
+	// owner's tests and the schedule have no byte cap).
 	MinMeasure = 3 * time.Second
-	MaxMeasure = 8 * time.Second
-	// MaxBytes caps each direction (ramp-up included): one test never
-	// moves more than 2 × MaxBytes.
-	MaxBytes = 100_000_000 // 100 MB (decimal, as the docs and the owner's 200 MB per test mean it)
+	MaxMeasure = 10 * time.Second
+	MaxOmit    = time.Second
+	// TimeBackstop: from a direction's data phase start, its streams are
+	// cut with an RST whatever the server does.
+	TimeBackstop = MaxOmit + MaxMeasure + 2*time.Second
+	// DirTimeout bounds one direction, connect to results.
+	DirTimeout = TimeBackstop + 5*time.Second
+	// SlotBudget: no new attempt or fallback server after this much of a
+	// slot; SlotCap is the hard limit of one slot: an attempt started at
+	// SlotBudget still has both directions and the pause between them.
+	SlotBudget = 25 * time.Second
+	SlotCap    = SlotBudget + 2*DirTimeout + relisten
+	// MaxBytes caps each direction of a share-link test (ramp-up
+	// included): it spends the owner's allowance, so one test never moves
+	// more than 2 × MaxBytes. Other tests have no byte cap.
+	MaxBytes = 100_000_000 // 100 MB (decimal)
 	// SweepUnreachable unreachable servers in a row end a sweep.
 	SweepUnreachable = 3
-	// SlotMaxBytes caps a whole test, every server and retry included.
+	// SlotMaxBytes caps a whole share-link test, every server and retry
+	// included.
 	SlotMaxBytes = 2 * MaxBytes
 	// BackstopBytes is where a direction is cut with an RST whatever the
 	// server does (Backstop(MaxBytes): MaxBytes + 5%).
@@ -80,7 +89,7 @@ const (
 	TestMaxBytes = 2 * BackstopBytes
 	// EstTestTime is a typical test (both directions, adaptive): the
 	// planned share of time under test is slots × EstTestTime / interval.
-	EstTestTime = 15 * time.Second
+	EstTestTime = 20 * time.Second
 	ShareWarn   = 0.25
 	// relisten is the pause before the upload: a stock iperf3 server
 	// closes and reopens its listener after every test, and refuses

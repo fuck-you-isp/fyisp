@@ -327,24 +327,24 @@ fyisp --speedtest-server Leaseweb-Tokyo,OVH-Sydney                 # chosen cata
 **What is sent, to whom.** Each test is an iperf3 test over IPv4, built into fyisp, so nothing has to be installed:
 - download, then upload, each with 8 parallel TCP streams;
 - the ramp-up (until the speed stops rising, at most 1 second) is left out;
-- then 3 to 8 seconds are measured, stopping as soon as the speed is steady (a second within 5% of the one before);
-- at most 100 MB each way: a fast line stops there, and the test is marked as cut short.
+- then 3 to 10 seconds are measured, stopping as soon as the speed is steady (a second within 5% of the one before): up to 10 seconds each way, whatever the data;
+- tests someone starts from your share link also stop at 100 MB each way, since they spend your share-link allowance.
 
 The servers are public iperf3 servers run by hosting companies and volunteers: Leaseweb (16), OVH (12), Clouvider (9), InterServer (3), Hurricane Electric, Scaleway, Eranium, Uztelecom and Edgoo. All 45 are listed with their sources in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), with the regions in `regions.yml`. The list is built into fyisp and changes only with a release. Like every probe target, they see your public IP address.
 
 **How much it costs your line.** A speed test fills the line while it runs, by design:
-- **Time under test:** mode `regions` keeps the line under test about 4% of the time (9 tests of 15 to 25 seconds an hour); `nearby` about 7%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
-- **Data:** at most 200 MB per test (100 MB each way). Mode `regions`, the default, runs 216 tests a day:
+- **Time under test:** mode `regions` keeps the line under test about 5% of the time (9 tests of 10 to 25 seconds an hour); `nearby` about 7%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
+- **Data:** a test moves your line's speed for 4 to 11 seconds each way; there is no byte cap. Mode `regions`, the default, runs 216 tests a day:
 
   | Your line | Data a month (mode `regions`) |
   |---|---|
-  | 25 Mbit/s | about 150 GB |
-  | 100 Mbit/s | about 600 GB |
-  | fast lines (several hundred Mbit/s and up) | about 1.3 TB (the 200 MB cap) |
-  | one "Test every server" sweep | about 8 GB |
+  | 25 Mbit/s | about 150 to 450 GB |
+  | 100 Mbit/s | about 650 GB to 1.8 TB |
+  | 1 Gbit/s | about 6.5 to 18 TB |
+  | one "Test every server" sweep | Details estimates it from your recent tests |
 
   Mode `nearby` uses about 1.8 times as much. Details shows the data used in the last 24 hours and this month, and an estimate for each mode.
-- **Fast lines:** the 200 MB cap ends a test early, after half a second to a couple of seconds of measuring, so results show *changes over the day* better than your top speed; Details marks them "≥". Speed tests show when your speed drops, not whether you get your plan's advertised speed.
+- **Fast lines:** a test still speeding up when its 10 seconds end (a far server on a fast line) shows "≥": the speed was at least this. Speed tests show when your speed drops, not whether you get your plan's advertised speed.
 - **Metered lines:** leave speed tests off on metered or capped connections.
 
 **Be kind to the servers.** The operators and what fyisp sends them are listed in [`docs/IPERF3-TERMS.md`](docs/IPERF3-TERMS.md); [`docs/OPERATORS.md`](docs/OPERATORS.md) is for the operators themselves. Each server port runs one test at a time.

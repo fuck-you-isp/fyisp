@@ -130,7 +130,12 @@ type Config struct {
 	// MaxBytes caps the bytes moved in this direction, ramp-up included
 	// (0: no cap): the test ends there, and Result.CappedByBytes is set.
 	MaxBytes int64
-	// Timeout bounds the whole run, default Omit+Duration+5s. The caller's
+	// Backstop is when, from the data phase's start, the streams are cut
+	// with an RST whatever the server does (a server that ignores TEST_END
+	// or keeps sending), default Omit+Duration+2s. A complete window
+	// still counts (Result.Overrun).
+	Backstop time.Duration
+	// Timeout bounds the whole run, default Omit+Duration+7s. The caller's
 	// ctx may end it sooner.
 	Timeout time.Duration
 	// Dial opens TCP connections (tests: a stub). Default net.Dialer.
@@ -200,8 +205,11 @@ func (c *Config) defaults() {
 	if c.MinDuration > 0 && c.Stable <= 0 {
 		c.Stable = 0.05
 	}
+	if c.Backstop <= 0 {
+		c.Backstop = c.Omit + c.Duration + 2*time.Second
+	}
 	if c.Timeout <= 0 {
-		c.Timeout = c.Omit + c.Duration + 5*time.Second
+		c.Timeout = c.Omit + c.Duration + 7*time.Second
 	}
 	if c.Dial == nil {
 		d := &net.Dialer{Timeout: 5 * time.Second}
@@ -297,7 +305,7 @@ func Run(ctx context.Context, c Config) (Result, error) {
 		// server's retransmits are lost); else the run failed.
 		r, err = res, nil
 		r.Overrun = true
-		if !res.CappedByBytes || res.Elapsed <= 0 {
+		if res.Elapsed <= 0 {
 			err = ErrOverrun
 		}
 	}
@@ -507,6 +515,11 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 		t.wg.Add(1)
 		go t.backstop()
 	}
+	cut := time.AfterFunc(t.c.Backstop, func() { // the time backstop
+		t.overrun.Store(true)
+		t.abort()
+	})
+	defer cut.Stop()
 	per, err := t.dataPhase(counts, res)
 	done.Store(true)
 	if err != nil {
@@ -582,6 +595,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	ackedStart := make([]int64, n)
 	measuring := false
 	rampCapped := false
+	timeCapped := false // the window ran to Duration without levelling off early
 	// cum is the bytes counted at each tick, for a capped direction's
 	// estimate: received for downloads, acked for uploads (Linux; nil
 	// without it).
@@ -657,6 +671,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		// Seconds are counted in ticks, so every second has the same length.
 		w := time.Duration(k-kWin) * tick
 		if w >= t.c.Duration {
+			timeCapped = true
 			break
 		}
 		if adaptive && (k-kWin)%int(time.Second/tick) == 0 {
@@ -728,6 +743,16 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		} else if rampCapped {
 			res.LowerBound = true // the whole run, slow start included
 		}
+	} else if timeCapped && perTick && kWin >= 1 && len(cum) > kWin {
+		// Time-capped (Duration reached, never steady): a lower bound when
+		// its window's ticks were still rising, by the same rule.
+		var r []float64
+		for i := kWin; i < len(cum); i++ {
+			if dt := ats[i] - ats[i-1]; dt > 0 {
+				r = append(r, float64(cum[i]-cum[i-1])/dt.Seconds())
+			}
+		}
+		res.RateMethod, res.LowerBound = MethodWindow, stillRising(r, t.pathRTT())
 	}
 	return per, nil
 }

@@ -1176,24 +1176,24 @@
    "up_p10_bps": 30000000
   }
  ],
- "planned_share": 0.017,
+ "planned_share": 0.022,
  "plans": [
   {
    "est_gb_month": 216,
    "mode": "regions",
-   "share": 0.008,
+   "share": 0.011,
    "tests_per_hour": 2
   },
   {
    "est_gb_month": 1728,
    "mode": "nearby",
-   "share": 0.067,
+   "share": 0.089,
    "tests_per_hour": 16
   },
   {
    "est_gb_month": 432,
    "mode": "custom",
-   "share": 0.017,
+   "share": 0.022,
    "tests_per_hour": 4
   }
  ],
@@ -1703,6 +1703,8 @@
  ],
  "set_by_flag": false,
  "spacing_s": 900,
+ "sweep_bytes": 3587500000,
+ "sweep_servers": 6,
  "tz": 120,
  "tz_name": "",
  "under_load": {

@@ -1143,3 +1143,24 @@ func TestSpeedOwnerZone(t *testing.T) {
 		t.Errorf("share link: %+v", v)
 	}
 }
+
+// TestSweepBytes: "Test every server" is estimated from each server's
+// recent median data, else the line's rate both ways for MaxMeasure;
+// skipped servers and the share link's capped tests are left out.
+func TestSweepBytes(t *testing.T) {
+	st := speedtest.State{Servers: []speedtest.ServerState{
+		{Server: speedtest.Server{ID: "A"}}, {Server: speedtest.Server{ID: "B"}}, {Server: speedtest.Server{ID: "C"}, Skipped: true}}}
+	d, u := 80e6, 40e6
+	ts := []model.SpeedTest{
+		{Server: "A", Outcome: model.SpeedOK, Bytes: 100e6, DownBps: &d, UpBps: &u, Trigger: "schedule"},
+		{Server: "A", Outcome: model.SpeedOK, Bytes: 300e6, DownBps: &d, UpBps: &u, Trigger: "manual"},
+		{Server: "B", Outcome: model.SpeedOK, Bytes: 200e6, DownBps: &d, UpBps: &u, Trigger: "public"},
+		{Server: "B", Outcome: model.SpeedBusy, Bytes: 1e3, Trigger: "schedule"},
+	}
+	if b, n := sweepBytes(st, ts); n != 2 || b != 200e6+150e6 {
+		t.Errorf("%d bytes over %d servers", b, n)
+	}
+	if b, _ := sweepBytes(st, nil); b != 2*defaultTestBytes {
+		t.Errorf("no tests: %d", b)
+	}
+}

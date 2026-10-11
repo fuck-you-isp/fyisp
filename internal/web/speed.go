@@ -215,7 +215,9 @@ type speedJSON struct {
 	TZ              int                `json:"tz"`                       // minutes east of UTC now
 	TZName          string             `json:"tz_name"`                  // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
 	ZoneLabel       string             `json:"zone_label"`               // the zone used, printable: "EDT (UTC−4)", "UTC"
-	BytesPerTest    int64              `json:"bytes_per_test,omitempty"` // the median data of this line\'s scheduled tests (30 days)
+	BytesPerTest    int64              `json:"bytes_per_test,omitempty"` // the median data of this line's scheduled tests (30 days)
+	SweepBytes      int64              `json:"sweep_bytes"`              // "Test every server": its estimated data (see sweepBytes)
+	SweepServers    int                `json:"sweep_servers"`            // the servers it tests (skipped ones left out)
 	Days            int                `json:"days"`
 	ExcludeFallback bool               `json:"exclude_fallback"`
 	Mode            speedtest.Mode     `json:"mode"`
@@ -386,10 +388,10 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	}
 	j.DownLBCounted = speedtest.LowerBoundCounted(t.ScoreDown, j.DownLowerBound)
 	j.UpLBCounted = speedtest.LowerBoundCounted(t.ScoreUp, j.UpLowerBound)
-	if t.DownShort || t.UpShort {
+	if t.DownShort || t.UpShort || strings.Contains(t.Extra, "rate_method") {
 		x := speedtest.ParseExtra(t.Extra)
 		i := 0
-		if !t.DownShort {
+		if x.RateMethod[0] == "" && x.RateMethod[1] != "" {
 			i = 1
 		}
 		j.RateMethod, j.WinMs = x.RateMethod[i], x.WinMs[i]
@@ -712,6 +714,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		perTest = callq.Median(avgBytes)
 		out.BytesPerTest = int64(perTest)
 	}
+	out.SweepBytes, out.SweepServers = sweepBytes(st, all)
 	for _, pl := range st.Plans {
 		out.Plans = append(out.Plans, speedPlan{Mode: pl.Mode, TestsPerHour: math.Round(pl.TestsPerHour*100) / 100,
 			Share: math.Round(pl.Share*1000) / 1000, EstGBMonth: math.Round(pl.TestsPerHour*24*30*perTest/1e9*10) / 10})
@@ -1272,6 +1275,51 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 
 // zoneLabel is the IANA name the hours are in: the parameter's, or the
 // server's own for no tz (its TZ, else "Local"), "" for a fixed offset.
+// sweepBytes estimates "Test every server": the sum, over the servers it
+// tests, of each one's median data over its recent ok tests (the
+// share link's, capped at 100 MB, left out), else this line's median rate
+// both ways for MaxMeasure, else defaultTestBytes.
+func sweepBytes(st speedtest.State, ts []model.SpeedTest) (total int64, n int) {
+	per := map[string][]float64{}
+	var down, up []float64
+	for _, t := range ts {
+		if t.Outcome != model.SpeedOK || t.Origin() == "public" {
+			continue
+		}
+		if t.Bytes > 0 {
+			per[t.Server] = append(per[t.Server], float64(t.Bytes))
+		}
+		if t.DownBps != nil {
+			down = append(down, *t.DownBps)
+		}
+		if t.UpBps != nil {
+			up = append(up, *t.UpBps)
+		}
+	}
+	fallback := float64(defaultTestBytes)
+	if len(down) > 0 {
+		rate := callq.Median(down)
+		if len(up) > 0 {
+			rate += callq.Median(up)
+		} else {
+			rate *= 2
+		}
+		fallback = rate / 8 * speedtest.MaxMeasure.Seconds()
+	}
+	for _, sv := range st.Servers {
+		if sv.Skipped {
+			continue
+		}
+		n++
+		if v := per[sv.ID]; len(v) > 0 {
+			total += int64(callq.Median(v))
+		} else {
+			total += int64(fallback)
+		}
+	}
+	return total, n
+}
+
 // summaryKey is a summary's cache key.
 func (p speedParams) summaryKey() string {
 	return fmt.Sprintf("speed\x00%d\x00%s\x00%v\x00%s", p.days, p.zone.key, p.excludeFallback, p.row)

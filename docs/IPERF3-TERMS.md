@@ -5,7 +5,7 @@ The record of the public iperf3 servers fyisp's speed tests use, what fyisp send
 ## What fyisp sends
 
 - **Protocol:** stock iperf3 over TCP, IPv4 only: the control connection, then 8 data streams, download (reverse mode) then upload. The control cookie starts with `fyisp`, so the tests can be told apart in a server's debug log.
-- **Per test:** at most 100 MB each way (200 MB a test), 3 to 8 seconds measured each way after a ramp-up of at most 1 second; the client ends the test (TEST_END), which stock servers accept.
+- **Per test:** up to 10 seconds each way: 3 to 10 seconds measured after a ramp-up of at most 1 second, with a hard stop (an RST) 2 seconds later whatever the server does; the client ends the test (TEST_END), which stock servers accept. There is no byte cap, except for tests started from a share link: at most 100 MB each way (200 MB a test).
 - **One at a time:** an install never runs two tests at once, against any server.
 - **Busy servers:** a busy or refusing port gets at most 2 more ports, 2 seconds apart (single-port servers: none), then fyisp moves to another provider. A server busy 3 scheduled tests in a row is left alone for 6 hours.
 - **From where:** the user's own connection; the server sees the user's public IP address.

@@ -402,7 +402,7 @@ const pageTmpl = `<!doctype html>
 <tbody>{{range .Rows}}<tr><td>{{.Name}}</td><td>{{.Server}}</td><td class="n">{{.Tests}}</td><td class="n">{{.Down}}</td><td class="n">{{.DownP10}}</td><td class="n">{{.Up}}</td><td class="t">{{.Dip}}</td><td>{{.Trouble}}</td></tr>
 {{end}}</tbody>
 </table></div>
-<p class="note">Probes that ran during a speed test measure the test, not your connection: they are left out everywhere in this report.{{if .Origins}} {{.Origins}}{{end}}{{if .TooFast}} Servers that this line reaches faster than a 100 MB test can measure are left out of the time-of-day comparison.{{end}}</p>
+<p class="note">Probes that ran during a speed test measure the test, not your connection: they are left out everywhere in this report.{{if .Origins}} {{.Origins}}{{end}}{{if .TooFast}} Servers that this line reaches faster than these tests can measure are left out of the time-of-day comparison.{{end}}</p>
 </section>
 {{- end}}
 {{- if .HasNotes}}
