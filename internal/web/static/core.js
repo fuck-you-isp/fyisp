@@ -146,6 +146,16 @@ export function zoneSuffix() {
   const tz = -new Date().getTimezoneOffset(), a = Math.abs(tz), hh = Math.floor(a / 60), mm = a % 60;
   return tz === 0 ? ' (UTC)' : ` (UTC${tz < 0 ? '−' : '+'}${hh}${mm ? ':' + String(mm).padStart(2, '0') : ''})`;
 }
+/** One request per URL while it's in flight: two views asking for the same summary share it. */
+const inflight = new Map();
+export function fetchShared(/** @type {string} */ url) {
+  let p = inflight.get(url);
+  if (!p) {
+    p = fetchJSON(url).finally(() => inflight.delete(url));
+    inflight.set(url, p);
+  }
+  return p;
+}
 export function fmtInt(/** @type {number} */ n) { return n.toLocaleString('en-US'); }
 
 export function median(/** @type {number[]} */ v) {
@@ -214,15 +224,17 @@ export function whyButton(/** @type {string} */ title, /** @type {string} */ tex
  * optional message, optional fields and buttons. It resolves with the
  * button's value, or '' when dismissed (Escape, Cancel); fields are read by
  * the caller before it resolves.
- * @param {{title:string, text?:string, fields?:Node[], buttons:{label:string,value:string,primary?:boolean,danger?:boolean}[], focus?:HTMLElement}} o
+ * body: paragraphs the dialog is described by (aria-describedby); safe: focus Cancel first even when the primary isn't destructive.
+ * @param {{title:string, text?:string, body?:Node[], fields?:Node[], buttons:{label:string,value:string,primary?:boolean,danger?:boolean}[], focus?:HTMLElement, safe?:boolean}} o
  * @returns {Promise<string>}
  */
 export function dialog(o) {
   return new Promise((resolve) => {
-    const dlg = /** @type {HTMLDialogElement} */ (h('dialog', { class: 'dlg', 'aria-labelledby': 'dlg-t' }));
+    const dlg = /** @type {HTMLDialogElement} */ (h('dialog', { class: 'dlg', 'aria-labelledby': 'dlg-t', 'aria-describedby': o.body ? 'dlg-d' : null }));
     const form = h('form', { class: 'dlg-form', method: 'dialog' },
       h('h2', { id: 'dlg-t', text: o.title }),
       o.text ? h('p', { class: 'dlg-text', text: o.text }) : null,
+      o.body ? h('div', { id: 'dlg-d', class: 'dlg-body' }, ...o.body) : null,
       ...(o.fields || []),
       // Only the primary button submits: Enter in a field (implicit submission) must pick it, never Cancel.
       h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }),
@@ -235,7 +247,7 @@ export function dialog(o) {
     document.body.append(dlg);
     dlg.showModal();
     // A field, else the safe choice: Cancel when the primary action is destructive, else the primary.
-    const danger = o.buttons.some((b) => b.danger);
+    const danger = o.safe || o.buttons.some((b) => b.danger);
     const pick = o.focus || /** @type {HTMLElement|null} */ (form.querySelector(danger ? 'button[value="cancel"]' : '.btn.primary'));
     (pick || form).focus();
   });

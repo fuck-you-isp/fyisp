@@ -95,16 +95,34 @@ function resultWord(t) {
   if (t.outcome === 'busy') return 'Server busy';
   if (t.outcome === 'unreachable') return 'Didn’t answer';
   if (t.outcome === 'failed') return 'Didn’t finish';
-  if (t.outcome === 'cancelled') return 'Cancelled';
+  if (t.outcome === 'cancelled') return t.down_bps != null ? `Cancelled after download (${mb(t.down_bps)} down)` : 'Cancelled';
   const bits = [t.fallback_level === 'nearby_city' ? 'Backup city ◤' : t.fallback ? 'Backup server ◤' : 'OK'];
   if (t.capped_by_server) bits.push('limited by server ⊘');
   return bits.join(' · ');
 }
-/** A reading that hit the 100 MB cap is a lower bound. @param {number|null} b @param {boolean|undefined} short */
-function atLeast(b, short) { return b == null ? '—' : (short ? '≥ ' : '') + mb(b).replace(' Mbit/s', ''); }
-/** A table cell for a reading; a capped one also says "short test" to screen readers. @param {string} k @param {number|null} b @param {boolean|undefined} short */
-function readingCell(k, b, short) {
-  return h('td', { class: 'num', 'data-k': k }, atLeast(b, short), short && b != null ? h('span', { class: 'sr-only', text: ' (short test: at least this)' }) : null);
+/**
+ * A lower bound: the test was still speeding up when it reached its 100 MB
+ * limit (A2), so the speed was at least this. v0.7.0 rows had no estimator,
+ * so any capped direction of theirs keeps the old "at least" reading.
+ * @param {SpeedTest} t @param {'down'|'up'} dir
+ */
+export function lowerBound(t, dir) {
+  const x = /** @type {any} */ (t);
+  return x[`${dir}_lower_bound`] === true || (!!x[`${dir}_short`] && !x.rate_method);
+}
+const LB_MORE = 'Still speeding up when it reached its 100 MB limit, so the speed was at least this. It isn’t used for this server’s normal, and it only counts toward the time-of-day pattern when it already matches the normal.';
+/**
+ * A reading's cell. "≥" only on lower bounds and only when the column mixes
+ * them with full readings (a column of only lower bounds says "at least" in
+ * its header); the mark is hidden from screen readers, which hear "at least".
+ * @param {string} k @param {number|null} b @param {boolean} lb @param {boolean} mark
+ */
+export function readingCell(k, b, lb, mark) {
+  if (b == null) return h('td', { class: 'num', 'data-k': k, text: '—' });
+  const v = mb(b).replace(' Mbit/s', '');
+  return h('td', { class: 'num', 'data-k': k },
+    lb && mark ? h('span', { 'aria-hidden': 'true', text: '≥ ' }) : null,
+    lb ? h('span', { class: 'sr-only', text: 'at least ' }) : null, v);
 }
 /** "8 → 21 ms (+13)" for one layer of a test's latency. @param {import('./speed.js').SpeedLat|undefined} idle @param {import('./speed.js').SpeedLat|undefined} load */
 function lat(idle, load) { return idle && load ? `${Math.round(idle.p50_ms)} → ${Math.round(load.p50_ms)} ms${load.loss ? `, ${Math.round(load.loss * 100)}% lost` : ''}` : 'not known'; }
@@ -534,14 +552,28 @@ export class SpeedMap {
     if (this.problems) list = list.filter((t) => (t.outcome !== 'ok' && t.outcome !== 'cancelled') || t.fallback);
     const shown = list.slice(0, this.shown);
     const regionTitle = (/** @type {string|null} */ id) => (id ? d.regions.find((r) => r.id === id)?.title || id : '');
+    // "≥" per cell only where a column mixes lower bounds with full readings.
+    const col = (/** @type {'down'|'up'} */ dir) => {
+      const vals = shown.filter((t) => t[`${dir}_bps`] != null);
+      const lb = vals.filter((t) => lowerBound(t, dir)).length;
+      return { all: vals.length > 0 && lb === vals.length, some: lb > 0 };
+    };
+    const cd = col('down'), cu = col('up');
     const rows = shown.map((t) => {
       const bad = t.outcome !== 'ok';
+      const lbDown = lowerBound(t, 'down'), lbUp = lowerBound(t, 'up');
+      const x = /** @type {any} */ (t);
+      const shortWin = !lbDown && !lbUp && (t.down_short || t.up_short) && x.win_ms ? `short test (${(x.win_ms / 1000).toFixed(1)} s)` : '';
+      const cancelled = t.outcome === 'cancelled'
+        ? (x.cancelled_by === 'owner' ? `Stopped by you at ${clock(t.end)}.` : x.cancelled_by === 'visitor' && MODE === 'local' ? `Stopped at ${clock(t.end)} by the person who asked for it.` : `Cancelled at ${clock(t.end)}.`) : '';
       const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More', 'aria-label': `More about the ${clock(t.start)} test (${t.label})` }),
         h('dl', {},
-          ...[['Attempts', String(t.attempts)],
+          ...[cancelled ? ['Cancelled', cancelled] : null,
+            lbDown || lbUp ? ['Speed', LB_MORE] : null,
+            ['Attempts', String(t.attempts)],
             MODE === 'local' && /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
             ['Retransmits', t.down_retrans != null || t.up_retrans != null ? `${t.down_retrans ?? '—'} down, ${t.up_retrans ?? '—'} up` : 'not known'],
-            ['Test length', t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up${t.down_short || t.up_short ? ' (hit the 100 MB cap)' : ''}` : `${Math.round((t.end - t.start) / 1000)} s`],
+            ['Test length', shortWin || (t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up${t.down_short || t.up_short ? ' (hit the 100 MB cap)' : ''}` : `${Math.round((t.end - t.start) / 1000)} s`)],
             t.bytes ? ['Data', `${Math.round(t.bytes / 1e6)} MB`] : null,
             ['Delay through your provider', t.latency?.edge ? `${lat(t.latency.edge.idle, t.latency.edge.down)} downloading; ${lat(t.latency.edge.idle, t.latency.edge.up)} uploading` : 'not known'],
             ['Router delay', t.latency?.gateway ? `${lat(t.latency.gateway.idle, t.latency.gateway.down)} downloading` : t.idle_gateway_ms != null ? `${Math.round(t.idle_gateway_ms)} → ${Math.round(/** @type {number} */ (t.loaded_gateway_ms))} ms` : 'not known'],
@@ -553,9 +585,13 @@ export class SpeedMap {
         h('td', { class: 'when', 'data-k': 'When', text: `${new Date(t.start).toLocaleDateString([], { weekday: 'short' })} ${clock(t.start)}` }),
         h('td', { 'data-k': 'Region', text: regionTitle(t.region) }),
         h('td', { 'data-k': 'Server', text: t.label }),
-        readingCell('Down', t.down_bps, t.down_short),
-        readingCell('Up', t.up_bps, t.up_short),
-        h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
+        readingCell('Down', t.down_bps, lbDown, !cd.all),
+        readingCell('Up', t.up_bps, lbUp, !cu.all),
+        // A lower bound is "at least normal" when it already matches the normal, else "not counted": never a slow result.
+        // A v0.7.0 row the server still scores (before A2) keeps its percentage.
+        lbDown && !bad && (x.rate_method || t.score == null) ? h('td', { class: 'num sp-nc', 'data-k': '% of normal', title: LB_MORE },
+          t.score != null && t.score >= 1 ? 'at least normal' : 'not counted', h('span', { class: 'sr-only', text: `: ${LB_MORE}` }))
+          : h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));
     });
@@ -564,10 +600,12 @@ export class SpeedMap {
         h('div', { class: 'seg sm', role: 'group', 'aria-label': 'Which tests' }, ...[[false, 'All'], [true, 'Problems only']].map(([p, l]) => h('button', {
           type: 'button', text: /** @type {string} */ (l), 'aria-pressed': String(this.problems === p), onclick: () => { this.problems = /** @type {boolean} */ (p); this.shown = 15; this.renderRow(); },
         })))),
+      // One note above the table: all lower bounds, or a mix.
+      cd.all || cu.all ? h('p', { class: 'muted small', text: 'Your line is faster than these tests can fully measure: each one stops after 100 MB in each direction. Treat the numbers as ‘at least’.' })
+        : cd.some || cu.some ? h('p', { class: 'muted small', text: '≥ means the test stopped at its 100 MB limit, so the speed was at least this.' }) : '',
       rows.length ? h('table', { class: 'sp-tt' },
-        h('thead', {}, h('tr', {}, ...['When', 'Region', 'Server', 'Down (Mbit/s)', 'Up (Mbit/s)', '% of normal', 'Result', ''].map((x, i) => h('th', { scope: 'col', class: i >= 3 && i <= 5 ? 'num' : '', text: x })))),
+        h('thead', {}, h('tr', {}, ...['When', 'Region', 'Server', cd.all ? 'Down (Mbit/s, at least)' : 'Down (Mbit/s)', cu.all ? 'Up (Mbit/s, at least)' : 'Up (Mbit/s)', '% of normal', 'Result', ''].map((x, i) => h('th', { scope: 'col', class: i >= 3 && i <= 5 ? 'num' : '', text: x })))),
         h('tbody', {}, ...rows)) : h('p', { class: 'muted', text: this.problems ? 'No problems in this span.' : 'No tests in this span yet.' }),
-      shown.some((t) => t.down_short || t.up_short) ? h('p', { class: 'muted small', text: '≥ means the test stopped at its data limit, so the speed was at least this.' }) : '',
       list.length > this.shown ? h('button', { class: 'btn sm', type: 'button', text: `Show older (${list.length - this.shown} more)`, onclick: () => { this.shown += 30; this.renderRow(); } }) : '');
   }
 

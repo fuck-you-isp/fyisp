@@ -291,11 +291,12 @@ export class Home {
     const sp = d.speed && d.answer.level !== 'bad' ? d.speed : null;
     this.speedEl.hidden = !sp;
     if (sp) {
-      this.speedEl.replaceChildren(
-        h('span', { class: 'ho-speed-i', 'aria-hidden': 'true', text: sp.impact === 'video_risk' ? '!' : '↘' }),
+      this.speedEl.replaceChildren(...[
+        // The warm-up line has no icon: nothing is slowing yet.
+        sp.kind === 'warmup' && sp.impact !== 'video_risk' ? '' : h('span', { class: 'ho-speed-i', 'aria-hidden': 'true', text: sp.impact === 'video_risk' ? '!' : '↘' }),
         // The server's warm-up line already starts with "Speed:".
         /^Speed:/.test(sp.text) ? h('span', { text: sp.text }) : h('span', {}, h('b', { text: 'Speed: ' }), sp.text.charAt(0).toLowerCase() + sp.text.slice(1)), ' ',
-        h('a', { class: 'ho-link', href: '#v=speed', text: 'See speed by hour', onclick: (/** @type {Event} */ e) => { e.preventDefault(); this.host.openDetails('#v=speed'); } }));
+        h('a', { class: 'ho-link', href: '#v=speed', text: 'See speed by hour', onclick: (/** @type {Event} */ e) => { e.preventDefault(); this.host.openDetails('#v=speed'); } })].filter((x) => x !== ''));
     }
     const a = d.answer;
     // Can't reach fyisp: grey, never red, and the last answer "as of".
