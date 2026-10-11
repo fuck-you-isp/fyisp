@@ -279,7 +279,7 @@ func TestUDPBelowTCPVerdicts(t *testing.T) {
 	}
 	h.run(2 * time.Minute)
 	v := h.e.Current()
-	if v.Kind != model.VerdictISP || v.Summary != "Your ISP's network is dropping packets: the router is fine, the first hop past it loses 50%." {
+	if v.Kind != model.VerdictISP || v.Summary != "Your ISP's network is dropping packets: the router looks fine, the first hop past it loses 50%." {
 		t.Fatalf("verdict %+v", v)
 	}
 	if _, ok := v.Evidence["udp_blocked_providers"]; ok {

@@ -195,5 +195,5 @@ About 14 focused days, from the architecture estimate plus burst storage.
 Check the terms of Google STUN, Cloudflare, Twilio and, if it ships, Microsoft's Teams relays. Drop any target whose terms forbid this use.
 
 ## Owner decisions (2026-10-10)
-1. **Teams relay: opt-in only.** It is in the `calls` profile at 5 s and not in `default`. The Calls view tells users how to add it (`--profile default,calls`).
+1. **Teams relay: opt-in only.** It is in the `calls` profile at 5 s and not in `default`. The README explains how to add it (`--profile default,calls`); the UI no longer shows the flag (v0.6).
 2. **Bursts:** each sample is 5 packets 20 ms apart, stored as three sibling series (`udp`, `udp_jitter`, `udp_loss`).

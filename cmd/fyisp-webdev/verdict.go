@@ -31,20 +31,20 @@ type scripted struct {
 }
 
 var script = []scripted{
-	{model.VerdictService, "Your connection is fine. Webex and Discord are not responding; that is on their side, not yours.",
+	{model.VerdictService, "2 services look affected: Discord and Webex.",
 		[]string{"Webex", "Discord"},
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0.02, "gateway_rtt_ms": 1.6, "edge_rtt_ms": 7.4, "anycast_rtt_ms": 13.1}},
-	{model.VerdictOK, "Everything looks healthy: your router, your ISP and the internet are all responding normally.", nil,
+	{model.VerdictOK, "Everything looks fine.", nil,
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0.001}},
-	{model.VerdictISP, "Your ISP is dropping 38% of packets. Your router and Wi-Fi are fine, so this is your ISP's fault.", nil,
+	{model.VerdictISP, "Your ISP's network is dropping packets: the router looks fine, the first hop past it loses 38%.", nil,
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0.38, "anycast_loss": 0.41, "services_loss": 0.4}},
-	{model.VerdictLAN, "Your Wi-Fi or router is dropping 22% of packets. Your internet provider looks fine from here.", nil,
+	{model.VerdictLAN, "Your Wi-Fi or router is dropping 22% of packets.", nil,
 		map[string]float64{"gateway_loss": 0.22, "edge_loss": 0.25, "anycast_loss": 0.24, "services_loss": 0.25}},
-	{model.VerdictUpstream, "Your ISP's first hop answers, but most of the internet does not: trouble beyond your ISP's edge or in its upstream links.", nil,
+	{model.VerdictUpstream, "Problems beyond your ISP: 3 of 3 public DNS anycast servers are unreachable.", nil,
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0.7, "services_loss": 0.72}},
-	{model.VerdictDNS, "Name lookups are failing for most services while the network path is fine: a DNS problem.", nil,
+	{model.VerdictDNS, "Name lookups are failing: 12 of 20 services can't be found, but the network itself looks fine.", nil,
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0.6}},
-	{model.VerdictNoNetwork, "This computer has no network connection (no route to the internet).", nil,
+	{model.VerdictNoNetwork, "This device has no working network connection.", nil,
 		map[string]float64{"gateway_loss": 1, "edge_loss": 1, "anycast_loss": 1, "services_loss": 1}},
 	{model.VerdictUDPBlocked, "UDP is blocked or failing on this network (or a firewall on this computer is blocking fyisp): calls will fall back to slower TCP relays.",
 		[]string{"Cloudflare-STUN", "Meet-STUN", "Twilio-STUN-global"},
@@ -67,11 +67,11 @@ func newFakeVerdict(now time.Time, backfill, cycle time.Duration, fixed model.Ve
 			{ID: 1, Start: lan.from, End: lan.to, Kind: model.VerdictLAN, PeakLoss: 0.8,
 				Summary: "Your Wi-Fi or router dropped most packets for a few minutes."},
 			{ID: 2, Start: at(0.5), End: at(0.5).Add(4 * time.Minute), Kind: model.VerdictDNS, PeakLoss: 0.3,
-				Summary: "Name lookups failed for most services; the network path was fine."},
+				Summary: "Name lookups failed for most services; the network itself looked fine."},
 			{ID: 3, Start: isp.from, End: isp.to, Kind: model.VerdictISP, PeakLoss: 0.6,
-				Summary: "Your ISP dropped 60% of packets while your router was fine."},
+				Summary: "Your ISP dropped 60% of packets while your router looked fine."},
 			{ID: 4, Start: at(0.15), End: at(0.15).Add(6 * time.Minute), Kind: model.VerdictService, PeakLoss: 0.12,
-				Summary: "Webex was unreachable; everything else was fine.", Targets: []string{"Webex"}},
+				Summary: "Webex was unreachable; everything else looked fine.", Targets: []string{"Webex"}},
 		}
 	}
 	return f

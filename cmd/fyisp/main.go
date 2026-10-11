@@ -6,6 +6,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -154,10 +155,10 @@ func parseFlags(args []string) (config, error) {
 	var c config
 	var retention string
 	fs := flag.NewFlagSet("fyisp", flag.ContinueOnError)
-	fs.StringVar(&c.listen, "listen", defaultListen, "local dashboard address (0.0.0.0:3000 exposes it to your LAN)")
+	fs.StringVar(&c.listen, "listen", cmp.Or(os.Getenv("FYISP_LISTEN"), defaultListen), "local dashboard address (0.0.0.0:3000 exposes it to your LAN; default: $FYISP_LISTEN, else "+defaultListen+")")
 	fs.BoolVar(&c.share, "share", false, "start a public read-only link (Cloudflare quick tunnel) at startup")
 	fs.StringVar(&c.shareProtocol, "share-protocol", "auto", "tunnel protocol: auto, quic or http2")
-	fs.StringVar(&c.dataDir, "data-dir", "", "where to keep data (default: per-OS state directory; see `fyisp paths`)")
+	fs.StringVar(&c.dataDir, "data-dir", "", "where to keep data (default: $FYISP_DATA_DIR, else the per-OS state directory; see `fyisp paths`)")
 	fs.BoolVar(&c.ephemeral, "ephemeral", false, "keep data in a temporary directory deleted on exit")
 	fs.StringVar(&retention, "retention", "90d", "how long to keep data (max 90d), e.g. 14d or 48h")
 	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]` or other named profiles")
