@@ -258,9 +258,9 @@
         "level": "warn",
         "state": "slow",
         "label": "Some aren't answering",
-        "note": "13 of 38 aren't answering reliably from here.",
+        "note": "12 of 38 aren't answering reliably from here.",
         "names": [],
-        "ok": 25,
+        "ok": 26,
         "total": 38,
         "details": "#v=o\u0026ot=other"
       }

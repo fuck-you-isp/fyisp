@@ -81,7 +81,7 @@ func TestStructure(t *testing.T) {
 		"fyisp measured 22 targets in 5 groups from this connection: TCP connects (time to open a connection) every 15",
 		"and UDP STUN bursts (5 requests 20 ms apart, the path call audio and video use) every 5",
 		"are pinged every 1",
-		"3 public resolvers (big anycast DNS resolvers) are pinged every 5",
+		"2 public resolvers (big anycast DNS resolvers) are pinged every 5",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("method lacks %q", want)

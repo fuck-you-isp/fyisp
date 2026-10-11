@@ -723,7 +723,7 @@ func TestProfileTCPOnly(t *testing.T) {
 			path++
 		}
 	}
-	if services != 18 || path != 5 || udp != 4 {
+	if services != 18 || path != 4 || udp != 4 {
 		t.Errorf("%d services, %d path targets, %d UDP targets", services, path, udp)
 	}
 	if !strings.Contains(b, `"name":"Microsoft-Teams","group":"call-apps","kinds":["tcp"],"interval_ms":15000,"provider":"services-communication","provider_title":"Communication Services","provider_kind":"service","geo":"global","tags":["voice","video","signaling","app:teams","home:calls"]`) {

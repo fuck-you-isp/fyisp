@@ -62,7 +62,7 @@ const QUIET_LABEL = { udp_blocked: 'This network blocks UDP', stun_blocked: 'Thi
 const LAYERS = [
   { id: 'gateway', key: 'gateway', label: 'Gateway', why: 'Your router: the first thing every packet goes through.' },
   { id: 'isp-edge', key: 'edge', label: 'ISP edge', why: 'The first hop on your ISP\'s side of the line.' },
-  { id: 'anycast', key: 'anycast', label: 'Internet (anycast)', why: 'Big anycast resolvers (Cloudflare, Google, Quad9) that are close to almost every ISP.' },
+  { id: 'anycast', key: 'anycast', label: 'Internet (anycast)', why: 'Big anycast resolvers (Cloudflare, Google) that are close to almost every ISP.' },
   { id: 'services', key: 'services', label: 'Services', why: 'The services and cloud regions in the panels below.' },
 ];
 // Which layer each verdict kind blames.
@@ -164,7 +164,7 @@ const GLOSSARY = {
   rtt: 'Time for a message to reach a server and come back, in milliseconds. Under 150 ms feels instant on a call.',
   stun: 'A tiny “what’s my address?” request that call apps send before a call. fyisp uses it to test the path call audio takes.',
   udp: 'The fast, no-retry way call audio and video travel. If it’s blocked, calls fall back to slower routes.',
-  anycast: 'Big services (Cloudflare, Google, Quad9 DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.',
+  anycast: 'Big services (Cloudflare and Google DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.',
   'isp edge': 'The first piece of your internet provider’s equipment past your router.',
   p95: '95 out of 100 measurements were faster than this. Shows the slow moments the median hides.',
   bursts: '5 STUN requests sent quickly, 20 ms apart, like call audio packets. Loss and jitter are measured per burst.',

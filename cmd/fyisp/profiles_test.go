@@ -179,7 +179,7 @@ func TestNoUDP(t *testing.T) {
 		return slices.ContainsFunc(p.Targets, func(tg model.Target) bool { return tg.IsUDP() })
 	}
 	p, err := loadProfile(c)
-	if err != nil || hasUDP(p) || len(p.Targets) != 18+5 || slices.ContainsFunc(p.Groups, func(g model.Group) bool { return g.ID == "calls" }) {
+	if err != nil || hasUDP(p) || len(p.Targets) != 18+4 || slices.ContainsFunc(p.Groups, func(g model.Group) bool { return g.ID == "calls" }) {
 		t.Fatalf("default --no-udp: %v, %d targets", err, len(p.Targets))
 	}
 	c, _ = parseFlags([]string{"--profile", "calls", "--no-udp"})

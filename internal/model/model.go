@@ -223,7 +223,7 @@ func (f Fanout) Observe(s Sample) {
 const (
 	LayerGateway = "gateway"  // the default gateway (home router)
 	LayerEdge    = "isp-edge" // the first public hop (the ISP's side)
-	LayerAnycast = "anycast"  // big anycast resolvers (1.1.1.1, 8.8.8.8, 9.9.9.9)
+	LayerAnycast = "anycast"  // big anycast resolvers (1.1.1.1, 8.8.8.8)
 )
 
 // Special hosts resolved at runtime from the local network path.

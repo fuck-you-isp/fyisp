@@ -36,7 +36,7 @@ type fakeTrace struct {
 	info    map[netip.Addr]model.HopInfo
 }
 
-var tracedTargets = []string{"Cloudflare DNS 1.1.1.1", "Google DNS 8.8.8.8", "Quad9 DNS 9.9.9.9", "Microsoft-Teams", "CDN-Cloudflare"}
+var tracedTargets = []string{"Cloudflare DNS 1.1.1.1", "Google DNS 8.8.8.8", "Microsoft-Teams", "CDN-Cloudflare"}
 
 type fhop struct {
 	ip    string
@@ -74,7 +74,6 @@ type cloud struct {
 var clouds = map[string]cloud{
 	"Cloudflare DNS 1.1.1.1": {13335, "CLOUDFLARENET", []string{"172.71.144.3", "162.158.60.1", "172.68.188.2", "1.1.1.1"}, "one.one.one.one", 14},
 	"Google DNS 8.8.8.8":     {15169, "GOOGLE", []string{"108.170.242.225", "142.251.65.143", "108.170.243.1", "8.8.8.8"}, "dns.google", 15},
-	"Quad9 DNS 9.9.9.9":      {19281, "QUAD9-AS-1", []string{"74.63.18.10", "74.63.18.66", "74.63.18.90", "9.9.9.9"}, "dns9.quad9.net", 17},
 	"Microsoft-Teams":        {64510, "EXAMPLE-CLOUD-A", []string{"192.0.2.101", "192.0.2.102", "192.0.2.103", "192.0.2.104"}, "teams.cloud-a.example", 16},
 	"CDN-Cloudflare":         {64511, "EXAMPLE-CDN", []string{"192.0.2.111", "192.0.2.112", "192.0.2.113", "192.0.2.114"}, "", 12},
 }
