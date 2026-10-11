@@ -619,6 +619,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	if err != nil {
 		return nil, err
 	}
+	all = withVia(all, st, s.public)
 	tz := p.zone.loc
 	byRegion, byServer := map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}
 	var span, last24 []model.SpeedTest
@@ -740,6 +741,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	out.UnderLoad = speedUnderLoadOf(span)
 	if s.public { // the share link's wording: a visitor's line is not "yours"
 		out.Finding.Text, out.Finding.Caveat = out.Finding.TextPublic, out.Finding.CaveatPublic
+		out.Finding.Network, out.Finding.Via = "", "" // no networks or exchanges by name
 		if out.Pattern != nil {
 			out.Pattern.Text = publicWording.Replace(out.Pattern.Text)
 		}
@@ -1037,6 +1039,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 	if err != nil {
 		return nil, err
 	}
+	all = withVia(all, s.d.Speed.State(), s.public)
 	var ts []model.SpeedTest
 	for _, t := range all {
 		if keep(t) {
@@ -1060,6 +1063,24 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 	return out, nil
 }
 
+// withVia adds, locally, the internet exchange each test's handoff
+// crossed (State.Vias: kept in memory, never stored, re-traced daily) when
+// the server's latest handoff is the test's. The share link never gets it.
+func withVia(ts []model.SpeedTest, st speedtest.State, public bool) []model.SpeedTest {
+	if public || len(st.Vias) == 0 {
+		return ts
+	}
+	out := slices.Clone(ts)
+	for i, t := range out {
+		if v, ok := st.Vias[t.Server]; ok && t.Handoff != nil && t.Handoff.ASN == v.ASN && t.Handoff.ISPASN == v.ISPASN {
+			h := *t.Handoff
+			h.Via = v.Via
+			out[i].Handoff = &h
+		}
+	}
+	return out
+}
+
 // speedHome is Home's speed line (nil: nothing on Home).
 func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location, voicePublic bool) *speedtest.HomeSpeed {
 	if s.d.Speed == nil || s.d.Speed.State().Mode == speedtest.ModeOff {
@@ -1069,6 +1090,7 @@ func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location
 	if err != nil {
 		return nil
 	}
+	ts = withVia(ts, s.d.Speed.State(), s.public || voicePublic)
 	eh, _ := s.edgeHours(ctx, now, tz)
 	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, Loc: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: edgeIdle(eh)})
 	line := speedtest.HomeLine(f, ts, tz, now)

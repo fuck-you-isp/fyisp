@@ -3,6 +3,7 @@ package speedtest
 import (
 	"math"
 	"math/rand/v2"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -161,9 +162,41 @@ func TestFinding(t *testing.T) {
 		}
 		ts[i].Handoff = h
 	}
-	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseProvider || f.Network != "AS3356 LEVEL3" || len(f.Providers) != 2 ||
-		!strings.Contains(f.Text, "the link between your internet provider and AS3356 LEVEL3") || strings.Contains(f.TextPublic, "LEVEL3") {
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseProvider || f.Network != "LEVEL3 (AS3356)" || len(f.Providers) != 2 ||
+		!strings.Contains(f.Text, "the link between your internet provider and LEVEL3 (AS3356).") || strings.Contains(f.TextPublic, "LEVEL3") {
 		t.Errorf("handoff: %s %q %v: %s / %s", f.Case, f.Network, f.Providers, f.Text, f.TextPublic)
+	}
+	// Meeting at an internet exchange (local wording only).
+	for i := range ts {
+		if ts[i].Server[0] != 'B' {
+			h := *ts[i].Handoff
+			h.Via = "DE-CIX"
+			ts[i].Handoff = &h
+		}
+	}
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Via != "DE-CIX" ||
+		!strings.Contains(f.Text, "the link between your internet provider and LEVEL3 (AS3356), where they meet at DE-CIX (an internet exchange)") ||
+		regexp.MustCompile(`DE-CIX|AS[0-9]|via`).MatchString(f.TextPublic) {
+		t.Errorf("via: %q: %s / %s", f.Via, f.Text, f.TextPublic)
+	}
+	// One provider dips; its traceroutes end at the exchange: the peer
+	// isn't known.
+	ts = synth(c, 9, func(sv string, h int) float64 {
+		if evening(h) && sv[0] == 'A' && sv != "A3" {
+			return 0.5
+		}
+		return 1
+	}, "wired")
+	for i := range ts {
+		ts[i].Handoff = &model.Handoff{ISPASN: 3320}
+		if ts[i].Server[0] == 'A' {
+			ts[i].Handoff.Via = "DE-CIX"
+		}
+	}
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseProvider ||
+		!strings.Contains(f.Text, "the route through DE-CIX (an internet exchange) to these servers") ||
+		regexp.MustCompile(`DE-CIX|AS[0-9]|via`).MatchString(f.TextPublic) {
+		t.Errorf("peer unknown: %s %q: %s / %s", f.Case, f.Via, f.Text, f.TextPublic)
 	}
 	// The ISP case's evidence line.
 	f := FindFinding(FindingInput{Tests: synth(c, 9, func(_ string, h int) float64 {
