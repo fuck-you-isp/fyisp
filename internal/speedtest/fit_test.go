@@ -191,8 +191,12 @@ func TestFitBudgetTooSmall(t *testing.T) {
 	if _, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v1"}); !errors.Is(err, ErrBudgetTooSmall) {
 		t.Errorf("enqueue: %v", err)
 	}
-	if st := q.State(); !st.BudgetTooSmall || st.CanStart || !st.Public || st.BudgetLimit != 150e6 {
-		t.Errorf("state %+v", st)
+	if st := q.State(); !st.BudgetTooSmall || st.CanStart || !st.Public || st.BudgetLimit != 150e6 || !st.BudgetResets.IsZero() {
+		t.Errorf("state %+v (a budget under one test never resets)", st)
+	}
+	setLedger(q, usage{At: time.Unix(0, q.o.Now().UnixNano()).Add(-time.Hour), Bytes: 100e6})
+	if _, _, r := q.Budget(); !r.IsZero() {
+		t.Errorf("resets_at %v with a budget under one test", r)
 	}
 	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner}); err != nil {
 		t.Errorf("the owner: %v", err)

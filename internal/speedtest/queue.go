@@ -370,6 +370,9 @@ func (q *Queue) budgetLocked(now time.Time) (limit, used int64, resetsAt time.Ti
 		held = PublicTestBytes
 	}
 	fits := func(used int64) bool { return limit-used-held >= PublicTestBytes }
+	if limit < PublicTestBytes {
+		return limit, used, time.Time{} // never fits: the share link's tests are off (ErrBudgetTooSmall), nothing resets
+	}
 	if !fits(used) {
 		left := used
 		for _, u := range q.ledger { // oldest first: the first age-out that makes room
