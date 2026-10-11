@@ -36,7 +36,7 @@ type estimate struct {
 // counted by the end of complete tick i+1 (the tick the cap fell in is
 // left out) and at[i] when that tick was read; end is when the last byte
 // was counted, endBytes the count then, all from the data phase's start.
-// rtt is the path's (the streams' largest smoothed RTT).
+// rtt is the path's idle RTT (see test.pathRTT).
 //
 //   - Each tick's rate is its bytes over its actual length (ticks are read
 //     late on a busy machine).

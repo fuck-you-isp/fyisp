@@ -105,6 +105,19 @@ func TestTickJitter(t *testing.T) {
 	}
 }
 
+// TestIdleRTT: the smoothing's RTT is the idle one, not a bloated line's
+// loaded srtt: a level 2G run with srtt 250 ms and a 10 ms connect time is
+// valid.
+func TestIdleRTT(t *testing.T) {
+	rtt := idleRTT(10*time.Millisecond, []time.Duration{250 * time.Millisecond, 260 * time.Millisecond})
+	if rtt != 10*time.Millisecond || stillRising([]float64{2.0, 2.0, 2.0, 2.0}, rtt) {
+		t.Errorf("rtt %v", rtt)
+	}
+	if idleRTT(0, []time.Duration{0, 40 * time.Millisecond}) != 40*time.Millisecond || idleRTT(0, nil) != 0 {
+		t.Error("fallbacks")
+	}
+}
+
 // TestStillRising: net-isp's vectors (rates per tick, as a share of the
 // line rate) and cq-netns's real series from a shaped lab line (Gbit/s).
 func TestStillRising(t *testing.T) {
