@@ -50,8 +50,14 @@ type estimate struct {
 //     stillRising's.
 //   - With no ticks, or none with bytes, it is MethodWhole.
 func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
+	return peak90From(0, cum, at, end, endBytes, rtt)
+}
+
+// peak90From is peak90 with the window starting at tick from or later
+// (written bytes: the first tick fills the send buffers, not the path).
+func peak90From(from int, cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
 	n := len(cum)
-	if n == 0 || end <= 0 || len(at) != n {
+	if n <= from || end <= 0 || len(at) != n {
 		return estimate{method: MethodWhole}
 	}
 	r := make([]float64, n)
@@ -64,8 +70,8 @@ func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, 
 		prev, prevAt = c, at[i]
 	}
 	sm := median3(r)
-	pk := 0
-	for i := range sm {
+	pk := from
+	for i := from; i < n; i++ {
 		if sm[i] > sm[pk] {
 			pk = i
 		}
@@ -73,7 +79,7 @@ func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, 
 	if sm[pk] <= 0 {
 		return estimate{method: MethodWhole}
 	}
-	k := 0
+	k := from
 	for sm[k] < 0.9*sm[pk] {
 		k++
 	}
