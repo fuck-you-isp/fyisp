@@ -122,13 +122,8 @@ function tooFastWhy(r, region) {
  * its header); the mark is hidden from screen readers, which hear "at least".
  * @param {string} k @param {number|null} b @param {boolean} lb @param {boolean} mark
  */
-/** Whether a lower bound counts as at least normal: the server's *_lb_counted, else (an older server) a score of 1 or more. @param {SpeedTest} t @param {'down'|'up'} dir */
-function lbCounted(t, dir) {
-  const v = /** @type {any} */ (t)[`${dir}_lb_counted`];
-  if (v !== undefined) return v === true;
-  const sc = dir === 'up' ? t.up_score : t.score;
-  return sc != null && sc >= 1;
-}
+/** Whether a lower bound counts as at least normal: the server's *_lb_counted (omitted when false). @param {SpeedTest} t @param {'down'|'up'} dir */
+function lbCounted(t, dir) { return /** @type {any} */ (t)[`${dir}_lb_counted`] === true; }
 /** The "% of normal" cell of a lower bound: "at least normal", or "not counted", muted either way. @param {boolean} atLeast */
 function lbCell(atLeast) {
   const why = atLeast ? LB_MORE : LB_OUT;
