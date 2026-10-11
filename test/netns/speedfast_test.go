@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,18 +28,17 @@ const (
 	fastCut  = 0.3 // the evening cut
 )
 
-// fastEveningCut: on a 2 Gbit/s line every direction reaches the 100 MB
-// cap within half a second. The steady-rate estimator must measure such a
-// direction from where its rate levels off (rate method peak90) and store a
-// lower bound only when it was still speeding up at the cap; the API's
-// flags must be the stored ones. On this line (htb, whose bursts make the
-// bytes per 100 ms tick swing by a third at 2 Gbit/s while the ticks
-// themselves are on time) the near server's directions, the 30% download
-// cut (1.4 Gbit/s) and a 1 Gbit/s line all level off: never a lower bound,
-// within about 10% of the shaped rate (9 of 9 runs on release/v0.7.1
-// ce3b7fc; the assertion allows 12%).
-// The far server (150 ms RTT) is window-limited at about 950 Mbit/s down
-// and still speeding up over its RTT-scaled smoothing window: a lower bound.
+// fastEveningCut: a 2 Gbit/s line under v0.7.2's 10 s time cap (no byte
+// cap). Every direction is measured from where its rate levels off (rate
+// method peak90) and stored with cap "time"; a lower bound only when it was
+// still speeding up at the cap; the API's flags are the stored ones. On
+// this line (htb, whose bursts make the bytes per 100 ms tick swing by a
+// third at 2 Gbit/s while the ticks themselves are on time) the near
+// server's directions, the 30% download cut (1.4 Gbit/s) and a 1 Gbit/s
+// line level off and stop early (about 3-4 s): never a lower bound, within
+// 12% of the shaped rate. The far server (150 ms RTT) runs longer while its
+// windows grow, then levels off, socket-buffer limited at about 1.6 Gbit/s:
+// not a lower bound either.
 //
 // The finding needs days of scheduled tests, so the store is seeded with
 // 9 days of hourly tests against the built-in catalog's regions before
@@ -65,6 +67,8 @@ func fastEveningCut(t *testing.T) {
 		api    speedTestAPI
 		method [2]string
 		lower  [2]bool
+		cap    string
+		runS   [2]float64 // each direction's data phase, from fyisp's tick log
 	}
 	run := func(srv string, a netip.Addr) result {
 		t.Helper()
@@ -73,20 +77,36 @@ func fastEveningCut(t *testing.T) {
 			t.Fatalf("%s: %+v", srv, r)
 		}
 		x := l.storedExtra(t, r.ID)
-		t.Logf("%s: down %.0f Mbit/s up %.0f Mbit/s, short %v/%v, lower bound %v/%v, rate method %q",
-			srv, *r.DownBps/1e6, *r.UpBps/1e6, r.DownShort, r.UpShort, r.DownLowerBound, r.UpLowerBound, x.RateMethod)
-		return result{r, x.RateMethod, x.LowerBound}
+		runS := l.lastTickRuns(t)
+		t.Logf("%s: down %.0f Mbit/s up %.0f Mbit/s, ran %.1f/%.1f s, measured %.1f/%.1f s, cap %q/%q, lower bound %v/%v, rate method %q",
+			srv, *r.DownBps/1e6, *r.UpBps/1e6, runS[0], runS[1], r.DownS, r.UpS, x.Cap, r.Cap, r.DownLowerBound, r.UpLowerBound, x.RateMethod)
+		return result{r, x.RateMethod, x.LowerBound, x.Cap, runS}
 	}
 
-	// Every capped direction has a rate method, and the API's lower-bound
-	// flags are the stored ones.
+	// v0.7.2: every test runs under the 10 s time cap (stored and in the
+	// API), with no byte cap; every direction has a rate method; the API's
+	// lower-bound flags are the stored ones.
 	consistent := func(name string, r result) {
 		t.Helper()
+		if r.cap != "time" || r.api.Cap != "time" {
+			t.Errorf("%s: cap stored %q, API %q; want time", name, r.cap, r.api.Cap)
+		}
 		for i, dir := range []string{"down", "up"} {
 			short := []bool{r.api.DownShort, r.api.UpShort}[i]
 			lb := []bool{r.api.DownLowerBound, r.api.UpLowerBound}[i]
-			if short != (r.method[i] != "") || lb != r.lower[i] {
-				t.Errorf("%s %s: short %v, rate method %q, lower bound stored %v, API %v", name, dir, short, r.method[i], r.lower[i], lb)
+			if short || r.method[i] == "" || lb != r.lower[i] {
+				t.Errorf("%s %s: short %v, rate method %q, lower bound stored %v, API %v; want no byte cap, a method, the same flags",
+					name, dir, short, r.method[i], r.lower[i], lb)
+			}
+		}
+	}
+
+	// quick: a near server's direction stops early once it levels off.
+	quick := func(name string, r result) {
+		t.Helper()
+		for i, dir := range []string{"down", "up"} {
+			if r.runS[i] < 2.5 || r.runS[i] > 6 {
+				t.Errorf("%s %s: ran %.1f s, want an early stop at about 3-5.5 s", name, dir, r.runS[i])
 			}
 		}
 	}
@@ -110,13 +130,26 @@ func fastEveningCut(t *testing.T) {
 	consistent("near", near)
 	levelled("near", near, 0, fastRate)
 	levelled("near", near, 1, fastRate)
+	quick("near", near)
 
 	// Far server (150 ms): its window-limited download is still speeding
 	// up at the cap over its RTT-scaled smoothing, so a lower bound.
 	far := run("far", iperfB)
 	consistent("far", far)
-	if !far.lower[0] {
-		t.Errorf("far down: %.0f Mbit/s, not a lower bound; want one at 150 ms", *far.api.DownBps/1e6)
+	// v0.7.2 (no byte cap): over up to 10 s the far path's windows grow and
+	// it levels off, socket-buffer limited (1595-1675 Mbit/s in 9 runs on
+	// release/v0.7.2 0f4370a): never a lower bound.
+	for i, dir := range []string{"down", "up"} {
+		bps := []*float64{far.api.DownBps, far.api.UpBps}[i]
+		if far.method[i] != speedtest.MethodPeak90 || far.lower[i] || *bps < 1.3e9 || *bps > 2e9 {
+			t.Errorf("far %s: %.0f Mbit/s by %q, lower bound %v; want a plateau of about 1600 (1300-2000), not a lower bound",
+				dir, *bps/1e6, far.method[i], far.lower[i])
+		}
+		// It runs longer than the near server, within the 10 s cap (and the
+		// ramp-up before it).
+		if far.runS[i] <= near.runS[i] || far.runS[i] > 12 {
+			t.Errorf("far %s: ran %.1f s (near %.1f s); want longer than near, at most the 10 s cap", dir, far.runS[i], near.runS[i])
+		}
 	}
 
 	// The evening cut: the line's download drops 30%; the near server reads
@@ -127,6 +160,7 @@ func fastEveningCut(t *testing.T) {
 	consistent("near, cut", cut)
 	levelled("near, cut", cut, 0, fastRate*(1-fastCut))
 	levelled("near, cut", cut, 1, fastRate)
+	quick("near, cut", cut)
 
 	// At 1 Gbit/s: the same.
 	for _, x := range []struct{ ns, dev string }{{l.isp, "i0"}, {l.gw, "g1"}} {
@@ -137,6 +171,7 @@ func fastEveningCut(t *testing.T) {
 	consistent("near, 1 Gbit/s", slow)
 	levelled("near, 1 Gbit/s", slow, 0, fastRate/2)
 	levelled("near, 1 Gbit/s", slow, 1, fastRate/2)
+	quick("near, 1 Gbit/s", slow)
 
 	// The finding over the seeded days: the ISP, at the cut's hours.
 	var s struct {
@@ -250,4 +285,34 @@ func (l *speedLab) storedExtra(t *testing.T, id int64) speedtest.Extra {
 	}
 	t.Fatalf("test %d not in the store", id)
 	return speedtest.Extra{}
+}
+
+// lastTickRuns reads fyisp's FYISP_TICKS log ("speed test ticks", one line
+// per direction) and returns the last test's data phase per direction, in
+// seconds: the time of its last tick.
+func (l *speedLab) lastTickRuns(t *testing.T) [2]float64 {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(l.dir, fmt.Sprintf("fyisp-%d.log", l.runs)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out [2]float64
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.Contains(line, `"speed test ticks"`) {
+			continue
+		}
+		var x struct {
+			Direction string    `json:"direction"`
+			AtMs      []float64 `json:"at_ms"`
+		}
+		if json.Unmarshal([]byte(line), &x) != nil || len(x.AtMs) == 0 {
+			continue
+		}
+		i := 0
+		if x.Direction == "upload" {
+			i = 1
+		}
+		out[i] = x.AtMs[len(x.AtMs)-1] / 1000
+	}
+	return out
 }
