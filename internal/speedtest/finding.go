@@ -107,6 +107,7 @@ const MinDays = 3
 
 // FindFinding computes the finding.
 func FindFinding(in FindingInput) Finding {
+	in.Tests = Censored(in.Tests) // capped directions as patterns use them
 	var tests []model.SpeedTest
 	days := map[string]bool{}
 	for _, t := range in.Tests {
@@ -165,10 +166,10 @@ func (f *Finding) quiet(in FindingInput, tests []model.SpeedTest) {
 	defer func() {
 		f.TextPublic = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual").Replace(f.Text)
 	}()
-	pooled := HourMedians(noFallback, in.Loc, false)
+	pooled := hourMedians(noFallback, in.Loc, false)
 	var rows []string
 	for _, k := range slices.Sorted(maps.Keys(byRow)) {
-		if p := FindDip(HourMedians(byRow[k], in.Loc, false), false); p != nil {
+		if p := FindDip(hourMedians(byRow[k], in.Loc, false), false); p != nil {
 			name := k
 			if r, ok := regionByID(in.Catalog, k); ok {
 				name = r.Title
@@ -235,10 +236,10 @@ func (f *Finding) thin(in FindingInput, tests []model.SpeedTest) bool {
 			groups[GroupKey(t)] = append(groups[GroupKey(t)], t)
 		}
 	}
-	pooled := HourMedians(noFallback, in.Loc, false)
+	pooled := hourMedians(noFallback, in.Loc, false)
 	covered, rows := countValid(pooled), 0
 	for _, ts := range groups {
-		if countValid(HourMedians(ts, in.Loc, false)) >= minHours {
+		if countValid(hourMedians(ts, in.Loc, false)) >= minHours {
 			rows++
 		}
 	}
@@ -375,13 +376,13 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 
 	var cands []*Pattern
 	for _, ts := range [][]model.SpeedTest{nearTests, noFallback} {
-		if p := FindDip(HourMedians(ts, in.Loc, up), up); p != nil {
+		if p := FindDip(hourMedians(ts, in.Loc, up), up); p != nil {
 			cands = append(cands, p)
 		}
 	}
 	for _, groups := range []map[string][]model.SpeedTest{byProvider, byNet, byRegion, byServer} {
 		for _, k := range slices.Sorted(maps.Keys(groups)) {
-			if p := FindDip(HourMedians(groups[k], in.Loc, up), up); p != nil {
+			if p := FindDip(hourMedians(groups[k], in.Loc, up), up); p != nil {
 				cands = append(cands, p)
 			}
 		}

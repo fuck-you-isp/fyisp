@@ -26,6 +26,13 @@ type Extra struct {
 	// second router): the edge may be the home router, and the link type
 	// is not this machine's.
 	Bridged bool `json:"bridged,omitempty"`
+	// Per direction (down, up) of a capped one: how its rate was taken
+	// (MethodPeak90, MethodWhole; "" when not capped, and in every v0.7.0
+	// row), its window, and whether it is a lower bound (still speeding up
+	// at the cap).
+	RateMethod [2]string  `json:"rate_method,omitzero"`
+	WinMs      [2]float64 `json:"win_ms,omitzero"`
+	LowerBound [2]bool    `json:"lower_bound,omitzero"`
 }
 
 // ParseExtra reads a test's Extra ("" gives the zero value).
@@ -457,10 +464,14 @@ func Baseline(ts []model.SpeedTest, server string, at time.Time) (down, up float
 			t.CappedByServer || t.Start.Before(at.Add(-BaselineSpan)) || !t.Start.Before(at) {
 			continue
 		}
-		if t.DownBps != nil {
+		var x Extra // capped directions: v0.7.0 ones and lower bounds stay out
+		if t.DownShort || t.UpShort {
+			x = ParseExtra(t.Extra)
+		}
+		if t.DownBps != nil && baselineRate(t.DownShort, &x, 0) {
 			d = append(d, *t.DownBps)
 		}
-		if t.UpBps != nil {
+		if t.UpBps != nil && baselineRate(t.UpShort, &x, 1) {
 			u = append(u, *t.UpBps)
 		}
 	}
@@ -540,6 +551,10 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			re = &r
 		}
 		x.RampMs[i] = round2(float64(res.Ramp) / float64(time.Millisecond))
+		if res.CappedByBytes {
+			x.RateMethod[i], x.LowerBound[i] = res.RateMethod, res.LowerBound
+			x.WinMs[i] = round2(float64(res.Elapsed) / float64(time.Millisecond))
+		}
 		secs := math.Round(res.Elapsed.Seconds()*100) / 100
 		if dir == Download {
 			t.DownBps, t.DownRetrans, t.DownShort, t.DownSecs = &bps, re, res.CappedByBytes, secs

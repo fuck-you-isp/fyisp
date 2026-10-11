@@ -113,27 +113,32 @@ type speedWindow struct {
 // speedTestJSON is one test. Ports and hosts are local only; own servers
 // are "custom-N" on the share link.
 type speedTestJSON struct {
-	ID              int64    `json:"id"`
-	Start           int64    `json:"start"`
-	End             int64    `json:"end"`
-	Trigger         string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep
-	OnDemand        bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
-	Outcome         string   `json:"outcome"`
-	Region          *string  `json:"region"`
-	Server          string   `json:"server"`
-	Label           string   `json:"label"`
-	Display         string   `json:"display"`
-	Provider        string   `json:"provider"`
-	City            string   `json:"city"`
-	Fallback        bool     `json:"fallback"`
-	FallbackLevel   string   `json:"fallback_level"`
-	Port            int      `json:"port,omitempty"`
-	Attempts        int      `json:"attempts"`
-	DownBps         *float64 `json:"down_bps"`
-	UpBps           *float64 `json:"up_bps"`
-	DownShort       bool     `json:"down_short"`
-	UpShort         bool     `json:"up_short"`
-	CappedByBudget  bool     `json:"capped_by_budget"` // either direction hit the 100 MB cap: show "≥ X"
+	ID             int64    `json:"id"`
+	Start          int64    `json:"start"`
+	End            int64    `json:"end"`
+	Trigger        string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep
+	OnDemand       bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
+	Outcome        string   `json:"outcome"`
+	Region         *string  `json:"region"`
+	Server         string   `json:"server"`
+	Label          string   `json:"label"`
+	Display        string   `json:"display"`
+	Provider       string   `json:"provider"`
+	City           string   `json:"city"`
+	Fallback       bool     `json:"fallback"`
+	FallbackLevel  string   `json:"fallback_level"`
+	Port           int      `json:"port,omitempty"`
+	Attempts       int      `json:"attempts"`
+	DownBps        *float64 `json:"down_bps"`
+	UpBps          *float64 `json:"up_bps"`
+	DownShort      bool     `json:"down_short"`
+	UpShort        bool     `json:"up_short"`
+	CappedByBudget bool     `json:"capped_by_budget"` // either direction hit the 100 MB cap: show "≥ X"
+	// DownLowerBound and UpLowerBound: still speeding up at the cap, so the
+	// speed was at least this. Its score never reads as slow: at or above
+	// 1 it is "at least normal", below it "not counted".
+	DownLowerBound  bool     `json:"down_lower_bound,omitempty"`
+	UpLowerBound    bool     `json:"up_lower_bound,omitempty"`
 	DownSecs        float64  `json:"down_s"`
 	UpSecs          float64  `json:"up_s"`
 	CappedByServer  bool     `json:"capped_by_server"`
@@ -342,6 +347,7 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		DownSecs: t.DownSecs, UpSecs: t.UpSecs, CappedByServer: t.CappedByServer, ScoreDown: t.ScoreDown, ScoreUp: t.ScoreUp,
 		Bytes: t.Bytes, DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans,
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
+	j.DownLowerBound, j.UpLowerBound = speedtest.LowerBounds(&t)
 	if j.FallbackLevel == "" {
 		j.FallbackLevel = speedtest.FallbackNone
 	}
