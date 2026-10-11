@@ -33,6 +33,9 @@ func setLedger(q *Queue, uses ...usage) {
 func TestFitResetsWhenATestFits(t *testing.T) {
 	q, f := newQueueHarness(t, withLedger(300e6))
 	now := time.Unix(0, f.now.Load())
+	if n := q.State().FitsTests; n != 1 {
+		t.Errorf("an empty 300 MB fits %d tests, want 1", n)
+	}
 	setLedger(q, usage{At: now.Add(-time.Hour), Bytes: 105e6})
 	var be *BudgetError
 	_, err := q.Admit(pub("v1"))
@@ -74,7 +77,7 @@ func TestFitDropsAtDequeue(t *testing.T) {
 	}
 	f.release <- struct{}{}
 	<-f.started // v1
-	if st := q.State(); st.Running == nil || st.Running.ID != es[0].ID || st.CanStart {
+	if st := q.State(); st.Running == nil || st.Running.ID != es[0].ID || st.CanStart || st.FitsTests != 0 {
 		t.Errorf("running %+v; can start %v (the running test holds 210 MB)", st.Running, st.CanStart)
 	}
 	f.release <- struct{}{}

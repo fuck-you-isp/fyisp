@@ -816,8 +816,8 @@ func TestQueueCancelledSweepIsLast(t *testing.T) {
 	f.release <- struct{}{}
 	<-f.started
 	x, _ := q.Cancel(sw.ID)
-	if x.Stopped != StopCancelled {
-		t.Errorf("the cancel's answer: stopped %q", x.Stopped)
+	if x.Stopped != StopCancelled || x.CancelledBy != "owner" {
+		t.Errorf("the cancel's answer: stopped %q by %q", x.Stopped, x.CancelledBy)
 	}
 	waitFor(t, func() bool { x, _ := q.Get(sw.ID); return !x.Finished.IsZero() })
 	if l := q.State().LastSweep; l == nil || l.ID != sw.ID || l.Ran != 2 || l.Stopped != StopCancelled || len(l.Tests) != 1 {
@@ -833,7 +833,7 @@ func TestQueueCancelledSweepIsLast(t *testing.T) {
 	if x, _ := q.Cancel(pub.ID); x.State != StateCancelled {
 		t.Fatalf("paused sweep: %+v", x)
 	}
-	if l := q.State().LastSweep; l == nil || l.ID != pub.ID || l.Ran != 1 || l.Stopped != StopCancelled {
+	if l := q.State().LastSweep; l == nil || l.ID != pub.ID || l.Ran != 1 || l.Stopped != StopCancelled || l.CancelledBy != "owner" {
 		t.Errorf("last sweep %+v", l)
 	}
 	f.release <- struct{}{}
