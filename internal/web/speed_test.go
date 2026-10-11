@@ -723,6 +723,55 @@ func TestSweepResults(t *testing.T) {
 	}
 }
 
+// TestSweepCancelledStaysReadable: the owner cancels a running sweep; the
+// cancel says why, and part=sweep keeps it as the last sweep, its results
+// so far, the rest skipped.
+func TestSweepCancelledStaysReadable(t *testing.T) {
+	g := newSpeedRig(t, 5*time.Hour)
+	for range 4 { // two servers, both directions
+		g.tokens <- struct{}{}
+	}
+	loc, _, _ := speedHandlers(t, g, LocalOptions{})
+	w := do(loc, "POST", "/api/speed/run?kind=sweep", speedPOSTHeaders())
+	var started struct{ Entry speedEntryJSON }
+	if json.Unmarshal(w.Body.Bytes(), &started); w.Code != 202 {
+		t.Fatalf("start: %d %s", w.Code, w.Body.String())
+	}
+	waitUntil(t, func() bool {
+		var e speedEntryJSON
+		json.Unmarshal(do(loc, "GET", fmt.Sprintf("/api/speed?part=entry&id=%d", started.Entry.ID), speedHost).Body.Bytes(), &e)
+		return len(e.Results) == 6 && e.Results[2].Status == "testing"
+	})
+	w = do(loc, "POST", fmt.Sprintf("/api/speed/cancel?id=%d", started.Entry.ID), speedPOSTHeaders())
+	var c struct{ Entry speedEntryJSON }
+	if json.Unmarshal(w.Body.Bytes(), &c); w.Code != 200 || c.Entry.StoppedReason == nil || *c.Entry.StoppedReason != "cancelled" {
+		t.Fatalf("cancel: %d %s", w.Code, w.Body.String())
+	}
+	var sw struct {
+		Running *speedEntryJSON
+		Entry   *speedEntryJSON
+		Tests   []speedTestJSON
+	}
+	waitUntil(t, func() bool {
+		sw.Running, sw.Entry, sw.Tests = nil, nil, nil
+		json.Unmarshal(do(loc, "GET", "/api/speed?part=sweep", speedHost).Body.Bytes(), &sw)
+		return sw.Entry != nil
+	})
+	e := sw.Entry
+	if e.ID != started.Entry.ID || e.State != "cancelled" || e.StoppedReason == nil || *e.StoppedReason != "cancelled" || sw.Running != nil {
+		t.Fatalf("part=sweep: %+v (running %+v)", e, sw.Running)
+	}
+	want := []string{"ok", "ok", "skipped", "skipped", "skipped", "skipped"}
+	for i, r := range e.Results {
+		if r.Status != want[i] {
+			t.Errorf("result %d: %s, want %s", i, r.Status, want[i])
+		}
+	}
+	if len(e.Results) != 6 || len(sw.Tests) != 2 {
+		t.Errorf("results %d, tests %d", len(e.Results), len(sw.Tests))
+	}
+}
+
 // TestQueueRefusals: every share-link refusal's code and fields.
 func TestQueueRefusals(t *testing.T) {
 	now := speedNow
