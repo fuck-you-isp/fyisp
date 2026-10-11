@@ -31,7 +31,7 @@ function pausedUntil(at, time = false, left = -1) {
   // The allowance may not be at 0: a test starts only when a whole one still fits.
   const why = time ? 'they slow the line while they run'
     : left > 0 ? `not enough of today’s allowance is left for another test (${mbWord(left)} left)` : 'the day’s data allowance is used up';
-  return at ? `Tests from this link are paused until ${when(at)} (${why}).` : `Tests from this link are paused for now (${why}).`;
+  return at ? `Tests from this link are paused until ${when(at)}: ${why}.` : `Tests from this link are paused for now: ${why}.`;
 }
 /** A full test from the link waits 30 minutes after the last one. @param {number} at */
 function nextSweep(at) { return at ? `The next full test from this link can start at ${when(at)}.` : 'A full test from this link ran recently. Try again in a little while.'; }
