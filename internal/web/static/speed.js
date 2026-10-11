@@ -401,6 +401,15 @@ export class Speed {
   }
 }
 
+/** When the first test after turning on runs, in whole minutes (never "½ minute"). @param {number|null|undefined} at @param {boolean} running */
+export function firstTest(at, running) {
+  if (running) return 'The first test is running now.';
+  if (!at) return 'The first test starts within the hour.';
+  const m = Math.round((at - Date.now()) / 60e3);
+  if ((at - Date.now()) < 60e3) return 'The first test starts in under a minute.';
+  return `The first test starts at about ${clock(at)} (in ${m} minute${m === 1 ? '' : 's'}).`;
+}
+
 /** replaceChildren, skipping the parts that don't apply. @param {Element} el @param {(Node|null)[]} kids */
 function fill(el, kids) { el.replaceChildren(.../** @type {Node[]} */ (kids.filter((k) => k))); }
 
