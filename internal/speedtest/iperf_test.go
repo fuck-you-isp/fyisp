@@ -31,6 +31,38 @@ type fakeServer struct {
 	moved   int64 // every byte sent or received on data streams, over every test
 	err     error
 	wg      sync.WaitGroup
+
+	out, in  atomic.Int64 // data bytes written and read so far, every stream and test
+	busyNext atomic.Int32 // the next sessions to answer busy
+	open     atomic.Int32 // connections accepted and not yet closed by the server
+	peak     atomic.Int32 // the most open at once
+}
+
+// trackedConn keeps fakeServer.open.
+type trackedConn struct {
+	net.Conn
+	f    *fakeServer
+	once sync.Once
+}
+
+func (c *trackedConn) Close() error {
+	c.once.Do(func() { c.f.open.Add(-1) })
+	return c.Conn.Close()
+}
+
+func (f *fakeServer) accept() (net.Conn, error) {
+	c, err := f.ln.Accept()
+	if err != nil {
+		return nil, err
+	}
+	n := f.open.Add(1)
+	for {
+		p := f.peak.Load()
+		if n <= p || f.peak.CompareAndSwap(p, n) {
+			break
+		}
+	}
+	return &trackedConn{Conn: c, f: f}, nil
 }
 
 func newFakeServer(t *testing.T, mode string) *fakeServer {
@@ -68,7 +100,7 @@ func (f *fakeServer) fail(err error) {
 func (f *fakeServer) serve() {
 	defer f.wg.Done()
 	for {
-		c, err := f.ln.Accept()
+		c, err := f.accept()
 		if err != nil {
 			return
 		}
@@ -107,6 +139,11 @@ func readJSON(c net.Conn, v any) error {
 // session runs one test on control connection c.
 func (f *fakeServer) session(c net.Conn) {
 	defer c.Close()
+	if f.busyNext.Load() > 0 {
+		f.busyNext.Add(-1)
+		c.Write([]byte{0xff})
+		return
+	}
 	switch f.mode {
 	case "busy":
 		c.Write([]byte{0xff}) // ACCESS_DENIED, without reading the cookie
@@ -144,13 +181,14 @@ func (f *fakeServer) session(c net.Conn) {
 		}
 	}()
 	for range n {
-		s, err := f.ln.Accept()
+		s, err := f.accept()
 		if err != nil {
 			f.fail(err)
 			return
 		}
 		ck, err := readCookie(s)
 		if err != nil || ck != cookie {
+			s.Close()
 			f.fail(errors.New("stream cookie differs from the control cookie"))
 			return
 		}
@@ -186,6 +224,7 @@ func (f *fakeServer) session(c net.Conn) {
 						}
 						k, err := s.Write(buf[:max(n, 1)])
 						sent[i] += int64(k)
+						f.out.Add(int64(k))
 						if err != nil {
 							return
 						}
@@ -196,6 +235,7 @@ func (f *fakeServer) session(c net.Conn) {
 			for {
 				k, err := s.Read(buf)
 				recv[i] += int64(k)
+				f.in.Add(int64(k))
 				if err != nil {
 					return
 				}
@@ -250,6 +290,10 @@ func (f *fakeServer) session(c net.Conn) {
 		f.fail(errors.New("no IPERF_DONE"))
 	}
 }
+
+// setupOverhead bounds a run's bytes besides its data: the control
+// connection's and the stream cookies (counted in WireBytes).
+const setupOverhead = 4096
 
 func quick(addr string, d Direction) Config {
 	return Config{Addr: addr, Direction: d, Streams: 3, Duration: 1500 * time.Millisecond, Omit: 500 * time.Millisecond}
@@ -426,7 +470,7 @@ func TestByteCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	// It stops early enough that what keeps arriving stays within the cap.
-	if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes/2 || r.WireBytes > cfg.MaxBytes || time.Since(t0) > time.Second || r.Elapsed <= 0 {
+	if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes/2 || r.WireBytes > cfg.MaxBytes+setupOverhead || time.Since(t0) > time.Second || r.Elapsed <= 0 {
 		t.Errorf("capped %v, %d bytes in all, %d measured over %v, run %v", r.CappedByBytes, r.TotalBytes, r.Bytes, r.Elapsed, time.Since(t0))
 	}
 	f.mu.Lock()
@@ -587,7 +631,7 @@ func TestByteCapInFlight(t *testing.T) {
 	f2 := newFakeServer(t, "")
 	cfg = quick(f2.addr(), Upload)
 	cfg.MaxBytes = 3 << 20
-	if r, err := Run(context.Background(), cfg); err != nil || !r.CappedByBytes || r.WireBytes > cfg.MaxBytes {
+	if r, err := Run(context.Background(), cfg); err != nil || !r.CappedByBytes || r.WireBytes > cfg.MaxBytes+setupOverhead {
 		t.Errorf("upload: %v capped %v, %d written (cap %d)", err, r.CappedByBytes, r.WireBytes, cfg.MaxBytes)
 	}
 }
@@ -617,4 +661,81 @@ func TestUploadUnacked(t *testing.T) {
 			t.Errorf("acked bytes changed: %d", res.Bytes)
 		}
 	}
+}
+
+// TestBytesHonest: a run's bytes are what moved on the wire (the kernel's
+// counts where it has them, never added to the application's), whether it
+// finishes, is cancelled mid-data, or during setup.
+func TestBytesHonest(t *testing.T) {
+	const slack = 1 << 20
+	settle := func(f *fakeServer) { // the fake's stream goroutines notice the close
+		for range 100 {
+			if f.open.Load() == 0 {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	t.Run("download", func(t *testing.T) {
+		f := newFakeServer(t, "")
+		r, err := Run(context.Background(), quick(f.addr(), Download))
+		if err != nil {
+			t.Fatal(err)
+		}
+		settle(f)
+		if out := f.out.Load(); r.WireBytes < out-slack || r.WireBytes > out+4096 {
+			t.Errorf("wire %d, the server sent %d", r.WireBytes, out)
+		}
+	})
+	t.Run("upload", func(t *testing.T) {
+		f := newFakeServer(t, "")
+		r, err := Run(context.Background(), quick(f.addr(), Upload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		settle(f)
+		if in := f.in.Load(); r.WireBytes < in || r.WireBytes > in+in/2 {
+			t.Errorf("wire %d, the server received %d", r.WireBytes, in)
+		}
+	})
+	t.Run("cancel mid-download", func(t *testing.T) {
+		f := newFakeServer(t, "stall")
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			for f.out.Load() < 4<<20 {
+				time.Sleep(5 * time.Millisecond)
+			}
+			cancel()
+		}()
+		c := quick(f.addr(), Download)
+		c.Duration = 10 * time.Second
+		r, err := Run(ctx, c)
+		if err == nil {
+			t.Fatal("not cancelled")
+		}
+		settle(f)
+		if out := f.out.Load(); r.WireBytes < out-slack || r.WireBytes > out+4096 {
+			t.Errorf("wire %d, the server sent %d", r.WireBytes, out)
+		}
+	})
+	t.Run("cancel in setup", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		go func() { // accepts, reads the cookie, never answers
+			c, err := ln.Accept()
+			if err == nil {
+				io.Copy(io.Discard, c)
+				c.Close()
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		defer cancel()
+		r, err := Run(ctx, quick(ln.Addr().String(), Download))
+		if err == nil || r.WireBytes < cookieSize {
+			t.Errorf("wire %d, err %v", r.WireBytes, err)
+		}
+	})
 }

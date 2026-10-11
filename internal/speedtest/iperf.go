@@ -137,9 +137,11 @@ type Config struct {
 type Result struct {
 	Direction Direction
 	Bytes     int64 // bytes received over the measured window (all streams)
-	// WireBytes is every byte of the data phase on the wire, ramp-up and
-	// the time after the window included (all streams; set even when the
-	// test fails): what a data budget must count.
+	// WireBytes is every byte of the run on the wire: the control
+	// connection's and, per stream, the larger of what the application and
+	// the kernel (TCP_INFO at close, Linux) counted, ramp-up and the time
+	// after the window included (set even when the test fails or is
+	// cancelled): what a data budget must count.
 	WireBytes int64
 	Elapsed   time.Duration // the measured window, without the omitted ramp-up
 	// Retransmits summed over the streams, -1 when unknown (the sender's
@@ -258,7 +260,8 @@ func Run(ctx context.Context, c Config) (Result, error) {
 		}
 		return res, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
-	t := &test{c: c, ctrl: ctrl, dialRTT: dialRTT}
+	t := &test{c: c, dialRTT: dialRTT}
+	t.ctrl = countConn{ctrl, &t.setup}
 	if c.MaxBytes > 0 {
 		t.stopAt.Store(c.MaxBytes - inflightFloor(c.MaxBytes))
 	}
@@ -267,7 +270,6 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer stop()
 
 	r, err := t.run(ctx, &res)
-	t.noteReceived()
 	if err != nil {
 		t.abort() // nothing more to send: drop what is queued
 	}
@@ -281,32 +283,54 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	return r, err
 }
 
-// wire is the data phase's bytes so far, over every stream.
+// wire is the run's bytes so far: the control connection's and the
+// stream cookies, plus each stream's larger count, the application's or
+// the kernel's (read at close; never their sum).
 func (t *test) wire() int64 {
-	return max(t.written(), t.received.Load())
+	t.mu.Lock()
+	counts, kern := t.counts, t.kern
+	t.mu.Unlock()
+	n := t.setup.Load()
+	for i := range max(len(counts), len(kern)) {
+		var app, k int64
+		if i < len(counts) {
+			app = counts[i].Load()
+		}
+		if i < len(kern) {
+			k = kern[i]
+		}
+		n += max(app, k)
+	}
+	return n
 }
 
-// noteReceived keeps the streams' TCP_INFO received bytes (what arrived,
-// read or still buffered: a download's data budget must count it) while
-// they are open.
-func (t *test) noteReceived() {
-	if t.c.Direction != Download {
-		return
+// kernelBytes is a stream's bytes as TCP counts them (Linux; -1
+// elsewhere): received for a download (read or still buffered), acked for
+// an upload.
+func (t *test) kernelBytes(s net.Conn) int64 {
+	if t.c.Direction == Download {
+		return tcpReceived(s)
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.closed {
-		return
-	}
-	var n int64
-	for _, s := range t.streams {
-		if r := tcpReceived(s); r > 0 {
-			n += r
-		}
-	}
-	if n > t.received.Load() {
-		t.received.Store(n)
-	}
+	_, acked := tcpInfo(s)
+	return acked
+}
+
+// countConn counts a connection's bytes both ways.
+type countConn struct {
+	net.Conn
+	n *atomic.Int64
+}
+
+func (c countConn) Read(b []byte) (int, error) {
+	k, err := c.Conn.Read(b)
+	c.n.Add(int64(k))
+	return k, err
+}
+
+func (c countConn) Write(b []byte) (int, error) {
+	k, err := c.Conn.Write(b)
+	c.n.Add(int64(k))
+	return k, err
 }
 
 type test struct {
@@ -319,10 +343,11 @@ type test struct {
 	closed  bool
 	wg      sync.WaitGroup // the data phase's stream goroutines
 
-	counts   []atomic.Int64 // per stream, the whole data phase (mu: the slice)
-	moved    atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
-	received atomic.Int64   // downloads: TCP_INFO received bytes, every stream
-	acked    bool           // uploads: Result.Bytes is TCP_INFO acked bytes
+	counts []atomic.Int64 // per stream, the whole data phase (mu: the slice)
+	moved  atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
+	kern   []int64        // per stream, kernelBytes at close (mu)
+	setup  atomic.Int64   // the control connection's bytes and the stream cookies
+	acked  bool           // uploads: Result.Bytes is TCP_INFO acked bytes
 	// stopAt is where a download stops reading: MaxBytes less what is
 	// still in flight then (see inflightSlack), so the total that arrives
 	// stays within MaxBytes.
@@ -331,35 +356,41 @@ type test struct {
 	capped  atomic.Bool
 }
 
-func (t *test) close() {
+func (t *test) close() { t.shut(false) }
+
+// shut closes the run once; rst: the data streams with SO_LINGER 0.
+func (t *test) shut(rst bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return
 	}
 	t.closed = true
-	_ = t.ctrl.Close()
-	for _, s := range t.streams {
-		_ = s.Close()
+	// The kernel's counts first: closing ends them, and an RST drops what
+	// is still queued.
+	t.kern = make([]int64, len(t.streams))
+	for i, s := range t.streams {
+		t.kern[i] = t.kernelBytes(s)
 	}
-}
-
-// abort closes the run on cancel, timeout or error: the data streams with
-// SO_LINGER 0, so upload data still queued in the kernel is dropped (an RST)
-// rather than sent on after the masked window. The happy path closes
-// gracefully (a stock server reading an RST mid-test logs an error).
-func (t *test) abort() {
-	t.mu.Lock()
-	if !t.closed {
+	if rst {
 		for _, s := range t.streams {
 			if tc, ok := s.(*net.TCPConn); ok {
 				_ = tc.SetLinger(0)
 			}
 		}
 	}
-	t.mu.Unlock()
-	t.close()
+	_ = t.ctrl.Close()
+	for _, s := range t.streams {
+		_ = s.Close()
+	}
 }
+
+// abort closes the run on cancel, timeout or error (close reads the
+// kernel's counts before anything changes): the data streams with
+// SO_LINGER 0, so upload data still queued in the kernel is dropped (an RST)
+// rather than sent on after the masked window. The happy path closes
+// gracefully (a stock server reading an RST mid-test logs an error).
+func (t *test) abort() { t.shut(true) }
 
 func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	if err := newCookie(&t.cookie); err != nil {
@@ -405,7 +436,9 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 			return *res, ctx.Err()
 		}
 		_ = s.SetWriteDeadline(time.Now().Add(stepTimeout))
-		if _, err := s.Write(t.cookie[:]); err != nil {
+		k, err := s.Write(t.cookie[:])
+		t.setup.Add(int64(k))
+		if err != nil {
 			return *res, fmt.Errorf("data stream: %w", err)
 		}
 		_ = s.SetWriteDeadline(time.Time{})
@@ -467,7 +500,6 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 		return *res, err
 	}
 	_ = t.write([]byte{stateIperfDone})
-	t.noteReceived()
 	t.close()
 	t.wg.Wait()
 	return *res, nil

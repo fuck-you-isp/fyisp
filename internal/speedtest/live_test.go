@@ -84,7 +84,7 @@ func TestStockAdaptive(t *testing.T) {
 		}
 		t.Logf("%s: capped at 100 MB: %.0f Mbit/s over %v after a %v ramp, %d bytes arrived or written in all, capped=%v", d,
 			capped.BitsPerSecond()/1e6, capped.Elapsed.Round(time.Millisecond), capped.Ramp.Round(time.Millisecond), capped.WireBytes, capped.CappedByBytes)
-		if capped.WireBytes > MaxBytes {
+		if capped.WireBytes > MaxBytes+setupOverhead {
 			t.Errorf("%s: %d bytes: over the 100 MB cap", d, capped.WireBytes)
 		}
 		if err != nil {
