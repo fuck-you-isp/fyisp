@@ -60,11 +60,12 @@ const (
 	// DefaultPublicBudget is the share link's data budget per rolling 24
 	// hours: bytes its tests actually transferred.
 	DefaultPublicBudget int64 = 10e9
-	// PublicTestBytes is the most one test can move: SlotMaxBytes plus the
-	// 5% the receive-side backstop allows (210 MB). A share-link test
-	// starts only when this much still fits in what is left of the budget;
-	// a budget below it turns the share link's tests off.
-	PublicTestBytes int64 = SlotMaxBytes * 105 / 100
+	// PublicTestBytes is what a share-link test needs free: the most one
+	// test can move (TestMaxBytes, 210 MB, whatever the server does). A
+	// share-link test starts only when this much still fits in what is
+	// left of the budget; a budget below it turns the share link's tests
+	// off.
+	PublicTestBytes int64 = TestMaxBytes
 	budgetSpan            = 24 * time.Hour
 	// The share link's tests mask probes (they would measure the test),
 	// so they may keep the line under test at most PublicTimePerHour in
