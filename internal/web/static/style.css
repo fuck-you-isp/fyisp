@@ -1361,6 +1361,9 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 
 /* Speed-test windows in the chart legends: a solid grey tick; a share-link visitor's, a dashed blue outline. */
 .chip.sp-tick { width: 12px; height: 4px; background: var(--muted); border-radius: 0; }
+.sp-toggle { cursor: pointer; }
+.sp-toggle.off { opacity: 0.55; }
+.sp-toggle:hover { opacity: 1; text-decoration: underline; }
 .chip.sp-tick.pub { background: transparent; border: 1.5px dashed var(--accent); height: 6px; }
 
 .sp-tf { display: block; font-size: 11px; line-height: 1.25; color: var(--ink-2); white-space: normal; }

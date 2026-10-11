@@ -377,7 +377,7 @@ Details → Speed shows:
 
 When every region and provider dips at the same time of day, Home shows one line, for example *Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). That's still plenty for video calls.* Only scheduled tests count toward patterns: Test now and sweeps don't. Reports get the finding and a speed section by region. `fyisp export --speedtests` writes every test as CSV.
 
-**Tests don't count against your connection.** Every probe that runs during a test, or in the 2 seconds after it, measures the test. Those probes are stored as "not measured". The verdict, call scores, Home and history ignore them (and don't call them time when fyisp wasn't running), charts shade the test windows, and a speed test never starts an incident or a bad call minute. "What happened at" says when a test overlapped. `/api/status` reports the share of the last 24 hours spent under test.
+**Probes keep running during a test.** Their results are stored as measured, so a test that slows your line shows up as a latency spike or loss, and can count toward the verdict. The "show speed tests" toggle under each chart (off by default) marks when tests ran, so a spike can be matched to a test. Latency under load comes from the same probes. `/api/status` reports the share of the last 24 hours spent under test.
 
 Limits: one test at a time, at most 15 seconds per direction and 45 seconds per slot, retries included; IPv4 only.
 

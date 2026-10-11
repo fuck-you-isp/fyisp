@@ -1769,8 +1769,17 @@ async function speedAvailable() {
 }
 /** @type {SpeedWindow[]} */
 let speedWins = [];
+// Whether charts mark speed-test windows: off by default (a test every few
+// minutes would cover the chart), toggled from the strip legend, remembered.
+let speedShow = false;
+try { speedShow = localStorage.getItem('fyisp.speedShow') === '1'; } catch { /* no storage */ }
+function toggleSpeedShow() {
+  speedShow = !speedShow;
+  try { localStorage.setItem('fyisp.speedShow', speedShow ? '1' : '0'); } catch { /* no storage */ }
+  redrawCharts();
+}
 
-/** Speed-test windows in the view: probes inside are "not measured", never judged. */
+/** Speed-test windows in the view: probes inside are measured as usual (a spike may be the test). */
 async function loadSpeedWindows() {
   if (!speedOn) return;
   const { from, to } = queryRange();
@@ -1790,7 +1799,7 @@ async function loadSpeedWindows() {
  * grid: with a test every 88 s they'd cover a day view.
  */
 function drawSpeedWindows(/** @type {any} */ u) {
-  if (!speedWins.length) return;
+  if (!speedShow || !speedWins.length) return;
   const ctx = u.ctx;
   const { left, top, width, height } = u.bbox;
   const vmin = u.scales.x.min, vmax = u.scales.x.max;
@@ -1843,18 +1852,25 @@ function speedLegend(view) {
   if (!view || !speedWins.length) return [];
   const inView = speedWins.filter((w) => w.end / 1000 >= view[0] && w.start / 1000 <= view[1]);
   if (!inView.length) return [];
-  const out = [h('span', {}, h('span', { class: 'chip sp-tick', 'aria-hidden': 'true' }), 'speed test running (left out of these numbers)')];
-  if (MODE === 'local' && inView.some((w) => w.origin === 'public')) out.push(h('span', {}, h('span', { class: 'chip sp-tick pub', 'aria-hidden': 'true' }), 'speed test someone started from your share link'));
+  const toggle = h('span', {
+    class: 'sp-toggle' + (speedShow ? '' : ' off'), tabindex: '0', role: 'button', 'aria-pressed': String(speedShow),
+    title: speedShow ? 'Hide speed-test marks' : 'Show when speed tests ran (they can raise latency while they run)',
+    onclick: toggleSpeedShow,
+    onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSpeedShow(); } },
+  }, h('span', { class: 'chip sp-tick', 'aria-hidden': 'true' }), speedShow ? 'speed tests (shown)' : 'show speed tests');
+  const out = [toggle];
+  if (speedShow && MODE === 'local' && inView.some((w) => w.origin === 'public')) out.push(h('span', {}, h('span', { class: 'chip sp-tick pub', 'aria-hidden': 'true' }), 'speed test someone started from your share link'));
   return out;
 }
 
 /** Tooltip line for a bucket that overlaps a speed test. */
 function speedTipNodes(/** @type {number} */ a, /** @type {number} */ b) {
+  if (!speedShow) return [];
   const hit = speedWins.filter((w) => w.start < b && w.end > a);
   if (!hit.length) return [];
   const n = hit.length, pub = MODE === 'local' ? hit.filter((w) => w.origin === 'public').length : 0;
   const from = pub ? (pub === n ? ' from the share link' : `, ${pub} from the share link`) : '';
-  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`}${from}: not measured` })];
+  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`}${from} running` })];
 }
 
 function noteTipNodes(/** @type {Note[]} */ list) {
