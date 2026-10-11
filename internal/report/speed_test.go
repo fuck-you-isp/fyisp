@@ -99,6 +99,12 @@ func TestSpeedSection(t *testing.T) {
 	if regexp.MustCompile(`AS[0-9]|Speed tests started on|DE-CIX`).MatchString(speed) {
 		t.Error("the shared report's speed section names a network or the start date")
 	}
+	if own := f.build(t, d, Options{}); !regexp.MustCompile(`Based on [\d,]+ tests on \d+ days between \w{3} \d+ \w{3} and \w{3} \d+ \w{3}`).MatchString(own) {
+		t.Errorf("the owner's report lacks the evidence's date range: %q", regexp.MustCompile(`Based on[^<]*`).FindAllString(own, 3))
+	}
+	if regexp.MustCompile(`days between`).MatchString(speed) {
+		t.Error("the shared report has the evidence's date range")
+	}
 	// The owner's zone: every time of day in it, labelled.
 	ny, _ := time.LoadLocation("America/New_York")
 	d.Zone = func(context.Context) *time.Location { return ny }
