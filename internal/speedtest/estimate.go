@@ -31,9 +31,9 @@ type estimate struct {
 	lowerBound bool // still speeding up at the cap: the speed was at least this
 }
 
-// rising is how far the window's last tick may read above its first for
+// plateau is how close to the peak a second smoothed tick must come for
 // the rate to count as levelled off.
-const rising = 0.05
+const plateau = 0.95
 
 // peak90 estimates a capped direction's steady rate. cum[i] is the bytes
 // counted by the end of complete tick i+1 (the tick the cap fell in is
@@ -46,8 +46,7 @@ const rising = 0.05
 //   - The window runs from the first smoothed tick at 90% of the peak to
 //     the last byte; its rate is its bytes over its length.
 //   - It is a lower bound (still speeding up at the cap) when fewer than 2
-//     smoothed ticks reach 90% of the peak, or when the window's last tick
-//     reads more than 5% above its first.
+//     smoothed ticks are within 5% of the peak: no plateau was seen.
 //   - With no ticks, or none with bytes, it is MethodWhole.
 func peak90(cum []int64, tick, end time.Duration, endBytes int64) estimate {
 	n := len(cum)
@@ -93,11 +92,11 @@ func peak90(cum []int64, tick, end time.Duration, endBytes int64) estimate {
 	}
 	near := 0
 	for _, v := range sm {
-		if v >= 0.9*sm[pk] {
+		if v >= plateau*sm[pk] {
 			near++
 		}
 	}
-	if near < 2 || sm[n-1] > (1+rising)*sm[k] {
+	if near < 2 {
 		e.lowerBound = true
 	}
 	return e
@@ -109,8 +108,9 @@ func peak90(cum []int64, tick, end time.Duration, endBytes int64) estimate {
 // direction capped in its ramp-up (RampMs 0: its rate included slow
 // start). It never enters Baseline. Per server and direction over
 // GuardSpan, the coverage guard (tooFast) decides how the rest go:
-//   - covered: lower bounds count as at least normal (score max(score,
-//     1)) in the patterns and the finding;
+//   - covered: a lower bound that already reaches normal counts as normal
+//     (score 1) in the patterns and the finding; one below normal is left
+//     out (it says nothing about how slow the line was);
 //   - too fast to measure from here: its scores are left out of the
 //     patterns and the finding (its rows are still shown and exported).
 
@@ -246,11 +246,19 @@ func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
 	return out
 }
 
-// atLeastNormal is a lower bound's score: never below 1 (normal).
+// atLeastNormal is a lower bound's score: 1 (normal) when it reaches
+// normal, else none (left out).
 func atLeastNormal(sc *float64, lb bool) *float64 {
-	if sc == nil || !lb || *sc >= 1 {
+	if sc == nil || !lb {
 		return sc
+	}
+	if *sc < 1 {
+		return nil
 	}
 	one := 1.0
 	return &one
 }
+
+// LowerBoundCounted reports whether a lower bound counts in the patterns
+// (as normal: it already reached it) rather than being left out.
+func LowerBoundCounted(sc *float64, lb bool) bool { return lb && sc != nil && *sc >= 1 }

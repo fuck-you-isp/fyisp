@@ -2,6 +2,7 @@
  "at": 1791655200000,
  "bytes_24h": 0,
  "bytes_month": 0,
+ "bytes_per_test": 146800640,
  "configurable": false,
  "connection": {
   "source": "detected",
@@ -3414,5 +3415,6 @@
    "The router's delay rises from 1 to 2 ms: the home network keeps up."
   ]
  },
- "warning": null
+ "warning": null,
+ "zone_label": "UTC+2"
 }
