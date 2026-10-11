@@ -36,6 +36,8 @@ function nextSweep(at) { return at ? `The next full test from this link can star
 // A full test: seconds per server, with the pause between tests. Each test runs up to 10 seconds each way.
 const SWEEP_S = 26;
 const TEST_S = 20;
+/** "2.4 GB", "850 MB". @param {number} b */
+function gbData(b) { return b >= 1e9 ? `${(b / 1e9).toFixed(1).replace(/\.0$/, '')} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`; }
 /** "14 minutes", "1 minute". @param {number} s seconds */
 function minWords(s) { const m = Math.max(1, Math.round(s / 60)); return `${m} minute${m === 1 ? '' : 's'}`; }
 
@@ -200,13 +202,16 @@ export class SpeedQueue {
     const d = this.host.summary();
     const q = this.q;
     const servers = d ? d.servers : [];
-    const n = servers.filter((x) => !x.skipped).length || 45;
+    const sw = /** @type {any} */ (d || {});
+    // The server's count (skipped servers left out) and its estimate of the whole run's data.
+    const n = sw.sweep_servers || servers.filter((x) => !x.skipped).length || 45;
     const skipped = servers.filter((x) => x.skipped).length;
     const mins = Math.max(1, Math.round(n * SWEEP_S / 60));
+    const data = sw.sweep_bytes > 0 ? ` It uses about ${gbData(sw.sweep_bytes)} of data.` : '';
     const p = (/** @type {string} */ t) => h('p', { text: t });
     /** @type {Node[]} */
     const body = [p(`One test on each of the ${n} servers, one after another.${MODE === 'local' && skipped ? ` ${skipped === 1 ? '1 server you skipped won’t be tested.' : `${skipped} servers you skipped won’t be tested.`}` : ''}`)];
-    body.push(p(`Takes about ${mins} minute${mins === 1 ? '' : 's'}: each test runs up to 10 seconds each way.`));
+    body.push(p(`Takes about ${mins} minute${mins === 1 ? '' : 's'}: each test runs up to 10 seconds each way.${data}`));
     if (MODE === 'public') {
       body.push(p('The owner’s line is busy most of that time, so their calls may stutter.'));
       // The share link's test time this hour (the server's caps; it stops the run when they're reached).
@@ -393,7 +398,7 @@ export class SpeedQueue {
     // A new reason is said once; the visible text next to the button stays.
     if (why && why !== this.lastWhy && this.lastWhy != null) this.host.say(why);
     this.lastWhy = why;
-    const n = d ? d.servers.filter((x) => !x.skipped).length || d.servers.length : 45;
+    const n = d ? /** @type {any} */ (d).sweep_servers || d.servers.filter((x) => !x.skipped).length || d.servers.length : 45;
     const mins = Math.max(1, Math.round(n * SWEEP_S / 60));
     const s = this.sweep;
     this.sweepEl.replaceChildren(...[

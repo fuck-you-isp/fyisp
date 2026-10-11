@@ -112,7 +112,7 @@ export function lowerBound(t, dir) { return /** @type {any} */ (t)[`${dir}_lower
  * neutrally.
  * @param {SpeedTest} t
  */
-function stopWords(t) { return t.down_short || t.up_short ? 'when the test stopped' : 'when its 10 seconds ran out'; }
+function stopWords(t) { const x = /** @type {any} */ (t); return x.cap === 'bytes' || (!x.cap && (t.down_short || t.up_short)) ? 'when the test stopped' : 'when its 10 seconds ran out'; }
 /** @param {SpeedTest} t */
 function lbMore(t) { return `Still speeding up ${stopWords(t)}, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.`; }
 /** @param {SpeedTest} t */
