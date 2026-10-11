@@ -404,9 +404,9 @@ func TestQueuePublicOptIn(t *testing.T) {
 // a sweep stops. The owner is never limited by it.
 func TestQueueBudget(t *testing.T) {
 	set := &memSettings{}
-	withBudget := func(o *QueueOptions) { o.Settings, o.PublicBudget = set, 5e6 }
+	withBudget := func(o *QueueOptions) { o.Settings, o.PublicBudget = set, 500e6 }
 	q, f := newQueueHarness(t, withBudget)
-	f.bytes.Store(3e6)
+	f.bytes.Store(150e6)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { q.Run(ctx); close(done) }()
@@ -424,10 +424,11 @@ func TestQueueBudget(t *testing.T) {
 	start := time.Unix(0, f.now.Load())
 	run(Request{Kind: KindSingle, Target: "A", Who: WhoPublic, Visitor: "v1"})
 	f.advance(time.Hour)
-	if _, used, resets := q.Budget(); used != 3e6 || !resets.IsZero() {
+	if _, used, resets := q.Budget(); used != 150e6 || !resets.IsZero() {
 		t.Errorf("after one: %d %v", used, resets)
 	}
-	// A sweep stops once the budget is spent (3 + 3 > 5): one test, not three.
+	// A sweep stops before a test that wouldn't fit whole (500 - 300 < 210
+	// MB): one test, not three.
 	sw, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoPublic, Visitor: "v2"})
 	if err != nil {
 		t.Fatal(err)
@@ -435,11 +436,11 @@ func TestQueueBudget(t *testing.T) {
 	<-f.started
 	f.release <- struct{}{}
 	waitFor(t, func() bool { x, _ := q.Get(sw.ID); return x.State == StateDone })
-	if x, _ := q.Get(sw.ID); len(x.Tests) != 1 {
-		t.Errorf("sweep ran %d tests past the budget", len(x.Tests))
+	if x, _ := q.Get(sw.ID); len(x.Tests) != 1 || x.Stopped != StopLimit || x.StopCode != "budget_exhausted" || x.ResetsAt.IsZero() {
+		t.Errorf("sweep past the budget: %+v", x)
 	}
 	limit, used, resets := q.Budget()
-	if limit != 5e6 || used != 6e6 || !resets.Equal(start.Add(24*time.Hour)) {
+	if limit != 500e6 || used != 300e6 || !resets.Equal(start.Add(24*time.Hour)) {
 		t.Errorf("spent: %d %d %v (start %v)", limit, used, resets, start)
 	}
 	var be *BudgetError
@@ -456,7 +457,7 @@ func TestQueueBudget(t *testing.T) {
 	q2, f2 := newQueueHarness(t, withBudget)
 	f2.now.Store(f.now.Load())
 	q2.load(context.Background())
-	if _, used, resets := q2.Budget(); used != 6e6 || resets.IsZero() {
+	if _, used, resets := q2.Budget(); used != 300e6 || resets.IsZero() {
 		t.Errorf("restored: %d %v", used, resets)
 	}
 	// A waiting share-link entry is dropped when its turn comes past the
@@ -474,7 +475,7 @@ func TestQueueBudget(t *testing.T) {
 	// 24 hours after the first test (the sweep's ran an hour later), it
 	// ages out: room again.
 	f2.advance(23*time.Hour + 30*time.Minute)
-	if _, used, resets := q2.Budget(); used != 3e6 || !resets.IsZero() {
+	if _, used, resets := q2.Budget(); used != 150e6 || !resets.IsZero() {
 		t.Errorf("aged: %d %v", used, resets)
 	}
 }

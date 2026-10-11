@@ -45,7 +45,11 @@ the share link may queue a test or a sweep of every server (`POST
 /s/<secret>/api/speed/run`), but never change the mode or cancel anything.
 Their tests may transfer at most `--speedtest-public-budget` (default 10 GB)
 per rolling 24 hours, counted from every byte on the wire (all attempts,
-ramp-up included) and kept across restarts. Because probes are masked
+ramp-up included) and kept across restarts. It is a hard limit: a test
+from the share link starts only when a whole test (up to 210 MB) still
+fits in what's left, and every test is hard-stopped at that size, even
+against a server that ignores the end of the test. A budget under 210 MB
+turns the share link's tests off (with a warning at start). Because probes are masked
 during a test, the share link's tests may also keep the line under test at
 most 10 minutes per hour and 60 per day, a public sweep can start only 30
 minutes after the last one, and a public sweep yields to the owner's and
