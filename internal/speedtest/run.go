@@ -662,7 +662,7 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 		var err error
 		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: min(MaxBytes, *left), Check: sv.check,
+			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: min(MaxBytes, *left), Check: sv.check, Log: s.o.Log,
 		})
 		w := max(res.WireBytes, res.TotalBytes, res.Bytes)
 		wire += w
