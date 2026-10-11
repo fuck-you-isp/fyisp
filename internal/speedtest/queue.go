@@ -202,6 +202,10 @@ type QueueOptions struct {
 	// EstSweepPause is Pause's typical wait before each of a sweep's
 	// tests, for the estimates (0: none).
 	EstSweepPause time.Duration
+	// WindowEnd, when set, is where the last test's masking window ends
+	// (Windows.LastEnd): a test cut short is masked a little past its end
+	// (AbortTail), and the share link's time is charged to there.
+	WindowEnd func() time.Time
 	// Live reports the running test's direction and server (optional).
 	Live func() (direction, server string, expectedEnd time.Time)
 	Log  *slog.Logger
@@ -230,6 +234,7 @@ type Queue struct {
 	ledger    []usage   // the share link's tests, last 24 h, oldest first
 	sweepEnd  time.Time // when the last public sweep ended (saved with the ledger)
 	pubFrom   time.Time // a share-link test runs: its time from here is not in the ledger yet
+	chargedTo time.Time // the share link's time is charged up to here (a test's window past its end)
 }
 
 // savedLedger is the ledger's saved form (SettingPublicLedger).
@@ -355,12 +360,23 @@ func (q *Queue) timeLocked(now time.Time) (hour, day time.Duration, resetsAt tim
 // spend adds a share-link test's bytes and the time since pubFrom (when
 // set) to the ledger and saves it; final ends the test's charging.
 func (q *Queue) spend(bytes int64, final bool) {
+	var winEnd time.Time
+	if final && q.o.WindowEnd != nil {
+		winEnd = q.o.WindowEnd()
+	}
 	q.mu.Lock()
 	now := q.o.Now()
 	var dur time.Duration
 	if !q.pubFrom.IsZero() {
-		dur = max(now.Sub(q.pubFrom), 0)
+		to := now
+		if final && winEnd.After(now) { // the test's masking window runs on (a cut-short test's tail)
+			to = winEnd
+		}
+		dur = max(to.Sub(q.pubFrom), 0)
 		q.pubFrom = now
+		if final {
+			q.chargedTo = to
+		}
 	}
 	if final {
 		q.pubFrom = time.Time{}
@@ -796,6 +812,9 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 			// line is under test, and probes masked, whether or not it
 			// finishes).
 			q.pubFrom = q.o.Now()
+			if q.chargedTo.After(q.pubFrom) { // the last test's tail, already charged
+				q.pubFrom = q.chargedTo
+			}
 		}
 		q.mu.Unlock()
 		var charging chan struct{}
