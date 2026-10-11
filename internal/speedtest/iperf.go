@@ -283,14 +283,7 @@ func Run(ctx context.Context, c Config) (Result, error) {
 
 // wire is the data phase's bytes so far, over every stream.
 func (t *test) wire() int64 {
-	t.mu.Lock()
-	counts := t.counts
-	t.mu.Unlock()
-	var n int64
-	for i := range counts {
-		n += counts[i].Load()
-	}
-	return max(n, t.received.Load())
+	return max(t.written(), t.received.Load())
 }
 
 // noteReceived keeps the streams' TCP_INFO received bytes (what arrived,
@@ -329,6 +322,7 @@ type test struct {
 	counts   []atomic.Int64 // per stream, the whole data phase (mu: the slice)
 	moved    atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
 	received atomic.Int64   // downloads: TCP_INFO received bytes, every stream
+	acked    bool           // uploads: Result.Bytes is TCP_INFO acked bytes
 	// stopAt is where a download stops reading: MaxBytes less what is
 	// still in flight then (see inflightSlack), so the total that arrives
 	// stays within MaxBytes.
@@ -590,6 +584,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		// What the server received, not what sat in our send buffers.
 		if acked {
 			res.Bytes = ackedBytes
+			t.acked = true
 		}
 		if retransStart[0] >= 0 {
 			res.Retransmits = 0
@@ -796,13 +791,19 @@ func (t *test) results(per []int64, res *Result) serverResults {
 
 // applyServer takes the server's retransmits for downloads (it is the
 // sender). Its byte counts include the ramp-up, so the client's own are
-// used for both directions.
+// used for both directions; without TCP_INFO acked bytes (not Linux), an
+// upload's bytes drop by what the server says never arrived (what sat in
+// our send buffers at the end), never rising above what we wrote.
 func (t *test) applyServer(srv *serverResults, res *Result) {
-	// Bounded: a server's figures are not trusted (the upload's bytes are
-	// measured here, from TCP_INFO; only retransmits come from the server).
-	var retrans int64
+	// Bounded: a server's figures are not trusted.
+	var retrans, got int64
 	for _, s := range srv.Streams {
 		retrans += min(max(s.Retransmits, 0), maxRetrans)
+		got += min(max(s.Bytes, 0), maxBytesReported)
+	}
+	if t.c.Direction == Upload && !t.acked {
+		unsent := min(max(t.written()-got, 0), res.Bytes)
+		res.Bytes -= unsent
 	}
 	retrans = min(retrans, maxRetrans)
 	if t.c.Direction == Download && srv.SenderHasRetransmits == 1 {
@@ -812,6 +813,21 @@ func (t *test) applyServer(srv *serverResults, res *Result) {
 
 // maxRetrans bounds a server-reported retransmit count.
 const maxRetrans = 1e9
+
+// maxBytesReported bounds one server-reported stream byte count.
+const maxBytesReported = 1 << 50
+
+// written is every byte the streams wrote so far.
+func (t *test) written() int64 {
+	t.mu.Lock()
+	counts := t.counts
+	t.mu.Unlock()
+	var n int64
+	for i := range counts {
+		n += counts[i].Load()
+	}
+	return n
+}
 
 // cookiePrefix makes fyisp's tests recognisable in a server's debug log
 // (the server checks only the cookie's length).
