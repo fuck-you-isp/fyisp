@@ -213,7 +213,7 @@ export class Speed {
     const est = this.perTest;
     const data = est != null
       ? `Your test used about ${bytes(est)}. ${modeName(this.pickMode)} would use about ${bytes(monthBytes(d, this.pickMode, est))} a month.`
-      : 'Uses a lot of data. With tests around the world, a month uses about:';
+      : 'How much data this uses depends on your line’s speed; each test runs up to 10 seconds each way.';
     const tph = testsPerHour(d, this.pickMode);
     const plan = d.plans && d.plans.find((p) => p.mode === this.pickMode);
     const busyMin = plan ? plan.share * 60 : tph * TEST_S / 60;
@@ -236,7 +236,7 @@ export class Speed {
       h('details', { class: 'sp-before', open: true },
         h('summary', { text: on ? 'What it costs' : 'Before you turn this on' }),
         h('ul', { class: 'sp-disc' },
-          h('li', {}, h('span', { text: data }), est == null ? dataTable() : '', ' ',
+          h('li', {}, h('span', { text: data }), ' ',
             can && !this.estimating ? h('button', { class: 'btn sm', type: 'button', text: est != null ? 'Estimate again' : 'Estimate for my connection', onclick: () => this.estimate() }) : null,
             this.estimating ? h('span', { class: 'muted', text: 'Testing (about 20 seconds)…' }) : null),
           h('li', { text: `Your line is busy about ${fmtMinutes(busyMin)} each hour, in ${Math.round(tph)} short bursts (about ${Math.max(1, Math.round(busyMin / 60 * 100))}% of the time).` }),
@@ -399,24 +399,6 @@ export class Speed {
     }
     this.bodyEl.replaceChildren(...lines);
   }
-}
-
-/** The owner's data figures for the default schedule, before any test of this line. */
-function dataTable() {
-  return h('table', { class: 'sp-data' },
-    h('caption', { class: 'muted small', text: 'A full test of every server, when you ask for one, runs each test for up to 10 seconds each way.' }),
-    h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Your connection' }), h('th', { scope: 'col', class: 'num', text: 'Data a month' }))),
-    h('tbody', {}, ...[['25 Mbit/s', 'about 150 GB'], ['100 Mbit/s', 'about 600 GB'], ['Fast lines (500 Mbit/s and up)', 'about 1.3 TB']]
-      .map(([a, b]) => h('tr', {}, h('th', { scope: 'row', text: a }), h('td', { class: 'num', text: b })))));
-}
-
-/** When the first test after turning on runs, in whole minutes (never "½ minute"). @param {number|null|undefined} at @param {boolean} running */
-export function firstTest(at, running) {
-  if (running) return 'The first test is running now.';
-  if (!at) return 'The first test starts within the hour.';
-  const m = Math.round((at - Date.now()) / 60e3);
-  if ((at - Date.now()) < 60e3) return 'The first test starts in under a minute.';
-  return `The first test starts at about ${clock(at)} (in ${m} minute${m === 1 ? '' : 's'}).`;
 }
 
 /** replaceChildren, skipping the parts that don't apply. @param {Element} el @param {(Node|null)[]} kids */
