@@ -128,6 +128,27 @@ func TestIdleRTT(t *testing.T) {
 	}
 }
 
+// TestFarPlateau: net-isp's far timed-dump series (150 ms) run on into a
+// 3 s plateau is valid, measured at the plateau's rate.
+func TestFarPlateau(t *testing.T) {
+	far := []float64{0.01, 0.02, 0, 0.04, 0.07, 0, 0.15, 0.3, 0, 0.59, 1.19, 0}
+	for range 30 { // 3 s at 1.25 Gbit/s, bursty per RTT
+		far = append(far, []float64{1.4, 1.1, 1.25}...)
+	}
+	const tk = 100 * time.Millisecond
+	var cum []int64
+	var at []time.Duration
+	var c int64
+	for i, g := range far {
+		c += int64(g * 1e9 / 8 * tk.Seconds())
+		cum, at = append(cum, c), append(at, time.Duration(i+1)*tk)
+	}
+	e := peak90(cum, at, at[len(at)-1], cum[len(cum)-1], 150*time.Millisecond)
+	if rate := float64(e.bytes) * 8 / e.win.Seconds(); e.lowerBound || e.method != MethodPeak90 || math.Abs(rate/1.25e9-1) > 0.05 {
+		t.Errorf("%+v: %.3g bit/s", e, rate)
+	}
+}
+
 // TestStillRising: net-isp's vectors (rates per tick, as a share of the
 // line rate) and cq-netns's real series from a shaped lab line (Gbit/s).
 func TestStillRising(t *testing.T) {
@@ -224,13 +245,13 @@ func capFixtureEve(c *Catalog, days int, lb func(h int, r *rand.Rand) bool, lbX,
 				case lb(h, r):
 					rate, isLB = rate*lbX, true
 				}
-				x := `{"rate_method":["peak90",""]}`
+				x := `{"cap":"time","rate_method":["peak90",""]}`
 				if isLB {
-					x = `{"rate_method":["peak90",""],"lower_bound":[true,false]}`
+					x = `{"cap":"time","rate_method":["peak90",""],"lower_bound":[true,false]}`
 				}
 				down, up := rate, 40e6
 				ts = append(ts, model.SpeedTest{Start: at, Trigger: "schedule", Outcome: model.SpeedOK, Region: reg.ID, Server: reg.Chain(c, at, 0)[0].Server.ID,
-					FallbackLevel: FallbackNone, DownBps: &down, UpBps: &up, DownShort: true, Extra: x, Conn: "wired"})
+					FallbackLevel: FallbackNone, DownBps: &down, UpBps: &up, Extra: x, Conn: "wired"})
 			}
 		}
 	}
@@ -324,7 +345,7 @@ func TestFastLineGuard(t *testing.T) {
 	ts = capFixture(c, 14, func(int, *rand.Rand) bool { return false }, 0.85, 0.6)
 	for i := range ts {
 		if ts[i].Region == "r3" && !evening(ts[i].Start.Hour()) {
-			ts[i].Extra = `{"rate_method":["peak90",""],"lower_bound":[true,false]}`
+			ts[i].Extra = `{"cap":"time","rate_method":["peak90",""],"lower_bound":[true,false]}`
 		}
 	}
 	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseISP || !strings.Contains(f.Evidence, "2 of 8 servers were too fast to measure from here and are left out.") {
@@ -392,12 +413,45 @@ func TestOldCappedRows(t *testing.T) {
 		t.Error("a baseline from v0.7.0 capped rows")
 	}
 	for i := range old {
-		old[i].Extra = `{"ramp_ms":[700,500]}` // capped after the ramp-up: valid
+		old[i].Extra = `{"ramp_ms":[700,500]}` // capped after the ramp-up: valid, but 100 MB
 	}
-	if _, _, ok := Baseline(old, "A1", end); !ok {
-		t.Error("old rows capped after the ramp-up left out")
+	if _, _, ok := Baseline(old, "A1", end); ok {
+		t.Error("a normal from 100 MB rows alone (v0.7.2 waits for time-capped ones)")
 	}
 	if d, _ := LowerBounds(&old[0]); d {
 		t.Error("an old row capped after the ramp-up is a lower bound")
+	}
+}
+
+// TestBaselineAfterTimeCap: a server with v0.7.x rows that stopped at
+// 100 MB waits for BaselineMin time-capped rows before it has a normal,
+// and leaves the old capped ones out; a server without any keeps using its
+// old rows.
+func TestBaselineAfterTimeCap(t *testing.T) {
+	at := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	row := func(i int, bps float64, short bool, x string) model.SpeedTest {
+		return model.SpeedTest{Server: "S", Trigger: "schedule", Outcome: model.SpeedOK, FallbackLevel: FallbackNone,
+			Start: at.Add(-time.Duration(i+1) * time.Hour), DownBps: &bps, DownShort: short, Extra: x}
+	}
+	var ts []model.SpeedTest
+	for i := range 30 {
+		ts = append(ts, row(i, 300e6, true, `{"ramp_ms":[500,500],"rate_method":["peak90",""]}`)) // old, capped, valid
+	}
+	for i := range BaselineMin - 1 {
+		ts = append(ts, row(40+i, 900e6, false, `{"cap":"time","rate_method":["peak90","peak90"]}`))
+	}
+	if _, _, ok := Baseline(ts, "S", at); ok {
+		t.Error("a normal before BaselineMin time-capped rows")
+	}
+	ts = append(ts, row(70, 900e6, false, `{"cap":"time","rate_method":["peak90","peak90"]}`))
+	if d, _, ok := Baseline(ts, "S", at); !ok || d != 900e6 {
+		t.Errorf("normal %v %v: the old capped rows count", d, ok)
+	}
+	var old []model.SpeedTest // uncapped old rows: a slow line keeps its normal
+	for i := range BaselineMin {
+		old = append(old, row(i, 50e6, false, `{"ramp_ms":[500,500]}`))
+	}
+	if d, _, ok := Baseline(old, "S", at); !ok || d != 50e6 {
+		t.Errorf("old uncapped: %v %v", d, ok)
 	}
 }

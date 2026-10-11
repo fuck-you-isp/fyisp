@@ -250,7 +250,7 @@ func TestSchedule(t *testing.T) {
 			t.Fatalf("cycle %d: start %v from base", c, off)
 		}
 	}
-	if load := s.planLoadLocked(ModeRegions); load.TestsPerHour != 2 || load.Share != 2*15.0/3600 {
+	if load := s.planLoadLocked(ModeRegions); load.TestsPerHour != 2 || load.Share != 2*EstTestTime.Seconds()/3600 {
 		t.Errorf("load %+v", load)
 	}
 	s.extra = []string{"us-east"}
@@ -357,7 +357,7 @@ func TestSlotBudget(t *testing.T) {
 	if x := ParseExtra(r.Extra); x.RampMs[0] != 300 {
 		t.Errorf("extra %q", r.Extra)
 	}
-	if c := h.calls[0]; c.Duration != MaxMeasure || c.MinDuration != MinMeasure || c.Timeout != DirTimeout || c.MaxBytes != MaxBytes {
+	if c := h.calls[0]; c.Duration != MaxMeasure || c.MinDuration != MinMeasure || c.Timeout != DirTimeout || c.MaxBytes != 0 || c.Backstop != TimeBackstop {
 		t.Errorf("config %+v", c)
 	}
 }

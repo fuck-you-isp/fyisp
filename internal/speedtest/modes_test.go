@@ -255,22 +255,31 @@ func TestScheduleThroughQueue(t *testing.T) {
 	}
 }
 
-// TestSlotCap: SlotMaxBytes holds over a slot's retries and servers: each
-// attempt gets what is left, and none starts once it is spent.
+// TestSlotCap: no test has a byte cap, the share link's included: only
+// the time cap and its backstop. The slot's hard cap holds an attempt
+// started at SlotBudget: both directions to their deadlines and the pause
+// between them.
 func TestSlotCap(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{WireBytes: 150 << 20}, ErrBusy // busy, after moving data
 	})
-	h.slot(t, target{server: "Near"})
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.calls) != 2 || h.calls[0].MaxBytes != MaxBytes || h.calls[1].MaxBytes != SlotMaxBytes-150<<20 {
-		var caps []int64
+	for _, trigger := range []string{"schedule", "manual", "sweep", "public", "public_sweep"} {
+		h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), trigger)
+		h.mu.Lock()
 		for _, c := range h.calls {
-			caps = append(caps, c.MaxBytes)
+			if c.MaxBytes != 0 || c.Backstop != TimeBackstop || c.Duration != MaxMeasure || c.Timeout != DirTimeout {
+				t.Errorf("%s: %+v", trigger, c)
+			}
 		}
-		t.Errorf("%d attempts, caps %v", len(h.calls), caps)
+		if len(h.calls) != MaxAttempts {
+			t.Errorf("%s: %d attempts", trigger, len(h.calls))
+		}
+		h.calls = nil
+		h.mu.Unlock()
+	}
+	if SlotCap < SlotBudget+2*DirTimeout+relisten || DirTimeout < TimeBackstop || TimeBackstop != MaxOmit+MaxMeasure+2*time.Second {
+		t.Errorf("SlotCap %v, DirTimeout %v, TimeBackstop %v", SlotCap, DirTimeout, TimeBackstop)
 	}
 }
 

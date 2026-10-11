@@ -327,24 +327,23 @@ fyisp --speedtest-server Leaseweb-Tokyo,OVH-Sydney                 # chosen cata
 **What is sent, to whom.** Each test is an iperf3 test over IPv4, built into fyisp, so nothing has to be installed:
 - download, then upload, each with 8 parallel TCP streams;
 - the ramp-up (until the speed stops rising, at most 1 second) is left out;
-- then 3 to 8 seconds are measured, stopping as soon as the speed is steady (a second within 5% of the one before);
-- at most 100 MB each way: a fast line stops there, and the test is marked as cut short.
+- then 3 to 10 seconds are measured, stopping once the speed has levelled off and held steady for 3 seconds (a second within 5% of the one before): up to 10 seconds each way, whatever the data; tests started from your share link are the same.
 
 The servers are public iperf3 servers run by hosting companies and volunteers: Leaseweb (16), OVH (12), Clouvider (9), InterServer (3), Hurricane Electric, Scaleway, Eranium, Uztelecom and Edgoo. All 45 are listed with their sources in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), with the regions in `regions.yml`. The list is built into fyisp and changes only with a release. Like every probe target, they see your public IP address.
 
 **How much it costs your line.** A speed test fills the line while it runs, by design:
-- **Time under test:** mode `regions` keeps the line under test about 4% of the time (9 tests of 15 to 25 seconds an hour); `nearby` about 7%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
-- **Data:** at most 200 MB per test (100 MB each way). Mode `regions`, the default, runs 216 tests a day:
+- **Time under test:** mode `regions` keeps the line under test about 5% of the time (9 tests of 10 to 25 seconds an hour); `nearby` about 7%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
+- **Data:** a test moves your line's speed for 4 to 11 seconds each way; there is no byte cap. Mode `regions`, the default, runs 216 tests a day:
 
   | Your line | Data a month (mode `regions`) |
   |---|---|
-  | 25 Mbit/s | about 150 GB |
-  | 100 Mbit/s | about 600 GB |
-  | fast lines (several hundred Mbit/s and up) | about 1.3 TB (the 200 MB cap) |
-  | one "Test every server" sweep | about 8 GB |
+  | 25 Mbit/s | about 150 to 450 GB |
+  | 100 Mbit/s | about 650 GB to 1.8 TB |
+  | 1 Gbit/s | about 6.5 to 18 TB |
+  | one "Test every server" sweep | Details estimates it from your recent tests |
 
   Mode `nearby` uses about 1.8 times as much. Details shows the data used in the last 24 hours and this month, and an estimate for each mode.
-- **Fast lines:** the 200 MB cap ends a test early, after half a second to a couple of seconds of measuring, so results show *changes over the day* better than your top speed; Details marks them "≥". Speed tests show when your speed drops, not whether you get your plan's advertised speed.
+- **Fast lines:** a test still speeding up when its 10 seconds end (a far server on a fast line) shows "≥": the speed was at least this. Speed tests show when your speed drops, not whether you get your plan's advertised speed.
 - **Metered lines:** leave speed tests off on metered or capped connections.
 
 **Be kind to the servers.** The operators and what fyisp sends them are listed in [`docs/IPERF3-TERMS.md`](docs/IPERF3-TERMS.md); [`docs/OPERATORS.md`](docs/OPERATORS.md) is for the operators themselves. Each server port runs one test at a time.
@@ -356,7 +355,7 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 
 **One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones, then the share link's. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
-**Share link.** Only if you turn it on (`--speedtest-public` or the toggle in Details → Speed; off by default), visitors to the share link can queue Test now or Test every server too, within a data budget and time caps: see [Sharing a public link](#sharing-a-public-link---share) below.
+**Share link.** Only if you turn it on (`--speedtest-public` or the toggle in Details → Speed; off by default), visitors to the share link can queue Test now or Test every server too, within time caps: see [Sharing a public link](#sharing-a-public-link---share) below.
 
 Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
 
@@ -494,7 +493,7 @@ Sharing is **off by default**. Start it with *Make a report* on Home, the share 
 - **People with your link can queue a speed test** (one server, or a sweep of every server), **only if you turn this on** (`--speedtest-public` or the toggle in Details → Speed; off by default). Tests wait in one queue and run one at a time: yours first, then the scheduled ones, then the link's.
   - Each visitor can have one waiting and start one every 30 seconds (10 an hour).
   - At most 3 sweeps and 12 tests from the link wait at once.
-  - The link's tests may use at most 10 GB in any 24 hours (`--speedtest-public-budget`, e.g. `--speedtest-public-budget=50GB`); a test from the share link starts only when a whole test (up to 210 MB) still fits in what's left, and a budget under 210 MB turns them off (fyisp still starts and logs a warning; the link answers `budget_too_small`). They also keep your line busy for at most 10 minutes an hour and 60 minutes a day; a full sweep from the link waits 30 minutes after the last one. Then the link says when it can test again.
+  - The link's tests are limited by time, not data: they keep your line busy for at most 10 minutes an hour and 60 minutes a day, and a full sweep from the link waits 30 minutes after the last one. Then the link says when it can test again. (`--speedtest-public-budget` from v0.7.1 is accepted and ignored, with a warning.)
   - A sweep from the link pauses between servers whenever one of your tests or a scheduled one is waiting.
   - You can cancel or clear them in Details → Speed.
 - **What is redacted:** LAN and gateway addresses, hostname, username, file paths and build details never appear on the public side. The public Calls view shows only the top card, the working-hours strip and public notes: no STUN target names and no Teams relay region (which would hint at where you are).

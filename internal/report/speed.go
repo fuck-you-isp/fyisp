@@ -312,7 +312,7 @@ func (r *run) speedSection() *speedView {
 }
 
 // speedMethod states how the tests ran, with the durations actually
-// measured: on a fast line the 100 MB cap ends a direction in about a
+// measured: a share-link test's 100 MB cap can end a direction in about a
 // second, and the report must not claim more.
 func speedMethod(ts []model.SpeedTest) string {
 	var down, up []float64
@@ -335,7 +335,7 @@ func speedMethod(ts []model.SpeedTest) string {
 			}
 		}
 	}
-	s := "Each test is iperf3 over IPv4 with 8 streams, download then upload, after a ramp-up of up to 1 second and at most 100 MB each way"
+	s := "Each test is iperf3 over IPv4 with 8 streams, download then upload, after a ramp-up of up to 1 second and up to 10 seconds measured each way (tests started from the share link stop at 100 MB each way)"
 	dur := func(v []float64) string {
 		return fmt.Sprintf("a median of %.1f s (%.1f–%.1f s)", callq.Median(v), slices.Min(v), slices.Max(v))
 	}

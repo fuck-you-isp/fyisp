@@ -2,7 +2,6 @@
  "at": 1791655200000,
  "bytes_24h": 0,
  "bytes_month": 0,
- "bytes_per_test": 146800640,
  "configurable": false,
  "connection": {
   "source": "detected",
@@ -198,6 +197,7 @@
  "latest": {
   "attempts": 1,
   "bytes": 146800640,
+  "cap": "bytes",
   "capped_by_budget": false,
   "capped_by_server": false,
   "city": "New York",
@@ -2452,24 +2452,24 @@
    "up_p10_bps": 8892000
   }
  ],
- "planned_share": 0.008,
+ "planned_share": 0.011,
  "plans": [
   {
    "est_gb_month": 211.4,
    "mode": "regions",
-   "share": 0.008,
+   "share": 0.011,
    "tests_per_hour": 2
   },
   {
    "est_gb_month": 1691.1,
    "mode": "nearby",
-   "share": 0.067,
+   "share": 0.089,
    "tests_per_hour": 16
   },
   {
    "est_gb_month": 422.8,
    "mode": "custom",
-   "share": 0.017,
+   "share": 0.022,
    "tests_per_hour": 4
   }
  ],
@@ -3394,6 +3394,8 @@
  ],
  "set_by_flag": false,
  "spacing_s": 1800,
+ "sweep_bytes": 1207602558,
+ "sweep_servers": 6,
  "tz": 120,
  "tz_name": "",
  "under_load": {
