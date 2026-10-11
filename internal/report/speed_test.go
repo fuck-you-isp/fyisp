@@ -35,6 +35,9 @@ func TestSpeedSection(t *testing.T) {
 				sc := down / base
 				x.DownBps, x.UpBps, x.ScoreDown = &down, &up, &sc
 				x.Conn, x.DownSecs, x.UpSecs, x.DownShort = model.ConnWired, 0.9, 3.1, base > 300e6
+				if x.DownShort {
+					x.Extra = `{"rate_method":["peak90",""]}` // a capped download, levelled off
+				}
 				x.Latency = &model.SpeedLatency{Edge: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8},
 					Down: &model.LoadStats{N: 30, P50Ms: 21, P95Ms: 34}, Up: &model.LoadStats{N: 25, Lost: 1, P50Ms: 48, P95Ms: 90}}}
 			}

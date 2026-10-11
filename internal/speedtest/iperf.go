@@ -157,6 +157,11 @@ type Result struct {
 	Ramp          time.Duration // the ramp-up left out
 	IP            netip.Addr    // the address the test ran against
 	TotalBytes    int64         // every byte moved, ramp-up included (data use)
+	// RateMethod is how a capped direction's rate was taken (MethodPeak90
+	// or MethodWhole; "" when not capped). LowerBound: it was still
+	// speeding up at the cap, so the speed was at least this.
+	RateMethod string
+	LowerBound bool
 	// Overrun: the server kept sending past the cap and the run was cut at
 	// the backstop (after a complete window; else the run fails with
 	// ErrOverrun).
@@ -371,7 +376,8 @@ type test struct {
 	stopAt  atomic.Int64
 	dialRTT time.Duration // the control connection's connect time: the RTT without TCP_INFO
 	capped  atomic.Bool
-	overrun atomic.Bool // the backstop cut the run
+	capAt   atomic.Int64 // when capped (UnixNano)
+	overrun atomic.Bool  // the backstop cut the run
 }
 
 func (t *test) close() { t.shut(false) }
@@ -566,6 +572,27 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	retransStart := make([]int64, n)
 	ackedStart := make([]int64, n)
 	measuring := false
+	rampCapped := false
+	// cum is the bytes counted at each tick, for a capped direction's
+	// estimate: received for downloads, acked for uploads (Linux; nil
+	// without it).
+	var cum []int64
+	ackedSum := func() int64 {
+		var x int64
+		for i := range n {
+			_, a := t.tcpCounters(i)
+			if a < 0 {
+				return -1
+			}
+			x += a
+		}
+		return x
+	}
+	perTick := t.c.Direction == Download || ackedSum() >= 0
+	ack0 := make([]int64, n) // uploads: acked before any data
+	for i := range ack0 {
+		_, ack0[i] = t.tcpCounters(i)
+	}
 	var winStart time.Time
 	var prevMax, last, secBytes int64
 	kWin := 0 // the tick the window started at
@@ -579,12 +606,22 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		d := b - last
 		last = b
 		t.updateStop(float64(d) / tick.Seconds())
+		if perTick {
+			c := b
+			if t.c.Direction == Upload {
+				if c = ackedSum(); c < 0 {
+					perTick, cum = false, nil
+				}
+			}
+			cum = append(cum, c)
+		}
 		if t.capped.Load() {
 			res.CappedByBytes = true
 			if !measuring { // capped in the ramp-up: the whole run is the window,
+				rampCapped = true
 				winStart = start // counted from the connections' start
 				for i := range ackedStart {
-					retransStart[i], ackedStart[i] = 0, 0
+					retransStart[i], ackedStart[i] = 0, ack0[i] // acked counts the handshake and cookie
 					if t.c.Direction == Download {
 						retransStart[i], ackedStart[i] = -1, -1
 					}
@@ -647,6 +684,30 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			}
 		}
 	}
+	if res.CappedByBytes {
+		e := estimate{method: MethodWhole}
+		if perTick && len(cum) > 0 {
+			// The last tick holds the cap: only the complete ones before
+			// it are ticks. The window ends at the last byte: the cap for
+			// a download (reads stop there), now for an upload's acks.
+			end, endBytes := time.Since(start), cum[len(cum)-1]
+			if t.c.Direction == Download {
+				endBytes = res.TotalBytes
+				if at := t.capAt.Load(); at > 0 {
+					end = time.Unix(0, at).Sub(start)
+				}
+			} else if a := ackedSum(); a >= 0 {
+				endBytes = a
+			}
+			e = peak90(cum[:len(cum)-1], tick, end, endBytes)
+		}
+		res.RateMethod, res.LowerBound = e.method, e.lowerBound
+		if e.method == MethodPeak90 {
+			res.Bytes, res.Elapsed, res.Ramp = e.bytes, e.win, e.start
+		} else if rampCapped {
+			res.LowerBound = true // the whole run, slow start included
+		}
+	}
 	return per, nil
 }
 
@@ -680,6 +741,7 @@ func (t *test) count(n *atomic.Int64, k int) {
 
 func (t *test) capNow() {
 	if t.capped.CompareAndSwap(false, true) {
+		t.capAt.Store(time.Now().UnixNano())
 		_ = t.ctrl.SetReadDeadline(time.Now()) // end the current wait now
 	}
 }

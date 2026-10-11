@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"math/rand/v2"
@@ -136,6 +137,9 @@ func (n *fakeNet) result(at time.Time, reg speedtest.Region, chain []speedtest.S
 		t.Handoff = &h
 	}
 	t.Extra = `{"ramp_ms":[700,500]}`
+	if t.DownShort { // capped, levelled off (A2's estimator)
+		t.Extra = fmt.Sprintf(`{"ramp_ms":[700,500],"rate_method":["peak90",""],"win_ms":[%.0f,0]}`, t.DownSecs*1000)
+	}
 	return t
 }
 

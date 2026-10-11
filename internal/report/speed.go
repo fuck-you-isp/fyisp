@@ -192,6 +192,9 @@ func (r *run) speedSection() *speedView {
 				worst, worstDrop = name, st.Dip.Drop
 			}
 		}
+		if st.TooFast && st.Dip == nil { // its downloads are "at least" values
+			row.Dip = "Too fast to measure from this far within the 100 MB limit."
+		}
 		var trouble []string
 		if st.Busy > 0 {
 			trouble = append(trouble, fmt.Sprintf("%d busy", st.Busy))
