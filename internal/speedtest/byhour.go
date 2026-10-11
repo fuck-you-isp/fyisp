@@ -70,11 +70,13 @@ type Stats struct {
 	Dip   *Pattern   `json:"dip"`
 	UpDip *Pattern   `json:"up_dip"`
 	Hours []HourCell `json:"hours"`
-	// LowerBounds counts the ok tests whose download was still speeding up
-	// at the 100 MB cap ("at least" values: left out of the speeds above).
-	// TooFast: most were, so the row is too fast to measure from this far.
-	LowerBounds int  `json:"n_lower_bound,omitempty"`
-	TooFast     bool `json:"too_fast,omitempty"`
+	// LowerBounds counts the ok tests whose download was a lower bound
+	// ("at least" values: left out of the speeds above), RampCappedShare
+	// their share. TooFast: every server of the row is too fast to measure
+	// from here (the coverage guard), so it's out of the patterns.
+	LowerBounds     int     `json:"n_lower_bound,omitempty"`
+	RampCappedShare float64 `json:"ramp_capped_share,omitempty"`
+	TooFast         bool    `json:"too_fast,omitempty"`
 }
 
 func quant(v []float64, p float64) *float64 {
@@ -99,8 +101,19 @@ func medianOf(v []float64, digits float64) *float64 {
 // Scores are censored (Censored). Lower bounds are left out of the speeds'
 // quantiles: they are "at least" values, never the row's slow end.
 func Summarize(tests []model.SpeedTest, loc *time.Location) Stats {
-	tests = Censored(tests)
+	fast := tooFast(tests, loc)
+	tests = Censored(tests, loc)
+	servers := map[string]bool{}
+	for i := range tests {
+		if patternRow(&tests[i], false) {
+			servers[tests[i].Server] = true
+		}
+	}
 	var st Stats
+	st.TooFast = len(servers) > 0
+	for sv := range servers {
+		st.TooFast = st.TooFast && fast[0][sv]
+	}
 	var down, up, score []float64
 	var hd, hu, hs, hus [24][]float64
 	cells := make([]HourCell, 24)
@@ -168,8 +181,8 @@ func Summarize(tests []model.SpeedTest, loc *time.Location) Stats {
 			hus[h] = append(hus[h], *t.ScoreUp)
 		}
 	}
-	st.TooFast = 2*st.LowerBounds > st.N
 	if st.N > 0 {
+		st.RampCappedShare = math.Round(float64(st.LowerBounds)/float64(st.N)*100) / 100
 		st.FallbackShare = math.Round(float64(st.Fallback)/float64(st.N)*100) / 100
 	}
 	st.DownMedian, st.DownP10, st.BestDown = quant(down, 0.5), quant(down, 0.1), quant(down, 0.9)
@@ -197,7 +210,7 @@ func Summarize(tests []model.SpeedTest, loc *time.Location) Stats {
 // tests (NaN with fewer than MinPerHour), scores censored (Censored); up
 // picks the upload score.
 func HourMedians(tests []model.SpeedTest, loc *time.Location, up bool) [24]float64 {
-	return hourMedians(Censored(tests), loc, up)
+	return hourMedians(Censored(tests, loc), loc, up)
 }
 
 // hourMedians is HourMedians of tests already censored.
@@ -350,7 +363,7 @@ func PooledPattern(tests []model.SpeedTest, loc *time.Location) *Pattern {
 			keep = append(keep, t)
 		}
 	}
-	return FindDip(hourMedians(Censored(keep), loc, false), false)
+	return FindDip(hourMedians(Censored(keep, loc), loc, false), false)
 }
 
 // Scheduled keeps the schedule's tests: patterns and per-row hours leave
