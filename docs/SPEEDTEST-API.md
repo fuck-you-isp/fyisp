@@ -225,7 +225,7 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
   "evidence_public": "Based on 648 tests on 9 days; each evening hour ...", // the same without dates (the share link gets it as evidence)
   "coverage": "Tests ran on 5 of the last 7 days.", // omitted when every day of the window has tests; or "Speed tests started on Mon 6 Oct, so this covers 3 days, not 7."
   "coverage_public": "This covers 3 days, not 7.", // without the date
-  "slowest": [{"display": "Southeast Asia · OVH, Singapore", "pct": 52, "median_bps": 310000000, "usual_bps": 600000000}], // omitted when none: up to 3 servers slowest in the dip's hours (≥ 3 results there), nearest first in the isp and mild cases, else slowest first
+  "slowest": [{"server": "OVH-Singapore", "n": 9, "display": "Southeast Asia · OVH, Singapore", "pct": 52, "median_bps": 310000000, "usual_bps": 600000000}], // omitted when none: up to 3 servers slowest in the dip's hours (≥ 3 results there), nearest first in the isp and mild cases, else slowest first
   "via": "DE-CIX",                // local only, omitted when none: the internet exchange the slow tests' route crosses
   "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
   "caveat_public": "Wi-Fi, or people in the home using the internet heavily at those hours, can look the same.",   // omitempty: the share link's and report's voice (the share link's `caveat` is this already)
@@ -291,6 +291,7 @@ The latency under load over the span: per layer, the median over tests.
   "capped_by_budget": false,      // down_short || up_short: show the speed as "≥ X"
   "down_lower_bound": true, "up_lower_bound": true, // omitted when false: still speeding up at the cap, or a v0.7.0 result capped in its ramp-up (below)
   "down_ramp_capped": true, "up_ramp_capped": true, // the same flags
+  "cancelled_by": "owner",        // a cancelled test the owner stopped; omitted otherwise (a shutdown)
   "down_lb_counted": true, "up_lb_counted": false, // a lower bound that reached normal (counts as normal: "at least normal"); false: left out ("not counted")
   "rate_method": "peak90", "win_ms": 640, // omitted when not capped: how the capped direction (the download if capped, else the upload) was measured ("peak90" | "whole"; v0.7.0 rows have none)
   "down_s": 4.0, "up_s": 3.2,                  // seconds measured (0 when not measured)

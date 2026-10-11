@@ -1022,3 +1022,21 @@ func TestSpeedWindowsOrigin(t *testing.T) {
 		}
 	}
 }
+
+// TestSpeedOwnerZone: a local page's IANA tz becomes the owner's zone, and
+// the share link's summary is in it whatever tz the visitor sends.
+func TestSpeedOwnerZone(t *testing.T) {
+	loc, pub, _ := speedHandlers(t, newSpeedRig(t, 5*time.Hour), LocalOptions{})
+	do(loc, "GET", "/api/speed?days=7&tz=America/New_York", speedHost)
+	var v struct {
+		OwnerTZ   string `json:"owner_tz"`
+		TZName    string `json:"tz_name"`
+		ZoneLabel string `json:"zone_label"`
+	}
+	if err := json.Unmarshal(do(pub, "GET", speedPub+"/api/speed?days=7&tz=Asia/Tokyo", nil).Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.OwnerTZ != "America/New_York" || v.TZName != "America/New_York" || !strings.HasPrefix(v.ZoneLabel, "ED") {
+		t.Errorf("share link: %+v", v)
+	}
+}
