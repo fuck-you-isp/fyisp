@@ -351,7 +351,7 @@ func (c homeCopy) nodeTip(id string) string {
 		return c.v("The first piece of your internet provider's equipment, just outside your home.",
 			"The provider's first piece of equipment past the home router.")
 	case "internet":
-		return "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
+		return "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
 	case "apps":
 		return c.v("The apps and websites we check for you.", "The apps and websites checked from this connection.")
 	}

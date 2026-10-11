@@ -34,6 +34,9 @@ type speedView struct {
 	// link (the rest were scheduled); Origins says so, "" when all were.
 	Owner, Public int
 	Origins       string
+	// TooFast: some rows are too fast to measure from here (the method
+	// note says they're left out).
+	TooFast bool
 }
 
 type slowRow struct{ Text, Aria string }
@@ -58,27 +61,6 @@ func (r *run) collectSpeed(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// zoneLabel names loc at t: "EDT (UTC−4)", "UTC+5:30" when it has no
-// abbreviation, "UTC".
-func zoneLabel(loc *time.Location, t time.Time) string {
-	name, off := t.In(loc).Zone()
-	if off == 0 && (name == "UTC" || name == "GMT" || name == "") {
-		return "UTC"
-	}
-	sign := "+"
-	if off < 0 {
-		sign, off = "−", -off
-	}
-	utc := fmt.Sprintf("UTC%s%d", sign, off/3600)
-	if m := off % 3600 / 60; m != 0 {
-		utc += fmt.Sprintf(":%02d", m)
-	}
-	if name == "" || name[0] == '+' || name[0] == '-' {
-		return utc
-	}
-	return name + " (" + utc + ")"
 }
 
 // hourRange is local hours [from, to) on a 12-hour clock: "8–11 pm",
@@ -210,7 +192,7 @@ func (r *run) speedSection() *speedView {
 	if loc == nil {
 		loc = time.UTC
 	}
-	v.Zone = zoneLabel(loc, r.to)
+	v.Zone = speedtest.ZoneLabel(loc, r.to)
 	if p := speedtest.PooledPattern(r.speed, loc); p != nil {
 		v.Pattern = fmt.Sprintf("Pooled over every server, tests read about %d%% lower from %s %s than the same servers' usual results.",
 			int(p.Drop*100+0.5), hourRange(p.DipFrom, p.DipTo), v.Zone)
@@ -221,7 +203,7 @@ func (r *run) speedSection() *speedView {
 	if cat != nil {
 		f := speedtest.FindFinding(speedtest.FindingInput{Tests: r.speed, Catalog: cat, Loc: loc, From: r.from, To: r.to})
 		switch f.Case {
-		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed:
+		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed, speedtest.CaseTooFast:
 			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (times in " + v.Zone + ")."
 			f.Caveat = f.CaveatPublic
 			if r.o.Redact { // the share link's rules: no start date, no networks by name
@@ -299,8 +281,9 @@ func (r *run) speedSection() *speedView {
 				worst, worstDrop = name, st.Dip.Drop
 			}
 		}
-		if st.TooFast && st.Dip == nil { // its downloads are "at least" values
-			row.Dip = "Too fast to measure from this far within the 100 MB limit."
+		if st.TooFast { // the coverage guard: out of the patterns
+			row.Dip = "Too fast to measure from here"
+			v.TooFast = true
 		}
 		var trouble []string
 		if st.Busy > 0 {

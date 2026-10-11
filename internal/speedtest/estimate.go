@@ -31,8 +31,8 @@ type estimate struct {
 	lowerBound bool // still speeding up at the cap: the speed was at least this
 }
 
-// plateau is how close an earlier smoothed tick must come to a peak in the
-// last 2 ticks for the rate to count as levelled off.
+// plateau is how close to the peak a second smoothed tick must come for
+// the rate to count as levelled off.
 const plateau = 0.95
 
 // peak90 estimates a capped direction's steady rate. cum[i] is the bytes
@@ -40,13 +40,13 @@ const plateau = 0.95
 // left out); end is when the last byte was counted, endBytes the count
 // then, both from the data phase's start.
 //
-//   - The ticks are smoothed by a 3-tick moving median, so one spike tick
-//     neither sets the peak nor starts the window.
+//   - The ticks are smoothed by a 3-tick moving median (2 ticks averaged at
+//     the edges), so one spike tick neither sets the peak nor starts the
+//     window.
 //   - The window runs from the first smoothed tick at 90% of the peak to
 //     the last byte; its rate is its bytes over its length.
-//   - It is a lower bound with fewer than 3 complete ticks in the window,
-//     or when the peak is in the last 2 ticks with nothing earlier within
-//     5% of it (still rising: no plateau seen).
+//   - It is a lower bound (still speeding up at the cap) when fewer than 2
+//     smoothed ticks are within 5% of the peak: no plateau was seen.
 //   - With no ticks, or none with bytes, it is MethodWhole.
 func peak90(cum []int64, tick, end time.Duration, endBytes int64) estimate {
 	n := len(cum)
@@ -90,34 +90,39 @@ func peak90(cum []int64, tick, end time.Duration, endBytes int64) estimate {
 	if e.win <= 0 || e.bytes <= 0 {
 		return estimate{method: MethodWhole}
 	}
-	if n-k < 3 {
-		e.lowerBound = true
+	near := 0
+	for _, v := range sm {
+		if v >= plateau*sm[pk] {
+			near++
+		}
 	}
-	if pk >= n-2 && (n < 3 || slices.Max(sm[:n-2]) < plateau*sm[pk]) {
+	if near < 2 {
 		e.lowerBound = true
 	}
 	return e
 }
 
 // How patterns use a capped direction (read side; nothing stored is
-// rewritten):
-//   - a v0.7.0 capped direction (short, no RateMethod) is left out of
-//     Baseline, the scores' medians and the finding: its rate included slow
-//     start. It is still shown and exported.
-//   - a lower bound never enters Baseline. In the scores it counts as 1.0
-//     (full speed) when it already reaches the baseline, and is left out
-//     otherwise (censored: never read as slow).
+// rewritten). A lower bound (still speeding up at the cap, so the speed
+// was at least this) is a new result flagged so, or a v0.7.0 capped
+// direction capped in its ramp-up (RampMs 0: its rate included slow
+// start). It never enters Baseline. Per server and direction over
+// GuardSpan, the coverage guard (tooFast) decides how the rest go:
+//   - covered: a lower bound that already reaches normal counts as normal
+//     (score 1) in the patterns and the finding; one below normal is left
+//     out (it says nothing about how slow the line was);
+//   - too fast to measure from here: its scores are left out of the
+//     patterns and the finding (its rows are still shown and exported).
 
-// rateUse is a direction's use: unscored (a v0.7.0 capped one), or a lower
-// bound.
-func rateUse(short bool, x *Extra, i int) (unscored, lowerBound bool) {
+// rateUse reports whether a direction (0 down, 1 up) is a lower bound.
+func rateUse(short bool, x *Extra, i int) bool {
 	if !short {
-		return false, false
+		return false
 	}
-	if x.RateMethod[i] == "" {
-		return true, false
+	if x.RateMethod[i] == "" { // v0.7.0
+		return x.RampMs[i] == 0
 	}
-	return false, x.LowerBound[i]
+	return x.LowerBound[i]
 }
 
 // LowerBounds reports which of t's directions are lower bounds.
@@ -126,46 +131,134 @@ func LowerBounds(t *model.SpeedTest) (down, up bool) {
 		return false, false
 	}
 	x := ParseExtra(t.Extra)
-	_, down = rateUse(t.DownShort, &x, 0)
-	_, up = rateUse(t.UpShort, &x, 1)
-	return down, up
+	return rateUse(t.DownShort, &x, 0), rateUse(t.UpShort, &x, 1)
 }
 
-// censor is a direction's score as patterns use it (nil: left out).
-func censor(sc *float64, short bool, x *Extra, i int) *float64 {
-	unscored, lb := rateUse(short, x, i)
-	switch {
-	case sc == nil || unscored:
-		return nil
-	case !lb:
-		return sc
-	case *sc >= 1:
-		one := 1.0
-		return &one
-	}
-	return nil
-}
+// baselineRate reports whether a direction's rate may enter Baseline.
+func baselineRate(short bool, x *Extra, i int) bool { return !rateUse(short, x, i) }
 
-// Censored is tests with each direction's score as patterns use it; ts is
-// not changed (and is returned as is when nothing was capped).
-func Censored(ts []model.SpeedTest) []model.SpeedTest {
-	if !slices.ContainsFunc(ts, func(t model.SpeedTest) bool { return t.DownShort || t.UpShort }) {
-		return ts
-	}
-	out := make([]model.SpeedTest, len(ts))
-	for i, t := range ts {
-		if t.DownShort || t.UpShort {
-			x := ParseExtra(t.Extra)
-			t.ScoreDown, t.ScoreUp = censor(t.ScoreDown, t.DownShort, &x, 0), censor(t.ScoreUp, t.UpShort, &x, 1)
+// The coverage guard: over GuardSpan, a server's direction is "too fast to
+// measure from here" when it has lower bounds and its other (baseline)
+// results cover fewer than guardHours distinct local hours, or more than
+// guardShare of them fall within any guardWindow consecutive hours: they
+// are then no sample of normal (a fast line's daytime reads as lower
+// bounds, leaving the evening's slow results).
+const (
+	GuardSpan   = 14 * 24 * time.Hour
+	guardHours  = 12
+	guardWindow = 6
+	guardShare  = 0.5
+)
+
+// covered applies the guard to the local hours of a server's baseline
+// results.
+func covered(hours []int) bool {
+	var n [24]int
+	distinct := 0
+	for _, h := range hours {
+		if n[h] == 0 {
+			distinct++
 		}
-		out[i] = t
+		n[h]++
+	}
+	if distinct < guardHours {
+		return false
+	}
+	for h := range 24 {
+		in := 0
+		for i := range guardWindow {
+			in += n[(h+i)%24]
+		}
+		if float64(in) > guardShare*float64(len(hours)) {
+			return false
+		}
+	}
+	return true
+}
+
+// patternRow is a result patterns may use: scheduled, on its region's own
+// server, measured (a failed upload keeps its download).
+func patternRow(t *model.SpeedTest, up bool) bool {
+	if t.OnDemand() || t.Fallback || t.CappedByServer {
+		return false
+	}
+	if up {
+		return t.Outcome == model.SpeedOK && t.UpBps != nil
+	}
+	return t.DownBps != nil
+}
+
+// tooFast is, per direction (0 down, 1 up), the servers too fast to
+// measure from here (the coverage guard) among ts, hours local to loc.
+func tooFast(ts []model.SpeedTest, loc *time.Location) [2]map[string]bool {
+	var newest time.Time
+	for _, t := range ts {
+		if t.Start.After(newest) {
+			newest = t.Start
+		}
+	}
+	var out [2]map[string]bool
+	for d := range 2 {
+		lb, hours := map[string]bool{}, map[string][]int{}
+		for i := range ts {
+			t := &ts[i]
+			if !patternRow(t, d == 1) || newest.Sub(t.Start) > GuardSpan {
+				continue
+			}
+			down, up := LowerBounds(t)
+			if (d == 0 && down) || (d == 1 && up) {
+				lb[t.Server] = true
+			} else {
+				hours[t.Server] = append(hours[t.Server], localHour(t.Start, loc))
+			}
+		}
+		out[d] = map[string]bool{}
+		for sv := range lb {
+			if !covered(hours[sv]) {
+				out[d][sv] = true
+			}
+		}
 	}
 	return out
 }
 
-// baselineRate reports whether a direction's rate may enter Baseline:
-// neither a v0.7.0 capped one nor a lower bound.
-func baselineRate(short bool, x *Extra, i int) bool {
-	unscored, lb := rateUse(short, x, i)
-	return !unscored && !lb
+// Censored is tests with each direction's score as patterns use it (see
+// above), hours local to loc; ts is not changed (and is returned as is
+// when nothing was capped).
+func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
+	if !slices.ContainsFunc(ts, func(t model.SpeedTest) bool { return t.DownShort || t.UpShort }) {
+		return ts
+	}
+	out := slices.Clone(ts)
+	fast := tooFast(ts, loc)
+	for i := range out {
+		t := &out[i]
+		if fast[0][t.Server] {
+			t.ScoreDown = nil
+		}
+		if fast[1][t.Server] {
+			t.ScoreUp = nil
+		}
+		down, up := LowerBounds(t)
+		t.ScoreDown = atLeastNormal(t.ScoreDown, down)
+		t.ScoreUp = atLeastNormal(t.ScoreUp, up)
+	}
+	return out
 }
+
+// atLeastNormal is a lower bound's score: 1 (normal) when it reaches
+// normal, else none (left out).
+func atLeastNormal(sc *float64, lb bool) *float64 {
+	if sc == nil || !lb {
+		return sc
+	}
+	if *sc < 1 {
+		return nil
+	}
+	one := 1.0
+	return &one
+}
+
+// LowerBoundCounted reports whether a lower bound counts in the patterns
+// (as normal: it already reached it) rather than being left out.
+func LowerBoundCounted(sc *float64, lb bool) bool { return lb && sc != nil && *sc >= 1 }

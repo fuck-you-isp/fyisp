@@ -43,6 +43,9 @@ const (
 	CaseServer    = "server"   // one server's busy time
 	CaseMild      = "mild"     // a 10-25% dip: too small to point anywhere
 	CaseMixed     = "mixed"    // some rows dip, in no pattern that points anywhere
+	// CaseTooFast: every server is too fast to measure from here (the
+	// coverage guard): the tests can't compare times of day.
+	CaseTooFast = "too_fast"
 )
 
 // Finding tiers.
@@ -128,8 +131,38 @@ type FindingInput struct {
 const MinDays = 3
 
 // FindFinding computes the finding.
-func FindFinding(in FindingInput) Finding {
-	in.Tests = Censored(in.Tests) // capped directions as patterns use them
+func FindFinding(in FindingInput) (f Finding) {
+	fast := tooFast(in.Tests, in.Loc)
+	servers, rawDays, rawN := map[string]bool{}, map[string]bool{}, 0
+	for i := range in.Tests {
+		if t := &in.Tests[i]; patternRow(t, false) && t.Outcome == model.SpeedOK {
+			servers[t.Server] = true
+			rawDays[t.Start.In(zone(in.Loc)).Format("2006-01-02")] = true
+			rawN++
+		}
+	}
+	out := 0
+	for sv := range servers {
+		if fast[0][sv] {
+			out++
+		}
+	}
+	if out > 0 && out == len(servers) && len(rawDays) >= MinDays {
+		f = Finding{Case: CaseTooFast, Days: len(rawDays), Tests: rawN, Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{},
+			Text:       "Your line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up.",
+			TextPublic: "The line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up."}
+		f.Evidence = fmt.Sprintf("Based on %s on %s.", plural(rawN, "test", "tests"), plural(len(rawDays), "day", "days"))
+		f.EvidencePublic = f.Evidence
+		return f
+	}
+	defer func() {
+		if out > 0 && f.Case != CaseNotEnough {
+			left := fmt.Sprintf(" %d of %d servers were too fast to measure from here and are left out.", out, len(servers))
+			f.Evidence += left
+			f.EvidencePublic += left
+		}
+	}()
+	in.Tests = Censored(in.Tests, in.Loc) // capped directions as patterns use them
 	var tests []model.SpeedTest
 	days := map[string]bool{}
 	for _, t := range in.Tests {
@@ -138,7 +171,7 @@ func FindFinding(in FindingInput) Finding {
 			days[t.Start.In(zone(in.Loc)).Format("2006-01-02")] = true
 		}
 	}
-	f := Finding{Days: len(days), Tests: len(tests), Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{}}
+	f = Finding{Days: len(days), Tests: len(tests), Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{}}
 	if f.Days < MinDays {
 		f.Case = CaseNotEnough
 		f.Text = fmt.Sprintf("We need about %d days of tests to compare times of day. %d of %d days so far.", MinDays, f.Days, MinDays)

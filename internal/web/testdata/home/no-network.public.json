@@ -259,7 +259,7 @@
         "label": "The wider internet",
         "state": "affected",
         "words": "Can't check while offline",
-        "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
+        "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
       },
       {
         "id": "apps",

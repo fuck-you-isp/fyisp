@@ -291,7 +291,7 @@
         "label": "The internet",
         "state": "affected",
         "words": "Affected",
-        "tooltip": "Big services that are close to almost every provider. If they're fine, the internet itself is fine."
+        "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
       },
       {
         "id": "apps",

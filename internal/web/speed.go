@@ -110,7 +110,7 @@ type speedRow struct {
 type speedWindow struct {
 	Start  int64  `json:"start"`
 	End    int64  `json:"end"`
-	Origin string `json:"origin"` // scheduled | owner | public (the share link)
+	Origin string `json:"origin"` // scheduled | owner | public (the share link); "test" on the share link, which never tells tests apart
 }
 
 // speedTestJSON is one test. Ports and hosts are local only; own servers
@@ -119,7 +119,7 @@ type speedTestJSON struct {
 	ID             int64    `json:"id"`
 	Start          int64    `json:"start"`
 	End            int64    `json:"end"`
-	Trigger        string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep
+	Trigger        string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep; "test" on the share link
 	OnDemand       bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
 	Outcome        string   `json:"outcome"`
 	Region         *string  `json:"region"`
@@ -137,11 +137,20 @@ type speedTestJSON struct {
 	DownShort      bool     `json:"down_short"`
 	UpShort        bool     `json:"up_short"`
 	CappedByBudget bool     `json:"capped_by_budget"` // either direction hit the 100 MB cap: show "≥ X"
-	// DownLowerBound and UpLowerBound: still speeding up at the cap, so the
-	// speed was at least this. Its score never reads as slow: at or above
-	// 1 it is "at least normal", below it "not counted".
+	// DownLowerBound and UpLowerBound: still speeding up at the cap (or a
+	// v0.7.0 result capped in its ramp-up), so the speed was at least
+	// this. It counts as at least normal in the patterns, never slow.
+	// DownRampCapped and UpRampCapped are the same flags (the acceptance
+	// script's names). RateMethod and WinMs: how the capped direction (the
+	// download if capped, else the upload) was measured.
 	DownLowerBound  bool     `json:"down_lower_bound,omitempty"`
 	UpLowerBound    bool     `json:"up_lower_bound,omitempty"`
+	DownLBCounted   bool     `json:"down_lb_counted,omitempty"` // a lower bound that reached normal: counted as normal
+	UpLBCounted     bool     `json:"up_lb_counted,omitempty"`
+	DownRampCapped  bool     `json:"down_ramp_capped,omitempty"`
+	UpRampCapped    bool     `json:"up_ramp_capped,omitempty"`
+	RateMethod      string   `json:"rate_method,omitempty"`
+	WinMs           float64  `json:"win_ms,omitempty"`
 	DownSecs        float64  `json:"down_s"`
 	UpSecs          float64  `json:"up_s"`
 	CappedByServer  bool     `json:"capped_by_server"`
@@ -202,8 +211,10 @@ type speedUnderLoad struct {
 // speedJSON is api/speed?part=summary.
 type speedJSON struct {
 	At              int64              `json:"at"`
-	TZ              int                `json:"tz"`      // minutes east of UTC now
-	TZName          string             `json:"tz_name"` // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
+	TZ              int                `json:"tz"`                       // minutes east of UTC now
+	TZName          string             `json:"tz_name"`                  // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
+	ZoneLabel       string             `json:"zone_label"`               // the zone used, printable: "EDT (UTC−4)", "UTC"
+	BytesPerTest    int64              `json:"bytes_per_test,omitempty"` // the median data of this line\'s scheduled tests (30 days)
 	Days            int                `json:"days"`
 	ExcludeFallback bool               `json:"exclude_fallback"`
 	Mode            speedtest.Mode     `json:"mode"`
@@ -352,6 +363,17 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		Bytes: t.Bytes, DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans,
 		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
 	j.DownLowerBound, j.UpLowerBound = speedtest.LowerBounds(&t)
+	j.DownRampCapped, j.UpRampCapped = j.DownLowerBound, j.UpLowerBound
+	j.DownLBCounted = speedtest.LowerBoundCounted(t.ScoreDown, j.DownLowerBound)
+	j.UpLBCounted = speedtest.LowerBoundCounted(t.ScoreUp, j.UpLowerBound)
+	if t.DownShort || t.UpShort {
+		x := speedtest.ParseExtra(t.Extra)
+		i := 0
+		if !t.DownShort {
+			i = 1
+		}
+		j.RateMethod, j.WinMs = x.RateMethod[i], x.WinMs[i]
+	}
 	if j.FallbackLevel == "" {
 		j.FallbackLevel = speedtest.FallbackNone
 	}
@@ -362,6 +384,8 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	j.Latency, j.Conn = t.Latency, cmp.Or(t.Conn, model.ConnUnknown)
 	if !n.public {
 		j.Port, j.Handoff = t.Port, t.Handoff
+	} else {
+		j.Trigger = "test" // the share link never tells tests apart
 	}
 	return j
 }
@@ -436,7 +460,7 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 		if ids > 1 || len(p.row) > 64 {
 			return p, badReq("one of row, server or region")
 		}
-		p.key = fmt.Sprintf("speed\x00%d\x00%s\x00%v\x00%s", p.days, p.zone.key, p.excludeFallback, p.row)
+		p.key = p.summaryKey()
 	case "windows":
 		if err := only("windows", "days", "tz", "exclude_fallback", "server", "region", "row", "id"); err != nil {
 			return p, err
@@ -500,6 +524,13 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.public {
 		s.d.Speed.NoteZone(p.zone.name)
+	} else if oz := s.d.Speed.State().OwnerZone; oz != "" && p.part == "summary" {
+		// The share link reads the owner's hours of day, whatever zone the
+		// visitor's browser is in (the report's times are the owner's).
+		if z, err := parseZone(oz, now); err == nil {
+			p.zone, p.tz = z, z.min
+			p.key = p.summaryKey()
+		}
 	}
 	switch p.part {
 	case "queue", "entry", "sweep":
@@ -536,7 +567,7 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
-			return jsonCached(map[string]any{"at": now.UnixMilli(), "windows": speedWindows(ts, p.from)})
+			return jsonCached(map[string]any{"at": now.UnixMilli(), "windows": speedWindows(ts, p.from, s.public)})
 		}
 		out, err := s.speedSummary(ctx, p, st, names, now)
 		if err != nil {
@@ -547,11 +578,17 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
+// speedWindows are the tests' windows from from; public: every origin is
+// "test" (the share link never says whose test it was).
+func speedWindows(ts []model.SpeedTest, from time.Time, public bool) []speedWindow {
 	out := []speedWindow{}
 	for _, t := range ts {
 		if !t.End.Before(from) && t.End.After(t.Start) {
-			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: t.Origin()})
+			o := t.Origin()
+			if public {
+				o = "test"
+			}
+			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: o})
 		}
 	}
 	return out
@@ -580,7 +617,7 @@ func strPtr(s string) *string {
 
 func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.State, names speedNames, now time.Time) (*speedJSON, error) {
 	cat := s.d.Speed.Catalog()
-	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
+	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), ZoneLabel: speedtest.ZoneLabel(p.zone.loc, now), Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
 		Enabled: st.Mode != speedtest.ModeOff, SetByFlag: st.SetByFlag, Extra: append([]string{}, st.Extra...),
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
@@ -653,6 +690,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	perTest := float64(defaultTestBytes)
 	if len(avgBytes) > 0 {
 		perTest = callq.Median(avgBytes)
+		out.BytesPerTest = int64(perTest)
 	}
 	for _, pl := range st.Plans {
 		out.Plans = append(out.Plans, speedPlan{Mode: pl.Mode, TestsPerHour: math.Round(pl.TestsPerHour*100) / 100,
@@ -1067,7 +1105,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 			out.Row.Scheduled, out.Row.Why = true, r.Why
 		}
 	}
-	out.Windows = speedWindows(ts, from)
+	out.Windows = speedWindows(ts, from, s.public)
 	if s.public {
 		out.Row.publicWording()
 	}
@@ -1200,6 +1238,11 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 
 // zoneLabel is the IANA name the hours are in: the parameter's, or the
 // server's own for no tz (its TZ, else "Local"), "" for a fixed offset.
+// summaryKey is a summary's cache key.
+func (p speedParams) summaryKey() string {
+	return fmt.Sprintf("speed\x00%d\x00%s\x00%v\x00%s", p.days, p.zone.key, p.excludeFallback, p.row)
+}
+
 func zoneLabel(z zoneParam) string {
 	if z.name != "" || z.loc != time.Local {
 		return z.name
