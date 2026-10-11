@@ -24,10 +24,17 @@ func cumOf(d ...int64) []int64 {
 
 func TestPeak90(t *testing.T) {
 	const tk = 100 * time.Millisecond
+	nominal := func(n int) []time.Duration {
+		at := make([]time.Duration, n)
+		for i := range at {
+			at[i] = time.Duration(i+1) * tk
+		}
+		return at
+	}
 	// end: the last byte half a tick after the last complete tick.
 	run := func(d ...int64) estimate {
 		cum := cumOf(d...)
-		return peak90(cum, tk, time.Duration(len(d))*tk+tk/2, cum[len(cum)-1]+d[len(d)-1]/2)
+		return peak90(cum, nominal(len(d)), time.Duration(len(d))*tk+tk/2, cum[len(cum)-1]+d[len(d)-1]/2, 0)
 	}
 	rate := func(e estimate) float64 { return float64(e.bytes) / e.win.Seconds() }
 	plateau := 10e6 / tk.Seconds()
@@ -50,33 +57,59 @@ func TestPeak90(t *testing.T) {
 	if e = run(2e6, 8e6, 10e6, 10e6, 10e6, 10.2e6, 10.3e6); e.lowerBound {
 		t.Errorf("plateau at the end: %+v", e)
 	}
-	// 1 tick: a lower bound; 2 level ticks are enough.
-	if e = run(10e6); !e.lowerBound {
-		t.Errorf("1 tick: %+v", e)
+	// The first tick doesn't count: 1 or 2 ticks are lower bounds, 3 level
+	// ones are enough.
+	for _, d := range [][]int64{{10e6}, {10e6, 10e6}} {
+		if e = run(d...); !e.lowerBound {
+			t.Errorf("%d ticks: %+v", len(d), e)
+		}
 	}
-	if e = run(10e6, 10e6); e.lowerBound {
-		t.Errorf("2 ticks: %+v", e)
-	}
-	// The 3-tick median at the edges, 4 ticks (net-isp): levelled off, or
-	// still rising.
-	if e = run(6e6, 9.5e6, 10e6, 9.8e6); e.lowerBound || e.method != MethodPeak90 {
-		t.Errorf("[0.6 0.95 1.0 0.98]: %+v", e)
-	}
-	if e = run(6e6, 9.4e6, 10e6, 9.8e6); e.lowerBound {
-		t.Errorf("[0.6 0.94 1 0.98]: %+v", e)
-	}
-	if e = run(5e6, 9.1e6, 10e6, 10e6); e.lowerBound {
-		t.Errorf("[0.5 0.91 1 1]: %+v", e)
-	}
-	if e = run(4e6, 7e6, 9e6, 10e6); !e.lowerBound {
-		t.Errorf("[0.4 0.7 0.9 1.0]: %+v", e)
+	if e = run(10e6, 10e6, 10e6); e.lowerBound {
+		t.Errorf("3 ticks: %+v", e)
 	}
 	// No tick with bytes, or none at all: the whole run.
-	if e = peak90(cumOf(0, 0, 0), tk, 350*time.Millisecond, 5); e.method != MethodWhole {
+	if e = peak90(cumOf(0, 0, 0), nominal(3), 350*time.Millisecond, 5, 0); e.method != MethodWhole {
 		t.Errorf("no tick: %+v", e)
 	}
-	if e = peak90(nil, tk, 50*time.Millisecond, 5e6); e.method != MethodWhole {
+	if e = peak90(nil, nil, 50*time.Millisecond, 5e6, 0); e.method != MethodWhole {
 		t.Errorf("no ticks: %+v", e)
+	}
+	// Ticks read late: rates per actual tick length (net-isp). The near 2G
+	// download's bytes at 0.100, 0.168 and 0.300 s: about 1.97 Gbit/s.
+	g := func(x float64) int64 { return int64(x * 1e9 / 8 * tk.Seconds()) }
+	cum := cumOf(g(2.19), g(1.46), g(2.26))
+	at := []time.Duration{100 * time.Millisecond, 168 * time.Millisecond, 300 * time.Millisecond}
+	if e = peak90(cum, at, at[2], cum[2], 0); e.lowerBound || math.Abs(rate(e)*8/1.97e9-1) > 0.02 {
+		t.Errorf("jittered ticks: %+v, %.3g bit/s", e, rate(e)*8)
+	}
+}
+
+// TestStillRising: net-isp's vectors (rates per tick, as a share of the
+// line rate) and cq-netns's real series from a shaped lab line (Gbit/s).
+func TestStillRising(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		r    []float64
+		rtt  time.Duration
+		lb   bool
+	}{
+		{"[0.6 0.94 1 0.98]", []float64{0.6, 0.94, 1, 0.98}, 0, false},
+		{"[0.5 0.91 1 1]", []float64{0.5, 0.91, 1, 1}, 0, false},
+		{"[0.6 0.95 1 0.98]", []float64{0.6, 0.95, 1, 0.98}, 0, false},
+		{"[0.3 1 1 1]", []float64{0.3, 1, 1, 1}, 0, false},
+		{"[0.4 0.7 0.9 1.0]", []float64{0.4, 0.7, 0.9, 1.0}, 0, true},
+		{"[0.1 0.3 0.6 0.9]", []float64{0.1, 0.3, 0.6, 0.9}, 0, true},
+		{"near 2G down", []float64{2.19, 1.46, 2.26}, 0, false},
+		{"near 2G up", []float64{2.24, 1.91, 1.93}, 0, false},
+		{"cut down", []float64{1.63, 1.18, 1.42, 1.35, 1.31}, 0, false},
+		{"1G down", []float64{1.25, 0.85, 0.96, 0.97, 0.99, 1.0, 0.97}, 0, false},
+		{"1G up", []float64{1.27, 0.95, 0.87, 1.06, 0.94, 0.95}, 0, false},
+		{"far down", []float64{0.01, 0.02, 0, 0.04, 0.07, 0, 0.15, 0.3, 0, 0.59, 1.19, 0}, 150 * time.Millisecond, true},
+		{"far up", []float64{0, 0.01, 0.01, 0.01, 0.04, 0, 0.07, 0.15, 0, 0.3, 0.59, 0, 1.19, 1.27, 1.01}, 150 * time.Millisecond, true},
+	} {
+		if got := stillRising(c.r, c.rtt); got != c.lb {
+			t.Errorf("%s: lower bound %v, want %v", c.name, got, c.lb)
+		}
 	}
 }
 

@@ -581,6 +581,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	// estimate: received for downloads, acked for uploads (Linux; nil
 	// without it).
 	var cum []int64
+	var ats []time.Duration // when each tick was read, from start
 	ackedSum := func() int64 {
 		var x int64
 		for i := range n {
@@ -601,15 +602,18 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	var prevMax, last, secBytes int64
 	kWin := 0 // the tick the window started at
 	prevSec := int64(-1)
+	var lastAt time.Duration
 	for k := 1; ; k++ {
 		at := start.Add(time.Duration(k) * tick)
 		if err := t.idle(at); err != nil {
 			return nil, err
 		}
+		now := time.Since(start) // ticks are read late on a busy machine: rates use the actual time
 		b := total()
 		d := b - last
 		last = b
-		t.updateStop(float64(d) / tick.Seconds())
+		t.updateStop(float64(d) / max(now-lastAt, time.Millisecond).Seconds())
+		lastAt = now
 		if perTick {
 			c := b
 			if t.c.Direction == Upload {
@@ -617,7 +621,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 					perTick, cum = false, nil
 				}
 			}
-			cum = append(cum, c)
+			cum, ats = append(cum, c), append(ats, now)
 		}
 		if t.capped.Load() {
 			res.CappedByBytes = true
@@ -703,7 +707,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			} else if a := ackedSum(); a >= 0 {
 				endBytes = a
 			}
-			e = peak90(cum[:len(cum)-1], tick, end, endBytes)
+			e = peak90(cum[:len(cum)-1], ats[:len(ats)-1], end, endBytes, t.maxRTT())
 		}
 		res.RateMethod, res.LowerBound = e.method, e.lowerBound
 		if e.method == MethodPeak90 {
@@ -713,6 +717,21 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		}
 	}
 	return per, nil
+}
+
+// maxRTT is the largest smoothed RTT over the streams (TCP_INFO), else
+// the control connection's connect time.
+func (t *test) maxRTT() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var r time.Duration
+	for _, s := range t.streams {
+		r = max(r, tcpRTT(s))
+	}
+	if r <= 0 {
+		r = t.dialRTT
+	}
+	return r
 }
 
 // tcpCounters is stream i's retransmits and bytes acked so far (upload),
