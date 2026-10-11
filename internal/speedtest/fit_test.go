@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
 // The share link's budget is a hard limit (v0.7.1 A1): one fit check
@@ -365,5 +367,47 @@ func TestFitDeafServerWithinBudget(t *testing.T) {
 	}
 	if ran != 2 || dropped != 2 {
 		t.Errorf("ran %d, dropped %d; want 2 and 2", ran, dropped)
+	}
+}
+
+// TestQueueOwnerCancelCause: the owner's cancel reaches the running test
+// with ErrCancelledByOwner, so the stored cancelled row says cancelled_by
+// "owner"; a shutdown leaves it unset.
+func TestQueueOwnerCancelCause(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		owner bool
+		want  string
+	}{{"owner", true, "owner"}, {"shutdown", false, ""}} {
+		t.Run(c.name, func(t *testing.T) {
+			sv := Server{ID: "Local", Host: "127.0.0.1", PortMin: 5201, PortMax: 5201, Custom: true, LAN: true}
+			st := &MemStore{}
+			started := make(chan struct{}, 4)
+			s := New(Options{Catalog: &Catalog{byID: map[string]int{}}, Custom: []Server{sv}, Store: st, Log: slog.New(slog.DiscardHandler),
+				Fake: &Fake{Run: func(ctx context.Context, cf Config) (Result, error) {
+					started <- struct{}{}
+					<-ctx.Done() // a download that only a cancel ends
+					return Result{Direction: cf.Direction, WireBytes: 5e6}, ctx.Err()
+				}}})
+			q := s.Queue()
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { q.Run(ctx); close(done) }()
+			e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: sv.ID, Who: WhoOwner})
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-started
+			if c.owner {
+				q.Cancel(e.ID)
+				waitFor(t, func() bool { x, _ := q.Get(e.ID); return !x.Finished.IsZero() })
+			}
+			cancel()
+			<-done
+			ts, _ := st.SpeedTests(context.Background(), time.Time{}, time.Now().Add(time.Hour))
+			if len(ts) != 1 || ts[0].Outcome != model.SpeedCancelled || ParseExtra(ts[0].Extra).CancelledBy != c.want {
+				t.Errorf("rows %+v, want one cancelled by %q", ts, c.want)
+			}
+		})
 	}
 }
