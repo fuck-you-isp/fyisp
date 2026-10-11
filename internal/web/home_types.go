@@ -1,7 +1,7 @@
 package web
 
 // /api/home: the Home view's answer, tiles and history, rolled up on the
-// server so the local page, the public link and reports say the same thing.
+// server so the page and its tests agree.
 // The contract is docs/HOME-API.md; keep the two in sync.
 //
 // Times are Unix milliseconds. Copy strings never contain a time or a
@@ -39,17 +39,9 @@ const (
 	confWeak   = "weak"   // only a router or provider hop is slow to answer checks; nothing the user uses is affected
 )
 
-// Voices: "you" on the owner's dashboard, "public" (third person) on the
-// share link.
-const (
-	voiceYou    = "you"
-	voicePublic = "public"
-)
-
 // HomeLive is /api/home?part=live.
 type HomeLive struct {
 	Part   string     `json:"part"` // "live"
-	Voice  string     `json:"voice"`
 	At     int64      `json:"at"`
 	Answer HomeAnswer `json:"answer"`
 	Path   []HomeNode `json:"path"`
@@ -81,8 +73,8 @@ type HomeAnswer struct {
 	App   string `json:"app,omitempty"`   // app id with who app ("teams", ...)
 	Since int64  `json:"since,omitempty"` // when the current problem started; 0 when none or unknown
 	// Copy. Headline is one short sentence; Cause says where the problem
-	// is; Hint is an optional third line; Try lists what the user can do
-	// (empty in the public voice); Fact is one labelled fact in words
+	// is; Hint is an optional third line; Try lists what the user can do;
+	// Fact is one labelled fact in words
 	// about the worst minute, at FactAt.
 	Headline string   `json:"headline"`
 	Cause    string   `json:"cause,omitempty"`
@@ -173,13 +165,12 @@ type HomeStep struct {
 
 // HomeHistory is /api/home?part=history.
 type HomeHistory struct {
-	Part  string `json:"part"` // "history"
-	Voice string `json:"voice"`
-	At    int64  `json:"at"`
-	TZ    int    `json:"tz"`   // minutes east of UTC, as used (rounded)
-	Span  string `json:"span"` // d | w
-	From  int64  `json:"from"`
-	To    int64  `json:"to"`
+	Part string `json:"part"` // "history"
+	At   int64  `json:"at"`
+	TZ   int    `json:"tz"`   // minutes east of UTC, as used (rounded)
+	Span string `json:"span"` // d | w
+	From int64  `json:"from"`
+	To   int64  `json:"to"`
 	// FirstData is the first measurement in the store (0: none yet); days
 	// before it have no record.
 	FirstData int64      `json:"first_data,omitempty"`
@@ -295,12 +286,11 @@ type HomeWorkCalls struct {
 // HomeAt is /api/home?part=at&at=<ms>: what happened around a picked time
 // (at ±15 minutes, up to now).
 type HomeAt struct {
-	Part  string `json:"part"` // "at"
-	Voice string `json:"voice"`
-	At    int64  `json:"at"`   // server time of the answer
-	Time  int64  `json:"time"` // the picked time
-	From  int64  `json:"from"`
-	To    int64  `json:"to"`
+	Part string `json:"part"` // "at"
+	At   int64  `json:"at"`   // server time of the answer
+	Time int64  `json:"time"` // the picked time
+	From int64  `json:"from"`
+	To   int64  `json:"to"`
 	// Measured: the call path was scored in at least one minute of the
 	// window; Calls is then the worst minute's call state, and BadFrom and
 	// BadTo span its minutes when it was not good.

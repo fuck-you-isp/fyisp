@@ -25,7 +25,7 @@ func TestLocalSpecificBindIP(t *testing.T) {
 	if st.Controls != "disabled" {
 		t.Errorf("LAN bind without admin token: controls = %q, want disabled", st.Controls)
 	}
-	w = do(h, "POST", "/api/share/start", map[string]string{"Host": "192.168.1.10:3000", "Origin": "http://192.168.1.10:3000", HeaderCSRF: "tok123"})
+	w = do(h, "DELETE", "/api/annotations/1", map[string]string{"Host": "192.168.1.10:3000", "Origin": "http://192.168.1.10:3000", HeaderCSRF: "tok123"})
 	if w.Code != 403 {
 		t.Errorf("LAN bind POST without admin token = %d, want 403", w.Code)
 	}

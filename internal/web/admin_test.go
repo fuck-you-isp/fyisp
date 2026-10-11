@@ -3,10 +3,8 @@ package web
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 const testAdmin = "0123456789abcdef0123456789abcdef"
@@ -82,7 +80,7 @@ func TestAdminSession(t *testing.T) {
 	if statusAdmin(good) || !statusAdmin(with(map[string]string{"Cookie": cookie})) {
 		t.Error("status admin flag wrong")
 	}
-	if w := do(h, "POST", "/api/share/start", good); w.Code != 403 || sh.start != 0 {
+	if w := do(h, "DELETE", "/api/annotations/1", good); w.Code != 403 || sh.n != 0 {
 		t.Errorf("no cookie = %d", w.Code)
 	}
 	for name, hdr := range map[string]map[string]string{
@@ -93,17 +91,17 @@ func TestAdminSession(t *testing.T) {
 		"wrong origin":  with(map[string]string{"Cookie": cookie, "Origin": "http://evil.com"}, "Sec-Fetch-Site"),
 		"no origin set": with(map[string]string{"Cookie": cookie}, "Origin", "Sec-Fetch-Site"),
 	} {
-		if w := do(h, "POST", "/api/share/start", hdr); w.Code != 403 {
+		if w := do(h, "DELETE", "/api/annotations/1", hdr); w.Code != 403 {
 			t.Errorf("%s = %d, want 403", name, w.Code)
 		}
 	}
-	if w := do(h, "POST", "/api/share/start", with(map[string]string{"Cookie": cookie})); w.Code != 200 || sh.start != 1 {
-		t.Errorf("cookie = %d (starts %d)", w.Code, sh.start)
+	if w := do(h, "DELETE", "/api/annotations/1", with(map[string]string{"Cookie": cookie})); w.Code != 200 || sh.n != 1 {
+		t.Errorf("cookie = %d (controls %d)", w.Code, sh.n)
 	}
 
 	// A new token (rotation) revokes the cookie.
 	h2, sh2 := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000", AdminToken: strings.Repeat("f", 32)})
-	if w := do(h2, "POST", "/api/share/start", with(map[string]string{"Cookie": cookie})); w.Code != 403 || sh2.start != 0 {
+	if w := do(h2, "DELETE", "/api/annotations/1", with(map[string]string{"Cookie": cookie})); w.Code != 403 || sh2.n != 0 {
 		t.Errorf("old cookie after rotation = %d", w.Code)
 	}
 
@@ -126,49 +124,7 @@ func TestAdminSession(t *testing.T) {
 	}
 	// A loopback dashboard ignores cookies and stays enabled.
 	hl, shl := localHandlerFor(t, LocalOptions{})
-	if w := do(hl, "POST", "/api/share/start", with(map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000"})); w.Code != 200 || shl.start != 1 {
+	if w := do(hl, "DELETE", "/api/annotations/1", with(map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000"})); w.Code != 200 || shl.n != 1 {
 		t.Errorf("loopback = %d", w.Code)
-	}
-}
-
-// The public listener never honours the admin token or cookie: every write
-// route and the exchange are 404 or 405 there, with or without them.
-func TestPublicIgnoresAdmin(t *testing.T) {
-	_, d, sh := fixture(t, time.Now())
-	h := Public(d, testSecret)
-	// A fresh handler per request keeps the rate limiter out of the way.
-	do := func(_ http.Handler, method, target string, hdr map[string]string) *httptest.ResponseRecorder {
-		return do(Public(d, testSecret), method, target, hdr)
-	}
-	base := "/s/" + testSecret + "/"
-	hdr := map[string]string{
-		"Origin": "https://x.trycloudflare.com", "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123",
-		HeaderAdmin: testAdmin, "Cookie": "fyisp_admin=" + testAdmin + "; fyisp_admin_3000=" + testAdmin,
-	}
-	for _, m := range []string{"POST", "PUT", "DELETE"} {
-		for _, p := range []string{"api/admin/session", "api/share/start", "api/share/stop", "api/annotations", "api/annotations/1", "api/reports", "api/reports/1", "api/investigate", "r/1"} {
-			for _, prefix := range []string{base, "/"} {
-				if m == "POST" && prefix == base && p == "api/investigate" {
-					continue // the one public write route: TestPublicInvestigate
-				}
-				w := do(h, m, prefix+p, hdr)
-				if w.Code != 404 && w.Code != 405 {
-					t.Errorf("%s %s%s = %d, want 404/405", m, prefix, p, w.Code)
-				}
-				if w.Header().Get("Set-Cookie") != "" {
-					t.Errorf("%s %s%s set a cookie", m, prefix, p)
-				}
-			}
-		}
-	}
-	if w := do(h, "GET", base+"api/admin/session", hdr); w.Code != 404 {
-		t.Errorf("GET exchange on public = %d", w.Code)
-	}
-	if sh.start != 0 {
-		t.Errorf("share started %d times via the public listener", sh.start)
-	}
-	w := do(h, "GET", base+"api/status", hdr)
-	if w.Code != 200 || strings.Contains(w.Body.String(), `"admin"`) || strings.Contains(w.Body.String(), "controls") {
-		t.Errorf("public status = %d %s", w.Code, w.Body.String())
 	}
 }

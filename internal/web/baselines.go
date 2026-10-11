@@ -4,8 +4,6 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -51,7 +49,7 @@ type slowJSON struct {
 }
 
 // slow returns Deps.Slow's list, limited to profile targets and finite
-// numbers (it is served on the public link).
+// numbers.
 func (s *server) slow() []slowJSON {
 	if s.d.Slow == nil {
 		return nil
@@ -132,11 +130,6 @@ func (s *server) serveBaselines(w http.ResponseWriter, r *http.Request) {
 	}
 	if at.After(now) {
 		at, ak = now, "now"
-	}
-	if s.public && !strings.HasPrefix(ak, "now") {
-		// Share cache entries between viewers: a minute is plenty.
-		at = at.Truncate(time.Minute)
-		ak = strconv.FormatInt(at.UnixMilli(), 10)
 	}
 	s.runCached(w, r, "base\x00"+group+"\x00"+ak, func(ctx context.Context) (*cached, error) {
 		b, err := s.baselines(ctx, group, at)

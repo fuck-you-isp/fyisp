@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/callq"
@@ -99,8 +98,7 @@ type callsSeries struct {
 	Loss   []num    `json:"loss"`
 }
 
-// callsTarget is one STUN target of a group (local only: the public link
-// never names targets).
+// callsTarget is one STUN target of a group.
 type callsTarget struct {
 	Name         string `json:"name"`
 	NotAnswering bool   `json:"not_answering,omitempty"`
@@ -173,9 +171,8 @@ type callsParams struct {
 }
 
 // parseCalls parses /api/calls?from=&to= with /api/panel's time rules
-// (default now-5m..now). On the public link absolute bounds are rounded
-// outward to the minute so that viewers share cache entries.
-func parseCalls(q url.Values, now time.Time, public bool) (callsParams, error) {
+// (default now-5m..now).
+func parseCalls(q url.Values, now time.Time) (callsParams, error) {
 	var p callsParams
 	if err := checkParams(q, "from", "to"); err != nil {
 		return p, err
@@ -198,24 +195,6 @@ func parseCalls(q url.Values, now time.Time, public bool) (callsParams, error) {
 	if p.to.After(now) {
 		p.to, tk = now, "now"
 	}
-	if public {
-		if !strings.HasPrefix(tk, "now") {
-			to := p.to.Truncate(time.Minute)
-			if to.Before(p.to) {
-				to = to.Add(time.Minute)
-			}
-			if to.After(now) {
-				to, tk = now, "now"
-			} else {
-				tk = strconv.FormatInt(to.UnixMilli(), 10)
-			}
-			p.to = to
-		}
-		if !strings.HasPrefix(fk, "now") {
-			p.from = p.from.Truncate(time.Minute)
-			fk = strconv.FormatInt(p.from.UnixMilli(), 10)
-		}
-	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
@@ -230,10 +209,10 @@ func parseCalls(q url.Values, now time.Time, public bool) (callsParams, error) {
 }
 
 // serveCalls answers /api/calls: the call path and per-app call quality
-// over the window. One store query; numbers, app and state names (and, on
-// the local listener only, target names and the Teams relay region).
+// over the window. One store query; numbers, app, state and target names
+// and the Teams relay region.
 func (s *server) serveCalls(w http.ResponseWriter, r *http.Request) {
-	p, err := parseCalls(r.URL.Query(), s.now(), s.public)
+	p, err := parseCalls(r.URL.Query(), s.now())
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -362,11 +341,9 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		for _, t := range ts {
 			i := idx[t.Name]
 			tm, td = append(tm, mins[i]), append(td, dead[i])
-			if !s.public {
-				sm := callq.Summarize(mins[i])
-				g.Targets = append(g.Targets, callsTarget{Name: t.Name, NotAnswering: dead[i], Samples: sm.Bursts, Unknown: sm.Unknown,
-					RTT: num(sm.RTT50), Loss: num(sm.Loss / 100)})
-			}
+			sm := callq.Summarize(mins[i])
+			g.Targets = append(g.Targets, callsTarget{Name: t.Name, NotAnswering: dead[i], Samples: sm.Bursts, Unknown: sm.Unknown,
+				RTT: num(sm.RTT50), Loss: num(sm.Loss / 100)})
 		}
 		comb, alive := callq.Group(tm, td, n)
 		g.Minutes = callsSeries{State: make([]string, n), MOS: make([]num, n), RTT: make([]num, n), Jitter: make([]num, n), Loss: make([]num, n)}
@@ -412,7 +389,7 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 	}
 
 	var regions map[string]string
-	if s.d.UDP != nil && !s.public {
+	if s.d.UDP != nil {
 		regions = map[string]string{}
 		for _, st := range s.d.UDP.UDPState() {
 			regions[st.Target] = st.Region

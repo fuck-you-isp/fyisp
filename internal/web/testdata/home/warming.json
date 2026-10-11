@@ -1,7 +1,6 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "public",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
@@ -10,12 +9,11 @@
     "calls": "good",
     "level": "good",
     "who": "none",
-    "headline": "The connection was good for calls then",
-    "cause": "If a call was bad then, the problem was probably the app or the other side's connection."
+    "headline": "Your connection was good for calls then",
+    "cause": "If the call was bad, the problem was probably the app or the other person's connection."
   },
   "history_today": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -33,7 +31,7 @@
         "off": []
       }
     ],
-    "summary": "Monitoring just started, so the history begins now.",
+    "summary": "We just started, so the history begins now.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -61,7 +59,6 @@
   },
   "history_week": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -135,7 +132,7 @@
         "off": []
       }
     ],
-    "summary": "Monitoring just started, so the history begins now.",
+    "summary": "We just started, so the history begins now.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -163,42 +160,41 @@
   },
   "live": {
     "part": "live",
-    "voice": "public",
     "at": 1791549000000,
     "answer": {
       "level": "checking",
       "who": "none",
       "kind": "warming_up",
       "calls": "good",
-      "headline": "Checking this connection…",
+      "headline": "Checking your connection…",
       "cause": "First results in about 2 minutes.",
       "try": [],
-      "announce": "Checking this connection…"
+      "announce": "Checking your connection…"
     },
     "path": [
       {
         "id": "device",
-        "label": "Monitoring device",
+        "label": "This device",
         "state": "ok",
         "words": "OK"
       },
       {
         "id": "router",
-        "label": "Home router",
+        "label": "Your router",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The router that connects the home to the internet."
+        "tooltip": "The box that connects your home to the internet."
       },
       {
         "id": "provider",
-        "label": "Provider network",
+        "label": "Your provider",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The provider's first piece of equipment past the home router."
+        "tooltip": "The first piece of your internet provider's equipment, just outside your home."
       },
       {
         "id": "internet",
-        "label": "The wider internet",
+        "label": "The internet",
         "state": "ok",
         "words": "OK",
         "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
@@ -208,7 +204,7 @@
         "label": "Apps \u0026 websites",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The apps and websites checked from this connection."
+        "tooltip": "The apps and websites we check for you."
       }
     ],
     "tiles": [
@@ -315,17 +311,17 @@
     "steps": [
       {
         "id": "router",
-        "label": "Home router",
+        "label": "Your router",
         "done": true
       },
       {
         "id": "provider",
-        "label": "Provider network",
+        "label": "Your provider",
         "done": true
       },
       {
         "id": "internet",
-        "label": "The wider internet",
+        "label": "The internet",
         "done": true
       },
       {

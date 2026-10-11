@@ -27,7 +27,7 @@ type asset struct {
 }
 
 // assets maps "static/<path>" to its content. index.html is rendered per
-// handler instead (it carries the mode and the CSRF token).
+// handler instead (it carries the CSRF token).
 var (
 	assets    map[string]*asset
 	indexTmpl string
@@ -81,34 +81,24 @@ func contentType(p string) string {
 	return "application/octet-stream"
 }
 
-// server holds what the local and public handlers share.
+// server holds the read-only API (the local handler adds the write
+// routes).
 type server struct {
 	d      Deps
-	public bool
 	index  []byte
 	now    func() time.Time
-	sem    chan struct{}   // bounds concurrent panel queries (public only)
-	cache  *respCache      // public only
-	hcache *respCache      // /api/home?part=history, local and public
-	inv    *Investigations // on-demand traces (Deps.Investigations, shared)
+	hcache *respCache      // /api/home?part=history
+	inv    *Investigations // on-demand traces
 	// canControl reports whether r may use the write routes (local only;
 	// api/speed's "configurable").
 	canControl func(r *http.Request) bool
 }
 
-func newServer(d Deps, public bool, token string) *server {
-	mode := "local"
-	if public {
-		mode = "public"
-	}
+func newServer(d Deps, token string) *server {
 	d.firsts = &firstCache{}
-	html := strings.NewReplacer("{{mode}}", mode, "{{token}}", token).Replace(indexTmpl)
+	html := strings.ReplaceAll(indexTmpl, "{{token}}", token)
 	hc := newRespCache(HomeHistoryTTL, 64, 4<<20, 1<<20)
-	inv := d.Investigations
-	if inv == nil {
-		inv = NewInvestigations()
-	}
-	return &server{d: d, public: public, index: []byte(html), now: time.Now, hcache: hc, inv: inv}
+	return &server{d: d, index: []byte(html), now: time.Now, hcache: hc, inv: NewInvestigations()}
 }
 
 // route is one GET route under the handler's base path.
@@ -180,7 +170,7 @@ func lookup(rel string) route {
 func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel string) {
 	q := r.URL.Query()
 	switch rt {
-	case routeStatic, routeStatus, routeProfile: // the index ignores params (e.g. ?fbclid= on shared links)
+	case routeStatic, routeStatus, routeProfile: // the index ignores params (e.g. ?fbclid=)
 		if err := checkParams(q); err != nil {
 			writeErr(w, r, http.StatusBadRequest, err.Error())
 			return
@@ -193,11 +183,11 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 	case routeStatic:
 		serveAsset(w, r, assets[rel])
 	case routeStatus:
-		writeJSON(w, r, http.StatusOK, s.status(r.Context()))
+		writeJSON(w, r, http.StatusOK, s.rawStatus(r.Context()))
 	case routeProfile:
 		pj := buildProfile(s.d.Profile())
 		pj.Features.Notes = s.d.Annotations != nil
-		pj.Features.Reports = s.d.Reports != nil && !s.public
+		pj.Features.Reports = s.d.Reports != nil
 		pj.Features.Baselines = s.d.Baselines != nil
 		pj.Features.Speed = s.d.Speed != nil
 		if s.d.Trace != nil {
@@ -268,33 +258,11 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a *asset) {
 	}
 }
 
-// localStatus is /api/status on the local listener.
+// localStatus is /api/status.
 type localStatus struct {
 	Status
-	Mode     string `json:"mode"`
 	Controls string `json:"controls"` // "enabled", "admin" (needs admin token) or "disabled"
 	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
-}
-
-// publicStatus is the redacted /api/status: no version, no hints, no error
-// strings, no paths, no share URL.
-type publicStatus struct {
-	Mode    string    `json:"mode"`
-	Started time.Time `json:"started"`
-	Caps    struct {
-		ICMP  string `json:"icmp"`
-		TCP   bool   `json:"tcp"`
-		HTTPS bool   `json:"https"`
-	} `json:"caps"`
-	Targets int `json:"targets"`
-	Ready   int `json:"ready"`
-	Share   struct {
-		Phase string `json:"phase"`
-	} `json:"share"`
-	Store struct {
-		Oldest  time.Time `json:"oldest"`
-		Healthy bool      `json:"healthy"`
-	} `json:"store"`
 }
 
 func (s *server) rawStatus(ctx context.Context) Status {
@@ -310,38 +278,12 @@ func (s *server) rawStatus(ctx context.Context) Status {
 			st.Store.LastFlushErr = err.Error()
 		}
 	}
-	if s.d.Share != nil {
-		st.Share = s.d.Share.State()
-	}
-	if st.Share.Phase == "" {
-		st.Share.Phase = ShareOff
-	}
 	if st.Targets == 0 {
 		if p := s.d.Profile(); p != nil {
 			st.Targets = len(p.Targets)
 		}
 	}
 	return st
-}
-
-func redact(st Status) publicStatus {
-	var p publicStatus
-	p.Mode = "public"
-	p.Started = st.Started
-	p.Caps.ICMP, p.Caps.TCP, p.Caps.HTTPS = st.Caps.ICMP, st.Caps.TCP, st.Caps.HTTPS
-	p.Targets, p.Ready = st.Targets, st.Ready
-	p.Share.Phase = st.Share.Phase
-	p.Store.Oldest = st.Store.Oldest
-	p.Store.Healthy = st.Store.LastFlushErr == ""
-	return p
-}
-
-func (s *server) status(ctx context.Context) any {
-	st := s.rawStatus(ctx)
-	if s.public {
-		return redact(st)
-	}
-	return st // wrapped by the local handler
 }
 
 // servePanel answers /api/panel and /api/panel.csv.
@@ -352,21 +294,7 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	if s.public {
-		if asCSV {
-			p.points = min(p.points, PublicCSVMaxPoints)
-		}
-		p.quantize(now)
-	}
 	render := func(ctx context.Context) (*cached, error) {
-		if s.sem != nil {
-			select {
-			case s.sem <- struct{}{}:
-				defer func() { <-s.sem }()
-			case <-ctx.Done():
-				return nil, errBusy
-			}
-		}
 		pd, err := s.d.queryPanel(ctx, p, now)
 		if err != nil {
 			return nil, err
@@ -379,16 +307,7 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), panelTimeout)
 	defer cancel()
-	var c *cached
-	if s.cache != nil {
-		key := "json\x00"
-		if asCSV {
-			key = "csv\x00"
-		}
-		c, err = s.cache.get(ctx, key+p.key, render)
-	} else {
-		c, err = render(ctx)
-	}
+	c, err := render(ctx)
 	switch {
 	case err == nil:
 	case errors.Is(err, errUnknownGroup):
@@ -408,11 +327,7 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 		return
 	default:
 		s.d.log().Error("panel query", "group", p.group, "err", err)
-		msg := "query failed"
-		if !s.public {
-			msg += ": " + err.Error()
-		}
-		writeErr(w, r, http.StatusInternalServerError, msg)
+		writeErr(w, r, http.StatusInternalServerError, "query failed: "+err.Error())
 		return
 	}
 	if c.disposition != "" {
@@ -434,4 +349,8 @@ func allowGET(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Allow", "GET, HEAD")
 	writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
 	return false
+}
+
+func notFound(w http.ResponseWriter, r *http.Request) {
+	writeErr(w, r, http.StatusNotFound, "not found")
 }

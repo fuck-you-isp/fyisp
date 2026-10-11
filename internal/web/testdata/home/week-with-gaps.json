@@ -1,28 +1,25 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "you",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
     "to": 1791549000000,
     "measured": true,
     "calls": "good",
-    "level": "warn",
-    "who": "app",
-    "kind": "service",
+    "level": "good",
+    "who": "none",
     "headline": "Your connection was good for calls then",
-    "cause": "Some online services had trouble at the time. That was on their side."
+    "cause": "If the call was bad, the problem was probably the app or the other person's connection."
   },
   "history_today": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
     "from": 1791496800000,
     "to": 1791549000000,
-    "first_data": 1791030600000,
+    "first_data": 1791187200000,
     "days": [
       {
         "date": "2026-10-09",
@@ -30,31 +27,18 @@
         "to": 1791549000000,
         "work_from": 1791529200000,
         "work_to": 1791558000000,
-        "runs": [
-          {
-            "from": 1791547500000,
-            "to": 1791549000000,
-            "level": "warn",
-            "who": "app",
-            "kind": "service",
-            "label": "Outlook",
-            "source": "incident",
-            "incident": 41,
-            "ongoing": true,
-            "text": "Some online services had trouble at the time. That was on their side."
-          }
-        ],
+        "runs": [],
         "off": []
       }
     ],
-    "summary": "1 problem today, with Outlook.",
+    "summary": "No problems today.",
     "counts": {
-      "problems": 1,
+      "problems": 0,
       "home": 0,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
-      "app": 1,
+      "app": 0,
       "calltraffic": 0,
       "offline": 0,
       "services": 0,
@@ -63,24 +47,10 @@
     "sides": {
       "home": 0,
       "provider": 0,
-      "other": 1
+      "other": 0
     },
     "coverage": 1,
-    "problems": [
-      {
-        "id": 41,
-        "from": 1791547500000,
-        "ongoing": true,
-        "kind": "service",
-        "who": "app",
-        "where": "Outlook",
-        "side": "other",
-        "level": "warn",
-        "text": "Some online services had trouble at the time. That was on their side.",
-        "peak_loss": 1,
-        "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
-      }
-    ],
+    "problems": [],
     "work": {
       "measured": 330,
       "bad": 0,
@@ -89,27 +59,28 @@
   },
   "history_week": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
     "from": 1790978400000,
     "to": 1791549000000,
-    "first_data": 1791030600000,
+    "first_data": 1791187200000,
     "days": [
       {
         "date": "2026-10-03",
         "from": 1790978400000,
         "to": 1791064800000,
         "runs": [],
-        "off": []
+        "off": [],
+        "no_record": true
       },
       {
         "date": "2026-10-04",
         "from": 1791064800000,
         "to": 1791151200000,
         "runs": [],
-        "off": []
+        "off": [],
+        "no_record": true
       },
       {
         "date": "2026-10-05",
@@ -126,8 +97,25 @@
         "to": 1791324000000,
         "work_from": 1791270000000,
         "work_to": 1791298800000,
-        "runs": [],
-        "off": []
+        "runs": [
+          {
+            "from": 1791288300000,
+            "to": 1791289200000,
+            "level": "bad",
+            "who": "provider",
+            "kind": "isp",
+            "label": "Most likely your provider",
+            "source": "incident",
+            "incident": 81,
+            "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
+          }
+        ],
+        "off": [
+          {
+            "from": 1791306000000,
+            "to": 1791324000000
+          }
+        ]
       },
       {
         "date": "2026-10-07",
@@ -136,7 +124,12 @@
         "work_from": 1791356400000,
         "work_to": 1791385200000,
         "runs": [],
-        "off": []
+        "off": [
+          {
+            "from": 1791324000000,
+            "to": 1791356400000
+          }
+        ]
       },
       {
         "date": "2026-10-08",
@@ -144,7 +137,30 @@
         "to": 1791496800000,
         "work_from": 1791442800000,
         "work_to": 1791471600000,
-        "runs": [],
+        "runs": [
+          {
+            "from": 1791445200000,
+            "to": 1791445920000,
+            "level": "bad",
+            "who": "provider",
+            "kind": "isp",
+            "label": "Most likely your provider",
+            "source": "incident",
+            "incident": 82,
+            "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
+          },
+          {
+            "from": 1791468120000,
+            "to": 1791468360000,
+            "level": "bad",
+            "who": "home",
+            "kind": "lan",
+            "label": "Most likely your home network",
+            "source": "incident",
+            "incident": 83,
+            "text": "The problem was most likely your Wi-Fi or router."
+          }
+        ],
         "off": []
       },
       {
@@ -153,55 +169,71 @@
         "to": 1791549000000,
         "work_from": 1791529200000,
         "work_to": 1791558000000,
-        "runs": [
-          {
-            "from": 1791547500000,
-            "to": 1791549000000,
-            "level": "warn",
-            "who": "app",
-            "kind": "service",
-            "label": "Outlook",
-            "source": "incident",
-            "incident": 41,
-            "ongoing": true,
-            "text": "Some online services had trouble at the time. That was on their side."
-          }
-        ],
+        "runs": [],
         "off": []
       }
     ],
-    "summary": "1 problem this week, with Outlook.",
+    "summary": "3 problems this week: 2 most likely from your internet provider and 1 most likely in your home network.",
     "counts": {
-      "problems": 1,
-      "home": 0,
-      "provider": 0,
+      "problems": 3,
+      "home": 1,
+      "provider": 2,
       "beyond": 0,
       "dns": 0,
-      "app": 1,
+      "app": 0,
       "calltraffic": 0,
       "offline": 0,
       "services": 0,
       "call_patches": 0
     },
     "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 1
+      "home": 1,
+      "provider": 2,
+      "other": 0
     },
-    "coverage": 0.91,
+    "coverage": 0.55,
     "problems": [
       {
-        "id": 41,
-        "from": 1791547500000,
-        "ongoing": true,
-        "kind": "service",
-        "who": "app",
-        "where": "Outlook",
-        "side": "other",
-        "level": "warn",
-        "text": "Some online services had trouble at the time. That was on their side.",
+        "id": 83,
+        "from": 1791468120000,
+        "to": 1791468360000,
+        "kind": "lan",
+        "who": "home",
+        "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
+        "peak_loss": 0.35,
+        "details": "#v=calls\u0026from=1791466320000\u0026to=1791470160000\u0026o=1"
+      },
+      {
+        "id": 82,
+        "from": 1791445200000,
+        "to": 1791445920000,
+        "kind": "isp",
+        "who": "provider",
+        "where": "Most likely your provider's network (past your router)",
+        "side": "provider",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
+        "peak_loss": 0.7,
+        "details": "#v=calls\u0026from=1791443400000\u0026to=1791447720000\u0026o=1"
+      },
+      {
+        "id": 81,
+        "from": 1791288300000,
+        "to": 1791289200000,
+        "kind": "isp",
+        "who": "provider",
+        "where": "Most likely your provider's network (past your router)",
+        "side": "provider",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
         "peak_loss": 1,
-        "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
+        "details": "#v=calls\u0026from=1791286500000\u0026to=1791291000000\u0026o=1"
       }
     ],
     "work": {
@@ -212,17 +244,16 @@
   },
   "live": {
     "part": "live",
-    "voice": "you",
     "at": 1791549000000,
     "answer": {
       "level": "good",
       "who": "none",
-      "kind": "service",
+      "kind": "ok",
       "calls": "good",
       "headline": "Your internet is fine",
-      "cause": "Calls and websites are working. Outlook isn't answering from here. That's most likely a problem on their side.",
+      "cause": "Calls, work apps and websites are all working.",
       "try": [],
-      "announce": "Your internet is fine. Calls and websites are working."
+      "announce": "Your internet is fine. Calls, work apps and websites are all working."
     },
     "path": [
       {
@@ -255,8 +286,8 @@
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "warn",
-        "words": "Work apps affected",
+        "state": "ok",
+        "words": "OK",
         "tooltip": "The apps and websites we check for you."
       }
     ],
@@ -280,20 +311,16 @@
       {
         "id": "work",
         "title": "Work apps",
-        "level": "warn",
-        "state": "mostly",
-        "label": "Mostly working",
-        "note": "Outlook isn't answering from here. That's most likely a problem on their side.",
+        "level": "good",
+        "state": "working",
+        "label": "Working",
         "names": [
           "Outlook",
           "Microsoft 365",
           "Microsoft sign-in"
         ],
         "more": 3,
-        "affected": [
-          "Outlook"
-        ],
-        "ok": 5,
+        "ok": 6,
         "total": 6,
         "details": "#v=o\u0026ot=work"
       },

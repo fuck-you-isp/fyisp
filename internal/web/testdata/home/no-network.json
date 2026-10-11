@@ -1,26 +1,24 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "public",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
     "to": 1791549000000,
     "measured": true,
     "calls": "unusable",
-    "bad_from": 1791548400000,
+    "bad_from": 1791548520000,
     "bad_to": 1791549000000,
     "level": "bad",
-    "who": "home",
-    "kind": "lan",
+    "who": "offline",
+    "kind": "no_network",
     "headline": "Calls would have broken up",
-    "cause": "The problem was most likely in the home network (Wi-Fi or router).",
-    "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
-    "fact_at": 1791548400000
+    "cause": "The device running this monitor was offline.",
+    "fact": "In the worst minute, almost all of the sound was lost.",
+    "fact_at": 1791548520000
   },
   "history_today": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -36,31 +34,31 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791548400000,
+            "from": 1791548520000,
             "to": 1791549000000,
             "level": "bad",
-            "who": "home",
-            "kind": "lan",
-            "label": "Most likely the home network",
+            "who": "offline",
+            "kind": "no_network",
+            "label": "Offline",
             "source": "incident",
-            "incident": 12,
+            "incident": 71,
             "ongoing": true,
-            "text": "The problem was most likely in the home network (Wi-Fi or router)."
+            "text": "The device running this monitor was offline."
           }
         ],
         "off": []
       }
     ],
-    "summary": "1 problem today, most likely in the home network.",
+    "summary": "1 problem today, with no connection.",
     "counts": {
       "problems": 1,
-      "home": 1,
+      "home": 0,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0,
+      "offline": 1,
       "services": 0,
       "call_patches": 0
     },
@@ -72,29 +70,27 @@
     "coverage": 1,
     "problems": [
       {
-        "id": 12,
-        "from": 1791548400000,
+        "id": 71,
+        "from": 1791548520000,
         "ongoing": true,
-        "kind": "lan",
-        "who": "home",
-        "where": "Most likely the home network (Wi-Fi or router)",
+        "kind": "no_network",
+        "who": "offline",
+        "where": "No internet connection",
         "side": "home",
         "level": "bad",
-        "confidence": "likely",
-        "text": "The problem was most likely in the home network (Wi-Fi or router).",
-        "peak_loss": 0.35,
-        "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
+        "text": "The device running this monitor was offline.",
+        "peak_loss": 1,
+        "details": "#v=calls\u0026from=1791546720000\u0026to=1791549000000\u0026o=1"
       }
     ],
     "work": {
       "measured": 330,
-      "bad": 10,
-      "good": 0.97
+      "bad": 8,
+      "good": 0.98
     }
   },
   "history_week": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -140,19 +136,7 @@
         "to": 1791410400000,
         "work_from": 1791356400000,
         "work_to": 1791385200000,
-        "runs": [
-          {
-            "from": 1791360300000,
-            "to": 1791360660000,
-            "level": "bad",
-            "who": "home",
-            "kind": "lan",
-            "label": "Most likely the home network",
-            "source": "incident",
-            "incident": 11,
-            "text": "The problem was most likely in the home network (Wi-Fi or router)."
-          }
-        ],
+        "runs": [],
         "off": []
       },
       {
@@ -172,139 +156,125 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791548400000,
+            "from": 1791548520000,
             "to": 1791549000000,
             "level": "bad",
-            "who": "home",
-            "kind": "lan",
-            "label": "Most likely the home network",
+            "who": "offline",
+            "kind": "no_network",
+            "label": "Offline",
             "source": "incident",
-            "incident": 12,
+            "incident": 71,
             "ongoing": true,
-            "text": "The problem was most likely in the home network (Wi-Fi or router)."
+            "text": "The device running this monitor was offline."
           }
         ],
         "off": []
       }
     ],
-    "summary": "2 problems this week, both most likely in the home network.",
+    "summary": "1 problem this week, with no connection.",
     "counts": {
-      "problems": 2,
-      "home": 2,
+      "problems": 1,
+      "home": 0,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
-      "offline": 0,
+      "offline": 1,
       "services": 0,
       "call_patches": 0
     },
     "sides": {
-      "home": 2,
+      "home": 1,
       "provider": 0,
       "other": 0
     },
     "coverage": 0.91,
     "problems": [
       {
-        "id": 12,
-        "from": 1791548400000,
+        "id": 71,
+        "from": 1791548520000,
         "ongoing": true,
-        "kind": "lan",
-        "who": "home",
-        "where": "Most likely the home network (Wi-Fi or router)",
+        "kind": "no_network",
+        "who": "offline",
+        "where": "No internet connection",
         "side": "home",
         "level": "bad",
-        "confidence": "likely",
-        "text": "The problem was most likely in the home network (Wi-Fi or router).",
-        "peak_loss": 0.35,
-        "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
-      },
-      {
-        "id": 11,
-        "from": 1791360300000,
-        "to": 1791360660000,
-        "kind": "lan",
-        "who": "home",
-        "where": "Most likely the home network (Wi-Fi or router)",
-        "side": "home",
-        "level": "bad",
-        "confidence": "likely",
-        "text": "The problem was most likely in the home network (Wi-Fi or router).",
-        "peak_loss": 0.4,
-        "details": "#v=calls\u0026from=1791358500000\u0026to=1791362460000\u0026o=1"
+        "text": "The device running this monitor was offline.",
+        "peak_loss": 1,
+        "details": "#v=calls\u0026from=1791546720000\u0026to=1791549000000\u0026o=1"
       }
     ],
     "work": {
       "measured": 330,
-      "bad": 10,
-      "good": 0.97
+      "bad": 8,
+      "good": 0.98
     }
   },
   "live": {
     "part": "live",
-    "voice": "public",
     "at": 1791549000000,
     "answer": {
       "level": "bad",
-      "who": "home",
-      "confidence": "sure",
-      "kind": "lan",
+      "who": "offline",
+      "kind": "no_network",
       "calls": "unusable",
-      "since": 1791548400000,
-      "headline": "There's a problem in the home network",
-      "cause": "The Wi-Fi or router is losing data. The provider looks fine from here.",
-      "try": [],
-      "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
+      "since": 1791548520000,
+      "headline": "No internet connection",
+      "cause": "The device running this monitor is offline.",
+      "try": [
+        "Check that Wi-Fi is on or the cable is plugged in.",
+        "Restart your router."
+      ],
+      "fact": "In the worst minute, almost all of the sound was lost.",
       "fact_at": 1791548700000,
-      "announce": "There's a problem in the home network. The Wi-Fi or router is losing data."
+      "announce": "No internet connection. The device running this monitor is offline."
     },
     "path": [
       {
         "id": "device",
-        "label": "Monitoring device",
-        "state": "ok",
-        "words": "OK"
+        "label": "This device",
+        "state": "bad",
+        "words": "Offline",
+        "blamed": true,
+        "culprit": "Problem is here"
       },
       {
         "id": "router",
-        "label": "Home router",
-        "state": "warn",
-        "words": "Dropping some data",
-        "blamed": true,
-        "culprit": "Problem is here",
-        "tooltip": "The router that connects the home to the internet."
+        "label": "Your router",
+        "state": "affected",
+        "words": "Can't check while offline",
+        "tooltip": "The box that connects your home to the internet."
       },
       {
         "id": "provider",
-        "label": "Provider network",
+        "label": "Your provider",
         "state": "affected",
-        "words": "Affected",
-        "tooltip": "The provider's first piece of equipment past the home router."
+        "words": "Can't check while offline",
+        "tooltip": "The first piece of your internet provider's equipment, just outside your home."
       },
       {
         "id": "internet",
-        "label": "The wider internet",
+        "label": "The internet",
         "state": "affected",
-        "words": "Affected",
+        "words": "Can't check while offline",
         "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
       },
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
         "state": "affected",
-        "words": "Calls, work apps and websites affected",
-        "tooltip": "The apps and websites checked from this connection."
+        "words": "Can't check while offline",
+        "tooltip": "The apps and websites we check for you."
       }
     ],
     "tiles": [
       {
         "id": "calls",
         "title": "Calls",
-        "level": "bad",
+        "level": "affected",
         "state": "unusable",
-        "label": "Calls will break up",
+        "label": "Can't check while offline",
         "names": [
           "Teams",
           "Google Meet",
@@ -329,7 +299,7 @@
         "title": "Work apps",
         "level": "affected",
         "state": "down",
-        "label": "Affected by the problem above",
+        "label": "Can't check while offline",
         "names": [
           "Outlook",
           "Microsoft 365",
@@ -353,7 +323,7 @@
         "title": "Websites",
         "level": "affected",
         "state": "down",
-        "label": "Affected by the problem above",
+        "label": "Can't check while offline",
         "names": [
           "Cloudflare",
           "Akamai",
@@ -374,10 +344,8 @@
     ],
     "calls": {
       "state": "unusable",
-      "delay": "short",
       "dropouts": "frequent",
-      "smoothness": "uneven",
-      "words": "Delay short · Dropouts frequent · Smoothness uneven",
+      "words": "Dropouts frequent",
       "worst_at": 1791548700000
     },
     "apps": [
@@ -386,57 +354,51 @@
         "title": "Teams",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "meet",
         "title": "Google Meet",
-        "level": "bad",
-        "state": "unusable",
-        "label": "Breaking up"
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't check while offline"
       },
       {
         "app": "zoom",
         "title": "Zoom",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "slack",
         "title": "Slack",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "discord",
         "title": "Discord",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "label": "Can't check while offline"
       },
       {
         "app": "webex",
         "title": "Webex",
         "level": "checking",
         "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "label": "Can't check while offline"
       }
     ],
-    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so they can't be tested ahead of time."
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

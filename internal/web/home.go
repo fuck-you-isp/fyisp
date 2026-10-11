@@ -20,9 +20,8 @@ import (
 
 // Home windows and limits (docs/HOME-API.md).
 const (
-	// HomeHistoryTTL is how long a history response is cached (local and
-	// public). The live part uses the public cache's PublicCacheTTL on the
-	// share link and is not cached locally.
+	// HomeHistoryTTL is how long a history response is cached. The live
+	// part is not cached.
 	HomeHistoryTTL = time.Minute
 	// homeCallsWindow is the call path's live window (as the Calls card);
 	// homeTileWindow the TCP tiles'; homePathWindow the path strip's.
@@ -92,17 +91,17 @@ func appTitle(id string) string {
 
 // homeParams is a parsed /api/home query.
 type homeParams struct {
-	part, span, voice string
-	tz                int            // minutes east of UTC, rounded to 15 (now, for an IANA zone)
-	loc               *time.Location // the zone: the speed line's hours (DST-correct with an IANA name)
-	tzKey             string
-	at                time.Time // part=at
-	key               string
+	part, span string
+	tz         int            // minutes east of UTC, rounded to 15 (now, for an IANA zone)
+	loc        *time.Location // the zone: the speed line's hours (DST-correct with an IANA name)
+	tzKey      string
+	at         time.Time // part=at
+	key        string
 }
 
-func parseHome(q url.Values, public bool) (homeParams, error) {
-	p := homeParams{part: q.Get("part"), span: q.Get("span"), voice: q.Get("voice")}
-	if err := checkParams(q, "part", "span", "tz", "voice", "at"); err != nil {
+func parseHome(q url.Values) (homeParams, error) {
+	p := homeParams{part: q.Get("part"), span: q.Get("span")}
+	if err := checkParams(q, "part", "span", "tz", "at"); err != nil {
 		return p, err
 	}
 	switch p.part {
@@ -121,9 +120,6 @@ func parseHome(q url.Values, public bool) (homeParams, error) {
 			return p, badReq("bad at %q: want Unix milliseconds", as)
 		}
 		p.at = time.UnixMilli(ms)
-		if public {
-			p.at = p.at.Truncate(time.Minute) // viewers share cache entries
-		}
 	}
 	switch {
 	case p.span != "" && p.part != "history":
@@ -132,16 +128,6 @@ func parseHome(q url.Values, public bool) (homeParams, error) {
 		p.span = "d"
 	case p.span != "d" && p.span != "w":
 		return p, badReq("bad span %q: want d or w", p.span)
-	}
-	switch p.voice {
-	case "":
-		p.voice = voiceYou
-	case voiceYou, voicePublic:
-	default:
-		return p, badReq("bad voice %q: want you or public", p.voice)
-	}
-	if public {
-		p.voice = voicePublic
 	}
 	p.loc = time.Local // the speed line's hours without tz: the server's zone
 	if s := q.Get("tz"); s != "" {
@@ -153,23 +139,23 @@ func parseHome(q url.Values, public bool) (homeParams, error) {
 	}
 	switch p.part {
 	case "live":
-		p.key = "home\x00live\x00" + p.voice + "\x00" + p.tzKey
+		p.key = "home\x00live\x00" + p.tzKey
 	case "at":
-		p.key = "home\x00at\x00" + strconv.FormatInt(p.at.UnixMilli(), 10) + "\x00" + p.voice
+		p.key = "home\x00at\x00" + strconv.FormatInt(p.at.UnixMilli(), 10)
 	default:
-		p.key = "home\x00history\x00" + p.span + "\x00" + p.tzKey + "\x00" + p.voice
+		p.key = "home\x00history\x00" + p.span + "\x00" + p.tzKey
 	}
 	return p, nil
 }
 
 // serveHome answers /api/home (docs/HOME-API.md).
 func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
-	p, err := parseHome(r.URL.Query(), s.public)
+	p, err := parseHome(r.URL.Query())
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !s.public && s.d.Speed != nil {
+	if s.d.Speed != nil {
 		s.d.Speed.NoteZone(p.tzKey) // the report's zone (only an IANA name loads)
 	}
 	if p.part == "at" {
@@ -178,7 +164,7 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
-			a, err := s.homeAt(ctx, p.at, p.voice, s.now())
+			a, err := s.homeAt(ctx, p.at, s.now())
 			if err != nil {
 				return nil, err
 			}
@@ -189,14 +175,14 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 	if p.part == "live" {
 		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
 			now := s.now()
-			l, err := s.homeLive(ctx, p.voice, now)
+			l, err := s.homeLive(ctx, now)
 			if err != nil {
 				return nil, err
 			}
 			// Speed by time of day: one plain line (its hours are local,
 			// hence tz), never while the answer card shows a problem.
 			if l.Answer.Level != levelWarn && l.Answer.Level != levelBad {
-				l.Speed = s.speedHome(ctx, now, p.loc, p.voice == voicePublic)
+				l.Speed = s.speedHome(ctx, now, p.loc)
 			}
 			return jsonCached(l)
 		})
@@ -262,15 +248,12 @@ func (hs homeSet) relevant(names []string) []string {
 
 // ---------- live ----------
 
-func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*HomeLive, error) {
+func (s *server) homeLive(ctx context.Context, now time.Time) (*HomeLive, error) {
 	prof := s.d.Profile()
 	hs := newHomeSet(prof)
 	v := model.Verdict{Kind: VerdictUnknown}
 	if s.d.Verdict != nil {
 		v = s.d.Verdict.Current()
-	}
-	if s.public {
-		v.Targets = targetFilter(prof)(v.Targets)
 	}
 	// Outages that already ended don't count against the apps or calls
 	// while their samples age out of the windows.
@@ -289,8 +272,8 @@ func (s *server) homeLive(ctx context.Context, voice string, now time.Time) (*Ho
 			names[t.Name] = homeName(t)
 		}
 	}
-	out := &HomeLive{Part: "live", Voice: voice, At: now.UnixMilli(), Apps: []HomeApp{}, Tiles: []HomeTile{}}
-	cp := copyFor(voice)
+	out := &HomeLive{Part: "live", At: now.UnixMilli(), Apps: []HomeApp{}, Tiles: []HomeTile{}}
+	cp := homeCopy{}
 
 	// The TCP tiles: one rows query per kind in use (TCP for every shipped
 	// profile).
@@ -1195,7 +1178,7 @@ type homeIncident struct {
 func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (*HomeHistory, error) {
 	prof := s.d.Profile()
 	hs := newHomeSet(prof)
-	cp := copyFor(p.voice)
+	cp := homeCopy{}
 	loc := time.FixedZone("", p.tz*60)
 	ln := now.In(loc)
 	today := time.Date(ln.Year(), ln.Month(), ln.Day(), 0, 0, 0, 0, loc)
@@ -1204,7 +1187,7 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 		days = 7
 	}
 	from := today.AddDate(0, 0, 1-days)
-	out := &HomeHistory{Part: "history", Voice: p.voice, At: now.UnixMilli(), TZ: p.tz, Span: p.span,
+	out := &HomeHistory{Part: "history", At: now.UnixMilli(), TZ: p.tz, Span: p.span,
 		From: from.UnixMilli(), To: now.UnixMilli(), Days: []HomeDay{}, Problems: []HomeProblem{}}
 
 	// When fyisp was measuring: a few heartbeat series.
@@ -1237,13 +1220,9 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 		if err != nil {
 			return nil, err
 		}
-		filter := targetFilter(prof)
 		for _, in := range list {
 			if !in.Start.Before(now) || (!in.End.IsZero() && !in.End.After(from)) {
 				continue
-			}
-			if s.public {
-				in.Targets = filter(in.Targets)
 			}
 			who := whoOf(in.Kind)
 			if who == whoNone || who == whoUnknown {
@@ -1609,8 +1588,8 @@ const homeAtWindow = 15 * time.Minute
 
 // homeAt answers "what happened around at?": the worst call minute and the
 // incidents in at±15 min, in one headline and one cause.
-func (s *server) homeAt(ctx context.Context, at time.Time, voice string, now time.Time) (*HomeAt, error) {
-	cp := copyFor(voice)
+func (s *server) homeAt(ctx context.Context, at time.Time, now time.Time) (*HomeAt, error) {
+	cp := homeCopy{}
 	prof := s.d.Profile()
 	hs := newHomeSet(prof)
 	from, to := at.Add(-homeAtWindow).Truncate(time.Minute), at.Add(homeAtWindow)
@@ -1620,7 +1599,7 @@ func (s *server) homeAt(ctx context.Context, at time.Time, voice string, now tim
 	if to.Sub(from) < CallsMinRange {
 		from = to.Add(-CallsMinRange)
 	}
-	out := &HomeAt{Part: "at", Voice: voice, At: now.UnixMilli(), Time: at.UnixMilli(), From: from.UnixMilli(), To: to.UnixMilli()}
+	out := &HomeAt{Part: "at", At: now.UnixMilli(), Time: at.UnixMilli(), From: from.UnixMilli(), To: to.UnixMilli()}
 
 	c, err := s.calls(ctx, callsParams{from: from, to: to})
 	if err != nil {
