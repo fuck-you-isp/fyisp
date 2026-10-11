@@ -107,6 +107,7 @@ function resultWord(t) {
  */
 export function lowerBound(t, dir) { return /** @type {any} */ (t)[`${dir}_lower_bound`] === true; }
 const LB_MORE = 'Still speeding up when it reached its 100 MB limit, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.';
+const LB_OUT = 'This test reached its 100 MB limit while still speeding up, so it shows only a lower limit and isn’t used in the time-of-day pattern.';
 /** A server or region left out because most tests to it end while still speeding up (A2). */
 const TOO_FAST = 'Too fast to measure from here';
 /** @param {SpeedRow} r @param {boolean} region */
@@ -121,6 +122,11 @@ function tooFastWhy(r, region) {
  * its header); the mark is hidden from screen readers, which hear "at least".
  * @param {string} k @param {number|null} b @param {boolean} lb @param {boolean} mark
  */
+/** The "% of normal" cell of a lower bound: "at least normal", or "not counted", muted either way. @param {boolean} atLeast */
+function lbCell(atLeast) {
+  const why = atLeast ? LB_MORE : LB_OUT;
+  return h('td', { class: 'num sp-nc', 'data-k': '% of normal', title: why }, atLeast ? 'at least normal' : 'not counted', h('span', { class: 'sr-only', text: `: ${why}` }));
+}
 export function readingCell(k, b, lb, mark) {
   if (b == null) return h('td', { class: 'num', 'data-k': k, text: '—' });
   const v = mb(b).replace(' Mbit/s', '');
@@ -583,11 +589,12 @@ export class SpeedMap {
       const x = /** @type {any} */ (t);
       const shortWin = !lbDown && !lbUp && (t.down_short || t.up_short) && x.win_ms ? `short test (${(x.win_ms / 1000).toFixed(1)} s)` : '';
       const cancelled = t.outcome === 'cancelled'
-        ? (x.cancelled_by === 'owner' && MODE === 'local' ? `Stopped by you at ${clock(t.end)}.` : `Cancelled at ${clock(t.end)}.`) : '';
+        ? (MODE === 'local' && x.cancelled_by === 'owner' ? `Stopped by you at ${clock(t.end)}.`
+          : MODE === 'local' && x.cancelled_by === 'visitor' ? `Stopped at ${clock(t.end)} by the person who asked for it.` : `Cancelled at ${clock(t.end)}.`) : '';
       const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More', 'aria-label': `More about the ${clock(t.start)} test (${t.label})` }),
         h('dl', {},
           ...[cancelled ? ['Cancelled', cancelled] : null,
-            lbDown || lbUp ? ['Speed', LB_MORE] : null,
+            lbDown || lbUp ? ['Speed', lbDown && !(t.score != null && t.score >= 1) ? LB_OUT : LB_MORE] : null,
             ['Attempts', String(t.attempts)],
             MODE === 'local' && /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
             ['Retransmits', t.down_retrans != null || t.up_retrans != null ? `${t.down_retrans ?? '—'} down, ${t.up_retrans ?? '—'} up` : 'not known'],
@@ -605,9 +612,8 @@ export class SpeedMap {
         h('td', { 'data-k': 'Server', text: t.label }),
         readingCell('Down', t.down_bps, lbDown, !cd.all),
         readingCell('Up', t.up_bps, lbUp, !cu.all),
-        // A lower bound always counts as at least normal (max(score, 1)): never slow.
-        lbDown && !bad ? h('td', { class: 'num sp-nc', 'data-k': '% of normal', title: LB_MORE },
-          'at least normal', h('span', { class: 'sr-only', text: `: ${LB_MORE}` }))
+        // A lower bound counts as at least normal only when its score is 1 or more; below that it's left out: never slow.
+        lbDown && !bad ? lbCell(t.score != null && t.score >= 1)
           : h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));

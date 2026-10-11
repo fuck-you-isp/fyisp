@@ -40,6 +40,9 @@ const TEST_MAX = 210e6;
 
 /** One test's bytes on this line: the latest test's when known, else the cap. @param {SpeedSummary|null} d */
 function perTestBytes(d) {
+  // The server's median over 30 days, else the latest ok test, else the cap.
+  const med = d && /** @type {any} */ (d).bytes_per_test;
+  if (med > 1e6) return Math.min(med, TEST_MAX);
   const b = d && d.latest && d.latest.outcome === 'ok' ? d.latest.bytes || 0 : 0;
   return b > 1e6 ? Math.min(b, TEST_MAX) : 200e6;
 }
