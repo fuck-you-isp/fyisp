@@ -148,11 +148,12 @@ func TestStillRising(t *testing.T) {
 		{"cut down", []float64{1.63, 1.18, 1.42, 1.35, 1.31}, 0, false},
 		{"1G down", []float64{1.25, 0.85, 0.96, 0.97, 0.99, 1.0, 0.97}, 0, false},
 		{"1G up", []float64{1.27, 0.95, 0.87, 1.06, 0.94, 0.95}, 0, false},
-		// htb bursts on the real 1G uploads (r4, r5, r7), and steady rises
-		// (net-isp's amendment; a first tick prepended).
-		{"1G up r4", []float64{1, 0.74, 0.95, 1.14, 0.97}, 0, false},
-		{"1G up r5", []float64{1, 0.74, 0.86, 1.17, 1.00}, 0, false},
-		{"1G up r7", []float64{1, 0.86, 0.84, 1.18, 0.94}, 0, false},
+		// htb bursts on the real 1G uploads r4, r5, r7 (cq-netns's timed
+		// dump, Gbit/s per actual tick), and steady rises (net-isp's
+		// amendment; a first tick prepended).
+		{"1G up r4", []float64{1.2374, 0.7398, 0.954, 1.1395, 0.9672}, 0, false},
+		{"1G up r5", []float64{1.2713, 0.7364, 0.8593, 1.1688, 1.0005}, 0, false},
+		{"1G up r7", []float64{1.2651, 0.8564, 0.8385, 1.1756, 0.9378}, 0, false},
 		{"rise 0.2-0.95", []float64{0.1, 0.2, 0.4, 0.6, 0.8, 0.95}, 0, true},
 		{"rise 0.3-0.9", []float64{0.1, 0.3, 0.5, 0.7, 0.9}, 0, true},
 		{"rise 0.5-1", []float64{0.1, 0.5, 0.7, 0.85, 1.0}, 0, true},
