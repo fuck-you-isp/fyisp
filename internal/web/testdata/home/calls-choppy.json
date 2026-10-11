@@ -72,12 +72,6 @@
       "services": 0,
       "call_patches": 1
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 1
-    },
-    "coverage": 1,
     "problems": [
       {
         "id": 51,
@@ -204,12 +198,6 @@
       "services": 0,
       "call_patches": 1
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 1
-    },
-    "coverage": 0.91,
     "problems": [
       {
         "id": 51,

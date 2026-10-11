@@ -20,7 +20,7 @@ import { h, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, tzParam
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
 /** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,side?:string,level?:string,confidence?:string,text?:string,peak_loss:number,details:string}} HomeProblem */
-/** @typedef {{part:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number},coverage?:number}} HomeHistory */
+/** @typedef {{part:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null}} HomeHistory */
 /** @typedef {{part:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number,speed_note?:string,speed_test_overlap_s?:number}} HomeAt */
 /** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
 /**

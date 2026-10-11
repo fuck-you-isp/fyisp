@@ -433,9 +433,6 @@ func TestHomeHistory(t *testing.T) {
 		t.Errorf("summary %q", h.Summary)
 	}
 	// Measured: from noon 3 days before (first data) to now, minus 6 h off.
-	if want := round2(float64(now.Sub(time.Date(2026, 10, 6, 12, 0, 0, 0, loc))-6*time.Hour) / float64(h.To-h.From) / 1e6); h.Coverage != want {
-		t.Errorf("coverage %v, want %v", h.Coverage, want)
-	}
 	if h.FirstData == 0 || h.Problems[1].Where != "Most likely your provider's network (past your router)" {
 		t.Errorf("first %d where %q", h.FirstData, h.Problems[1].Where)
 	}

@@ -1306,16 +1306,6 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 	}
 
 	for _, in := range incs { // newest first
-		if in.level != levelInfo {
-			switch sideOf(in.who) {
-			case "home":
-				out.Sides.Home++
-			case "provider":
-				out.Sides.Provider++
-			default:
-				out.Sides.Other++
-			}
-		}
 		switch {
 		case in.level == levelInfo:
 			// not a problem; still in the table, the timeline and runs
@@ -1344,13 +1334,6 @@ func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (
 		out.Problems = append(out.Problems, pr)
 	}
 	out.Counts.CallPatches = len(callRuns)
-	if span := out.To - out.From; span > 0 && !first.IsZero() {
-		measured := out.To - max(out.From, first.UnixMilli())
-		for _, sp := range off {
-			measured -= min(sp.To, out.To) - max(sp.From, out.From, first.UnixMilli())
-		}
-		out.Coverage = round2(max(0, float64(measured)) / float64(span))
-	}
 	// One app named when every app problem was about the same one; a
 	// long-standing block is a known issue, not a problem.
 	app, apps, known := "", map[string]bool{}, false

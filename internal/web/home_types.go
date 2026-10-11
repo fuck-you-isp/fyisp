@@ -173,16 +173,12 @@ type HomeHistory struct {
 	To   int64  `json:"to"`
 	// FirstData is the first measurement in the store (0: none yet); days
 	// before it have no record.
-	FirstData int64      `json:"first_data,omitempty"`
-	Days      []HomeDay  `json:"days"`
-	Summary   string     `json:"summary"`
-	Counts    HomeCounts `json:"counts"`
-	Sides     HomeSides  `json:"sides"`
-	// Coverage is the share of [From, To) that was measured: not before
-	// FirstData and not in an off span (0 to 1, two decimals).
-	Coverage float64        `json:"coverage"`
-	Problems []HomeProblem  `json:"problems"`
-	Work     *HomeWorkCalls `json:"work,omitempty"`
+	FirstData int64          `json:"first_data,omitempty"`
+	Days      []HomeDay      `json:"days"`
+	Summary   string         `json:"summary"`
+	Counts    HomeCounts     `json:"counts"`
+	Problems  []HomeProblem  `json:"problems"`
+	Work      *HomeWorkCalls `json:"work,omitempty"`
 	// Known is an ongoing known issue (a long-standing call block), shown
 	// after the summary: Text then Since formatted ("Some call connections
 	// have been blocked since" + "Fri 1:12 PM").
@@ -266,14 +262,6 @@ type HomeProblem struct {
 	Text       string  `json:"text"` // the same sentence as its runs' text
 	PeakLoss   float64 `json:"peak_loss"`
 	Details    string  `json:"details"` // Details view hash zoomed to it
-}
-
-// HomeSides counts the span's problems (known issues excluded) by side,
-// for the report: "3 on the provider's side, 1 in the home".
-type HomeSides struct {
-	Home     int `json:"home"`
-	Provider int `json:"provider"`
-	Other    int `json:"other"`
 }
 
 // HomeWorkCalls is today's call quality in working hours (span d only).
