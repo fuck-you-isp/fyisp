@@ -591,3 +591,30 @@ func TestByteCapInFlight(t *testing.T) {
 		t.Errorf("upload: %v capped %v, %d written (cap %d)", err, r.CappedByBytes, r.WireBytes, cfg.MaxBytes)
 	}
 }
+
+// TestUploadUnacked: without TCP_INFO acked bytes (not Linux), an upload
+// counts what the server received, never more than we wrote.
+func TestUploadUnacked(t *testing.T) {
+	for _, c := range []struct{ got, want int64 }{
+		{990, 890},     // 10 sat in our buffers
+		{1000, 900},    // all arrived
+		{5000, 900},    // a server claiming more changes nothing
+		{-1, 0},        // nor one claiming less than nothing
+		{1 << 62, 900}, // bounded
+	} {
+		tt := &test{c: Config{Direction: Upload}, counts: make([]atomic.Int64, 2)}
+		tt.counts[0].Store(600)
+		tt.counts[1].Store(400)
+		res := Result{Bytes: 900}
+		tt.applyServer(&serverResults{Streams: []streamResult{{Bytes: c.got / 2}, {Bytes: c.got - c.got/2}}}, &res)
+		if res.Bytes != c.want {
+			t.Errorf("server got %d: bytes %d, want %d", c.got, res.Bytes, c.want)
+		}
+		tt.acked = true
+		res.Bytes = 900
+		tt.applyServer(&serverResults{Streams: []streamResult{{Bytes: 10}}}, &res)
+		if res.Bytes != 900 {
+			t.Errorf("acked bytes changed: %d", res.Bytes)
+		}
+	}
+}
