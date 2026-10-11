@@ -169,6 +169,9 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.public && s.d.Speed != nil {
+		s.d.Speed.NoteZone(p.tzKey) // the report's zone (only an IANA name loads)
+	}
 	if p.part == "at" {
 		if now := s.now(); p.at.After(now) || now.Sub(p.at) > MaxRange {
 			writeErr(w, r, http.StatusBadRequest, "at must be within the last 90 days")

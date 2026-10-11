@@ -87,6 +87,7 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
   "bytes_24h": 3120000000,        // the last 24 hours; 0 on the share link     // data used by speed tests since the 1st of this month (UTC); 0 on the share link
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
+  "owner_tz": "America/New_York", // omitted when unknown: the owner's IANA zone (the one their browser last sent on a local page); reports use it for times of day
   "next_row": "uk",               // |null: its row id
   "running": { ...Running },      // |null
   "rows": [ ...Row ],             // the current mode's scheduled rows, in plan order (empty when off)
@@ -217,7 +218,12 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
   "tier": "points_to",            // omitempty: "points_to" | "most_likely" | "early_sign" (how sure)
   "text": "Every region slows from about 7 to 11 pm, with every provider: about 40% below normal. Your provider's first router also answers slower then (25 ms instead of 8 ms), so it's in its local network. That points to your internet provider's own network.",
   "text_public": "… That points to the internet provider's own network.",   // the share link's and report's wording
-  "evidence": "Based on 648 tests over 9 days; each evening hour was tested at least 9 times across 3 providers.",
+  "evidence": "Based on 648 tests on 9 days between Tue 1 Sep and Wed 9 Sep; each evening hour was tested at least 9 times across 3 providers.",
+  "evidence_public": "Based on 648 tests on 9 days; each evening hour ...", // the same without dates (the share link gets it as evidence)
+  "coverage": "Tests ran on 5 of the last 7 days.", // omitted when every day of the window has tests; or "Speed tests started on Mon 6 Oct, so this covers 3 days, not 7."
+  "coverage_public": "This covers 3 days, not 7.", // without the date
+  "slowest": [{"display": "Southeast Asia · OVH, Singapore", "pct": 52, "median_bps": 310000000, "usual_bps": 600000000}], // omitted when none: up to 3 servers slowest in the dip's hours (≥ 3 results there), nearest first in the isp and mild cases, else slowest first
+  "via": "DE-CIX",                // local only, omitted when none: the internet exchange the slow tests' route crosses
   "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
   "caveat_public": "Wi-Fi, or people in the home using the internet heavily at those hours, can look the same.",   // omitempty: the share link's and report's voice (the share link's `caveat` is this already)
   "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],

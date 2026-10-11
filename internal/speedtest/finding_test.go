@@ -205,8 +205,10 @@ func TestFinding(t *testing.T) {
 		}
 		return 1
 	}, "wired"), Catalog: c})
-	if !strings.HasPrefix(f.Evidence, "Based on 648 tests over 9 days; each evening hour was tested at least") || len(f.Hours) != 4 || f.Hours[0] != 19 {
-		t.Errorf("evidence %q hours %v", f.Evidence, f.Hours)
+	if !strings.HasPrefix(f.Evidence, "Based on 648 tests on 9 days between Tue 1 Sep and Wed 9 Sep; each evening hour was tested at least") ||
+		!strings.HasPrefix(f.EvidencePublic, "Based on 648 tests on 9 days; each evening hour") || strings.Contains(f.EvidencePublic, "Sep") ||
+		len(f.Hours) != 4 || f.Hours[0] != 19 {
+		t.Errorf("evidence %q / %q hours %v", f.Evidence, f.EvidencePublic, f.Hours)
 	}
 	// Manual tests and sweeps never count.
 	ts = synth(c, 9, func(string, int) float64 { return 1 }, "wired")
@@ -472,5 +474,45 @@ func TestFarEnd(t *testing.T) {
 	}
 	if !closeZones(c, []string{"uk", "eu-west"}) || closeZones(c, []string{"uk", "us-east"}) {
 		t.Error("closeZones")
+	}
+}
+
+// TestFindingDays: the days are the local dates with tests, one number
+// everywhere; fewer than the window's say why; times in the owner's zone.
+func TestFindingDays(t *testing.T) {
+	c := findingCatalog(t)
+	flat := func(string, int) float64 { return 1 }
+	var ts []model.SpeedTest
+	for _, x := range synth(c, 4, flat, "wired") { // days 1, 2 and 4
+		if x.Start.Day() != 3 {
+			ts = append(ts, x)
+		}
+	}
+	from := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC) // a 7-day window
+	f := FindFinding(FindingInput{Tests: ts, Catalog: c, From: from, To: from.Add(7 * 24 * time.Hour)})
+	if f.Days != 3 || !strings.HasPrefix(f.Evidence, "Based on 216 tests on 3 days between Tue 1 Sep and Fri 4 Sep") ||
+		f.Coverage != "Speed tests started on Tue 1 Sep, so this covers 3 days, not 7." || f.CoveragePublic != "This covers 3 days, not 7." {
+		t.Errorf("days %d: %q / %q / %q", f.Days, f.Evidence, f.Coverage, f.CoveragePublic)
+	}
+	f = FindFinding(FindingInput{Tests: ts, Catalog: c, From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)})
+	if f.Coverage != "Tests ran on 3 of the last 7 days." || f.CoveragePublic != f.Coverage {
+		t.Errorf("gaps: %q", f.Coverage)
+	}
+	// One day: "1 day".
+	f = FindFinding(FindingInput{Tests: synth(c, 1, flat, "wired"), Catalog: c})
+	if f.Days != 1 || !strings.Contains(f.Text, "1 of 3 days") {
+		t.Errorf("1 day: %d %q", f.Days, f.Text)
+	}
+	// America/New_York: an 8-11 pm EDT dip is the evening there, never a
+	// UTC hour.
+	ny, _ := time.LoadLocation("America/New_York")
+	f = FindFinding(FindingInput{Tests: synth(c, 9, func(_ string, h int) float64 {
+		if l := time.Date(2026, 9, 1, h, 0, 0, 0, time.UTC).In(ny).Hour(); l >= 20 && l <= 22 {
+			return 0.6
+		}
+		return 1
+	}, "wired"), Catalog: c, Loc: ny})
+	if len(f.Hours) == 0 || f.Hours[0] != 20 || !strings.Contains(f.Evidence, "evening hour") || strings.Contains(f.Text, "night") {
+		t.Errorf("New York: %v %q %q", f.Hours, f.Text, f.Evidence)
 	}
 }

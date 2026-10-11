@@ -14,12 +14,17 @@ import (
 )
 
 // speedView is the report's speed test section: a summary paragraph and
-// one row per region (or server, for tests outside mode regions), hours in
-// UTC like the rest of the report.
+// one row per region (or server, for tests outside mode regions), times of
+// day and days in the owner's zone (Zone, printed with every time).
 type speedView struct {
 	Summary string
 	Pattern string
-	Finding *speedtest.Finding // where a slowdown points (public wording, hours in UTC); nil without one
+	Zone    string             // e.g. "EDT (UTC−4)"
+	Finding *speedtest.Finding // where a slowdown points (public wording); nil without one
+	// SlowestHead and Slowest: the servers slowest in the dip's hours
+	// (none: no list).
+	SlowestHead string
+	Slowest     []slowRow
 	// For tier-1 support: the connection the tests ran on, latency under
 	// load at the provider's first router, and what to ask the provider
 	// ("" when there's nothing to ask).
@@ -30,6 +35,8 @@ type speedView struct {
 	Owner, Public int
 	Origins       string
 }
+
+type slowRow struct{ Text, Aria string }
 
 type speedRow struct {
 	Name, Server, Tests, Down, DownP10, Up, Dip, Trouble string
@@ -44,7 +51,56 @@ func (r *run) collectSpeed(ctx context.Context) error {
 		return fmt.Errorf("report: speed tests: %w", err)
 	}
 	r.speed = ts
+	r.speedLoc = time.UTC
+	if r.b.d.Zone != nil {
+		if loc := r.b.d.Zone(ctx); loc != nil {
+			r.speedLoc = loc
+		}
+	}
 	return nil
+}
+
+// zoneLabel names loc at t: "EDT (UTC−4)", "UTC+5:30" when it has no
+// abbreviation, "UTC".
+func zoneLabel(loc *time.Location, t time.Time) string {
+	name, off := t.In(loc).Zone()
+	if off == 0 && (name == "UTC" || name == "GMT" || name == "") {
+		return "UTC"
+	}
+	sign := "+"
+	if off < 0 {
+		sign, off = "−", -off
+	}
+	utc := fmt.Sprintf("UTC%s%d", sign, off/3600)
+	if m := off % 3600 / 60; m != 0 {
+		utc += fmt.Sprintf(":%02d", m)
+	}
+	if name == "" || name[0] == '+' || name[0] == '-' {
+		return utc
+	}
+	return name + " (" + utc + ")"
+}
+
+// hourRange is local hours [from, to) on a 12-hour clock: "8–11 pm",
+// "11 pm–1 am".
+func hourRange(from, to int) string {
+	c := func(h int) (int, string) {
+		h = (h%24 + 24) % 24
+		ampm := "am"
+		if h >= 12 {
+			ampm = "pm"
+		}
+		if h %= 12; h == 0 {
+			h = 12
+		}
+		return h, ampm
+	}
+	a, pa := c(from)
+	b, pb := c(to)
+	if pa == pb && from%24 < to%24 {
+		return fmt.Sprintf("%d–%d %s", a, b, pb)
+	}
+	return fmt.Sprintf("%d %s–%d %s", a, pa, b, pb)
 }
 
 func mbps(bps float64) string {
@@ -55,6 +111,36 @@ func mbps(bps float64) string {
 		return fmt.Sprintf("%.1f Mbit/s", bps/1e6)
 	}
 	return fmt.Sprintf("%.2f Mbit/s", bps/1e6)
+}
+
+// speedDisplay names servers as the share link does: "Region · Provider,
+// City" for catalog servers, "Your server N" for the owner's own (never a
+// host, label or address).
+func speedDisplay(cat *speedtest.Catalog, ts []model.SpeedTest) func(string) string {
+	var own []string
+	for _, t := range ts {
+		if _, ok := cat.Server(t.Server); !ok && t.Server != "" && !slices.Contains(own, t.Server) {
+			own = append(own, t.Server)
+		}
+	}
+	slices.Sort(own)
+	return func(id string) string {
+		if s, ok := cat.Server(id); ok {
+			d := s.Provider + ", " + s.City
+			if rid := cat.RegionOf(id); rid != "" {
+				for _, r := range cat.Regions {
+					if r.ID == rid {
+						d = r.Title + " · " + d
+					}
+				}
+			}
+			return d
+		}
+		if i := slices.Index(own, id); i >= 0 && len(own) > 1 {
+			return fmt.Sprintf("Your server %d", i+1)
+		}
+		return "Your server"
+	}
 }
 
 // speedNames gives region titles and public server labels (own servers
@@ -120,24 +206,45 @@ func (r *run) speedSection() *speedView {
 		v.Summary += fmt.Sprintf(", %d were cancelled", cancelled)
 	}
 	v.Summary += ". " + speedMethod(r.speed) + " Only scheduled tests count toward the patterns below; Test now and Test all servers do not."
-	if p := speedtest.PooledPattern(r.speed, time.UTC); p != nil {
-		v.Pattern = fmt.Sprintf("Pooled over every server, tests read about %d%% lower from %02d:00 to %02d:00 UTC than the same servers' usual results.",
-			int(p.Drop*100+0.5), p.DipFrom, p.DipTo)
+	loc := r.speedLoc
+	if loc == nil {
+		loc = time.UTC
+	}
+	v.Zone = zoneLabel(loc, r.to)
+	if p := speedtest.PooledPattern(r.speed, loc); p != nil {
+		v.Pattern = fmt.Sprintf("Pooled over every server, tests read about %d%% lower from %s %s than the same servers' usual results.",
+			int(p.Drop*100+0.5), hourRange(p.DipFrom, p.DipTo), v.Zone)
 	} else if ok >= 48 {
 		v.Pattern = "Pooled over every server, there is no clear time-of-day pattern."
 	}
 	v.Connection, v.Latency = speedConnection(r.speed), speedLatency(r.speed)
 	if cat != nil {
-		f := speedtest.FindFinding(speedtest.FindingInput{Tests: r.speed, Catalog: cat})
+		f := speedtest.FindFinding(speedtest.FindingInput{Tests: r.speed, Catalog: cat, Loc: loc, From: r.from, To: r.to})
 		switch f.Case {
 		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed:
-			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (hours in UTC)."
+			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (times in " + v.Zone + ")."
 			f.Caveat = f.CaveatPublic
-			if f.Network != "" {
+			if r.o.Redact { // the share link's rules: no start date, no networks by name
+				f.Evidence, f.Coverage, f.Network = f.EvidencePublic, f.CoveragePublic, ""
+			} else if f.Network != "" {
 				f.Evidence += " The slow tests left the provider's network through " + f.Network + "."
 			}
+			if f.Coverage != "" {
+				f.Evidence += " " + f.Coverage
+			}
 			v.Finding = &f
-			v.Ask = speedAsk(f, cat)
+			v.Ask = speedAsk(f, cat, v.Zone)
+			if len(f.Slowest) > 0 {
+				v.SlowestHead = "Slowest servers from " + hourRange(f.Hours[0], f.Hours[len(f.Hours)-1]+1) + " " + v.Zone
+				display := speedDisplay(cat, r.speed)
+				for _, s := range f.Slowest {
+					d := display(s.Server)
+					v.Slowest = append(v.Slowest, slowRow{
+						Text: fmt.Sprintf("%s: %d%% of its usual result (median %.0f vs usual %.0f Mbit/s)", d, s.Pct, s.MedianBps/1e6, s.UsualBps/1e6),
+						Aria: fmt.Sprintf("%s: %d%% of its usual result, median %.0f versus usual %.0f megabits per second",
+							strings.ReplaceAll(d, " · ", ", "), s.Pct, s.MedianBps/1e6, s.UsualBps/1e6)})
+				}
+			}
 		}
 	}
 	// Regions first, then the other servers.
@@ -156,7 +263,7 @@ func (r *run) speedSection() *speedView {
 	var worstDrop float64
 	for _, k := range order {
 		ts := groups[k]
-		st := speedtest.Summarize(ts, time.UTC)
+		st := speedtest.Summarize(ts, loc)
 		name, isRegion := titles[k]
 		if !isRegion {
 			name = label(k)
@@ -187,7 +294,7 @@ func (r *run) speedSection() *speedView {
 			row.Up = mbps(*st.UpMedian)
 		}
 		if st.Dip != nil {
-			row.Dip = fmt.Sprintf("%02d–%02d UTC, −%d%%", st.Dip.DipFrom, st.Dip.DipTo, int(st.Dip.Drop*100+0.5))
+			row.Dip = fmt.Sprintf("%s %s, −%d%%", hourRange(st.Dip.DipFrom, st.Dip.DipTo), v.Zone, int(st.Dip.Drop*100+0.5))
 			if st.Dip.Drop > worstDrop {
 				worst, worstDrop = name, st.Dip.Drop
 			}
@@ -324,11 +431,11 @@ func speedLatency(ts []model.SpeedTest) string {
 }
 
 // speedAsk is what to ask the provider for the finding's case.
-func speedAsk(f speedtest.Finding, cat *speedtest.Catalog) string {
+func speedAsk(f speedtest.Finding, cat *speedtest.Catalog, zone string) string {
 	if len(f.Hours) == 0 {
 		return ""
 	}
-	when := fmt.Sprintf("between %02d:00 and %02d:00 UTC", f.Hours[0], (f.Hours[len(f.Hours)-1]+1)%24)
+	when := "from " + hourRange(f.Hours[0], f.Hours[len(f.Hours)-1]+1) + " " + zone
 	switch f.Case {
 	case speedtest.CaseISP:
 		return "Ask your provider whether the node or segment serving this line is congested " + when + ", and for its utilisation at those hours."

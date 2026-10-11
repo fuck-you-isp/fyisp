@@ -13,6 +13,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/export"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/report"
+	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
@@ -125,6 +126,11 @@ func reportDeps(ctx context.Context, st store.Reader, prof *model.Profile) repor
 		SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
 	}); ok {
 		d.SpeedTests = ss.SpeedTests
+	}
+	if zs, ok := st.(interface {
+		Setting(ctx context.Context, key string) (string, bool, error)
+	}); ok {
+		d.Zone = func(ctx context.Context) *time.Location { return speedtest.StoredZone(ctx, zs) }
 	}
 	if br, ok := st.(store.BaselineReader); ok {
 		var mu sync.Mutex
