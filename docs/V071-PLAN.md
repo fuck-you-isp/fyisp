@@ -1,6 +1,6 @@
 # fyisp v0.7.1: plan (FINAL)
 
-**Status:** FINAL, 2026-10-11. The execution team (cq-core, ux-eng, cq-ui) starts from this file.
+**Status:** FINAL, 2026-10-11 (A2 scoring settled: net-isp's share-based hybrid). The execution team (cq-core, ux-eng, cq-ui) starts from this file.
 
 **Who and where:**
 - **Planning team:** ux-product (lead), ux-speed (UX), cq-core (backend).
@@ -31,8 +31,7 @@
 3. **A2 is rewritten:**
    - **Dropped:** the 0.5 s guard. It censored by speed (net-isp M1, go-review M1).
    - **New estimator:** a **smoothed 3-tick peak** with the window ending at the last byte's timestamp. It's a pure function with unit tests on synthetic tick series. Uploads use **acked** bytes.
-   - **Still-rising results** are kept as **lower bounds** with censored scoring ("not slow").
-   - **v0.7.0 capped rows** are skipped in the baseline, the by-hour stats and the finding.
+   - **Ramp-capped results** are kept as **lower bounds** ("not slow"); see 12 for the final scoring.
    - **New acceptance case:** a 2 Gbit/s line with a 30% evening cut.
 4. **A3** reads the TCP_INFO bytes in `close()` on **every** run (max of application and kernel counts, never their sum), not only on cancel.
 5. **A4** counts **established** connections only.
@@ -45,7 +44,16 @@
 8. **Copy:** every ux-content must and should is in, with exact strings (B1–B10, C2, C3).
 9. **Public origin:** rev-security asked that the share link stop telling tests apart, so `origin` and `trigger` are neutralised on the public listener (B5).
 10. **C1** is now **ENV defaults plus a bare ENTRYPOINT**. `report` and `export` stay read-only.
-11. **New B10:** the "≥" noise rule (ux-content M8, from Q4).
+11. **New B10:** "≥" only on ramp-capped results, with the column-header form when all are (ux-content M8, net-isp, go-review).
+12. **Addenda** (the lead's rulings after the reviews):
+    - **A2 scoring (FINAL):** net-isp's share-based hybrid, per server over 14 days.
+      - Under 20% ramp-capped: the baseline comes from uncapped rows, and capped rows count as "at least normal" (`max(score, 1.0)`).
+      - 20% or more: "too fast to measure from here", out of the finding and the by-hour stats.
+      - All servers out: case `too_fast`.
+      - `max(p90, capped lower bounds)` is dropped (it depends on RTT).
+    - **The ramp-capped flag** is decoded once in the store. v0.7.0 rows with `down_short && ramp_ms == 0` count as ramp-capped, rather than being skipped as in the draft.
+13. **A6:** IX ASNs are skipped before the `isp == 0` branch; the scan continues past unanswered hops; networks are grouped by (peer ASN, via); the list is verified once against a routing table (LINX's two ASNs).
+14. **A7 now runs the traceroute *before* the test window,** synchronously and bounded, instead of async after the save (go-review).
 
 ---
 
@@ -108,57 +116,81 @@
 5. The ledger stays ≤ the limit across 1,000 randomised sequences, run **against a fake server that ignores TEST_END**.
 6. Budget 150 MB: fyisp starts, logs the WARN, the link returns 403 `disabled`/`budget_too_small`, and Details shows the sentence above.
 
-#### A2. [M] Fast lines: one steady-rate estimator, lower bounds kept honest (cq-core) — *after A1*
+#### A2. [M] Fast lines: one steady-rate estimator, lower bounds counted as "at least normal" (cq-core) — *after A1*
 **Estimator.** It applies to every capped direction, and is optional for uncapped ones.
-- **Ticks:** take the 100 ms ticks, smoothed by a 3-tick moving average. Download ticks come from received bytes; **upload ticks from per-tick `tcpi_bytes_acked`** (Linux), never written bytes.
+- **Ticks:** the 100 ms ticks, smoothed by a 3-tick moving average. Download ticks come from received bytes; **upload ticks from per-tick `tcpi_bytes_acked`** (Linux), never written bytes.
 - **Peak:** the highest smoothed tick.
 - **Window:** from the first smoothed tick ≥ 90% of the peak, to the **actual timestamp of the last byte** (not a tick boundary).
 - **Rate:** bytes in the window ÷ the window's duration.
-- **Stored** in `Extra`:
-  - `rate_method: "peak90"`, or `"whole"` as the fallback;
-  - `win_ms`;
-  - `lower_bound`.
+- **Stored** in `Extra`: `rate_method` (`"peak90"`, or `"whole"` as the fallback) and `win_ms`.
 
-**Rules.**
-- **Fewer than 3 ticks in the window:** the result is a **lower bound** (`lower_bound: true`).
-- **Still rising at the cap** (the smoothed peak is in the last 2 ticks, so no plateau was seen): the result is a **lower bound**.
-- **No tick qualifies:** use the whole run, with `rate_method: "whole"`.
-- **Non-Linux uploads:** the v0.7.0 method, with `rate_method: "whole"`.
+**Ramp-capped** (a lower bound).
+- **Which results:**
+  - new results whose smoothed peak is in the last 2 ticks (still rising, no plateau);
+  - new results with fewer than 3 ticks in the window;
+  - **v0.7.0 rows** with `down_short` (`up_short`) and `ramp_ms == 0` in that direction.
+- **Where it's decided:** once, when the store decodes a test (`model.SpeedTest.RampCapped{Down,Up}`). No other code re-derives it.
+- **Other cases:** no qualifying tick gives `rate_method: "whole"`, flagged; non-Linux uploads use the v0.7.0 method, with `rate_method: "whole"`.
+- **Capped after the ramp** (a plateau was seen before the cap): a **valid rate**, scored normally (see B10 for its wording).
 
-**Scoring lower bounds (censored).**
-- If `x / baseline ≥ 1`, the result counts as a full-speed sample (score 1.0) in the by-hour stats and the finding. Otherwise it is left out.
-- A lower bound **never** enters `Baseline()`, and is never shown or counted as slow.
+**Scoring: net-isp's share-based hybrid** (FINAL; the lead's ruling, 2026-10-11).
+- **The share decides.** For each server, take the **share** of its scheduled rows in the last 14 days that are ramp-capped (per direction).
+- **Under 20% ramp-capped:**
+  - `Baseline()` (the p90) is built from the **non-ramp-capped** rows, with the existing minimum-n rules;
+  - ramp-capped rows count as "**at least normal**" (`score = max(score, 1.0)`) in by-hour stats, patterns and the finding, never slow and never dropped.
+  - (Only the fastest ≤ 20% are missing from the baseline, so it reads a few percent low at most.)
+- **20% or more ramp-capped:** the uncapped rows are no longer a sample of normal; they are the slow tail. The server is "**too fast to measure from here**":
+  - out of the finding, the by-hour stats and the patterns;
+  - its rows are still shown and exported;
+  - it's never shown as "learning".
+- **Every server out:** when every scheduled server is "too fast to measure from here", the finding's case is `too_fast`. Its text is "Your line is too fast for these tests to compare times of day", never "nothing" or "within 10%".
+- **Dropped:** `max(p90 uncapped, median of capped lower bounds)`. net-isp showed it depends on RTT and fails on mid and far servers.
+- **Not a gate any more:** the "fewer than 3 uncapped rows" rule is replaced by the share.
+- **Nothing stored is rewritten.** Patterns recompute on read.
+- **v0.8 note** (net-isp): the ramp-capped share by hour is itself a speed signal (90% capped by day, 10% in the evening means a dip). Use it once the estimator has proved itself.
 
-**v0.7.0 rows.**
-- A row with `down_short` (or `up_short`) and no `rate_method` in `Extra`: that direction is **skipped** in `Baseline()`, `HourMedians` and `FindFinding`.
-- It is still shown and exported. Nothing is rewritten.
-
-**Far regions on fast lines.** When most of a region's tests are lower bounds, its row and the report say: "**Too fast to measure from this far within the 100 MB limit.**" It is not shown as "learning".
+**Fixture pass criterion** (net-isp; must pass before PR 3 merges).
+- **Fixture:** daytime rows are ramp-capped (fast); evening rows are uncapped, at 60% of the true rate.
+- **Criterion:** the result is never "nothing", and the baseline is never built from evening-only rows. Either the dip is found, or the server is marked "too fast to measure from here". With more than 20% capped, as in this fixture, expect "too fast".
+- A second fixture with 10% of rows capped (a slightly faster day) must **find** the evening dip.
 
 **Acceptance.**
 1. **Pure-function unit tests** of the estimator on synthetic tick series:
    - slow start then plateau: the rate is the plateau within 3%;
-   - a single high spike tick: ignored by the smoothing;
-   - still rising at the end: `lower_bound`;
-   - 1-tick and 2-tick runs: `lower_bound`;
+   - a single high spike tick: smoothed away;
+   - still rising at the end: ramp-capped;
+   - 1-tick and 2-tick runs: ramp-capped;
    - no qualifying tick: `"whole"`;
-   - a deep upload send buffer, with written ≫ acked in the first ticks: uses acked.
-2. **One coarse timing test** with the fake server. No other timing-sensitive asserts, to avoid flakes under `-race`.
+   - a deep upload send buffer (written ≫ acked in the first ticks): uses acked.
+2. **One coarse timing test** with the fake server. No other timing-sensitive asserts (`-race`).
 3. **Under the cap** (100 Mbit/s): by-hour, finding and baseline outputs are byte-identical to v0.7.0 (goldens).
-4. **A 2 Gbit/s line with a 30% evening cut** (fixture plus a netns or fake-server case):
-   - the evening pattern is detected;
-   - the baseline comes from daytime tests;
-   - far servers are mostly lower bounds and never read as slow.
-5. **`finding_test`** on a 1 Gbit/s line where near regions dip and far regions are lower bounds: the case is `isp`.
-6. **A mixed fixture** of v0.7.0 capped rows plus new rows: the old capped directions are absent from `Baseline()`, the medians and the finding; the other old rows still count.
+4. **net-isp's fixtures** (above):
+   - over 20% capped: "too fast to measure from here", never "nothing", and the baseline never comes from evening-only rows;
+   - 10% capped: the evening dip is found.
+5. **A 2 Gbit/s line with a 30% evening cut** (fixture plus a netns or fake-server case):
+   - near servers that plateau (under 20% capped) find the evening pattern;
+   - far servers (mostly capped) are "too fast to measure from here", never slow, never "nothing".
+6. **`finding_test`** on a 1 Gbit/s line where near regions dip and far regions are ramp-capped: the case is `isp`.
+7. **Share thresholds:**
+   - a server at 19% capped is scored;
+   - one at 20% is "too fast to measure from here";
+   - all servers too fast gives case `too_fast` with its sentence.
+8. **v0.7.0 rows** with `down_short && ramp_ms == 0` are decoded as ramp-capped, and old rows capped after the ramp score normally.
 
-**UI and copy for A2** (cq-ui, with ux-content S10 adapted to lower bounds):
-- **"% of normal" cell:**
-  - for a lower bound at or above normal: "**at least normal**";
-  - for one below it: "**not counted**" (muted, never an error colour);
-  - with the ▸ More sentence as the cell's `title` and screen-reader text.
-- **▸ More:** "**Still speeding up when it reached its 100 MB limit, so the speed was at least this. It isn't used for this server's normal, and it only counts toward the time-of-day pattern when it already matches the normal.**"
-- **"Problems only":** never includes these rows.
+**UI and copy** (cq-ui, ux-content S10 adapted to the ruling):
+- **"% of normal" cell** of a ramp-capped result: "**at least normal**", muted and never an error colour. The ▸ More sentence is its `title` and screen-reader text.
+- **▸ More:** "**Still speeding up when it reached its 100 MB limit, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn't used to set this server's normal.**"
+- **"Too fast to measure from here"** strings (added to ux-content's string table; the public voice is the same, with "the line" for "your line"):
+
+  | Where | String |
+  |---|---|
+  | Server row (heatmap Servers view, table group header) | "**Too fast to measure from here**" (muted), with the `title` / screen-reader text below |
+  | Server row explanation (▸ More, `title`) | "**Most tests to {server} reached their 100 MB limit while still speeding up, so they can't show when this line slows down. It's left out of the time-of-day pattern.**" |
+  | Region row, when every server in it is too fast | "**Too fast to measure from here**", with "Every server in {region} is too fast to measure from here within the 100 MB limit." |
+  | Finding, case `too_fast` (Details, Home is silent, report) | "**Your line is too fast for these tests to compare times of day: most tests reach their 100 MB limit while still speeding up.**" |
+  | Finding evidence line, when some servers are out | "{k} of {n} servers were too fast to measure from here and are left out." |
+  | Report method bullet | "Servers that this line reaches faster than a 100 MB test can measure are left out of the time-of-day comparison." |
+- **"Problems only"** never includes ramp-capped rows.
 
 #### A4. [S] Prove "at most 9 connections" (cq-core; ux-product for the script)
 - **Fake server:** counts connections **accepted and not yet closed** (its own close tracked) across download, relisten, a busy retry and upload. Assert ≤ `Streams + 1`.
@@ -185,43 +217,53 @@
 
 #### A6. [S] Look through internet exchanges in the handoff (cq-core)
 **List.**
-- A constant list of about 15 IX route-server and LAN ASNs: DE-CIX 6695; AMS-IX 1200; LINX 5459 and 8714; France-IX 51706; NL-ix 34307; Netnod 8674; SIX 33108; JPNAP 7527; HKIX 4635; IX.br 26162; …
-- Each entry is **verified against PeeringDB by hand** before committing; the source is noted in a comment.
+- A constant list of about 15 IX route-server and LAN ASNs: DE-CIX 6695; AMS-IX 1200; LINX 5459 **and** 8714; France-IX 51706; NL-ix 34307; Netnod 8674; SIX 33108; JPNAP 7527; HKIX 4635; IX.br 26162; …
+- Each entry is **verified once** against PeeringDB and a current routing table before committing, with the source noted in a comment. (LINX has two ASNs: check that both are listed.)
 - No runtime fetch, no rDNS.
 
-**Lookup.**
-- `handoffOf` treats hops in these ASNs like ASN 0: it skips them, and the peer is the next hop with an ASN.
-- The IX's name is returned as `via` in the API **only**, inside the existing `if !n.public` block. It isn't stored.
-- There's no schema change. The handoff is re-traced per server daily, so `via` fills within a day.
+**Lookup** (`handoffOf`).
+- IX ASNs are skipped **before** the `isp == 0` branch, so an IX hop can never become the ISP either.
+- They're treated like ASN 0, and the scan **keeps going past unanswered hops**. The peer is the next hop with a non-IX ASN.
+- The IX's name is returned as `via` in the API **only**, inside the existing `if !n.public` block (rev-security). It isn't stored.
+- No schema change. The handoff is re-traced per server daily, so `via` fills within a day.
 
-**Finding wording** (local; ux-content S11):
-- **Peer known:**
-  - "the link between your internet provider and **Leaseweb**, where they meet at **DE-CIX (an internet exchange)**";
-  - for a transit peer: "…and **Lumen (AS3356)**, meeting at DE-CIX (an internet exchange)".
-- **Peer unknown:** "…the route through **DE-CIX (an internet exchange)** to these servers". It never names the exchange as the party at fault, and uses the tier's verb ("may be" when early).
+**Finding.**
+- **Grouping:** networks are grouped by **(peer ASN, via)**.
+- **Local evidence:** keeps `via`.
+- **Wording** (ux-content S11, local):
+  - **Peer known:** "the link between your internet provider and **Leaseweb**, where they meet at **DE-CIX (an internet exchange)**"; for a transit peer, "…and **Lumen (AS3356)**, meeting at DE-CIX (an internet exchange)".
+  - **Peer unknown:** "…the route through **DE-CIX (an internet exchange)** to these servers".
+  - It **never blames the exchange**, which is a meeting point. It uses the tier's verb ("may be" when early).
 - **Format:** everywhere in the UI, "{Name} (AS{n})", never "AS{n} {NAME}" in upper case.
-- **Public voice:** no `via`, no IX name, no AS numbers. The finding names the peer and never the IX.
+- **Public voice:** no `via`, no IX name and no AS numbers. **The finding never names the IX**, only the peer.
 
 **Acceptance.**
 1. A handoff test with the path ISP → DE-CIX LAN hop → Leaseweb gives ASN 60781 with `via: "DE-CIX"`.
-2. A path that ends at the IX hop gives the peer null with `via: "DE-CIX"`, and the finding uses the "route through" wording.
-3. `SchemaVersion()` is unchanged.
-4. The public golden grep for `"via"`, `DE-CIX` and `AS[0-9]` in `text_public` returns 0.
+2. The path ISP → IX hop → unanswered hop → Leaseweb still gives the peer as Leaseweb with `via: "DE-CIX"`.
+3. A path whose last answer is the IX hop gives the peer null with `via: "DE-CIX"`, and the finding uses the "route through" wording.
+4. An IX hop first on the path (where `isp` would be 0) never becomes the ISP.
+5. `SchemaVersion()` is unchanged.
+6. The public golden grep for `"via"`, `DE-CIX` and `AS[0-9]` in `text_public` and the public report returns 0.
 
-#### A7. [S] The daily handoff traceroute doesn't sit between a test and its save (cq-core)
-**Fix.** Save first. Then run the traceroute (when due) and update that row's handoff fields.
+#### A7. [S] The daily handoff traceroute runs before the test, on an idle line (cq-core)
+**Fix** (go-review update; it replaces "after the save").
+- When a server's handoff is due (at most daily), run its traceroute **before `Windows.Begin`**, synchronously and with a time bound (the existing `handoffBudget`, at most 15 s).
+- It runs on the idle line, so it never overlaps a test's load, and it can't write after the store closes.
+- The test itself is then saved straight after it ends, with no traceroute between.
 
-**Conditions** (rev-security):
-- It targets the **IP the test dialled** (`Result.IP`, already checked by `Server.check`) and never re-resolves the name.
-- **At most one** deferred traceroute at a time.
-- It is cancelled on shutdown.
-- The late update never fails loudly and never resurrects a row that retention has pruned (update-if-exists).
+**Conditions** (rev-security, still apply):
+- The traceroute targets the **same IP the test will dial** (resolved once and checked by `Server.check`), never a re-resolved name.
+- It's at most one at a time (it runs synchronously inside the one-at-a-time queue).
+- It's cancelled on shutdown (via the run's context).
+- There are no late writes.
+
+**Cost.** A test whose handoff is due starts up to 15 s later, at most once a day per server. The slot's 45 s cap doesn't include the traceroute.
 
 **Acceptance.**
-1. With a 5 s fake traceroute, the row is saved and the next queue entry starts within 1 s of the test's end.
-2. The handoff fields are filled once the traceroute finishes.
-3. Two quick tests start only one traceroute at a time.
-4. A shutdown during a traceroute exits cleanly.
+1. With a 5 s fake traceroute, the test's window starts after it ends, and the row is saved within 1 s of the test's end.
+2. The traceroute's ICMP is not inside any test window.
+3. A traceroute that runs past the bound is abandoned, and the test still runs.
+4. A shutdown during a traceroute exits cleanly, with no write after close.
 
 ---
 
@@ -393,18 +435,24 @@ The note is announced once via `role=status`. The header's "next test {clock}" u
 #### B9. [S] Home warm-up line without the ↘ icon (cq-ui)
 - `kind: "warmup"` gets no icon. The pattern line keeps ↘ or !.
 
-#### B10. [S] "≥" without the noise (cq-ui; ux-content M8, Q4)
+#### B10. [S] "≥" only where it's true, without the noise (cq-ui; net-isp, ux-content M8, go-review)
+**"≥" marks only ramp-capped results** (A2): the results that were still speeding up at the limit.
+
+**Capped after the ramp** (a plateau was seen, then the cap ended the test): a **valid rate**.
+- No "≥".
+- ▸ More: "**Short test ({s} s): it reached its 100 MB limit after the speed had levelled off.**"
+
 **Column rule.**
-- When **every** shown row in a direction is capped: drop the per-cell "≥". The column header becomes "**Down (Mbit/s, at least)**" / "**Up (Mbit/s, at least)**".
-- In mixed tables, keep "≥" per cell.
+- When **every** shown row in a direction is ramp-capped: no per-cell "≥", and the column header becomes "**Down (Mbit/s, at least)**" / "**Up (Mbit/s, at least)**".
+- Mixed tables keep "≥" on the ramp-capped cells.
 
 **One note above the table**, replacing today's line under it:
-- all capped: "**Your line is faster than these tests can fully measure: each one stops after 100 MB in each direction. Treat the numbers as 'at least'.**"
-- mixed: "**≥ means the test stopped at its 100 MB limit, so the speed was at least this.**"
+- all ramp-capped: "**Your line is faster than these tests can fully measure: each one stops after 100 MB in each direction. Treat the numbers as 'at least'.**"
+- mixed: "**≥ means the test reached its 100 MB limit while still speeding up, so the speed was at least this.**"
 
 **Screen readers.** The visible "≥" is `aria-hidden`, with sr-only "at least ".
 
-**Report and share link.** Instead of per-row marks, one sentence in the method bullet: "On this line every test reached its 100 MB limit, so speeds are lower limits."
+**Report and share link.** No per-row marks. When every test was ramp-capped, one sentence in the method bullet: "On this line every test reached its 100 MB limit while still speeding up, so speeds are lower limits."
 
 ---
 
@@ -504,14 +552,14 @@ All PRs go into `release/v0.7.1`. Merge them in this order; work can start in pa
 |---|---|---|---|---|---|
 | 1 | `fix/v071-bytes` | A3 (honest counts), A4 (connection test) | cq-core | 0.5 d | — |
 | 2 | `fix/v071-budget` | A1: the backstop (cq-core, `iperf.go`) + `fits()` / `resets_at` / sub-minimum handling (ux-eng, `queue.go`) + Details off-reason copy (cq-ui) + docs lines | ux-eng + cq-core | 1 d | 1 |
-| 3 | `fix/v071-estimator` | A2: the estimator, lower bounds, censored scoring, skipping old rows, "too fast to measure", the 2 Gbit fixtures; its UI cells and ▸ More copy | cq-core (+ cq-ui for cells) | 2 d | 2 |
-| 4 | `fix/v071-schedule` | A5 (first test), A7 (traceroute off the save path), A6 (IX list and wording) | cq-core | 1.5 d | 3 |
+| 3 | `fix/v071-estimator` | A2: the estimator, the ramp-capped flag in the store, "at least normal" scoring, the baseline from non-ramp-capped rows, "too fast to measure", net-isp's fixture and the 2 Gbit fixtures; its UI cells and ▸ More copy | cq-core (+ cq-ui for cells) | 2 d | 2 |
+| 4 | `fix/v071-schedule` | A5 (first test), A7 (traceroute before the window), A6 (IX list, grouping and wording) | cq-core | 1.5 d | 3 |
 | 5 | `fix/v071-report` | B2 (zone, days, evidence), B3, B4; settings for the owner's zone | cq-core + cq-ui | 1.5 d | 3 |
 | 6 | `fix/v071-speed-ui` | B1, B5 (legend + public API neutralising), B6, B7, B8, B9, B10, C6 | cq-ui (+ cq-core for the B5 API) | 2 d | 2, 4 |
 | 7 | `fix/v071-cli-copy` | C1, C2, C3, C4 | cq-core | 0.5 d | — |
 | 8 | `docs/v071` | README, SECURITY.md and SPEEDTEST-API.md for A1, A2, A5, A6, B2 (zone), B5, C1; the release notes; C5 | ux-product (+ owners' review) | 0.5 d | 1–7 |
 
-**Total:** about 9.5 dev-days, roughly 4 calendar days with three owners in parallel.
+**Total:** about 8 dev-days (go-review's estimate), roughly 3–4 calendar days with three owners in parallel. The draft's measurement PR is split three ways: PR 1 (A3, A4), PR 3 (A2) and PR 4 (A5, A6, A7).
 
 **Release gate.** A3, A1, A2, B1, B2, B3, B5 and C5 hold the release. Any **S** item that isn't ready by the RC moves to v0.7.2 and is listed in the release notes' known limits where users would notice.
 
@@ -532,12 +580,14 @@ All PRs go into `release/v0.7.1`. Merge them in this order; work can start in pa
   - one coarse timing test;
   - goldens equal to v0.7.0 below the cap;
   - the 2 Gbit evening-cut fixture;
-  - `finding_test` with near dips and far lower bounds (`isp`);
-  - the mixed v0.7.0/new fixture.
+  - `finding_test` with near dips and far ramp-capped results (`isp`);
+  - **net-isp's fixtures**: over 20% capped gives "too fast to measure from here" (never "nothing", never a baseline from evening-only rows); 10% capped finds the dip;
+  - the share thresholds (19% scored, 20% too fast, all too fast gives case `too_fast`);
+  - v0.7.0 rows decoded as ramp-capped from `down_short && ramp_ms == 0`.
 - **A4:** peak accepted-not-closed ≤ 9.
 - **A5:** turn-on, mode change, restart, the grid hand-over (≥ `spacing/2`), and idle samples < 20 giving missing.
-- **A6:** the DE-CIX paths (peer found; peer null); the schema is unchanged; the public grep.
-- **A7:** a slow traceroute doesn't delay the save or the next entry; one at a time; shutdown.
+- **A6:** the DE-CIX paths (peer found; past an unanswered hop; peer null; IX first); grouping by (peer, via); the schema is unchanged; the public grep.
+- **A7:** the traceroute runs before `Windows.Begin`, never inside a window; the time bound; shutdown with no write after close.
 - **B2:**
   - evidence goldens for gap days, plurals, an America/New_York fixture and both voices;
   - the owner zone fallback chain (browser zone → `TZ` → UTC).
@@ -575,7 +625,8 @@ All PRs go into `release/v0.7.1`. Merge them in this order; work can start in pa
 7. **`ss -tn state established dst <ip>`** during 20 tests: never more than 9 (A4).
 8. **On a fast line** (the RC host's own ~1 Gbit, or the netns 2 Gbit stand-in):
    - tests show `rate_method: "peak90"`;
-   - far servers show "at least normal" / "not counted", and the row says "Too fast to measure from this far…";
+   - ramp-capped far servers show "at least normal" and "≥" (or the "at least" header);
+   - a server with 20% or more ramp-capped results says "Too fast to measure from here" and is out of the finding;
    - the all-capped table has the "at least" headers (A2, B10).
 9. **Details charts:** the legend entries; the blue dashed tick appears only on the owner's view (B5).
 10. **Report card** (webdev `-backfill 72h`, with the owner's browser zone America/New_York):
@@ -602,7 +653,8 @@ All PRs go into `release/v0.7.1`. Merge them in this order; work can start in pa
 - **Fast lines: steadier results.**
   - **The measurement:** fyisp now measures each test from the point where the speed levels off, so tests that hit the 100 MB limit are measured the same way as the rest.
   - **Tests still speeding up when they hit the limit** are kept as "at least" values, never as slow results.
-  - **Older data:** fast-line results from v0.7.0 are kept but not used for patterns, which rebuild over about 3 days.
+  - **Older data:** fast-line results from v0.7.0 that hit the limit while speeding up now count as "at least normal" too. Nothing stored is changed.
+  - **Very fast lines:** servers that every test reaches while still speeding up are marked "too fast to measure from here" and left out of the findings.
 - **More accurate data counts:** the data each test uses now includes what was still in transit.
 - **The first speed test runs about 2 minutes after you turn them on** (it used to be anywhere from 2 to 9). Details says when.
 - **"Test every server" asks first,** with the time and data. On the share link it also shows the owner's remaining allowance, and whether the run will stop partway.
@@ -628,3 +680,12 @@ All PRs go into `release/v0.7.1`. Merge them in this order; work can start in pa
   - The server list is built in.
   - Exchanges not on fyisp's built-in list, and private interconnects, can't be seen through.
   - The upload byte fix for macOS hasn't been checked on a Mac against a live server yet.
+
+---
+
+## 6. A2 confirmation (closed)
+
+- **2026-10-11:** net-isp confirmed that the lead's first A2 rule **fails** their fixture. The baseline built from uncapped rows is the evening tail, so the dip scored about 1.0. They proposed the share-based hybrid.
+- rev-network's outside view agreed with the diagnosis.
+- The lead ruled the **hybrid FINAL** (A2, "Scoring").
+- Fixture pass criterion: never "nothing", never a baseline from evening-only rows.
