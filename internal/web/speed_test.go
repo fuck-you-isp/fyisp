@@ -666,7 +666,7 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 	q := queue(pub, speedPub+"/api/speed?part=queue", speedVisitor("3.3.3.3"))
 	// 140 MB left: less than a whole test (210 MB), so no more start.
 	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 500e6 || q.Budget.UsedBytes != 360e6 || q.Budget.RemainingBytes != 140e6 ||
-		q.Budget.TestMaxBytes != 210e6 || q.Budget.ResetsAt == nil || q.PublicOffReason != nil {
+		q.Budget.TestMaxBytes != 210e6 || q.Budget.FitsTests != 0 || q.Budget.ResetsAt == nil || q.PublicOffReason != nil {
 		t.Errorf("spent: %+v", q)
 	}
 	w = do(pub, "POST", speedPub+"/api/speed/run?kind=sweep", speedVisitor("3.3.3.3"))
@@ -696,7 +696,7 @@ func TestSpeedPublicBudgetTooSmall(t *testing.T) {
 	}
 	w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", speedVisitor("1.1.1.1"))
 	var e struct{ Code, Reason string }
-	if json.Unmarshal(w.Body.Bytes(), &e); w.Code != 403 || e.Code != "disabled" || e.Reason != "budget_too_small" {
+	if json.Unmarshal(w.Body.Bytes(), &e); w.Code != 403 || e.Code != "budget_too_small" || e.Reason != "budget_too_small" {
 		t.Errorf("run: %d %s", w.Code, w.Body.String())
 	}
 	for _, v := range []struct {
@@ -707,7 +707,7 @@ func TestSpeedPublicBudgetTooSmall(t *testing.T) {
 		var q speedQueueJSON
 		json.Unmarshal(do(v.h, "GET", v.path, v.hdr).Body.Bytes(), &q)
 		if q.PublicStart || !q.PublicEnabled || q.PublicOffReason == nil || *q.PublicOffReason != "budget_too_small" ||
-			q.Budget.LimitBytes != 150e6 || q.Budget.TestMaxBytes != 210e6 {
+			q.Budget.LimitBytes != 150e6 || q.Budget.TestMaxBytes != 210e6 || q.Budget.FitsTests != 0 {
 			t.Errorf("%s: %+v", v.path, q)
 		}
 	}

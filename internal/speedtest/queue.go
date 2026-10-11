@@ -135,6 +135,9 @@ type Entry struct {
 	Stopped  string
 	StopCode string
 	ResetsAt time.Time
+	// CancelledBy: "owner" when the owner cancelled it (Cancel,
+	// ClearPublic, turning the share link off); "" otherwise (shutdown).
+	CancelledBy string
 }
 
 // Why an entry stopped early (Entry.Stopped).
@@ -457,6 +460,17 @@ func (q *Queue) save() {
 	}
 }
 
+// fitsTestsLocked is how many whole tests fit in what is left of the
+// budget (a running share-link test holds one).
+func (q *Queue) fitsTestsLocked(now time.Time) int {
+	limit, used, _ := q.budgetLocked(now)
+	left := limit - used
+	if !q.pubFrom.IsZero() {
+		left -= PublicTestBytes
+	}
+	return int(max(left, 0) / PublicTestBytes)
+}
+
 // fitsLocked is the one check for a share-link test, at admit, at dequeue
 // and before each of a sweep's tests: the share link's tests are on, a
 // whole test still fits in the budget (with a running test's hold), the
@@ -678,7 +692,7 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 	defer q.mu.Unlock()
 	now := q.o.Now()
 	if e := q.running; e != nil && e.ID == id {
-		e.State, e.Stopped = StateCancelled, StopCancelled // the runner finishes it once the test returns
+		e.State, e.Stopped, e.CancelledBy = StateCancelled, StopCancelled, "owner" // the runner finishes it once the test returns
 		if e.cancel != nil {
 			e.cancel()
 		}
@@ -687,6 +701,7 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 	for i, e := range q.waiting {
 		if e.ID == id {
 			q.waiting = slices.Delete(q.waiting, i, i+1)
+			e.CancelledBy = "owner"
 			q.finishLocked(e, StateCancelled, now)
 			return q.snapshotLocked(e, now), nil
 		}
@@ -707,6 +722,7 @@ func (q *Queue) ClearPublic() int {
 		if e.Who != WhoPublic {
 			return false
 		}
+		e.CancelledBy = "owner"
 		q.finishLocked(e, StateCancelled, now)
 		n++
 		return true
@@ -957,6 +973,9 @@ type QueueState struct {
 	// tests are off whatever Public says. CanStart: a share-link test may
 	// start now (fitsLocked passes).
 	BudgetTooSmall, CanStart bool
+	// FitsTests: how many whole tests (PublicTestBytes each) fit in what
+	// is left of the budget now.
+	FitsTests int
 	// The share link's test time in the last hour and day (caps
 	// PublicTimePerHour, PublicTimePerDay), and when a capped one frees up;
 	// when its next sweep may start (zero: now).
@@ -990,6 +1009,7 @@ func (q *Queue) State() QueueState {
 	st.Public = q.public
 	st.BudgetTooSmall = q.o.PublicBudget < PublicTestBytes
 	st.CanStart = q.fitsLocked(now, false) == nil
+	st.FitsTests = q.fitsTestsLocked(now)
 	st.BudgetLimit, st.BudgetUsed, st.BudgetResets = q.budgetLocked(now)
 	st.TimeHour, st.TimeDay, st.TimeResets = q.timeLocked(now)
 	if !q.sweepEnd.IsZero() && now.Before(q.sweepEnd.Add(PublicSweepGap)) {
