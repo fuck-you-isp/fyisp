@@ -4,6 +4,7 @@
 package speedtest
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
@@ -138,6 +139,8 @@ type Config struct {
 	// The run resolves once and dials that one address for the control
 	// connection and every stream: they must all reach one server.
 	Lookup func(ctx context.Context, host string) ([]netip.Addr, error)
+	// Log takes the FYISP_TICKS log (nil: slog's default).
+	Log *slog.Logger
 	// Check, when set, vets the address before any dial (catalog servers
 	// must be public, the user's LAN servers private).
 	Check func(netip.Addr) error
@@ -717,7 +720,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			for i, a := range ats {
 				ms[i] = float64(a.Microseconds()) / 1000
 			}
-			slog.Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
+			cmp.Or(t.c.Log, slog.Default()).Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
 				"rtt_ms", float64(t.pathRTT().Microseconds())/1000, "method", e.method, "lower_bound", e.lowerBound)
 		}
 		if e.method == MethodPeak90 {
@@ -730,28 +733,31 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 }
 
 // pathRTT is the path's idle RTT, for the estimator's smoothing: a
-// loaded srtt includes queueing, and a standing queue paces packets
-// rather than bunching them per RTT.
+// loaded srtt includes queueing (a bloated line's 100-300 ms), and a
+// standing queue paces packets rather than bunching them per RTT.
 func (t *test) pathRTT() time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	var srtt []time.Duration
+	var mins []time.Duration
 	for _, s := range t.streams {
-		srtt = append(srtt, tcpRTT(s))
+		mins = append(mins, tcpMinRTT(s))
 	}
-	return idleRTT(t.dialRTT, srtt)
+	return idleRTT(t.dialRTT, mins)
 }
 
-// idleRTT is the smallest known of the connect time and the streams'
-// smoothed RTTs (0: none known).
-func idleRTT(dial time.Duration, srtt []time.Duration) time.Duration {
-	r := dial
-	for _, x := range srtt {
-		if x > 0 && (r <= 0 || x < r) {
+// idleRTT is the streams' smallest min_rtt (TCP_INFO), else the control
+// connection's connect time.
+func idleRTT(dial time.Duration, minRTT []time.Duration) time.Duration {
+	var r time.Duration
+	for _, x := range minRTT {
+		if x > 0 && (r == 0 || x < r) {
 			r = x
 		}
 	}
-	return max(r, 0)
+	if r == 0 {
+		r = max(dial, 0)
+	}
+	return r
 }
 
 // tcpCounters is stream i's retransmits and bytes acked so far (upload),

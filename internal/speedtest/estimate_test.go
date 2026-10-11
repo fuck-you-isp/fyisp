@@ -105,16 +105,26 @@ func TestTickJitter(t *testing.T) {
 	}
 }
 
-// TestIdleRTT: the smoothing's RTT is the idle one, not a bloated line's
-// loaded srtt: a level 2G run with srtt 250 ms and a 10 ms connect time is
-// valid.
+// TestIdleRTT: the smoothing's RTT is the idle one (min_rtt, else the
+// connect time), never a bloated line's loaded srtt: a level 2G run on a
+// 10 ms path with 250 ms under load is valid.
 func TestIdleRTT(t *testing.T) {
-	rtt := idleRTT(10*time.Millisecond, []time.Duration{250 * time.Millisecond, 260 * time.Millisecond})
-	if rtt != 10*time.Millisecond || stillRising([]float64{2.0, 2.0, 2.0, 2.0}, rtt) {
-		t.Errorf("rtt %v", rtt)
+	flat := []float64{2.0, 2.0, 2.0, 2.0}
+	if !stillRising(flat, 250*time.Millisecond) {
+		t.Error("the loaded srtt would pass anyway: the test shows nothing")
 	}
-	if idleRTT(0, []time.Duration{0, 40 * time.Millisecond}) != 40*time.Millisecond || idleRTT(0, nil) != 0 {
-		t.Error("fallbacks")
+	for _, c := range []struct {
+		dial time.Duration
+		min  []time.Duration
+		want time.Duration
+	}{
+		{10 * time.Millisecond, nil, 10 * time.Millisecond}, // no TCP_INFO
+		{40 * time.Millisecond, []time.Duration{11 * time.Millisecond, 9 * time.Millisecond}, 9 * time.Millisecond},
+		{10 * time.Millisecond, []time.Duration{0, 0}, 10 * time.Millisecond},
+	} {
+		if got := idleRTT(c.dial, c.min); got != c.want || stillRising(flat, got) {
+			t.Errorf("dial %v min %v: %v", c.dial, c.min, got)
+		}
 	}
 }
 
