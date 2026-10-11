@@ -320,7 +320,7 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		// Cancelled or shutting down: not a result, but a row without
 		// speeds keeps its masked window explained. Never linked to a
 		// sweep (saved false).
-		s.saveCancelled(context.WithoutCancel(ctx), t, used)
+		s.saveCancelled(ctx, t, used)
 		return nil, false, t.Bytes
 	}
 	if t.Latency = latency(s.o.Load, s.o.Windows, lr, win.Start); t.Latency != nil {
@@ -352,6 +352,8 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 // saveCancelled stores a cancelled test: its window (Start, End), server,
 // trigger and the data it used, no speeds.
 func (s *Scheduler) saveCancelled(ctx context.Context, t model.SpeedTest, used Server) {
+	ctx, cancel := storeCtx(ctx)
+	defer cancel()
 	c := model.SpeedTest{Start: t.Start, End: t.End, Trigger: t.Trigger, Outcome: model.SpeedCancelled, Region: t.Region,
 		Server: used.ID, FallbackLevel: t.FallbackLevel, Fallback: t.Fallback, Port: t.Port, Attempts: t.Attempts,
 		Bytes: t.Bytes, Conn: t.Conn}
@@ -364,6 +366,16 @@ func (s *Scheduler) saveCancelled(ctx context.Context, t model.SpeedTest, used S
 	if s.o.OnResult != nil {
 		s.o.OnResult(c)
 	}
+}
+
+// saveTimeout bounds storing a test.
+const saveTimeout = 10 * time.Second
+
+// storeCtx is the context a test is stored with: never cancelled with the
+// job (a row and its window must not be lost to a cancel), bounded on its
+// own.
+func storeCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
 }
 
 // handoffBudget bounds one handoff traceroute (after the test's window).
@@ -388,7 +400,13 @@ func (s *Scheduler) loadRun() *loadRun {
 }
 
 // save stores t (it reports whether it did), logs and reports it.
+//
+// A test that finished is stored as its result even when the entry was
+// cancelled meanwhile (the cancel landed after the test's own last check):
+// the store gets its own context, never the job's.
 func (s *Scheduler) save(ctx context.Context, t *model.SpeedTest, x Extra) bool {
+	ctx, cancel := storeCtx(ctx)
+	defer cancel()
 	if b, err := json.Marshal(x); err == nil && x != (Extra{}) {
 		t.Extra = string(b)
 	}

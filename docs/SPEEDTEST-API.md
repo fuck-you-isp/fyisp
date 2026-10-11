@@ -301,7 +301,7 @@ The latency under load over the span: per layer, the median over tests.
 - `busy`: every port and server tried within the slot's budget was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
 - `unreachable`: no server accepted a connection (timeouts, DNS failures, or refusals on every port).
 - `failed`: anything else.
-- `cancelled`: stopped mid-test (the owner's cancel, or shutdown). Stored without speeds only so its window stays explained (charts shade it; Home never calls it "not running"); never a result, never busy or failed, never linked to a sweep. `end` includes AbortTail.
+- `cancelled`: stopped mid-test (the owner's cancel, or shutdown). Stored without speeds only so its window stays explained (charts shade it; Home never calls it "not running"); never a result, never busy or failed, never linked to a sweep. `end` includes AbortTail. A cancel that lands after the test finished (while its result is being stored) doesn't cancel it: the test is stored as its real result. A test is always stored, whatever happens to its entry.
 
 When a download worked but the upload failed, `down_bps` is set and `outcome` is the upload's.
 

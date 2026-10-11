@@ -408,3 +408,52 @@ func TestSweepStopsWhenUnreachable(t *testing.T) {
 		t.Errorf("ran %d of %d, stopped %q", x.Ran, x.Steps, x.Stopped)
 	}
 }
+
+// ctxStore fails a save whose context ended, as SQLite does.
+type ctxStore struct{ *MemStore }
+
+func (c ctxStore) SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return c.MemStore.SaveSpeedTest(ctx, t)
+}
+
+// TestCancelAtCompletion: a cancel that lands just as a test completes
+// (after its last check, before it is stored) never loses the row or its
+// window: the finished test is stored as its result.
+func TestCancelAtCompletion(t *testing.T) {
+	h := newHarness(t, Options{})
+	st := ctxStore{h.st}
+	h.s.o.Store = st
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { // runs after the test, before the save
+		cancel()
+		return nil, nil
+	}
+	h.setRun(func(c Config, n int) (Result, error) {
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
+	})
+	id, saved, _ := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "sweep")
+	ts, _ := st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
+	if !saved || id == 0 || len(ts) != 1 || ts[0].Outcome != model.SpeedOK || ts[0].DownBps == nil {
+		t.Fatalf("saved %v id %d: %+v", saved, id, ts)
+	}
+	if end := h.s.o.Windows.LastEnd(); !end.Equal(ts[0].End) {
+		t.Errorf("window %v, stored %v", end, ts[0].End)
+	}
+	// A cancel during the test still stores its cancelled row, with a
+	// store that refuses cancelled contexts.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	h.s.o.Handoff = nil
+	h.setRun(func(c Config, n int) (Result, error) {
+		cancel2()
+		return Result{}, context.Canceled
+	})
+	h.s.execJob(ctx2, h.s.slotJob(target{server: "Near", nearby: -1}), "sweep")
+	ts, _ = st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
+	if len(ts) != 2 || ts[1].Outcome != model.SpeedCancelled {
+		t.Errorf("cancelled: %+v", ts)
+	}
+}
