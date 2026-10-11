@@ -491,12 +491,12 @@ func TestFindingDays(t *testing.T) {
 	from := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC) // a 7-day window
 	f := FindFinding(FindingInput{Tests: ts, Catalog: c, From: from, To: from.Add(7 * 24 * time.Hour)})
 	if f.Days != 3 || !strings.HasPrefix(f.Evidence, "Based on 216 tests on 3 days between Tue 1 Sep and Fri 4 Sep") ||
-		f.Coverage != "Speed tests started on Tue 1 Sep, so this covers 3 days, not 7." || f.CoveragePublic != "This covers 3 days, not 7." {
-		t.Errorf("days %d: %q / %q / %q", f.Days, f.Evidence, f.Coverage, f.CoveragePublic)
+		f.DaysNote != "Speed tests started on Tue 1 Sep, so this covers 3 days, not 7." || f.DaysNotePublic != "This covers 3 days, not 7." {
+		t.Errorf("days %d: %q / %q / %q", f.Days, f.Evidence, f.DaysNote, f.DaysNotePublic)
 	}
 	f = FindFinding(FindingInput{Tests: ts, Catalog: c, From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)})
-	if f.Coverage != "Tests ran on 3 of the last 7 days." || f.CoveragePublic != f.Coverage {
-		t.Errorf("gaps: %q", f.Coverage)
+	if f.DaysNote != "Tests ran on 3 of the last 7 days." || f.DaysNotePublic != f.DaysNote {
+		t.Errorf("gaps: %q", f.DaysNote)
 	}
 	// One day: "1 day".
 	f = FindFinding(FindingInput{Tests: synth(c, 1, flat, "wired"), Catalog: c})

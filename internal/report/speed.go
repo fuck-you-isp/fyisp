@@ -63,27 +63,6 @@ func (r *run) collectSpeed(ctx context.Context) error {
 	return nil
 }
 
-// zoneLabel names loc at t: "EDT (UTC−4)", "UTC+5:30" when it has no
-// abbreviation, "UTC".
-func zoneLabel(loc *time.Location, t time.Time) string {
-	name, off := t.In(loc).Zone()
-	if off == 0 && (name == "UTC" || name == "GMT" || name == "") {
-		return "UTC"
-	}
-	sign := "+"
-	if off < 0 {
-		sign, off = "−", -off
-	}
-	utc := fmt.Sprintf("UTC%s%d", sign, off/3600)
-	if m := off % 3600 / 60; m != 0 {
-		utc += fmt.Sprintf(":%02d", m)
-	}
-	if name == "" || name[0] == '+' || name[0] == '-' {
-		return utc
-	}
-	return name + " (" + utc + ")"
-}
-
 // hourRange is local hours [from, to) on a 12-hour clock: "8–11 pm",
 // "11 pm–1 am".
 func hourRange(from, to int) string {
@@ -213,7 +192,7 @@ func (r *run) speedSection() *speedView {
 	if loc == nil {
 		loc = time.UTC
 	}
-	v.Zone = zoneLabel(loc, r.to)
+	v.Zone = speedtest.ZoneLabel(loc, r.to)
 	if p := speedtest.PooledPattern(r.speed, loc); p != nil {
 		v.Pattern = fmt.Sprintf("Pooled over every server, tests read about %d%% lower from %s %s than the same servers' usual results.",
 			int(p.Drop*100+0.5), hourRange(p.DipFrom, p.DipTo), v.Zone)
@@ -228,12 +207,14 @@ func (r *run) speedSection() *speedView {
 			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (times in " + v.Zone + ")."
 			f.Caveat = f.CaveatPublic
 			if r.o.Redact { // the share link's rules: no start date, no networks by name
-				f.Evidence, f.Coverage, f.Network = f.EvidencePublic, f.CoveragePublic, ""
+				f.Evidence, f.DaysNote, f.Network = f.EvidencePublic, f.DaysNotePublic, ""
 			} else if f.Network != "" {
 				f.Evidence += " The slow tests left the provider's network through " + f.Network + "."
 			}
-			if f.Coverage != "" {
-				f.Evidence += " " + f.Coverage
+			for _, n := range []string{f.DaysNote, f.EarlyNote} {
+				if n != "" {
+					f.Evidence += " " + n
+				}
 			}
 			v.Finding = &f
 			v.Ask = speedAsk(f, cat, v.Zone)
@@ -243,9 +224,9 @@ func (r *run) speedSection() *speedView {
 				for _, s := range f.Slowest {
 					d := display(s.Server)
 					v.Slowest = append(v.Slowest, slowRow{
-						Text: fmt.Sprintf("%s: %d%% of its usual result (median %.0f vs usual %.0f Mbit/s)", d, s.Pct, s.MedianBps/1e6, s.UsualBps/1e6),
-						Aria: fmt.Sprintf("%s: %d%% of its usual result, median %.0f versus usual %.0f megabits per second",
-							strings.ReplaceAll(d, " · ", ", "), s.Pct, s.MedianBps/1e6, s.UsualBps/1e6)})
+						Text: fmt.Sprintf("%s: %.0f%% of its usual result (median %.0f vs usual %.0f Mbit/s)", d, s.Pct*100, s.MedianBps/1e6, s.UsualBps/1e6),
+						Aria: fmt.Sprintf("%s: %.0f%% of its usual result, median %.0f versus usual %.0f megabits per second",
+							strings.ReplaceAll(d, " · ", ", "), s.Pct*100, s.MedianBps/1e6, s.UsualBps/1e6)})
 				}
 			}
 		}

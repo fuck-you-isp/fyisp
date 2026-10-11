@@ -681,3 +681,27 @@ func TestOwnerZone(t *testing.T) {
 		t.Error("not kept across a restart")
 	}
 }
+
+// TestCancelledBy: a cancelled test's row says who stopped it, from the
+// cancel's cause; a download that finished keeps its speed.
+func TestCancelledBy(t *testing.T) {
+	for _, c := range []struct {
+		cause error
+		want  string
+	}{{ErrCancelledByOwner, "owner"}, {ErrCancelledByVisitor, "visitor"}, {nil, ""}} {
+		h := newHarness(t, Options{})
+		ctx, cancel := context.WithCancelCause(context.Background())
+		h.setRun(func(cf Config, n int) (Result, error) {
+			if cf.Direction == Upload {
+				cancel(c.cause)
+				return Result{}, context.Canceled
+			}
+			return Result{Direction: cf.Direction, Bytes: 1e6, Elapsed: time.Second}, nil
+		})
+		h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
+		ts := h.st.tests
+		if len(ts) != 1 || ts[0].Outcome != model.SpeedCancelled || ParseExtra(ts[0].Extra).CancelledBy != c.want || ts[0].DownBps == nil {
+			t.Errorf("cause %v: %+v", c.cause, ts)
+		}
+	}
+}

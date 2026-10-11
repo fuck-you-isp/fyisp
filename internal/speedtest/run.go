@@ -33,6 +33,9 @@ type Extra struct {
 	RateMethod [2]string  `json:"rate_method,omitzero"`
 	WinMs      [2]float64 `json:"win_ms,omitzero"`
 	LowerBound [2]bool    `json:"lower_bound,omitzero"`
+	// CancelledBy (a cancelled test): "owner" or "visitor", from the
+	// cancel's cause ("" unknown, or shutdown).
+	CancelledBy string `json:"cancelled_by,omitempty"`
 }
 
 // ParseExtra reads a test's Extra ("" gives the zero value).
@@ -394,11 +397,22 @@ func (s *Scheduler) deferHandoff(id int64, ip netip.Addr, server string) {
 // saveCancelled stores a cancelled test: its window (Start, End), server,
 // trigger and the data it used, no speeds.
 func (s *Scheduler) saveCancelled(ctx context.Context, t model.SpeedTest, used Server) {
+	var x Extra
+	switch cause := context.Cause(ctx); {
+	case errors.Is(cause, ErrCancelledByOwner):
+		x.CancelledBy = "owner"
+	case errors.Is(cause, ErrCancelledByVisitor):
+		x.CancelledBy = "visitor"
+	}
 	ctx, cancel := storeCtx(ctx)
 	defer cancel()
 	c := model.SpeedTest{Start: t.Start, End: t.End, Trigger: t.Trigger, Outcome: model.SpeedCancelled, Region: t.Region,
 		Server: used.ID, FallbackLevel: t.FallbackLevel, Fallback: t.Fallback, Port: t.Port, Attempts: t.Attempts,
-		Bytes: t.Bytes, Conn: t.Conn}
+		Bytes: t.Bytes, Conn: t.Conn, DownBps: t.DownBps}
+	if x != (Extra{}) {
+		b, _ := json.Marshal(x)
+		c.Extra = string(b)
+	}
 	if s.o.Store != nil {
 		if err := s.o.Store.SaveSpeedTest(ctx, &c); err != nil {
 			s.o.Log.Warn("speed test: saving a cancelled test failed", "err", err)
