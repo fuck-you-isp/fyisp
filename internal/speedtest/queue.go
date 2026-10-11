@@ -230,7 +230,7 @@ type qentry struct {
 	Entry
 	jobs   []Job
 	next   int // the next job: a public sweep that yielded resumes here
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
 
 // Queue runs speed tests one at a time, in order.
@@ -370,6 +370,9 @@ func (q *Queue) budgetLocked(now time.Time) (limit, used int64, resetsAt time.Ti
 		held = PublicTestBytes
 	}
 	fits := func(used int64) bool { return limit-used-held >= PublicTestBytes }
+	if limit < PublicTestBytes {
+		return limit, used, time.Time{} // never fits: the share link's tests are off (ErrBudgetTooSmall), nothing resets
+	}
 	if !fits(used) {
 		left := used
 		for _, u := range q.ledger { // oldest first: the first age-out that makes room
@@ -695,7 +698,7 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 	if e := q.running; e != nil && e.ID == id {
 		e.State, e.Stopped, e.CancelledBy = StateCancelled, StopCancelled, "owner" // the runner finishes it once the test returns
 		if e.cancel != nil {
-			e.cancel()
+			e.cancel(ErrCancelledByOwner) // the stored row says who (cancelled_by)
 		}
 		return q.snapshotLocked(e, now), nil
 	}
@@ -773,7 +776,7 @@ func (q *Queue) Run(ctx context.Context) {
 		}
 		var ectx context.Context
 		if e != nil {
-			ectx, e.cancel = context.WithCancel(ctx)
+			ectx, e.cancel = context.WithCancelCause(ctx)
 		}
 		q.mu.Unlock()
 		if e != nil {
@@ -873,7 +876,7 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		// link's entries and resumes here.
 		if i > e.next && e.Who == WhoPublic && slices.ContainsFunc(q.waiting, func(w *qentry) bool { return w.Who != WhoPublic }) {
 			e.next, e.State = i, StateWaiting
-			e.cancel()
+			e.cancel(nil)
 			e.cancel = nil
 			q.running = nil
 			first := slices.IndexFunc(q.waiting, func(w *qentry) bool { return w.Who == WhoPublic })
@@ -941,7 +944,7 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		q.sweepEnd = now
 	}
 	if cancel != nil {
-		cancel()
+		cancel(nil)
 	}
 }
 
