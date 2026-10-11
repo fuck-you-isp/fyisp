@@ -47,6 +47,26 @@ func tcpReceived(c net.Conn) int64 {
 	return n
 }
 
+// tcpMinRTT is the smallest RTT a TCP connection has seen (TCP_INFO
+// min_rtt: its idle RTT), 0 when unknown.
+func tcpMinRTT(c net.Conn) time.Duration {
+	tc, ok := c.(*net.TCPConn)
+	if !ok {
+		return 0
+	}
+	rc, err := tc.SyscallConn()
+	if err != nil {
+		return 0
+	}
+	var d time.Duration
+	_ = rc.Control(func(fd uintptr) {
+		if ti, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO); err == nil {
+			d = time.Duration(ti.Min_rtt) * time.Microsecond
+		}
+	})
+	return d
+}
+
 // tcpRTT is a TCP connection's smoothed RTT (TCP_INFO), 0 when unknown.
 func tcpRTT(c net.Conn) time.Duration {
 	tc, ok := c.(*net.TCPConn)

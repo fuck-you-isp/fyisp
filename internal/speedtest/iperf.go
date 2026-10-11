@@ -4,6 +4,7 @@
 package speedtest
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
@@ -11,9 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"net/netip"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -85,7 +88,15 @@ var (
 	// that port right now. A stock iperf3 server closes its listener for a
 	// moment after every test, so another port (or a retry) may work.
 	ErrRefused = errors.New("iperf3 connection refused")
+	// ErrOverrun: a download reached the backstop (the server kept sending
+	// past the byte cap) before its window was complete, and was cut with
+	// an RST.
+	ErrOverrun = errors.New("iperf3 server kept sending past the byte cap")
 )
+
+// ErrCancelledByOwner is the cause (context.WithCancelCause) of the owner's
+// cancel, so a cancelled test's row says who stopped it.
+var ErrCancelledByOwner = errors.New("cancelled by the owner")
 
 // ServerError is an iperf3 SERVER_ERROR or SERVER_TERMINATE.
 type ServerError struct {
@@ -128,6 +139,8 @@ type Config struct {
 	// The run resolves once and dials that one address for the control
 	// connection and every stream: they must all reach one server.
 	Lookup func(ctx context.Context, host string) ([]netip.Addr, error)
+	// Log takes the FYISP_TICKS log (nil: slog's default).
+	Log *slog.Logger
 	// Check, when set, vets the address before any dial (catalog servers
 	// must be public, the user's LAN servers private).
 	Check func(netip.Addr) error
@@ -137,9 +150,11 @@ type Config struct {
 type Result struct {
 	Direction Direction
 	Bytes     int64 // bytes received over the measured window (all streams)
-	// WireBytes is every byte of the data phase on the wire, ramp-up and
-	// the time after the window included (all streams; set even when the
-	// test fails): what a data budget must count.
+	// WireBytes is every byte of the run on the wire: the control
+	// connection's and, per stream, the larger of what the application and
+	// the kernel (TCP_INFO at close, Linux) counted, ramp-up and the time
+	// after the window included (set even when the test fails or is
+	// cancelled): what a data budget must count.
 	WireBytes int64
 	Elapsed   time.Duration // the measured window, without the omitted ramp-up
 	// Retransmits summed over the streams, -1 when unknown (the sender's
@@ -151,6 +166,15 @@ type Result struct {
 	Ramp          time.Duration // the ramp-up left out
 	IP            netip.Addr    // the address the test ran against
 	TotalBytes    int64         // every byte moved, ramp-up included (data use)
+	// RateMethod is how a capped direction's rate was taken (MethodPeak90
+	// or MethodWhole; "" when not capped). LowerBound: it was still
+	// speeding up at the cap, so the speed was at least this.
+	RateMethod string
+	LowerBound bool
+	// Overrun: the server kept sending past the cap and the run was cut at
+	// the backstop (after a complete window; else the run fails with
+	// ErrOverrun).
+	Overrun bool
 }
 
 // BitsPerSecond is the throughput.
@@ -258,7 +282,8 @@ func Run(ctx context.Context, c Config) (Result, error) {
 		}
 		return res, fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
-	t := &test{c: c, ctrl: ctrl, dialRTT: dialRTT}
+	t := &test{c: c, dialRTT: dialRTT}
+	t.ctrl = countConn{ctrl, &t.setup}
 	if c.MaxBytes > 0 {
 		t.stopAt.Store(c.MaxBytes - inflightFloor(c.MaxBytes))
 	}
@@ -267,7 +292,15 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer stop()
 
 	r, err := t.run(ctx, &res)
-	t.noteReceived()
+	if t.overrun.Load() {
+		// The measurement stands when the window was complete (only the
+		// server's retransmits are lost); else the run failed.
+		r, err = res, nil
+		r.Overrun = true
+		if !res.CappedByBytes || res.Elapsed <= 0 {
+			err = ErrOverrun
+		}
+	}
 	if err != nil {
 		t.abort() // nothing more to send: drop what is queued
 	}
@@ -281,32 +314,54 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	return r, err
 }
 
-// wire is the data phase's bytes so far, over every stream.
+// wire is the run's bytes so far: the control connection's and the
+// stream cookies, plus each stream's larger count, the application's or
+// the kernel's (read at close; never their sum).
 func (t *test) wire() int64 {
-	return max(t.written(), t.received.Load())
+	t.mu.Lock()
+	counts, kern := t.counts, t.kern
+	t.mu.Unlock()
+	n := t.setup.Load()
+	for i := range max(len(counts), len(kern)) {
+		var app, k int64
+		if i < len(counts) {
+			app = counts[i].Load()
+		}
+		if i < len(kern) {
+			k = kern[i]
+		}
+		n += max(app, k)
+	}
+	return n
 }
 
-// noteReceived keeps the streams' TCP_INFO received bytes (what arrived,
-// read or still buffered: a download's data budget must count it) while
-// they are open.
-func (t *test) noteReceived() {
-	if t.c.Direction != Download {
-		return
+// kernelBytes is a stream's bytes as TCP counts them (Linux; -1
+// elsewhere): received for a download (read or still buffered), acked for
+// an upload.
+func (t *test) kernelBytes(s net.Conn) int64 {
+	if t.c.Direction == Download {
+		return tcpReceived(s)
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.closed {
-		return
-	}
-	var n int64
-	for _, s := range t.streams {
-		if r := tcpReceived(s); r > 0 {
-			n += r
-		}
-	}
-	if n > t.received.Load() {
-		t.received.Store(n)
-	}
+	_, acked := tcpInfo(s)
+	return acked
+}
+
+// countConn counts a connection's bytes both ways.
+type countConn struct {
+	net.Conn
+	n *atomic.Int64
+}
+
+func (c countConn) Read(b []byte) (int, error) {
+	k, err := c.Conn.Read(b)
+	c.n.Add(int64(k))
+	return k, err
+}
+
+func (c countConn) Write(b []byte) (int, error) {
+	k, err := c.Conn.Write(b)
+	c.n.Add(int64(k))
+	return k, err
 }
 
 type test struct {
@@ -319,47 +374,56 @@ type test struct {
 	closed  bool
 	wg      sync.WaitGroup // the data phase's stream goroutines
 
-	counts   []atomic.Int64 // per stream, the whole data phase (mu: the slice)
-	moved    atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
-	received atomic.Int64   // downloads: TCP_INFO received bytes, every stream
-	acked    bool           // uploads: Result.Bytes is TCP_INFO acked bytes
+	counts []atomic.Int64 // per stream, the whole data phase (mu: the slice)
+	moved  atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
+	kern   []int64        // per stream, kernelBytes at close (mu)
+	setup  atomic.Int64   // the control connection's bytes and the stream cookies
+	acked  bool           // uploads: Result.Bytes is TCP_INFO acked bytes
 	// stopAt is where a download stops reading: MaxBytes less what is
 	// still in flight then (see inflightSlack), so the total that arrives
 	// stays within MaxBytes.
 	stopAt  atomic.Int64
 	dialRTT time.Duration // the control connection's connect time: the RTT without TCP_INFO
 	capped  atomic.Bool
+	capAt   atomic.Int64 // when capped (UnixNano)
+	overrun atomic.Bool  // the backstop cut the run
 }
 
-func (t *test) close() {
+func (t *test) close() { t.shut(false) }
+
+// shut closes the run once; rst: the data streams with SO_LINGER 0.
+func (t *test) shut(rst bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
 		return
 	}
 	t.closed = true
-	_ = t.ctrl.Close()
-	for _, s := range t.streams {
-		_ = s.Close()
+	// The kernel's counts first: closing ends them, and an RST drops what
+	// is still queued.
+	t.kern = make([]int64, len(t.streams))
+	for i, s := range t.streams {
+		t.kern[i] = t.kernelBytes(s)
 	}
-}
-
-// abort closes the run on cancel, timeout or error: the data streams with
-// SO_LINGER 0, so upload data still queued in the kernel is dropped (an RST)
-// rather than sent on after the masked window. The happy path closes
-// gracefully (a stock server reading an RST mid-test logs an error).
-func (t *test) abort() {
-	t.mu.Lock()
-	if !t.closed {
+	if rst {
 		for _, s := range t.streams {
 			if tc, ok := s.(*net.TCPConn); ok {
 				_ = tc.SetLinger(0)
 			}
 		}
 	}
-	t.mu.Unlock()
-	t.close()
+	_ = t.ctrl.Close()
+	for _, s := range t.streams {
+		_ = s.Close()
+	}
 }
+
+// abort closes the run on cancel, timeout or error (close reads the
+// kernel's counts before anything changes): the data streams with
+// SO_LINGER 0, so upload data still queued in the kernel is dropped (an RST)
+// rather than sent on after the masked window. The happy path closes
+// gracefully (a stock server reading an RST mid-test logs an error).
+func (t *test) abort() { t.shut(true) }
 
 func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 	if err := newCookie(&t.cookie); err != nil {
@@ -405,7 +469,9 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 			return *res, ctx.Err()
 		}
 		_ = s.SetWriteDeadline(time.Now().Add(stepTimeout))
-		if _, err := s.Write(t.cookie[:]); err != nil {
+		k, err := s.Write(t.cookie[:])
+		t.setup.Add(int64(k))
+		if err != nil {
 			return *res, fmt.Errorf("data stream: %w", err)
 		}
 		_ = s.SetWriteDeadline(time.Time{})
@@ -437,6 +503,10 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 			}
 		}()
 	}
+	if t.c.Direction == Download && t.c.MaxBytes > 0 {
+		t.wg.Add(1)
+		go t.backstop()
+	}
 	per, err := t.dataPhase(counts, res)
 	done.Store(true)
 	if err != nil {
@@ -467,7 +537,6 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 		return *res, err
 	}
 	_ = t.write([]byte{stateIperfDone})
-	t.noteReceived()
 	t.close()
 	t.wg.Wait()
 	return *res, nil
@@ -484,7 +553,7 @@ func (t *test) idle(deadline time.Time) error {
 			return t.stateErr(int8(b[0]))
 		}
 		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() {
+		if errors.As(err, &ne) && ne.Timeout() || t.capped.Load() { // capped: the backstop may have closed it
 			continue
 		}
 		return fmt.Errorf("control connection: %w", err)
@@ -512,25 +581,60 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	retransStart := make([]int64, n)
 	ackedStart := make([]int64, n)
 	measuring := false
+	rampCapped := false
+	// cum is the bytes counted at each tick, for a capped direction's
+	// estimate: received for downloads, acked for uploads (Linux; nil
+	// without it).
+	var cum []int64
+	var ats []time.Duration // when each tick was read, from start
+	ackedSum := func() int64 {
+		var x int64
+		for i := range n {
+			_, a := t.tcpCounters(i)
+			if a < 0 {
+				return -1
+			}
+			x += a
+		}
+		return x
+	}
+	perTick := t.c.Direction == Download || ackedSum() >= 0
+	ack0 := make([]int64, n) // uploads: acked before any data
+	for i := range ack0 {
+		_, ack0[i] = t.tcpCounters(i)
+	}
 	var winStart time.Time
 	var prevMax, last, secBytes int64
 	kWin := 0 // the tick the window started at
 	prevSec := int64(-1)
+	var lastAt time.Duration
 	for k := 1; ; k++ {
 		at := start.Add(time.Duration(k) * tick)
 		if err := t.idle(at); err != nil {
 			return nil, err
 		}
+		now := time.Since(start) // ticks are read late on a busy machine: rates use the actual time
 		b := total()
 		d := b - last
 		last = b
-		t.updateStop(float64(d) / tick.Seconds())
+		t.updateStop(float64(d) / max(now-lastAt, time.Millisecond).Seconds())
+		lastAt = now
+		if perTick {
+			c := b
+			if t.c.Direction == Upload {
+				if c = ackedSum(); c < 0 {
+					perTick, cum = false, nil
+				}
+			}
+			cum, ats = append(cum, c), append(ats, now)
+		}
 		if t.capped.Load() {
 			res.CappedByBytes = true
 			if !measuring { // capped in the ramp-up: the whole run is the window,
+				rampCapped = true
 				winStart = start // counted from the connections' start
 				for i := range ackedStart {
-					retransStart[i], ackedStart[i] = 0, 0
+					retransStart[i], ackedStart[i] = 0, ack0[i] // acked counts the handshake and cookie
 					if t.c.Direction == Download {
 						retransStart[i], ackedStart[i] = -1, -1
 					}
@@ -593,7 +697,67 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			}
 		}
 	}
+	if res.CappedByBytes {
+		e := estimate{method: MethodWhole}
+		if perTick && len(cum) > 0 {
+			// The last tick holds the cap: only the complete ones before
+			// it are ticks. The window ends at the last byte: the cap for
+			// a download (reads stop there), now for an upload's acks.
+			end, endBytes := time.Since(start), cum[len(cum)-1]
+			if t.c.Direction == Download {
+				endBytes = res.TotalBytes
+				if at := t.capAt.Load(); at > 0 {
+					end = time.Unix(0, at).Sub(start)
+				}
+			} else if a := ackedSum(); a >= 0 {
+				endBytes = a
+			}
+			e = peak90(cum[:len(cum)-1], ats[:len(ats)-1], end, endBytes, t.pathRTT())
+		}
+		res.RateMethod, res.LowerBound = e.method, e.lowerBound
+		if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
+			ms := make([]float64, len(ats))
+			for i, a := range ats {
+				ms[i] = float64(a.Microseconds()) / 1000
+			}
+			cmp.Or(t.c.Log, slog.Default()).Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
+				"rtt_ms", float64(t.pathRTT().Microseconds())/1000, "method", e.method, "lower_bound", e.lowerBound)
+		}
+		if e.method == MethodPeak90 {
+			res.Bytes, res.Elapsed, res.Ramp = e.bytes, e.win, e.start
+		} else if rampCapped {
+			res.LowerBound = true // the whole run, slow start included
+		}
+	}
 	return per, nil
+}
+
+// pathRTT is the path's idle RTT, for the estimator's smoothing: a
+// loaded srtt includes queueing (a bloated line's 100-300 ms), and a
+// standing queue paces packets rather than bunching them per RTT.
+func (t *test) pathRTT() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var mins []time.Duration
+	for _, s := range t.streams {
+		mins = append(mins, tcpMinRTT(s))
+	}
+	return idleRTT(t.dialRTT, mins)
+}
+
+// idleRTT is the streams' smallest min_rtt (TCP_INFO), else the control
+// connection's connect time.
+func idleRTT(dial time.Duration, minRTT []time.Duration) time.Duration {
+	var r time.Duration
+	for _, x := range minRTT {
+		if x > 0 && (r == 0 || x < r) {
+			r = x
+		}
+	}
+	if r == 0 {
+		r = max(dial, 0)
+	}
+	return r
 }
 
 // tcpCounters is stream i's retransmits and bytes acked so far (upload),
@@ -626,7 +790,51 @@ func (t *test) count(n *atomic.Int64, k int) {
 
 func (t *test) capNow() {
 	if t.capped.CompareAndSwap(false, true) {
+		t.capAt.Store(time.Now().UnixNano())
 		_ = t.ctrl.SetReadDeadline(time.Now()) // end the current wait now
+	}
+}
+
+// backstopEvery is how often a download's received bytes are checked
+// against the backstop.
+const backstopEvery = 5 * time.Millisecond
+
+// Backstop is where a download is cut with an RST, whatever the server
+// does: the run's cap plus 5%.
+func Backstop(maxBytes int64) int64 { return maxBytes + maxBytes/20 }
+
+// backstop watches a download's bytes received (the kernel's count where
+// known, read or still buffered; else what was read): at the stop point
+// the test is capped as when the reads reach it, and a server that ignores
+// TEST_END or keeps sending is aborted once they reach Backstop.
+func (t *test) backstop() {
+	defer t.wg.Done()
+	limit := Backstop(t.c.MaxBytes)
+	tk := time.NewTicker(backstopEvery)
+	defer tk.Stop()
+	for range tk.C {
+		t.mu.Lock()
+		if t.closed {
+			t.mu.Unlock()
+			return
+		}
+		var n int64
+		for i, s := range t.streams {
+			k := tcpReceived(s)
+			if i < len(t.counts) {
+				k = max(k, t.counts[i].Load())
+			}
+			n += k
+		}
+		t.mu.Unlock()
+		if n >= t.stopAt.Load() {
+			t.capNow()
+		}
+		if n >= limit {
+			t.overrun.Store(true)
+			t.abort()
+			return
+		}
 	}
 }
 

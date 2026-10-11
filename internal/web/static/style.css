@@ -591,6 +591,7 @@ textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent);
 .dlg::backdrop { background: rgba(0, 0, 0, 0.45); }
 .dlg h2 { margin: 0; font-size: 17px; }
 .dlg p { margin: 0; }
+.dlg-body { display: flex; flex-direction: column; gap: 8px; max-width: 60ch; }
 
 @media (max-width: 767.98px) {
   .n-row { grid-template-columns: auto minmax(0, 1fr) auto; }
@@ -1326,7 +1327,7 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-live h3 { margin: 14px 0 6px; font-size: 14px; }
 .sp-live-list { list-style: none; margin: 0; padding: 0; columns: 3 260px; column-gap: 24px; font-size: 12px; }
 .sp-live-list li { break-inside: avoid; display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto; gap: 6px; padding: 2px 0; }
-.sp-live-list li.st-waiting { color: var(--ink-2); }
+.sp-live-list li.st-waiting, .sp-live-list li.st-cancelled, .sp-live-list li.st-skipped { color: var(--ink-2); }
 .sp-live-list li.st-testing { font-weight: 600; }
 .sp-live-m { text-align: center; }
 .sp-live-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1360,3 +1361,28 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-ctl .seg.sm button { min-height: 28px; }
 .sp-check input { width: 20px; height: 20px; margin: 0; }
 .sp-check { min-height: 28px; }
+
+.sp-tt td.sp-nc { color: var(--ink-2); font-size: 12px; }
+
+/* Speed-test windows in the chart legends: a solid grey tick; a share-link visitor's, a dashed blue outline. */
+.chip.sp-tick { width: 12px; height: 4px; background: var(--muted); border-radius: 0; }
+.chip.sp-tick.pub { background: transparent; border: 1.5px dashed var(--accent); height: 6px; }
+
+.sp-tf { display: block; font-size: 11px; line-height: 1.25; color: var(--ink-2); white-space: normal; }
+
+.rp-speed-cap { caption-side: top; text-align: left; padding: 0 0 4px; }
+@media (max-width: 767.98px) {
+  /* The speed card's table stays a table on a phone (the problems table above becomes cards). */
+  .rp-speed-t { display: table; font-size: 12px; }
+  .rp-speed-t thead { display: table-header-group; }
+  .rp-speed-t tbody { display: table-row-group; }
+  .rp-speed-t tr { display: table-row; padding: 0; }
+  .rp-speed-t th, .rp-speed-t td { display: table-cell; padding: 5px 4px; border-bottom: 1px solid var(--border); }
+  .rp-speed-t th { font-size: 11px; }
+  .rp-speed-cap { display: table-caption; }
+}
+/* Jumps (a block picked on the timeline, "What happened at…") land below Home's and the report's sticky header. */
+body.home-on .home section, body.home-on .home tr, body.home-on .home h2 { scroll-margin-top: 72px; }
+@media (max-width: 767.98px) {
+  body.public.home-on .home section, body.public.home-on .home tr, body.public.home-on .home h2 { scroll-margin-top: 100px; }
+}

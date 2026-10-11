@@ -6,6 +6,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -154,10 +155,10 @@ func parseFlags(args []string) (config, error) {
 	var c config
 	var retention string
 	fs := flag.NewFlagSet("fyisp", flag.ContinueOnError)
-	fs.StringVar(&c.listen, "listen", defaultListen, "local dashboard address (0.0.0.0:3000 exposes it to your LAN)")
+	fs.StringVar(&c.listen, "listen", cmp.Or(os.Getenv("FYISP_LISTEN"), defaultListen), "local dashboard address (0.0.0.0:3000 exposes it to your LAN; default: $FYISP_LISTEN, else "+defaultListen+")")
 	fs.BoolVar(&c.share, "share", false, "start a public read-only link (Cloudflare quick tunnel) at startup")
 	fs.StringVar(&c.shareProtocol, "share-protocol", "auto", "tunnel protocol: auto, quic or http2")
-	fs.StringVar(&c.dataDir, "data-dir", "", "where to keep data (default: per-OS state directory; see `fyisp paths`)")
+	fs.StringVar(&c.dataDir, "data-dir", "", "where to keep data (default: $FYISP_DATA_DIR, else the per-OS state directory; see `fyisp paths`)")
 	fs.BoolVar(&c.ephemeral, "ephemeral", false, "keep data in a temporary directory deleted on exit")
 	fs.StringVar(&retention, "retention", "90d", "how long to keep data (max 90d), e.g. 14d or 48h")
 	fs.StringVar(&c.configPath, "config", "", "local profile file (YAML); may `extends: [default]` or other named profiles")
@@ -167,7 +168,7 @@ func parseFlags(args []string) (config, error) {
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
 	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (9 regions, each hourly), --speedtest=nearby (3 nearby providers and 1 far region, every 15m), --speedtest=regions,add=canada, --speedtest=nearby,far=us-west, every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
 	fs.Var(&c.speedPublic, "speedtest-public", "let people with the share link queue speed tests (default: the Details setting, off)")
-	fs.Var(&c.speedBudget, "speedtest-public-budget", "data the share link's speed tests may use per rolling 24 hours, e.g. 50GB or 500MB")
+	fs.Var(&c.speedBudget, "speedtest-public-budget", "data the share link's speed tests may use per rolling 24 hours, e.g. 50GB or 500MB (default 10GB); at least 210MB, one whole test, or share-link tests stay off")
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
@@ -333,6 +334,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		b: report.New(report.Deps{
 			Profile: func() *model.Profile { return prof }, Store: st, Trace: st,
 			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, SpeedTests: st.SpeedTests, Version: version,
+			Zone: func(ctx context.Context) *time.Location { return speedtest.StoredZone(ctx, st) },
 		}),
 		ReportStore: st,
 	}

@@ -211,7 +211,7 @@ func (f *fakeTrace) write(target string, from, to time.Time) {
 			}
 			if hop == 5 {
 				// The router's control plane: slow, jittery and rate-limited
-				// ICMP replies, while forwarding is fine.
+				// ICMP replies, while forwarding works.
 				lossP = 1 - (1-lossP)*(1-0.25)
 				base += 14 + 10*r.Float64()
 			}

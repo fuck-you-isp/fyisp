@@ -341,7 +341,7 @@ func TestRules(t *testing.T) {
 				internet(every(2, model.ReasonTimeout)),
 			},
 			kind:    model.VerdictISP,
-			summary: "Your ISP's network is dropping packets: the router is fine, the first hop past it loses 50%.",
+			summary: "Your ISP's network is dropping packets: the router looks fine, the first hop past it loses 50%.",
 		},
 		{
 			name: "upstream via anycast",
@@ -433,7 +433,7 @@ func TestRules(t *testing.T) {
 			name:     "latency spike on the edge",
 			baseline: 10 * time.Minute,
 			fx:       []behavior{layer(model.LayerEdge, rtt(90*time.Millisecond))},
-			kind:     model.VerdictISP, summary: "Your ISP's network is slow: the router is fine, but the first hop past it answers in 90 ms instead of the usual 8 ms.",
+			kind:     model.VerdictISP, summary: "Your ISP's network is slow: the router looks fine, but the first hop past it answers in 90 ms instead of the usual 8 ms.",
 		},
 		{
 			name:     "latency spike on one service",

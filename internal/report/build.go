@@ -35,6 +35,9 @@ type Deps struct {
 	// SpeedTests returns the speed tests that started in [from, to] (nil:
 	// no speed section).
 	SpeedTests func(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+	// Zone is the owner's time zone: the speed section's times of day and
+	// days (nil: UTC).
+	Zone func(ctx context.Context) *time.Location
 	// Version is shown in reports that are not redacted.
 	Version string
 }
@@ -112,6 +115,7 @@ type run struct {
 	ispOwner  string
 	baselines bool // any baseline known
 	speed     []model.SpeedTest
+	speedLoc  *time.Location // the speed section's zone
 }
 
 type incident struct {

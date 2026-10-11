@@ -26,6 +26,16 @@ type Extra struct {
 	// second router): the edge may be the home router, and the link type
 	// is not this machine's.
 	Bridged bool `json:"bridged,omitempty"`
+	// Per direction (down, up) of a capped one: how its rate was taken
+	// (MethodPeak90, MethodWhole; "" when not capped, and in every v0.7.0
+	// row), its window, and whether it is a lower bound (still speeding up
+	// at the cap).
+	RateMethod [2]string  `json:"rate_method,omitzero"`
+	WinMs      [2]float64 `json:"win_ms,omitzero"`
+	LowerBound [2]bool    `json:"lower_bound,omitzero"`
+	// CancelledBy (a cancelled test): "owner" when the owner stopped it
+	// (the cancel's cause); "" otherwise (a shutdown).
+	CancelledBy string `json:"cancelled_by,omitempty"`
 }
 
 // ParseExtra reads a test's Extra ("" gives the zero value).
@@ -285,6 +295,13 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 			x.Bridged = true
 		}
 	}
+	// The handoff of the first server, before the window (never during a
+	// test, nor in the next one's way); its test then dials that address.
+	steps = slices.Clone(steps)
+	pre, preH := s.handoffFor(ctx, &steps[0].Server)
+	if ctx.Err() != nil {
+		return nil, false, 0 // shut down or cancelled before the test
+	}
 	t.Start = s.o.Now()
 	s.o.Windows.Begin(t.Start)
 	var used Server
@@ -335,28 +352,77 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		}
 	}
 	if s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && ip.IsValid() {
-		// The traceroute goes to the address the test used, already
-		// resolved and checked (never a fresh lookup of the name).
-		hctx, cancel := context.WithTimeout(ctx, handoffBudget)
-		h, err := s.o.Handoff(hctx, ip.String())
-		cancel()
-		if err != nil {
-			s.o.Log.Debug("speed test: handoff traceroute failed", "server", used.ID, "err", err)
+		switch {
+		case ip == pre:
+			t.Handoff = preH
+		case s.o.HandoffCached != nil: // a fallback server: only a recent answer
+			if h, ok := s.o.HandoffCached(ip.String()); ok {
+				t.Handoff = h
+				s.noteVia(used.ID, h)
+			}
 		}
-		t.Handoff = h
 	}
 	saved := s.save(ctx, &t, x)
 	return &t, saved, t.Bytes
 }
 
+// handoffFor resolves and checks sv's address once (its test then dials
+// it: sv.Host becomes the address) and finds the handoff on the path to
+// it: a recent answer at once, else a traceroute bounded by handoffBudget
+// (none on timeout). Nothing without Options.Handoff, or when the name
+// doesn't resolve to an address the server may have (the test reports
+// that).
+func (s *Scheduler) handoffFor(ctx context.Context, sv *Server) (netip.Addr, *model.Handoff) {
+	if s.o.Handoff == nil {
+		return netip.Addr{}, nil
+	}
+	c := Config{Addr: net.JoinHostPort(sv.Host, "1"), Check: sv.check, Lookup: s.o.lookup}
+	c.defaults()
+	rctx, cancel := context.WithTimeout(ctx, pickTimeout)
+	ap, err := c.resolve(rctx)
+	cancel()
+	if err != nil {
+		return netip.Addr{}, nil
+	}
+	ip := ap.Addr()
+	sv.Host = ip.String()
+	if s.o.HandoffCached != nil {
+		if h, ok := s.o.HandoffCached(ip.String()); ok {
+			s.noteVia(sv.ID, h)
+			return ip, h
+		}
+	}
+	bound := s.o.handoffIn
+	if bound <= 0 {
+		bound = handoffBudget
+	}
+	hctx, cancel := context.WithTimeout(ctx, bound)
+	defer cancel()
+	h, err := s.o.Handoff(hctx, ip.String())
+	if err != nil {
+		s.o.Log.Debug("speed test: handoff traceroute failed", "server", sv.ID, "err", err)
+		return ip, nil
+	}
+	s.noteVia(sv.ID, h)
+	return ip, h
+}
+
 // saveCancelled stores a cancelled test: its window (Start, End), server,
 // trigger and the data it used, no speeds.
 func (s *Scheduler) saveCancelled(ctx context.Context, t model.SpeedTest, used Server) {
+	var x Extra
+	if errors.Is(context.Cause(ctx), ErrCancelledByOwner) {
+		x.CancelledBy = "owner"
+	}
 	ctx, cancel := storeCtx(ctx)
 	defer cancel()
 	c := model.SpeedTest{Start: t.Start, End: t.End, Trigger: t.Trigger, Outcome: model.SpeedCancelled, Region: t.Region,
 		Server: used.ID, FallbackLevel: t.FallbackLevel, Fallback: t.Fallback, Port: t.Port, Attempts: t.Attempts,
-		Bytes: t.Bytes, Conn: t.Conn}
+		Bytes: t.Bytes, Conn: t.Conn, DownBps: t.DownBps}
+	if x != (Extra{}) {
+		b, _ := json.Marshal(x)
+		c.Extra = string(b)
+	}
 	if s.o.Store != nil {
 		if err := s.o.Store.SaveSpeedTest(ctx, &c); err != nil {
 			s.o.Log.Warn("speed test: saving a cancelled test failed", "err", err)
@@ -378,7 +444,21 @@ func storeCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
 }
 
-// handoffBudget bounds one handoff traceroute (after the test's window).
+// noteVia keeps server's latest handoff when it crossed an exchange.
+func (s *Scheduler) noteVia(server string, h *model.Handoff) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if h == nil || h.Via == "" {
+		delete(s.vias, server)
+		return
+	}
+	if s.vias == nil {
+		s.vias = map[string]model.Handoff{}
+	}
+	s.vias[server] = *h
+}
+
+// handoffBudget bounds one handoff traceroute (before the test's window).
 const handoffBudget = 10 * time.Second
 
 // loadRun opens the pinger for one test's latency under load; nil without
@@ -457,10 +537,14 @@ func Baseline(ts []model.SpeedTest, server string, at time.Time) (down, up float
 			t.CappedByServer || t.Start.Before(at.Add(-BaselineSpan)) || !t.Start.Before(at) {
 			continue
 		}
-		if t.DownBps != nil {
+		var x Extra // capped directions: v0.7.0 ones and lower bounds stay out
+		if t.DownShort || t.UpShort {
+			x = ParseExtra(t.Extra)
+		}
+		if t.DownBps != nil && baselineRate(t.DownShort, &x, 0) {
 			d = append(d, *t.DownBps)
 		}
-		if t.UpBps != nil {
+		if t.UpBps != nil && baselineRate(t.UpShort, &x, 1) {
 			u = append(u, *t.UpBps)
 		}
 	}
@@ -540,6 +624,10 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			re = &r
 		}
 		x.RampMs[i] = round2(float64(res.Ramp) / float64(time.Millisecond))
+		if res.CappedByBytes {
+			x.RateMethod[i], x.LowerBound[i] = res.RateMethod, res.LowerBound
+			x.WinMs[i] = round2(float64(res.Elapsed) / float64(time.Millisecond))
+		}
 		secs := math.Round(res.Elapsed.Seconds()*100) / 100
 		if dir == Download {
 			t.DownBps, t.DownRetrans, t.DownShort, t.DownSecs = &bps, re, res.CappedByBytes, secs
@@ -574,11 +662,14 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 		var err error
 		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: min(MaxBytes, *left), Check: sv.check,
+			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: min(MaxBytes, *left), Check: sv.check, Log: s.o.Log,
 		})
 		w := max(res.WireBytes, res.TotalBytes, res.Bytes)
 		wire += w
 		*left -= w
+		if res.Overrun || errors.Is(err, ErrOverrun) {
+			s.o.Log.Info("speed test: the server kept sending past the byte cap; cut", "server", sv.ID, "direction", dir.String())
+		}
 		switch {
 		case err == nil:
 			return res, port, attempt, model.SpeedOK, wire

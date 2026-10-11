@@ -688,6 +688,7 @@ class Panel {
     for (const r of REASONS) if (present.has(r)) kids.push(h('span', {}, h('span', { class: `chip r-${r}` }), REASON_LABEL[/** @type {'dns'} */ (r)]));
     if (anyGap) kids.push(h('span', {}, h('span', { class: 'chip hatch' }), 'not measured'));
     if (!kids.length) kids.push(h('span', { class: 'muted', text: 'No loss in range' }));
+    kids.push(...speedLegend(/** @type {[number, number]} */ (this.view)));
     this.stripLegend.replaceChildren(...kids);
   }
 
@@ -1804,7 +1805,7 @@ function drawSpeedWindows(/** @type {any} */ u) {
     let x0 = u.valToPos(w.start / 1000, 'x', true), x1 = u.valToPos(w.end / 1000, 'x', true);
     if (x1 - x0 < 2 * dpr) { const m = (x0 + x1) / 2; x0 = m - dpr; x1 = m + dpr; }
     const last = spans[spans.length - 1];
-    const pub = w.origin === 'public';
+    const pub = MODE === 'local' && w.origin === 'public'; // the share link never tells tests apart
     if (last && x0 <= last[1] + dpr) { last[1] = Math.max(last[1], x1); last[2] = last[2] || pub; } else spans.push([x0, x1, pub]);
   }
   ctx.save();
@@ -1817,17 +1818,41 @@ function drawSpeedWindows(/** @type {any} */ u) {
       ctx.fillStyle = rgba(c, 0.10);
       ctx.fillRect(x0, top, x1 - x0, height);
     }
-    ctx.fillStyle = rgba(pub ? acc : c, 0.7);
-    ctx.fillRect(x0, top, x1 - x0, 4 * dpr);
+    // The owner's and the schedule's tests: a solid grey tick. A share-link visitor's: a dashed blue outline (shape, not colour alone).
+    if (pub) {
+      ctx.strokeStyle = acc;
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.setLineDash([3 * dpr, 2 * dpr]);
+      ctx.strokeRect(x0 + 0.75 * dpr, top + 0.75 * dpr, Math.max(dpr, x1 - x0 - 1.5 * dpr), 4 * dpr);
+      ctx.setLineDash([]);
+    } else {
+      ctx.fillStyle = c;
+      ctx.fillRect(x0, top, x1 - x0, 4 * dpr);
+    }
   }
   ctx.restore();
+}
+
+/**
+ * Legend entries for speed-test windows, only when the chart's range holds
+ * one. The share-link entry is the owner's only (the share link's windows
+ * are all "test").
+ * @param {[number, number]} view seconds
+ */
+function speedLegend(view) {
+  if (!view || !speedWins.length) return [];
+  const inView = speedWins.filter((w) => w.end / 1000 >= view[0] && w.start / 1000 <= view[1]);
+  if (!inView.length) return [];
+  const out = [h('span', {}, h('span', { class: 'chip sp-tick', 'aria-hidden': 'true' }), 'speed test running (left out of these numbers)')];
+  if (MODE === 'local' && inView.some((w) => w.origin === 'public')) out.push(h('span', {}, h('span', { class: 'chip sp-tick pub', 'aria-hidden': 'true' }), 'speed test someone started from your share link'));
+  return out;
 }
 
 /** Tooltip line for a bucket that overlaps a speed test. */
 function speedTipNodes(/** @type {number} */ a, /** @type {number} */ b) {
   const hit = speedWins.filter((w) => w.start < b && w.end > a);
   if (!hit.length) return [];
-  const n = hit.length, pub = hit.filter((w) => w.origin === 'public').length;
+  const n = hit.length, pub = MODE === 'local' ? hit.filter((w) => w.origin === 'public').length : 0;
   const from = pub ? (pub === n ? ' from the share link' : `, ${pub} from the share link`) : '';
   return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`}${from}: not measured` })];
 }

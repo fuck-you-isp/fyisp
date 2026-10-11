@@ -456,6 +456,7 @@ func TestLatencyUnderLoad(t *testing.T) {
 	}}
 	h := newHarness(t, Options{})
 	tap := NewLoadTap(p, h.clock)
+	tap.start = h.clock().Add(-time.Hour) // past the start's warm-up
 	fp := &fakePinger{}
 	h.s.o.Load, h.s.o.loadEvery = tap, 2*time.Millisecond
 	h.s.o.Path = func() (netip.Addr, netip.Addr) { return gwA, edgeA }
@@ -475,9 +476,9 @@ func TestLatencyUnderLoad(t *testing.T) {
 	h.mu.Lock()
 	h.now = h.now.Add(-30 * time.Second)
 	h.mu.Unlock()
-	feed(gw, 2, 10, false)
-	feed(edge, 8, 8, false)
-	feed(edge, 0, 2, true)
+	feed(gw, 2, 20, false)
+	feed(edge, 8, 16, false)
+	feed(edge, 0, 4, true)
 	tap.Observe(model.Sample{Key: edge, Lost: true, Reason: model.ReasonGap}) // not measured: left out
 	var dir Direction
 	var upN int
@@ -506,8 +507,8 @@ func TestLatencyUnderLoad(t *testing.T) {
 	if l == nil || l.Edge.Idle == nil || l.Edge.Down == nil || l.Edge.Up == nil || l.Gateway.Idle == nil || l.Gateway.Down == nil || l.Gateway.Up == nil {
 		t.Fatalf("latency %+v", l)
 	}
-	if e := l.Edge.Idle; e.N != 10 || e.Lost != 2 || e.Loss != 0.2 || e.P50Ms != 8 || e.P95Ms != 1000 {
-		t.Errorf("edge idle %+v, want 10 probes, 2 lost, p50 8, p95 1000 (lost = timeout)", *e)
+	if e := l.Edge.Idle; e.N != 20 || e.Lost != 4 || e.Loss != 0.2 || e.P50Ms != 8 || e.P95Ms != 1000 {
+		t.Errorf("edge idle %+v, want 20 probes, 4 lost, p50 8, p95 1000 (lost = timeout)", *e)
 	}
 	if e := l.Edge.Down; e.Lost != 0 || e.P50Ms != 30 || e.N < 5 {
 		t.Errorf("edge download %+v, want p50 30, no loss", *e)
@@ -658,5 +659,32 @@ func TestLoadTapIdle(t *testing.T) {
 	}
 	if all := tap.Stats(LayerEdge, t0.Add(-idleWindow), t0, nil); all == nil || all.N != 21 || all.P95Ms != 900 {
 		t.Errorf("without windows %+v, want 21 probes", all)
+	}
+}
+
+// TestIdleNeedsSamples: an idle median needs minIdle samples, and the
+// first idleWindow after fyisp started is never idle.
+func TestIdleNeedsSamples(t *testing.T) {
+	p := &model.Profile{Targets: []model.Target{{Name: "ISP edge", Layer: model.LayerEdge, Kinds: []model.ProbeKind{model.KindICMP}}}}
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	tap := NewLoadTap(p, func() time.Time { return now })
+	feed := func(n int) {
+		for range n {
+			tap.Observe(model.Sample{Key: model.SeriesKey{Target: "ISP edge", Kind: model.KindICMP}, At: now, RTT: 8 * time.Millisecond})
+		}
+	}
+	now = now.Add(time.Minute)
+	feed(30)
+	if st := tap.Idle(LayerEdge, now.Add(time.Second), nil); st != nil {
+		t.Errorf("idle right after the start: %+v", st)
+	}
+	now = now.Add(3 * time.Minute)
+	feed(minIdle - 1)
+	if st := tap.Idle(LayerEdge, now.Add(time.Second), nil); st != nil {
+		t.Errorf("idle from %d samples: %+v", minIdle-1, st)
+	}
+	feed(1)
+	if st := tap.Idle(LayerEdge, now.Add(time.Second), nil); st == nil || st.N != minIdle {
+		t.Errorf("idle from %d samples: %+v", minIdle, st)
 	}
 }

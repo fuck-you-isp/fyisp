@@ -23,7 +23,7 @@ Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and n
 | HTTP | `code` |
 |---|---|
 | 400 | `bad_request` |
-| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off); `speed_off` (speed tests are off) |
+| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off); `budget_too_small` (they are off because the budget is below one test; also `reason: "budget_too_small"`); `speed_off` (speed tests are off) |
 | 409 | `skipped` (Test now of a server the user skipped) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
@@ -87,6 +87,9 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
   "bytes_24h": 3120000000,        // the last 24 hours; 0 on the share link     // data used by speed tests since the 1st of this month (UTC); 0 on the share link
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
+  "owner_tz": "America/New_York", // omitted when unknown: the owner's IANA zone (the one their browser last sent on a local page); reports use it for times of day, and the share link's summary is in it whatever tz the visitor sends
+  "zone_label": "EDT (UTC−4)",    // the zone the summary's hours are in, printable
+  "bytes_per_test": 146800640,    // omitted without tests: the median data of this line's scheduled tests (30 days)
   "next_row": "uk",               // |null: its row id
   "running": { ...Running },      // |null
   "rows": [ ...Row ],             // the current mode's scheduled rows, in plan order (empty when off)
@@ -180,6 +183,9 @@ Only **scheduled** tests count in rows. Test now and sweeps are stored and liste
   "score_median": 0.97,           // |null: the median score (below)
   "dip": { ...Pattern },          // |null: this row's download dip by score
   "up_dip": { ...Pattern },       // |null: its upload dip
+  "n_lower_bound": 12,            // omitted when 0: ok tests whose download was a lower bound (left out of the *_bps above)
+  "ramp_capped_share": 0.4,       // omitted when 0: their share of the ok tests
+  "too_fast": true,               // omitted when false: every server of the row is too fast to measure from here (below); out of the patterns
   "hours": [                      // always 24 entries, local hours
     {"hour": 0, "n": 4, "n_fallback": 0, "n_failed": 0, "n_capped": 0,
      "down_median_bps": 188000000, "up_median_bps": 38000000,   // |null with fewer than 3 ok tests
@@ -211,11 +217,16 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
 
 ```jsonc
 {
-  "case": "isp",                  // "not_enough_data" | "nothing" | "mild" | "mixed" | "isp" | "provider" | "route" | "server"
+  "case": "isp",                  // "not_enough_data" | "nothing" | "mild" | "mixed" | "isp" | "provider" | "route" | "server" | "too_fast" (every server too fast to measure from here)
   "tier": "points_to",            // omitempty: "points_to" | "most_likely" | "early_sign" (how sure)
   "text": "Every region slows from about 7 to 11 pm, with every provider: about 40% below normal. Your provider's first router also answers slower then (25 ms instead of 8 ms), so it's in its local network. That points to your internet provider's own network.",
   "text_public": "… That points to the internet provider's own network.",   // the share link's and report's wording
-  "evidence": "Based on 648 tests over 9 days; each evening hour was tested at least 9 times across 3 providers.",
+  "evidence": "Based on 648 tests on 9 days between Tue 1 Sep and Wed 9 Sep; each evening hour was tested at least 9 times across 3 providers.",
+  "evidence_public": "Based on 648 tests on 9 days; each evening hour ...", // the same without dates (the share link gets it as evidence)
+  "coverage": "Tests ran on 5 of the last 7 days.", // omitted when every day of the window has tests; or "Speed tests started on Mon 6 Oct, so this covers 3 days, not 7."
+  "coverage_public": "This covers 3 days, not 7.", // without the date
+  "slowest": [{"server": "OVH-Singapore", "n": 9, "display": "Southeast Asia · OVH, Singapore", "pct": 52, "median_bps": 310000000, "usual_bps": 600000000}], // omitted when none: up to 3 servers slowest in the dip's hours (≥ 3 results there), nearest first in the isp and mild cases, else slowest first
+  "via": "DE-CIX",                // local only, omitted when none: the internet exchange the slow tests' route crosses
   "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
   "caveat_public": "Wi-Fi, or people in the home using the internet heavily at those hours, can look the same.",   // omitempty: the share link's and report's voice (the share link's `caveat` is this already)
   "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],
@@ -265,7 +276,7 @@ The latency under load over the span: per layer, the median over tests.
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | from the share link "public" | "public_sweep"
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | from the share link "public" | "public_sweep"; always "test" on the share link
   "on_demand": false,             // not "schedule": never in rows, patterns or the finding
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed" | "cancelled"
   "region": "us-east",            // |null when the test was for no region
@@ -278,6 +289,11 @@ The latency under load over the span: per layer, the median over tests.
   "down_bps": 182345678, "up_bps": 38123456,   // |null when not measured
   "down_short": false, "up_short": false,      // the direction hit the 100 MB cap: measured for less time
   "capped_by_budget": false,      // down_short || up_short: show the speed as "≥ X"
+  "down_lower_bound": true, "up_lower_bound": true, // omitted when false: still speeding up at the cap, or a v0.7.0 result capped in its ramp-up (below)
+  "down_ramp_capped": true, "up_ramp_capped": true, // the same flags
+  "cancelled_by": "owner",        // a cancelled test the owner stopped; omitted otherwise (a shutdown)
+  "down_lb_counted": true, "up_lb_counted": false, // a lower bound that reached normal (counts as normal: "at least normal"); false: left out ("not counted")
+  "rate_method": "peak90", "win_ms": 640, // omitted when not capped: how the capped direction (the download if capped, else the upload) was measured ("peak90" | "whole"; v0.7.0 rows have none)
   "down_s": 4.0, "up_s": 3.2,                  // seconds measured (0 when not measured)
   "capped_by_server": false,      // a direction within 10% of the server's published capacity
   "score": 0.94, "up_score": 0.97,             // |null: against the server's baseline
@@ -293,9 +309,15 @@ The latency under load over the span: per layer, the median over tests.
 }
 ```
 
-**Latency under load.** Bufferbloat sits in the queue at the line's bottleneck (the modem's upload buffer, the ISP's CMTS, OLT or BNG), past the router: the ISP edge (the first hop past the router) is behind it, the router's LAN address is not. During each direction fyisp pings both every 150 ms (1 s timeout). `idle` is the 2 minutes before the test, from the continuous probes. Each `Stats` is `{"n": 60, "lost": 3, "loss": 0.05, "p50_ms": 140, "p95_ms": 1000}`, or `null` with fewer than 3 probes. **A lost probe counts as loss and, in `p50_ms`/`p95_ms`, as 1000 ms**: under heavy bloat most probes time out, so a p95 of 1000 means "at least 1 s". On lines with active queue management (fq_codel, CAKE) the edge stays flat even when the line is congested.
+**Latency under load.** Bufferbloat sits in the queue at the line's bottleneck (the modem's upload buffer, the ISP's CMTS, OLT or BNG), past the router: the ISP edge (the first hop past the router) is behind it, the router's LAN address is not. During each direction fyisp pings both every 150 ms (1 s timeout). `idle` is the 2 minutes before the test, from the continuous probes; it is `null` with fewer than 20 probes then, and in fyisp's first 2 minutes after starting (path discovery runs then). Each `Stats` is `{"n": 60, "lost": 3, "loss": 0.05, "p50_ms": 140, "p95_ms": 1000}`, or `null` with fewer than 3 probes. **A lost probe counts as loss and, in `p50_ms`/`p95_ms`, as 1000 ms**: under heavy bloat most probes time out, so a p95 of 1000 means "at least 1 s". On lines with active queue management (fq_codel, CAKE) the edge stays flat even when the line is congested.
 
-**Handoff** (local only): the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`). `null` when unknown.
+**Capped directions.** A direction that reaches the 100 MB limit is measured from where its rate levels off: the 100 ms ticks (each rate over its actual length), smoothed over 3 ticks, from the first one at 90% of the peak to the last byte (uploads count what the server acknowledged, on Linux). When it was still speeding up at the limit, the result is a **lower bound**: leaving out the first tick (connection start, a shaper's burst) and smoothing over at least one RTT on long paths, no two near-peak ticks at least an RTT apart, nor a peak an RTT before the end: the speed was at least this. v0.7.0 results capped in their ramp-up (`ramp_ms` 0) are lower bounds too. A lower bound never enters the server's normal (`Baseline`). Per server and direction over 14 days, a **coverage guard** decides the rest: when the server has lower bounds and its other results cover fewer than 12 local hours, or more than half of them fall within any 6 hours, they are no sample of its normal (on a fast line the daytime reads as lower bounds, leaving the slow evenings), so the server is **too fast to measure from here**: left out of the time-of-day patterns, the rows' score medians and the finding (its tests are still listed and exported). Otherwise a lower bound that already reaches the server's normal counts as normal (score 1), and one below it is left out (`*_lb_counted` says which); a lower bound never reads as slow. When every server is too fast, the finding's case is `too_fast` ("Your line is too fast for these tests to compare times of day: …"), never "nothing"; when some are, the evidence ends "k of n servers were too fast to measure from here and are left out."
+
+With the environment variable `FYISP_TICKS` set, fyisp logs each capped direction's ticks (`at_ms`, `bytes`, `rtt_ms`) and the verdict, for checking the estimator on a real line.
+
+**Bytes.** `bytes` is what the test moved on the wire, every attempt included, also when it failed or was cancelled (then it's what moved until the cancel, and a cancel during setup still counts the few hundred bytes of the handshake). On Linux each stream counts what the kernel saw (received, read or still buffered, for downloads; acknowledged for uploads) when that's more than what fyisp read or wrote; other systems count what fyisp read or wrote. `bytes_24h` and the share link's allowance add up these numbers.
+
+**Handoff** (local only): the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`). `null` when unknown. The traceroute runs just before the test (bounded to 10 s; without an answer the test goes ahead without a handoff), to the address the test then dials. When the path crosses an internet exchange on fyisp's built-in list (DE-CIX, AMS-IX, LINX and others), the handoff is the network behind it, and `via` names the exchange (`asn` 0 when the path ends there). `via` is kept in memory only, so it fills in within a day of a restart.
 
 **Outcomes.**
 - `busy`: every port and server tried within the slot's budget was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
@@ -317,7 +339,7 @@ One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An 
   "kind": "region",               // "region" | "server"
   "row": { ...Row },
   "tests": [ ...Test ],           // every test in the span (any trigger), oldest first, the newest 5000 at most
-  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner | public
+  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner | public; always "test" on the share link
 }
 ```
 
@@ -344,13 +366,17 @@ There is no cooldown for the owner or for single tests; the only wait is the 30-
 
 **The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
 
-**The share link has a data budget:** at most `--speedtest-public-budget` (default 10 GB) over a rolling 24 hours.
-- It counts every byte the share link's tests put on the wire: every attempt, the ramp-up, and tests that were cut short.
+**The share link has a data budget:** at most `--speedtest-public-budget` (default 10 GB) over a rolling 24 hours. It is a hard limit: a test from the share link starts only when a whole test (up to 210 MB) still fits in what's left.
+- One test moves at most 210 MB: 100 MB each way, plus the 5% a hard receive-side stop allows, even against a server that ignores the end of the test.
+- It counts every byte the share link's tests put on the wire: every attempt, the ramp-up, and tests that were cut short. A running share-link test holds a whole test's 210 MB until its real bytes are charged.
 - It is saved across restarts.
-- Once spent:
-  - new share-link requests get 429 `budget_exhausted` with `resets_at`, the moment enough use ages out;
-  - waiting share-link entries are dropped when their turn comes;
-  - a running share-link sweep stops after its current test.
+- One check decides, at admission, when an entry's turn comes, and before each test of a sweep. When a whole test doesn't fit:
+  - new share-link requests get 429 `budget_exhausted` with `resets_at`, the moment enough use ages out for 210 MB to fit;
+  - waiting share-link entries are dropped when their turn comes (`state: "dropped"`, `stopped_reason: "limit"`, `stopped_code`, `resets_at`);
+  - a share-link sweep stops before the test that wouldn't fit (`stopped_reason: "limit"`); the tests it ran stay.
+- When several limits block (the data, the test time, a sweep's 30-minute gap), the refusal is the one that clears **last**, and its `resets_at` (and `retry_after`) is when a retry will be admitted.
+- `resets_at` is exact when recorded usage has to age out. When the only thing in the way is a **running** share-link test (it holds a whole test's bytes until its real bytes are charged at its end), `resets_at` is an **estimate**: about when that test ends (a typical test's length from now). A retry then may still get `budget_exhausted` if the charged bytes leave too little, this time with an exact `resets_at`.
+- **A budget under 210 MB** turns the share link's tests off: fyisp starts as usual and logs one warning (`share-link speed tests are off: the budget (150 MB) is below the 210 MB one test needs`), the link answers 403 `budget_too_small`, and part=queue has `public_off_reason: "budget_too_small"`. The budget is never raised for you.
 - The owner and the schedule are never limited by it.
 
 **The share link has test-time caps.** Probes are masked during every test, so its tests may keep the line under test for at most:
@@ -374,10 +400,13 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "waiting": [ { ...Entry } ],  // in run order
   "last_sweep": { ...Entry },   // |null: the last finished sweep
   "public_enabled": true,       // the owner lets the share link queue tests
-  "public_start": true,         // the share link may start one now: enabled, budget and test time left, room in the queue (show its button only then)
+  "public_off_reason": null,    // |"budget_too_small": the share link's tests are off anyway (the budget is below one test)
+  "public_start": true,         // the share link may start one now: enabled, a whole test fits, test time left, room in the queue (show its button only then)
   "budget": {                   // the share link's rolling 24-hour data budget
-    "limit_bytes": 50000000000, "used_bytes": 1200000000, "remaining_bytes": 48800000000,
-    "resets_at": null,          // |null: when spent, when enough use ages out
+    "limit_bytes": 10000000000, "used_bytes": 1200000000, "remaining_bytes": 8800000000,
+    "test_max_bytes": 210000000, // the most one test moves; a test starts only when this much fits in remaining_bytes
+    "fits_tests": 41,           // whole tests that fit in what's left now (a running share-link test holds one)
+    "resets_at": null,          // |null: when a whole test doesn't fit, when enough use ages out for one to
     "time_hour_s": 240, "time_day_s": 960,          // the share link's test time in the last hour and day
     "time_hour_max_s": 600, "time_day_max_s": 3600,
     "time_resets_at": null,     // |null: when a capped one frees up
@@ -408,6 +437,9 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "tests": [412, 413],          // the stored tests so far
   "wait_reason": null,          // waiting: "cooldown" = a share-link sweep held until est_start (30 min after the last one); else null
   "stopped_reason": null,       // finished before its last test: "cancelled" | "unreachable" (a sweep stopped after servers in a row didn't answer) | "limit" (the share link's budget or time ran out, or it was turned off); else null
+  "stopped_code": null,         // for "limit": "budget_exhausted" | "time_cap" | "budget_too_small" | "disabled"; else null
+  "resets_at": null,            // for "limit" by the budget or the time caps: when a test fits again; else null
+  "cancelled_by": null,         // cancelled by the owner: "owner"; else null (also a shutdown). Visitors can't cancel.
   "results": [                  // a sweep's servers in order (part=entry and part=sweep only)
     {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "status": "ok", "test": 412,
      "down_bps": 412000000, "up_bps": 38000000},
@@ -418,7 +450,7 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
 }
 ```
 
-`results[].status` is `waiting`, `testing`, the stored outcome (`ok`, `busy`, `unreachable`, `failed`), or `skipped`: cancelled mid-test, or never reached because the sweep stopped early (see `stopped_reason`). A finished sweep never shows `waiting`. `down_bps` and `up_bps` are set for `ok` only.
+`results[].status` is `waiting`, `testing`, the stored outcome (`ok`, `busy`, `unreachable`, `failed`), `cancelled` (the server whose test a cancel stopped mid-run), or `skipped` (never reached because the sweep stopped early: see `stopped_reason`). A finished sweep never shows `waiting`. `down_bps` and `up_bps` are set for `ok` only.
 
 On the share link, `who` is `you` only for that visitor's own entries; everyone else's, the owner's included, are `someone`. Locally, the owner's are `you` and the share link's are `someone`. Targets and servers use the share link's ids (`custom-1`), and no host, port or address appears.
 
@@ -446,7 +478,7 @@ It works in every mode, `off` included.
 **Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
 - **Speed tests on:** 403 `speed_off` while the mode is `off` (part=queue `speed_on: false`).
 - **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
-- **Budget:** 429 `budget_exhausted` (data) or `time_cap` (test time) with `resets_at` (ms) and `retry_after` once either is spent.
+- **Budget:** 429 `budget_exhausted` (a whole test no longer fits in the data left) or `time_cap` (test time) with `resets_at` (ms) and `retry_after`; when both block, the one that clears last. 403 `budget_too_small` when the budget is below one test.
 - **Sweep gap:** 429 `cooldown` with `resets_at` and `retry_after` for a sweep within 30 minutes of the last public one.
 - **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
 - **Queue limits (429 `queue_full`, its `error` says which):**

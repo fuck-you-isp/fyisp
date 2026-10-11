@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -277,17 +278,22 @@ func TestSlotCap(t *testing.T) {
 // used (resolved and checked), never a fresh lookup of the name.
 func TestHandoffAddress(t *testing.T) {
 	h := newHarness(t, Options{})
-	ip := netip.MustParseAddr("198.51.100.7")
+	ip := netip.MustParseAddr("203.0.114.7")
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: ip}, nil
 	})
+	h.s.o.lookup = func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{ip}, nil }
 	var asked []string
 	h.s.o.Handoff = func(_ context.Context, host string) (*model.Handoff, error) {
 		asked = append(asked, host)
 		return &model.Handoff{ASN: 174}, nil
 	}
-	if ts := h.slot(t, target{server: "Near"}); ts.Handoff == nil || len(asked) != 1 || asked[0] != "198.51.100.7" {
+	ts := h.slot(t, target{server: "Near"})
+	if ts.Handoff == nil || len(asked) != 1 || asked[0] != "203.0.114.7" {
 		t.Errorf("asked %v, handoff %+v", asked, ts.Handoff)
+	}
+	if host, _ := hostPort(h.calls[len(h.calls)-1]); host != "203.0.114.7" {
+		t.Errorf("the test dialled %s, not the traced address", host)
 	}
 }
 
@@ -376,6 +382,9 @@ func TestCancelMasksUntilStreamsClose(t *testing.T) {
 	if len(ts) != 1 || ts[0].Outcome != model.SpeedCancelled || ts[0].DownBps != nil || ts[0].Server != sv.ID || ts[0].End.Before(ret.Add(AbortTail)) {
 		t.Fatalf("stored %+v", ts)
 	}
+	if ts[0].Bytes <= 0 {
+		t.Errorf("the cancelled row's bytes: %d", ts[0].Bytes)
+	}
 	if st := Summarize(ts, nil); st.N != 0 || st.Failed != 0 || st.Busy != 0 {
 		t.Errorf("a cancelled test counted: %+v", st)
 	}
@@ -428,9 +437,10 @@ func TestCancelAtCompletion(t *testing.T) {
 	h.s.o.Store = st
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { // runs after the test, before the save
+	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { return nil, nil }
+	h.s.o.HandoffCached = func(string) (*model.Handoff, bool) { // runs after the test, before the save
 		cancel()
-		return nil, nil
+		return nil, false
 	}
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
@@ -446,7 +456,7 @@ func TestCancelAtCompletion(t *testing.T) {
 	// A cancel during the test still stores its cancelled row, with a
 	// store that refuses cancelled contexts.
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	h.s.o.Handoff = nil
+	h.s.o.Handoff, h.s.o.HandoffCached = nil, nil
 	h.setRun(func(c Config, n int) (Result, error) {
 		cancel2()
 		return Result{}, context.Canceled
@@ -455,5 +465,209 @@ func TestCancelAtCompletion(t *testing.T) {
 	ts, _ = st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
 	if len(ts) != 2 || ts[1].Outcome != model.SpeedCancelled {
 		t.Errorf("cancelled: %+v", ts)
+	}
+}
+
+// TestAtMostNineConnections: one test never holds more than Streams+1
+// connections to a server, across download, the relisten pause, a busy
+// retry and upload (counted by the client's dialler and by the server).
+func TestAtMostNineConnections(t *testing.T) {
+	f := newFakeServer(t, "")
+	host, port, _ := net.SplitHostPort(f.addr())
+	p, _ := strconv.Atoi(port)
+	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p + 5, Custom: true, LAN: true}
+	var open, peak atomic.Int32
+	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		c, err := d.DialContext(ctx, network, f.addr()) // every port is the fake
+		if err != nil {
+			return nil, err
+		}
+		n := open.Add(1)
+		for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+		}
+		return &dialedConn{Conn: c, open: &open}, nil
+	}
+	var runs []Direction
+	s := New(Options{Catalog: &Catalog{byID: map[string]int{}}, Custom: []Server{sv}, Store: &MemStore{},
+		Fake: &Fake{
+			Run: func(ctx context.Context, c Config) (Result, error) {
+				if c.Direction == Upload && !slices.Contains(runs, Upload) {
+					f.busyNext.Store(1) // the upload's first port is busy
+				}
+				runs = append(runs, c.Direction)
+				c.Dial, c.Streams = dial, 8
+				c.Duration, c.MinDuration, c.Omit = 300*time.Millisecond, 0, 100*time.Millisecond
+				return Run(ctx, c)
+			},
+			Sleep: func(ctx context.Context, _ time.Duration) bool { return ctx.Err() == nil },
+		}})
+	id, saved, _ := s.execJob(context.Background(), s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
+	if !saved || id == 0 || !slices.Equal(runs, []Direction{Download, Upload, Upload}) {
+		t.Fatalf("saved %v, runs %v", saved, runs)
+	}
+	if peak.Load() > 9 || f.peak.Load() > 9 || peak.Load() < 9 {
+		t.Errorf("at most %d open (client), %d (server); want 9", peak.Load(), f.peak.Load())
+	}
+	if open.Load() != 0 {
+		t.Errorf("%d connections left open", open.Load())
+	}
+}
+
+type dialedConn struct {
+	net.Conn
+	open *atomic.Int32
+	once sync.Once
+}
+
+func (c *dialedConn) Close() error {
+	c.once.Do(func() { c.open.Add(-1) })
+	return c.Conn.Close()
+}
+
+// TestEarlyFirstTest: turning tests on (or changing the mode) runs the
+// first test 2 minutes later, an extra run of the next grid slot; the grid
+// then goes on, never two tests closer than half a spacing. A restart, or
+// turning on what is already on, stays on the grid.
+func TestEarlyFirstTest(t *testing.T) {
+	for _, phase := range []time.Duration{0, 37 * time.Second, 3*time.Minute + 11*time.Second, 6 * time.Minute, 29 * time.Minute} {
+		h := newHarness(t, Options{})
+		h.now = h.now.Add(phase)
+		ctx := context.Background()
+		on := h.clock()
+		next, err := h.s.SetMode(ctx, ModeRegions, nil)
+		if err != nil || next.Sub(on) != firstDelay || !h.s.State().Next.Equal(next) {
+			t.Fatalf("phase %v: next %v after turning on at %v (%v)", phase, next, on, err)
+		}
+		h.s.mu.Lock()
+		sp := h.s.spacingLocked(ModeRegions)
+		grid := func(at time.Time) bool { // on the install's grid, up to the cycle's jitter
+			off := at.Sub(h.s.cycleStart) % sp
+			return off == 0
+		}
+		var runs []time.Time
+		var slots []int
+		now := on
+		for len(runs) < 25 {
+			tg, wait := h.s.dueLocked(now)
+			if tg != nil {
+				runs = append(runs, now)
+				slots = append(slots, h.s.slot)
+			}
+			if wait > 0 {
+				now = now.Add(wait)
+			}
+		}
+		if !h.s.next.IsZero() && !grid(h.s.next) {
+			t.Errorf("phase %v: off the grid afterwards: %v", phase, h.s.next)
+		}
+		h.s.mu.Unlock()
+		for i := 1; i < len(runs); i++ {
+			if d := runs[i].Sub(runs[i-1]); d < sp/2 {
+				t.Errorf("phase %v: tests %d and %d %v apart (spacing %v)", phase, i-1, i, d, sp)
+			}
+		}
+		// Turning on what is already on changes nothing.
+		h.s.mu.Lock()
+		before := h.s.next
+		h.s.mu.Unlock()
+		if n, _ := h.s.SetMode(ctx, ModeRegions, nil); !n.Equal(before) {
+			t.Errorf("phase %v: on again moved the next test: %v -> %v", phase, before, n)
+		}
+	}
+	// A restart: the first test is the grid's, at least firstDelay away.
+	h := newHarness(t, Options{})
+	h.now = h.now.Add(3 * time.Minute)
+	h.s.mu.Lock()
+	h.s.mode = ModeRegions
+	h.s.restartLocked(h.clock())
+	next, base := h.s.next, h.s.cycleBase
+	sp := h.s.spacingLocked(ModeRegions)
+	h.s.mu.Unlock()
+	if next.Sub(h.clock()) < firstDelay || next.Sub(base)%sp != 0 {
+		t.Errorf("restart: next %v, cycle %v", next, base)
+	}
+}
+
+// TestHandoffBeforeWindow: the handoff traceroute runs before the test's
+// window (never during a test, nor after it in the next one's way),
+// bounded: on timeout the test goes ahead with no handoff. A shutdown
+// during it saves nothing.
+func TestHandoffBeforeWindow(t *testing.T) {
+	ip := netip.MustParseAddr("203.0.114.7")
+	h := newHarness(t, Options{})
+	h.s.o.lookup = func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{ip}, nil }
+	h.setRun(func(c Config, n int) (Result, error) {
+		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: ip}, nil
+	})
+	var during []bool // a window open while it traced
+	h.s.o.Handoff = func(ctx context.Context, host string) (*model.Handoff, error) {
+		now := h.clock()
+		during = append(during, h.s.o.Windows.Overlaps(now, now) || len(h.calls) > 0)
+		return &model.Handoff{ASN: 6939, Name: "HURRICANE", ISPASN: 64500}, nil
+	}
+	if ts := h.slot(t, target{server: "Near"}); ts.Handoff == nil || ts.Handoff.ASN != 6939 || len(during) != 1 || during[0] {
+		t.Errorf("handoff %+v, traced during a test %v", ts.Handoff, during)
+	}
+	// The bound: a traceroute that never answers is given up on.
+	h.s.o.handoffIn = 50 * time.Millisecond
+	h.s.o.Handoff = func(ctx context.Context, _ string) (*model.Handoff, error) { <-ctx.Done(); return nil, ctx.Err() }
+	t0 := time.Now()
+	if ts := h.slot(t, target{server: "Near"}); ts.Handoff != nil || ts.Outcome != model.SpeedOK || time.Since(t0) > 2*time.Second {
+		t.Errorf("timed out: %+v after %v", ts.Handoff, time.Since(t0))
+	}
+	// A shutdown during the traceroute: no test, no row.
+	ctx, cancel := context.WithCancel(context.Background())
+	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { cancel(); return nil, context.Canceled }
+	n, calls := len(h.st.tests), len(h.calls)
+	if id, saved, _ := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "schedule"); id != 0 || saved || len(h.st.tests) != n || len(h.calls) != calls {
+		t.Errorf("shut down while tracing: saved %v, %d rows, %d runs", saved, len(h.st.tests)-n, len(h.calls)-calls)
+	}
+}
+
+// TestOwnerZone: the owner's zone is kept from a local page's tz (an IANA
+// name only) and is the report's, falling back to the server's zone.
+func TestOwnerZone(t *testing.T) {
+	h := newHarness(t, Options{})
+	for _, bad := range []string{"", "Local", "120", "Nowhere/Else"} {
+		h.s.NoteZone(bad)
+	}
+	if z := h.s.State().OwnerZone; z != "" || StoredZone(context.Background(), h.st) != time.Local {
+		t.Errorf("not a zone: %q", z)
+	}
+	h.s.NoteZone("America/New_York")
+	if z := h.s.State().OwnerZone; z != "America/New_York" || StoredZone(context.Background(), h.st).String() != "America/New_York" {
+		t.Errorf("kept %q, stored %v", z, StoredZone(context.Background(), h.st))
+	}
+	h2 := newHarness(t, Options{})
+	h2.st = h.st
+	h2.s.o.Store = h.st
+	h2.s.load(context.Background())
+	if h2.s.State().OwnerZone != "America/New_York" {
+		t.Error("not kept across a restart")
+	}
+}
+
+// TestCancelledBy: the owner's cancel (its cause) is on the cancelled row;
+// a download that finished keeps its speed.
+func TestCancelledBy(t *testing.T) {
+	for _, c := range []struct {
+		cause error
+		want  string
+	}{{ErrCancelledByOwner, "owner"}, {nil, ""}} {
+		h := newHarness(t, Options{})
+		ctx, cancel := context.WithCancelCause(context.Background())
+		h.setRun(func(cf Config, n int) (Result, error) {
+			if cf.Direction == Upload {
+				cancel(c.cause)
+				return Result{}, context.Canceled
+			}
+			return Result{Direction: cf.Direction, Bytes: 1e6, Elapsed: time.Second}, nil
+		})
+		h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
+		ts := h.st.tests
+		if len(ts) != 1 || ts[0].Outcome != model.SpeedCancelled || ParseExtra(ts[0].Extra).CancelledBy != c.want || ts[0].DownBps == nil {
+			t.Errorf("cause %v: %+v", c.cause, ts)
+		}
 	}
 }

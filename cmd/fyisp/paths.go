@@ -14,6 +14,9 @@ import (
 
 // defaultDataDir is where history lives unless --data-dir or --ephemeral.
 func defaultDataDir() (string, error) {
+	if d := os.Getenv("FYISP_DATA_DIR"); d != "" { // the Docker image's default
+		return d, nil
+	}
 	if d := os.Getenv("STATE_DIRECTORY"); d != "" { // systemd StateDirectory=
 		return d, nil
 	}

@@ -1,6 +1,7 @@
 package speedtest
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -42,6 +43,9 @@ const (
 	CaseServer    = "server"   // one server's busy time
 	CaseMild      = "mild"     // a 10-25% dip: too small to point anywhere
 	CaseMixed     = "mixed"    // some rows dip, in no pattern that points anywhere
+	// CaseTooFast: every server is too fast to measure from here (the
+	// coverage guard): the tests can't compare times of day.
+	CaseTooFast = "too_fast"
 )
 
 // Finding tiers.
@@ -66,13 +70,29 @@ type Finding struct {
 	Providers    []string `json:"providers"` // provider names involved
 	Servers      []string `json:"servers"`   // server IDs involved (case server)
 	// Network is the first network past the ISP that the slow tests share
-	// (case provider: e.g. "AS3356 LEVEL3"), from the tests' handoff
-	// traceroutes; "" when unknown or not shared. Local wording only.
+	// (case provider: e.g. "LEVEL3 (AS3356)"), from the tests' handoff
+	// traceroutes; "" when unknown or not shared. Via is the internet
+	// exchange they meet at, when the traceroutes crossed one. Local
+	// wording only.
 	Network string  `json:"network,omitempty"`
+	Via     string  `json:"via,omitempty"`
 	Drop    float64 `json:"drop"`
-	Up      bool    `json:"up"`   // about uploads
-	Days    int     `json:"days"` // days with scored scheduled tests
-	Tests   int     `json:"tests"`
+	Up      bool    `json:"up"` // about uploads
+	// Days is the local dates (in FindingInput.Loc) with a scored
+	// scheduled test, First and Last the first and last such test.
+	Days  int       `json:"days"`
+	Tests int       `json:"tests"`
+	First time.Time `json:"-"`
+	Last  time.Time `json:"-"`
+	// EvidencePublic is Evidence without dates (the share link and report
+	// keep the owner's start date out). Coverage says why fewer than 7
+	// days are covered (owner voice; CoveragePublic without the date).
+	EvidencePublic string `json:"evidence_public,omitempty"`
+	Coverage       string `json:"coverage,omitempty"`
+	CoveragePublic string `json:"coverage_public,omitempty"`
+	// Slowest is the servers slowest in the dip's hours (see slowest);
+	// the caller sets their Display.
+	Slowest []SlowServer `json:"slowest,omitempty"`
 	// Case isp: how many regions and providers could tell (Regions and
 	// Providers dipped), and the far regions left out (limited by
 	// distance, they can't show the line's speed).
@@ -90,6 +110,8 @@ type Finding struct {
 	Bridged bool `json:"bridged,omitempty"`
 
 	group []model.SpeedTest // the case's own tests (the days count)
+	span  int               // the days the tests span, in whole days: the tiers' count
+	loc   *time.Location    // FindingInput.Loc
 }
 
 // FindingInput is what the finding is computed from.
@@ -100,13 +122,47 @@ type FindingInput struct {
 	// EdgeIdle is the ISP edge's idle RTT median (ms) per local hour (NaN:
 	// unknown): the access-network control.
 	EdgeIdle [24]float64
+	// From and To are the window (zero From: no Coverage). When the tests
+	// cover fewer of its days, Coverage says why.
+	From, To time.Time
 }
 
 // MinDays is the days of tests a finding needs.
 const MinDays = 3
 
 // FindFinding computes the finding.
-func FindFinding(in FindingInput) Finding {
+func FindFinding(in FindingInput) (f Finding) {
+	fast := tooFast(in.Tests, in.Loc)
+	servers, rawDays, rawN := map[string]bool{}, map[string]bool{}, 0
+	for i := range in.Tests {
+		if t := &in.Tests[i]; patternRow(t, false) && t.Outcome == model.SpeedOK {
+			servers[t.Server] = true
+			rawDays[t.Start.In(zone(in.Loc)).Format("2006-01-02")] = true
+			rawN++
+		}
+	}
+	out := 0
+	for sv := range servers {
+		if fast[0][sv] {
+			out++
+		}
+	}
+	if out > 0 && out == len(servers) && len(rawDays) >= MinDays {
+		f = Finding{Case: CaseTooFast, Days: len(rawDays), Tests: rawN, Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{},
+			Text:       "Your line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up.",
+			TextPublic: "The line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up."}
+		f.Evidence = fmt.Sprintf("Based on %s on %s.", plural(rawN, "test", "tests"), plural(len(rawDays), "day", "days"))
+		f.EvidencePublic = f.Evidence
+		return f
+	}
+	defer func() {
+		if out > 0 && f.Case != CaseNotEnough {
+			left := fmt.Sprintf(" %d of %d servers were too fast to measure from here and are left out.", out, len(servers))
+			f.Evidence += left
+			f.EvidencePublic += left
+		}
+	}()
+	in.Tests = Censored(in.Tests, in.Loc) // capped directions as patterns use them
 	var tests []model.SpeedTest
 	days := map[string]bool{}
 	for _, t := range in.Tests {
@@ -115,12 +171,13 @@ func FindFinding(in FindingInput) Finding {
 			days[t.Start.In(zone(in.Loc)).Format("2006-01-02")] = true
 		}
 	}
-	f := Finding{Days: len(days), Tests: len(tests), Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{}}
+	f = Finding{Days: len(days), Tests: len(tests), Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{}}
 	if f.Days < MinDays {
 		f.Case = CaseNotEnough
 		f.Text = fmt.Sprintf("We need about %d days of tests to compare times of day. %d of %d days so far.", MinDays, f.Days, MinDays)
 		f.TextPublic = fmt.Sprintf("About %d days of tests are needed to compare times of day; %d of %d so far.", MinDays, f.Days, MinDays)
 		f.Evidence = fmt.Sprintf("Based on %s so far.", plural(len(tests), "test", "tests"))
+		f.EvidencePublic = f.Evidence
 		return f
 	}
 	// From here Days is the span the tests cover, in whole days: 4 days of
@@ -134,19 +191,95 @@ func FindFinding(in FindingInput) Finding {
 			last = t.Start
 		}
 	}
-	f.Days = min(f.Days, max(1, int(math.Ceil(last.Sub(first).Hours()/24))))
-	f.Evidence = fmt.Sprintf("Based on %s over %s.", plural(len(tests), "test", "tests"), plural(f.Days, "day", "days"))
+	f.span = min(f.Days, max(1, int(math.Ceil(last.Sub(first).Hours()/24))))
+	f.First, f.Last, f.loc = first, last, in.Loc
+	f.coverage(in, tests)
+	f.Evidence = fmt.Sprintf("Based on %s on %s between %s and %s.", plural(len(tests), "test", "tests"), plural(f.Days, "day", "days"),
+		dayName(first, in.Loc), dayName(last, in.Loc))
+	f.EvidencePublic = fmt.Sprintf("Based on %s on %s.", plural(len(tests), "test", "tests"), plural(f.Days, "day", "days"))
 	if f.thin(in, tests) {
 		return f
 	}
 	for _, up := range []bool{false, true} {
 		if f.find(in, tests, up) {
 			f.wording(in, tests)
+			f.slowest(in, tests)
 			return f
 		}
 	}
 	f.quiet(in, tests)
+	f.slowest(in, tests)
 	return f
+}
+
+// SlowServer is one of the servers slowest in the dip's hours.
+type SlowServer struct {
+	Server    string  `json:"-"`       // its ID (local)
+	Ref       string  `json:"server"`  // its public-safe ID, set by the caller
+	Display   string  `json:"display"` // its public-safe name, set by the caller
+	Pct       int     `json:"pct"`     // its dip hours' median, % of its usual
+	MedianBps float64 `json:"median_bps"`
+	UsualBps  float64 `json:"usual_bps"` // its median outside the dip hours
+	N         int     `json:"n"`         // its results in the dip hours
+}
+
+// MaxSlowest is the most servers Finding.Slowest lists.
+const MaxSlowest = 3
+
+// slowest lists up to MaxSlowest servers with at least MinPerHour
+// non-fallback scheduled results in the dip's hours (and outside them)
+// that read below their usual: in the isp and mild cases the fastest
+// (nearest) first, else the slowest first. Lower bounds are left out.
+func (f *Finding) slowest(in FindingInput, tests []model.SpeedTest) {
+	switch f.Case {
+	case CaseISP, CaseMild, CaseRoute, CaseProvider, CaseServer:
+	default:
+		return
+	}
+	if len(f.Hours) == 0 {
+		return
+	}
+	in1, out := map[string][]float64{}, map[string][]float64{}
+	for _, t := range tests {
+		v := t.DownBps
+		if f.Up {
+			v = t.UpBps
+		}
+		if v == nil || t.Fallback || t.OnDemand() {
+			continue
+		}
+		if lbDown, lbUp := LowerBounds(&t); (!f.Up && lbDown) || (f.Up && lbUp) {
+			continue
+		}
+		if slices.Contains(f.Hours, localHour(t.Start, in.Loc)) {
+			in1[t.Server] = append(in1[t.Server], *v)
+		} else {
+			out[t.Server] = append(out[t.Server], *v)
+		}
+	}
+	var list []SlowServer
+	for sv, v := range in1 {
+		u := out[sv]
+		if len(v) < MinPerHour || len(u) < MinPerHour {
+			continue
+		}
+		m, usual := callq.Median(v), callq.Median(u)
+		if usual <= 0 || m >= usual {
+			continue
+		}
+		list = append(list, SlowServer{Server: sv, Pct: int(m/usual*100 + 0.5), MedianBps: math.Round(m), UsualBps: math.Round(usual), N: len(v)})
+	}
+	slices.SortFunc(list, func(a, b SlowServer) int {
+		if a.Pct != b.Pct {
+			return a.Pct - b.Pct
+		}
+		return strings.Compare(a.Server, b.Server)
+	})
+	list = list[:min(len(list), MaxSlowest)]
+	if f.Case == CaseISP || f.Case == CaseMild {
+		slices.SortStableFunc(list, func(a, b SlowServer) int { return cmp.Compare(b.UsualBps, a.UsualBps) })
+	}
+	f.Slowest = list
 }
 
 // quiet fills the finding when no case matched, true to what the rule can
@@ -165,10 +298,10 @@ func (f *Finding) quiet(in FindingInput, tests []model.SpeedTest) {
 	defer func() {
 		f.TextPublic = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual").Replace(f.Text)
 	}()
-	pooled := HourMedians(noFallback, in.Loc, false)
+	pooled := hourMedians(noFallback, in.Loc, false)
 	var rows []string
 	for _, k := range slices.Sorted(maps.Keys(byRow)) {
-		if p := FindDip(HourMedians(byRow[k], in.Loc, false), false); p != nil {
+		if p := FindDip(hourMedians(byRow[k], in.Loc, false), false); p != nil {
 			name := k
 			if r, ok := regionByID(in.Catalog, k); ok {
 				name = r.Title
@@ -235,10 +368,10 @@ func (f *Finding) thin(in FindingInput, tests []model.SpeedTest) bool {
 			groups[GroupKey(t)] = append(groups[GroupKey(t)], t)
 		}
 	}
-	pooled := HourMedians(noFallback, in.Loc, false)
+	pooled := hourMedians(noFallback, in.Loc, false)
 	covered, rows := countValid(pooled), 0
 	for _, ts := range groups {
-		if countValid(HourMedians(ts, in.Loc, false)) >= minHours {
+		if countValid(hourMedians(ts, in.Loc, false)) >= minHours {
 			rows++
 		}
 	}
@@ -247,10 +380,10 @@ func (f *Finding) thin(in FindingInput, tests []model.SpeedTest) bool {
 	}
 	// About how many more days: each row gets this many tests per hour of
 	// day per day so far.
-	perDay := float64(len(noFallback)) / float64(max(len(groups), 1)*24*f.Days)
+	perDay := float64(len(noFallback)) / float64(max(len(groups), 1)*24*f.span)
 	more := 1
 	if perDay > 0 {
-		more = max(1, int(math.Ceil(float64(MinPerHour)/perDay))-f.Days)
+		more = max(1, int(math.Ceil(float64(MinPerHour)/perDay))-f.span)
 	}
 	f.Case = CaseNotEnough
 	wait := "about " + plural(more, "more day", "more days")
@@ -370,18 +503,18 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 	region := func(t model.SpeedTest) string { return t.Region }
 	provider := func(t model.SpeedTest) string { return providerOf(in.Catalog, t.Server) }
 	byRegion, byProvider := group(noFallback, region), group(noFallback, provider)
-	byServer, byNet := group(noFallback, func(t model.SpeedTest) string { return t.Server }), group(noFallback, handoffKey)
+	byServer, byNet := group(noFallback, func(t model.SpeedTest) string { return t.Server }), group(noFallback, netKey)
 	nearRows, nearProv := group(nearTests, GroupKey), group(nearTests, provider)
 
 	var cands []*Pattern
 	for _, ts := range [][]model.SpeedTest{nearTests, noFallback} {
-		if p := FindDip(HourMedians(ts, in.Loc, up), up); p != nil {
+		if p := FindDip(hourMedians(ts, in.Loc, up), up); p != nil {
 			cands = append(cands, p)
 		}
 	}
 	for _, groups := range []map[string][]model.SpeedTest{byProvider, byNet, byRegion, byServer} {
 		for _, k := range slices.Sorted(maps.Keys(groups)) {
-			if p := FindDip(HourMedians(groups[k], in.Loc, up), up); p != nil {
+			if p := FindDip(hourMedians(groups[k], in.Loc, up), up); p != nil {
 				cands = append(cands, p)
 			}
 		}
@@ -469,7 +602,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 			if len(regs) >= 2 && compared {
 				set(CaseProvider)
 				f.Providers, f.Regions = []string{pv}, regs
-				f.Network = sharedHandoff(byProvider[pv])
+				f.Network, f.Via = sharedHandoff(byProvider[pv]), sharedVia(byProvider[pv])
 				f.FarEvening = closeZones(in.Catalog, regs)
 				f.group = byProvider[pv]
 				return true
@@ -488,7 +621,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 			if regs := regionsOf(byNet[k]); len(provs) >= 2 && len(regs) >= 2 {
 				slices.Sort(provs)
 				set(CaseProvider)
-				f.Providers, f.Regions, f.Network = provs, regs, k
+				f.Providers, f.Regions, f.Network, f.Via = provs, regs, handoffKey(byNet[k][0]), sharedVia(byNet[k])
 				f.FarEvening = closeZones(in.Catalog, regs)
 				f.group = byNet[k]
 				return true
@@ -623,7 +756,8 @@ func closeZones(c *Catalog, regions []string) bool {
 	return slices.Max(offs)-slices.Min(offs) < 3*3600
 }
 
-// handoffKey names a test's handoff network ("AS3356 LEVEL3"); "" unknown.
+// handoffKey names a test's handoff network ("LEVEL3 (AS3356)"); ""
+// unknown.
 func handoffKey(t model.SpeedTest) string {
 	h := t.Handoff
 	if h == nil || h.ASN == 0 {
@@ -632,7 +766,47 @@ func handoffKey(t model.SpeedTest) string {
 	if h.Name == "" {
 		return fmt.Sprintf("AS%d", h.ASN)
 	}
-	return fmt.Sprintf("AS%d %s", h.ASN, h.Name)
+	return fmt.Sprintf("%s (AS%d)", h.Name, h.ASN)
+}
+
+// netKey groups tests by their handoff network and the exchange they meet
+// it at: one peer reached at two exchanges is two links ("" unknown).
+func netKey(t model.SpeedTest) string {
+	k := handoffKey(t)
+	if k != "" && t.Handoff.Via != "" {
+		k += " via " + t.Handoff.Via
+	}
+	return k
+}
+
+// sharedVia is the internet exchange most of ts (≥ 80% of those with a
+// handoff) crossed, else "".
+func sharedVia(ts []model.SpeedTest) string {
+	n := map[string]int{}
+	known := 0
+	for _, t := range ts {
+		if t.Handoff != nil {
+			known++
+			if t.Handoff.Via != "" {
+				n[t.Handoff.Via]++
+			}
+		}
+	}
+	for k, c := range n {
+		if c*5 >= known*4 {
+			return k
+		}
+	}
+	return ""
+}
+
+// meetAt is the wording for where the ISP meets a network at an internet
+// exchange ("" without one).
+func meetAt(via string) string {
+	if via == "" {
+		return ""
+	}
+	return ", where they meet at " + via + " (an internet exchange)"
 }
 
 // sharedHandoff is the handoff network of most of ts (≥ 80%), else "".
@@ -728,9 +902,9 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 	}
 	edgeRises := ctl != "" || (len(edgeRise) >= MinPerHour && callq.Median(edgeRise) >= 5)
 	switch {
-	case f.Days >= 7 && full && wired && steady && (f.Case != CaseISP || (f.Drop >= 0.3 && edgeRises)):
+	case f.span >= 7 && full && wired && steady && (f.Case != CaseISP || (f.Drop >= 0.3 && edgeRises)):
 		f.Tier = TierPointsTo
-	case f.Days >= 5 && full:
+	case f.span >= 5 && full:
 		f.Tier = TierMostLikely
 	default:
 		f.Tier = TierEarly
@@ -802,12 +976,17 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		if len(f.Providers) > 1 { // grouped by the network past the ISP
 			claim = fmt.Sprintf("Only servers reached through one network (%s; %s) %s from about %s; the others we could test stay normal.",
 				joinAnd(f.Providers), joinAnd(regs), slowVerb(f.Up), when)
-			who, whoPublic = "the link between your internet provider and "+f.Network, "the link between the internet provider and that network"
+			who, whoPublic = "the link between your internet provider and "+f.Network+meetAt(f.Via), "the link between the internet provider and that network"
 		} else {
 			claim = fmt.Sprintf("Only %s servers %s from about %s (%s); other providers we could test there stay normal.", f.Providers[0], slowVerb(f.Up), when, joinAnd(regs))
 			who, whoPublic = "the link between your internet provider and "+f.Providers[0], "the link between the internet provider and "+f.Providers[0]
-			if f.Network != "" {
+			switch {
+			case f.Network != "" && f.Via != "":
+				who = "the link between your internet provider and " + f.Network + meetAt(f.Via)
+			case f.Network != "":
 				who += " (reached through " + f.Network + ")"
+			case f.Via != "": // the traceroutes end at the exchange: the peer isn't known
+				who = "the route through " + f.Via + " (an internet exchange) to these servers"
 			}
 		}
 		if f.FarEvening {
@@ -895,12 +1074,55 @@ func tierTail(tier, who string) string {
 func (f *Finding) evidence(minTests, minProv int) {
 	part, _ := partOfDay(&Pattern{DipFrom: f.Hours[0], Hours: f.Hours})
 	p := strings.ToLower(strings.TrimSuffix(part, "s"))
-	f.Evidence = fmt.Sprintf("Based on %s over %s; each %s hour was tested at least %s across %s.",
-		plural(f.Tests, "test", "tests"), plural(f.Days, "day", "days"), p,
+	each := fmt.Sprintf("each %s hour was tested at least %s across %s.", p,
 		plural(minTests, "time", "times"), plural(minProv, "provider", "providers"))
-	if f.DayCount > 0 {
-		f.Evidence += fmt.Sprintf(" Slower on %d of %s.", f.SlowDays, plural(f.DayCount, p, p+"s"))
+	days := plural(f.Days, "day", "days")
+	f.Evidence = fmt.Sprintf("Based on %s on %s between %s and %s; %s", plural(f.Tests, "test", "tests"), days,
+		dayName(f.First, f.loc), dayName(f.Last, f.loc), each)
+	f.EvidencePublic = fmt.Sprintf("Based on %s on %s; %s", plural(f.Tests, "test", "tests"), days, each)
+	var more string
+	if f.Tier == TierEarly {
+		more += fmt.Sprintf(" Early: %s of tests. A week gives a clearer picture.", days)
 	}
+	if f.DayCount > 0 {
+		more += fmt.Sprintf(" Slower on %d of %s.", f.SlowDays, plural(f.DayCount, p, p+"s"))
+	}
+	f.Evidence += more
+	f.EvidencePublic += more
+}
+
+// dayName is t's date in loc (nil: UTC), e.g. "Mon 6 Oct".
+func dayName(t time.Time, loc *time.Location) string { return t.In(zone(loc)).Format("Mon 2 Jan") }
+
+// coverage says why the tests cover fewer days than the window's: tests
+// started within it (only the owner's voice names the date), or days
+// without tests.
+func (f *Finding) coverage(in FindingInput, tests []model.SpeedTest) {
+	if in.From.IsZero() {
+		return
+	}
+	to := in.To
+	if to.IsZero() {
+		to = f.Last
+	}
+	w := int(math.Round(to.Sub(in.From).Hours() / 24))
+	days := map[string]bool{}
+	for _, t := range tests {
+		if !t.Start.Before(in.From) && !t.Start.After(to) {
+			days[t.Start.In(zone(in.Loc)).Format("2006-01-02")] = true
+		}
+	}
+	d := len(days)
+	if d >= w {
+		return
+	}
+	if f.First.Sub(in.From) > 24*time.Hour {
+		f.Coverage = fmt.Sprintf("Speed tests started on %s, so this covers %s, not %d.", dayName(f.First, in.Loc), plural(d, "day", "days"), w)
+		f.CoveragePublic = fmt.Sprintf("This covers %s, not %d.", plural(d, "day", "days"), w)
+		return
+	}
+	f.Coverage = fmt.Sprintf("Tests ran on %d of the last %d days.", d, w)
+	f.CoveragePublic = f.Coverage
 }
 
 func slowVerb(up bool) string {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/netip"
 	"slices"
@@ -71,6 +72,12 @@ const (
 	SweepUnreachable = 3
 	// SlotMaxBytes caps a whole test, every server and retry included.
 	SlotMaxBytes = 2 * MaxBytes
+	// BackstopBytes is where a direction is cut with an RST whatever the
+	// server does (Backstop(MaxBytes): MaxBytes + 5%).
+	BackstopBytes = MaxBytes + MaxBytes/20
+	// TestMaxBytes bounds one test's data, every server and retry included,
+	// against any server: what a share-link test needs free.
+	TestMaxBytes = 2 * BackstopBytes
 	// EstTestTime is a typical test (both directions, adaptive): the
 	// planned share of time under test is slots × EstTestTime / interval.
 	EstTestTime = 15 * time.Second
@@ -103,6 +110,9 @@ const (
 	SettingKey   = "speedtest_mode"
 	settingExtra = "speedtest_extra"
 	settingSeed  = "speedtest_seed"
+	// SettingZone is the owner's IANA time zone, as their browser last
+	// sent it on a local page: the report's zone.
+	SettingZone = "owner_tz"
 )
 
 // Options configure a Scheduler.
@@ -132,8 +142,12 @@ type Options struct {
 	// interface tests use; nil: unknown.
 	Conn func() string
 	// Handoff returns where the path to host leaves the user's ISP
-	// (HandoffFinder.Handoff); nil: not recorded.
-	Handoff func(ctx context.Context, host string) (*model.Handoff, error)
+	// (HandoffFinder.Handoff); nil: not recorded. HandoffCached is its
+	// answer without a traceroute, when it has a recent one. When neither
+	// is cached, the traceroute runs before the test's window, bounded
+	// (see handoffFor).
+	Handoff       func(ctx context.Context, host string) (*model.Handoff, error)
+	HandoffCached func(host string) (*model.Handoff, bool)
 	// Ping returns the ICMP RTT to a host (probe.PingOnce); nil or failing:
 	// TCP connect time to port 80, 443, then the server's first iperf3 port.
 	Ping func(ctx context.Context, host string) (time.Duration, error)
@@ -156,6 +170,8 @@ type Options struct {
 	rtt       func(ctx context.Context, host string, port int) (time.Duration, error)
 	sleep     func(ctx context.Context, d time.Duration) bool
 	rand      *rand.Rand
+	lookup    func(ctx context.Context, host string) ([]netip.Addr, error) // the handoff's resolution (nil: the system resolver)
+	handoffIn time.Duration                                                // the handoff traceroute's bound (default handoffBudget)
 }
 
 // Fake stands in for the network: Run for the iperf3 run, RTT for the
@@ -200,6 +216,7 @@ type Scheduler struct {
 	seed         uint32
 	cycleBase    time.Time // the cycle's start on the install's grid, without jitter
 	cycleStart   time.Time
+	skipBefore   time.Time // after an early test: grid slots before this are skipped
 	slot         int
 	next         time.Time            // the next slot; zero when off
 	cur          *live                // the test running: its direction and server
@@ -211,6 +228,8 @@ type Scheduler struct {
 	far          string               // mode nearby: the automatic far region
 	pickedAt     time.Time
 	rtts         map[string]time.Duration
+	vias         map[string]model.Handoff // server -> latest handoff with a Via
+	zone         string                   // the owner's IANA zone ("": unknown)
 }
 
 // Row is a scheduled row of the current mode (a region or a server).
@@ -257,6 +276,11 @@ type State struct {
 	Servers      []ServerState
 	Regions      []Region
 	Custom       []string // custom server IDs
+	// Vias is each server's latest handoff that crossed an internet
+	// exchange (Handoff.Via; in memory only, local only).
+	Vias map[string]model.Handoff
+	// OwnerZone is the owner's IANA zone ("" unknown: see OwnerZone).
+	OwnerZone string
 }
 
 // New returns a Scheduler; Run drives it.
@@ -410,7 +434,7 @@ func (s *Scheduler) phase(iv time.Duration) time.Duration {
 // phase; the first test is the first slot at least firstDelay away, so
 // idle RTTs exist before it.
 func (s *Scheduler) restartLocked(now time.Time) {
-	s.slot, s.next = 0, time.Time{}
+	s.slot, s.next, s.skipBefore = 0, time.Time{}, time.Time{}
 	n := len(s.planLocked(s.mode))
 	if n == 0 {
 		return
@@ -430,6 +454,45 @@ func (s *Scheduler) restartLocked(now time.Time) {
 		}
 		base = base.Add(iv)
 	}
+}
+
+// dueLocked takes the slot due at now (nil: none) and moves on; wait is
+// the time to the next one (0: look again now). Every due slot goes into
+// the queue, late ones too: the queue drops a slot that waits
+// ScheduledStale, and never stacks two. The slot times themselves never
+// move.
+func (s *Scheduler) dueLocked(now time.Time) (*target, time.Duration) {
+	if s.next.IsZero() {
+		return nil, time.Hour
+	}
+	if wait := s.next.Sub(now); wait > 0 {
+		return nil, wait
+	}
+	var tg *target
+	if plan := s.planLocked(s.mode); s.slot < len(plan) {
+		t := plan[s.slot]
+		t.at = s.cycleBase.Add(time.Duration(s.slot) * s.IntervalFor(s.mode) / time.Duration(len(plan)))
+		tg = &t
+	}
+	s.advanceLocked()
+	for !s.next.IsZero() && s.next.Before(s.skipBefore) {
+		s.advanceLocked() // too close to an early test
+	}
+	return tg, 0
+}
+
+// earlyLocked, after an explicit turn-on or mode change (never a
+// restart), brings the first test to firstDelay from now: an extra run of
+// the next grid slot (its rotation stays its nominal time's). The grid
+// then goes on from the slot after it, skipping any slot less than half a
+// spacing after the early test, so no two tests are closer than that.
+func (s *Scheduler) earlyLocked(now time.Time) {
+	early := now.Add(firstDelay)
+	if s.next.IsZero() || !s.next.After(early) {
+		return
+	}
+	s.next = early
+	s.skipBefore = early.Add(s.spacingLocked(s.mode) / 2)
 }
 
 // advanceLocked moves to the next slot. A new cycle starts at the next
@@ -491,6 +554,9 @@ func (s *Scheduler) load(ctx context.Context) {
 			s.extra = splitIDs(v)
 		}
 	}
+	if v, ok, err := st.Setting(ctx, SettingZone); err == nil && ok {
+		s.zone = v
+	}
 	if v, ok, err := st.Setting(ctx, settingSkip); err == nil && ok {
 		for _, id := range splitIDs(v) {
 			s.skip[id] = true
@@ -538,30 +604,12 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}()
 	defer func() { <-qdone }()
 	for {
-		now := s.o.Now()
 		s.mu.Lock()
-		wait := time.Hour
-		if !s.next.IsZero() {
-			if wait = s.next.Sub(now); wait <= 0 {
-				// Every due slot goes into the queue, late ones too: the
-				// queue drops a slot that waits ScheduledStale, and never
-				// stacks two. The slot times themselves never move.
-				var tg *target
-				if plan := s.planLocked(s.mode); s.slot < len(plan) {
-					t := plan[s.slot]
-					t.at = s.cycleBase.Add(time.Duration(s.slot) * s.IntervalFor(s.mode) / time.Duration(len(plan)))
-					tg = &t
-				}
-				s.advanceLocked()
-				wait = 0
-				if tg != nil {
-					s.mu.Unlock()
-					s.q.EnqueueScheduled(s.slotJob(*tg))
-					s.mu.Lock()
-				}
-			}
-		}
+		tg, wait := s.dueLocked(s.o.Now())
 		s.mu.Unlock()
+		if tg != nil {
+			s.q.EnqueueScheduled(s.slotJob(*tg))
+		}
 		if wait <= 0 {
 			continue
 		}
@@ -632,6 +680,7 @@ func (s *Scheduler) SetMode(ctx context.Context, m Mode, extra []string) (time.T
 	}
 	if changed {
 		s.restartLocked(s.o.Now())
+		s.earlyLocked(s.o.Now())
 	}
 	next := s.next
 	s.mu.Unlock()
@@ -642,6 +691,76 @@ func (s *Scheduler) SetMode(ctx context.Context, m Mode, extra []string) (time.T
 	return next, nil
 }
 
+// NoteZone keeps the owner's IANA zone (from a local page's tz) when it
+// changed; anything time.LoadLocation can't load is ignored.
+func (s *Scheduler) NoteZone(name string) {
+	if name == "" || name == "Local" {
+		return
+	}
+	s.mu.Lock()
+	same := s.zone == name
+	s.mu.Unlock()
+	if same {
+		return
+	}
+	if _, err := time.LoadLocation(name); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.zone = name
+	s.mu.Unlock()
+	if st := s.o.Store; st != nil {
+		ctx, cancel := storeCtx(context.Background())
+		defer cancel()
+		if err := st.SetSetting(ctx, SettingZone, name); err != nil {
+			s.o.Log.Debug("speed test: saving the owner's time zone failed", "err", err)
+		}
+	}
+}
+
+// OwnerZone is where the owner's times of day are: their IANA zone,
+// else the server's (TZ, time.Local), which is UTC when unset.
+func OwnerZone(name string) *time.Location {
+	if name != "" && name != "Local" {
+		if loc, err := time.LoadLocation(name); err == nil {
+			return loc
+		}
+	}
+	return time.Local
+}
+
+// ZoneLabel names loc at t: "EDT (UTC−4)", "UTC+5:30" when it has no
+// abbreviation, "UTC".
+func ZoneLabel(loc *time.Location, t time.Time) string {
+	name, off := t.In(loc).Zone()
+	if off == 0 && (name == "UTC" || name == "GMT" || name == "") {
+		return "UTC"
+	}
+	sign := "+"
+	if off < 0 {
+		sign, off = "−", -off
+	}
+	utc := fmt.Sprintf("UTC%s%d", sign, off/3600)
+	if m := off % 3600 / 60; m != 0 {
+		utc += fmt.Sprintf(":%02d", m)
+	}
+	if name == "" || name[0] == '+' || name[0] == '-' {
+		return utc
+	}
+	return name + " (" + utc + ")"
+}
+
+// StoredZone is OwnerZone of the zone saved in st (the report's zone).
+func StoredZone(ctx context.Context, st interface {
+	Setting(ctx context.Context, key string) (string, bool, error)
+}) *time.Location {
+	if st == nil {
+		return time.Local
+	}
+	v, _, _ := st.Setting(ctx, SettingZone)
+	return OwnerZone(v)
+}
+
 // State reports the schedule, the rows and the servers.
 func (s *Scheduler) State() State {
 	s.mu.Lock()
@@ -649,7 +768,7 @@ func (s *Scheduler) State() State {
 	load := s.planLoadLocked(s.mode)
 	st := State{Mode: s.mode, Modes: s.Modes(), SetByFlag: s.setByFlag, Extra: slices.Clone(s.extra),
 		Interval: s.IntervalFor(s.mode), Spacing: s.spacingLocked(s.mode), PlannedShare: load.Share,
-		Regions: s.o.Catalog.Regions, Next: s.next}
+		Regions: s.o.Catalog.Regions, Next: s.next, Vias: maps.Clone(s.vias), OwnerZone: s.zone}
 	if s.mode == ModeOff {
 		st.PlannedShare = 0
 	}

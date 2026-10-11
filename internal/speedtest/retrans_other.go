@@ -15,3 +15,6 @@ func tcpReceived(net.Conn) int64 { return -1 }
 
 // tcpRTT is unknown outside Linux.
 func tcpRTT(net.Conn) time.Duration { return 0 }
+
+// tcpMinRTT is unknown outside Linux.
+func tcpMinRTT(net.Conn) time.Duration { return 0 }

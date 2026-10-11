@@ -168,4 +168,7 @@ USER 65532:65532
 VOLUME /data
 EXPOSE 3000
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/fyisp", "--data-dir=/data", "--listen=0.0.0.0:3000"]
+# Defaults as environment variables (flags win), so subcommands work too:
+# docker run IMG version | profiles | report | export | paths.
+ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000
+ENTRYPOINT ["/fyisp"]

@@ -60,7 +60,13 @@ const (
 	// DefaultPublicBudget is the share link's data budget per rolling 24
 	// hours: bytes its tests actually transferred.
 	DefaultPublicBudget int64 = 10e9
-	budgetSpan                = 24 * time.Hour
+	// PublicTestBytes is what a share-link test needs free: the most one
+	// test can move (TestMaxBytes, 210 MB, whatever the server does). A
+	// share-link test starts only when this much still fits in what is
+	// left of the budget; a budget below it turns the share link's tests
+	// off.
+	PublicTestBytes int64 = TestMaxBytes
+	budgetSpan            = 24 * time.Hour
 	// The share link's tests mask probes (they would measure the test),
 	// so they may keep the line under test at most PublicTimePerHour in
 	// any hour and PublicTimePerDay in any 24 hours, and a public sweep
@@ -124,8 +130,18 @@ type Entry struct {
 	// (the gap after the last one).
 	Held bool
 	// Stopped: why a finished entry ended before its last job (StopCancelled,
-	// StopUnreachable, StopLimit); "" when it ran them all.
-	Stopped string
+	// StopUnreachable, StopLimit); "" when it ran them all. For StopLimit,
+	// StopCode is the refusal's code (RefusalCode) and ResetsAt when it
+	// clears.
+	Stopped  string
+	StopCode string
+	ResetsAt time.Time
+	// CancelledBy: "owner" when the owner cancelled it (Cancel,
+	// ClearPublic, turning the share link off); "" otherwise (shutdown).
+	CancelledBy string
+	// Cut: the job (1-based) a cancel stopped mid-test, without a result;
+	// 0 when none was.
+	Cut int
 }
 
 // Why an entry stopped early (Entry.Stopped).
@@ -141,6 +157,10 @@ var (
 	ErrUnknownID      = errors.New("no such server or region")
 	ErrNoEntry        = errors.New("no such queue entry")
 	ErrPublicDisabled = errors.New("tests from the share link are turned off")
+	// ErrBudgetTooSmall: the budget can't hold one whole test
+	// (PublicTestBytes), so the share link's tests are off. It is an
+	// ErrPublicDisabled.
+	ErrBudgetTooSmall = fmt.Errorf("%w: the budget is below what one test needs", ErrPublicDisabled)
 )
 
 // BudgetError: the share link's budget (data, or test time) is spent
@@ -154,7 +174,7 @@ func (e *BudgetError) Error() string {
 	if e.Time {
 		return "tests from the share link have used their time for now"
 	}
-	return "the share link's daily test budget is used up"
+	return "not enough of the share link's daily test allowance is left for another test"
 }
 
 // SweepWaitError: a public sweep ran recently; the next may start at
@@ -213,7 +233,7 @@ type qentry struct {
 	Entry
 	jobs   []Job
 	next   int // the next job: a public sweep that yielded resumes here
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
 
 // Queue runs speed tests one at a time, in order.
@@ -266,7 +286,19 @@ func NewQueue(o QueueOptions) *Queue {
 	if o.Public != nil {
 		q.public = *o.Public
 	}
+	if o.PublicBudget < PublicTestBytes { // never raised: off, and said once
+		o.Log.Warn(fmt.Sprintf("share-link speed tests are off: the budget (%s) is below the %s one test needs",
+			megabytes(o.PublicBudget), megabytes(PublicTestBytes)))
+	}
 	return q
+}
+
+// megabytes is b for a log line: "150 MB" (decimal, like the flag).
+func megabytes(b int64) string {
+	if b < 1e6 {
+		return fmt.Sprintf("%d KB", (b+500)/1e3)
+	}
+	return fmt.Sprintf("%d MB", (b+5e5)/1e6)
 }
 
 // load restores the opt-in (unless the flag set it) and the ledger.
@@ -319,27 +351,42 @@ func (q *Queue) pruneLedgerLocked(now time.Time) {
 }
 
 // Budget reports the share link's budget: its limit, the bytes used in the
-// last 24 hours, and when it is spent, when enough of that use ages out.
+// last 24 hours, and, when a whole test (PublicTestBytes) doesn't fit in
+// what is left, when enough of that use ages out for one to.
 func (q *Queue) Budget() (limit, used int64, resetsAt time.Time) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.budgetLocked(q.o.Now())
 }
 
+// budgetLocked is the byte half of fitsLocked. A running share-link test
+// holds a whole test's bytes until it is charged (its real bytes are only
+// known at its end, and it can move up to PublicTestBytes).
 func (q *Queue) budgetLocked(now time.Time) (limit, used int64, resetsAt time.Time) {
 	q.pruneLedgerLocked(now)
 	limit = q.o.PublicBudget
 	for _, u := range q.ledger {
 		used += u.Bytes
 	}
-	if used >= limit {
+	var held int64
+	if !q.pubFrom.IsZero() {
+		held = PublicTestBytes
+	}
+	fits := func(used int64) bool { return limit-used-held >= PublicTestBytes }
+	if limit < PublicTestBytes {
+		return limit, used, time.Time{} // never fits: the share link's tests are off (ErrBudgetTooSmall), nothing resets
+	}
+	if !fits(used) {
 		left := used
-		for _, u := range q.ledger { // oldest first: the first age-out that brings it under
+		for _, u := range q.ledger { // oldest first: the first age-out that makes room
 			left -= u.Bytes
-			if left < limit {
+			if fits(left) {
 				resetsAt = u.At.Add(budgetSpan)
 				break
 			}
+		}
+		if resetsAt.IsZero() { // only the running test's hold is in the way
+			resetsAt = now.Add(EstJob)
 		}
 	}
 	return limit, used, resetsAt
@@ -420,18 +467,50 @@ func (q *Queue) save() {
 	}
 }
 
-// publicLocked refuses a share-link request: off, or the budget spent.
-func (q *Queue) publicLocked(now time.Time) error {
+// fitsTestsLocked is how many whole tests fit in what is left of the
+// budget (a running share-link test holds one).
+func (q *Queue) fitsTestsLocked(now time.Time) int {
+	limit, used, _ := q.budgetLocked(now)
+	left := limit - used
+	if !q.pubFrom.IsZero() {
+		left -= PublicTestBytes
+	}
+	return int(max(left, 0) / PublicTestBytes)
+}
+
+// fitsLocked is the one check for a share-link test, at admit, at dequeue
+// and before each of a sweep's tests: the share link's tests are on, a
+// whole test still fits in the budget (with a running test's hold), the
+// time caps leave room, and, for a new sweep, the gap since the last one
+// is over. The refusal is the latest of whatever blocks: its ResetsAt
+// (or Until) is when all of them have cleared.
+func (q *Queue) fitsLocked(now time.Time, newSweep bool) error {
 	if !q.public {
 		return ErrPublicDisabled
 	}
-	if _, _, resets := q.budgetLocked(now); !resets.IsZero() {
-		return &BudgetError{ResetsAt: resets}
+	if q.o.PublicBudget < PublicTestBytes {
+		return ErrBudgetTooSmall
 	}
-	if _, _, resets := q.timeLocked(now); !resets.IsZero() {
-		return &BudgetError{ResetsAt: resets, Time: true}
+	var err error
+	var at time.Time
+	if _, _, r := q.budgetLocked(now); !r.IsZero() {
+		err, at = &BudgetError{ResetsAt: r}, r
 	}
-	return nil
+	if _, _, r := q.timeLocked(now); !r.IsZero() && r.After(at) {
+		err, at = &BudgetError{ResetsAt: r, Time: true}, r
+	}
+	if g := q.sweepEnd.Add(PublicSweepGap); newSweep && !q.sweepEnd.IsZero() && now.Before(g) && g.After(at) {
+		err = &SweepWaitError{Until: g}
+	}
+	return err
+}
+
+// Fits reports whether a share-link test (a sweep: a new one) may start
+// now, or the refusal fitsLocked gives.
+func (q *Queue) Fits(sweep bool) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.fitsLocked(q.o.Now(), sweep)
 }
 
 func (q *Queue) poke() {
@@ -515,7 +594,7 @@ func (q *Queue) capsLocked(r Request) error {
 	if r.Who != WhoPublic {
 		return nil
 	}
-	if err := q.publicLocked(q.o.Now()); err != nil {
+	if err := q.fitsLocked(q.o.Now(), r.Kind == KindSweep); err != nil {
 		return err
 	}
 	pub, sweeps := 0, 0
@@ -536,8 +615,6 @@ func (q *Queue) capsLocked(r Request) error {
 		return &QueueFullError{"the queue is full"}
 	case r.Kind == KindSweep && sweeps >= MaxPublicSweeps:
 		return &QueueFullError{"enough full sweeps are already waiting"}
-	case r.Kind == KindSweep && !q.sweepEnd.IsZero() && q.o.Now().Before(q.sweepEnd.Add(PublicSweepGap)):
-		return &SweepWaitError{Until: q.sweepEnd.Add(PublicSweepGap)}
 	}
 	return nil
 }
@@ -552,8 +629,8 @@ func (q *Queue) Admit(r Request) (dup bool, err error) {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if r.Who == WhoPublic && !q.public {
-		return false, ErrPublicDisabled
+	if r.Who == WhoPublic && (!q.public || q.o.PublicBudget < PublicTestBytes) {
+		return false, q.fitsLocked(q.o.Now(), false)
 	}
 	if (q.running != nil && q.running.same(r)) || slices.ContainsFunc(q.waiting, func(e *qentry) bool { return e.same(r) }) {
 		return true, nil
@@ -622,15 +699,16 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 	defer q.mu.Unlock()
 	now := q.o.Now()
 	if e := q.running; e != nil && e.ID == id {
-		e.State, e.Stopped = StateCancelled, StopCancelled // the runner finishes it once the test returns
+		e.State, e.Stopped, e.CancelledBy = StateCancelled, StopCancelled, "owner" // the runner finishes it once the test returns
 		if e.cancel != nil {
-			e.cancel()
+			e.cancel(ErrCancelledByOwner) // the stored row says who (cancelled_by)
 		}
 		return q.snapshotLocked(e, now), nil
 	}
 	for i, e := range q.waiting {
 		if e.ID == id {
 			q.waiting = slices.Delete(q.waiting, i, i+1)
+			e.CancelledBy = "owner"
 			q.finishLocked(e, StateCancelled, now)
 			return q.snapshotLocked(e, now), nil
 		}
@@ -651,6 +729,7 @@ func (q *Queue) ClearPublic() int {
 		if e.Who != WhoPublic {
 			return false
 		}
+		e.CancelledBy = "owner"
 		q.finishLocked(e, StateCancelled, now)
 		n++
 		return true
@@ -686,9 +765,9 @@ func (q *Queue) Run(ctx context.Context) {
 				continue
 			}
 			q.waiting = slices.Delete(q.waiting, i, i+1)
-			if e.Who == WhoPublic && q.publicLocked(now) != nil {
-				e.Stopped = StopLimit
-				q.finishLocked(e, StateDropped, now) // turned off, or the budget ran out while it waited
+			if err := q.fitsLocked(now, false); e.Who == WhoPublic && err != nil {
+				q.limitLocked(e, err)
+				q.finishLocked(e, StateDropped, now) // turned off, or a whole test no longer fits
 				e = nil
 				continue
 			}
@@ -700,7 +779,7 @@ func (q *Queue) Run(ctx context.Context) {
 		}
 		var ectx context.Context
 		if e != nil {
-			ectx, e.cancel = context.WithCancel(ctx)
+			ectx, e.cancel = context.WithCancelCause(ctx)
 		}
 		q.mu.Unlock()
 		if e != nil {
@@ -725,6 +804,41 @@ func (q *Queue) Run(ctx context.Context) {
 // beforeNextJob, in tests, runs before execute takes the lock for job i
 // (to race a Cancel against a sweep's yield).
 var beforeNextJob func(id uint64, i int)
+
+// limitLocked notes why the share link's limits stopped e: its code and
+// when they clear.
+func (q *Queue) limitLocked(e *qentry, err error) {
+	e.Stopped, e.StopCode, e.ResetsAt = StopLimit, RefusalCode(err), time.Time{}
+	var b *BudgetError
+	var g *SweepWaitError
+	switch {
+	case errors.As(err, &b):
+		e.ResetsAt = b.ResetsAt
+	case errors.As(err, &g):
+		e.ResetsAt = g.Until
+	}
+}
+
+// RefusalCode is the API's code for a share-link refusal: disabled,
+// budget_too_small, budget_exhausted, time_cap or cooldown ("" for
+// another error).
+func RefusalCode(err error) string {
+	var b *BudgetError
+	var g *SweepWaitError
+	switch {
+	case errors.Is(err, ErrBudgetTooSmall):
+		return "budget_too_small"
+	case errors.Is(err, ErrPublicDisabled):
+		return "disabled"
+	case errors.As(err, &g):
+		return "cooldown"
+	case errors.As(err, &b) && b.Time:
+		return "time_cap"
+	case errors.As(err, &b):
+		return "budget_exhausted"
+	}
+	return ""
+}
 
 // gapLocked reports a share-link sweep that may not start yet: the last
 // one ended less than PublicSweepGap ago. A paused sweep resumes anyway.
@@ -755,12 +869,17 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 			q.mu.Unlock()
 			break
 		}
+		if err := q.fitsLocked(q.o.Now(), false); e.Who == WhoPublic && err != nil {
+			q.limitLocked(e, err) // a sweep stops before a test that wouldn't fit; its done tests stay
+			q.mu.Unlock()
+			break
+		}
 		// A public sweep yields between its tests to the owner's entries
 		// and schedule slots: it waits again at the head of the share
 		// link's entries and resumes here.
 		if i > e.next && e.Who == WhoPublic && slices.ContainsFunc(q.waiting, func(w *qentry) bool { return w.Who != WhoPublic }) {
 			e.next, e.State = i, StateWaiting
-			e.cancel()
+			e.cancel(nil)
 			e.cancel = nil
 			q.running = nil
 			first := slices.IndexFunc(q.waiting, func(w *qentry) bool { return w.Who == WhoPublic })
@@ -772,15 +891,17 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 			return
 		}
 		e.Step = i + 1
+		if e.Who == WhoPublic {
+			// Under the lock that checked the fit: from here the test holds
+			// a whole test's bytes, and its time is charged as it runs (the
+			// line is under test, and probes masked, whether or not it
+			// finishes).
+			q.pubFrom = q.o.Now()
+		}
 		q.mu.Unlock()
 		var charging chan struct{}
 		var charged sync.WaitGroup
 		if e.Who == WhoPublic {
-			// The line is under test (and probes masked) whether or not the
-			// test finishes: charge its time as it runs.
-			q.mu.Lock()
-			q.pubFrom = q.o.Now()
-			q.mu.Unlock()
 			charging = make(chan struct{})
 			charged.Go(func() {
 				t := time.NewTicker(chargeEvery)
@@ -801,21 +922,14 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		if saved {
 			e.Tests = append(e.Tests, id)
 			e.JobTests[i] = id
+		} else if ctx.Err() != nil {
+			e.Cut = i + 1
 		}
 		q.mu.Unlock()
 		if e.Who == WhoPublic {
 			close(charging)
 			charged.Wait()
 			q.spend(bytes, true)
-			q.mu.Lock()
-			stop := q.publicLocked(q.o.Now()) != nil && i+1 < len(e.jobs)
-			if stop {
-				e.Stopped = StopLimit
-			}
-			q.mu.Unlock()
-			if stop {
-				break // a sweep stops when the budget runs out (or the owner turned it off)
-			}
 		}
 	}
 	if e.Kind == KindSweep && e.Who == WhoPublic {
@@ -835,7 +949,7 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		q.sweepEnd = now
 	}
 	if cancel != nil {
-		cancel()
+		cancel(nil)
 	}
 }
 
@@ -864,6 +978,13 @@ type QueueState struct {
 	Public                  bool
 	BudgetLimit, BudgetUsed int64
 	BudgetResets            time.Time
+	// BudgetTooSmall: the budget can't hold one test, so the share link's
+	// tests are off whatever Public says. CanStart: a share-link test may
+	// start now (fitsLocked passes).
+	BudgetTooSmall, CanStart bool
+	// FitsTests: how many whole tests (PublicTestBytes each) fit in what
+	// is left of the budget now.
+	FitsTests int
 	// The share link's test time in the last hour and day (caps
 	// PublicTimePerHour, PublicTimePerDay), and when a capped one frees up;
 	// when its next sweep may start (zero: now).
@@ -895,6 +1016,9 @@ func (q *Queue) State() QueueState {
 	st.Full = st.PublicWaiting >= MaxPublicWaiting
 	st.SweepsFull = st.PublicSweeps >= MaxPublicSweeps
 	st.Public = q.public
+	st.BudgetTooSmall = q.o.PublicBudget < PublicTestBytes
+	st.CanStart = q.fitsLocked(now, false) == nil
+	st.FitsTests = q.fitsTestsLocked(now)
 	st.BudgetLimit, st.BudgetUsed, st.BudgetResets = q.budgetLocked(now)
 	st.TimeHour, st.TimeDay, st.TimeResets = q.timeLocked(now)
 	if !q.sweepEnd.IsZero() && now.Before(q.sweepEnd.Add(PublicSweepGap)) {
