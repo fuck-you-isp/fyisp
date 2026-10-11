@@ -41,6 +41,17 @@ func TestSpeedTests(t *testing.T) {
 	if got[1].DownBps != nil || got[1].UpRetrans != nil || got[1].ScoreDown != nil {
 		t.Error("nulls not kept")
 	}
+	// A handoff filled in after the save; a removed row stays removed.
+	h := &model.Handoff{ASN: 6939, Name: "HURRICANE", ISPASN: 3320, At: now.Truncate(time.Millisecond)}
+	if err := s.SetSpeedHandoff(ctx, busy.ID, h); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSpeedHandoff(ctx, 9999, h); err != nil {
+		t.Errorf("a missing row: %v", err)
+	}
+	if got, _ := s.SpeedTests(ctx, now.Add(-2*time.Hour), now); len(got) != 2 || !reflect.DeepEqual(got[1].Handoff, h) {
+		t.Errorf("handoff later: %+v", got)
+	}
 	if b, err := s.BytesSince(ctx, now.Add(-2*time.Hour)); err != nil || b != 140<<20 {
 		t.Errorf("bytes %d %v", b, err)
 	}

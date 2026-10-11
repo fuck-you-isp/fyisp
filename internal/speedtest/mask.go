@@ -203,6 +203,7 @@ const (
 type LoadTap struct {
 	now    func() time.Time
 	layers map[model.SeriesKey]string
+	start  time.Time // when it began watching
 
 	mu  sync.Mutex
 	buf []tapSample
@@ -221,12 +222,16 @@ const tapKeep = idleWindow + 2*time.Minute
 // idleWindow is the span before a test whose RTTs are "idle".
 const idleWindow = 2 * time.Minute
 
+// minIdle is the samples an idle median needs: with fewer it is missing,
+// never a median of a handful.
+const minIdle = 20
+
 // NewLoadTap watches p's gateway and ISP edge targets (ICMP).
 func NewLoadTap(p *model.Profile, now func() time.Time) *LoadTap {
 	if now == nil {
 		now = time.Now
 	}
-	t := &LoadTap{now: now, layers: map[model.SeriesKey]string{}}
+	t := &LoadTap{now: now, layers: map[model.SeriesKey]string{}, start: now()}
 	if p == nil {
 		return t
 	}
@@ -266,6 +271,28 @@ func (t *LoadTap) Observe(s model.Sample) {
 // leaving out those during a test window or its MaskTail (w, may be nil):
 // a test just before is not idle. nil with fewer than 3.
 func (t *LoadTap) Stats(layer string, from, to time.Time, w *Windows) *model.LoadStats {
+	return statsOf(t.samples(layer, from, to, w))
+}
+
+// Idle is layer's idle stats in the idleWindow before start: nil with
+// fewer than minIdle samples. The first idleWindow after fyisp started is
+// never idle (path discovery and the first traceroutes run then).
+func (t *LoadTap) Idle(layer string, start time.Time, w *Windows) *model.LoadStats {
+	from := start.Add(-idleWindow)
+	if warm := t.start.Add(idleWindow); from.Before(warm) {
+		from = warm
+	}
+	if !from.Before(start) {
+		return nil
+	}
+	v := t.samples(layer, from, start, w)
+	if len(v) < minIdle {
+		return nil
+	}
+	return statsOf(v)
+}
+
+func (t *LoadTap) samples(layer string, from, to time.Time, w *Windows) []loadSample {
 	t.mu.Lock()
 	var v []loadSample
 	var at []time.Time
@@ -285,5 +312,5 @@ func (t *LoadTap) Stats(layer string, from, to time.Time, w *Windows) *model.Loa
 		}
 		v = v[:k]
 	}
-	return statsOf(v)
+	return v
 }

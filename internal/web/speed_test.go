@@ -983,3 +983,22 @@ func TestCancelledWindow(t *testing.T) {
 		t.Errorf("windows %+v lack the cancelled test's", ws)
 	}
 }
+
+// TestWithVia: the exchange a handoff crossed is added locally only, and
+// only to tests whose handoff is the server's latest.
+func TestWithVia(t *testing.T) {
+	st := speedtest.State{Vias: map[string]model.Handoff{"A": {ASN: 60781, ISPASN: 3320, Via: "DE-CIX"}}}
+	ts := []model.SpeedTest{
+		{Server: "A", Handoff: &model.Handoff{ASN: 60781, ISPASN: 3320}},
+		{Server: "A", Handoff: &model.Handoff{ASN: 3356, ISPASN: 3320}}, // an older route
+		{Server: "B", Handoff: &model.Handoff{ASN: 60781, ISPASN: 3320}},
+		{Server: "A"},
+	}
+	got := withVia(ts, st, false)
+	if got[0].Handoff.Via != "DE-CIX" || got[1].Handoff.Via != "" || got[2].Handoff.Via != "" || got[3].Handoff != nil || ts[0].Handoff.Via != "" {
+		t.Errorf("local: %+v %+v %+v", got[0].Handoff, got[1].Handoff, got[2].Handoff)
+	}
+	if got := withVia(ts, st, true); got[0].Handoff.Via != "" {
+		t.Error("the share link got the exchange")
+	}
+}

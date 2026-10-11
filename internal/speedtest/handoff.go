@@ -97,6 +97,21 @@ func (f *HandoffFinder) Handoff(ctx context.Context, host string) (*model.Handof
 	return h, nil
 }
 
+// Cached is the answer for host without a traceroute, when one younger
+// than HandoffEvery is cached.
+func (f *HandoffFinder) Cached(host string) (*model.Handoff, bool) {
+	now := time.Now
+	if f.Now != nil {
+		now = f.Now
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if e, ok := f.cache[host]; ok && now().Sub(e.at) < HandoffEvery {
+		return e.h, true
+	}
+	return nil, false
+}
+
 func (f *HandoffFinder) resolve(ctx context.Context, host string) (netip.Addr, error) {
 	if a, err := netip.ParseAddr(host); err == nil {
 		return a.Unmap(), nil
@@ -148,25 +163,37 @@ func traceTo(ctx context.Context, p hops.Prober, dst netip.Addr) []netip.Addr {
 
 // handoffOf finds the handoff on path: the ISP is the edge's network when
 // the edge has a public address with an ASN, else the first hop that has
-// one; the handoff is the first later hop with another ASN. nil when there
-// is none.
+// one; the handoff is the first later hop with another ASN. Hops of an
+// internet exchange (ixASNs) are looked through like hops without an ASN,
+// and the exchange is kept as Via; a path that ends there gives the
+// exchange with no peer (ASN 0). nil when there is none.
 func handoffOf(path []netip.Addr, edge netip.Addr, lookup func(netip.Addr) asn.Info) *model.Handoff {
 	isp := uint32(0)
 	if edge.IsValid() {
 		isp = lookup(edge).ASN
 	}
+	via := ""
 	for _, a := range path {
 		if !a.IsValid() {
 			continue
 		}
 		in := lookup(a)
+		if ix, ok := ixASNs[in.ASN]; ok {
+			if isp != 0 && via == "" {
+				via = ix
+			}
+			continue
+		}
 		switch {
 		case in.ASN == 0:
 		case isp == 0:
 			isp = in.ASN
 		case in.ASN != isp:
-			return &model.Handoff{ASN: in.ASN, Name: in.Owner, ISPASN: isp}
+			return &model.Handoff{ASN: in.ASN, Name: in.Owner, ISPASN: isp, Via: via}
 		}
+	}
+	if via != "" {
+		return &model.Handoff{ISPASN: isp, Via: via}
 	}
 	return nil
 }
