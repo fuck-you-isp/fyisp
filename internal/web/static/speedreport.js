@@ -102,7 +102,7 @@ export class SpeedReport {
     const providers = new Set(d.servers.filter((s) => inChain.has(s.id)).map((s) => s.provider));
     const f = d.finding || null;
     // The owner's zone (B2); every time of day carries it.
-    const zone = zoneLabel(d.owner_tz || d.tz_name, d.tz);
+    const zone = /** @type {any} */ (d).zone_label || zoneLabel(d.owner_tz || d.tz_name, d.tz);
     const hrs = (/** @type {number[]} */ h2) => `${hourRange(h2)} ${zone}`;
     const drop = d.pattern ? Math.round(d.pattern.drop * 100) : 0;
     const text = f && f.text_public ? f.text_public : d.pattern
@@ -137,14 +137,18 @@ export class SpeedReport {
       slowest.length ? h('div', {}, h('h3', { text: `Slowest servers from ${hrs(dip)}` }),
         h('ul', { class: 'rp-speed-worst' }, ...slowest.map((w) => {
           const name = String(w.display).replace(/ · /g, ', ');
-          return h('li', { 'aria-label': `${name}: ${Math.round(w.pct)}% of its usual result, median ${Math.round(w.median_bps / 1e6)} versus usual ${Math.round(w.usual_bps / 1e6)} megabits per second` },
-            `${w.display}: ${Math.round(w.pct)}% of its usual result (median ${Math.round(w.median_bps / 1e6)} vs usual ${Math.round(w.usual_bps / 1e6)} Mbit/s)`);
+          // pct is a ratio (0.52); an older server sent a whole percent (52).
+          const p = Math.round(w.pct > 1.5 ? w.pct : w.pct * 100);
+          return h('li', { 'aria-label': `${name}: ${p}% of its usual result, median ${Math.round(w.median_bps / 1e6)} versus usual ${Math.round(w.usual_bps / 1e6)} megabits per second` },
+            `${w.display}: ${p}% of its usual result (median ${Math.round(w.median_bps / 1e6)} vs usual ${Math.round(w.usual_bps / 1e6)} Mbit/s)`);
         }))) : '',
       h('h3', { text: 'About this evidence' }),
       h('ul', { class: 'rp-speed-ev' },
         // The server's evidence (dateless on the share link) and, when fewer days than the window, its coverage line.
         f && f.evidence ? h('li', { text: f.evidence }) : '',
-        f && /** @type {any} */ (f).coverage ? h('li', { text: /** @type {any} */ (f).coverage }) : '',
+        // The server's sentences in this listener's voice: fewer days than the window, then the early tier.
+        f && (/** @type {any} */ (f).days_note || /** @type {any} */ (f).coverage) ? h('li', { text: /** @type {any} */ (f).days_note || /** @type {any} */ (f).coverage }) : '',
+        f && /** @type {any} */ (f).early_note ? h('li', { text: /** @type {any} */ (f).early_note }) : '',
         h('li', { text: d.connection && d.connection.type === 'wifi' ? 'The measuring device used Wi-Fi, which can itself slow down in the evening. A test over a cable would be stronger evidence.'
           : d.connection && d.connection.type === 'wired' ? `The measuring device is connected by cable${d.connection.source === 'user' ? ' (as the owner said)' : ''}.` : 'How the measuring device is connected (cable or Wi-Fi) isn’t known.' }),
         h('li', { text: `Tests went to ${plural(rows.length, 'region')} and ${plural(providers.size, 'hosting provider')}.${bad ? ` ${bad.toLocaleString()} couldn’t run, usually because the server was busy.` : ''}` }),
