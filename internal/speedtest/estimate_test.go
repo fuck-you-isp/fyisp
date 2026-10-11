@@ -84,6 +84,27 @@ func TestPeak90(t *testing.T) {
 	}
 }
 
+// TestTickJitter: a steady rate read with ±30 ms of timer wake jitter
+// stays valid and measures the rate (rates over the actual tick lengths).
+func TestTickJitter(t *testing.T) {
+	const rate = 125e6 // bytes/s (1 Gbit/s)
+	for seed := range uint64(20) {
+		r := rand.New(rand.NewPCG(seed, 9))
+		var cum []int64
+		var at []time.Duration
+		for k := 1; k <= 8; k++ {
+			a := time.Duration(k)*100*time.Millisecond + time.Duration((r.Float64()*2-1)*30e6)
+			at = append(at, a)
+			cum = append(cum, int64(rate*a.Seconds()))
+		}
+		end := 850 * time.Millisecond
+		e := peak90(cum, at, end, int64(rate*end.Seconds()), 0)
+		if got := float64(e.bytes) / e.win.Seconds(); e.lowerBound || math.Abs(got/rate-1) > 0.01 {
+			t.Errorf("seed %d: %+v, %.4g B/s", seed, e, got)
+		}
+	}
+}
+
 // TestStillRising: net-isp's vectors (rates per tick, as a share of the
 // line rate) and cq-netns's real series from a shaped lab line (Gbit/s).
 func TestStillRising(t *testing.T) {
