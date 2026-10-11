@@ -1,6 +1,7 @@
 package speedtest
 
 import (
+	"math"
 	"slices"
 	"time"
 
@@ -31,43 +32,37 @@ type estimate struct {
 	lowerBound bool // still speeding up at the cap: the speed was at least this
 }
 
-// plateau is how close to the peak a second smoothed tick must come for
-// the rate to count as levelled off.
-const plateau = 0.95
-
 // peak90 estimates a capped direction's steady rate. cum[i] is the bytes
 // counted by the end of complete tick i+1 (the tick the cap fell in is
-// left out); end is when the last byte was counted, endBytes the count
-// then, both from the data phase's start.
+// left out) and at[i] when that tick was read; end is when the last byte
+// was counted, endBytes the count then, all from the data phase's start.
+// rtt is the path's (the streams' largest smoothed RTT).
 //
-//   - The ticks are smoothed by a 3-tick moving median (2 ticks averaged at
-//     the edges), so one spike tick neither sets the peak nor starts the
-//     window.
+//   - Each tick's rate is its bytes over its actual length (ticks are read
+//     late on a busy machine).
+//   - The rates are smoothed by a 3-tick moving median (2 ticks averaged
+//     at the edges), so one spike tick neither sets the peak nor starts
+//     the window.
 //   - The window runs from the first smoothed tick at 90% of the peak to
 //     the last byte; its rate is its bytes over its length.
-//   - It is a lower bound (still speeding up at the cap) when fewer than 2
-//     smoothed ticks are within 5% of the peak: no plateau was seen.
+//   - Whether it was still speeding up at the cap (a lower bound) is
+//     stillRising's.
 //   - With no ticks, or none with bytes, it is MethodWhole.
-func peak90(cum []int64, tick, end time.Duration, endBytes int64) estimate {
+func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
 	n := len(cum)
-	if n == 0 || end <= 0 {
+	if n == 0 || end <= 0 || len(at) != n {
 		return estimate{method: MethodWhole}
 	}
-	d := make([]float64, n)
+	r := make([]float64, n)
 	var prev int64
+	var prevAt time.Duration
 	for i, c := range cum {
-		d[i], prev = float64(c-prev), c
-	}
-	sm := make([]float64, n)
-	for i := range d {
-		w := slices.Clone(d[max(i-1, 0):min(i+2, n)])
-		slices.Sort(w)
-		if len(w) == 3 {
-			sm[i] = w[1]
-		} else {
-			sm[i] = (w[0] + w[len(w)-1]) / 2
+		if dt := at[i] - prevAt; dt > 0 {
+			r[i] = float64(c-prev) / dt.Seconds()
 		}
+		prev, prevAt = c, at[i]
 	}
+	sm := median3(r)
 	pk := 0
 	for i := range sm {
 		if sm[i] > sm[pk] {
@@ -82,24 +77,90 @@ func peak90(cum []int64, tick, end time.Duration, endBytes int64) estimate {
 		k++
 	}
 	var base int64
+	var start time.Duration
 	if k > 0 {
-		base = cum[k-1]
+		base, start = cum[k-1], at[k-1]
 	}
-	e := estimate{method: MethodPeak90, start: time.Duration(k) * tick, bytes: endBytes - base}
-	e.win = end - e.start
+	e := estimate{method: MethodPeak90, start: start, bytes: endBytes - base, win: end - start}
 	if e.win <= 0 || e.bytes <= 0 {
 		return estimate{method: MethodWhole}
 	}
+	e.lowerBound = stillRising(r, rtt)
+	return e
+}
+
+// median3 is a 3-tick moving median (the 2 ticks averaged at the edges).
+func median3(d []float64) []float64 {
+	n := len(d)
+	sm := make([]float64, n)
+	for i := range d {
+		w := slices.Clone(d[max(i-1, 0):min(i+2, n)])
+		slices.Sort(w)
+		if len(w) == 3 {
+			sm[i] = w[1]
+		} else {
+			sm[i] = (w[0] + w[len(w)-1]) / 2
+		}
+	}
+	return sm
+}
+
+// stillRising reports a lower bound: no plateau seen in the per-tick
+// rates r (net-isp's rule, checked against real shaped lines).
+//   - The first tick (connection start, a shaper's burst) is left out;
+//     fewer than 2 ticks left is a lower bound.
+//   - Up to 50 ms of RTT the rates are smoothed by the 3-tick moving
+//     median; beyond, by a moving mean over w = ⌈RTT / 100 ms⌉ ticks (a
+//     long path's bytes arrive in bursts per RTT).
+//   - Levelled off when two smoothed values within 5% of the peak are at
+//     least w ticks apart, or when the peak is at least w ticks before the
+//     end and at least 2 values are within 10% of it.
+func stillRising(r []float64, rtt time.Duration) bool {
+	if len(r) < 3 {
+		return true
+	}
+	d := r[1:]
+	w := 1
+	if rtt > tick/2 {
+		w = int(math.Ceil(float64(rtt) / float64(tick)))
+	}
+	var sm []float64
+	if w == 1 {
+		sm = median3(d)
+	} else {
+		if len(d) < w+1 {
+			return true
+		}
+		for i := w - 1; i < len(d); i++ {
+			var x float64
+			for _, v := range d[i-w+1 : i+1] {
+				x += v
+			}
+			sm = append(sm, x/float64(w))
+		}
+	}
+	p := slices.Max(sm)
+	if p <= 0 {
+		return true
+	}
+	first, lastHi := -1, -1
 	near := 0
-	for _, v := range sm {
-		if v >= plateau*sm[pk] {
+	for i, v := range sm {
+		if v >= 0.95*p {
+			if first < 0 {
+				first = i
+			}
+			lastHi = i
+		}
+		if v >= 0.9*p {
 			near++
 		}
 	}
-	if near < 2 {
-		e.lowerBound = true
+	if lastHi-first >= w {
+		return false
 	}
-	return e
+	ip := slices.Index(sm, p)
+	return !(len(sm)-1-ip >= w && near >= 2)
 }
 
 // How patterns use a capped direction (read side; nothing stored is
