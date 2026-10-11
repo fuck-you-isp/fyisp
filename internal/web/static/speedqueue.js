@@ -409,15 +409,18 @@ export class SpeedQueue {
       MODE === 'local' && this.note && this.el.hidden ? h('p', { class: 'sp-note', text: this.note }) : null,
       s && s.running && s.running.results ? this.liveNodes(s.running) : null,
       s && s.entry && s.tests.length ? this.resultNodes(s.entry, s.tests) : null,
+      // A run that stopped early keeps its per-server list for the owner (cancelled, not reached), even with no results at all.
+      MODE === 'local' && s && !s.running && s.entry && s.entry.stopped_reason && s.entry.results && s.entry.results.length ? this.liveNodes(s.entry, true) : null,
     ].filter((x) => !!x));
   }
 
   /**
-   * A full test under way: every server with its state, in run order. Status
-   * is words and a mark, never colour alone; nothing here is announced.
-   * @param {QueueEntry} e
+   * A full test under way (or, finished, one that stopped early): every
+   * server with its state, in run order. Status is words and a mark, never
+   * colour alone; nothing here is announced.
+   * @param {QueueEntry} e @param {boolean} [finished]
    */
-  liveNodes(e) {
+  liveNodes(e, finished = false) {
     const res = e.results || [];
     const done = res.filter((r) => r.status !== 'waiting' && r.status !== 'testing').length;
     const word = (/** @type {SweepResult} */ r) => {
@@ -435,7 +438,9 @@ export class SpeedQueue {
     // A cancelled test is neutral, like one never reached: never ×.
     const mark = { ok: '✓', testing: '●', busy: '×', unreachable: '×', failed: '×', cancelled: '–', skipped: '–', waiting: '○' };
     return h('div', { class: 'sp-live' },
-      h('h3', { text: `${e.who === 'you' ? 'Your' : 'A'} full test: ${done} of ${res.length} servers done` }),
+      // A run stopped before any result: say why here, since there are no results above.
+      finished && !(e.tests || []).length && stoppedWhy(e) ? h('p', { class: 'sp-flag', text: stoppedWhy(e) }) : null,
+      h('h3', { text: finished ? `Every server in this run (${res.filter((r) => r.status !== 'skipped' && r.status !== 'waiting').length} of ${res.length} reached)` : `${e.who === 'you' ? 'Your' : 'A'} full test: ${done} of ${res.length} servers done` }),
       h('ol', { class: 'sp-live-list' }, ...res.map((r) => h('li', { class: 'st-' + r.status },
         h('span', { class: 'sp-live-m', 'aria-hidden': 'true', text: mark[/** @type {'ok'} */ (r.status)] || '○' }),
         h('span', { class: 'sp-live-n', text: r.server.label }),
@@ -470,7 +475,8 @@ export class SpeedQueue {
       const main = list.filter((x) => isDefault.has(x.k)).sort((a, b) => order.indexOf(a.k) - order.indexOf(b.k));
       const rest = list.filter((x) => !isDefault.has(x.k));
       return h('div', { class: 'sp-sw-bars' }, h('h3', { text: title }), h('ul', {}, ...main.map(item)),
-        rest.length ? h('h4', { text: 'Other places' }) : null, rest.length ? h('ul', {}, ...rest.map(item)) : null);
+        // "Other places" as a heading only when there are default regions above it; on its own it's just a bar.
+        rest.length && main.length ? h('h4', { text: 'Other places' }) : null, rest.length ? h('ul', {}, ...rest.map(item)) : null);
     };
     // A server with a download counts as a result, even when its upload didn't finish.
     const gave = rows.filter((r) => r.t.down_bps != null).length;

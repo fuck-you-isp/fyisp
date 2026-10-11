@@ -506,7 +506,7 @@ export class SpeedMap {
       r.why ? h('p', { class: 'muted small', text: `Tested because: ${r.why}` }) : '',
       /** @type {any} */ (r).too_fast ? h('p', { class: 'sp-note' }, h('b', { text: `${TOO_FAST}. ` }), tooFastWhy(r, isRegion)) : '',
       r.note ? h('p', { class: 'notice warn', text: r.note }) : '',
-      h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}${r.learning && this.unit === 'pct' ? ' (learning: its normal isn’t known yet)' : ''}` }),
+      h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}${r.learning && !/** @type {any} */ (r).too_fast && this.unit === 'pct' ? ' (learning: its normal isn’t known yet)' : ''}` }),
       h('div', { class: 'sp-chart' }, byHour),
       legend,
       h('p', { class: 'muted small', text: 'One mark per test; the line is each hour’s median.' + (dipHours.length ? ` Shaded: ${hourRange(dipHours)}.` : '') }),
