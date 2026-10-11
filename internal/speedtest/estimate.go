@@ -115,6 +115,9 @@ func median3(d []float64) []float64 {
 //   - Levelled off when two smoothed values within 5% of the peak are at
 //     least w ticks apart, or when the peak is at least w ticks before the
 //     end and at least 2 values are within 10% of it.
+//   - With w = 1 the median is taken twice, the edge ticks averaged and the
+//     edge tick repeated: a lower bound only when both see it rising (a
+//     shaper's burst next to the last tick can't fake a lone peak).
 func stillRising(r []float64, rtt time.Duration) bool {
 	if len(r) < 3 {
 		return true
@@ -124,21 +127,43 @@ func stillRising(r []float64, rtt time.Duration) bool {
 	if rtt > tick/2 {
 		w = int(math.Ceil(float64(rtt) / float64(tick)))
 	}
-	var sm []float64
 	if w == 1 {
-		sm = median3(d)
-	} else {
-		if len(d) < w+1 {
-			return true
-		}
-		for i := w - 1; i < len(d); i++ {
-			var x float64
-			for _, v := range d[i-w+1 : i+1] {
-				x += v
-			}
-			sm = append(sm, x/float64(w))
-		}
+		return rising(median3(d), 1) && rising(median3Repeat(d), 1)
 	}
+	if len(d) < w+1 {
+		return true
+	}
+	var sm []float64
+	for i := w - 1; i < len(d); i++ {
+		var x float64
+		for _, v := range d[i-w+1 : i+1] {
+			x += v
+		}
+		sm = append(sm, x/float64(w))
+	}
+	return rising(sm, w)
+}
+
+// median3Repeat is a 3-tick moving median with the edge ticks repeated
+// (2 ticks: their mean).
+func median3Repeat(d []float64) []float64 {
+	n := len(d)
+	if n == 2 {
+		m := (d[0] + d[1]) / 2
+		return []float64{m, m}
+	}
+	p := append(append([]float64{d[0]}, d...), d[n-1])
+	sm := make([]float64, n)
+	for i := range sm {
+		w := slices.Clone(p[i : i+3])
+		slices.Sort(w)
+		sm[i] = w[1]
+	}
+	return sm
+}
+
+// rising is the plateau test on smoothed rates sm, w ticks per RTT.
+func rising(sm []float64, w int) bool {
 	p := slices.Max(sm)
 	if p <= 0 {
 		return true
