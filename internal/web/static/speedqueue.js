@@ -276,9 +276,17 @@ export class SpeedQueue {
     const q = this.q;
     if (!q || !q.budget || !q.public_enabled || !q.budget.time_hour_max_s) return null;
     const b = q.budget;
-    // "8 s", "4 min": a single test is seconds, so minutes alone would read 0.
-    const dur = (/** @type {number|undefined} */ x) => ((x || 0) < 60 ? `${Math.round(x || 0)} s` : `${Math.round((x || 0) / 60)} min`);
-    return h('p', { class: 'muted small', text: `Share-link tests: ${dur(b.time_hour_s)} of ${dur(b.time_hour_max_s)} of testing this hour, ${dur(b.time_day_s)} of ${dur(b.time_day_max_s)} today.${MODE === 'local' ? ' Your own tests aren’t limited.' : ''}` });
+    const own = MODE === 'local' ? ' Your own tests aren’t limited.' : '';
+    const hMax = Math.round(b.time_hour_max_s / 60), dMax = Math.round((b.time_day_max_s || 0) / 60);
+    // Whole minutes; a few seconds of use reads "under 1", never "0".
+    const used = (/** @type {number|undefined} */ x) => (!x ? '0' : x < 60 ? 'under 1' : String(Math.round(x / 60)));
+    const more = b.time_resets_at ? `; more from ${when(b.time_resets_at)}` : '';
+    if (b.time_day_max_s && (b.time_day_s || 0) >= b.time_day_max_s) return h('p', { class: 'muted small', text: `Today’s ${dMax} minutes of share-link testing are used up${more}.${own}` });
+    if ((b.time_hour_s || 0) >= b.time_hour_max_s) return h('p', { class: 'muted small', text: `This hour’s ${hMax} minutes of share-link testing are used up${more}.${own}` });
+    const today = b.time_day_max_s && b.time_day_s ? `, ${used(b.time_day_s)} of ${dMax} today` : '';
+    if (!b.time_hour_s) return h('p', { class: 'muted small', text: `None of this hour’s ${hMax} minutes of share-link testing used yet${today}.${own}` });
+    const u = used(b.time_hour_s);
+    return h('p', { class: 'muted small', text: `${u.charAt(0).toUpperCase()}${u.slice(1)} of ${hMax} minutes of share-link testing used this hour${today}.${own}` });
   }
 
   /**
