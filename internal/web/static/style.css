@@ -1371,3 +1371,13 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .sp-tf { display: block; font-size: 11px; color: var(--ink-2); }
 
 .rp-speed-cap { caption-side: top; text-align: left; padding: 0 0 4px; }
+@media (max-width: 767.98px) {
+  /* The speed card's table stays a table on a phone (the problems table above becomes cards). */
+  .rp-speed-t { display: table; font-size: 12px; }
+  .rp-speed-t thead { display: table-header-group; }
+  .rp-speed-t tbody { display: table-row-group; }
+  .rp-speed-t tr { display: table-row; padding: 0; }
+  .rp-speed-t th, .rp-speed-t td { display: table-cell; padding: 5px 4px; border-bottom: 1px solid var(--border); }
+  .rp-speed-t th { font-size: 11px; }
+  .rp-speed-cap { display: table-caption; }
+}
