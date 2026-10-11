@@ -45,6 +45,11 @@ type speedEntryJSON struct {
 	// (a sweep's servers stopped answering) or "limit" (the share link's
 	// budget or time); else null.
 	StoppedReason *string `json:"stopped_reason"`
+	// StoppedCode and ResetsAt: for stopped_reason "limit", which limit
+	// (budget_exhausted, time_cap, budget_too_small, disabled) and when it
+	// clears (null for the last two).
+	StoppedCode *string `json:"stopped_code"`
+	ResetsAt    *int64  `json:"resets_at"`
 	// Results: a sweep's servers in order, with each one's status (part=entry
 	// and part=sweep only).
 	Results []speedJobJSON `json:"results,omitempty"`
@@ -130,20 +135,27 @@ type speedQueueJSON struct {
 	Waiting    []speedEntryJSON `json:"waiting"`
 	LastSweep  *speedEntryJSON  `json:"last_sweep"`
 	// PublicEnabled: the owner lets the share link queue tests (the
-	// Details toggle); PublicStart: the share link may start one now (on,
-	// budget left, room in the queue).
-	PublicEnabled bool            `json:"public_enabled"`
-	SpeedOn       bool            `json:"speed_on"` // speed tests are on (a mode other than off): the share link may only ask then
-	PublicStart   bool            `json:"public_start"`
-	Budget        speedBudgetJSON `json:"budget"`
+	// Details toggle); PublicOffReason: why they are off anyway
+	// ("budget_too_small": the budget can't hold one test); PublicStart:
+	// the share link may start one now (on, a whole test fits, room in the
+	// queue).
+	PublicEnabled   bool            `json:"public_enabled"`
+	PublicOffReason *string         `json:"public_off_reason"`
+	SpeedOn         bool            `json:"speed_on"` // speed tests are on (a mode other than off): the share link may only ask then
+	PublicStart     bool            `json:"public_start"`
+	Budget          speedBudgetJSON `json:"budget"`
 }
 
 // speedBudgetJSON is the share link's rolling 24-hour data budget.
 type speedBudgetJSON struct {
-	LimitBytes     int64  `json:"limit_bytes"`
-	UsedBytes      int64  `json:"used_bytes"`
-	RemainingBytes int64  `json:"remaining_bytes"`
-	ResetsAt       *int64 `json:"resets_at"` // when spent: when enough use ages out
+	LimitBytes     int64 `json:"limit_bytes"`
+	UsedBytes      int64 `json:"used_bytes"`
+	RemainingBytes int64 `json:"remaining_bytes"`
+	// TestMaxBytes: the most one test moves; a test starts only when this
+	// much fits in what is left (remaining_bytes). ResetsAt: when it
+	// doesn't, when enough use ages out for it to.
+	TestMaxBytes int64  `json:"test_max_bytes"`
+	ResetsAt     *int64 `json:"resets_at"`
 	// Test time: the share link's tests mask the monitoring, so they get
 	// at most time_hour_max_s in any hour and time_day_max_s in any day.
 	TimeHourS    int64  `json:"time_hour_s"`
@@ -235,7 +247,7 @@ func (s *server) speedEntry(e speedtest.Entry, v speedViewer, st speedtest.State
 	if e.Held {
 		j.WaitReason = strPtr("cooldown")
 	}
-	j.StoppedReason = strPtr(e.Stopped)
+	j.StoppedReason, j.StoppedCode, j.ResetsAt = strPtr(e.Stopped), strPtr(e.StopCode), msPtr(e.ResetsAt)
 	if e.State == speedtest.StateRunning {
 		if e.Server != "" {
 			ref := names.ref(e.Server)
@@ -343,12 +355,15 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 		out.Mine = mine
 		out.PublicEnabled = qs.Public
 		out.Budget = speedBudgetJSON{LimitBytes: qs.BudgetLimit, UsedBytes: qs.BudgetUsed,
-			RemainingBytes: max(qs.BudgetLimit-qs.BudgetUsed, 0), ResetsAt: msPtr(qs.BudgetResets),
+			RemainingBytes: max(qs.BudgetLimit-qs.BudgetUsed, 0), TestMaxBytes: speedtest.PublicTestBytes, ResetsAt: msPtr(qs.BudgetResets),
 			TimeHourS: int64(qs.TimeHour / time.Second), TimeDayS: int64(qs.TimeDay / time.Second),
 			TimeHourMaxS: int64(speedtest.PublicTimePerHour / time.Second), TimeDayMaxS: int64(speedtest.PublicTimePerDay / time.Second),
 			TimeResetsAt: msPtr(qs.TimeResets), SweepAvailAt: msPtr(qs.SweepAt)}
 		out.SpeedOn = st.Mode != speedtest.ModeOff
-		out.PublicStart = out.SpeedOn && qs.Public && qs.BudgetResets.IsZero() && qs.TimeResets.IsZero() && !qs.Full
+		out.PublicStart = out.SpeedOn && qs.CanStart && !qs.Full
+		if qs.BudgetTooSmall {
+			out.PublicOffReason = strPtr("budget_too_small")
+		}
 		writeJSON(w, r, http.StatusOK, out)
 	}
 }
@@ -513,6 +528,9 @@ func queueRefused(w http.ResponseWriter, r *http.Request, err error, now time.Ti
 		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
 		writeJSON(w, r, http.StatusTooManyRequests, map[string]any{"error": gap.Error(), "code": "cooldown",
 			"resets_at": gap.Until.UnixMilli(), "retry_after": max(secs, 1)})
+	case errors.Is(err, speedtest.ErrBudgetTooSmall):
+		writeJSON(w, r, http.StatusForbidden, map[string]any{"error": "the share link's data allowance is smaller than one test",
+			"code": "disabled", "reason": "budget_too_small"})
 	case errors.Is(err, speedtest.ErrPublicDisabled):
 		writeInvErr(w, r, http.StatusForbidden, "disabled", "the owner hasn't turned on tests from the share link", 0)
 	case errors.As(err, &budget):

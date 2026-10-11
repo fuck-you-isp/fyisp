@@ -636,7 +636,7 @@ func speedQueueOf(t *testing.T, pub *publicHandler, hdr map[string]string) (stri
 // (403 disabled; the Details toggle turns them on), and spend a 24-hour
 // data budget counted on the wire (429 budget_exhausted with resets_at).
 func TestSpeedPublicOptInBudget(t *testing.T) {
-	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 300e6, wire: 90e6})
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 500e6, wire: 90e6})
 	close(g.release)
 	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
 	queue := func(h http.Handler, path string, hdr map[string]string) speedQueueJSON {
@@ -664,7 +664,9 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 		})
 	}
 	q := queue(pub, speedPub+"/api/speed?part=queue", speedVisitor("3.3.3.3"))
-	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 300e6 || q.Budget.UsedBytes != 360e6 || q.Budget.RemainingBytes != 0 || q.Budget.ResetsAt == nil {
+	// 140 MB left: less than a whole test (210 MB), so no more start.
+	if q.PublicStart || !q.PublicEnabled || q.Budget.LimitBytes != 500e6 || q.Budget.UsedBytes != 360e6 || q.Budget.RemainingBytes != 140e6 ||
+		q.Budget.TestMaxBytes != 210e6 || q.Budget.ResetsAt == nil || q.PublicOffReason != nil {
 		t.Errorf("spent: %+v", q)
 	}
 	w = do(pub, "POST", speedPub+"/api/speed/run?kind=sweep", speedVisitor("3.3.3.3"))
@@ -680,6 +682,34 @@ func TestSpeedPublicOptInBudget(t *testing.T) {
 	ts, _ := g.st.SpeedTests(context.Background(), speedNow.Add(-time.Minute), speedNow.Add(time.Minute))
 	if n := len(ts); n == 0 || ts[n-1].Trigger != "public" || ts[n-1].Origin() != "public" {
 		t.Errorf("stored %+v", ts)
+	}
+}
+
+// TestSpeedPublicBudgetTooSmall: a budget under one test (150 MB < 210 MB)
+// turns the share link's tests off: 403 disabled with reason
+// budget_too_small, and part=queue says why.
+func TestSpeedPublicBudgetTooSmall(t *testing.T) {
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{budget: 150e6})
+	loc, pub, _ := speedHandlers(t, g, LocalOptions{})
+	if cw := speedSend(loc, "POST", "/api/speed/config", `{"public": true}`, speedPOSTHeaders()); cw.Code != 200 {
+		t.Fatalf("toggle: %d %s", cw.Code, cw.Body.String())
+	}
+	w := do(pub, "POST", speedPub+"/api/speed/run?id=us-east", speedVisitor("1.1.1.1"))
+	var e struct{ Code, Reason string }
+	if json.Unmarshal(w.Body.Bytes(), &e); w.Code != 403 || e.Code != "disabled" || e.Reason != "budget_too_small" {
+		t.Errorf("run: %d %s", w.Code, w.Body.String())
+	}
+	for _, v := range []struct {
+		h    http.Handler
+		path string
+		hdr  map[string]string
+	}{{loc, "/api/speed?part=queue", speedHost}, {pub, speedPub + "/api/speed?part=queue", speedVisitor("1.1.1.1")}} {
+		var q speedQueueJSON
+		json.Unmarshal(do(v.h, "GET", v.path, v.hdr).Body.Bytes(), &q)
+		if q.PublicStart || !q.PublicEnabled || q.PublicOffReason == nil || *q.PublicOffReason != "budget_too_small" ||
+			q.Budget.LimitBytes != 150e6 || q.Budget.TestMaxBytes != 210e6 {
+			t.Errorf("%s: %+v", v.path, q)
+		}
 	}
 }
 

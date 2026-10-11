@@ -23,7 +23,7 @@ Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and n
 | HTTP | `code` |
 |---|---|
 | 400 | `bad_request` |
-| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off); `speed_off` (speed tests are off) |
+| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off; with `reason: "budget_too_small"` when the budget is below one test); `speed_off` (speed tests are off) |
 | 409 | `skipped` (Test now of a server the user skipped) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
@@ -346,13 +346,16 @@ There is no cooldown for the owner or for single tests; the only wait is the 30-
 
 **The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
 
-**The share link has a data budget:** at most `--speedtest-public-budget` (default 10 GB) over a rolling 24 hours.
-- It counts every byte the share link's tests put on the wire: every attempt, the ramp-up, and tests that were cut short.
+**The share link has a data budget:** at most `--speedtest-public-budget` (default 10 GB) over a rolling 24 hours. It is a hard limit: a test from the share link starts only when a whole test (up to 210 MB) still fits in what's left.
+- One test moves at most 210 MB: 100 MB each way, plus the 5% a hard receive-side stop allows, even against a server that ignores the end of the test.
+- It counts every byte the share link's tests put on the wire: every attempt, the ramp-up, and tests that were cut short. A running share-link test holds a whole test's 210 MB until its real bytes are charged.
 - It is saved across restarts.
-- Once spent:
-  - new share-link requests get 429 `budget_exhausted` with `resets_at`, the moment enough use ages out;
-  - waiting share-link entries are dropped when their turn comes;
-  - a running share-link sweep stops after its current test.
+- One check decides, at admission, when an entry's turn comes, and before each test of a sweep. When a whole test doesn't fit:
+  - new share-link requests get 429 `budget_exhausted` with `resets_at`, the moment enough use ages out for 210 MB to fit;
+  - waiting share-link entries are dropped when their turn comes (`state: "dropped"`, `stopped_reason: "limit"`, `stopped_code`, `resets_at`);
+  - a share-link sweep stops before the test that wouldn't fit (`stopped_reason: "limit"`); the tests it ran stay.
+- When several limits block (the data, the test time, a sweep's 30-minute gap), the refusal is the one that clears **last**, and its `resets_at` (and `retry_after`) is when a retry will be admitted.
+- **A budget under 210 MB** turns the share link's tests off: fyisp starts as usual and logs one warning (`share-link speed tests are off: the budget (150 MB) is below the 210 MB one test needs`), the link answers 403 `disabled` with `reason: "budget_too_small"`, and part=queue has `public_off_reason: "budget_too_small"`. The budget is never raised for you.
 - The owner and the schedule are never limited by it.
 
 **The share link has test-time caps.** Probes are masked during every test, so its tests may keep the line under test for at most:
@@ -376,10 +379,12 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "waiting": [ { ...Entry } ],  // in run order
   "last_sweep": { ...Entry },   // |null: the last finished sweep
   "public_enabled": true,       // the owner lets the share link queue tests
-  "public_start": true,         // the share link may start one now: enabled, budget and test time left, room in the queue (show its button only then)
+  "public_off_reason": null,    // |"budget_too_small": the share link's tests are off anyway (the budget is below one test)
+  "public_start": true,         // the share link may start one now: enabled, a whole test fits, test time left, room in the queue (show its button only then)
   "budget": {                   // the share link's rolling 24-hour data budget
-    "limit_bytes": 50000000000, "used_bytes": 1200000000, "remaining_bytes": 48800000000,
-    "resets_at": null,          // |null: when spent, when enough use ages out
+    "limit_bytes": 10000000000, "used_bytes": 1200000000, "remaining_bytes": 8800000000,
+    "test_max_bytes": 210000000, // the most one test moves; a test starts only when this much fits in remaining_bytes
+    "resets_at": null,          // |null: when a whole test doesn't fit, when enough use ages out for one to
     "time_hour_s": 240, "time_day_s": 960,          // the share link's test time in the last hour and day
     "time_hour_max_s": 600, "time_day_max_s": 3600,
     "time_resets_at": null,     // |null: when a capped one frees up
@@ -410,6 +415,8 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "tests": [412, 413],          // the stored tests so far
   "wait_reason": null,          // waiting: "cooldown" = a share-link sweep held until est_start (30 min after the last one); else null
   "stopped_reason": null,       // finished before its last test: "cancelled" | "unreachable" (a sweep stopped after servers in a row didn't answer) | "limit" (the share link's budget or time ran out, or it was turned off); else null
+  "stopped_code": null,         // for "limit": "budget_exhausted" | "time_cap" | "budget_too_small" | "disabled"; else null
+  "resets_at": null,            // for "limit" by the budget or the time caps: when a test fits again; else null
   "results": [                  // a sweep's servers in order (part=entry and part=sweep only)
     {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "status": "ok", "test": 412,
      "down_bps": 412000000, "up_bps": 38000000},
@@ -448,7 +455,7 @@ It works in every mode, `off` included.
 **Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
 - **Speed tests on:** 403 `speed_off` while the mode is `off` (part=queue `speed_on: false`).
 - **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
-- **Budget:** 429 `budget_exhausted` (data) or `time_cap` (test time) with `resets_at` (ms) and `retry_after` once either is spent.
+- **Budget:** 429 `budget_exhausted` (a whole test no longer fits in the data left) or `time_cap` (test time) with `resets_at` (ms) and `retry_after`; when both block, the one that clears last. 403 `disabled` with `reason: "budget_too_small"` when the budget is below one test.
 - **Sweep gap:** 429 `cooldown` with `resets_at` and `retry_after` for a sweep within 30 minutes of the last public one.
 - **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
 - **Queue limits (429 `queue_full`, its `error` says which):**
