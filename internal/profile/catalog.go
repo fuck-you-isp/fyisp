@@ -338,3 +338,19 @@ func Builtin() (*Registry, error) {
 	})
 	return builtinReg, builtinErr
 }
+
+// IperfCatalog is catalog/iperf3: the public iperf3 servers and regions
+// for speed tests (parsed by package speedtest).
+func IperfCatalog() fs.FS {
+	sub, _ := fs.Sub(catalogFS, "catalog/iperf3")
+	return sub
+}
+
+// CheckPublicHost reports whether h is a hostname or a public IPv4
+// address (private and loopback addresses are refused).
+func CheckPublicHost(h string) error {
+	if isSpecial(h) {
+		return fmt.Errorf("%s is not a host", h)
+	}
+	return checkHost(h, false)
+}

@@ -7,7 +7,7 @@
 // keeps it accessible. Plain ES module, no build step.
 // @ts-check
 
-import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText } from './core.js';
+import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText, tzParam } from './core.js';
 
 /** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string,recovered?:number}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
@@ -15,13 +15,13 @@ import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, c
 /** @typedef {{state:string,delay?:string,dropouts?:string,smoothness?:string,words?:string,worst_at?:number}} HomeCalls */
 /** @typedef {{app:string,title:string,level:string,state:string,label:string,note?:string}} HomeApp */
 /** @typedef {{id:string,label:string,done:boolean}} HomeStep */
-/** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[]}} HomeLive */
+/** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[],speed?:{text:string,level?:string,kind?:string,impact?:string}}} HomeLive */
 /** @typedef {{from:number,to:number,level:string,who:string,kind?:string,label:string,text?:string,source:string,incident?:number,ongoing?:boolean}} HomeRun */
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
 /** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,side?:string,level?:string,confidence?:string,text?:string,peak_loss:number,details:string}} HomeProblem */
 /** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number},coverage?:number}} HomeHistory */
-/** @typedef {{part:string,voice:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number}} HomeAt */
+/** @typedef {{part:string,voice:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number,speed_note?:string,speed_test_overlap_s?:number}} HomeAt */
 /** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
 /**
  * What Home needs from the page (app.js owns the hash, the status and sharing).
@@ -165,9 +165,11 @@ export class Home {
     this.timeErr = h('p', { class: 'ho-err', hidden: true }, 'Couldn’t load the history. ',
       h('button', { class: 'ho-link', type: 'button', text: 'Try again', onclick: () => this.loadHistory() }));
     this.legendEl = h('div', { class: 'ho-legend' });
+    // Speed tests' time-of-day pattern: one plain line, only when there is one.
+    this.speedEl = h('p', { class: 'ho-speed', hidden: true });
     this.timeEl = h('section', { class: 'ho-time', 'aria-labelledby': 'ho-time-h' },
       h('div', { class: 'ho-sec-head' }, h('h2', { id: 'ho-time-h', text: 'When was it bad?' }), this.spanSeg),
-      this.sumEl, this.timeErr, this.stripsEl, this.legendEl);
+      this.sumEl, this.timeErr, this.stripsEl, this.legendEl, this.speedEl);
 
     // What happened at…?
     this.askIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', id: 'ho-ask-in' }));
@@ -230,7 +232,7 @@ export class Home {
     if (this.marked && this.marked.undoUntil && now > this.marked.undoUntil) { this.marked.undoUntil = 0; this.renderMark(); }
   }
 
-  tz() { return String(-new Date().getTimezoneOffset()); }
+  tz() { return tzParam(); }
 
   async loadLive() {
     if (this.liveBusy) return;
@@ -284,6 +286,16 @@ export class Home {
       this.tilesEl.replaceChildren();
       this.renderMeta();
       return;
+    }
+    // One plain line, never during a Problem: the card owns "now". "Speed:" says it isn't a problem count.
+    const sp = d.speed && d.answer.level !== 'bad' ? d.speed : null;
+    this.speedEl.hidden = !sp;
+    if (sp) {
+      this.speedEl.replaceChildren(
+        h('span', { class: 'ho-speed-i', 'aria-hidden': 'true', text: sp.impact === 'video_risk' ? '!' : '↘' }),
+        // The server's warm-up line already starts with "Speed:".
+        /^Speed:/.test(sp.text) ? h('span', { text: sp.text }) : h('span', {}, h('b', { text: 'Speed: ' }), sp.text.charAt(0).toLowerCase() + sp.text.slice(1)), ' ',
+        h('a', { class: 'ho-link', href: '#v=speed', text: 'See speed by hour', onclick: (/** @type {Event} */ e) => { e.preventDefault(); this.host.openDetails('#v=speed'); } }));
     }
     const a = d.answer;
     // Can't reach fyisp: grey, never red, and the last answer "as of".
@@ -507,6 +519,8 @@ export class Home {
     const span = r.bad_from && r.bad_to ? `${when(r.bad_from)} to ${clock(r.bad_to)}` : `Around ${when(r.time)}`;
     const L = LEVELS[r.level] || LEVELS.checking;
     const kids = [badge(r.level, L.word), ' ', h('b', { text: `${span}: ` }), `${r.headline}.`];
+    // A speed test in the window comes first: at 10 s or more it is the most likely cause.
+    if (r.speed_note) kids.splice(3, 0, `${r.speed_note} `);
     if (r.cause) kids.push(' ', r.cause);
     if (r.fact) kids.push(' ', r.fact_at ? r.fact.replace(/^In the worst minute/, `In the worst minute (${clock(r.fact_at)})`) : r.fact);
     return kids;

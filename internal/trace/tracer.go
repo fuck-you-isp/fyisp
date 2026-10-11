@@ -173,7 +173,7 @@ type target struct {
 	wake  chan struct{}
 
 	// tracer.mu
-	sessions map[uint64]time.Time // Investigate callers -> deadline
+	sessions map[uint64]*session // running Investigate sessions
 	looping  bool
 	curIv    time.Duration
 
@@ -231,7 +231,7 @@ func (tr *tracer) Run(ctx context.Context, p *model.Profile, sink Sink) error {
 		tr.targets[t.Name] = &target{
 			t: t, host: t.HostFor(model.KindICMP),
 			phase: float64(i) / float64(len(p.Targets)), idx: i,
-			wake: make(chan struct{}, 1), sessions: map[uint64]time.Time{},
+			wake: make(chan struct{}, 1), sessions: map[uint64]*session{},
 		}
 	}
 	n := 0
@@ -268,9 +268,41 @@ func (tr *tracer) startLoop(st *target) {
 	}()
 }
 
-func (tr *tracer) Investigate(name string, ttl time.Duration) (func(), error) {
-	if ttl <= 0 {
-		return nil, errors.New("trace: ttl must be positive")
+// session is one Investigate caller. Fields are guarded by tracer.mu.
+type session struct {
+	tr       *tracer
+	st       *target
+	id       uint64
+	max      int
+	done     int
+	deadline time.Time
+	ended    time.Time
+}
+
+func (se *session) Stop() {
+	se.tr.mu.Lock()
+	se.endLocked(se.tr.o.Now())
+	se.tr.mu.Unlock()
+	poke(se.st.wake)
+}
+
+func (se *session) Progress() (int, time.Time) {
+	se.tr.mu.Lock()
+	defer se.tr.mu.Unlock()
+	return se.done, se.ended
+}
+
+// endLocked ends the session at t (once). tr.mu is held.
+func (se *session) endLocked(t time.Time) {
+	if se.ended.IsZero() {
+		se.ended = t
+		delete(se.st.sessions, se.id)
+	}
+}
+
+func (tr *tracer) Investigate(name string, rounds int) (Investigation, error) {
+	if rounds <= 0 {
+		return nil, errors.New("trace: rounds must be positive")
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -285,22 +317,31 @@ func (tr *tracer) Investigate(name string, ttl time.Duration) (func(), error) {
 		return nil, fmt.Errorf("trace: target %q: %s cannot be resolved", name, st.host)
 	}
 	tr.nextID++
-	id := tr.nextID
-	st.sessions[id] = tr.o.Now().Add(ttl)
+	// The deadline only guards against a loop that cannot keep up: the
+	// rounds end the session first.
+	se := &session{tr: tr, st: st, id: tr.nextID, max: rounds,
+		deadline: tr.o.Now().Add(2*time.Duration(rounds)*tr.o.Investigate + time.Minute)}
+	st.sessions[se.id] = se
 	if !st.looping {
 		tr.startLoop(st)
 	} else {
 		poke(st.wake)
 	}
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			tr.mu.Lock()
-			delete(st.sessions, id)
-			tr.mu.Unlock()
-			poke(st.wake)
-		})
-	}, nil
+	return se, nil
+}
+
+// counted credits a round traced at the investigate rate to st's sessions,
+// ending those that have had their rounds.
+func (tr *tracer) counted(st *target) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	now := tr.o.Now()
+	for _, se := range st.sessions {
+		se.done++
+		if se.done >= se.max {
+			se.endLocked(now)
+		}
+	}
 }
 
 func poke(c chan struct{}) {
@@ -348,9 +389,9 @@ func (tr *tracer) interval(st *target) (time.Duration, bool) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	now := tr.o.Now()
-	for id, dl := range st.sessions {
-		if !now.Before(dl) {
-			delete(st.sessions, id)
+	for _, se := range st.sessions {
+		if !now.Before(se.deadline) {
+			se.endLocked(now)
 		}
 	}
 	switch {
@@ -388,6 +429,9 @@ func (tr *tracer) loop(ctx context.Context, st *target) {
 		if slot.After(st.lastSlot) {
 			st.lastSlot = slot
 			tr.round(ctx, st, slot)
+			if iv == tr.o.Investigate {
+				tr.counted(st)
+			}
 			continue
 		}
 		wait := time.Unix(0, (n+1)*int64(iv)+int64(phase)).Sub(now)
@@ -588,6 +632,7 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 	p.full = p.hops == nil || pending || st.gen != gen || turn == 0 || turn == -rv
 	st.gen = gen
 
+	at := time.Now()
 	res := tr.probeAll(ctx, p)
 	if ctx.Err() != nil {
 		return // cancelled mid-round: not measured
@@ -649,7 +694,7 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 		if r.skipped {
 			continue // not measured: no sample
 		}
-		s := model.Sample{Key: model.SeriesKey{Target: st.t.Name, Kind: model.KindTrace, Hop: uint8(ttl)}, Slot: slot}
+		s := model.Sample{Key: model.SeriesKey{Target: st.t.Name, Kind: model.KindTrace, Hop: uint8(ttl)}, Slot: slot, At: at}
 		switch {
 		case r.h.Addr.IsValid():
 			s.RTT = max(r.h.RTT, 0)

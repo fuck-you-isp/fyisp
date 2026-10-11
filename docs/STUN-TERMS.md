@@ -43,7 +43,7 @@ Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.ym
 
 **Caveats:**
 - Treat it as best effort.
-- fyisp already shows a dead server as "This test server isn't answering, not your connection" and never raises a verdict for one dead provider.
+- fyisp already shows a dead server as "This test server isn't answering; your other call checks look normal" and never raises a verdict for one dead provider.
 - Port 3478 on this host isn't named anywhere. Meet's network guide only lists UDP 3478 and 19302–19309 as ports to open.
 
 **Sources:**

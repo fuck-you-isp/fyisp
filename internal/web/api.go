@@ -681,6 +681,7 @@ type profileJSON struct {
 		Notes     bool `json:"notes"`     // timeline notes (/api/annotations)
 		Reports   bool `json:"reports"`   // evidence reports (local only)
 		Baselines bool `json:"baselines"` // "normal" badges and band (/api/baselines)
+		Speed     bool `json:"speed"`     // speed tests (/api/speed)
 	} `json:"features"`
 	Groups  []groupJSON     `json:"groups"`
 	Targets []targetSummary `json:"targets"`
@@ -819,6 +820,35 @@ func writeJSON(w http.ResponseWriter, r *http.Request, code int, v any) {
 	writeBody(w, r, code, "application/json; charset=utf-8", append(b, '\n'))
 }
 
-func writeErr(w http.ResponseWriter, r *http.Request, code int, msg string) {
-	writeJSON(w, r, code, map[string]string{"error": msg})
+// writeErr writes {"error": msg, "code": ...}: code is a stable word for
+// the UI (never match on msg), derived from the status.
+func writeErr(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	writeErrCode(w, r, status, errCode(status), msg)
+}
+
+// writeErrCode writes an error with an explicit code (e.g. "running").
+func writeErrCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	writeJSON(w, r, status, map[string]string{"error": msg, "code": code})
+}
+
+func errCode(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "bad_request"
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusNotFound:
+		return "not_found"
+	case http.StatusMethodNotAllowed:
+		return "method_not_allowed"
+	case http.StatusConflict:
+		return "conflict"
+	case http.StatusMisdirectedRequest:
+		return "unknown_host"
+	case http.StatusTooManyRequests:
+		return "rate_limited"
+	case http.StatusServiceUnavailable:
+		return "unavailable"
+	}
+	return "error"
 }

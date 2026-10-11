@@ -264,3 +264,46 @@ func blockUDP(t *testing.T) {
 	}
 	t.Logf("UDP port 7844 blocked: %v", rule)
 }
+
+// TestLiveSameOrigin checks what the public listener's same-origin check
+// (web.sameOrigin, used by POST /s/<secret>/api/investigate) relies on: the
+// quick tunnel passes the eyeball's Host (the trycloudflare hostname, not
+// the origin's 127.0.0.1:port), Origin and Sec-Fetch-Site unchanged, and
+// sets Cf-Connecting-Ip.
+func TestLiveSameOrigin(t *testing.T) {
+	liveOnly(t)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cf := "no"
+		if r.Header.Get("Cf-Connecting-Ip") != "" {
+			cf = "yes"
+		}
+		_, _ = io.WriteString(w, r.Method+" host="+r.Host+" origin="+r.Header.Get("Origin")+" sfs="+r.Header.Get("Sec-Fetch-Site")+" cfip="+cf)
+	}))
+	tun := New(Options{OriginURL: origin.URL, Log: testLogger(t)})
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &liveRun{tun: tun, cancel: cancel, done: make(chan error, 1), origin: origin}
+	go func() { r.done <- tun.Run(ctx) }()
+	st := r.waitConnected(t, 90*time.Second)
+	host := strings.TrimPrefix(st.URL, "https://")
+	fetch(t, st.URL, "GET host="+host+" origin= sfs= cfip=yes", 60*time.Second)
+
+	res := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, "1.1.1.1:53")
+	}}
+	c := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{DisableKeepAlives: true,
+		DialContext: (&net.Dialer{Resolver: res, Timeout: 10 * time.Second}).DialContext}}
+	req, _ := http.NewRequest("POST", st.URL+"/s/x/api/investigate?target=Alpha", nil)
+	req.Header.Set("Origin", st.URL)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if want := "POST host=" + host + " origin=" + st.URL + " sfs=same-origin cfip=yes"; string(b) != want {
+		t.Errorf("origin saw %q, want %q", b, want)
+	}
+	t.Logf("origin saw %q", b)
+	r.stop(t)
+}

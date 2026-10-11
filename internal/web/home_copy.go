@@ -412,11 +412,59 @@ func (c homeCopy) fine(home bool) string {
 	return c.v("Your internet is fine", "This connection is fine")
 }
 
-func (c homeCopy) everything(home bool) string {
-	if !home {
-		return c.v("Everything we check is working.", "Everything checked is working.")
+// everything is the cause line when nothing is wrong enough to name a
+// place. It follows the tiles: "all working" only when every tile says
+// Working; otherwise which work and which are slower than usual, so the
+// card never contradicts a tile.
+func (c homeCopy) everything(home bool, tiles []HomeTile) string {
+	names := map[string]string{tileCalls: "calls", tileWork: "work apps", tileWeb: "websites"}
+	var ok, slow []string
+	present := 0
+	for _, t := range tiles {
+		name, known := names[t.ID]
+		if !known {
+			continue
+		}
+		present++
+		switch {
+		case t.State == tileWorking || (t.ID == tileCalls && t.State == "good"):
+			ok = append(ok, name)
+		case t.ID != tileCalls && (t.State == tileMostly || t.State == tileSlow || t.State == tileDown):
+			slow = append(slow, name)
+		}
 	}
-	return "Calls, work apps and websites are all working."
+	if !home {
+		if len(slow) == 0 {
+			return c.v("Everything we check is working.", "Everything checked is working.")
+		}
+		return "Some " + joinWords(slow) + " are slower than usual."
+	}
+	switch {
+	case len(slow) == 0 && len(ok) == present:
+		return "Calls, work apps and websites are all working."
+	case len(slow) == 0 && len(ok) > 0:
+		return upperFirst(joinWords(ok)) + " are working."
+	case len(slow) == 0:
+		return "Calls, work apps and websites are being checked."
+	case len(ok) == 0:
+		return "Some " + joinWords(slow) + " are slower than usual."
+	}
+	return upperFirst(joinWords(ok)) + " are working. Some " + joinWords(slow) + " are slower than usual."
+}
+
+// joinWords is "a", "a and b", "a, b and c".
+func joinWords(xs []string) string {
+	if len(xs) < 2 {
+		return strings.Join(xs, "")
+	}
+	return strings.Join(xs[:len(xs)-1], ", ") + " and " + xs[len(xs)-1]
+}
+
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func (c homeCopy) verdictHead(k model.VerdictKind, conf string, quiet bool, affected []string, onlyOther bool) string {

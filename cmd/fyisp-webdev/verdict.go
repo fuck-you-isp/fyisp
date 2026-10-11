@@ -38,7 +38,7 @@ var script = []scripted{
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0, "services_loss": 0.001}},
 	{model.VerdictISP, "Your ISP is dropping 38% of packets. Your router and Wi-Fi are fine, so this is your ISP's fault.", nil,
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0.38, "anycast_loss": 0.41, "services_loss": 0.4}},
-	{model.VerdictLAN, "Your Wi-Fi or router is dropping 22% of packets. Your ISP cannot be blamed for this one.", nil,
+	{model.VerdictLAN, "Your Wi-Fi or router is dropping 22% of packets. Your internet provider looks fine from here.", nil,
 		map[string]float64{"gateway_loss": 0.22, "edge_loss": 0.25, "anycast_loss": 0.24, "services_loss": 0.25}},
 	{model.VerdictUpstream, "Your ISP's first hop answers, but most of the internet does not: trouble beyond your ISP's edge or in its upstream links.", nil,
 		map[string]float64{"gateway_loss": 0, "edge_loss": 0, "anycast_loss": 0.7, "services_loss": 0.72}},

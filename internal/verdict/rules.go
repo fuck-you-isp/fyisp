@@ -73,8 +73,18 @@ import (
 //
 // In order, the first match wins:
 //
-//  1. no_network: no samples at all; or nothing succeeded and most losses
-//     are "no network"/"unreachable"; or every known layer loses everything
+//  0. unknown (no verdict: the engine holds the current one and its
+//     incident): more than a quarter of the window's slots not measured
+//     (a speed test masks every probe it overlaps), including a window of
+//     nothing but such slots, unless at least half the window is measured
+//     and shows a dead connection (rule 1's loss clauses). Not measured is never loss and never "no
+//     network". A quarter, not half:
+//     a mask removes evidence unevenly (the layers are probed every 5 s,
+//     services every 15 s), and a window a third masked can already shift
+//     the blame, e.g. from the ISP edge to "beyond your ISP".
+//  1. no_network: no samples at all and none masked (no probe even ran);
+//     or at least 5 samples lost, and nothing succeeded with most losses
+//     "no network"/"unreachable", or every known layer loses everything
 //     that way while no internet target succeeds.
 //  2. lan: the gateway layer is to blame (innermost lossy layer, below).
 //  3. isp: the ISP-edge layer is to blame (the gateway is not).
@@ -169,6 +179,9 @@ type judgement struct {
 	v      model.Verdict // Since unset
 	loss   float64       // headline loss for PeakLoss
 	layers map[string]*bool
+	// unknown: the window was mostly not measured (no verdict; the
+	// engine holds the current one).
+	unknown bool
 }
 
 // judge applies the rules to one window.
@@ -178,8 +191,9 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 		ls[l] = &layerStat{name: l}
 	}
 	var inet []*tstat // internet targets with samples
-	var n, lost, nonet, inetOK, inetN, inetLost int
+	var n, lost, nonet, gap, inetOK, inetN, inetLost int
 	for _, t := range ts {
+		gap += t.gap
 		if t.n == 0 {
 			continue
 		}
@@ -286,10 +300,20 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 			}
 		}
 	}
-	switch {
-	case n == 0,
-		lost == n && 2*nonet > lost,
-		knownLayers > 0 && deadLayers == knownLayers && inetOK == 0:
+	dead := lost >= minLost && (lost == n && 2*nonet > lost ||
+		knownLayers > 0 && deadLayers == knownLayers && inetOK == 0)
+	// 0. unknown: more than a quarter of the window's slots not measured
+	// (masked by a speed test). Not measured is never loss. A dead
+	// connection with at least half the window measured is judged anyway:
+	// masking never produces "no network" or "unreachable" samples, and a
+	// sweep's tests fail fast without a network, so its windows stay
+	// partly masked for the whole outage. (A few stray dead samples in a
+	// mostly masked window are not enough.)
+	if !(dead && n >= gap) && gap > 0 && 3*gap > n {
+		j.unknown = true
+		return j
+	}
+	if n == 0 || dead {
 		return set(model.VerdictNoNetwork, 1, "This device has no working network connection.")
 	}
 

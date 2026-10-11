@@ -19,6 +19,7 @@ import {
 } from './core.js';
 import { Home } from './home.js';
 import { Report } from './report.js';
+import { Speed } from './speed.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
 
@@ -70,14 +71,15 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
 
 /**
  * Page state; everything but band lives in the URL hash. view: 'h' (Home),
- * 'calls' (Calls), 'o' (Overview) or 'c' (charts), null for Home; focus: a target shown alone
+ * 'calls' (Calls), 'o' (Overview), 'c' (charts) or 'speed' (Speed), null for Home; focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
- * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter.
+ * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter;
+ * sr/sd/snf/ssw: Speed's selected row, span in days, "leave out backup servers" and the full test (sweep=1).
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '' };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '', sr: '', sd: 7, snf: false, ssw: false };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -196,7 +198,7 @@ function readHash() {
   }
   fixKinds();
   const v = p.get('v');
-  state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' ? v : null;
+  state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' || v === 'speed' ? v : null;
   state.hw = p.get('hw') === 'w' ? 'w' : 'd';
   const ot = p.get('ot');
   state.ot = ot && /^[a-z]+$/.test(ot) ? ot : '';
@@ -209,6 +211,12 @@ function readHash() {
   state.oc = p.get('oc') || '';
   const om = p.get('om');
   state.om = om === 'r' || om === 'ms' ? om : '';
+  // Speed: the selected row ('r:<region>' or 's:<server>'), the span, backup servers left out.
+  const sr = p.get('sr');
+  state.sr = sr && /^[rs]:[A-Za-z0-9._:-]{1,80}$/.test(sr) ? sr : '';
+  state.sd = p.get('sd') === '30' ? 30 : 7;
+  state.snf = p.get('snf') === '1';
+  state.ssw = p.get('sweep') === '1';
 }
 /** The last hash the page applied (hashchange and popstate both fire on Back). */
 let lastHash = '';
@@ -235,6 +243,10 @@ function hashString() {
   if (state.op) p.set('op', '1');
   if (state.oc) p.set('oc', state.oc);
   if (state.om) p.set('om', state.om);
+  if (state.sr) p.set('sr', state.sr);
+  if (state.sd === 30) p.set('sd', '30');
+  if (state.snf) p.set('snf', '1');
+  if (state.ssw) p.set('sweep', '1');
   return '#' + p.toString();
 }
 function writeHash() {
@@ -520,7 +532,7 @@ class Panel {
       hooks: {
         setSelect: [onChartSelect],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { self.drawBand(u); self.drawIncidents(u); drawNotes(u); self.drawStrip(); }],
+        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawBand(u); self.drawIncidents(u); drawNotes(u); self.drawStrip(); }],
       },
     };
     this.emptyEl.remove();
@@ -767,6 +779,7 @@ class Panel {
         nodes.push(h('div', { class: 'row inc' }, sw, `incident: ${inc.summary}`));
       }
     }
+    nodes.push(...speedTipNodes(d.start + i * d.step, d.start + (i + 1) * d.step));
     nodes.push(...noteTipNodes(notesNear(u, u.cursor.left)));
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
@@ -942,10 +955,10 @@ function incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
 /** @typedef {{hop:number,ip?:string,no_reply?:boolean,private?:boolean,masked?:boolean,rdns?:string,asn?:number,owner?:string}} HopRef */
 /** @typedef {HopRef & {n:number,lost:number,loss:number,min:number|null,mean:number|null,max:number|null,p95:number|null,jitter:number|null,loss_continues:boolean}} HopRow */
 /** @typedef {{id:number,target:string,at:string,first_diff:number,from:HopRef[],to:HopRef[]}} RouteChange */
-/** @typedef {{target:string,traced:boolean,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigate_until?:number}} TraceData */
+/** @typedef {{target:string,traced:boolean,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigation?:InvState}} TraceData */
+/** @typedef {{target:string,state:string,rounds_done:number,rounds_max:number,interval_ms:number,started_at:number,finished_at?:number}} InvState */
 
 const INV_REFRESH_MS = 5000;
-const KEEPALIVE_MS = 60000;
 const REAL_LOSS = 0.01; // loss below 1% is noise
 const INV_SYNC = 'fyisp-inv';
 
@@ -960,7 +973,7 @@ function targetInfo(/** @type {string} */ name) { return allTargets.find((t) => 
 /** The target the path panel and path-level incidents open: a traced anycast target, else any traced one. */
 function defaultTraceTarget() {
   const tr = allTargets.filter((t) => t.trace);
-  return (tr.find((t) => t.layer === 'anycast') || tr[0] || (MODE === 'local' ? allTargets.find((t) => !t.layer) : null) || { name: '' }).name;
+  return (tr.find((t) => t.layer === 'anycast') || tr[0] || allTargets.find((t) => !t.layer) || { name: '' }).name;
 }
 
 /** The target an outage-log row offers to trace: the first affected one we can trace, else the path. */
@@ -968,7 +981,7 @@ function incidentTraceTarget(/** @type {Incident} */ inc) {
   if (!traceOn) return '';
   for (const n of inc.targets || []) {
     const t = targetInfo(n);
-    if (t && (t.trace || MODE === 'local')) return n;
+    if (t) return n; // anyone can start an on-demand trace (the share link too)
   }
   return defaultTraceTarget();
 }
@@ -999,11 +1012,44 @@ function closeInvestigate() {
 function showView() {
   const on = !!(state.inv && inv);
   document.body.classList.toggle('investigating', on);
+  const homeOn = currentView() === 'h' && !on;
+  document.body.classList.toggle('home-on', homeOn);
+  if (home) home.el.hidden = !homeOn;
+  if (home) renderViewNav();
   if (inv) {
     inv.el.hidden = !on;
     if (on) inv.open(/** @type {string} */ (state.inv)); else inv.close();
   }
   updateRefreshLabel();
+}
+
+/**
+ * Why an on-demand trace couldn't start, in plain words, from the API's
+ * stable error code (never its wording): busy (no free slot: 4 in all, of
+ * which share-link viewers may use 3), rate_limited (this viewer's starts)
+ * and cooldown (this target finished less than 5 minutes ago, share link
+ * only), each with retry_after; unknown_target, unavailable, forbidden.
+ * @param {any} e
+ */
+function invError(e) {
+  const b = e.body || {};
+  const s = Number(b.retry_after) || Number(e.retryAfter) || 0;
+  const wait = s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while';
+  switch (b.code) {
+    // The owner always keeps one of the 4 slots: on the share link, busy can mean 3.
+    case 'busy': return MODE === 'public'
+      ? 'The most traces at once are already running. Try again in a few minutes.'
+      : 'Four traces are already running, which is the most at once. Try again in a few minutes.';
+    case 'rate_limited': return `You’ve started several traces recently. Try again ${wait}.`;
+    case 'cooldown': {
+      const m = Math.max(1, Math.ceil(s / 60));
+      return `This target was traced a few minutes ago. Try again in ${m} minute${m === 1 ? '' : 's'}.`;
+    }
+    case 'unknown_target': return 'Tracing isn’t available for this target.';
+    case 'unavailable': return 'Tracing is turned off on this setup.';
+    case 'forbidden': return 'This page can’t start traces: open the dashboard at its own address.';
+  }
+  return e.status === 429 ? `Too many traces right now. Try again ${wait}.` : 'Couldn’t start the trace. Try again.';
 }
 
 function hopAddr(/** @type {HopRef} */ x) {
@@ -1039,10 +1085,14 @@ class Investigate {
     this.sig = '';
     /** @type {AbortController|null} */
     this.ctl = null;
-    this.lastPoke = 0;
     this.poking = false;
     this.invErr = '';
-    this.invUntil = 0;
+    /** @type {InvState|null} the on-demand trace of this target (running, or finished within the hour) */
+    this.invState = null;
+    // Start one on open, once the first load shows none is running.
+    this.wantStart = false;
+    /** Spoken only when a trace starts or finishes, never per round. */
+    this.invSay = h('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
     this.hover = false;
     /** @type {number[]} */
     this.hops = [];
@@ -1066,6 +1116,7 @@ class Investigate {
     this.chartLegend = h('ul', { class: 'legend inv-legend', 'aria-label': 'Hops on the timeline' });
     this.changesEl = h('div', { class: 'inv-changes' });
     this.el = h('section', { id: 'inv', class: 'inv', 'aria-label': 'Investigate a target hop by hop', hidden: true },
+      this.invSay,
       h('div', { class: 'inv-head' },
         h('button', { class: 'btn', type: 'button', text: '← Dashboard', onclick: closeInvestigate }),
         this.titleEl, this.picker, this.statusEl),
@@ -1104,8 +1155,7 @@ class Investigate {
       this.sel = new Set();
       this.userSel = false;
       this.invErr = '';
-      this.invUntil = 0;
-      this.lastPoke = 0;
+      this.invState = null;
       this.tbody.replaceChildren();
       this.summary.replaceChildren();
       this.changesEl.replaceChildren();
@@ -1118,15 +1168,16 @@ class Investigate {
     }
     this.fillPicker();
     this.titleEl.textContent = 'Investigate';
+    const t = targetInfo(target);
+    this.wantStart = !!t && !t.trace;
     this.renderStatus();
-    this.keepalive();
   }
 
   close() { this.ctl?.abort(); }
 
   fillPicker() {
     const opts = [];
-    const ok = (/** @type {TargetInfo} */ t) => t.trace || MODE === 'local';
+    const ok = (/** @type {TargetInfo} */ t) => !!t; // every target: anyone can start an on-demand trace
     const byGroup = new Map();
     for (const p of panels) byGroup.set(p.group.id, p.group.title);
     const groups = new Map();
@@ -1140,66 +1191,77 @@ class Investigate {
     if (traced.length) {
       opts.push(h('optgroup', { label: 'Always-on traces' }, ...traced.map((t) => h('option', { value: t.name, text: t.name }))));
     }
-    if (MODE === 'local') {
-      for (const [g, ts] of groups) {
-        const rest = ts.filter((/** @type {TargetInfo} */ t) => !t.trace);
-        if (rest.length) opts.push(h('optgroup', { label: `${g} (on demand)` }, ...rest.map((/** @type {TargetInfo} */ t) => h('option', { value: t.name, text: t.name }))));
-      }
+    for (const [g, ts] of groups) {
+      const rest = ts.filter((/** @type {TargetInfo} */ t) => !t.trace);
+      if (rest.length) opts.push(h('optgroup', { label: `${g} (on demand)` }, ...rest.map((/** @type {TargetInfo} */ t) => h('option', { value: t.name, text: t.name }))));
     }
     if (!allTargets.some((t) => t.name === this.target && ok(t))) opts.unshift(h('option', { value: this.target, text: this.target }));
     this.picker.replaceChildren(...opts);
     this.picker.value = this.target;
   }
 
-  /** On-demand trace for a target without an always-on trace: POST now and every 60 s while open. */
-  keepalive() {
-    const t = targetInfo(this.target);
-    if (MODE !== 'local' || !t || t.trace || this.poking || document.hidden) return;
-    if (status && status.controls === 'disabled') {
-      this.invErr = 'on-demand traces are disabled because the dashboard is reachable from your network and fyisp was started with --admin-token=off';
-      this.renderStatus();
-      return;
-    }
-    if (Date.now() - this.lastPoke < KEEPALIVE_MS) return;
-    this.poke();
-  }
-
+  /**
+   * Starts an on-demand trace (POST api/investigate). Anyone can, the share
+   * link too; it runs at most rounds_max rounds and stops by itself, so it
+   * is never re-posted to keep it alive. On a running trace the POST only
+   * returns its state.
+   */
   async poke() {
     const target = this.target;
+    if (this.poking) return;
     this.poking = true;
-    this.lastPoke = Date.now();
     /** @type {Record<string,string>} */
-    const headers = { 'X-FYISP-Token': TOKEN };
-    if (!await addAdmin(headers)) { this.poking = false; return; }
+    const headers = {};
+    if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
     try {
+      /** @type {InvState} */
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
       if (target !== this.target) return;
-      this.invUntil = r.until;
       this.invErr = '';
+      this.setInv(r);
     } catch (e) {
       if (target !== this.target) return;
-      const err = /** @type {any} */ (e);
-      if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
-      this.invErr = err.message;
+      this.invErr = invError(/** @type {any} */ (e));
     } finally {
       this.poking = false;
     }
     this.renderStatus();
+    this.renderSummaryIfEmpty();
+  }
+
+  /** A new trace state; speaks only when a trace starts or finishes. @param {InvState|null|undefined} v */
+  setInv(v) {
+    const prev = this.invState;
+    this.invState = v || null;
+    if (!v) return;
+    if (v.state === 'running' && (!prev || prev.state !== 'running' || prev.started_at !== v.started_at)) {
+      this.invSay.textContent = `Tracing ${v.target}: up to ${v.rounds_max} rounds.`;
+    } else if (v.state === 'finished' && prev && prev.state === 'running') {
+      this.invSay.textContent = `Trace of ${v.target} finished: ${v.rounds_done} rounds.`;
+    }
   }
 
   renderStatus() {
     const t = targetInfo(this.target);
     const d = this.data;
+    const v = this.invState;
     const kids = [];
     if (t && t.trace) kids.push(h('span', { class: 'pill on', text: 'Always-on trace' }));
-    else if (MODE === 'local') {
-      if (this.invErr) kids.push(h('span', { class: 'pill err', text: `On-demand trace failed: ${this.invErr}` }));
-      else if (this.invUntil) kids.push(h('span', { class: 'pill on', title: 'The trace keeps running while this view is open, and stops about 2 minutes after you leave it.', text: 'On-demand trace running' }));
-      else kids.push(h('span', { class: 'pill', text: 'Starting on-demand trace…' }));
-    } else kids.push(h('span', { class: 'pill', text: 'No always-on trace for this target' }));
+    else if (this.invErr) {
+      kids.push(h('span', { class: 'pill err', text: this.invErr }));
+      kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Try again', onclick: () => { this.invErr = ''; this.poke(); } }));
+    } else if (v && v.state === 'running') {
+      kids.push(h('span', { class: 'pill on', title: `About every ${Math.round(v.interval_ms / 100) / 10} s; it stops by itself after ${v.rounds_max} rounds.`, text: `Tracing… ${v.rounds_done} of ${v.rounds_max} rounds` }));
+    } else if (v && v.state === 'finished') {
+      kids.push(h('span', { class: 'pill', text: `Finished: ${v.rounds_done} rounds${v.finished_at ? ` (ended ${fmtWhen(v.finished_at)})` : ''}` }));
+      kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace again', disabled: this.poking || null, onclick: () => this.poke() }));
+    } else kids.push(h('span', { class: 'pill', text: 'Starting a trace…' }));
     if (d && d.route) kids.push(h('span', { class: 'muted small', text: `route unchanged since ${fmtWhen(Date.parse(d.route.since))}` }));
     this.statusEl.replaceChildren(...kids);
   }
+
+  /** The "Tracing…" line in the summary while there are no hops yet. */
+  renderSummaryIfEmpty() { if (this.data && !this.data.hops.length) this.renderSummary(); }
 
   setView(/** @type {number} */ from, /** @type {number} */ to) {
     this.view = [from / 1000, to / 1000];
@@ -1233,7 +1295,13 @@ class Investigate {
       const d = await fetchJSON('api/trace?' + new URLSearchParams({ target, from, to }), { signal: ctl.signal });
       if (ctl.signal.aborted || target !== this.target) return;
       this.data = d;
-      if (d.investigate_until) this.invUntil = d.investigate_until;
+      // A cached response (the share link caches for 10 s) can predate our start: never forget a known trace.
+      if (d.investigation) this.setInv(d.investigation);
+      // Opening a target without an always-on trace starts one, unless one is running or just finished.
+      if (this.wantStart) {
+        this.wantStart = false;
+        if (!d.investigation) this.poke();
+      }
       const dest = this.dest();
       if (!this.userSel) {
         this.sel = new Set();
@@ -1276,7 +1344,7 @@ class Investigate {
     const kids = [];
     if (!d.hops.length) {
       const t = targetInfo(this.target);
-      const pending = MODE === 'local' && t && !t.trace && !this.invErr;
+      const pending = t && !t.trace && !this.invErr && (!this.invState || this.invState.state === 'running');
       this.summary.className = 'inv-summary v-warming_up';
       kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.' : 'No trace data in this range.' }));
       this.summary.replaceChildren(...kids);
@@ -1504,7 +1572,7 @@ class Investigate {
           u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
         }],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { self.drawChanges(u, !isLoss); drawNotes(u); }],
+        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawChanges(u, !isLoss); drawNotes(u); }],
       },
     };
     const u = new uPlot(opts, data, el);
@@ -1570,6 +1638,7 @@ class Investigate {
         if (t >= b0 && t < b1) nodes.push(h('div', { class: 'row inc' }, `route changed at hop ${ch.first_diff}`));
       }
     }
+    nodes.push(...speedTipNodes(d.start + i * d.step, d.start + (i + 1) * d.step));
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
   }
@@ -1678,6 +1747,91 @@ function drawNotes(/** @type {any} */ u) {
 }
 
 /** Tooltip rows for notes under the cursor. */
+// ---------- speed-test windows ----------
+
+/** @typedef {{start:number,end:number,origin?:string}} SpeedWindow */
+
+// false once this fyisp answers 404 (no speed tests): stop asking.
+let speedOn = true;
+/** Details → Speed, when this fyisp has speed tests. @type {Speed|null} */
+let speed = null;
+
+/** Whether this fyisp has speed tests: the light part=running answers 404 when not. */
+async function speedAvailable() {
+  try {
+    await fetchJSON('api/speed?part=running');
+    return true;
+  } catch (e) {
+    if (/** @type {any} */ (e).status === 404) { speedOn = false; return false; }
+    return true; // another error: show the tab, which says it can't load
+  }
+}
+/** @type {SpeedWindow[]} */
+let speedWins = [];
+
+/** Speed-test windows in the view: probes inside are "not measured", never judged. */
+async function loadSpeedWindows() {
+  if (!speedOn) return;
+  const { from, to } = queryRange();
+  try {
+    const d = await fetchJSON('api/speed?' + new URLSearchParams({ part: 'windows', from, to }));
+    speedWins = Array.isArray(d.windows) ? d.windows : [];
+  } catch (e) {
+    if (/** @type {any} */ (e).status === 404) { speedOn = false; speedWins = []; redrawCharts(); }
+    return;
+  }
+  redrawCharts();
+}
+
+/**
+ * Speed tests as marks along the top of the chart; a test wide enough to see
+ * (zoomed in) also gets a faint band. Thin full-height bands would read as a
+ * grid: with a test every 88 s they'd cover a day view.
+ */
+function drawSpeedWindows(/** @type {any} */ u) {
+  if (!speedWins.length) return;
+  const ctx = u.ctx;
+  const { left, top, width, height } = u.bbox;
+  const vmin = u.scales.x.min, vmax = u.scales.x.max;
+  const dpr = window.devicePixelRatio || 1;
+  const c = css('--muted') || '#898781';
+  // Merge windows that touch on screen, each at least 2 px wide.
+  // Tests a share-link visitor asked for get the accent, so the owner can tell them apart; merged spans keep it if any part was public.
+  /** @type {[number, number, boolean][]} */
+  const spans = [];
+  for (const w of speedWins) {
+    if (w.end / 1000 < vmin || w.start / 1000 > vmax) continue;
+    let x0 = u.valToPos(w.start / 1000, 'x', true), x1 = u.valToPos(w.end / 1000, 'x', true);
+    if (x1 - x0 < 2 * dpr) { const m = (x0 + x1) / 2; x0 = m - dpr; x1 = m + dpr; }
+    const last = spans[spans.length - 1];
+    const pub = w.origin === 'public';
+    if (last && x0 <= last[1] + dpr) { last[1] = Math.max(last[1], x1); last[2] = last[2] || pub; } else spans.push([x0, x1, pub]);
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, width, height);
+  ctx.clip();
+  const acc = css('--accent') || '#3987e5';
+  for (const [x0, x1, pub] of spans) {
+    if (x1 - x0 >= 6 * dpr) {
+      ctx.fillStyle = rgba(c, 0.10);
+      ctx.fillRect(x0, top, x1 - x0, height);
+    }
+    ctx.fillStyle = rgba(pub ? acc : c, 0.7);
+    ctx.fillRect(x0, top, x1 - x0, 4 * dpr);
+  }
+  ctx.restore();
+}
+
+/** Tooltip line for a bucket that overlaps a speed test. */
+function speedTipNodes(/** @type {number} */ a, /** @type {number} */ b) {
+  const hit = speedWins.filter((w) => w.start < b && w.end > a);
+  if (!hit.length) return [];
+  const n = hit.length, pub = hit.filter((w) => w.origin === 'public').length;
+  const from = pub ? (pub === n ? ' from the share link' : `, ${pub} from the share link`) : '';
+  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`}${from}: not measured` })];
+}
+
 function noteTipNodes(/** @type {Note[]} */ list) {
   const nodes = [];
   if (!list.length) return nodes;
@@ -1935,17 +2089,19 @@ let ov = null;
 function currentView() {
   if (state.focus && focusPanel()) return 'c';
   if (state.view === 'calls' && !callsOn) return detailsView();
+  if (state.view === 'speed' && !speed) return detailsView();
   return state.view || 'h';
 }
 /** Details' own view: Calls when the profile has a call path or call apps, the Overview for big profiles, else the charts. */
 function detailsView() { return callsOn ? 'calls' : bigProfile ? 'o' : 'c'; }
 function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
+function speedShown() { return !!speed && currentView() === 'speed' && !(state.inv && inv); }
 /** The kind the Overview shows: the first selected of TCP, HTTPS, ICMP. */
 function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || kindsOffered[0]; }
 function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.targets.some((t) => t.name === state.focus)) || null : null; }
 /** Panels that are on screen and may load: the path panel always, the others per view and focus. */
 function panelShown(/** @type {Panel} */ p) {
-  if (currentView() === 'h') return false; // Details loads its charts only when opened
+  if (currentView() === 'h' || currentView() === 'speed') return false; // Details loads its charts only when opened; Speed has none
   if (p.isPath) return true;
   if (currentView() !== 'c') return false;
   const fp = focusPanel();
@@ -2502,7 +2658,7 @@ const CALL_STATES = {
   unusable: { label: 'Unusable', head: 'Calls will break up' },
   blocked: { label: 'Blocked', head: 'Calls are blocked on this network' },
   not_enough_data: { label: 'Not enough data yet', head: 'Not enough data yet' },
-  server_not_answering: { label: 'This test server isn\'t answering, not your connection', head: 'The test servers aren\'t answering, not your connection' },
+  server_not_answering: { label: 'This test server isn\'t answering; your other call checks look normal', head: 'The test servers aren\'t answering; your other call checks look normal' },
 };
 const BAD_CALL = new Set(['poor', 'unusable']);
 /** @type {Object<string,string>} */
@@ -2829,7 +2985,7 @@ class Calls {
     const st = d.state, c = d.cause, p = d.path;
     if (st === 'good') return '';
     if (st === 'not_enough_data') return 'fyisp needs a few minutes of measurements of your call path.';
-    if (st === 'server_not_answering') return 'The call-path test servers stopped answering while the rest of your connection works: that is on their side.';
+    if (st === 'server_not_answering') return 'The call-path test servers stopped answering, while your other call checks look normal.';
     if (st === 'blocked') {
       const why = CALL_CAUSE[c?.kind || 'udp_blocked'];
       return d.quiet ? `It has been this way for hours (common on hotel and office networks): ${why}.` : `Blocked: ${why}.`;
@@ -3220,11 +3376,10 @@ function homeShown() { return !!home && currentView() === 'h' && !(state.inv && 
 
 /** The header's Home | Details switch. */
 function renderViewNav() {
-  const v = currentView();
   const nav = $('#viewnav');
   nav.replaceChildren(
-    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': v === 'h' ? 'page' : null, onclick: () => { if (currentView() !== 'h') goHome(); } }),
-    h('button', { type: 'button', text: 'Details', 'aria-current': v !== 'h' ? 'page' : null, onclick: () => { if (currentView() === 'h') openDetails(''); } }));
+    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': homeShown() ? 'page' : null, onclick: () => { if (!homeShown()) { state.inv = null; goHome(); } } }),
+    h('button', { type: 'button', text: 'Details', 'aria-current': !homeShown() ? 'page' : null, onclick: () => { if (homeShown()) openDetails(''); } }));
 }
 
 /**
@@ -3265,7 +3420,7 @@ function setView(/** @type {string} */ v) {
   state.focus = null;
   writeHash();
   applyView();
-  if (v === 'o') ov?.load(); else if (v === 'calls') calls?.refresh(); else loadStale();
+  if (v === 'o') ov?.load(); else if (v === 'calls') calls?.refresh(); else if (v === 'speed') speed?.refresh(); else loadStale();
 }
 
 function renderViewBar() {
@@ -3273,23 +3428,29 @@ function renderViewBar() {
   viewSeg.replaceChildren(
     callsOn ? h('button', { type: 'button', text: 'Calls', 'aria-pressed': String(v === 'calls'), title: 'Is your connection good for calls?', onclick: () => setView('calls') }) : null,
     h('button', { type: 'button', text: 'Overview', 'aria-pressed': String(v === 'o'), title: 'Every target in one table and heatmap', onclick: () => setView('o') }),
-    h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }));
+    h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }),
+    speed ? h('button', { type: 'button', text: 'Speed', 'aria-pressed': String(v === 'speed'), title: 'Download and upload speed through the day', onclick: () => setView('speed') }) : null);
   const hint = /** @type {HTMLElement} */ (viewBar.lastElementChild);
   const n = panels.filter((p) => !p.isPath).length;
-  hint.textContent = v === 'calls' ? 'Measured with tiny STUN tests over UDP, the path call audio and video take'
+  hint.textContent = v === 'speed' ? 'Measured with short download and upload tests to public test servers'
+    : v === 'calls' ? 'Measured with tiny STUN tests over UDP, the path call audio and video take'
     : v === 'o' ? `${fmtInt(allTargets.filter((t) => !t.layer).length)} targets; click a row to see its chart` : `${n} chart panel${n === 1 ? '' : 's'}`;
 }
 
 /** Applies the view and focus to the page: which panels show, the focus bar, isolation. */
 function applyView() {
   const v = currentView();
-  document.body.classList.toggle('home-on', v === 'h');
-  if (home) home.el.hidden = v !== 'h';
+  // Investigate (#t=) is part of Details: it hides Home, whatever the view.
+  const homeOn = v === 'h' && !(state.inv && inv);
+  document.body.classList.toggle('home-on', homeOn);
+  if (home) home.el.hidden = !homeOn;
   if (v !== 'h') document.title = MODE === 'public' ? 'Details · Internet quality report' : 'Details · fyisp';
   renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
+  document.body.classList.toggle('speed-on', v === 'speed');
   if (ov) ov.el.hidden = v !== 'o';
+  if (speed) speed.el.hidden = v !== 'speed';
   if (calls) calls.el.hidden = v !== 'calls';
   const fp = focusPanel();
   for (const p of panels) {
@@ -3574,13 +3735,14 @@ async function refreshAll() {
   refreshing = true;
   updateRefreshLabel();
   try {
-    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), inv.load()]);
+    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), loadSpeedWindows(), inv.load()]);
     // Home makes two requests; the status (for sharing and notes) at most twice a minute.
     else if (homeShown()) await Promise.all([Date.now() - statusAt > 30e3 ? loadStatus() : null, /** @type {Home} */ (home).refresh()]);
     else {
       // Hidden panels (the Overview is showing, or focus) load when shown.
-      await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
+      await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), loadSpeedWindows(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
         callsShown() ? /** @type {Calls} */ (calls).refresh() : null,
+        speedShown() ? /** @type {Speed} */ (speed).refresh() : null,
         ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
     }
   } finally {
@@ -3771,7 +3933,6 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden || homeShown()) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   else if (Date.now() - lastVerdict >= VERDICT_MS) loadVerdict();
-  if (inv && state.inv) inv.keepalive();
 });
 
 // ---------- header controls ----------
@@ -4044,9 +4205,22 @@ async function main() {
   callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
   ov = new Overview();
   calls = callsOn ? new Calls() : null;
+  // features.speed says it at once; older builds without it are probed.
+  const hasSpeed = prof.features && typeof prof.features.speed === 'boolean' ? prof.features.speed : await speedAvailable();
+  if (!hasSpeed) speedOn = false;
+  speed = hasSpeed ? new Speed({
+    sel: () => state.sr,
+    setSel: (v) => { state.sr = v; writeHash(); },
+    days: () => state.sd,
+    setDays: (n) => { state.sd = n; writeHash(); speed?.refresh(); },
+    nofb: () => state.snf,
+    setNofb: (b) => { state.snf = b; writeHash(); speed?.refresh(); },
+    refresh: () => speed?.refresh(),
+    sweep: () => state.ssw,
+  }) : null;
   // The view switch, then Calls, the network path, the Overview or the charts: DOM order is visual order.
   const path = panels.filter((p) => p.isPath).map((p) => p.el);
-  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
+  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', speed ? speed.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
   if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {

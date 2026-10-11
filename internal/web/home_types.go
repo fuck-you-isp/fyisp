@@ -8,6 +8,8 @@ package web
 // number of milliseconds: the client formats every time from the *_at /
 // from / to fields in the viewer's locale.
 
+import "github.com/fuck-you-isp/fyisp/internal/speedtest"
+
 // Answer and tile levels: the severity that picks the icon and colour.
 const (
 	levelGood     = "good"
@@ -62,6 +64,9 @@ type HomeLive struct {
 	// call (they have no note of their own).
 	AppsNote string     `json:"apps_note,omitempty"`
 	Steps    []HomeStep `json:"steps,omitempty"` // warming up only
+	// Speed is a clear time-of-day pattern in the speed tests (see
+	// docs/SPEEDTEST-API.md), nil without one.
+	Speed *speedtest.HomeSpeed `json:"speed,omitempty"`
 }
 
 // HomeAnswer is the one answer at the top of Home.
@@ -310,6 +315,10 @@ type HomeAt struct {
 	Cause    string `json:"cause"`
 	Fact     string `json:"fact,omitempty"`
 	FactAt   int64  `json:"fact_at,omitempty"`
+	// SpeedTestOverlapS is how long a speed test ran in the window, and
+	// SpeedNote says so first (the most likely cause at 10 s or more).
+	SpeedTestOverlapS int    `json:"speed_test_overlap_s,omitempty"`
+	SpeedNote         string `json:"speed_note,omitempty"`
 }
 
 // HomeKnown is a known issue: information, not a problem.

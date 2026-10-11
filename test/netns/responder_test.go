@@ -37,7 +37,8 @@ import (
 //     stunAddr, NXDOMAIN for everything else;
 //   - STUN (RFC 5389) on stunAddr, UDP ports stunPorts: a Binding Success
 //     carrying XOR-MAPPED-ADDRESS mappedAddr:mappedPort for every Binding
-//     Request (udp_test.go checks that fyisp never shows it).
+//     Request (udp_test.go checks that fyisp never shows it);
+//   - iperf3 on iperfAddrs, ports iperfPorts (iperf_test.go).
 //
 // ICMP echo is answered by the kernel.
 
@@ -185,6 +186,7 @@ func runResponder(dir string) {
 		}
 		go serveSTUN(pc)
 	}
+	serveIperf()
 	fmt.Println("responder ready") // the test waits for this line
 	select {}
 }

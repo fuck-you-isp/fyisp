@@ -197,7 +197,7 @@ func roundTracer(t *testing.T, f *fakeNet, o Options) (*tracer, *target, *recSin
 	tr.sink, tr.prober = sink, f
 	tr.hops = newHopCache(tr.o, sink)
 	st := &target{t: model.Target{Name: "x", Host: "1.1.1.1", Trace: true}, host: "1.1.1.1",
-		wake: make(chan struct{}, 1), sessions: map[uint64]time.Time{}}
+		wake: make(chan struct{}, 1), sessions: map[uint64]*session{}}
 	return tr, st, sink
 }
 
@@ -574,24 +574,24 @@ func TestInvestigate(t *testing.T) {
 		off time.Duration
 	}{}
 	clock := func() time.Time { now.Lock(); defer now.Unlock(); return time.Now().Add(now.off) }
-	if _, err := New(Options{}).Investigate("plain", time.Minute); err == nil {
+	if _, err := New(Options{}).Investigate("plain", 100); err == nil {
 		t.Error("Investigate before Run: no error")
 	}
 	tr, sink := runTracer(t, f, Options{Interval: iv, Investigate: inv, Now: clock}, labProfile())
 
-	if _, err := tr.Investigate("nope", time.Minute); err == nil {
+	if _, err := tr.Investigate("nope", 100); err == nil {
 		t.Error("unknown target: no error")
 	}
 	if _, err := tr.Investigate("plain", 0); err == nil {
-		t.Error("ttl 0: no error")
+		t.Error("0 rounds: no error")
 	}
 
 	// Two callers share one fast trace of an untraced target.
-	stop1, err := tr.Investigate("plain", time.Hour)
+	s1, err := tr.Investigate("plain", 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop2, err := tr.Investigate("plain", time.Hour)
+	s2, err := tr.Investigate("plain", 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,11 +613,14 @@ func TestInvestigate(t *testing.T) {
 			t.Errorf("investigate slot %v not aligned to %v", s.Slot, inv)
 		}
 	}
-	stop1()
-	stop1() // idempotent
+	s1.Stop()
+	s1.Stop() // idempotent
+	if _, ended := s1.Progress(); ended.IsZero() {
+		t.Error("stopped session has no end")
+	}
 	n := len(sink.samplesOf("plain"))
 	waitFor(t, "rounds continue for the second caller", func() bool { return len(sink.samplesOf("plain")) >= n+4 })
-	stop2()
+	s2.Stop()
 	waitFor(t, "loop ends", func() bool { tr.mu.Lock(); defer tr.mu.Unlock(); return !tr.targets["plain"].looping })
 	n = len(sink.samplesOf("plain"))
 	time.Sleep(5 * inv)
@@ -628,14 +631,16 @@ func TestInvestigate(t *testing.T) {
 		t.Errorf("Interval after investigate %v, want the default %v", got, iv)
 	}
 
-	// A traced target speeds up and slows down again; ttl expiry ends it.
+	// A traced target speeds up and slows down again; the safety deadline
+	// (twice the rounds' time plus a minute) ends a session that can't
+	// finish its rounds.
 	before := len(sink.samplesOf("traced"))
-	if _, err := tr.Investigate("traced", time.Minute); err != nil {
+	if _, err := tr.Investigate("traced", 1000); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "fast rounds of the traced target", func() bool { return len(sink.samplesOf("traced")) >= before+2*6 })
 	now.Lock()
-	now.off = 2 * time.Minute // past the ttl
+	now.off = 2 * time.Minute // past 2 × 1000 × 20ms + 1 min
 	now.Unlock()
 	waitFor(t, "back to the normal interval", func() bool { return tr.Interval("traced") == iv })
 	tr.mu.Lock()
@@ -655,6 +660,37 @@ func TestInvestigate(t *testing.T) {
 		}
 		seen[s.Key][s.Slot] = true
 	}
+}
+
+// TestInvestigateRounds: a session ends by itself after its rounds; a
+// longer one goes on.
+func TestInvestigateRounds(t *testing.T) {
+	f := newFakeNet("192.168.1.1")
+	iv, inv := 400*time.Millisecond, 20*time.Millisecond
+	tr, _ := runTracer(t, f, Options{Interval: iv, Investigate: inv}, labProfile())
+	short, err := tr.Investigate("plain", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "short session ends", func() bool { _, e := short.Progress(); return !e.IsZero() })
+	if n, _ := short.Progress(); n != 5 {
+		t.Errorf("short session: %d rounds, want 5", n)
+	}
+	waitFor(t, "loop ends", func() bool { tr.mu.Lock(); defer tr.mu.Unlock(); return !tr.targets["plain"].looping })
+
+	long, err := tr.Investigate("plain", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := tr.Investigate("plain", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "second short session ends", func() bool { _, e := again.Progress(); return !e.IsZero() })
+	if n, e := long.Progress(); !e.IsZero() || n < 3 {
+		t.Errorf("long session: %d rounds, ended %v", n, e)
+	}
+	long.Stop()
 }
 
 func TestRunErrors(t *testing.T) {

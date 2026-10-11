@@ -61,7 +61,7 @@ func newSim(t *testing.T, f *fakeNet, o Options, n int) *sim {
 	for i := range n {
 		host := fmt.Sprintf("1.1.1.%d", i+1)
 		st := &target{t: model.Target{Name: fmt.Sprintf("t%d", i), Host: host, Trace: true}, host: host,
-			idx: i, phase: float64(i) / float64(n), wake: make(chan struct{}, 1), sessions: map[uint64]time.Time{}}
+			idx: i, phase: float64(i) / float64(n), wake: make(chan struct{}, 1), sessions: map[uint64]*session{}}
 		tr.targets[st.t.Name] = st
 		s.targets = append(s.targets, st)
 	}

@@ -148,6 +148,7 @@ type harness struct {
 	st   *fakeStore
 	e    *engine
 	fx   []behavior // later ones win
+	sink model.Sink // nil: samples go straight to e
 	seen map[model.VerdictKind]bool
 }
 
@@ -189,7 +190,7 @@ func (h *harness) run(d time.Duration) {
 					send = false
 				}
 				if send {
-					h.e.Observe(model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: k}, Slot: h.now, RTT: o.rtt, Lost: o.lost, Reason: o.reason})
+					h.observe(model.Sample{Key: model.SeriesKey{Target: t.Name, Kind: k}, Slot: h.now, RTT: o.rtt, Lost: o.lost, Reason: o.reason})
 				}
 				if send && k == model.KindUDP {
 					// A burst writes its siblings with the same slot, as
@@ -205,8 +206,8 @@ func (h *harness) run(d time.Duration) {
 						jit.Lost, jit.Reason = true, model.ReasonGap
 						loss.RTT = 100 * time.Millisecond
 					}
-					h.e.Observe(jit)
-					h.e.Observe(loss)
+					h.observe(jit)
+					h.observe(loss)
 				}
 			}
 		}
@@ -220,6 +221,16 @@ func (h *harness) run(d time.Duration) {
 }
 
 func (h *harness) with(f behavior) { h.fx = append(h.fx, f) }
+
+// observe feeds the engine, through h.sink when one is set (e.g. the speed
+// test mask in front of it).
+func (h *harness) observe(s model.Sample) {
+	if h.sink != nil {
+		h.sink.Observe(s)
+		return
+	}
+	h.e.Observe(s)
+}
 
 // target returns a behavior for the named targets.
 func targets(o func(at time.Time) outcome, names ...string) behavior {
@@ -463,6 +474,7 @@ func TestRules(t *testing.T) {
 			kind: model.VerdictNoNetwork,
 		},
 		{
+			// No probe ran at all (none masked either: see gap_test.go).
 			name: "no samples at all",
 			stop: true,
 			kind: model.VerdictNoNetwork,
@@ -878,10 +890,17 @@ func TestBoundedMemory(t *testing.T) {
 	if len(e.series) != 0 {
 		t.Fatal("stale series kept")
 	}
-	// Gaps are ignored; duplicates and late samples are handled.
-	e.Observe(model.Sample{Key: k, Slot: t0, Lost: true, Reason: model.ReasonGap})
+	// Gaps are noted (bounded, never as samples) and trimmed like
+	// samples; duplicates and late samples are handled.
+	for i := 0; i < 5000; i++ {
+		e.Observe(model.Sample{Key: k, Slot: t0.Add(time.Duration(i) * 100 * time.Millisecond), Lost: true, Reason: model.ReasonGap})
+	}
+	if sr := e.series[k]; sr == nil || len(sr.raw) != 0 || len(sr.gaps) != maxRaw {
+		t.Fatalf("gaps %+v", sr)
+	}
+	e.collect(t0.Add(3*time.Hour), nil)
 	if len(e.series) != 0 {
-		t.Fatal("gap recorded")
+		t.Fatal("series with stale gaps kept")
 	}
 	e.Observe(model.Sample{Key: k, Slot: t0.Add(time.Second), RTT: time.Millisecond})
 	e.Observe(model.Sample{Key: k, Slot: t0, RTT: time.Millisecond})

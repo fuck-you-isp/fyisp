@@ -111,6 +111,91 @@ func TestCrashChild(t *testing.T) {
 	}
 }
 
+// checkCrashSeries checks series i of the crash test in s: every slot from
+// from up to flushedTo is stored and equals crashSample, except that slots
+// at the end whose sample is "not measured" (model.ReasonGap, which
+// crashSample produces about once in 1550 slots) may be missing. A stored
+// "not measured" slot and a missing one mean the same, and the store does
+// not keep trailing ones when it merges a new block with a stored hour
+// (place skips them), as it does after every restart. It returns the slots
+// checked and those stored after flushedTo.
+func checkCrashSeries(s *SQLite, i int, from, flushedTo time.Time) (checked, beyond int, err error) {
+	k := crashKey(i)
+	want := from
+	err = s.Raw(ctx, []model.SeriesKey{k}, from, flushedTo.Add(time.Hour), func(p RawPoint) error {
+		if p.TS.After(flushedTo) {
+			beyond++
+			return nil
+		}
+		x := crashSample(i, p.TS)
+		if !p.TS.Equal(want) || p.Lost != x.Lost || p.Reason != x.Reason || (!x.Lost && p.RTTms != float64(x.RTT)/1e6) {
+			return fmt.Errorf("series %v at %v: got %+v, want slot %v %+v", k, p.TS, p, want, x)
+		}
+		want = want.Add(time.Second)
+		checked++
+		return nil
+	})
+	if err != nil {
+		return checked, beyond, err
+	}
+	for end := want; !end.After(flushedTo); end = end.Add(time.Second) {
+		if x := crashSample(i, end); !x.Lost || x.Reason != model.ReasonGap {
+			return checked, beyond, fmt.Errorf("series %v stored up to %v, but a flush up to %v was reported", k, want.Add(-time.Second), flushedTo)
+		}
+	}
+	return checked, beyond, nil
+}
+
+// TestCrashTrailingGap reproduces TestCrash's rare failure ("series {t05
+// icmp 0} stored up to 03:39:04, but a flush up to 03:39:05 was reported")
+// without a crash: as the child after a restart, a store opened with its
+// clock not yet set merges new blocks with the stored hour, and series 17's
+// sample at 03:39:05 is "not measured" (ReasonGap). It ends the flushed
+// block, so the merge leaves it out, and the series reads as stored up to
+// 03:39:04. That is no loss: checkCrashSeries accepts it.
+func TestCrashTrailingGap(t *testing.T) {
+	gapAt := t0.Add(3*time.Hour + 39*time.Minute + 5*time.Second)
+	if x := crashSample(17, gapAt); !x.Lost || x.Reason != model.ReasonGap {
+		t.Fatalf("crashSample(17, %v) = %+v, want a not measured sample", gapAt, x)
+	}
+	dir := t.TempDir()
+	o := Options{Interval: func(model.SeriesKey) time.Duration { return time.Second }}
+	run := func(now func() time.Time, from, to time.Time) {
+		t.Helper()
+		o.Now = now
+		s := openT(t, dir, o)
+		for sim := from; !sim.After(to); sim = sim.Add(time.Second) {
+			for i := range crashSeries {
+				s.Observe(crashSample(i, sim))
+			}
+		}
+		if err := s.Flush(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hour := gapAt.Truncate(time.Hour)
+	run(func() time.Time { return gapAt }, hour, gapAt.Add(-time.Minute))
+	run(func() time.Time { return time.UnixMilli(0) }, gapAt.Add(-time.Minute+time.Second), gapAt) // the child's clock before its first step
+
+	s := openT(t, dir, Options{Interval: o.Interval, Now: func() time.Time { return gapAt }})
+	defer s.Close()
+	var last time.Time
+	if err := s.Raw(ctx, []model.SeriesKey{crashKey(17)}, hour, gapAt, func(p RawPoint) error { last = p.TS; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !last.Equal(gapAt.Add(-time.Second)) {
+		t.Fatalf("series 17 stored up to %v, want %v (the trailing gap left out by the merge)", last, gapAt.Add(-time.Second))
+	}
+	for i := range crashSeries {
+		if _, _, err := checkCrashSeries(s, i, hour, gapAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestCrash(t *testing.T) {
 	kills := 3
 	if os.Getenv("FYISP_CRASH") == "1" {
@@ -196,27 +281,12 @@ func TestCrash(t *testing.T) {
 		}
 		var checked, beyond int
 		for i := range crashSeries {
-			k := crashKey(i)
-			want := from
-			err := s.Raw(ctx, []model.SeriesKey{k}, from, flushedTo.Add(time.Hour), func(p RawPoint) error {
-				if p.TS.After(flushedTo) {
-					beyond++
-					return nil
-				}
-				x := crashSample(i, p.TS)
-				if !p.TS.Equal(want) || p.Lost != x.Lost || p.Reason != x.Reason || (!x.Lost && p.RTTms != float64(x.RTT)/1e6) {
-					return fmt.Errorf("series %v at %v: got %+v, want slot %v %+v", k, p.TS, p, want, x)
-				}
-				want = want.Add(time.Second)
-				checked++
-				return nil
-			})
+			c, b, err := checkCrashSeries(s, i, from, flushedTo)
 			if err != nil {
 				t.Fatalf("kill %d: %v", it, err)
 			}
-			if want.Before(flushedTo.Add(time.Second)) {
-				t.Fatalf("kill %d: series %v stored up to %v, but a flush up to %v was reported", it, k, want.Add(-time.Second), flushedTo)
-			}
+			checked += c
+			beyond += b
 		}
 		st, _ := s.Stats(ctx)
 		t.Logf("kill %2d: flushed to sim %s, %6d samples verified (+%d written after the last report), wall time since last flush %4dms, db+wal %d KB",
