@@ -253,7 +253,7 @@ const (
 
 // Verdict is the current assessment. Summary is one plain-English sentence
 // and must never contain IP addresses or hostnames of the user's network
-// (it is served on the public link).
+// (redacted reports quote it as is).
 type Verdict struct {
 	Kind    VerdictKind `json:"kind"`
 	Since   time.Time   `json:"since"`
@@ -280,8 +280,8 @@ type Incident struct {
 }
 
 // HopInfo describes the router seen at one hop address. Stored once per IP,
-// not per sample. RDNS and Owner may reveal locations; the public view
-// redacts them for the first public hops.
+// not per sample. RDNS and Owner may reveal locations; a redacted report
+// leaves them out for the first public hops.
 type HopInfo struct {
 	IP        netip.Addr `json:"ip"`
 	RDNS      string     `json:"rdns,omitempty"`
@@ -311,8 +311,8 @@ type RouteChange struct {
 }
 
 // Annotation is a user note on the timeline (e.g. "call dropped", "ISP ticket
-// opened"). End is zero for a point in time. Public notes are shown on the
-// public link; all notes can be included in reports.
+// opened"). End is zero for a point in time. Public notes go into redacted
+// reports too; reports that are not redacted include every note.
 type Annotation struct {
 	ID      int64     `json:"id"`
 	At      time.Time `json:"at"`
@@ -344,7 +344,6 @@ type ReportMeta struct {
 	From    time.Time `json:"from"`
 	To      time.Time `json:"to"`
 	Created time.Time `json:"created"`
-	Public  bool      `json:"public"` // served on the public link (redacted snapshot)
 	Bytes   int       `json:"bytes"`
 }
 
@@ -367,7 +366,7 @@ type SpeedTest struct {
 	ID      int64     `json:"id"`
 	Start   time.Time `json:"start"`
 	End     time.Time `json:"end"`
-	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now), "sweep", or from the share link "public" or "public_sweep"
+	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now), "sweep"; before v0.8.0 also "public" or "public_sweep" (the share link)
 	Outcome string    `json:"outcome"`
 	// Region is the catalog region the test was for ("" outside mode
 	// regions); Server the server actually used: a catalog ID, or host:port
@@ -468,14 +467,15 @@ type Handoff struct {
 // people look, and sweeps hit every server at once).
 func (t SpeedTest) OnDemand() bool {
 	switch t.Trigger {
-	case "manual", "sweep", "public", "public_sweep":
+	case "manual", "sweep", "public", "public_sweep": // TODO(v0.9): drop the share link's, gone with v0.8.0's 90 days of retention
 		return true
 	}
 	return false
 }
 
-// Origin is who asked for the test: "scheduled", "owner" or "public" (the
-// share link).
+// Origin is who asked for the test: "scheduled", "owner", or "public" for
+// a test the share link started before v0.8.0 removed it (TODO(v0.9): drop
+// once no such row is left).
 func (t SpeedTest) Origin() string {
 	switch t.Trigger {
 	case "manual", "sweep":

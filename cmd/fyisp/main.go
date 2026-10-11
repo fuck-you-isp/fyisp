@@ -1,11 +1,12 @@
 // Command fyisp is a single-binary internet quality monitor: it probes
 // hyperscalers and popular services with TCP connects (and the network path
 // to them with ICMP), keeps every
-// sample for up to 90 days in a local SQLite file, serves a dashboard, and can
-// share a redacted read-only view over a Cloudflare quick tunnel.
+// sample for up to 90 days in a local SQLite file, serves a dashboard, and
+// builds evidence reports.
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/rand"
@@ -27,8 +28,7 @@ import (
 	"time"
 
 	// Embedded CA roots, used only when the OS has none (scratch image,
-	// minimal systems), so the tunnel (and HTTPS probes of --config files)
-	// still work.
+	// minimal systems), so HTTPS probes of --config files still work.
 	_ "golang.org/x/crypto/x509roots/fallback"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
@@ -85,29 +85,25 @@ const (
 )
 
 type config struct {
-	listen        string
-	share         bool
-	shareProtocol string
-	dataDir       string
-	ephemeral     bool
-	retention     time.Duration
-	configPath    string
-	profiles      profileNames
-	geos          geoList
-	noPath        bool
-	noUDP         bool
-	speed         speedFlag
-	speedPublic   optBool  // --speedtest-public: unset leaves the Details choice
-	speedBudget   byteSize // --speedtest-public-budget
-	speedSkip     string   // --speedtest-skip
-	speedServer   string
-	openBrowser   bool
-	adminToken    string
-	allowHosts    hostList
-	pprofAddr     string
-	logFormat     string
-	logLevel      string
-	force         bool
+	listen      string
+	dataDir     string
+	ephemeral   bool
+	retention   time.Duration
+	configPath  string
+	profiles    profileNames
+	geos        geoList
+	noPath      bool
+	noUDP       bool
+	speed       speedFlag
+	speedSkip   string // --speedtest-skip
+	speedServer string
+	openBrowser bool
+	adminToken  string
+	allowHosts  hostList
+	pprofAddr   string
+	logFormat   string
+	logLevel    string
+	force       bool
 }
 
 func main() {
@@ -156,8 +152,6 @@ func parseFlags(args []string) (config, error) {
 	var retention string
 	fs := flag.NewFlagSet("fyisp", flag.ContinueOnError)
 	fs.StringVar(&c.listen, "listen", cmp.Or(os.Getenv("FYISP_LISTEN"), defaultListen), "local dashboard address (0.0.0.0:3000 exposes it to your LAN; default: $FYISP_LISTEN, else "+defaultListen+")")
-	fs.BoolVar(&c.share, "share", false, "start a public read-only link (Cloudflare quick tunnel) at startup")
-	fs.StringVar(&c.shareProtocol, "share-protocol", "auto", "tunnel protocol: auto, quic or http2")
 	fs.StringVar(&c.dataDir, "data-dir", "", "where to keep data (default: $FYISP_DATA_DIR, else the per-OS state directory; see `fyisp paths`)")
 	fs.BoolVar(&c.ephemeral, "ephemeral", false, "keep data in a temporary directory deleted on exit")
 	fs.StringVar(&retention, "retention", "90d", "how long to keep data (max 90d), e.g. 14d or 48h")
@@ -167,12 +161,10 @@ func parseFlags(args []string) (config, error) {
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
 	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (9 regions, each hourly), --speedtest=nearby (3 nearby providers and 1 far region, every 15m), --speedtest=regions,add=canada, --speedtest=nearby,far=us-west, every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
-	fs.Var(&c.speedPublic, "speedtest-public", "let people with the share link queue speed tests (default: the Details setting, off)")
-	fs.Var(&c.speedBudget, "speedtest-public-budget", "ignored (kept so existing command lines start): share-link speed tests are limited by time, not data")
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, sharing) when --listen is not loopback; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
+	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, speed tests) when --listen is not loopback or --allow-host is set; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
@@ -182,7 +174,15 @@ func parseFlags(args []string) (config, error) {
 		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp profiles [NAME[,NAME...]]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
+	// Usage and parse errors go through a buffer: a removed flag gets its
+	// explanation instead of the flag list.
+	var out bytes.Buffer
+	fs.SetOutput(&out)
 	if err := fs.Parse(args); err != nil {
+		if rerr := removedFlagErr(err); rerr != err {
+			return c, rerr
+		}
+		os.Stderr.Write(out.Bytes())
 		return c, err
 	}
 	if fs.NArg() > 0 {
@@ -193,11 +193,6 @@ func parseFlags(args []string) (config, error) {
 		return c, err
 	}
 	c.retention = d
-	switch c.shareProtocol {
-	case "auto", "quic", "http2":
-	default:
-		return c, fmt.Errorf("--share-protocol must be auto, quic or http2")
-	}
 	if c.ephemeral && c.dataDir != "" {
 		return c, fmt.Errorf("--ephemeral and --data-dir are mutually exclusive")
 	}
@@ -209,6 +204,38 @@ func parseFlags(args []string) (config, error) {
 	}
 	envProfiles(&c.profiles, c.configPath)
 	return c, nil
+}
+
+// removedFlags explains flags that v0.8.0 removed together with the share
+// link. They fail at startup, whatever their value, rather than being
+// ignored: a unit file that still passes --share should not look as if it
+// published a link.
+var removedFlags = map[string]string{
+	"share":                   shareRemoved,
+	"share-protocol":          shareRemoved,
+	"speedtest-public":        "speed tests start only from your own dashboard (Test now) or on a schedule (--speedtest)",
+	"speedtest-public-budget": "speed tests start only from your own dashboard (Test now) or on a schedule (--speedtest)",
+}
+
+const shareRemoved = `fyisp no longer publishes a public link.
+  To show someone your connection, send them a report:
+    fyisp report --redact -o report.html   (or "Create report" in the dashboard)
+  For live access, run your own named tunnel or reverse proxy to the
+  dashboard (a cloudflared named tunnel, tailscale serve 3000, nginx) and
+  start fyisp with --allow-host=<its host name>: the dashboard then
+  requires the admin token for its controls. See the README's "Sharing"`
+
+// removedFlagErr turns the flag package's "flag provided but not defined"
+// for a removed flag into an explanation.
+func removedFlagErr(err error) error {
+	name, ok := strings.CutPrefix(err.Error(), "flag provided but not defined: -")
+	if !ok {
+		return err
+	}
+	if why, ok := removedFlags[name]; ok {
+		return fmt.Errorf("--%s was removed in v0.8.0 with the share link: %s", name, why)
+	}
+	return err
 }
 
 // envProfiles fills in profiles from FYISP_PROFILE (for container and NAS
@@ -355,25 +382,11 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	probeSinks := model.Fanout{tap, st, mc, mos, eng, &warm}
 	caps := runner.Caps()
 
-	// Listeners: the local dashboard (+ /metrics), and a loopback-only public
-	// origin that the tunnel publishes.
+	// The dashboard (+ /metrics).
 	localLn, err := listenLocal(c.listen)
 	if err != nil {
 		return err
 	}
-	// The public origin must stay loopback-only: only the in-process tunnel
-	// may reach it, which is what makes its per-client limits' key
-	// (Cf-Connecting-Ip, set by Cloudflare's edge) trustworthy.
-	publicLn, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return err
-	}
-	secret, err := randomHex(16)
-	if err != nil {
-		return err
-	}
-	share := newShareControl(ctx, "http://"+publicLn.Addr().String(), secret, c.shareProtocol, log)
-	defer share.Stop()
 
 	deps := web.Deps{
 		Profile: func() *model.Profile { return prof },
@@ -394,20 +407,20 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			}
 			return out
 		},
-		Trace:          newWebTrace(st, tr, prof),
-		Investigations: web.NewInvestigations(), // one set for both listeners
-		Share:          share,
-		Log:            log,
+		Trace: newWebTrace(st, tr, prof),
+		Log:   log,
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed
 	localAddr := localLn.Addr().String()
-	adminTok, adminStored, err := resolveAdminToken(c.adminToken, localAddr, dir)
+	adminTok, adminStored, err := resolveAdminToken(c.adminToken, localAddr, c.allowHosts, dir)
 	if err != nil {
 		return err
 	}
+	if c.adminToken == adminTokenOff && len(c.allowHosts) > 0 && isLoopbackAddr(localAddr) {
+		log.Warn("--admin-token=off with --allow-host: dashboard controls and on-demand traces are disabled for every browser, this one included")
+	}
 	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}))
-	publicSrv := newServer(web.Public(deps, secret))
 	serve := func(name string, s *http.Server, ln net.Listener) {
 		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("http server failed", "server", name, "err", err)
@@ -415,7 +428,6 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		}
 	}
 	go serve("local", localSrv, localLn)
-	go serve("public", publicSrv, publicLn)
 	if c.pprofAddr != "" {
 		if err := servePprof(c.pprofAddr, log); err != nil {
 			return err
@@ -436,14 +448,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		// container on the same volume can still show it. Reading the log
 		// already takes as much access as reading the data directory.
 		link := adminLink(localURL, adminTok)
-		log.Info("open this link once in your browser to use notes, reports and sharing", "url", link)
-		fmt.Fprintf(os.Stderr, "  To use notes, reports and sharing, open this link once:\n  %s\n\n", link)
+		log.Info("open this link once in your browser to use notes, reports and speed tests", "url", link)
+		fmt.Fprintf(os.Stderr, "  To use notes, reports and speed tests, open this link once:\n  %s\n\n", link)
 		openURL = link
-	}
-	if c.share {
-		if err := share.Start(ctx); err != nil {
-			log.Warn("could not start the public link", "err", err)
-		}
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {
 		openBrowser(openURL)
@@ -501,11 +508,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	if err := st.Flush(flushCtx); err != nil {
 		log.Error("final save failed", "err", err)
 	}
-	share.Stop()
 	shutCtx, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel2()
 	_ = localSrv.Shutdown(shutCtx)
-	_ = publicSrv.Shutdown(shutCtx)
 	return nil
 }
 

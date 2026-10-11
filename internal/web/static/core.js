@@ -12,8 +12,6 @@ export function useStatus(/** @type {() => any} */ f) { statusOf = f; }
 
 export const meta = (/** @type {string} */ n) => document.querySelector(`meta[name="${n}"]`)?.getAttribute('content') || '';
 
-export const MODE = meta('fyisp-mode') === 'public' ? 'public' : 'local';
-
 export const TOKEN = meta('fyisp-token');
 
 export const $ = (/** @type {string} */ s) => /** @type {HTMLElement} */ (document.querySelector(s));
@@ -140,12 +138,6 @@ export function tzParam() {
   } catch { /* old browser */ }
   return String(-new Date().getTimezoneOffset());
 }
-/** " (UTC+2)" on the share link, where a stranger reads the times; "" on the owner's own dashboard. */
-export function zoneSuffix() {
-  if (MODE !== 'public') return '';
-  const tz = -new Date().getTimezoneOffset(), a = Math.abs(tz), hh = Math.floor(a / 60), mm = a % 60;
-  return tz === 0 ? ' (UTC)' : ` (UTC${tz < 0 ? '−' : '+'}${hh}${mm ? ':' + String(mm).padStart(2, '0') : ''})`;
-}
 /** One request per URL while it's in flight: two views asking for the same summary share it. */
 const inflight = new Map();
 export function fetchShared(/** @type {string} */ url) {
@@ -167,7 +159,7 @@ export function median(/** @type {number[]} */ v) {
 // ---------- fetch ----------
 
 /**
- * GET/POST JSON with a small retry on 429/503 (the public link is rate limited).
+ * GET/POST JSON with a small retry on 429/503.
  * @param {string} url @param {RequestInit} [init] @param {number} [tries]
  */
 export async function fetchJSON(url, init, tries = 3) {
@@ -273,7 +265,7 @@ export async function adminHeader(why = '') {
     const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
     const v = await dialog({
       title: 'Admin token',
-      text: why || 'Sharing, notes and reports on this dashboard need the admin token. You can also open the link fyisp printed when it started.',
+      text: why || 'Notes, reports and speed tests on this dashboard need the admin token. You can also open the link fyisp printed when it started.',
       fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
       buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Continue', value: 'ok', primary: true }],
       focus: input,
@@ -315,8 +307,8 @@ export async function apiWrite(method, url, body, why = '') {
   }
 }
 
-/** Owner controls (notes, reports) are usable: local and not disabled by a LAN bind with --admin-token=off. */
-export function canWrite() { const status = statusOf(); return MODE === 'local' && !!status && status.controls !== 'disabled'; }
+/** Owner controls (notes, reports) are usable: not disabled by a LAN bind with --admin-token=off. */
+export function canWrite() { const status = statusOf(); return !!status && status.controls !== 'disabled'; }
 
 /** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */
 export function toLocalInput(/** @type {number} */ ms) {
@@ -327,16 +319,3 @@ export function toLocalInput(/** @type {number} */ ms) {
 
 export function fromLocalInput(/** @type {string} */ s) { const t = s ? new Date(s).getTime() : NaN; return isFinite(t) ? t : NaN; }
 
-export async function copyText(/** @type {string} */ text, /** @type {HTMLElement} */ btn) {
-  const label = btn.textContent;
-  try {
-    await navigator.clipboard.writeText(text);
-    btn.textContent = 'Copied';
-  } catch {
-    // No clipboard access (an insecure origin, a denied permission): show it selected to copy by hand.
-    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'text', id: 'dlg-copy', readonly: true, value: text }));
-    input.addEventListener('focus', () => input.select());
-    await dialog({ title: 'Copy this link', fields: [h('label', { class: 'fld', for: 'dlg-copy' }, h('span', { text: 'Link' }), input)], buttons: [{ label: 'Done', value: 'ok', primary: true }], focus: input });
-  }
-  setTimeout(() => { btn.textContent = label; }, 1500);
-}

@@ -1,4 +1,6 @@
 # Plan v2: Call quality for fyisp v0.5.0
+
+> **Historical plan.** The share link it describes (`--share`, the Cloudflare quick tunnel, the public listener and everything served on it) was removed in v0.8.0; see the README's "Sharing" and "Upgrading to v0.8.0".
 This revises v1 after review by five reviewers: network/VoIP, Go architecture, UX, security/privacy and test/release. All five said "approve with changes". This version applies their must-fix items and resolves the conflicts between them. The items still open for the owner are at the bottom.
 
 ## Goal

@@ -41,7 +41,6 @@ type SpeedSource interface {
 
 // Speed API limits.
 const (
-	SpeedTTL = 30 * time.Second // the share link's cache of summaries
 	// fallbackNote is the share of a region's tests on a fallback server
 	// (last 24 h) above which the row gets a note.
 	fallbackNote     = 0.5
@@ -59,7 +58,7 @@ type speedRef struct {
 type speedServerJSON struct {
 	ID       string   `json:"id"`
 	Label    string   `json:"label"`
-	Display  string   `json:"display"` // "UK · Clouvider, London": public-safe
+	Display  string   `json:"display"` // "UK · Clouvider, London"
 	Provider string   `json:"provider"`
 	City     string   `json:"city"`
 	Country  string   `json:"country"`
@@ -77,8 +76,8 @@ type speedServerJSON struct {
 	Skipped    bool   `json:"skipped"`
 	SkipLocked bool   `json:"skip_locked"`
 	RestUntil  *int64 `json:"rest_until"`
-	Host       string `json:"host,omitempty"`  // local only
-	Ports      string `json:"ports,omitempty"` // local only
+	Host       string `json:"host,omitempty"`
+	Ports      string `json:"ports,omitempty"`
 }
 
 type speedRegionJSON struct {
@@ -110,16 +109,15 @@ type speedRow struct {
 type speedWindow struct {
 	Start  int64  `json:"start"`
 	End    int64  `json:"end"`
-	Origin string `json:"origin"` // scheduled | owner | public (the share link); "test" on the share link, which never tells tests apart
+	Origin string `json:"origin"` // scheduled | owner
 }
 
-// speedTestJSON is one test. Ports and hosts are local only; own servers
-// are "custom-N" on the share link.
+// speedTestJSON is one test.
 type speedTestJSON struct {
 	ID             int64    `json:"id"`
 	Start          int64    `json:"start"`
 	End            int64    `json:"end"`
-	Trigger        string   `json:"trigger"`   // schedule, manual, sweep, public, public_sweep; "test" on the share link
+	Trigger        string   `json:"trigger"`   // schedule, manual or sweep
 	OnDemand       bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
 	Outcome        string   `json:"outcome"`
 	Region         *string  `json:"region"`
@@ -272,17 +270,16 @@ type speedConnection struct {
 
 // ---------- names ----------
 
-// speedNames maps server IDs to what a viewer may see.
+// speedNames maps server IDs to labels.
 type speedNames struct {
-	public  bool
 	cat     *speedtest.Catalog
 	custom  map[string]int // own servers (host:port): their number
 	regions map[string]string
 	inReg   map[string]string // server -> its (first) region
 }
 
-func newSpeedNames(st speedtest.State, cat *speedtest.Catalog, public bool) speedNames {
-	n := speedNames{public: public, cat: cat, custom: map[string]int{}, regions: map[string]string{}, inReg: map[string]string{}}
+func newSpeedNames(st speedtest.State, cat *speedtest.Catalog) speedNames {
+	n := speedNames{cat: cat, custom: map[string]int{}, regions: map[string]string{}, inReg: map[string]string{}}
 	for _, sv := range st.Servers {
 		if sv.Custom {
 			n.custom[sv.ID] = len(n.custom) + 1
@@ -301,19 +298,14 @@ func newSpeedNames(st speedtest.State, cat *speedtest.Catalog, public bool) spee
 	return n
 }
 
-// server is a server's public-safe identity: id, label, display, provider
-// and city.
+// server is a server's identity: id, label, display, provider and city.
 func (n speedNames) server(id string) (ref speedRef, display, provider, city string) {
 	if k, ok := n.custom[id]; ok {
 		label := "Your server"
 		if len(n.custom) > 1 {
 			label += " " + strconv.Itoa(k)
 		}
-		pid := id
-		if n.public {
-			pid = "custom-" + strconv.Itoa(k)
-		}
-		return speedRef{ID: pid, Label: label}, label, "Your server", ""
+		return speedRef{ID: id, Label: label}, label, "Your server", ""
 	}
 	if sv, ok := n.cat.Server(id); ok {
 		display = sv.Provider + ", " + sv.City
@@ -322,39 +314,10 @@ func (n speedNames) server(id string) (ref speedRef, display, provider, city str
 		}
 		return speedRef{ID: id, Label: sv.Label}, display, sv.Provider, sv.City
 	}
-	if n.public && id != "" {
-		return speedRef{ID: "custom", Label: "Your server"}, "Your server", "Your server", ""
-	}
 	return speedRef{ID: id, Label: id}, id, "", ""
 }
 
 func (n speedNames) ref(id string) speedRef { r, _, _, _ := n.server(id); return r }
-
-// pubID is a server or row id as the viewer may see it: on the share link
-// the owner's own servers (configured or removed since) are custom-N or
-// "custom", never a host or port; catalog servers and regions are as they
-// are.
-func (n speedNames) pubID(id string) string {
-	if !n.public || id == "" || n.regions[id] != "" {
-		return id
-	}
-	if n.cat != nil {
-		if _, ok := n.cat.Server(id); ok {
-			return id
-		}
-	}
-	return n.ref(id).ID
-}
-
-// resolve maps a requested (public or local) ID to the stored one.
-func (n speedNames) resolve(id string) string {
-	for local, k := range n.custom {
-		if id == "custom-"+strconv.Itoa(k) {
-			return local
-		}
-	}
-	return id
-}
 
 func roundP(p *float64, digits float64) *float64 {
 	if p == nil {
@@ -374,7 +337,7 @@ func ms(t time.Time) *int64 {
 
 func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	ref, display, provider, city := n.server(t.Server)
-	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, OnDemand: t.OnDemand(),
+	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: legacyTrigger(t.Trigger), OnDemand: t.OnDemand(),
 		Outcome: t.Outcome, Server: ref.ID, Label: ref.Label, Display: display, Provider: provider, City: city,
 		Fallback: t.Fallback, FallbackLevel: t.FallbackLevel, Attempts: t.Attempts,
 		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownShort: t.DownShort, UpShort: t.UpShort, CappedByBudget: t.DownShort || t.UpShort,
@@ -408,12 +371,32 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 		j.Region = &r
 	}
 	j.Latency, j.Conn = t.Latency, cmp.Or(t.Conn, model.ConnUnknown)
-	if !n.public {
-		j.Port, j.Handoff = t.Port, t.Handoff
-	} else {
-		j.Trigger = "test" // the share link never tells tests apart
-	}
+	j.Port, j.Handoff = t.Port, t.Handoff
 	return j
+}
+
+// legacyTrigger maps the share link's triggers, which tests stored before
+// v0.8.0 may still carry, to the owner's: the API knows only schedule,
+// manual and sweep.
+// TODO(v0.9): drop once no such row is left (speedtests are kept 90 days).
+func legacyTrigger(trigger string) string {
+	switch trigger {
+	case "public":
+		return "manual"
+	case "public_sweep":
+		return "sweep"
+	}
+	return trigger
+}
+
+// legacyOrigin is t.Origin() with legacyTrigger's mapping: "public"
+// (before v0.8.0) becomes "owner", the other on-demand origin.
+// TODO(v0.9): drop with legacyTrigger.
+func legacyOrigin(t model.SpeedTest) string {
+	if o := t.Origin(); o != "public" {
+		return o
+	}
+	return "owner"
 }
 
 // ---------- params ----------
@@ -548,35 +531,24 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !s.public {
-		s.d.Speed.NoteZone(p.zone.name)
-	} else if oz := s.d.Speed.State().OwnerZone; oz != "" && p.part == "summary" {
-		// The share link reads the owner's hours of day, whatever zone the
-		// visitor's browser is in (the report's times are the owner's).
-		if z, err := parseZone(oz, now); err == nil {
-			p.zone, p.tz = z, z.min
-			p.key = p.summaryKey()
-		}
-	}
+	s.d.Speed.NoteZone(p.zone.name)
 	switch p.part {
 	case "queue", "entry", "sweep":
 		s.serveSpeedQueue(w, r, p, now)
 		return
 	}
 	st := s.d.Speed.State()
-	names := newSpeedNames(st, s.d.Speed.Catalog(), s.public)
+	names := newSpeedNames(st, s.d.Speed.Catalog())
 	if p.part == "running" {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, r, http.StatusOK, map[string]any{"at": now.UnixMilli(), "running": s.speedRunning(names)})
 		return
 	}
 	if p.part == "summary" && p.row != "" {
-		if !rowKnown(p.row, st, names, s.public) {
+		if !rowKnown(p.row, st) {
 			writeErr(w, r, http.StatusNotFound, errNoSpeedID.Error())
 			return
 		}
-		// The query runs inside the cache's fill: the share link's cache
-		// covers it.
 		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
 			out, err := s.speedOne(ctx, p, st, names, now)
 			if err != nil {
@@ -586,14 +558,14 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	configurable := !s.public && s.canControl != nil && s.canControl(r)
+	configurable := s.canControl != nil && s.canControl(r)
 	s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
 		if p.part == "windows" {
 			ts, err := s.d.Speed.SpeedTests(ctx, p.from.Add(-speedtest.SlotCap), p.to)
 			if err != nil {
 				return nil, err
 			}
-			return jsonCached(map[string]any{"at": now.UnixMilli(), "windows": speedWindows(ts, p.from, s.public)})
+			return jsonCached(map[string]any{"at": now.UnixMilli(), "windows": speedWindows(ts, p.from)})
 		}
 		out, err := s.speedSummary(ctx, p, st, names, now)
 		if err != nil {
@@ -604,17 +576,12 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// speedWindows are the tests' windows from from; public: every origin is
-// "test" (the share link never says whose test it was).
-func speedWindows(ts []model.SpeedTest, from time.Time, public bool) []speedWindow {
+// speedWindows are the tests' windows from from.
+func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
 	out := []speedWindow{}
 	for _, t := range ts {
 		if !t.End.Before(from) && t.End.After(t.Start) {
-			o := t.Origin()
-			if public {
-				o = "test"
-			}
-			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: o})
+			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: legacyOrigin(t)})
 		}
 	}
 	return out
@@ -648,14 +615,12 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
 		MaskedShare24h: math.Round(s.d.Speed.MaskedShare(24*time.Hour)*1000) / 1000,
-		NextAt:         ms(st.Next), OwnerTZ: st.OwnerZone, NextRow: strPtr(names.pubID(st.NextRow)), Running: s.speedRunning(names),
+		NextAt:         ms(st.Next), OwnerTZ: st.OwnerZone, NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
 		Rows: []speedRow{}, PerRegion: []speedRow{}, PerServer: []speedRow{}, Servers: []speedServerJSON{}, Regions: []speedRegionJSON{},
 		Connection: speedConnection{Type: "unknown", Source: "detected"}}
-	if !s.public {
-		month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-		out.BytesMonth, _ = s.d.Speed.BytesSince(ctx, month)
-		out.Bytes24h, _ = s.d.Speed.BytesSince(ctx, now.Add(-24*time.Hour))
-	}
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	out.BytesMonth, _ = s.d.Speed.BytesSince(ctx, month)
+	out.Bytes24h, _ = s.d.Speed.BytesSince(ctx, now.Add(-24*time.Hour))
 	for _, sv := range st.Servers {
 		ref, display, _, _ := names.server(sv.ID)
 		j := speedServerJSON{ID: ref.ID, Label: ref.Label, Display: display, Provider: sv.Provider, City: sv.City, Country: sv.Country,
@@ -671,12 +636,10 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		if sv.Custom {
 			j.Provider, j.Metro = "Your server", ""
 		}
-		if !s.public {
-			j.Host = sv.Host
-			j.Ports = strconv.Itoa(sv.PortMin)
-			if sv.PortMax != sv.PortMin {
-				j.Ports += "-" + strconv.Itoa(sv.PortMax)
-			}
+		j.Host = sv.Host
+		j.Ports = strconv.Itoa(sv.PortMin)
+		if sv.PortMax != sv.PortMin {
+			j.Ports += "-" + strconv.Itoa(sv.PortMax)
 		}
 		out.Servers = append(out.Servers, j)
 	}
@@ -689,7 +652,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	if err != nil {
 		return nil, err
 	}
-	all = withVia(all, st, s.public)
+	all = withVia(all, st)
 	tz := p.zone.loc
 	byRegion, byServer := map[string][]model.SpeedTest{}, map[string][]model.SpeedTest{}
 	var span, last24 []model.SpeedTest
@@ -751,7 +714,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		if !r.Default && !isSched && len(byRegion[r.ID]) == 0 {
 			continue
 		}
-		row := speedRowOf(r.ID, "region", r.Title, byRegion[r.ID], tz, names)
+		row := speedRowOf(r.ID, "region", r.Title, byRegion[r.ID], tz)
 		row.Servers = append(slices.Clone(r.Servers), r.Nearby...)
 		row.Scheduled, row.Why = isSched, sr.Why
 		note(&row, r.Title)
@@ -764,7 +727,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 			continue
 		}
 		ref := names.ref(sv.ID)
-		row := speedRowOf(ref.ID, "server", ref.Label, ts, tz, names)
+		row := speedRowOf(ref.ID, "server", ref.Label, ts, tz)
 		row.Servers = []string{ref.ID}
 		row.Scheduled, row.Why = isSched, sr.Why
 		out.PerServer = append(out.PerServer, row)
@@ -815,22 +778,6 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	}
 	out.Coverage = speedCoverage(span, tz, cat)
 	out.UnderLoad = speedUnderLoadOf(span)
-	if s.public { // the share link's wording: a visitor's line is not "yours"
-		out.Finding.Text, out.Finding.Caveat = out.Finding.TextPublic, out.Finding.CaveatPublic
-		out.Finding.Evidence, out.Finding.Coverage = out.Finding.EvidencePublic, out.Finding.CoveragePublic // no dates
-		out.Finding.Network, out.Finding.Via = "", ""                                                       // no networks or exchanges by name
-		if out.Pattern != nil {
-			out.Pattern.Text = publicWording.Replace(out.Pattern.Text)
-		}
-		for i, x := range out.UnderLoad.Text {
-			out.UnderLoad.Text[i] = publicWording.Replace(x)
-		}
-		for _, rows := range [][]speedRow{out.PerRegion, out.PerServer} {
-			for i := range rows {
-				rows[i].publicWording()
-			}
-		}
-	}
 	return out, nil
 }
 
@@ -901,33 +848,8 @@ func (s *server) edgeHours(ctx context.Context, now time.Time, tz *time.Location
 	return out, nil
 }
 
-// publicWording rewords a row's dips for the share link (the rows in
-// Rows share the patterns with PerRegion and PerServer).
-func (r *speedRow) publicWording() {
-	for _, p := range []*speedtest.Pattern{r.Dip, r.UpDip} {
-		if p != nil {
-			p.Text = publicWording.Replace(p.Text)
-		}
-	}
-}
-
-var publicWording = strings.NewReplacer("your provider's", "the provider's", "your line", "the line", "your modem", "the modem", "your daytime", "the daytime", "your usual", "the usual", "your provider", "the internet provider",
-	"Your router's", "The router's", "your home", "the home")
-
-func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz *time.Location, names speedNames) speedRow {
+func speedRowOf(id, kind, label string, ts []model.SpeedTest, tz *time.Location) speedRow {
 	row := speedRow{ID: id, Kind: kind, Label: label, Stats: speedtest.Summarize(ts, tz)}
-	// The stats name the servers that answered: public ids on the share link.
-	row.ServerNow = names.pubID(row.ServerNow)
-	for i, h := range row.Hours {
-		if len(h.Servers) == 0 {
-			continue
-		}
-		m := make(map[string]int, len(h.Servers))
-		for id, k := range h.Servers {
-			m[names.pubID(id)] += k
-		}
-		row.Hours[i].Servers = m
-	}
 	if row.Stats.LatestAt != nil {
 		row.LatestAt = ms(*row.Stats.LatestAt)
 	}
@@ -1075,17 +997,10 @@ func ptrOr(p *float64, d float64) float64 {
 
 var errNoSpeedID = errors.New("no such server or region")
 
-// rowKnown reports a region or server id this viewer may ask for (own
-// servers only by their public id on the share link).
-func rowKnown(id string, st speedtest.State, names speedNames, public bool) bool {
-	if slices.ContainsFunc(st.Regions, func(r speedtest.Region) bool { return r.ID == id }) {
-		return true
-	}
-	local := names.resolve(id)
-	if public && local == id && names.custom[local] > 0 {
-		return false
-	}
-	return slices.ContainsFunc(st.Servers, func(sv speedtest.ServerState) bool { return sv.ID == local })
+// rowKnown reports a region or server id.
+func rowKnown(id string, st speedtest.State) bool {
+	return slices.ContainsFunc(st.Regions, func(r speedtest.Region) bool { return r.ID == id }) ||
+		slices.ContainsFunc(st.Servers, func(sv speedtest.ServerState) bool { return sv.ID == id })
 }
 
 // speedOneJSON is api/speed?row=<id> (or server=, region=): one row's
@@ -1115,9 +1030,8 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 		servers = append(slices.Clone(r.Servers), r.Nearby...)
 		keep = func(t model.SpeedTest) bool { return t.Region == r.ID && !(p.excludeFallback && t.Fallback) }
 	} else {
-		local := names.resolve(p.row)
-		i := slices.IndexFunc(st.Servers, func(sv speedtest.ServerState) bool { return sv.ID == local })
-		if i < 0 || (s.public && local == p.row && names.custom[local] > 0) { // own servers only by public ID there
+		local := p.row
+		if !slices.ContainsFunc(st.Servers, func(sv speedtest.ServerState) bool { return sv.ID == local }) {
 			return nil, errNoSpeedID
 		}
 		ref := names.ref(local)
@@ -1128,7 +1042,7 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 	if err != nil {
 		return nil, err
 	}
-	all = withVia(all, s.d.Speed.State(), s.public)
+	all = withVia(all, s.d.Speed.State())
 	var ts []model.SpeedTest
 	for _, t := range all {
 		if keep(t) {
@@ -1138,25 +1052,22 @@ func (s *server) speedOne(ctx context.Context, p speedParams, st speedtest.State
 	for _, t := range ts[max(0, len(ts)-speedTestsCap):] {
 		out.Tests = append(out.Tests, names.test(t))
 	}
-	out.Row = speedRowOf(id, out.Kind, label, ts, p.zone.loc, names)
+	out.Row = speedRowOf(id, out.Kind, label, ts, p.zone.loc)
 	out.Row.Servers = servers
 	for _, r := range st.Rows {
 		if r.ID == id || names.ref(r.ID).ID == id {
 			out.Row.Scheduled, out.Row.Why = true, r.Why
 		}
 	}
-	out.Windows = speedWindows(ts, from, s.public)
-	if s.public {
-		out.Row.publicWording()
-	}
+	out.Windows = speedWindows(ts, from)
 	return out, nil
 }
 
-// withVia adds, locally, the internet exchange each test's handoff
-// crossed (State.Vias: kept in memory, never stored, re-traced daily) when
-// the server's latest handoff is the test's. The share link never gets it.
-func withVia(ts []model.SpeedTest, st speedtest.State, public bool) []model.SpeedTest {
-	if public || len(st.Vias) == 0 {
+// withVia adds the internet exchange each test's handoff crossed
+// (State.Vias: kept in memory, never stored, re-traced daily) when the
+// server's latest handoff is the test's.
+func withVia(ts []model.SpeedTest, st speedtest.State) []model.SpeedTest {
+	if len(st.Vias) == 0 {
 		return ts
 	}
 	out := slices.Clone(ts)
@@ -1171,7 +1082,7 @@ func withVia(ts []model.SpeedTest, st speedtest.State, public bool) []model.Spee
 }
 
 // speedHome is Home's speed line (nil: nothing on Home).
-func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location, voicePublic bool) *speedtest.HomeSpeed {
+func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location) *speedtest.HomeSpeed {
 	if s.d.Speed == nil || s.d.Speed.State().Mode == speedtest.ModeOff {
 		return nil
 	}
@@ -1179,17 +1090,10 @@ func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location
 	if err != nil {
 		return nil
 	}
-	ts = withVia(ts, s.d.Speed.State(), s.public || voicePublic)
+	ts = withVia(ts, s.d.Speed.State())
 	eh, _ := s.edgeHours(ctx, now, tz)
 	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, Loc: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: edgeIdle(eh)})
-	line := speedtest.HomeLine(f, ts, tz, now)
-	if line != nil && voicePublic {
-		if f.Caveat != "" {
-			line.Text = strings.Replace(line.Text, f.Caveat, f.CaveatPublic, 1)
-		}
-		line.Text = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual", "your internet provider's", "the internet provider's").Replace(line.Text)
-	}
-	return line
+	return speedtest.HomeLine(f, ts, tz, now)
 }
 
 // speedPOST checks a speed-test write: a source, POST, only the allowed
@@ -1212,21 +1116,20 @@ func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params 
 }
 
 // serveSpeedConfig answers POST api/speed/config {"mode", "extra",
-// "public"}.
+// "skip"}.
 func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r) {
 		return
 	}
 	var body struct {
-		Mode   *string  `json:"mode"`
-		Extra  []string `json:"extra"`  // opt-in (regions) or far (nearby) regions
-		Public *bool    `json:"public"` // the share link may queue tests
-		Skip   []string `json:"skip"`   // servers never to test (replaces the list)
+		Mode  *string  `json:"mode"`
+		Extra []string `json:"extra"` // opt-in (regions) or far (nearby) regions
+		Skip  []string `json:"skip"`  // servers never to test (replaces the list)
 	}
 	d := json.NewDecoder(io.LimitReader(r.Body, 4<<10))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Public == nil && body.Skip == nil) || (body.Mode == nil && body.Extra != nil) {
-		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]}, {"public": true or false} and/or {"skip": [server ids]}`)
+	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Skip == nil) || (body.Mode == nil && body.Extra != nil) {
+		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]} and/or {"skip": [server ids]}`)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
@@ -1248,12 +1151,7 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if body.Skip != nil {
-		ids := make([]string, len(body.Skip))
-		names := newSpeedNames(h.d.Speed.State(), h.d.Speed.Catalog(), false)
-		for i, id := range body.Skip {
-			ids[i] = names.resolve(id)
-		}
-		if err := h.d.Speed.SetSkip(ctx, ids); errors.Is(err, speedtest.ErrMode) {
+		if err := h.d.Speed.SetSkip(ctx, body.Skip); errors.Is(err, speedtest.ErrMode) {
 			writeErr(w, r, http.StatusBadRequest, err.Error())
 			return
 		} else if err != nil {
@@ -1262,30 +1160,20 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		}
 		out["skip"] = body.Skip
 	}
-	if body.Public != nil {
-		if err := h.d.Speed.Queue().SetPublic(ctx, *body.Public); err != nil {
-			h.storeErr(w, r, "save the speed test setting", err)
-			return
-		}
-		// The limits the confirmation shows (also in part=queue budget).
-		out["public"], out["limits"] = *body.Public, map[string]int64{
-			"time_hour_max_s": int64(speedtest.PublicTimePerHour / time.Second),
-			"time_day_max_s":  int64(speedtest.PublicTimePerDay / time.Second)}
-	}
 	writeJSON(w, r, http.StatusOK, out)
 }
 
 // zoneLabel is the IANA name the hours are in: the parameter's, or the
 // server's own for no tz (its TZ, else "Local"), "" for a fixed offset.
 // sweepBytes estimates "Test every server": the sum, over the servers it
-// tests, of each one's median data over its recent ok tests (the
-// share link's, capped at 100 MB, left out), else this line's median rate
+// tests, of each one's median data over its recent ok tests (share-link
+// tests from before v0.8.0, capped at 100 MB, left out), else this line's median rate
 // both ways for MaxMeasure, else defaultTestBytes.
 func sweepBytes(st speedtest.State, ts []model.SpeedTest) (total int64, n int) {
 	per := map[string][]float64{}
 	var down, up []float64
 	for _, t := range ts {
-		if t.Outcome != model.SpeedOK || t.Origin() == "public" {
+		if t.Outcome != model.SpeedOK || t.Origin() == "public" { // TODO(v0.9): drop the legacy origin
 			continue
 		}
 		if t.Bytes > 0 {

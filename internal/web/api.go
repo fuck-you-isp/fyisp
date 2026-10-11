@@ -66,44 +66,10 @@ type panelParams struct {
 	points   int
 	key      string // normalized query, for caching
 	fk, tk   string // normalized from and to (see parseTime)
-	// fromAbs and toAbs report unix-millisecond bounds; fromDerived that
-	// from was clamped to to-MaxRange.
-	fromAbs, toAbs, fromDerived bool
 }
 
 func (p *panelParams) setKey() {
 	p.key = p.group + "\x00" + p.fk + "\x00" + p.tk + "\x00" + strconv.Itoa(p.points)
-}
-
-// quantize rounds absolute bounds outward to the bucket step the store
-// would use for this range (buckets are aligned to multiples of the step),
-// so absolute ranges that differ by less than a bucket share one cache key.
-// It adds at most one bucket at each end. A to rounded past now becomes now.
-func (p *panelParams) quantize(now time.Time) {
-	tier := store.TierRaw
-	if p.to.Sub(p.from) > store.RawMaxRange {
-		tier = store.TierHourly
-	}
-	step := store.BucketStep(p.from, p.to, p.points, tier)
-	if p.toAbs {
-		to := p.to.Truncate(step)
-		if to.Before(p.to) {
-			to = to.Add(step)
-		}
-		if to.After(now) {
-			p.to, p.tk, p.toAbs = now, "now", false
-		} else {
-			p.to, p.tk = to, strconv.FormatInt(to.UnixMilli(), 10)
-		}
-	}
-	switch {
-	case p.fromDerived:
-		p.from, p.fk = p.to.Add(-MaxRange), p.tk+"-90d"
-	case p.fromAbs:
-		p.from = p.from.Truncate(step)
-		p.fk = strconv.FormatInt(p.from.UnixMilli(), 10)
-	}
-	p.setKey()
 }
 
 // parseTime accepts "now", "now-<n><s|m|h|d>" and unix milliseconds. It
@@ -177,16 +143,15 @@ func parsePanelParams(q url.Values, now time.Time) (panelParams, error) {
 	if p.to, p.tk, err = parseTime(ts, now); err != nil {
 		return p, err
 	}
-	p.fromAbs, p.toAbs = !strings.HasPrefix(p.fk, "now"), !strings.HasPrefix(p.tk, "now")
 	if p.to.After(now) {
-		p.to, p.tk, p.toAbs = now, "now", false
+		p.to, p.tk = now, "now"
 	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
 	if p.to.Sub(p.from) > MaxRange {
 		p.from = p.to.Add(-MaxRange)
-		p.fk, p.fromAbs, p.fromDerived = p.tk+"-90d", false, true
+		p.fk = p.tk + "-90d"
 	}
 	p.points = DefaultPoints
 	if s := q.Get("points"); s != "" {

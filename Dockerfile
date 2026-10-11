@@ -61,18 +61,6 @@ SH
 FROM scratch AS asndb
 COPY --from=asndb-gen /out/ip2asn-v4.bin /internal/asn/data/
 
-# Live tunnel tests (need network; they hit trycloudflare.com). See internal/tunnel/live_test.go.
-#   docker build --target livetest -t fyisp-livetest .
-#   docker run --rm -e FYISP_LIVE_TUNNEL=1 fyisp-livetest -test.run Live -test.v
-FROM source AS livetest-build
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 go test -c -race -o /tunnel.test ./internal/tunnel
-FROM debian:bookworm-slim AS livetest
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables && rm -rf /var/lib/apt/lists/*
-COPY --from=livetest-build /tunnel.test /tunnel.test
-ENTRYPOINT ["/tunnel.test"]
-
 # License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
 # fyisp on any release platform, for the release assets and the image.
 FROM source AS licenses

@@ -376,7 +376,7 @@ func TestProfileReloadDropsTargets(t *testing.T) {
 	scrape(t, c2)
 }
 
-// The handler must serve a private registry: cloudflared (and anything else)
+// The handler must serve a private registry: a dependency
 // registering into the default registry must not show up.
 func TestPrivateRegistry(t *testing.T) {
 	canary := prometheus.NewCounter(prometheus.CounterOpts{Name: "fyisp_test_default_registry_canary", Help: "x"})

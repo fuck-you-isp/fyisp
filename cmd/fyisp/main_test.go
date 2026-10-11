@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +40,34 @@ func TestEnvDefaults(t *testing.T) {
 	}
 	if _, err := parseFlags([]string{"repport"}); err == nil {
 		t.Error("an unknown word ran the server")
+	}
+}
+
+// TestRemovedFlags: the share link's flags fail with an explanation,
+// whatever their value; a value that happens to look like one does not.
+func TestRemovedFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"--share"}, {"-share"}, {"--share=false"}, {"-share=false"}, {"--listen=127.0.0.1:4000", "--share"},
+		{"--share-protocol", "quic"}, {"--share-protocol=http2"},
+		{"--speedtest-public"}, {"--speedtest-public=false"}, {"--speedtest-public-budget=50GB"},
+	} {
+		_, err := parseFlags(args)
+		if err == nil || !strings.Contains(err.Error(), "removed in v0.8.0") {
+			t.Errorf("%q: err %v", args, err)
+			continue
+		}
+		if strings.Contains(args[len(args)-1], "share") && !strings.Contains(err.Error(), "fyisp report --redact") {
+			t.Errorf("%q: no pointer to the alternatives: %v", args, err)
+		}
+	}
+	// Flag values and arguments after -- are not flags.
+	if c, err := parseFlags([]string{"--admin-token", "--share"}); err != nil || c.adminToken != "--share" {
+		t.Errorf("--admin-token --share: %q %v", c.adminToken, err)
+	}
+	if _, err := parseFlags([]string{"--", "--share"}); err == nil || strings.Contains(err.Error(), "removed") {
+		t.Errorf("-- --share: %v", err)
+	}
+	if _, err := parseFlags([]string{"--sharing"}); err == nil || strings.Contains(err.Error(), "removed") {
+		t.Errorf("--sharing: %v", err)
 	}
 }

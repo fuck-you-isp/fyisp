@@ -44,8 +44,7 @@ func newFakeSpeed(ctx context.Context, now time.Time, bf time.Duration, log *slo
 			_ = st.SaveSpeedTest(ctx, &x)
 		}
 	}
-	public := true // the share link may queue tests here
-	s := speedtest.New(speedtest.Options{Catalog: cat, Store: st, Log: log, Public: &public, Fake: &speedtest.Fake{Run: n.run, RTT: n.rtt}})
+	s := speedtest.New(speedtest.Options{Catalog: cat, Store: st, Log: log, Fake: &speedtest.Fake{Run: n.run, RTT: n.rtt}})
 	go func() { _ = s.Run(ctx) }()
 	return s
 }

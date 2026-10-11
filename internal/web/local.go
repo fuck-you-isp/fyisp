@@ -1,14 +1,12 @@
 package web
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"net"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // LocalOptions configures the local (owner) listener.
@@ -19,6 +17,9 @@ type LocalOptions struct {
 	Addr string
 	// ExtraHosts are additional allowed Host header values, e.g.
 	// "fyisp.lan:3000" or "fyisp.lan" (any port). Compared case-insensitively.
+	// They mean the dashboard is reached from elsewhere (a proxy, a
+	// tunnel), whatever Addr is: without AdminToken the POST routes and
+	// on-demand traces are then disabled.
 	ExtraHosts []string
 	// PublicBind reports that the listener accepts non-loopback clients
 	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an Addr whose
@@ -56,10 +57,10 @@ type localHandler struct {
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
-// /metrics, and the write routes (POST /api/share/start|stop, POST
-// /api/speed/run|config, POST/PUT/DELETE /api/annotations[/{id}] and
-// /api/reports[/{id}]), all behind controlAllowed; POST /api/investigate,
-// behind the same-origin and CSRF checks only (no admin token); and
+// /metrics, and the write routes (POST /api/speed/run|config|cancel,
+// POST/PUT/DELETE /api/annotations[/{id}] and /api/reports[/{id}]), all
+// behind controlAllowed; POST /api/investigate, behind the same-origin and
+// CSRF checks and, when one is set, the admin token; and
 // POST/DELETE /api/admin/session, which exchanges the admin token for a
 // cookie.
 func Local(d Deps, o LocalOptions) http.Handler {
@@ -69,7 +70,7 @@ func Local(d Deps, o LocalOptions) http.Handler {
 		_, _ = rand.Read(b[:])
 		tok = hex.EncodeToString(b[:])
 	}
-	h := &localHandler{server: newServer(d, false, tok), opts: o, csrf: tok, extra: map[string]bool{}}
+	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, extra: map[string]bool{}}
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
 		ip := net.ParseIP(host)
@@ -89,13 +90,15 @@ func Local(d Deps, o LocalOptions) http.Handler {
 	switch {
 	case o.AdminToken != "":
 		h.controls = "admin"
-	case h.opts.PublicBind:
+	case h.opts.PublicBind || len(o.ExtraHosts) > 0:
+		// Reachable from elsewhere, and no token (--admin-token=off):
+		// a tunnel or forwarder need not set any proxy header.
 		h.controls = "disabled"
 	default:
 		h.controls = "enabled"
 	}
 	h.canControl = func(r *http.Request) bool {
-		return h.controls != "disabled" && (h.opts.AdminToken == "" || h.adminOK(r))
+		return h.controls != "disabled" && (h.opts.AdminToken == "" || h.adminOK(r)) && !(h.controls == "enabled" && proxied(r))
 	}
 	return h
 }
@@ -152,9 +155,6 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.d.Metrics.ServeHTTP(w, r)
 		}
 		return
-	case "/api/share/start", "/api/share/stop":
-		h.serveShare(w, r, p == "/api/share/start")
-		return
 	case "/api/investigate":
 		h.serveInvestigate(w, r)
 		return
@@ -197,7 +197,7 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSON(w, r, http.StatusOK, localStatus{Status: h.rawStatus(r.Context()), Mode: "local", Controls: h.controls,
+		writeJSON(w, r, http.StatusOK, localStatus{Status: h.rawStatus(r.Context()), Controls: h.controls,
 			Admin: h.controls == "admin" && h.adminOK(r)})
 		return
 	}
@@ -244,6 +244,26 @@ func sameOrigin(r *http.Request) bool {
 	return true
 }
 
+// proxyHeaders are set by reverse proxies and tunnels (nginx, Caddy,
+// cloudflared, Tailscale Serve/Funnel). A loopback listener without an
+// admin token trusts every client, which is only right when the client is
+// on this machine: a proxy that rewrites Host to 127.0.0.1 would pass the
+// Host check and hand everyone behind it the owner's controls.
+var proxyHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip", "Tailscale-User-Login"}
+
+// proxied reports whether r came through a reverse proxy or a tunnel.
+func proxied(r *http.Request) bool {
+	for _, k := range proxyHeaders {
+		if r.Header.Get(k) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// errProxied refuses a write through a proxy to a token-less dashboard.
+const errProxied = "this dashboard has no admin token, so its controls work only from this machine, not through a proxy or tunnel: start fyisp with --allow-host=<the proxy's host name> (which turns the admin token on) or --admin-token"
+
 func tokenEqual(got, want string) bool {
 	return want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
@@ -253,7 +273,11 @@ func tokenEqual(got, want string) bool {
 // refusal and returns false.
 func (h *localHandler) controlAllowed(w http.ResponseWriter, r *http.Request, what string) bool {
 	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from the network (--listen) and fyisp was started with --admin-token=off")
+		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from elsewhere (--listen or --allow-host) and fyisp was started with --admin-token=off")
+		return false
+	}
+	if h.controls == "enabled" && proxied(r) {
+		writeErr(w, r, http.StatusForbidden, errProxied)
 		return false
 	}
 	if !sameOrigin(r) {
@@ -330,37 +354,4 @@ func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request)
 	c.Value, c.MaxAge = h.opts.AdminToken, adminCookieMaxAge
 	http.SetCookie(w, c)
 	writeJSON(w, r, http.StatusOK, map[string]any{"admin": true})
-}
-
-func (h *localHandler) serveShare(w http.ResponseWriter, r *http.Request, start bool) {
-	if h.d.Share == nil {
-		writeErr(w, r, http.StatusNotFound, "sharing is not available")
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if len(r.URL.RawQuery) > 0 {
-		writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
-		return
-	}
-	if !h.controlAllowed(w, r, "share controls") {
-		return
-	}
-	var err error
-	if start {
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-		err = h.d.Share.Start(ctx)
-		cancel()
-	} else {
-		err = h.d.Share.Stop()
-	}
-	if err != nil {
-		h.d.log().Warn("share control", "start", start, "err", err)
-		writeJSON(w, r, http.StatusInternalServerError, map[string]any{"error": err.Error(), "share": h.d.Share.State()})
-		return
-	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"share": h.d.Share.State()})
 }

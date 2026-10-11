@@ -107,8 +107,7 @@ func (s *Scheduler) slotJob(t target) Job {
 	return j
 }
 
-// pause runs before each queued job (QueueOptions.Pause, never charged to
-// the share link's time cap: the line is neither tested nor masked then).
+// pause runs before each queued job (QueueOptions.Pause).
 // A sweep's tests would blind the monitoring for minutes back to back: it
 // leaves the probes SweepGap of unmasked time after the last window's
 // tail. StopCancelled: ctx ended while waiting.
@@ -116,7 +115,7 @@ func (s *Scheduler) slotJob(t target) Job {
 // A sweep also stops (StopUnreachable) after SweepUnreachable unreachable
 // servers in a row: during an outage it would only mask the monitoring.
 func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) string {
-	if trigger != "sweep" && trigger != "public_sweep" {
+	if trigger != "sweep" {
 		return ""
 	}
 	s.mu.Lock()
@@ -137,9 +136,9 @@ func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) string {
 	return ""
 }
 
-// execJob runs one queued test (QueueOptions.Exec): the stored test's ID,
-// whether it was saved, and the bytes on the wire, every attempt's.
-func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool, int64) {
+// execJob runs one queued test (QueueOptions.Exec): the stored test's ID
+// and whether it was saved.
+func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool) {
 	region, steps := j.Region, []Step(nil)
 	if j.steps != nil {
 		region, steps = j.steps(ctx)
@@ -154,13 +153,13 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 	}
 	if n := len(steps); n > 0 {
 		if steps = s.filter(steps, trigger == "schedule"); len(steps) == 0 {
-			return 0, false, 0 // every server skipped or resting: no test, not a failure
+			return 0, false // every server skipped or resting: no test, not a failure
 		}
 	}
-	t, saved, bytes := s.runSteps(ctx, region, steps, trigger)
+	t, saved, _ := s.runSteps(ctx, region, steps, trigger)
 	s.mu.Lock()
 	switch {
-	case trigger != "sweep" && trigger != "public_sweep":
+	case trigger != "sweep":
 		s.sweepUnreach = 0
 	case t != nil && t.Outcome == model.SpeedUnreachable:
 		s.sweepUnreach++
@@ -169,9 +168,9 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 	}
 	s.mu.Unlock()
 	if t == nil {
-		return 0, false, bytes
+		return 0, false
 	}
-	return t.ID, saved, bytes
+	return t.ID, saved
 }
 
 // live is the running test's direction and server and its expected end

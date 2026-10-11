@@ -64,7 +64,7 @@ func TestSpeedSection(t *testing.T) {
 	for _, want := range []string{
 		`id="speed"`, "<h2>Speed tests</h2>",
 		"1346 speed tests ran in this range: 1311 measured, 35 found the test servers busy (not counted as slow).",
-		"Of these, 1 started by hand and 1 started from the share link; the rest were scheduled.",
+		"Of these, 1 started by hand and 1 started from the share link (before v0.8.0); the rest were scheduled.",
 		"Pooled over every server, tests read about 50% lower from 7–11 pm UTC than the same servers",
 		"for at most about 11 seconds each way, ramp-up included (the ramp-up is left out of the result)",
 		"Connection: of 1311 measured tests, 1310 wired, 1 on a link of unknown type.",

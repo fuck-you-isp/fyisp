@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -20,10 +19,8 @@ import (
 // {"kind":"unknown"} and /api/incidents [].
 //
 // Contract: Verdict.Summary and Incident.Summary are plain-English sentences
-// free of IP addresses and hostnames (the engine guarantees this; they are
-// served on the public link as is). The public handler additionally drops
-// target names that are not in the profile and evidence keys that are not
-// plain identifiers, but it does not rewrite summaries.
+// free of IP addresses and hostnames (the engine guarantees this; reports,
+// redacted ones included, quote them as is).
 type VerdictSource interface {
 	Current() model.Verdict
 	Incidents(ctx context.Context, from, to time.Time) ([]model.Incident, error)
@@ -37,11 +34,6 @@ const MaxIncidents = 500
 
 // incidentsTimeout bounds one incidents query.
 const incidentsTimeout = 10 * time.Second
-
-// evidenceKeyRE is what a public evidence key may look like: a lower-case
-// identifier such as "gateway_loss". Anything else (an address, a hostname,
-// a target name) is dropped on the public link.
-var evidenceKeyRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 // verdictJSON is /api/verdict. Since is omitted when unknown.
 type verdictJSON struct {
@@ -67,7 +59,7 @@ type incidentJSON struct {
 	PeakLoss float64           `json:"peak_loss"`
 }
 
-// targetFilter keeps names that exist in the profile (public only).
+// targetFilter keeps names that exist in the profile.
 func targetFilter(p *model.Profile) func([]string) []string {
 	known := map[string]bool{}
 	if p != nil {
@@ -99,13 +91,9 @@ func (s *server) verdict() verdictJSON {
 		t := v.Since.UTC()
 		out.Since = &t
 	}
-	if s.public {
-		out.Targets = targetFilter(s.d.Profile())(v.Targets)
-	}
-	// Copy the evidence: NaN and ±Inf do not marshal, and the public link
-	// only carries keys that are plain identifiers.
+	// Copy the evidence: NaN and ±Inf do not marshal.
 	for k, x := range v.Evidence {
-		if math.IsNaN(x) || math.IsInf(x, 0) || (s.public && !evidenceKeyRE.MatchString(k)) {
+		if math.IsNaN(x) || math.IsInf(x, 0) {
 			continue
 		}
 		if out.Evidence == nil {
@@ -170,7 +158,6 @@ func (s *server) incidents(ctx context.Context, p incidentParams) ([]incidentJSO
 	if err != nil {
 		return nil, err
 	}
-	filter := targetFilter(s.d.Profile())
 	for _, in := range list {
 		if len(out) >= MaxIncidents {
 			break
@@ -184,9 +171,6 @@ func (s *server) incidents(ctx context.Context, p incidentParams) ([]incidentJSO
 			j.PeakLoss = 0
 		} else if j.PeakLoss > 1 {
 			j.PeakLoss = 1
-		}
-		if s.public {
-			j.Targets = filter(in.Targets)
 		}
 		out = append(out, j)
 	}
@@ -212,14 +196,6 @@ func (s *server) serveIncidents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	render := func(ctx context.Context) (*cached, error) {
-		if s.sem != nil {
-			select {
-			case s.sem <- struct{}{}:
-				defer func() { <-s.sem }()
-			case <-ctx.Done():
-				return nil, errBusy
-			}
-		}
 		list, err := s.incidents(ctx, p)
 		if err != nil {
 			return nil, err
@@ -232,24 +208,15 @@ func (s *server) serveIncidents(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), incidentsTimeout)
 	defer cancel()
-	var c *cached
-	if s.cache != nil {
-		c, err = s.cache.get(ctx, "inc\x00"+p.key, render)
-	} else {
-		c, err = render(ctx)
-	}
+	c, err := render(ctx)
 	if err != nil {
-		if errors.Is(err, errBusy) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			w.Header().Set("Retry-After", "2")
 			writeErr(w, r, http.StatusServiceUnavailable, "busy, retry shortly")
 			return
 		}
 		s.d.log().Error("incidents query", "err", err)
-		msg := "query failed"
-		if !s.public {
-			msg += ": " + strings.TrimSpace(err.Error())
-		}
-		writeErr(w, r, http.StatusInternalServerError, msg)
+		writeErr(w, r, http.StatusInternalServerError, "query failed: "+strings.TrimSpace(err.Error()))
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

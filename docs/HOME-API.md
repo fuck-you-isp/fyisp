@@ -4,7 +4,7 @@ Home is built from one endpoint with two parts:
 - **`live`** is the answer, the path, the tiles and the call apps. Poll it every 15 s.
 - **`history`** is the timeline, the problem table and today's calls. Poll it every 60 s, and again when the span changes.
 
-The roll-up and every string of copy are made on the server. That way the owner's page, the public link and reports use the same words, and Go tests pin them (`internal/web/home*_test.go`, with golden files).
+The roll-up and every string of copy are made on the server. That way the page uses the same words everywhere, and Go tests pin them (`internal/web/home*_test.go`, with golden files).
 
 The Go types are in `internal/web/home_types.go`; keep the two in sync.
 
@@ -13,25 +13,23 @@ The Go types are in `internal/web/home_types.go`; keep the two in sync.
 ```
 GET api/home?part=live&tz=120
 GET api/home?part=history&span=w&tz=120
-GET api/home?part=live&voice=public        (local only: preview the share wording)
 GET api/home?part=at&at=1760103900000      ("What happened at…?", "I just had a bad call")
 ```
 
-The route is relative, like every other API: `/api/home` locally and `/s/<secret>/api/home` on the share link.
+The route is relative, like every other API.
 
 | Param | Values | Default | Notes |
 |---|---|---|---|
 | `part` | `live`, `history`, `at` | `live` | Anything else returns 400. |
-| `at` | Unix ms, within the last 90 days and not in the future | – | Required with `part=at`, 400 elsewhere. On the share link it is rounded down to the minute. |
+| `at` | Unix ms, within the last 90 days and not in the future | – | Required with `part=at`, 400 elsewhere. |
 | `span` | `d` (today), `w` (the last 7 local days, today included) | `d` | `history` only; on `live` it returns 400. |
 | `tz` | minutes **east** of UTC, an integer from -840 to 840 | `0` | Send `-new Date().getTimezoneOffset()`. The server rounds it to the nearest 15 minutes and echoes the result in `tz`. A non-integer or out-of-range value returns 400. One offset is used for the whole span, so across a DST change the day edges of older days are off by an hour; this is accepted. `live` ignores `tz` but accepts it. |
-| `voice` | `you`, `public` | `you` locally; **always** `public` on the share link | On the share link `voice=you` is ignored. |
 
 Unknown parameters return 400, like the other routes.
 
 **Caching:**
-- `live` is cached for up to 10 s on the share link (the public response cache) and is not cached locally.
-- `history` is cached for 60 s on both, keyed by `span`, `tz` and `voice`.
+- `live` is not cached.
+- `history` is cached for 60 s, keyed by `span` and `tz`.
 - Every response carries `at`, the server time it was computed at. Use it for "Checked … ago". Don't use the client's clock.
 
 **Errors:** `{"error": "..."}` with 400, 404, 429 or 503, as for the other routes. On 503, retry after `Retry-After`.
@@ -50,14 +48,14 @@ Unknown parameters return 400, like the other routes.
 
 ### `who`: where the problem is
 
-| Value | From | Default label (`you` voice) | Public voice |
-|---|---|---|---|
-| `none` | nothing is wrong | – | – |
-| `home` | verdict `lan`; `no_network` is `offline` | Your Wi-Fi or router | The home network (Wi-Fi or router) |
-| `provider` | verdict `isp` | Your internet provider | The provider's network |
-| `beyond` | verdict `upstream` | Further out on the internet | Further out than the provider's first hop |
-| `dns` | verdict `dns` | Looking up names | Name lookups (DNS) |
-| `app` | verdict `service` on a Home tile's targets; one call app worse than the path | {App} | {App} |
+| Value | From | Default label |
+|---|---|---|
+| `none` | nothing is wrong | – |
+| `home` | verdict `lan`; `no_network` is `offline` | Your Wi-Fi or router |
+| `provider` | verdict `isp` | Your internet provider |
+| `beyond` | verdict `upstream` | Further out on the internet |
+| `dns` | verdict `dns` | Looking up names |
+| `app` | verdict `service` on a Home tile's targets; one call app worse than the path | {App} |
 | `calltraffic` | verdicts `udp_blocked`, `stun_blocked`, `udp_degraded`; a bad call-path score with no layer verdict | The connection calls use | Call traffic |
 | `offline` | verdict `no_network` | No internet connection | The monitoring device was offline |
 | `unknown` | no verdict source | – | – |
@@ -117,7 +115,6 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 ```jsonc
 {
   "part": "live",
-  "voice": "you",
   "at": 1760104800000,
   "answer": {
     "level": "bad",                  // good | warn | bad | info | checking
@@ -211,7 +208,6 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 ```jsonc
 {
   "part": "history",
-  "voice": "you",
   "at": 1760104800000,
   "tz": 120,
   "span": "w",
@@ -286,7 +282,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
   - "1 problem today, from your internet provider. Calls also had 2 other rough patches today."
 
   Show the run times from `runs`/`problems` next to it.
-- **`counts`:** incidents in the span by `who`; `problems` is the total. The public summary uses them for "provider side vs home side".
+- **`counts`:** incidents in the span by `who`; `problems` is the total.
 - **`problems`:** the outage log in Home's words, newest first, at most 50.
   - Home-network incidents are listed too.
   - `where` is the `who` in a short phrase. `details` opens the Details Calls view zoomed to the incident ±30 min, with the outage log open.
@@ -298,7 +294,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 
 ```jsonc
 {
-  "part": "at", "voice": "you",
+  "part": "at",
   "at": 1760104800000,               // server time of the answer
   "time": 1760103900000,             // the picked time
   "from": 1760103000000, "to": 1760104800000,
@@ -330,50 +326,11 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 
 Write the times from `bad_from`/`bad_to` (or `time`) yourself.
 
-## The public report
+## Removed in v0.8.0
 
-The share link's report is `part=history&span=w` in the public voice; the route forces the voice. Everything it needs is in fields; the client formats every time:
+The share link's third-person voice is gone: the `voice` parameter (now a 400, like any unknown parameter) and the `voice` field of every part, the share link's weekly report (the same `part=history&span=w` read in that voice), and the `sides` and `coverage` fields of `part=history`, which only that report read. `answer.try` and every copy field speak to the owner. For something to send to others, build a redacted evidence report (`fyisp report --redact`, or Reports in the dashboard).
 
-- **Period and timezone:**
-  - `from` (local midnight 6 days ago) and `to` (now), in Unix ms;
-  - `tz`, minutes east of UTC as used: write the offset next to every time ("UTC+2").
-- **`sides`** `{home, provider, other}`: the week's problems by side.
-  - `home` is the home network and the device offline; `provider` is the provider's network; `other` is everything else (further out, name lookups, apps and services, call traffic).
-  - Known issues are excluded. The three sum to `counts.problems`.
-- **`problems[]`** is the 7-day table, newest first, at most 50, home-side incidents included. Each row has:
-  - `from` and `to` (0 and `ongoing` while it lasts);
-  - `where` ("Most likely the provider network (past the router)");
-  - `side`;
-  - `level` (`bad`, `warn`, `info` for a known issue);
-  - `confidence` (`likely` for home and provider; history never claims more);
-  - `text`, a short past-tense sentence, the same as its runs';
-  - `peak_loss` and `details`.
-- **`coverage`** (0 to 1): the share of the period that was measured, i.e. after `first_data` and not in an `off` span ("Measured 82% of the week").
-- **`summary`, `counts`, `known` and `days`,** as for the owner, in the third person.
-
-`internal/web/testdata/home/report.<scenario>.json` pins it through the public route (TestHomePublicReportGolden), which also checks that no host, address, region or evidence appears.
-
-## Voice and redaction (`voice=public` and the share link)
-
-**Third-person voice:** every copy field uses the third person: "this connection", "the home network (Wi-Fi or router)", "the provider's network". Examples:
-
-| Field | `you` | `public` |
-|---|---|---|
-| `answer.headline` (ok) | Your internet is working normally. | This connection is working normally. |
-| `answer.cause` (isp, sure) | The problem is with your internet provider. Your Wi-Fi and router are fine. | The problem is in the provider's network. The home network (Wi-Fi and router) is fine. |
-| `answer.cause` (lan, likely) | The problem is most likely inside your home: your Wi-Fi or router. Your internet provider looks fine from here. | The problem is most likely in the home network (Wi-Fi or router). The provider's network looks fine from here. |
-| `path[].label` | Your router / Your provider | Home router / Provider network |
-| `summary` | 1 problem today, from your internet provider. | 1 problem today, in the provider's network. |
-| `problems[].where` | Your provider's network (past your router) | Provider network (past the router) |
-
-**On the share link** (always `public`), and locally with `voice=public`:
-- `answer.try` is `[]`; tips are for the owner.
-- `answer.announce` uses the public voice.
-- Target `names`/`affected` are only display names of targets in the profile, as `/api/verdict`'s filtered `targets` already are. They are never hosts, IPs, the Teams relay's region, ASNs or evidence values.
-- Path nodes have no numbers. No field of `/api/home` in either voice carries ms, loss percentages or MOS. `problems[].peak_loss` is the only number, and it is already public in `/api/incidents`.
-- No note text. Home's "marked bad call" notes are not part of this API.
-
-## Banned on Home (in either voice)
+## Rules for Home's words
 
 **A path verdict names the place in the headline:**
 - `lan`: "There's a problem in your home network"
@@ -422,13 +379,13 @@ What it does to calls is the Calls tile's job. During such a problem, call apps 
 TestHomeCopyWords and TestHomeGolden fail when the two share a run of three words.
 
 
-None of these may appear in any copy field: STUN, UDP, TCP, ICMP, anycast, MOS, jitter, p95, probe, target, baseline, verdict, profile, gateway, ISP edge, ms, `×N`, or a CLI flag. `DNS` appears only in parentheses after "name lookups", and only in the public voice. A golden test scans every copy field of every scenario for these words.
+None of these may appear in any copy field: STUN, UDP, TCP, ICMP, anycast, MOS, jitter, p95, probe, target, baseline, verdict, profile, gateway, ISP edge, ms, `×N`, or a CLI flag. `DNS` appears only in the owner's tips ("If you changed your DNS settings…"). A golden test scans every copy field of every scenario for these words.
 
 ## Development: scenarios and golden files
 
 `internal/web/homescen` builds the Home scenarios: the default profile (`--profile aws` for `clouds-other`), a week of stored samples, and a verdict with its outage log. It covers good, warming, wifi, isp, upstream, one-app-down, calls-choppy, udp-blocked, no-network, week-with-gaps and clouds-other.
 
-- **`cmd/fyisp-webdev -home <scenario>`** serves the **real** `/api/home` (and the rest of the dashboard) over that data, and keeps adding samples as time passes. `-home public` is the isp scenario; open the share link to see the public voice.
-- **`internal/web/testdata/home/<scenario>.<you|public>.json`** pins every scenario in both voices: live, today, the week, and `part=at` 5 minutes ago, on Friday 2026-10-09 at 14:30 (UTC+2). This is where the copy is reviewed.
+- **`cmd/fyisp-webdev -home <scenario>`** serves the **real** `/api/home` (and the rest of the dashboard) over that data, and keeps adding samples as time passes.
+- **`internal/web/testdata/home/<scenario>.json`** pins every scenario: live, today, the week, and `part=at` 5 minutes ago, on Friday 2026-10-09 at 14:30 (UTC+2). This is where the copy is reviewed.
   - To rewrite the files, run `go test ./internal/web -run TestHomeGolden -update`, then review the diff.
   - The test also runs every copy field through the banned-word rules.

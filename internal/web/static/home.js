@@ -7,7 +7,7 @@
 // keeps it accessible. Plain ES module, no build step.
 // @ts-check
 
-import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, copyText, tzParam } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, tzParam } from './core.js';
 
 /** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string,recovered?:number}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
@@ -15,20 +15,20 @@ import { h, MODE, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, c
 /** @typedef {{state:string,delay?:string,dropouts?:string,smoothness?:string,words?:string,worst_at?:number}} HomeCalls */
 /** @typedef {{app:string,title:string,level:string,state:string,label:string,note?:string}} HomeApp */
 /** @typedef {{id:string,label:string,done:boolean}} HomeStep */
-/** @typedef {{part:string,voice:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[],speed?:{text:string,level?:string,kind?:string,impact?:string}}} HomeLive */
+/** @typedef {{part:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[],speed?:{text:string,level?:string,kind?:string,impact?:string}}} HomeLive */
 /** @typedef {{from:number,to:number,level:string,who:string,kind?:string,label:string,text?:string,source:string,incident?:number,ongoing?:boolean}} HomeRun */
 /** @typedef {{from:number,to:number}} HomeSpan */
 /** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
 /** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,side?:string,level?:string,confidence?:string,text?:string,peak_loss:number,details:string}} HomeProblem */
-/** @typedef {{part:string,voice:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null,sides?:{home:number,provider:number,other:number},coverage?:number}} HomeHistory */
-/** @typedef {{part:string,voice:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number,speed_note?:string,speed_test_overlap_s?:number}} HomeAt */
+/** @typedef {{part:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null}} HomeHistory */
+/** @typedef {{part:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number,speed_note?:string,speed_test_overlap_s?:number}} HomeAt */
 /** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
 /**
- * What Home needs from the page (app.js owns the hash, the status and sharing).
+ * What Home needs from the page (app.js owns the hash and the status).
  * @typedef {{
  *   span: () => string, setSpan: (s: string) => void,
  *   openDetails: (hash: string) => void,
- *   status: () => any, startShare: () => Promise<void>,
+ *   status: () => any,
  *   notesOn: () => boolean, notesChanged: () => void, reportsOn: () => boolean,
  * }} HomeHost
  */
@@ -44,7 +44,7 @@ const KEEP_RUNNING = 'https://github.com/fuck-you-isp/fyisp#keep-it-running';
 
 /** Icon and word per level: never colour alone. */
 /** @type {Object<string,{icon:string,word:string}>} */
-export const LEVELS = {
+const LEVELS = {
   good: { icon: '✓', word: 'OK' },
   warn: { icon: '!', word: 'Minor problem' },
   bad: { icon: '✕', word: 'Problem' },
@@ -53,7 +53,7 @@ export const LEVELS = {
   affected: { icon: '–', word: 'Affected' },
 };
 /** @type {Object<string,string>} path node states */
-export const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '…', affected: '–' };
+const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '…', affected: '–' };
 // The tab title: the state first, so a background tab says it.
 /** @type {Object<string,string>} */
 const TITLE_WORD = { good: 'Fine', info: 'Fine', warn: 'Trouble', bad: 'Trouble', checking: 'Checking' };
@@ -186,12 +186,10 @@ export class Home {
     this.reportOut = h('div', { class: 'ho-report-out' });
     this.reportEl = h('section', { class: 'ho-report', 'aria-labelledby': 'ho-report-h' },
       h('h2', { id: 'ho-report-h', text: 'Make a report' }),
-      h('p', { class: 'ho-muted', text: 'A link you can send to your internet provider or your IT team: the last 7 days, with no addresses or notes.' }),
+      h('p', { class: 'ho-muted', text: 'A page you can save and send to your internet provider or your IT team: the last 7 days, with no private addresses.' }),
       h('button', { class: 'btn primary ho-big', type: 'button', text: 'Make a report', onclick: () => this.report() }),
       this.reportOut);
 
-    const pub = MODE === 'public';
-    if (pub) { this.markEl.hidden = true; this.reportEl.hidden = true; }
     this.el = h('main', { id: 'home', class: 'home', hidden: true },
       this.announcer, this.alerter,
       this.card, this.markWrap, this.tilesEl, this.otherEl, this.timeEl,
@@ -384,13 +382,11 @@ export class Home {
     if (dl.childElementCount) kids.push(dl);
     const apps = d.apps || [];
     if (apps.length) {
-      kids.push(h('p', { class: 'ho-apps-h', text: d.voice === 'public' ? 'Call apps' : 'Your call apps' }),
+      kids.push(h('p', { class: 'ho-apps-h', text: 'Your call apps' }),
         h('ul', { class: 'ho-apps' }, ...apps.map((x) => h('li', {}, badge(x.level, x.label), ' ', h('b', { text: x.title }), x.note ? h('span', { class: 'ho-muted', text: ` ${x.note}` }) : null))));
     }
     if (d.apps_note) kids.push(h('p', { class: 'ho-muted', text: d.apps_note }));
-    kids.push(h('p', { class: 'ho-muted', text: d.voice === 'public'
-      ? 'Every few seconds, a device in this home sends small test messages to its router, its internet provider and common apps and websites. The other people on a call aren’t measured.'
-      : 'Every few seconds we send small test messages to your router, your provider and the apps and websites you use, from this device. We can’t see the other people on a call.' }));
+    kids.push(h('p', { class: 'ho-muted', text: 'Every few seconds we send small test messages to your router, your provider and the apps and websites you use, from this device. We can’t see the other people on a call.' }));
     this.moreEl.replaceChildren(...kids);
   }
 
@@ -457,7 +453,7 @@ export class Home {
     this.sumEl.replaceChildren(h('span', { text: d.summary }));
     if (d.known && d.known.text) this.sumEl.append(' ', h('span', { text: `${d.known.text} ${when(d.known.since)}.` }));
     if (times.length) this.sumEl.append(h('span', { class: 'ho-times', text: `When: ${times.join('; ')}${probs.length > 3 ? '; …' : ''}.` }));
-    const t = buildTimeline(d, this.focus, (st, a, b) => this.pickBlock(st, a, b), {});
+    const t = buildTimeline(d, this.focus, (st, a, b) => this.pickBlock(st, a, b));
     this.stripsEl.replaceChildren(t.grid);
     this.legendEl.replaceChildren(...t.legend);
     if (d.work && d.span === 'd' && d.work.measured) {
@@ -530,7 +526,6 @@ export class Home {
   // ---------- mark a bad call ----------
 
   renderMark() {
-    if (MODE === 'public') return;
     this.markBtn.disabled = this.markBusy;
     this.earlierBtn.setAttribute('aria-expanded', String(this.markOpen));
     this.earlierEl.hidden = !this.markOpen;
@@ -560,13 +555,13 @@ export class Home {
   }
 
   /**
-   * Why writes (notes, sharing) can't happen from this page, in plain
+   * Why writes (notes, reports) can't happen from this page, in plain
    * words, or '' when they can. Never mentions flags.
    */
   writeBlock() {
     const st = this.host.status();
-    if (MODE !== 'local' || !st || !this.host.notesOn() || st.controls === 'disabled') return 'Not saved: this dashboard is read-only on this device.';
-    if (st.controls === 'admin' && !st.admin) return 'Not saved yet: to save notes or share from this browser, open the link fyisp showed when it started (in its log or terminal window).';
+    if (!st || !this.host.notesOn() || st.controls === 'disabled') return 'Not saved: this dashboard is read-only on this device.';
+    if (st.controls === 'admin' && !st.admin) return 'Not saved yet: to save notes or make reports from this browser, open the link fyisp showed when it started (in its log or terminal window).';
     return canWrite() ? '' : 'Not saved: this dashboard is read-only on this device.';
   }
 
@@ -616,9 +611,9 @@ export class Home {
     }
   }
 
-  // ---------- make a report (the public link) ----------
+  // ---------- make a report ----------
 
-  /** The report is the public link: a redacted 7-day summary. */
+  /** A redacted report of the last 7 days, saved with the others in Details. */
   async report() {
     const st = this.host.status();
     const out = this.reportOut;
@@ -632,46 +627,29 @@ export class Home {
     if (counts && counts.home > (counts.provider || 0) + (counts.beyond || 0)) {
       kids.push(h('p', { class: 'ho-warn', text: 'Most problems this week were in your home network (Wi-Fi or router). Your provider will likely say the same.' }));
     }
-    if (st && st.controls === 'admin' && !st.admin) {
-      kids.push(h('p', { class: 'ho-muted', text: 'To share from this browser, first open the link fyisp showed when it started (in its log or terminal window). Then try again.' }));
+    if (!this.host.reportsOn() || !canWrite() || (st && st.controls === 'disabled')) {
+      kids.push(h('p', { class: 'ho-muted', text: 'Reports can’t be made from this browser on this setup. Run fyisp report --redact on the device running fyisp instead.' }));
       out.replaceChildren(...kids);
       return;
     }
-    if (!canWrite() || (st && st.controls === 'disabled')) {
-      kids.push(h('p', { class: 'ho-muted', text: 'Sharing is turned off on this setup, so we can’t make a link here. Details has a report you can download.' }));
-      out.replaceChildren(...kids);
-      return;
+    kids.push(h('p', { class: 'ho-muted', role: 'status', text: 'Making your report…' }));
+    out.replaceChildren(...kids);
+    kids.pop();
+    const to = Date.now();
+    try {
+      /** @type {{id:string}} */
+      const r = await apiWrite('POST', 'api/reports', { from: new Date(to - 7 * 864e5).toISOString(), to: new Date(to).toISOString(), title: 'Internet quality report', redact: true },
+        'Making a report needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
+      kids.push(h('div', { class: 'ho-links' },
+        h('a', { class: 'btn', href: `api/reports/${r.id}`, target: '_blank', rel: 'noopener', text: 'Open report' }),
+        h('a', { class: 'btn', href: `api/reports/${r.id}?download=1`, download: '', text: 'Download' })),
+      h('p', { class: 'ho-muted', text: 'Send the downloaded file, or print it to PDF. It has no private addresses and only the notes you marked for redacted reports. It’s also listed under Reports in Details.' }));
+    } catch (e) {
+      const err = /** @type {any} */ (e);
+      if (err.status === 0) { out.replaceChildren(...kids); return; } // the admin dialog was cancelled
+      kids.push(h('p', { class: 'ho-warn', role: 'alert', text: 'We couldn’t make the report: ' + err.message }));
     }
-    const url = st && st.share && st.share.phase === 'connected' ? String(st.share.url || '') : '';
-    if (!url) {
-      kids.push(h('p', { class: 'ho-muted', role: 'status', text: 'Making your link. This takes about 10 seconds…' }));
-      out.replaceChildren(...kids);
-      try { await this.host.startShare(); } catch { /* the status below says */ }
-      for (let i = 0; i < 20; i++) {
-        const s = this.host.status();
-        if (s && s.share && (s.share.phase === 'connected' || s.share.phase === 'error')) break;
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-      return this.reportLink(kids);
-    }
-    this.reportLink(kids);
-  }
-
-  reportLink(/** @type {Node[]} */ kids) {
-    const st = this.host.status();
-    const sh = st && st.share;
-    if (!sh || sh.phase !== 'connected' || !sh.url) {
-      kids.push(h('p', { class: 'ho-warn', role: 'alert', text: 'We couldn’t make the link. Check your internet and try again.' }));
-      this.reportOut.replaceChildren(...kids);
-      return;
-    }
-    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'text', readonly: true, value: sh.url, id: 'ho-report-url' }));
-    input.addEventListener('focus', () => input.select());
-    const copy = h('button', { class: 'btn', type: 'button', text: 'Copy link', onclick: () => copyText(sh.url, copy) });
-    kids.push(h('label', { class: 'fld', for: 'ho-report-url' }, h('span', { text: 'Your report link' }), input),
-      h('div', { class: 'ho-links' }, copy),
-      h('p', { class: 'ho-muted', text: 'Anyone with the link can see the last 7 days of this connection’s quality. It stops working when fyisp stops; you can stop sharing in Details.' }));
-    this.reportOut.replaceChildren(...kids);
+    out.replaceChildren(...kids);
   }
 }
 
@@ -682,14 +660,12 @@ function tileHash(/** @type {HomeTile} */ t) { return t.details; }
  * The Today/Week timeline: one row of blocks per day (an hour each, 3 hours
  * on a phone) whose height and pattern carry the state, a "now" marker, the
  * hour axis and the legend. One tab stop; arrow keys move across blocks.
- * focus keeps the roving position across refreshes. Home and the public
- * report share it.
+ * focus keeps the roving position across refreshes.
  * @param {HomeHistory} d
  * @param {{idx:number,span:string}} focus
  * @param {(st:{kind:string,level?:string,run?:HomeRun|null}, a:number, b:number) => void} onPick
- * @param {{noKeep?:boolean,offWord?:string,dates?:boolean}} opts (dates: label rows "Wed 7 Oct", for the report read later)
  */
-export function buildTimeline(d, focus, onPick, opts) {
+function buildTimeline(d, focus, onPick) {
   const phone = window.matchMedia('(max-width: 767.98px)').matches;
   const per = phone ? 3 : 1; // hours per block: blocks stay ≥ 24 px wide on a phone
   const rows = [];
@@ -719,7 +695,7 @@ export function buildTimeline(d, focus, onPick, opts) {
       strip.append(now);
     }
     rows.push(h('div', { class: 'ho-row' },
-      h('span', { class: 'ho-day', 'aria-hidden': 'true', text: opts.dates ? new Date(day.from + 12 * 3600e3).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) : d.span === 'd' ? 'Today' : name }), strip));
+      h('span', { class: 'ho-day', 'aria-hidden': 'true', text: d.span === 'd' ? 'Today' : name }), strip));
   }
   // Hour marks under the strips, each at hour/24 of the strip.
   const axis = h('div', { class: 'ho-axis' });
@@ -757,9 +733,9 @@ export function buildTimeline(d, focus, onPick, opts) {
     h('span', {}, h('span', { class: 'ho-key b-run lvl-warn', 'aria-hidden': 'true' }), LEVELS.warn.word),
     h('span', {}, h('span', { class: 'ho-key b-run lvl-bad', 'aria-hidden': 'true' }), LEVELS.bad.word),
     d.days.some((x) => x.runs.some((r) => r.level === 'info')) ? h('span', {}, h('span', { class: 'ho-key b-run lvl-info', 'aria-hidden': 'true' }), LEVELS.info.word) : null,
-    h('span', {}, h('span', { class: 'ho-key b-off', 'aria-hidden': 'true' }), opts.offWord || 'fyisp wasn’t running'),
+    h('span', {}, h('span', { class: 'ho-key b-off', 'aria-hidden': 'true' }), 'fyisp wasn’t running'),
     d.days.some((x) => x.no_record) || (d.first_data && d.first_data > d.from) ? h('span', {}, h('span', { class: 'ho-key b-none', 'aria-hidden': 'true' }), 'No record yet') : null,
-    anyOff && !opts.noKeep ? h('a', { class: 'ho-keep', href: KEEP_RUNNING, target: '_blank', rel: 'noopener', text: 'How to keep it running' }) : null,
+    anyOff ? h('a', { class: 'ho-keep', href: KEEP_RUNNING, target: '_blank', rel: 'noopener', text: 'How to keep it running' }) : null,
   ].filter((x) => x != null);
   return { grid, legend: /** @type {HTMLElement[]} */ (legend) };
 }

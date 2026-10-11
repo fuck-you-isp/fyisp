@@ -1,5 +1,7 @@
 # fyisp v0.6: Home first (plan v2)
 
+> **Historical plan.** The share link it describes (`--share`, the Cloudflare quick tunnel, the public listener and everything served on it) was removed in v0.8.0; see the README's "Sharing" and "Upgrading to v0.8.0".
+
 **Released as v0.6.0 (owner decision: pre-1.0, not a major).**
 
 **What the owner asked for (2026-10-10):**

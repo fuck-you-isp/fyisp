@@ -14,11 +14,12 @@
 #   AmbientCapabilities=CAP_NET_RAW
 #   CapabilityBoundingSet=CAP_NET_RAW
 #
-# To share a public link, add --share to ExecStart in a drop-in:
+# To turn on speed tests (or pass any other flag), override ExecStart in a
+# drop-in:
 #
 #   [Service]
 #   ExecStart=
-#   ExecStart=/usr/local/bin/fyisp --data-dir=${STATE_DIRECTORY} --listen=127.0.0.1:3000 --share
+#   ExecStart=/usr/local/bin/fyisp --data-dir=${STATE_DIRECTORY} --listen=127.0.0.1:3000 --speedtest
 
 [Unit]
 Description=fyisp internet quality monitor

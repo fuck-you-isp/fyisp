@@ -1,20 +1,15 @@
 // Package web serves the fyisp dashboard: an embedded static UI plus a small
 // read-only JSON/CSV API over store.Reader.
 //
-// Two handlers share the same API code:
+// Local is the only handler: the owner's listener (default
+// 127.0.0.1:3000). It adds /metrics and the write routes (on-demand traces,
+// notes, reports, speed tests), protected by a Host allowlist, a
+// same-origin check, a per-process CSRF token and, where the dashboard is
+// reachable from elsewhere (--listen beyond loopback, --allow-host), an
+// admin token. Sharing is done with evidence reports (redacted or not), not
+// with a public listener: v0.8.0 removed the share link.
 //
-//   - Local is the owner's listener (default 127.0.0.1:3000). It adds /metrics
-//     and the write routes (share link, on-demand traces, notes, reports),
-//     protected by a Host allowlist, a same-origin check and a per-process
-//     CSRF token.
-//   - Public is the tunnel's origin. Everything lives under /s/<secret>/, only
-//     allowlisted GET/HEAD routes exist, requests are rate limited, panel
-//     queries are bounded and cached, and responses are redacted (no version,
-//     paths, LAN addresses or error strings). Private notes are never
-//     served; /s/<secret>/r/<id> serves a report snapshot only when it was
-//     built redacted and is marked public, under a strict CSP.
-//
-// The caller owns the http.Server. Recommended settings for both listeners:
+// The caller owns the http.Server. Recommended settings:
 //
 //	&http.Server{
 //		Handler:           h,
@@ -27,7 +22,6 @@
 package web
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -39,7 +33,7 @@ import (
 )
 
 // Deps is everything the handlers need. Profile, Store and Status are
-// required; Metrics and Share may be nil (the routes then answer 404).
+// required; Metrics may be nil (the route then answers 404).
 // Verdict may be nil: the verdict banner and outage log are then hidden.
 // Trace may be nil: the trace routes then answer 404 and the UI hides the
 // Investigate view. Annotations, Reports and Baselines may be nil: their
@@ -51,12 +45,8 @@ type Deps struct {
 	Store   store.Reader
 	Status  func() Status
 	Metrics http.Handler
-	Share   ShareControl
 	Verdict VerdictSource // the verdict engine (internal/verdict.Engine)
 	Trace   TraceSource   // per-hop stats, routes and on-demand traces
-	// Investigations is shared by the local and public handlers so that
-	// MaxInvestigations holds across both; nil gives each its own.
-	Investigations *Investigations
 	// Annotations keeps timeline notes (store.AnnotationStore).
 	Annotations AnnotationStore
 	// Reports builds and keeps evidence reports (report.Builder plus
@@ -79,48 +69,17 @@ type Deps struct {
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }
 
-// Status is what /api/status reports. The public handler redacts it (see
-// publicStatus): Version, the ICMP hint, share errors and store errors are
-// never served publicly.
+// Status is what /api/status reports.
 type Status struct {
 	Version string      `json:"version"`
 	Started time.Time   `json:"started"`
 	Caps    probe.Caps  `json:"caps"`
 	Targets int         `json:"targets"` // targets in the profile
 	Ready   int         `json:"ready"`   // targets that have reported at least one sample (see Warmup)
-	Share   ShareState  `json:"share"`
 	Store   store.Stats `json:"store"`
 	// SpeedMasked is the share of the last 24 hours under speed test
 	// (probes then are stored as not measured); nil without speed tests.
 	SpeedMasked *float64 `json:"speed_masked_share_24h,omitempty"`
-}
-
-// Share phases used by the UI. Anything else is shown verbatim.
-const (
-	ShareOff         = "off"
-	ShareStarting    = "starting"
-	ShareConnected   = "connected"
-	ShareReconnected = "reconnecting"
-	ShareError       = "error"
-)
-
-// ShareState is the public link's state as the UI needs it. URL is the full
-// public URL including the /s/<secret>/ path.
-type ShareState struct {
-	Phase    string `json:"phase"`
-	URL      string `json:"url,omitempty"`
-	Protocol string `json:"protocol,omitempty"`
-	LastErr  string `json:"last_err,omitempty"`
-}
-
-// ShareControl starts and stops the public link (implemented over
-// internal/tunnel by the caller). Start must return promptly: the tunnel keeps
-// running in the background until Stop, independent of ctx, which only bounds
-// the Start call itself. Start and Stop must be idempotent.
-type ShareControl interface {
-	State() ShareState
-	Start(ctx context.Context) error
-	Stop() error
 }
 
 // Warmup counts distinct targets that have reported a sample (lost or not).

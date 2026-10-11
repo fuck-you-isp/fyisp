@@ -30,8 +30,9 @@ type speedView struct {
 	// ("" when there's nothing to ask).
 	Connection, Latency, Ask string
 	Rows                     []speedRow
-	// Owner and Public count the tests started by hand and from the share
-	// link (the rest were scheduled); Origins says so, "" when all were.
+	// Owner and Public count the tests started by hand and, before v0.8.0,
+	// from the share link (the rest were scheduled); Origins says so, ""
+	// when all were. TODO(v0.9): drop Public with model's legacy triggers.
 	Owner, Public int
 	Origins       string
 	// TooFast: some rows are too fast to measure from here (the method
@@ -95,7 +96,7 @@ func mbps(bps float64) string {
 	return fmt.Sprintf("%.2f Mbit/s", bps/1e6)
 }
 
-// speedDisplay names servers as the share link does: "Region · Provider,
+// speedDisplay names servers for anyone to read: "Region · Provider,
 // City" for catalog servers, "Your server N" for the owner's own (never a
 // host, label or address).
 func speedDisplay(cat *speedtest.Catalog, ts []model.SpeedTest) func(string) string {
@@ -206,7 +207,7 @@ func (r *run) speedSection() *speedView {
 		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed, speedtest.CaseTooFast:
 			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (times in " + v.Zone + ")."
 			f.Caveat = f.CaveatPublic
-			if r.o.Redact { // the share link's rules: no start date, no networks by name
+			if r.o.Redact { // no start date, no networks by name
 				f.Evidence, f.Coverage, f.Network = f.EvidencePublic, f.CoveragePublic, ""
 			} else if f.Network != "" {
 				f.Evidence += " The slow tests left the provider's network through " + f.Network + "."
@@ -300,7 +301,7 @@ func (r *run) speedSection() *speedView {
 		asked = append(asked, fmt.Sprintf("%d started by hand", v.Owner))
 	}
 	if v.Public > 0 {
-		asked = append(asked, fmt.Sprintf("%d started from the share link", v.Public))
+		asked = append(asked, fmt.Sprintf("%d started from the share link (before v0.8.0)", v.Public))
 	}
 	if len(asked) > 0 {
 		v.Origins = "Of these, " + strings.Join(asked, " and ") + "; the rest were scheduled. Tests someone started are left out of the time-of-day patterns, but their probe gaps count like any other."

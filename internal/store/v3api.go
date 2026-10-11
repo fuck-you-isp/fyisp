@@ -13,7 +13,7 @@ type AnnotationStore interface {
 	UpdateAnnotation(ctx context.Context, a *model.Annotation) error
 	DeleteAnnotation(ctx context.Context, id int64) error
 	// Annotations overlapping [from, to], oldest first. publicOnly limits
-	// the result to notes marked Public.
+	// the result to notes marked Public (those a redacted report shows).
 	Annotations(ctx context.Context, from, to time.Time, publicOnly bool) ([]model.Annotation, error)
 }
 
@@ -22,7 +22,6 @@ type ReportStore interface {
 	SaveReport(ctx context.Context, meta model.ReportMeta, html []byte) error
 	Report(ctx context.Context, id string) (model.ReportMeta, []byte, error) // ErrNotFound
 	Reports(ctx context.Context) ([]model.ReportMeta, error)                 // newest first
-	SetReportPublic(ctx context.Context, id string, public bool) error
 	DeleteReport(ctx context.Context, id string) error
 }
 

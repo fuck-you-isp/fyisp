@@ -12,9 +12,9 @@ Intervals can be changed with `--speedtest=…,every=`. The floor is 15 minutes 
 
 The catalog (`internal/profile/catalog/iperf3/`: 45 servers in per-provider files, plus `regions.yml`) is built into the binary. It changes only with a release.
 
-The Go types live in `internal/web/speed.go`; keep this file in sync with them. Golden examples: `internal/web/testdata/speed/{local,public}.json`.
+The Go types live in `internal/web/speed.go`; keep this file in sync with them. Golden example: `internal/web/testdata/speed/local.json`.
 
-Routes are relative like every other API: `/api/speed` locally, `/s/<secret>/api/speed` on the share link. Unknown parameters return 400. When fyisp runs without a speed-test source (an old build, or `fyisp-webdev -no-speed`), every route answers 404 and `/api/profile` has `features.speed: false`. Hide Speed then.
+Routes are relative like every other API. Unknown parameters return 400. When fyisp runs without a speed-test source (an old build, or `fyisp-webdev -no-speed`), every route answers 404 and `/api/profile` has `features.speed: false`. Hide Speed then.
 
 ## Errors
 
@@ -23,31 +23,27 @@ Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and n
 | HTTP | `code` |
 |---|---|
 | 400 | `bad_request` |
-| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token); `disabled` (the share link's tests are off); `speed_off` (speed tests are off) |
+| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token, or proxy headers on a loopback dashboard without an admin token) |
 | 409 | `skipped` (Test now of a server the user skipped) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
 | 421 | `unknown_host` |
-| 429 | `queue_full`; `rate_limited`, `time_cap` and `cooldown` (with `retry_after`, the last two with `resets_at`) |
 | 503 | `unavailable` (retry after `Retry-After`) |
 
 ## Nullables
 
-In the JSON below, `|null` marks fields that are **always present and may be null**. `(local only)` and `(omitempty)` mark fields that are **omitted** when they don't apply. Every other field is always present.
+In the JSON below, `|null` marks fields that are **always present and may be null**. `(omitempty)` marks fields that are **omitted** when they don't apply. Every other field is always present.
 
-## Identity and the share link
+## Identity
 
 Servers have these names:
-- `id` is the catalog id, e.g. `Leaseweb-NewYork`. It is stable, URL-safe, and the same on both listeners.
+- `id` is the catalog id, e.g. `Leaseweb-NewYork`. It is stable and URL-safe. The user's own servers (`--speedtest-server host:port`) have the id `host:port`, with the label "Your server" (or "Your server 2" and so on).
 - `label` is provider and city, e.g. "Leaseweb New York" or "InterServer Secaucus NJ".
-- `display` is the public label "Region · Provider, City", e.g. "US East · Leaseweb, New York". It falls back to "Provider, City" for servers in no region.
-- `host` and the ports are **local only**, along with every test's `port`.
+- `display` is "Region · Provider, City", e.g. "US East · Leaseweb, New York". It falls back to "Provider, City" for servers in no region.
 
-The user's own servers (`--speedtest-server host:port`) have the id `host:port` locally. On the share link they appear as `custom-1`, `custom-2`, … with the label "Your server" (or "Your server 2" and so on), and the share link accepts those ids as well.
+Regions have an `id` (`uk`, `eu-west`, …) and a `title` ("UK", "Western Europe", …).
 
-Regions have an `id` (`uk`, `eu-west`, …) and a `title` ("UK", "Western Europe", …). Neither a client address nor data use (`bytes_month` is 0) ever appears on the share link.
-
-Wording: `finding.text`, `pattern.text`, row dips and `under_load.text` speak to the owner ("your internet provider"). On the share link the same fields carry the public wording ("the internet provider").
+Wording: `finding.text`, `pattern.text`, row dips and `under_load.text` speak to the owner ("your internet provider").
 
 ## `GET api/speed` (summary)
 
@@ -64,7 +60,7 @@ GET api/speed?days=7&tz=120[&exclude_fallback=1]
 
 The summary carries rows and the latest test only; use `?row=` for tests. With no tests yet it is still 200, with `latest: null`, rows with `n: 0`, `pattern: null` and `finding.case: "not_enough_data"`.
 
-Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=running` or `part=queue` for live state (every 3 s while something runs).
+Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live state (every 3 s while something runs).
 
 ```jsonc
 {
@@ -74,7 +70,7 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
   "enabled": true,                // mode != "off"
   "set_by_flag": false,           // a --speedtest flag chose the mode at start (the Details choice is overridden until restart)
   "extra": ["canada"],            // the opt-in (regions) or extra far (nearby) regions
-  "configurable": true,           // may use config, cancel and clear (local, controls allowed); always false on the share link
+  "configurable": true,           // may use config and cancel (controls allowed, with the admin token where one is set)
   "interval_s": 3600,             // each region or server is tested once per interval
   "spacing_s": 400,               // between scheduled tests
   "planned_share": 0.038,         // share of time the line is planned to be under test
@@ -84,10 +80,10 @@ Caching: 30 s on the share link; none locally. Poll every 30 s, and use `part=ru
   ],                              // est_gb_month: tests per hour × 720 × the median data of recent tests (150 MB before any)
   "masked_share_24h": 0.037,      // share of the last 24 h actually under test (masked)
   "bytes_month": 86580579678,
-  "bytes_24h": 3120000000,        // the last 24 hours; 0 on the share link     // data used by speed tests since the 1st of this month (UTC); 0 on the share link
+  "bytes_24h": 3120000000,        // the last 24 hours (bytes_month: data used by speed tests since the 1st of this month, UTC)
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
-  "owner_tz": "America/New_York", // omitted when unknown: the owner's IANA zone (the one their browser last sent on a local page); reports use it for times of day, and the share link's summary is in it whatever tz the visitor sends
+  "owner_tz": "America/New_York", // omitted when unknown: the owner's IANA zone (the one their browser last sent on a local page); reports use it for times of day
   "zone_label": "EDT (UTC−4)",    // the zone the summary's hours are in, printable
   "sweep_bytes": 9200000000, "sweep_servers": 45, // "Test every server": its estimated data (each server's recent median, else this line's median rate both ways for 10 s) and the servers it tests
   "next_row": "uk",               // |null: its row id
@@ -141,8 +137,8 @@ The queue's running entry in short (the full entry is in `part=queue`):
   "skipped": false,               // the user skipped it: never tested (config {"skip": [...]})
   "skip_locked": false,           // skipped by --speedtest-skip: the toggle can't undo it
   "rest_until": null,             // |null: resting after BusyRun (3) busy scheduled tests in a row, for 6 h
-  "host": "speedtest.nyc1.us.leaseweb.net",   // local only
-  "ports": "5201-5210"                        // local only
+  "host": "speedtest.nyc1.us.leaseweb.net",
+  "ports": "5201-5210"
 }
 ```
 
@@ -220,15 +216,11 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
   "case": "isp",                  // "not_enough_data" | "nothing" | "mild" | "mixed" | "isp" | "provider" | "route" | "server" | "too_fast" (every server too fast to measure from here)
   "tier": "points_to",            // omitempty: "points_to" | "most_likely" | "early_sign" (how sure)
   "text": "Every region slows from about 7 to 11 pm, with every provider: about 40% below normal. Your provider's first router also answers slower then (25 ms instead of 8 ms), so it's in its local network. That points to your internet provider's own network.",
-  "text_public": "… That points to the internet provider's own network.",   // the share link's and report's wording
   "evidence": "Based on 648 tests on 9 days between Tue 1 Sep and Wed 9 Sep; each evening hour was tested at least 9 times across 3 providers.",
-  "evidence_public": "Based on 648 tests on 9 days; each evening hour ...", // the same without dates (the share link gets it as evidence)
   "coverage": "Tests ran on 5 of the last 7 days.", // omitted when every day of the window has tests; or "Speed tests started on Mon 6 Oct, so this covers 3 days, not 7."
-  "coverage_public": "This covers 3 days, not 7.", // without the date
   "slowest": [{"server": "OVH-Singapore", "n": 9, "display": "Southeast Asia · OVH, Singapore", "pct": 52, "median_bps": 310000000, "usual_bps": 600000000}], // omitted when none: up to 3 servers slowest in the dip's hours (≥ 3 results there), nearest first in the isp and mild cases, else slowest first
-  "via": "DE-CIX",                // local only, omitted when none: the internet exchange the slow tests' route crosses
+  "via": "DE-CIX",                // omitted when none: the internet exchange the slow tests' route crosses
   "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
-  "caveat_public": "Wi-Fi, or people in the home using the internet heavily at those hours, can look the same.",   // omitempty: the share link's and report's voice (the share link's `caveat` is this already)
   "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],
   "servers": [],                  // case server: the server
   "network": "AS3356 LEVEL3",     // omitempty, local wording only: the first network past the ISP the slow tests share (handoff)
@@ -276,7 +268,7 @@ The latency under load over the span: per layer, the median over tests.
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" | from the share link "public" | "public_sweep"; always "test" on the share link
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" (tests the share link started before v0.8.0 read as manual or sweep)
   "on_demand": false,             // not "schedule": never in rows, patterns or the finding
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed" | "cancelled"
   "region": "us-east",            // |null when the test was for no region
@@ -284,7 +276,7 @@ The latency under load over the span: per layer, the median over tests.
   "provider": "Leaseweb", "city": "New York",
   "fallback": false,
   "fallback_level": "none",       // "none" | "same_metro" | "nearby_city"
-  "port": 5203,                   // local only
+  "port": 5203,
   "attempts": 2,                  // connection attempts over every server tried
   "down_bps": 182345678, "up_bps": 38123456,   // |null when not measured
   "down_short": false, "up_short": false,      // the direction hit the 100 MB cap (rows from before v0.7.2): measured for less time
@@ -306,7 +298,7 @@ The latency under load over the span: per layer, the median over tests.
     "gateway": {"idle": Stats, "down": Stats, "up": Stats}    // the router: the home network
   },
   "conn": "wired",                // "wired" | "wifi" | "unknown": the interface the test ran on
-  "handoff": {"asn": 3356, "name": "LEVEL3", "isp_asn": 3320, "at": 1760090000000}   // local only, |null
+  "handoff": {"asn": 3356, "name": "LEVEL3", "isp_asn": 3320, "at": 1760090000000}   // |null
 }
 ```
 
@@ -316,9 +308,9 @@ The latency under load over the span: per layer, the median over tests.
 
 With the environment variable `FYISP_TICKS` set, fyisp logs each capped direction's ticks (`at_ms`, `bytes`, `rtt_ms`) and the verdict, for checking the estimator on a real line.
 
-**Bytes.** `bytes` is what the test moved on the wire, every attempt included, also when it failed or was cancelled (then it's what moved until the cancel, and a cancel during setup still counts the few hundred bytes of the handshake). On Linux each stream counts what the kernel saw (received, read or still buffered, for downloads; acknowledged for uploads) when that's more than what fyisp read or wrote; other systems count what fyisp read or wrote. `bytes_24h` and the share link's allowance add up these numbers.
+**Bytes.** `bytes` is what the test moved on the wire, every attempt included, also when it failed or was cancelled (then it's what moved until the cancel, and a cancel during setup still counts the few hundred bytes of the handshake). On Linux each stream counts what the kernel saw (received, read or still buffered, for downloads; acknowledged for uploads) when that's more than what fyisp read or wrote; other systems count what fyisp read or wrote. `bytes_24h` and `bytes_month` add up these numbers.
 
-**Handoff** (local only): the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`). `null` when unknown. The traceroute runs just before the test (bounded to 10 s; without an answer the test goes ahead without a handoff), to the address the test then dials. When the path crosses an internet exchange on fyisp's built-in list (DE-CIX, AMS-IX, LINX and others), the handoff is the network behind it, and `via` names the exchange (`asn` 0 when the path ends there). `via` is kept in memory only, so it fills in within a day of a restart.
+**Handoff**: the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`). `null` when unknown. The traceroute runs just before the test (bounded to 10 s; without an answer the test goes ahead without a handoff), to the address the test then dials. When the path crosses an internet exchange on fyisp's built-in list (DE-CIX, AMS-IX, LINX and others), the handoff is the network behind it, and `via` names the exchange (`asn` 0 when the path ends there). `via` is kept in memory only, so it fills in within a day of a restart.
 
 **Outcomes.**
 - `busy`: every port and server tried within the slot's budget was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
@@ -332,7 +324,7 @@ When a download worked but the upload failed, `down_bps` is set and `outcome` is
 
 ## `GET api/speed?row=<id>` (or `server=`, `region=`)
 
-One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An unknown id returns 404, and on the share link own servers are found only by `custom-N`.
+One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An unknown id returns 404.
 
 ```jsonc
 {
@@ -340,7 +332,7 @@ One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An 
   "kind": "region",               // "region" | "server"
   "row": { ...Row },
   "tests": [ ...Test ],           // every test in the span (any trigger), oldest first, the newest 5000 at most
-  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner | public; always "test" on the share link
+  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner
 }
 ```
 
@@ -349,7 +341,7 @@ For compare, make one request per row (up to 4).
 ## `GET api/speed?part=windows&from=...&to=...`
 
 ```json
-{"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "public"}]}
+{"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "owner"}]}
 ```
 
 `from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples that ran inside a window, or within 2 s after it, are stored as "not measured", so charts show a gap. The verdict, call minutes, Home and history never count them, and history never calls them "fyisp wasn't running".
@@ -361,47 +353,21 @@ Every test goes through one process-wide queue, and exactly one runs at a time:
 - **Sweep:** every catalog server and the user's own servers, one test each, about 45.
 - **Scheduled slots:** a slot is enqueued when it falls due. It is **dropped** if it is still waiting 10 minutes later, and a slot already waiting is never stacked.
 
-The order is by class, FIFO within each: the owner's entries (the local dashboard) first, then schedule slots, then the share link's. Nothing interrupts the running test. A public sweep **yields** between its tests whenever an owner entry or a schedule slot is waiting, and then resumes at the head of the share link's entries. Schedule slots therefore never starve behind public sweeps.
+The order is by class, FIFO within each: the owner's entries (Test now, sweeps) first, then schedule slots. Nothing interrupts the running test.
 
-There is no cooldown for the owner or for single tests; the only wait is the 30-minute gap between public sweeps (below). Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
-
-**The share link's tests are an owner opt-in.** They are off by default, turned on with `--speedtest-public` or the Details toggle (`POST api/speed/config {"public": true}`), and the choice is saved. Turning them off drops the share link's waiting entries.
-
-**The share link has no data budget:** every test is time-capped like the owner's (up to 10 s each way). `--speedtest-public-budget` from v0.7.1 is accepted and ignored, with a warning. One check decides, at admission, when an entry's turn comes, and before each test of a sweep:
-- new share-link requests get 429 `time_cap` (or `cooldown`) with `resets_at`;
-- waiting share-link entries are dropped when their turn comes (`state: "dropped"`, `stopped_reason: "limit"`, `stopped_code`, `resets_at`);
-- a share-link sweep stops before the test that would pass a cap (`stopped_reason: "limit"`); the tests it ran stay.
-- When several limits block (the time caps, a sweep's 30-minute gap), the refusal is the one that clears **last**, and its `resets_at` (and `retry_after`) is when a retry will be admitted.
-- The owner and the schedule are never limited by them.
-
-**The share link has test-time caps.** Probes are masked during every test, so its tests may keep the line under test for at most:
-- 10 minutes in any hour;
-- 60 minutes in any 24 hours.
-
-A new public sweep can start at the earliest 30 minutes after the last one ended (429 `cooldown` with `resets_at`); one already waiting stays waiting until then while other entries go by, and its `est_start` says when. The end time is saved, so a restart doesn't reset the gap. Single tests are not affected. Test time is charged while a test runs, every 15 s, and counts whether the test finishes, fails or is cancelled. A capped share link gets 429 `time_cap` with `resets_at`.
+There is no cooldown. Sweep and Test now results are stored with `on_demand: true` and kept out of the patterns.
 
 ### `GET api/speed?part=queue`
 
-In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It's cheap; poll every 3 s.
+In memory, so it is never cached (`Cache-Control: no-store`). It's cheap; poll every 3 s.
 
 ```jsonc
 {
   "at": 1760104800000,
-  "max_waiting": 12,            // the share link's waiting entries, in all
-  "full": false,                // the share link can't add any now
-  "sweeps_full": false,         // 3 share-link sweeps are waiting
-  "mine": 17,                   // |null: the viewer's newest waiting or running entry (share link: this visitor; local: the owner)
+  "mine": 17,                   // |null: the owner's newest waiting or running entry
   "running": { ...Entry },      // |null
   "waiting": [ { ...Entry } ],  // in run order
-  "last_sweep": { ...Entry },   // |null: the last finished sweep
-  "public_enabled": true,       // the owner lets the share link queue tests
-  "public_start": true,         // the share link may start one now: enabled, test time left, room in the queue (show its button only then)
-  "budget": {                   // the share link's limits: test time only
-    "time_hour_s": 240, "time_day_s": 960,          // the share link's test time in the last hour and day
-    "time_hour_max_s": 600, "time_day_max_s": 3600,
-    "time_resets_at": null,     // |null: when a capped one frees up
-    "sweep_available_at": null  // |null: a public sweep ran recently; the next from then
-  }
+  "last_sweep": { ...Entry }    // |null: the last finished sweep
 }
 ```
 
@@ -411,8 +377,8 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
 {
   "id": 17,
   "kind": "sweep",              // "single" | "sweep" | "scheduled"
-  "who": "you",                 // "you" | "someone" | "scheduled": relative to the viewer; never an address
-  "origin": "owner",            // local only: "owner" | "public" | "scheduled"
+  "who": "you",                 // "you" | "scheduled"
+  "origin": "owner",            // "owner" | "scheduled"
   "state": "running",           // "waiting" | "running" | "done" | "cancelled" | "dropped"
   "target": {"id": "us-east", "label": "US East"},   // |null: the nearest servers, a sweep, or a slot
   "position": 0,                // waiting: 1 is next; otherwise 0
@@ -425,11 +391,8 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
   "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null: running only
   "direction": "download",      // |null: running only ("picking" | "download" | "upload")
   "tests": [412, 413],          // the stored tests so far
-  "wait_reason": null,          // waiting: "cooldown" = a share-link sweep held until est_start (30 min after the last one); else null
-  "stopped_reason": null,       // finished before its last test: "cancelled" | "unreachable" (a sweep stopped after servers in a row didn't answer) | "limit" (the share link's test time ran out, or it was turned off); else null
-  "stopped_code": null,         // for "limit": "time_cap" | "cooldown" | "disabled"; else null
-  "resets_at": null,            // for "limit" by the time caps or the gap: when a test may start again; else null
-  "cancelled_by": null,         // cancelled by the owner: "owner"; else null (also a shutdown). Visitors can't cancel.
+  "stopped_reason": null,       // finished before its last test: "cancelled" | "unreachable" (a sweep stopped after servers in a row didn't answer); else null
+  "cancelled_by": null,         // cancelled by the owner: "owner"; else null (also a shutdown)
   "results": [                  // a sweep's servers in order (part=entry and part=sweep only)
     {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "status": "ok", "test": 412,
      "down_bps": 412000000, "up_bps": 38000000},
@@ -442,8 +405,6 @@ In memory and per viewer, so it is never cached (`Cache-Control: no-store`). It'
 
 `results[].status` is `waiting`, `testing`, the stored outcome (`ok`, `busy`, `unreachable`, `failed`), `cancelled` (the server whose test a cancel stopped mid-run), or `skipped` (never reached because the sweep stopped early: see `stopped_reason`). A finished sweep never shows `waiting`. `down_bps` and `up_bps` are set for `ok` only.
 
-On the share link, `who` is `you` only for that visitor's own entries; everyone else's, the owner's included, are `someone`. Locally, the owner's are `you` and the share link's are `someone`. Targets and servers use the share link's ids (`custom-1`), and no host, port or address appears.
-
 ### `GET api/speed?part=entry&id=<id>`
 
 One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
@@ -454,45 +415,30 @@ One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
 ### `POST api/speed/run?kind=single[&id=<server or region id>]` or `?kind=sweep`
 
-"Test now" (no `id`: the nearest servers) or a sweep. There is no body; `kind` defaults to `single`. The share link's own-server ids (`custom-1`) are accepted.
+"Test now" (no `id`: the nearest servers) or a sweep. There is no body; `kind` defaults to `single`.
 
-The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the same requester (the owner, or the same share-link visitor) already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
+The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the owner already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
 
-**Local:** the same protections as notes:
+It has the same protections as notes:
 - same origin;
 - `X-FYISP-Token`;
 - the admin token or session cookie when one is set.
 
 It works in every mode, `off` included.
 
-**Share link:** `POST /s/<secret>/api/speed/run?…` needs no token. It has these protections:
-- **Speed tests on:** 403 `speed_off` while the mode is `off` (part=queue `speed_on: false`).
-- **Opt-in:** 403 `disabled` while the owner hasn't turned it on.
-- **Test time:** 429 `time_cap` with `resets_at` (ms) and `retry_after`.
-- **Sweep gap:** 429 `cooldown` with `resets_at` and `retry_after` for a sweep within 30 minutes of the last public one.
-- **Request:** same origin only; only `kind` and `id`, each at most once; no body (a declared length or chunking is refused); every response `no-store`.
-- **Queue limits (429 `queue_full`, its `error` says which):**
-  - one waiting entry per visitor;
-  - at most 3 waiting share-link sweeps;
-  - at most 12 waiting share-link entries in all.
-- **Start limit (429 `rate_limited`, with `retry_after`):** per visitor, 1 new entry per 30 s and 10 per hour. Visitors are `Cf-Connecting-Ip`, with IPv6 grouped by /64. A duplicate or a refused request doesn't count.
+### `POST api/speed/cancel?id=<id>`
 
-### `POST api/speed/cancel?id=<id>` or `?public=1` (local only)
+The same protections as notes (admin-gated). It cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
 
-These use the same protections as notes (admin-gated):
-- `id`: cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
-- `public=1` (the owner's "cancel queue"): cancels every waiting share-link entry. It returns `200 {"cancelled": 3}`.
-
-## `POST api/speed/config` (local only)
+## `POST api/speed/config`
 
 ```
 POST api/speed/config
 {"mode": "regions", "extra": ["canada"]}   // and/or
-{"public": true}               // let the share link queue tests (saved; --speedtest-public sets it at start)
 {"skip": ["Leaseweb-Tokyo"]}   // servers never to test (replaces the saved list; --speedtest-skip adds to it)
 ```
 
-- `200 {"mode": "regions", "next_at": 1760104920000, "public": true, "limits": {"time_hour_max_s": 600, "time_day_max_s": 3600}}`, with the fields it changed; `next_at` is null for `off`. `limits` comes with `public`: the share link's caps, for the toggle's confirmation (the same values as part=queue `budget`).
+- `200 {"mode": "regions", "next_at": 1760104920000}`, with the fields it changed; `next_at` is null for `off`.
 - `400` for a mode not in `modes`, an unknown region in `extra` (or `extra` without `mode`), for neither field, or for any other field.
 
 `extra` is the opt-in regions (mode `regions`) or extra far regions (mode `nearby`). The choices are saved and survive restarts. A `--speedtest…` flag on the command line overrides them at start (`set_by_flag`). Switching to a mode schedules the first test about 2 minutes later.
@@ -516,7 +462,7 @@ POST api/speed/config
 - `kind`: `warmup` (the first days: "Speed: checking at different times of day. We need about 3 days to see a pattern."), `pattern`, or `steady` (no time of day stands out).
 - `impact`: `ok`, or `video_risk` when the dip hours' download may be too slow for video calls.
 - It is absent when speed tests are off, while the answer card shows a problem (warn or bad), when the dip is narrow (fewer than half the regions or fewer than 2 providers), and when the last day's tests mostly failed.
-- Send `tz` on `live` too: the wording depends on local hours. The share link says "the daytime" instead of "your daytime".
+- Send `tz` on `live` too: the wording depends on local hours.
 
 `HomeAt` ("What happened at") gains `speed_test_overlap_s` and `speed_note` (both omitempty) when a speed test ran in the window. At 10 s or more of overlap, the note names the test as the most likely cause.
 
@@ -534,3 +480,9 @@ These give the latest result per region and server, set after every test:
 ## Export
 
 `fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,idle_gateway_ms,loaded_gateway_ms,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.
+
+Rows stored before v0.8.0 may carry the share link's triggers `public` and `public_sweep`; the export writes them as stored.
+
+## Removed in v0.8.0
+
+With the share link: the `/s/<secret>/api/speed` routes and `POST /s/<secret>/api/speed/run`; the visitor queue and its limits (opt-in, test-time caps, sweep gap, queue caps, start limit; codes `disabled`, `speed_off`, `time_cap`, `cooldown`, `queue_full`); `custom-N` ids; `?public=1` on cancel and `public` in config (now 400); in part=queue `max_waiting`, `full`, `sweeps_full`, `public_enabled`, `public_start`, `speed_on` and `budget`; in entries `wait_reason`, `stopped_code`, `resets_at`, `who: "someone"`, origin `public` and stopped reason `limit`; in the finding `text_public`, `caveat_public`, `evidence_public` and `coverage_public`. Tests the share link started before v0.8.0 are served with trigger `manual` or `sweep` and origin `owner`, and still count as on demand (until v0.9, when 90 days of retention have passed).

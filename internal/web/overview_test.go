@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -216,7 +215,6 @@ func TestOverviewParams(t *testing.T) {
 		h            http.Handler
 	}{
 		{"local", "/", Local(d, LocalOptions{Addr: "127.0.0.1:3000"})},
-		{"public", "/s/" + testSecret + "/", Public(d, testSecret)},
 	} {
 		for i, c := range []struct {
 			q    string
@@ -248,80 +246,6 @@ func TestOverviewParams(t *testing.T) {
 	}
 }
 
-func TestOverviewPublicCache(t *testing.T) {
-	now := time.Now()
-	cs, d := overviewFixture(t, now)
-	h := Public(d, testSecret)
-	base := "/s/" + testSecret + "/api/overview"
-	for i := range 3 {
-		getOverview(t, h, base+"?from=now-30m&kind=tcp", pubHdr(i))
-	}
-	if n := cs.calls.Load(); n != 1 {
-		t.Errorf("3 identical requests made %d store calls, want 1", n)
-	}
-	// Absolute bounds within the same minute share one entry; the key
-	// includes the kind.
-	m := now.Add(-time.Hour).Truncate(time.Minute)
-	for i, off := range []time.Duration{time.Second, 17 * time.Second, 59 * time.Second} {
-		q := fmt.Sprintf("?from=%d&to=%d", m.Add(off).UnixMilli(), m.Add(30*time.Minute+off).UnixMilli())
-		o, _ := getOverview(t, h, base+q, pubHdr(10+i))
-		if o.From != m.UnixMilli() || o.To != m.Add(31*time.Minute).UnixMilli() {
-			t.Errorf("bounds not rounded to the minute: %d..%d", o.From, o.To)
-		}
-	}
-	if n := cs.calls.Load(); n != 2 {
-		t.Errorf("absolute ranges in one minute made %d store calls, want 2 in total", n)
-	}
-	getOverview(t, h, base+"?from=now-30m&kind=https", pubHdr(20))
-	if n := cs.calls.Load(); n != 3 {
-		t.Errorf("another kind: %d store calls, want 3", n)
-	}
-	// Concurrent misses coalesce into one fill.
-	cs.delay = 50 * time.Millisecond
-	var wg sync.WaitGroup
-	for i := range 10 {
-		wg.Go(func() {
-			if w := do(h, "GET", base+"?from=now-2h", pubHdr(30+i)); w.Code != 200 {
-				t.Errorf("concurrent request = %d", w.Code)
-			}
-		})
-	}
-	wg.Wait()
-	if n := cs.calls.Load(); n != 4 {
-		t.Errorf("10 concurrent identical requests: %d store calls in total, want 4", n)
-	}
-	// The local listener is not cached.
-	l := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
-	cs.delay = 0
-	getOverview(t, l, "/api/overview", map[string]string{"Host": "127.0.0.1:3000"})
-	getOverview(t, l, "/api/overview", map[string]string{"Host": "127.0.0.1:3000"})
-	if n := cs.calls.Load(); n != 6 {
-		t.Errorf("local: %d store calls in total, want 6", n)
-	}
-}
-
-func TestOverviewPublicRedaction(t *testing.T) {
-	cs, d := overviewFixture(t, time.Now())
-	h := Public(d, testSecret)
-	base := "/s/" + testSecret + "/"
-	check := func(i int, p string) {
-		w := do(h, "GET", base+p, pubHdr(60+i))
-		body := w.Body.String()
-		for k, v := range w.Header() {
-			body += "\n" + k + ": " + strings.Join(v, ",")
-		}
-		if m := leakRE.FindString(body); m != "" {
-			t.Errorf("public %q leaks %q", p, m)
-		}
-	}
-	for i, p := range []string{"api/overview", "api/overview?kind=tcp", "api/overview?kind=icmp&from=now-90d", "api/overview?kind=x", "api/profile"} {
-		check(i, p)
-	}
-	// Store errors are not passed through.
-	cs.err = fmt.Errorf("sqlite: open /home/venkat/.local/state/fyisp/fyisp.db: 192.168.1.20")
-	check(10, "api/overview?from=now-1h")
-}
-
 // TestProfileMetadata checks /api/profile's provider and location fields on
 // a real catalog profile, and that neither listener serves a host.
 func TestProfileMetadata(t *testing.T) {
@@ -337,14 +261,13 @@ func TestProfileMetadata(t *testing.T) {
 	p.Groups = append(p.Groups, model.Group{ID: "home", Title: "Home", Order: 99})
 	p.Targets = append(p.Targets, model.Target{Name: "nas", Host: "nas.example", Group: "home", Kinds: []model.ProbeKind{model.KindTCP}, Interval: 15 * time.Second})
 	now := time.Now()
-	_, d, _ := fixture(t, now)
+	_, d := fixture(t, now)
 	d.Profile = func() *model.Profile { return p }
 	for _, tc := range []struct {
 		name, path string
 		h          http.Handler
 	}{
 		{"local", "/api/profile", Local(d, LocalOptions{Addr: "127.0.0.1:3000"})},
-		{"public", "/s/" + testSecret + "/api/profile", Public(d, testSecret)},
 	} {
 		w := do(tc.h, "GET", tc.path, map[string]string{"Host": "127.0.0.1:3000", "Cf-Connecting-Ip": "198.51.100.90"})
 		body := w.Body.String()

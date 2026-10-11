@@ -13,10 +13,9 @@ import (
 type Options struct {
 	From, To time.Time
 	Title    string
-	// Redact applies the public-link rules (no private addresses, ISP edge
-	// masked to /24, no reverse DNS for the first public hops, public
-	// annotations only). Snapshots served on the public link are always
-	// built with Redact.
+	// Redact makes a report fit to send to others: no private addresses,
+	// the ISP edge masked to /24, no reverse DNS for the first public hops,
+	// public annotations only (the notes marked for redacted reports).
 	Redact bool
 	Now    func() time.Time
 }

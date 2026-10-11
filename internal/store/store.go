@@ -21,7 +21,7 @@
 //	      annotations; reports are never pruned (capped at MaxReports).
 //	every 60s:  st.Flush(ctx)             // error: shown via Stats().LastFlushErr, retried next time
 //	every 1h:   st.Prune(ctx, time.Now().Add(-retention))
-//	shutdown:   stop probes; st.Flush(ctx); close tunnel; stop HTTP; st.Close()
+//	shutdown:   stop probes; st.Flush(ctx); stop HTTP; st.Close()
 //	            (Close flushes again, checkpoints, closes, releases the lock)
 //
 // `fyisp export` uses store.OpenReadOnly(dataDir), which takes no lock and

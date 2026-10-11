@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,31 +74,25 @@ func (c *countingStore) Stats(ctx context.Context) (store.Stats, error) {
 		LastFlushErr: "open /var/lib/fyisp/fyisp.db: disk full on 192.168.1.20"}, nil
 }
 
-type fakeShare struct {
-	mu    sync.Mutex
-	st    ShareState
-	start int
+// fakeControl stands in for a write route behind controlAllowed: DELETE
+// /api/annotations/{id} counts the deletes that got through.
+type fakeControl struct {
+	AnnotationStore
+	mu sync.Mutex
+	n  int
 }
 
-func (f *fakeShare) State() ShareState { f.mu.Lock(); defer f.mu.Unlock(); return f.st }
-func (f *fakeShare) Start(context.Context) error {
+func (f *fakeControl) DeleteAnnotation(context.Context, int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.start++
-	f.st = ShareState{Phase: ShareConnected, URL: "https://x.trycloudflare.com/s/" + testSecret + "/", Protocol: "quic", LastErr: "dial 10.0.0.1:7844 failed"}
-	return nil
-}
-func (f *fakeShare) Stop() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.st = ShareState{Phase: ShareOff}
+	f.n++
 	return nil
 }
 
 // fixture fills a fake store: 15s HTTPS/TCP and 5s ICMP samples for the last
 // 40 minutes, with a timeout outage for Alpha HTTPS (20-22 min ago) and a
 // not-measured hole for everyone (30-35 min ago).
-func fixture(t *testing.T, now time.Time) (*countingStore, Deps, *fakeShare) {
+func fixture(t *testing.T, now time.Time) (*countingStore, Deps) {
 	t.Helper()
 	f := store.NewFake()
 	p := testProfile()
@@ -120,7 +113,6 @@ func fixture(t *testing.T, now time.Time) (*countingStore, Deps, *fakeShare) {
 		}
 	}
 	cs := &countingStore{Reader: f}
-	sh := &fakeShare{st: ShareState{Phase: ShareOff}}
 	d := Deps{
 		Profile: func() *model.Profile { return p },
 		Store:   cs,
@@ -132,10 +124,9 @@ func fixture(t *testing.T, now time.Time) (*countingStore, Deps, *fakeShare) {
 			}
 		},
 		Metrics: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ping_rtt_seconds 1\n") }),
-		Share:   sh,
 		Verdict: cleanVerdict(now),
 	}
-	return cs, d, sh
+	return cs, d
 }
 
 func do(h http.Handler, method, target string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -154,84 +145,6 @@ func do(h http.Handler, method, target string, hdr map[string]string) *httptest.
 
 // ---------- public ----------
 
-func TestPublicRoutes(t *testing.T) {
-	_, d, _ := fixture(t, time.Now())
-	h := Public(d, testSecret)
-	base := "/s/" + testSecret + "/"
-	cases := []struct {
-		method, path string
-		code         int
-	}{
-		{"GET", "/", 404},
-		{"GET", "/metrics", 404},
-		{"GET", "/debug/pprof/", 404},
-		{"GET", "/debug/pprof/heap", 404},
-		{"GET", "/api/status", 404},
-		{"GET", "/static/app.js", 404},
-		{"GET", "/s/", 404},
-		{"GET", "/s/wrong-secret-wrong-secret-xx/", 404},
-		{"GET", "/s/" + testSecret[:31] + "/", 404},
-		{"GET", base + "metrics", 404},
-		{"GET", base + "debug/pprof/", 404},
-		{"GET", base + "api/share/start", 404},
-		{"POST", base + "api/share/start", 404},
-		{"GET", base + "nope", 404},
-		{"GET", base + "static/../api/status", 404},
-		{"GET", "/s/" + testSecret, 301},
-		{"GET", base, 200},
-		{"HEAD", base, 200},
-		{"GET", base + "static/app.js", 200},
-		{"GET", base + "static/vendor/uPlot.iife.min.js", 200},
-		{"GET", base + "api/status", 200},
-		{"GET", base + "api/profile", 200},
-		{"GET", base + "api/panel?group=common", 200},
-		{"GET", base + "api/panel.csv?group=common", 200},
-		{"GET", base + "api/overview", 200},
-		{"GET", base + "api/overview?kind=tcp&from=now-1h", 200},
-		{"POST", base + "api/overview", 405},
-		{"GET", base + "api/overview?kind=all", 400},
-		{"GET", base + "api/overview?group=common", 400},
-		{"POST", base, 405},
-		{"POST", base + "api/panel?group=common", 405},
-		{"PUT", base + "api/status", 405},
-		{"DELETE", base + "api/profile", 405},
-		{"OPTIONS", base + "api/panel", 405},
-		{"GET", base + "api/status?x=1", 400},
-		{"GET", base + "api/panel?group=common&debug=1", 400},
-		{"GET", base + "api/panel?group=common&group=lan", 400},
-		{"GET", base + "api/panel?group=nope", 404},
-	}
-	for i, c := range cases {
-		w := do(h, c.method, c.path, map[string]string{"Cf-Connecting-Ip": fmt.Sprintf("203.0.113.%d", i)})
-		if w.Code != c.code {
-			t.Errorf("%s %s = %d, want %d (%s)", c.method, c.path, w.Code, c.code, w.Body.String())
-		}
-		hd := w.Header()
-		if !strings.Contains(hd.Get("Content-Security-Policy"), "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'") ||
-			hd.Get("X-Content-Type-Options") != "nosniff" || hd.Get("Referrer-Policy") != "no-referrer" {
-			t.Errorf("%s %s: missing security headers: %v", c.method, c.path, hd)
-		}
-	}
-	// The Calls view's API: GET only (a fresh handler: the cases above use
-	// up the global burst).
-	h = Public(d, testSecret)
-	for i, c := range []struct {
-		method, path string
-		code         int
-	}{
-		{"GET", base + "api/calls", 200},
-		{"GET", base + "api/calls?from=now-24h&to=now", 200},
-		{"HEAD", base + "api/calls", 200},
-		{"POST", base + "api/calls", 405},
-		{"PUT", base + "api/calls", 405},
-		{"GET", base + "api/calls?kind=udp", 400},
-	} {
-		if w := do(h, c.method, c.path, pubHdr(i)); w.Code != c.code {
-			t.Errorf("%s %s = %d, want %d (%s)", c.method, c.path, w.Code, c.code, w.Body.String())
-		}
-	}
-}
-
 // portLeak matches the planted port 8443 as a number of its own (":8443",
 // "port":8443, "8443"), not the same digits inside a millisecond timestamp
 // or a decimal RTT.
@@ -241,120 +154,6 @@ var portRE = regexp.MustCompile(portLeak)
 
 // leakRE matches private details planted in the fixtures.
 var leakRE = regexp.MustCompile(`\b(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|127\.\d+\.\d+\.\d+|169\.254\.\d+\.\d+)\b|\[?::1\]?|localhost|/home/|/var/|/proc/|/etc/|/Users/|[A-Z]:\\|v9\.9\.9|trycloudflare|secret-path|example\.com|` + portLeak)
-
-func TestPublicRedaction(t *testing.T) {
-	cs, d, sh := fixture(t, time.Now())
-	_ = sh.Start(context.Background()) // share state carries a LAN error string
-	h := Public(d, testSecret)
-	base := "/s/" + testSecret + "/"
-	paths := []string{"", "api/status", "api/profile", "api/panel?group=common", "api/panel?group=lan&from=now-90d",
-		"api/verdict", "api/incidents", "api/incidents?from=now-90d", "api/incidents?from=x",
-		"api/panel.csv?group=lan", "api/overview", "api/overview?kind=icmp&from=now-90d", "api/overview?kind=x", "api/calls", "api/calls?from=now-90d", "api/calls?from=x", "static/app.js", "static/style.css", "nope", "api/panel?group=bad", "api/panel?from=x"}
-	check := func(p string) {
-		w := do(h, "GET", base+p, map[string]string{"Cf-Connecting-Ip": "198.51.100.7"})
-		body := w.Body.String()
-		for k, v := range w.Header() {
-			body += "\n" + k + ": " + strings.Join(v, ",")
-		}
-		if m := leakRE.FindString(body); m != "" {
-			t.Errorf("public %q leaks %q", p, m)
-		}
-	}
-	for _, p := range paths {
-		check(p)
-	}
-	// Store errors (which may contain paths) are not passed through.
-	cs.err = errors.New("sqlite: open /home/venkat/.local/state/fyisp/fyisp.db: 192.168.1.20")
-	check("api/panel?group=lan&points=77")
-	check("api/panel.csv?group=lan&points=77")
-	check("api/overview?kind=tcp&from=now-77m")
-	check("api/calls?from=now-77m")
-
-	var st map[string]any
-	w := do(h, "GET", base+"api/status", map[string]string{"Cf-Connecting-Ip": "198.51.100.8"})
-	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := st["version"]; ok {
-		t.Error("public status exposes version")
-	}
-	if st["mode"] != "public" {
-		t.Errorf("mode = %v", st["mode"])
-	}
-}
-
-func TestPublicRateLimit(t *testing.T) {
-	_, d, _ := fixture(t, time.Now())
-	h := Public(d, testSecret).(*publicHandler)
-	now := time.Now()
-	h.now = func() time.Time { return now } // frozen clock: no refill
-	url := "/s/" + testSecret + "/api/status"
-
-	// Per client: burst of PublicClientBurst, then 429.
-	got429 := 0
-	for range PublicClientBurst + 5 {
-		if w := do(h, "GET", url, map[string]string{"Cf-Connecting-Ip": "198.51.100.1"}); w.Code == 429 {
-			got429++
-			if w.Header().Get("Retry-After") == "" {
-				t.Error("429 without Retry-After")
-			}
-		}
-	}
-	if got429 != 5 {
-		t.Errorf("per-client: %d x 429, want 5", got429)
-	}
-	// Global: many clients drain the global burst of 40.
-	h2 := Public(d, testSecret).(*publicHandler)
-	h2.now = h.now
-	ok, limited := 0, 0
-	for i := range 100 {
-		w := do(h2, "GET", url, map[string]string{"Cf-Connecting-Ip": fmt.Sprintf("203.0.113.%d", i)})
-		switch w.Code {
-		case 200:
-			ok++
-		case 429:
-			limited++
-		}
-	}
-	if ok != PublicBurst || limited != 100-PublicBurst {
-		t.Errorf("global: %d ok, %d limited; want %d/%d", ok, limited, PublicBurst, 100-PublicBurst)
-	}
-	// Refill: after one second, 5 more for a client.
-	now = now.Add(time.Second)
-	if w := do(h, "GET", url, map[string]string{"Cf-Connecting-Ip": "198.51.100.1"}); w.Code != 200 {
-		t.Errorf("after refill: %d", w.Code)
-	}
-}
-
-func TestPublicCacheAndConcurrency(t *testing.T) {
-	cs, d, _ := fixture(t, time.Now())
-	h := Public(d, testSecret)
-	url := "/s/" + testSecret + "/api/panel?group=common&from=now-30m&to=now&points=500"
-	for i := range 3 {
-		if w := do(h, "GET", url, map[string]string{"Cf-Connecting-Ip": fmt.Sprintf("203.0.113.%d", i)}); w.Code != 200 {
-			t.Fatal(w.Code)
-		}
-	}
-	if n := cs.calls.Load(); n != 1 {
-		t.Errorf("3 identical queries made %d store calls, want 1 (cached)", n)
-	}
-	// Concurrent distinct queries never exceed PublicMaxQueries in flight.
-	cs.delay = 20 * time.Millisecond
-	var inflight, peak atomic.Int32
-	d.Store = &peakStore{Reader: cs, inflight: &inflight, peak: &peak}
-	h = Public(d, testSecret)
-	var wg sync.WaitGroup
-	for i := range 30 {
-		wg.Go(func() {
-			u := fmt.Sprintf("/s/%s/api/panel?group=common&points=%d", testSecret, 100+i)
-			do(h, "GET", u, map[string]string{"Cf-Connecting-Ip": fmt.Sprintf("203.0.113.%d", i)})
-		})
-	}
-	wg.Wait()
-	if p := peak.Load(); p > PublicMaxQueries || p == 0 {
-		t.Errorf("peak concurrent queries = %d, want 1..%d", p, PublicMaxQueries)
-	}
-}
 
 type peakStore struct {
 	store.Reader
@@ -373,25 +172,17 @@ func (p *peakStore) Panel(ctx context.Context, q store.PanelQuery) (*store.Panel
 	return p.Reader.Panel(ctx, q)
 }
 
-func TestPublicSecretValidation(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Error("short secret accepted")
-		}
-	}()
-	_, d, _ := fixture(t, time.Now())
-	Public(d, "short")
-}
-
 // ---------- local ----------
 
-func localHandlerFor(t *testing.T, o LocalOptions) (http.Handler, *fakeShare) {
-	_, d, sh := fixture(t, time.Now())
+func localHandlerFor(t *testing.T, o LocalOptions) (http.Handler, *fakeControl) {
+	_, d := fixture(t, time.Now())
+	fc := &fakeControl{}
+	d.Annotations = fc
 	if o.Addr == "" {
 		o.Addr = "127.0.0.1:3000"
 	}
 	o.CSRFToken = "tok123"
-	return Local(d, o), sh
+	return Local(d, o), fc
 }
 
 func TestLocalHost(t *testing.T) {
@@ -420,7 +211,7 @@ func TestLocalRoutes(t *testing.T) {
 	for p, code := range map[string]int{
 		"/": 200, "/metrics": 200, "/api/status": 200, "/api/profile": 200, "/api/panel?group=lan": 200,
 		"/api/panel.csv?group=lan": 200, "/static/app.js": 200, "/debug/pprof/": 404, "/nope": 404,
-		"/static/index.html": 404, "/api/share/start": 405, "/api/verdict": 200, "/api/incidents": 200,
+		"/static/index.html": 404, "/api/share/start": 404, "/s/" + testSecret + "/": 404, "/api/verdict": 200, "/api/incidents": 200,
 		"/api/verdict?from=now": 400, "/api/incidents?from=now&to=now-1h": 400,
 	} {
 		if w := do(h, "GET", p, host); w.Code != code {
@@ -437,7 +228,7 @@ func TestLocalRoutes(t *testing.T) {
 	}
 	var st localStatus
 	_ = json.Unmarshal(do(h, "GET", "/api/status", host).Body.Bytes(), &st)
-	if st.Mode != "local" || st.Controls != "enabled" || st.Version == "" || st.Store.FileBytes != 1234 {
+	if st.Controls != "enabled" || st.Version == "" || st.Store.FileBytes != 1234 {
 		t.Errorf("local status = %+v", st)
 	}
 }
@@ -474,16 +265,12 @@ func TestLocalPOST(t *testing.T) {
 		{"ok via Sec-Fetch-Site only", with(nil, "Origin"), 200},
 	}
 	for _, c := range cases {
-		if w := do(h, "POST", "/api/share/start", c.hdr); w.Code != c.code {
+		if w := do(h, "DELETE", "/api/annotations/1", c.hdr); w.Code != c.code {
 			t.Errorf("%s: %d, want %d (%s)", c.name, w.Code, c.code, w.Body.String())
 		}
 	}
-	if sh.start != 2 {
-		t.Errorf("share started %d times, want 2", sh.start)
-	}
-	w := do(h, "POST", "/api/share/stop", good)
-	if w.Code != 200 || sh.State().Phase != ShareOff {
-		t.Errorf("stop: %d %s", w.Code, w.Body.String())
+	if sh.n != 2 {
+		t.Errorf("control used %d times, want 2", sh.n)
 	}
 	if w := do(h, "POST", "/api/status", good); w.Code != 405 {
 		t.Errorf("POST /api/status = %d", w.Code)
@@ -491,8 +278,8 @@ func TestLocalPOST(t *testing.T) {
 
 	// Listening on all interfaces without an admin token: POST disabled.
 	hb, shb := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000"})
-	if w := do(hb, "POST", "/api/share/start", good); w.Code != 403 || shb.start != 0 {
-		t.Errorf("PublicBind POST = %d (starts %d), want 403", w.Code, shb.start)
+	if w := do(hb, "DELETE", "/api/annotations/1", good); w.Code != 403 || shb.n != 0 {
+		t.Errorf("PublicBind POST = %d (controls %d), want 403", w.Code, shb.n)
 	}
 	var st localStatus
 	_ = json.Unmarshal(do(hb, "GET", "/api/status", good).Body.Bytes(), &st)
@@ -501,11 +288,26 @@ func TestLocalPOST(t *testing.T) {
 	}
 	// With an admin token, the header is required.
 	ha, sha := localHandlerFor(t, LocalOptions{PublicBind: true, AdminToken: "adm"})
-	if w := do(ha, "POST", "/api/share/start", good); w.Code != 403 {
+	if w := do(ha, "DELETE", "/api/annotations/1", good); w.Code != 403 {
 		t.Errorf("admin missing = %d", w.Code)
 	}
-	if w := do(ha, "POST", "/api/share/start", with(map[string]string{HeaderAdmin: "adm"})); w.Code != 200 || sha.start != 1 {
+	if w := do(ha, "DELETE", "/api/annotations/1", with(map[string]string{HeaderAdmin: "adm"})); w.Code != 200 || sha.n != 1 {
 		t.Errorf("admin ok = %d", w.Code)
+	}
+	// A loopback dashboard without a token trusts only this machine: a
+	// reverse proxy or tunnel that rewrote Host to 127.0.0.1 is refused.
+	before := sh.n
+	for _, k := range proxyHeaders {
+		if w := do(h, "DELETE", "/api/annotations/1", with(map[string]string{k: "203.0.113.9"})); w.Code != 403 || !strings.Contains(w.Body.String(), "--admin-token") {
+			t.Errorf("through a proxy (%s) = %d %s", k, w.Code, w.Body.String())
+		}
+	}
+	if sh.n != before {
+		t.Error("a proxied request used a control")
+	}
+	// With an admin token, the token decides.
+	if w := do(ha, "DELETE", "/api/annotations/1", with(map[string]string{HeaderAdmin: "adm", "X-Forwarded-For": "203.0.113.9"})); w.Code != 200 {
+		t.Errorf("admin through a proxy = %d", w.Code)
 	}
 }
 
@@ -536,7 +338,7 @@ type panelResp struct {
 
 func TestPanelJSON(t *testing.T) {
 	now := time.Now()
-	cs, d, _ := fixture(t, now)
+	cs, d := fixture(t, now)
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
 	host := map[string]string{"Host": "127.0.0.1:3000"}
 	w := do(h, "GET", "/api/panel?group=common&from=now-40m&to=now&points=1000", host)
@@ -603,7 +405,7 @@ func TestPanelJSON(t *testing.T) {
 
 func TestPanelClamp(t *testing.T) {
 	now := time.Now()
-	cs, d, _ := fixture(t, now)
+	cs, d := fixture(t, now)
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
 	host := map[string]string{"Host": "127.0.0.1:3000"}
 	w := do(h, "GET", "/api/panel?group=lan&from=now-400d&points=99999", host)
@@ -636,7 +438,7 @@ func TestPanelClamp(t *testing.T) {
 }
 
 func TestPanelCSV(t *testing.T) {
-	_, d, _ := fixture(t, time.Now())
+	_, d := fixture(t, time.Now())
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
 	w := do(h, "GET", "/api/panel.csv?group=common&from=now-40m", map[string]string{"Host": "127.0.0.1:3000"})
 	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/csv") ||
@@ -672,7 +474,7 @@ func TestPanelCSV(t *testing.T) {
 }
 
 func TestProfileNoHosts(t *testing.T) {
-	_, d, _ := fixture(t, time.Now())
+	_, d := fixture(t, time.Now())
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
 	b := do(h, "GET", "/api/profile", map[string]string{"Host": "127.0.0.1:3000"}).Body.String()
 	for _, s := range []string{"example.com", "192.168", "10.1.2.3", "172.16", "secret-path"} {
@@ -697,7 +499,7 @@ func TestProfileTCPOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, d, _ := fixture(t, time.Now())
+	_, d := fixture(t, time.Now())
 	d.Profile = func() *model.Profile { return def }
 	b := do(Local(d, LocalOptions{Addr: "127.0.0.1:3000"}), "GET", "/api/profile", map[string]string{"Host": "127.0.0.1:3000"}).Body.String()
 	var p profileJSON
@@ -732,7 +534,7 @@ func TestProfileTCPOnly(t *testing.T) {
 }
 
 func TestGzipAndETag(t *testing.T) {
-	_, d, _ := fixture(t, time.Now())
+	_, d := fixture(t, time.Now())
 	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"})
 	w := do(h, "GET", "/static/app.js", map[string]string{"Host": "127.0.0.1:3000", "Accept-Encoding": "gzip"})
 	if w.Header().Get("Content-Encoding") != "gzip" || w.Header().Get("ETag") == "" {

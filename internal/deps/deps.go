@@ -5,16 +5,6 @@
 package deps
 
 import (
-	_ "github.com/cloudflare/cloudflared/client"
-	_ "github.com/cloudflare/cloudflared/config"
-	_ "github.com/cloudflare/cloudflared/connection"
-	_ "github.com/cloudflare/cloudflared/features"
-	_ "github.com/cloudflare/cloudflared/ingress"
-	_ "github.com/cloudflare/cloudflared/ingress/origins"
-	_ "github.com/cloudflare/cloudflared/orchestration"
-	_ "github.com/cloudflare/cloudflared/signal"
-	_ "github.com/cloudflare/cloudflared/supervisor"
-	_ "github.com/cloudflare/cloudflared/tlsconfig"
 	_ "github.com/klauspost/compress/zstd"
 	_ "github.com/prometheus/client_golang/prometheus"
 	_ "github.com/prometheus/client_golang/prometheus/promhttp"
