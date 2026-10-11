@@ -168,7 +168,7 @@ func parseFlags(args []string) (config, error) {
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
 	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (9 regions, each hourly), --speedtest=nearby (3 nearby providers and 1 far region, every 15m), --speedtest=regions,add=canada, --speedtest=nearby,far=us-west, every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
 	fs.Var(&c.speedPublic, "speedtest-public", "let people with the share link queue speed tests (default: the Details setting, off)")
-	fs.Var(&c.speedBudget, "speedtest-public-budget", "data the share link's speed tests may use per rolling 24 hours, e.g. 50GB or 500MB")
+	fs.Var(&c.speedBudget, "speedtest-public-budget", "data the share link's speed tests may use per rolling 24 hours, e.g. 50GB or 500MB (default 10GB); at least 210MB, one whole test, or share-link tests stay off")
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")

@@ -62,7 +62,7 @@ type speedJobJSON struct {
 	Display  string   `json:"display"`  // "Region · Provider, City"
 	Region   *string  `json:"region"`   // the test region the server belongs to
 	Provider string   `json:"provider"` //
-	Status   string   `json:"status"`   // waiting | testing | ok | busy | unreachable | failed | skipped
+	Status   string   `json:"status"`   // waiting | testing | ok | busy | unreachable | failed | cancelled | skipped
 	Test     *int64   `json:"test"`     // the stored test's id
 	// DownBps and UpBps: the result (ok only); DownShort and UpShort: the
 	// direction hit the byte cap (show "≥ X").
@@ -74,11 +74,13 @@ type speedJobJSON struct {
 }
 
 // jobStatus is a sweep's job i before its stored test is looked up:
-// "testing", "waiting", or "skipped" (run without a stored result, e.g.
-// cancelled mid-test, or never reached by a finished sweep); a run job's
-// stored outcome replaces "skipped".
+// "testing", "waiting", "cancelled" (the test a cancel stopped mid-run), or
+// "skipped" (run without a stored result, or never reached by a finished
+// sweep); a run job's stored outcome replaces "skipped".
 func jobStatus(e speedtest.Entry, i int) string {
 	switch {
+	case i == e.Cut-1:
+		return "cancelled" // stopped mid-test; the servers after it are never reached
 	case i < e.Ran:
 		return "skipped"
 	case e.State == speedtest.StateRunning && i == e.Step-1:

@@ -820,7 +820,7 @@ func TestQueueCancelledSweepIsLast(t *testing.T) {
 		t.Errorf("the cancel's answer: stopped %q by %q", x.Stopped, x.CancelledBy)
 	}
 	waitFor(t, func() bool { x, _ := q.Get(sw.ID); return !x.Finished.IsZero() })
-	if l := q.State().LastSweep; l == nil || l.ID != sw.ID || l.Ran != 2 || l.Stopped != StopCancelled || len(l.Tests) != 1 {
+	if l := q.State().LastSweep; l == nil || l.ID != sw.ID || l.Ran != 2 || l.Stopped != StopCancelled || len(l.Tests) != 1 || l.Cut != 2 {
 		t.Fatalf("last sweep %+v", l)
 	}
 	// Paused: a public sweep yields to the owner's test, then is cancelled
@@ -833,7 +833,7 @@ func TestQueueCancelledSweepIsLast(t *testing.T) {
 	if x, _ := q.Cancel(pub.ID); x.State != StateCancelled {
 		t.Fatalf("paused sweep: %+v", x)
 	}
-	if l := q.State().LastSweep; l == nil || l.ID != pub.ID || l.Ran != 1 || l.Stopped != StopCancelled || l.CancelledBy != "owner" {
+	if l := q.State().LastSweep; l == nil || l.ID != pub.ID || l.Ran != 1 || l.Stopped != StopCancelled || l.CancelledBy != "owner" || l.Cut != 0 {
 		t.Errorf("last sweep %+v", l)
 	}
 	f.release <- struct{}{}
