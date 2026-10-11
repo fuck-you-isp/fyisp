@@ -344,14 +344,15 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		}
 	}()
 	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version, Path: ni.Current})
-	// Speed tests: probes that overlap a test are masked (stored as not
-	// measured) before every sink; the load tap sees them first.
-	speed, tap, windows, err := newSpeed(c, prof, st, mc, ni.Current, log)
+	// Speed tests: the load tap keeps loaded ICMP samples for latency
+	// under load; the windows are recorded for the charts.
+	speed, tap, _, err := newSpeed(c, prof, st, mc, ni.Current, log)
 	if err != nil {
 		return err
 	}
-	ivOf := seriesInterval(prof, tr.Interval)
-	probeSinks := model.Fanout{tap, speedtest.Mask{Inner: model.Fanout{st, mc, mos, eng, &warm}, Windows: windows, Interval: ivOf}}
+	// Samples taken during a speed test are kept as measured: the chart
+	// shades the test windows, so a spike can be matched to a test.
+	probeSinks := model.Fanout{tap, st, mc, mos, eng, &warm}
 	caps := runner.Caps()
 
 	// Listeners: the local dashboard (+ /metrics), and a loopback-only public
@@ -476,7 +477,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		// Trace samples go to the store and /metrics only: the verdict
 		// engine and warm-up judge targets, not individual hops.
 		ts := traceSinks{st, mc}
-		if err := tr.Run(ctx, prof, maskedTrace{ts, speedtest.Mask{Inner: ts, Windows: windows, Interval: ivOf}}); err != nil && ctx.Err() == nil {
+		if err := tr.Run(ctx, prof, ts); err != nil && ctx.Err() == nil {
 			log.Warn("traceroutes unavailable", "err", err)
 		}
 	}()

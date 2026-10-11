@@ -212,15 +212,6 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 	return speedtest.New(o), o.Load, o.Windows, nil
 }
 
-// maskedTrace blanks trace hop samples taken during a speed test, like
-// every other probe's.
-type maskedTrace struct {
-	traceSinks
-	mask speedtest.Mask
-}
-
-func (m maskedTrace) Observe(s model.Sample) { m.mask.Observe(s) }
-
 // speedSkips is --speedtest-skip's server IDs.
 func speedSkips(c *config) []string {
 	var out []string
