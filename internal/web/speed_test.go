@@ -744,7 +744,7 @@ func TestSpeedOwnerZone(t *testing.T) {
 
 // TestSweepBytes: "Test every server" is estimated from each server's
 // recent median data, else the line's rate both ways for MaxMeasure;
-// skipped servers and the share link's capped tests are left out.
+// skipped servers and share-link tests from before v0.8.0 (capped) are left out.
 func TestSweepBytes(t *testing.T) {
 	st := speedtest.State{Servers: []speedtest.ServerState{
 		{Server: speedtest.Server{ID: "A"}}, {Server: speedtest.Server{ID: "B"}}, {Server: speedtest.Server{ID: "C"}, Skipped: true}}}

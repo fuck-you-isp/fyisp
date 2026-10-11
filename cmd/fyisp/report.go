@@ -35,7 +35,7 @@ func cmdReport(args []string) int {
 	from := fs.String("from", "7d", "start time: RFC 3339, YYYY-MM-DD, or an age like 24h or 7d")
 	to := fs.String("to", "now", "end time, same forms as --from")
 	title := fs.String("title", "", "report title")
-	redactFlag := fs.Bool("redact", false, "apply the public-link rules: no private addresses, ISP edge masked, public notes only")
+	redactFlag := fs.Bool("redact", false, "fit to send to others: no private addresses, ISP edge masked, only notes marked for redacted reports")
 	out := fs.String("output", "", "output file, created with mode 0600 (default stdout)")
 	fs.StringVar(out, "o", "", "shorthand for --output")
 	if err := fs.Parse(args); err != nil {

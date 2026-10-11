@@ -151,18 +151,6 @@ func (f *Fake) Reports(context.Context) ([]model.ReportMeta, error) {
 	return out, nil
 }
 
-func (f *Fake) SetReportPublic(_ context.Context, id string, public bool) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	r, ok := f.reports[id]
-	if !ok {
-		return fmt.Errorf("%w: report %q", ErrNotFound, id)
-	}
-	r.meta.Public = public
-	f.reports[id] = r
-	return nil
-}
-
 func (f *Fake) DeleteReport(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -376,7 +376,7 @@ func synthDown(c *Catalog, days int, score func(sv string, h int) float64, base 
 }
 
 // TestFindingNetIsp: the re-review's cases (net-isp-review.md).
-// publicVoice: the share link's and report's texts never address the
+// publicVoice: the evidence report's texts never address the
 // viewer ("your …") or speak as fyisp ("we"): they're about someone
 // else's line.
 func publicVoice(t *testing.T, name string, f Finding) {

@@ -149,8 +149,8 @@ type Options struct {
 	Ping func(ctx context.Context, host string) (time.Duration, error)
 	// OnResult is called after every saved test (metrics).
 	OnResult func(model.SpeedTest)
-	Log    *slog.Logger
-	Now    func() time.Time
+	Log      *slog.Logger
+	Now      func() time.Time
 	// Fake replaces the network (cmd/fyisp-webdev and the web tests).
 	Fake *Fake
 

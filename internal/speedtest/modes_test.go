@@ -259,7 +259,7 @@ func TestScheduleThroughQueue(t *testing.T) {
 	}
 }
 
-// TestSlotCap: no test has a byte cap, the share link's included: only
+// TestSlotCap: no test has a byte cap: only
 // the time cap and its backstop. The slot's hard cap holds an attempt
 // started at SlotBudget: both directions to their deadlines and the pause
 // between them.
