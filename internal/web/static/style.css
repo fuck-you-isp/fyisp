@@ -1368,7 +1368,7 @@ dialog.pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .chip.sp-tick { width: 12px; height: 4px; background: var(--muted); border-radius: 0; }
 .chip.sp-tick.pub { background: transparent; border: 1.5px dashed var(--accent); height: 6px; }
 
-.sp-tf { display: block; font-size: 11px; color: var(--ink-2); }
+.sp-tf { display: block; font-size: 11px; line-height: 1.25; color: var(--ink-2); white-space: normal; }
 
 .rp-speed-cap { caption-side: top; text-align: left; padding: 0 0 4px; }
 @media (max-width: 767.98px) {

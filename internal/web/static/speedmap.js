@@ -611,8 +611,9 @@ export class SpeedMap {
         h('td', { class: 'when', 'data-k': 'When', text: `${new Date(t.start).toLocaleDateString([], { weekday: 'short' })} ${clock(t.start)}` }),
         h('td', { 'data-k': 'Region', text: regionTitle(t.region) }),
         h('td', { 'data-k': 'Server', text: t.label }),
-        readingCell('Down', t.down_bps, lbDown, !cd.all),
-        readingCell('Up', t.up_bps, lbUp, !cu.all),
+        // The phone cards label each value: they say "at least" where the column header would.
+        readingCell(cd.all ? 'Down (at least)' : 'Down', t.down_bps, lbDown, !cd.all),
+        readingCell(cu.all ? 'Up (at least)' : 'Up', t.up_bps, lbUp, !cu.all),
         // A lower bound counts as at least normal only when the server says so (down_lb_counted); otherwise it's left out: never slow.
         lbDown && !bad ? lbCell(lbCounted(t, 'down'))
           : h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
