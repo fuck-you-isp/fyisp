@@ -63,6 +63,17 @@ test('checking: grey card, grey no-data bars', async ({ page }) => {
   await expect(page.locator('.hp-tile .hp-bars i.b-none')).toHaveCount(264);
 });
 
+test('a (re)start is checking, not stale, whatever its last check', async ({ page }) => {
+  const d = fx('now-checking');
+  // An old last check from before a restart, or none at all (the server omits it while checking).
+  d.last_check = d.at - 3 * 3600e3;
+  await serveHome(page, d);
+  await openHome(page);
+  await expect(page.locator('.hp-answer')).toHaveClass(/checking/);
+  await expect(page.locator('.hp-headline')).toHaveText('Checking your connection…');
+  await expect(page).toHaveTitle('Checking – fyisp');
+});
+
 test('off tiles: not checked, no bars, the counts come from the server', async ({ page }) => {
   const d = fx('now-calls-profile');
   await serveHome(page, d);
@@ -89,13 +100,14 @@ test('tiles: the bars, their titles and the scale', async ({ page }) => {
   const zoom = page.locator('.hp-tile[data-id="zoom"]');
   await expect(zoom).toHaveClass(/is-down/);
   await expect(zoom.locator('.hp-since')).toHaveText('since 10:05 am');
-  await expect(zoom.locator('.hp-bars i').nth(19)).toHaveAttribute('title', '10:05–10:10 am: Down since 10:05 am');
-  await expect(zoom.locator('.hp-bars i').nth(23)).toHaveAttribute('title', '10:25–10:30 am (now): Down since 10:05 am');
-  await expect(zoom.locator('.hp-bars i').nth(0)).toHaveAttribute('title', '8:30–8:35 am: Good');
-  await expect(zoom.locator('.hp-scale')).toHaveText('8:30now');
-  await expect(zoom).toHaveAccessibleDescription(/^Not connecting since 10:05 am\. .* Last 2 hours: down or dropped in 5 of 24 five-minute periods\.$/);
+  // The bars run from 8:35 to the current one, 10:30–10:35 (the server's 5-minute buckets).
+  await expect(zoom.locator('.hp-bars i').nth(18)).toHaveAttribute('title', '10:05–10:10 am: Down since 10:05 am');
+  await expect(zoom.locator('.hp-bars i').nth(23)).toHaveAttribute('title', '10:30–10:35 am (now): Down since 10:05 am');
+  await expect(zoom.locator('.hp-bars i').nth(0)).toHaveAttribute('title', '8:35–8:40 am: Good');
+  await expect(zoom.locator('.hp-scale')).toHaveText('8:35now');
+  await expect(zoom).toHaveAccessibleDescription(/^Not connecting since 10:05 am\. .* Last 2 hours: down or dropped in 6 of 24 five-minute periods\.$/);
   // Slack's 9:41 problem: a slow bar with the server's note.
-  await expect(page.locator('.hp-tile[data-id="slack"] .hp-bars i').nth(14)).toHaveAttribute('title', '9:40–9:45 am: Choppy 9:41–9:45 am — likely Slack’s side');
+  await expect(page.locator('.hp-tile[data-id="slack"] .hp-bars i').nth(13)).toHaveAttribute('title', '9:40–9:45 am: Choppy 9:41–9:45 am — likely Slack’s side');
   // Good tiles with a drop note (blip) are covered in the blip state: the note shows, the word stays Good.
 });
 
@@ -106,8 +118,8 @@ test('a drop note on Good tiles (working again)', async ({ page }) => {
   await expect(teams).toHaveClass(/is-good has-note/);
   await expect(teams.locator('.hp-word')).toHaveText('Good');
   await expect(teams.locator('.hp-since')).toHaveText('Dropped 40 s at 10:14 am');
-  await expect(teams.locator('.hp-bars i').nth(20)).toHaveClass('b-down');
-  await expect(teams.locator('.hp-bars i').nth(20)).toHaveAttribute('title', '10:10–10:15 am: Dropped 40 s');
+  await expect(teams.locator('.hp-bars i').nth(19)).toHaveClass('b-down');
+  await expect(teams.locator('.hp-bars i').nth(19)).toHaveAttribute('title', '10:10–10:15 am: Dropped 40 s');
   await expect(page.locator('.hp-hop').nth(1)).toContainText('Dropped for 40 s at 10:14 am, fine now');
 });
 
@@ -115,14 +127,14 @@ test('app-only problem with "working again" appended', async ({ page }) => {
   await serveHome(page, 'now-zoom-working-again');
   await openHome(page);
   await expect(page.locator('.hp-answer')).toHaveClass(/\bok\b/);
-  await expect(page.locator('.hp-sub')).toHaveText(/Teams and Google Meet are working if you need to switch\. Working again\. Your internet dropped for about 40 seconds at 10:14 am\.$/);
+  await expect(page.locator('.hp-sub')).toHaveText(/Teams and Google Meet are working if you need to switch\. Separately, your internet dropped for about 40 seconds at 10:14 am and is back now\.$/);
   await expect(page).toHaveTitle('! Zoom down – fyisp');
 });
 
 test('the speed line: usual, no usual, running elsewhere', async ({ page }) => {
   const ctl = await serveHome(page, 'now-good');
   await openHome(page);
-  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up, about your usual.');
+  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.');
   await expect(page.locator('.hp-speed-note')).toHaveText('Today 8:00 am');
   ctl.now = fx('now-speed-no-usual');
   await page.reload();

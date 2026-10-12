@@ -141,5 +141,5 @@ func TestEngineConcurrent(t *testing.T) {
 	if err := <-runDone; err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("late %d, problems %d, card %s", e.LateSamples(), len(e.Snapshot().eps), e.Snapshot().Conn.Kind)
+	t.Logf("late %d, problems %d, card %s", e.LateSamples(), len(e.Snapshot().Eps), e.Snapshot().Conn.Kind)
 }

@@ -91,7 +91,7 @@ func (e *engine) Chart(id string) (*Chart, bool) {
 		off = append(off, Band{From: run, To: e.nextMin, Kind: BandOff})
 	}
 	e.mu.Unlock()
-	for _, x := range tileEpisodes(s.eps, id) {
+	for _, x := range tileEpisodes(s.Eps, id) {
 		if !x.Ongoing() && x.End.Before(c.From) {
 			continue
 		}

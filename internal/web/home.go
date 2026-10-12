@@ -155,7 +155,7 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	if s.d.Speed != nil {
+	if s.d.Speed != nil && sameSite(r) {
 		s.d.Speed.NoteZone(p.tzKey) // the report's zone (only an IANA name loads)
 	}
 	if p.part == "at" {

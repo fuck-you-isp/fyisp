@@ -71,7 +71,10 @@ type Deps struct {
 	Path func() netinfo.Path
 	// Tiles is the Home tiles engine (tiles.Engine); may be nil.
 	Tiles TilesSource
-	Log   *slog.Logger
+	// CustomProfile: the profile is a --config file (an off tile is turned
+	// on with a tile: tag there, not with --profile).
+	CustomProfile bool
+	Log           *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }
@@ -97,6 +100,9 @@ type Status struct {
 	// SpeedMasked is the share of the last 24 hours under speed test
 	// (probes then are stored as not measured); nil without speed tests.
 	SpeedMasked *float64 `json:"speed_masked_share_24h,omitempty"`
+	// TilesLate counts the samples the Home tiles engine ignored because
+	// they arrived too late (TilesSource.LateSamples); nil without it.
+	TilesLate *int `json:"tiles_late_samples,omitempty"`
 }
 
 // Warmup counts distinct targets that have reported a sample (lost or not).

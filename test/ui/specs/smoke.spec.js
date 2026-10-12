@@ -1,5 +1,6 @@
 // Smoke test: the current app loads, Home and Details render, and nothing
-// logs an error or trips the CSP on the way.
+// logs an error or trips the CSP on the way. Home is the new one: webdev's
+// /api/home2 is the real tiles engine over the fake probes.
 // @ts-check
 const { test, expect } = require('./fixtures');
 
@@ -7,11 +8,11 @@ test('Home, then Details', async ({ page }) => {
   await page.goto('/');
   const home = page.locator('#home');
   await expect(home).toBeVisible();
-  await expect(page.locator('#viewnav button[aria-current="page"]')).toHaveText('Home');
+  await expect(page.locator('.hp-tile')).toHaveCount(11);
   await page.waitForLoadState('networkidle');
   await page.screenshot({ path: 'out/shots/home.png', fullPage: true });
 
-  await page.locator('#viewnav button', { hasText: 'Details' }).click();
+  await page.getByRole('link', { name: 'Technical details →' }).click();
   await expect(home).toBeHidden();
   await expect(page.locator('#viewnav button[aria-current="page"]')).toHaveText('Details');
   await expect(page).toHaveURL(/#.*v=/);

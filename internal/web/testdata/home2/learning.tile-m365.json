@@ -1,0 +1,18 @@
+{
+  "v": 2,
+  "at": 1791556200000,
+  "id": "m365",
+  "state": "good",
+  "word": "Good",
+  "reason": "Working normally.",
+  "coverage": "",
+  "metrics": [],
+  "from": 1791470100000,
+  "step": 300000,
+  "ms": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 11.3, 11.6, 12.5, 11.6, 11.9, 11.9, 12.3, 12.4, null],
+  "usual_ms": null,
+  "bands": [
+    {"from": 1791470100000, "to": 1791553800000, "kind": "off", "text": "Not watched before 9:50 am"}
+  ],
+  "text": "Still learning what’s usual. Not watched before 9:50 am."
+}
