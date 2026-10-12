@@ -31,7 +31,9 @@ jobs:
           docker buildx build --target launchertest-pwsh .
           docker buildx build --target servicetest .
           docker buildx build --target imagetest .
-      - name: runtime image upgrades a v1 database (scratch image, no /tmp)
+      - name: runtime image for arm64 and arm/v7 (FROM scratch, no QEMU)
+        run: docker buildx build --target runtime --platform linux/arm64,linux/arm/v7 .
+      - name: runtime image upgrades a v1 database (scratch image)
         run: |
           docker buildx build --target image --load -t fyisp:ci .
           docker volume create fyisp-ci
