@@ -462,6 +462,34 @@ func TestHomeRestartNotStale(t *testing.T) {
 	}
 }
 
+// stun_blocked (STUN ports blocked, other UDP works) reads as udp_blocked:
+// the engine keeps the verdict's kind, the card's key says udp_blocked
+// (found by the netns i2 scenario, where Home said "All good").
+func TestHomeSTUNBlocked(t *testing.T) {
+	answer := func(kind string) (HomeAnswer, []HomeTile) {
+		sc := scenario(t, "udp-blocked")
+		snap := *sc.Snap
+		snap.Conn.Kind = kind
+		sc.Snap = &snap
+		code, b := homeGet(t, homeServer(t, sc, homeNow), sc.Viewer, "part=now&tz=America/New_York")
+		if code != 200 {
+			t.Fatalf("%d %s", code, b)
+		}
+		d := decode[HomeNow](t, b)
+		return d.Answer, d.Tiles
+	}
+	ua, ut := answer(string(model.VerdictUDPBlocked))
+	sa, st := answer(string(model.VerdictSTUNBlocked))
+	if sa.Key != ua.Key || sa.Tone != ua.Tone || sa.Headline != ua.Headline || sa.Sub != ua.Sub || !strings.HasPrefix(sa.Key, "udp_blocked:") {
+		t.Errorf("stun_blocked %+v, want udp_blocked's %+v", sa, ua)
+	}
+	for i := range ut {
+		if st[i].State != ut[i].State {
+			t.Errorf("%s: %s, want %s", st[i].ID, st[i].State, ut[i].State)
+		}
+	}
+}
+
 // On a network that blocks call traffic, a call tile whose own servers are
 // down stays Down (only the block is softened to Choppy).
 func TestHomeBlockedKeepsAppOutage(t *testing.T) {

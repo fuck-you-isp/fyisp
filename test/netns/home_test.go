@@ -82,6 +82,8 @@ func (h *harness) checkHome(t *testing.T, name, kind string) {
 		l, raw = h.home(t, name)
 	}
 	if w := homeWrong(&l, kind); w != "" {
+		v, _ := h.verdict(t)
+		t.Logf("verdict now: %s since %v", v.Kind, v.Since)
 		t.Errorf("Home %s: answer %s (%s), path not good %v, want %s: %s", name, l.Answer.Key, l.Answer.Tone, l.hurt(), w, raw)
 	}
 }

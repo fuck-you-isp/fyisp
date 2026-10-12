@@ -301,7 +301,7 @@ func (s *server) homeNow(r *http.Request, p homeParams, now time.Time) *HomeNow 
 	for _, e := range eps {
 		byID[e.ID] = e
 	}
-	v := homeView{checking: checking, stale: stale, blocked: !checking && !stale && snap.Conn.Kind == string(model.VerdictUDPBlocked),
+	v := homeView{checking: checking, stale: stale, blocked: !checking && !stale && udpBlocked(snap.Conn.Kind),
 		first: snap.FirstData, custom: s.d.CustomProfile}
 	for _, t := range snap.Tiles {
 		out.Tiles = append(out.Tiles, c.tile(t, byID, v))
@@ -401,6 +401,12 @@ func (c homeCopy) watching(t time.Time) string {
 	return c.in(t).Format("Jan 2")
 }
 
+// udpBlocked: the card's connection state is a call-traffic block
+// (stun_blocked keys and reads as udp_blocked).
+func udpBlocked(kind string) bool {
+	return kind == string(model.VerdictUDPBlocked) || kind == string(model.VerdictSTUNBlocked)
+}
+
 func iconOf(st tiles.State) string {
 	switch st {
 	case tiles.Good, tiles.Slow, tiles.Down:
@@ -450,7 +456,7 @@ func (c homeCopy) card(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, ch
 		a.Headline = "Websites can’t be found right now."
 		a.Sub = "Your connection is up, but name lookups (DNS) are failing, so apps can’t find their servers." + started()
 		a.Tab = "! Websites not found"
-	case string(model.VerdictUDPBlocked):
+	case string(model.VerdictUDPBlocked), string(model.VerdictSTUNBlocked):
 		a.Headline = "Calls can’t use their fast path on this network."
 		if cs.Quiet {
 			a.Icon = "info" // known for a long time: information, not a warning
@@ -858,7 +864,7 @@ func (s *server) homeTile(p homeParams, now time.Time) (*HomeTileDetail, int, st
 	}
 	c := homeCopy{loc: p.zone.loc, now: now}
 	d := tileDef(p.id)
-	v := homeView{checking: checking, blocked: !checking && !stale && snap.Conn.Kind == string(model.VerdictUDPBlocked), first: snap.FirstData}
+	v := homeView{checking: checking, blocked: !checking && !stale && udpBlocked(snap.Conn.Kind), first: snap.FirstData}
 	byID := map[string]tiles.Episode{}
 	for _, e := range snap.Problems(now.Add(-homeWeek)) {
 		byID[e.ID] = e
