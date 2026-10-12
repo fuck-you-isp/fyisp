@@ -7,6 +7,8 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
 // Defaults for Options.
@@ -39,8 +41,9 @@ func newWatcher(o Options, rt func() (route, error), tr func() (tracer, error)) 
 		o.Log = slog.Default()
 	}
 	return &watcher{
-		o: o, route: rt, tracer: tr, now: time.Now, retry: retryUnknown,
+		o: o, route: rt, tracer: tr, conn: ConnType, now: time.Now, retry: retryUnknown,
 		kick: make(chan struct{}, 1), subs: map[chan Path]struct{}{},
+		cur: Path{Conn: model.ConnUnknown},
 	}
 }
 
@@ -48,17 +51,19 @@ type watcher struct {
 	o      Options
 	route  func() (route, error)
 	tracer func() (tracer, error)
+	conn   func(iface string) string // ConnType
 	now    func() time.Time
 	retry  time.Duration
 	kick   chan struct{} // run edge discovery now
 
-	mu      sync.Mutex
-	cur     Path
-	gwErr   string
-	edgeErr string
-	lastGW  netip.Addr // last known gateway (kept while there is no route)
-	hadGW   bool       // the previous poll found a default route
-	subs    map[chan Path]struct{}
+	mu        sync.Mutex
+	cur       Path
+	gwErr     string
+	edgeErr   string
+	lastGW    netip.Addr // last known gateway (kept while there is no route)
+	lastIface string     // interface Conn was read for
+	hadGW     bool       // the previous poll found a default route
+	subs      map[chan Path]struct{}
 }
 
 func (w *watcher) Current() Path {
@@ -68,7 +73,7 @@ func (w *watcher) Current() Path {
 }
 
 // Subscribe returns a channel that receives the Path after every change of
-// Gateway, Iface or Edge. It holds only the latest Path: a slow reader
+// Gateway, Iface, Edge or Conn. It holds only the latest Path: a slow reader
 // skips intermediate ones. The returned func unsubscribes and closes it.
 func (w *watcher) Subscribe() (<-chan Path, func()) {
 	ch := make(chan Path, 1)
@@ -115,7 +120,9 @@ func (w *watcher) trigger() {
 
 // pollGateway reads the default route. A new gateway forgets the edge (it
 // belongs to another network) and triggers edge discovery; losing the route
-// keeps the last edge, so that probes of it report the outage.
+// keeps the last edge, so that probes of it report the outage, and the last
+// connection type (a dropped Wi-Fi link is still Wi-Fi). A new interface
+// rereads the connection type.
 func (w *watcher) pollGateway() {
 	r, err := w.route()
 	w.mu.Lock()
@@ -135,6 +142,10 @@ func (w *watcher) pollGateway() {
 		w.hadGW = false
 	default:
 		next.Gateway, next.Iface = r.Gateway, r.Iface
+		if r.Iface != w.lastIface {
+			next.Conn = w.conn(r.Iface)
+			w.lastIface = r.Iface
+		}
 		w.gwErr = ""
 		if r.Gateway.IsValid() && w.lastGW.IsValid() && r.Gateway != w.lastGW {
 			next.Edge, next.EdgeHop = netip.Addr{}, 0
@@ -163,10 +174,10 @@ func (w *watcher) errLocked() string {
 // setLocked stores next and notifies subscribers if the path changed.
 func (w *watcher) setLocked(prev, next Path) {
 	w.cur = next
-	if prev.Gateway == next.Gateway && prev.Iface == next.Iface && prev.Edge == next.Edge {
+	if prev.Gateway == next.Gateway && prev.Iface == next.Iface && prev.Edge == next.Edge && prev.Conn == next.Conn {
 		return
 	}
-	w.o.Log.Info("network path", "gateway", next.Gateway, "iface", next.Iface, "edge", next.Edge, "edge_hop", next.EdgeHop)
+	w.o.Log.Info("network path", "gateway", next.Gateway, "iface", next.Iface, "conn", next.Conn, "edge", next.Edge, "edge_hop", next.EdgeHop)
 	for ch := range w.subs {
 		select {
 		case <-ch: // drop the stale value
@@ -207,14 +218,16 @@ func (w *watcher) edgeLoop(ctx context.Context) {
 	}
 }
 
-// discover runs one edge discovery. Without a route it does nothing (a
-// kick follows when the route returns). A failed discovery keeps the last
-// edge: during an outage the edge series must keep reporting loss.
+// discover runs one edge discovery and rereads the connection type. Without
+// a route it does nothing (a kick follows when the route returns). A failed
+// discovery keeps the last edge: during an outage the edge series must keep
+// reporting loss.
 func (w *watcher) discover(ctx context.Context) {
 	start := w.Current()
 	if start.NoRoute() {
 		return
 	}
+	conn := w.conn(start.Iface)
 	edge, n, err := w.trace(ctx)
 	if ctx.Err() != nil {
 		return
@@ -226,6 +239,9 @@ func (w *watcher) discover(ctx context.Context) {
 	}
 	prev, next := w.cur, w.cur
 	next.Updated = w.now()
+	if start.Iface != "" {
+		next.Conn = conn
+	}
 	if err != nil {
 		if w.edgeErr == "" || prev.Edge.IsValid() {
 			w.o.Log.Debug("edge discovery failed", "err", err, "keeping", prev.Edge)

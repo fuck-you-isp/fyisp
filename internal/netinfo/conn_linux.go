@@ -15,12 +15,16 @@ import (
 // phy80211, and DEVTYPE=wlan in uevent), model.ConnWired for any other
 // Ethernet-type interface backed by a device, model.ConnUnknown otherwise
 // (veth and bridges inside containers, VM and VPN interfaces, an unknown
-// interface).
-func ConnType(iface string) string {
+// interface). In a container with the host's network it sees the host's
+// interfaces; see InContainer.
+func ConnType(iface string) string { return connType("/sys", iface) }
+
+// connType is ConnType with sysfs mounted at sysRoot.
+func connType(sysRoot, iface string) string {
 	if iface == "" || iface == "." || iface == ".." || strings.Contains(iface, "/") {
 		return model.ConnUnknown
 	}
-	dir := filepath.Join("/sys/class/net", iface)
+	dir := filepath.Join(sysRoot, "class/net", iface)
 	for _, f := range []string{"wireless", "phy80211"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
 			return model.ConnWiFi

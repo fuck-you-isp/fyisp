@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
@@ -64,7 +65,10 @@ type Deps struct {
 	// Speed runs the speed tests (speedtest.Scheduler); nil: the speed
 	// routes answer 404 and the UI hides Speed.
 	Speed SpeedSource
-	Log   *slog.Logger
+	// Path is the current network path of this machine (netinfo.Watcher's
+	// Current), including how it connects (Path.Conn); may be nil.
+	Path func() netinfo.Path
+	Log  *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -122,9 +123,21 @@ func checkSpeedFlags(c *config) error {
 // Details choice and Test now work; it only tests when a mode is on), the
 // load tap and the windows the mask uses.
 func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, error) {
+	o, err := speedOptions(c, prof, st, path, log)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	sm := metrics.NewSpeed()
+	mc.Register(sm)
+	o.OnResult = sm.Observe
+	return speedtest.New(o), o.Load, o.Windows, nil
+}
+
+// speedOptions is the scheduler's configuration for newSpeed.
+func speedOptions(c config, prof *model.Profile, st speedtest.Store, path func() netinfo.Path, log *slog.Logger) (speedtest.Options, error) {
 	cat, err := speedtest.Builtin()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("speed test catalog: %w", err)
+		return speedtest.Options{}, fmt.Errorf("speed test catalog: %w", err)
 	}
 	o := speedtest.Options{Catalog: cat, Mode: c.speed.mode, Interval: c.speed.every, Extra: c.speed.extra, Store: st,
 		Windows: &speedtest.Windows{}, Log: log,
@@ -133,7 +146,7 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 		}}
 	if c.speedServer != "" {
 		if o.Custom, err = speedtest.Custom(c.speedServer, cat); err != nil {
-			return nil, nil, nil, err
+			return speedtest.Options{}, err
 		}
 	}
 	o.Skip = speedSkips(&c)
@@ -142,13 +155,10 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 	// the handoff network, from the network path.
 	o.Path = func() (netip.Addr, netip.Addr) { p := path(); return p.Gateway, p.Edge }
 	o.OpenPinger = func() (speedtest.LoadPinger, error) { return probe.OpenPinger() }
-	o.Conn = func() string { return netinfo.ConnType(path().Iface) }
+	o.Conn = func() string { return cmp.Or(path().Conn, model.ConnUnknown) }
 	hf := &speedtest.HandoffFinder{Edge: func() netip.Addr { return path().Edge }}
 	o.Handoff, o.HandoffCached = hf.Handoff, hf.Cached
-	sm := metrics.NewSpeed()
-	mc.Register(sm)
-	o.OnResult = sm.Observe
-	return speedtest.New(o), o.Load, o.Windows, nil
+	return o, nil
 }
 
 // speedSkips is --speedtest-skip's server IDs.

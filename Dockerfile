@@ -34,10 +34,14 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download && go mod verify
 FROM deps AS source
 COPY . .
 
+# The OS-specific netinfo code (and its tests) is also vetted for macOS and
+# Windows, so a change there can't break those builds unnoticed.
 FROM source AS test
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    test -z "$(gofmt -l . | tee /dev/stderr)" && go vet ./... && CGO_ENABLED=1 go test -race ./...
+    test -z "$(gofmt -l . | tee /dev/stderr)" && go vet ./... \
+ && GOOS=darwin go vet ./internal/netinfo/... && GOOS=windows go vet ./internal/netinfo/... \
+ && CGO_ENABLED=1 go test -race ./...
 
 # Built-in IP-to-ASN table: download the latest iptoasn.com IPv4 data (public
 # domain, PDDL) and convert it with internal/asn/cmd/asngen. ADD re-checks the
@@ -158,5 +162,7 @@ EXPOSE 3000
 STOPSIGNAL SIGTERM
 # Defaults as environment variables (flags win), so subcommands work too:
 # docker run IMG version | profiles | report | export | paths.
-ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000
+# container=oci tells fyisp it runs in a container (netinfo.InContainer),
+# also where the runtime creates no /.dockerenv.
+ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000 container=oci
 ENTRYPOINT ["/fyisp"]
