@@ -76,7 +76,7 @@ func TestHome10(t *testing.T) {
 
 		z0 := time.Now()
 		lab.nft(t, fmt.Sprintf("add rule inet fyt fault ip daddr %s tcp dport 443 reject with tcp reset", home10Addr("zoom")))
-		time.Sleep(150 * time.Second)
+		time.Sleep(210 * time.Second)
 		lab.flush(t)
 		zs := lab.polls(z0.Add(lab.downBy()), time.Now())
 		if len(zs) == 0 {
@@ -89,8 +89,9 @@ func TestHome10(t *testing.T) {
 				lab.errorf(t, p, "Zoom down after the drop: want the Zoom card with the drop in its sub line")
 				break
 			}
-			// the tile's own cause comes with its first judged minute
-			if z := p.n.tile("zoom"); z.State != "down" || p.t.After(z0.Add(lab.downBy()+time.Minute)) && !strings.Contains(z.Reason, "Likely cause: Zoom’s side") {
+			// the tile's own cause comes with its first judged minute (up to
+			// 100 s after it went down)
+			if z := p.n.tile("zoom"); z.State != "down" || p.t.After(z0.Add(lab.downBy()+2*time.Minute)) && !strings.Contains(z.Reason, "Likely cause: Zoom’s side") {
 				lab.errorf(t, p, "Zoom down after the drop: zoom %s %q, want down on Zoom’s side", z.State, z.Reason)
 				break
 			}
@@ -313,8 +314,9 @@ func TestHome10(t *testing.T) {
 				lab.errorf(t, p, "Zoom down: want the green Zoom card naming Teams and Google Meet")
 				break
 			}
-			// the tile's own cause comes with its first judged minute
-			if z := n.tile("zoom"); z.State != "down" || p.t.After(t0.Add(lab.downBy()+time.Minute)) && !strings.Contains(z.Reason, "Likely cause: Zoom’s side") {
+			// the tile's own cause comes with its first judged minute (up to
+			// 100 s after it went down)
+			if z := n.tile("zoom"); z.State != "down" || p.t.After(t0.Add(lab.downBy()+2*time.Minute)) && !strings.Contains(z.Reason, "Likely cause: Zoom’s side") {
 				lab.errorf(t, p, "Zoom down: zoom %s %q, want down on Zoom’s side", z.State, z.Reason)
 				break
 			}
