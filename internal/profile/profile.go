@@ -542,6 +542,9 @@ func Validate(p *model.Profile, l Limits) error {
 		if err := checkHomeTags(t.Tags); err != nil {
 			bad("target %q: %v", t.Name, err)
 		}
+		if err := checkTileTags(t.Tags); err != nil {
+			bad("target %q: %v", t.Name, err)
+		}
 		special := isSpecial(t.Host)
 		for k, h := range t.HostOverrides {
 			if !validKind(k) || k == model.KindUDP {

@@ -42,7 +42,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video, app:zoom, home:calls]
+    tags: [voice, video, app:zoom, home:calls, tile:zoom]
     verified:
       date: 2026-09-27
       icmp: true
@@ -62,7 +62,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video, media, app:meet, home:calls]
+    tags: [voice, video, media, app:meet, home:calls, tile:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -74,7 +74,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [video, signaling, app:meet]
+    tags: [video, signaling, app:meet, tile:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -88,7 +88,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, media, turn, app:meet]
+    tags: [voice, video, media, turn, app:meet, tile:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -100,7 +100,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, media, turn, app:meet]
+    tags: [voice, video, media, turn, app:meet, tile:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -112,7 +112,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, signaling, app:teams, home:calls]
+    tags: [voice, video, signaling, app:teams, home:calls, tile:teams]
     verified:
       date: 2026-09-27
       icmp: true
@@ -126,7 +126,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, media, turn, app:teams]
+    tags: [voice, video, media, turn, app:teams, tile:teams]
     verified:
       date: 2026-09-27
       icmp: false
@@ -139,7 +139,7 @@ targets:
     region: eu
     geo: eu
     anycast: true
-    tags: [voice, video, media, turn, app:teams]
+    tags: [voice, video, media, turn, app:teams, tile:teams]
     verified:
       date: 2026-09-27
       icmp: false
@@ -152,7 +152,7 @@ targets:
     region: us
     geo: na
     anycast: true
-    tags: [voice, video, media, turn, app:teams]
+    tags: [voice, video, media, turn, app:teams, tile:teams]
     verified:
       date: 2026-09-27
       icmp: false
@@ -179,7 +179,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat, app:slack, home:calls]
+    tags: [chat, app:slack, home:calls, tile:slack]
     verified:
       date: 2026-09-27
       icmp: false
@@ -193,7 +193,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat, app:slack]
+    tags: [chat, app:slack, tile:slack]
     verified:
       date: 2026-09-27
       icmp: false

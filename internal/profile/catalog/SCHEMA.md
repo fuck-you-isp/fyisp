@@ -27,7 +27,7 @@ targets:
     country: US                    # ISO 3166-1 alpha-2
     geo: na                        # na | sa | eu | me | af | as | oc  (me = Middle East)
     anycast: false                 # true for anycast/global endpoints (no fixed location)
-    tags: []                       # optional, e.g. [voice], [matchmaking]; home:calls|work|web (see below)
+    tags: []                       # optional, e.g. [voice], [matchmaking]; home:calls|work|web, tile:<id> (see below)
     verified:                      # from your own light checks (free-form, never used for probing)
       date: 2026-09-27
       tcp: true                    # TCP connect to `port` ok
@@ -49,6 +49,14 @@ them). Targets of the default profile must have one; other targets without
 one are placed by their other tags and provider (`app:*` and `udp-path` →
 calls, services-productivity → work, CDNs and streaming → web), else under
 "Other services".
+
+A `tile:<id>` tag puts a target in one of the fixed tiles of the new Home view
+(`internal/profile/tiles.go`): `tile:zoom`, `tile:teams`, `tile:meet`,
+`tile:slack`, `tile:m365`, `tile:gws`, `tile:github`, `tile:dropbox`,
+`tile:onedrive`, `tile:youtube` or `tile:netflix`. At most one per target, and
+no other values. Every catalog target listed by a tile carries its tag, and
+only those (a test checks both ways); a call tile's own STUN targets
+(Meet-STUN, Teams-Relay) carry it too.
 
 Rules for choosing endpoints:
 - Prefer endpoints **meant for latency checks** (published "ping"/speed-test hosts,
