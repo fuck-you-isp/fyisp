@@ -259,7 +259,8 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		dropNow: v.connCur, drops: slices.Concat(v.connDrops, v.blips), layersOK: layersOK, tiles: tn, eps: v.eps,
 		clean: func(k model.VerdictKind, from time.Time) bool {
 			return e.layersClean(v, from, time.Time{}, blamed(k)...)
-		}})
+		},
+		edgeLoss: e.recentLoss(layerEdge, now.Add(-edgeRecent))})
 	// After a drop or a blip the verdict's layer health lags by its 60 s
 	// window: while the card no longer blames the path, for lagMax at
 	// most, a layer that has been clean (of loss) since is Good.
@@ -281,6 +282,27 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 	s.Day = dayCounts(v.eps, now)
 	s.Rev = epsHash(v.eps)
 	return s
+}
+
+// recentLoss is the share of a layer's checks since from that were lost
+// (0 with fewer than 10 of them).
+func (e *engine) recentLoss(l int, from time.Time) float64 {
+	n, lost := 0, 0
+	for _, i := range e.paths[l] {
+		for _, c := range e.ss[i].raw {
+			if c.gap || c.ms <= from.UnixMilli() {
+				continue
+			}
+			n++
+			if c.lost {
+				lost++
+			}
+		}
+	}
+	if n < 10 {
+		return 0
+	}
+	return float64(lost) / float64(n)
 }
 
 // closedFrom returns the closed minutes from from on: [from, nextMin).

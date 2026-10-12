@@ -287,6 +287,12 @@ func TestProviderLossCard(t *testing.T) {
 	if c = connState(connIn{ready: true, now: at(10 * time.Minute), verdict: v}); !c.Lossy || c.Tone != ToneWarn {
 		t.Errorf("29%% loss: %+v, want the amber card", c)
 	}
+	// 40% loss that just began: the 60 s window says 15%, the edge's
+	// latest checks 40%
+	v.Evidence["loss"] = 0.15
+	if c = connState(connIn{ready: true, now: at(10 * time.Minute), verdict: v, edgeLoss: 0.4}); c.Lossy || c.Tone != ToneBad {
+		t.Errorf("40%% at the edge now: %+v, want the red isp card", c)
+	}
 	// a lagging incident is skipped while the path has been clean since the drop
 	v = model.Verdict{Kind: model.VerdictISP, Since: at(10*time.Minute + 9*time.Second), Evidence: map[string]float64{"loss": 0.2}}
 	drop := Drop{Start: at(10 * time.Minute), End: at(10*time.Minute + 40*time.Second), Dur: 40 * time.Second}
@@ -300,9 +306,9 @@ func TestProviderLossCard(t *testing.T) {
 	}
 }
 
-// TestLossDownLifts: a call tile Down from loss alone lifts once its last
-// 2 minutes are not Down, to Choppy by the usual rule (c); Down from delay
-// keeps the 5-minute rule.
+// TestLossDownLifts: a call tile Down from loss alone lifts once the loss
+// rule (10% in each of 2 minutes) no longer holds, to Choppy by the usual
+// rule (c); Down from delay keeps the 5-minute rule.
 func TestLossDownLifts(t *testing.T) {
 	m := time.Minute
 	seq := []State{Good, Good, Down, Down, Slow, Slow}
@@ -319,13 +325,14 @@ func TestLossDownLifts(t *testing.T) {
 			t.Errorf("delay: %s, want still Down", got)
 		}
 	}
-	// one minute below is not enough
+	// the first minute the loss rule (over 2 minutes) no longer finds:
+	// netns S2b wants calls back within 3 minutes of the loss ending
 	var w word
 	for i, st := range []State{Good, Down, Down, Slow} {
 		w.stepLoss(at(time.Duration(i)*m), st, st == Down)
 	}
-	if got, _ := w.state(); got != Down {
-		t.Errorf("one minute below: %s, want Down", got)
+	if got, _ := w.state(); got != Slow {
+		t.Errorf("one minute below: %s, want Slow", got)
 	}
 }
 

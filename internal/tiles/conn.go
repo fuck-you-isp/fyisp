@@ -138,12 +138,13 @@ func monitored(ts []tileNow) int {
 
 // connIn is what the card is decided from.
 type connIn struct {
-	now     time.Time
-	stale   bool
-	ready   bool
-	verdict model.Verdict
-	dropNow *Drop  // a connection drop in progress
-	drops   []Drop // the connection drops and the path blips (ended ones matter)
+	now      time.Time
+	stale    bool
+	ready    bool
+	verdict  model.Verdict
+	dropNow  *Drop   // a connection drop in progress
+	drops    []Drop  // the connection drops and the path blips (ended ones matter)
+	edgeLoss float64 // the share of the edge's checks lost in the last edgeRecent
 	// clean reports the layers a verdict kind needs clean (blamed) clean
 	// since from (nil: unknown)
 	clean    func(k model.VerdictKind, from time.Time) bool
@@ -179,7 +180,9 @@ func connState(in connIn) ConnState {
 			}
 			return !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
 		}) {
-			if loss, ok := v.Evidence["loss"]; ok && v.Kind == model.VerdictISP && in.dropNow == nil && loss > 0 && loss < lossyBelow {
+			// the verdict's 60 s window understates loss that just began:
+			// the edge's latest checks count too
+			if loss, ok := v.Evidence["loss"]; ok && v.Kind == model.VerdictISP && in.dropNow == nil && loss > 0 && max(loss, in.edgeLoss) < lossyBelow {
 				c := vk("isp_lossy", ToneWarn, Slow)
 				c.Lossy = true
 				return c

@@ -140,8 +140,9 @@ const (
 	// card. 6% is a degraded line (calls choppy, sites fine); 40% breaks
 	// most things and keeps the red "having trouble" card.
 	lossyBelow = 0.3
-	layerLossy = 0.02 // a layer losing this much is lossy
-	layerClean = 0.01 // a layer losing less is clean
+	edgeRecent = 30 * time.Second // the edge's latest checks the card reads besides the verdict's window
+	layerLossy = 0.02             // a layer losing this much is lossy
+	layerClean = 0.01             // a layer losing less is clean
 )
 
 // State is a tile's word, a minute's judgement or a bar's colour.
@@ -575,8 +576,8 @@ type wordRun struct {
 //     row, or as soon as the last badWindow judged minutes hold no Down
 //     minute: to Slow when badOf of them are bad (since the first of
 //     those), else to Good. A call tile's Down from loss alone (lossDown)
-//     is left sooner: once the latest callDownLossMins judged minutes are
-//     not Down, the same way.
+//     is left sooner: as soon as a judged minute is not Down (the loss
+//     rule looks at callDownLossMins minutes), the same way.
 //   - None minutes hold the word and do not count.
 //
 // A run that ends on good minutes ends at the first of them, or at the
@@ -657,9 +658,10 @@ func (w *word) stepLoss(at time.Time, s State, lossDown bool) *wordRun {
 	if s == Down {
 		w.lossDown = lossDown && (w.level != Down || w.lossDown)
 	}
-	if w.level == Down && w.lossDown && w.nRecent >= callDownLossMins {
-		// loss Down lifts once its last minutes are below the Down loss
-		down = slices.ContainsFunc(w.recent[:callDownLossMins], func(r judged) bool { return r.s == Down })
+	if w.level == Down && w.lossDown {
+		// loss Down lifts as soon as the rule, over its last
+		// callDownLossMins minutes, no longer finds the Down loss
+		down = s == Down
 	}
 	switch {
 	case s == Down && w.level != Down:
