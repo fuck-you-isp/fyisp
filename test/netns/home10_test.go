@@ -533,37 +533,59 @@ func TestHome10(t *testing.T) {
 		parallel(t)
 		lab := startHome10(t, home10Opts{})
 		pid := lab.fy.cmd.Process.Pid
-		if err := syscall.Kill(pid, syscall.SIGSTOP); err != nil {
-			t.Fatal(err)
+		// pause stops fyisp for 150 s and returns the answer to a request
+		// queued while it was stopped, and when it was resumed.
+		pause := func() (poll, time.Time) {
+			if err := syscall.Kill(pid, syscall.SIGSTOP); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(150 * time.Second)
+			first := make(chan poll, 1)
+			go func() {
+				c := &http.Client{Timeout: time.Minute, Transport: &http.Transport{DialContext: dialIn(lab.cli), DisableKeepAlives: true}}
+				first <- lab.fetchNow(c)
+			}()
+			time.Sleep(2 * time.Second)
+			if err := syscall.Kill(pid, syscall.SIGCONT); err != nil {
+				t.Fatal(err)
+			}
+			tc := time.Now()
+			p := <-first
+			lab.record(p)
+			return p, tc
 		}
-		time.Sleep(150 * time.Second)
-		// A request queued while fyisp is stopped is the first it answers.
-		first := make(chan poll, 1)
-		go func() {
-			c := &http.Client{Timeout: time.Minute, Transport: &http.Transport{DialContext: dialIn(lab.cli), DisableKeepAlives: true}}
-			first <- lab.fetchNow(c)
-		}()
-		time.Sleep(2 * time.Second)
-		if err := syscall.Kill(pid, syscall.SIGCONT); err != nil {
-			t.Fatal(err)
-		}
-		tc := time.Now()
-		p := <-first
-		lab.record(p)
-		switch {
-		case p.err != nil:
-			t.Errorf("the first request after resuming: %v", p.err)
-		case !p.n.Stale && p.t.Sub(time.UnixMilli(p.n.LastCheck)) < 2*time.Minute:
-			lab.errorf(t, p, "the first answer after 150 s stopped: want stale, or last_check 2 min old")
-		default:
-			t.Logf("first answer after resuming: stale %v, last check %s old, key %s", p.n.Stale,
-				p.t.Sub(time.UnixMilli(p.n.LastCheck)).Round(time.Second), p.n.Answer.Key)
+		// On resuming, fyisp's probes and its engine tick race the queued
+		// request: when a check made after the pause is in the answer, the
+		// request lost the race and says nothing about the pause. Pause
+		// again then (up to 3 times; it lost 1 of 5 runs).
+		t0 := time.Now()
+		var tc time.Time
+		for try := 1; ; try++ {
+			var p poll
+			p, tc = pause()
+			if p.err != nil {
+				t.Fatalf("the first request after resuming: %v", p.err)
+			}
+			age := p.t.Sub(time.UnixMilli(p.n.LastCheck))
+			switch {
+			case p.n.Stale || age >= 2*time.Minute:
+				t.Logf("first answer after resuming: stale %v, last check %s old, key %s", p.n.Stale, age.Round(time.Second), p.n.Answer.Key)
+			case !time.UnixMilli(p.n.LastCheck).After(tc.Add(-time.Second)):
+				lab.errorf(t, p, "the first answer after 150 s stopped: want stale, or last_check 2 min old")
+			case try < 3:
+				t.Logf("pause %d: a check made after resuming beat the queued request (last check %s old); pausing again", try, age.Round(time.Second))
+				time.Sleep(time.Minute)
+				continue
+			default:
+				lab.errorf(t, p, "3 pauses: a check made after resuming always beat the queued request")
+			}
+			break
 		}
 		time.Sleep(3 * time.Minute)
 		if q := lab.first(tc, tc.Add(30*time.Second), func(n *h10Now) bool { return !n.Stale && !strings.HasPrefix(n.Answer.Key, "stale") }); q == nil {
 			t.Errorf("still stale 30 s after resuming")
 		}
-		for _, q := range lab.polls(tc, time.Now()) {
+		for _, q := range lab.polls(t0, time.Now()) {
 			n := q.n
 			switch {
 			case n.notTile(func(x h10Tile) bool { return x.State != "down" }) != nil:
