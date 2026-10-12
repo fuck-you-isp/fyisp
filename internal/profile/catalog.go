@@ -280,6 +280,9 @@ func (p *Provider) validate() error {
 		if err := checkHomeTags(t.Tags); err != nil {
 			bad("target %q: %v", t.Name, err)
 		}
+		if err := checkTileTags(t.Tags, ks[model.KindUDP]); err != nil {
+			bad("target %q: %v", t.Name, err)
+		}
 		if t.Country != "" && !countryRe.MatchString(t.Country) {
 			bad("target %q: country %q, want an ISO 3166-1 alpha-2 code like US", t.Name, t.Country)
 		}

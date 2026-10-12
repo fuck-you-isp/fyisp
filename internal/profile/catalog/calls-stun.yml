@@ -31,7 +31,7 @@ targets:
     port: 19302
     region: global
     anycast: true
-    tags: [udp-path, app:meet, home:calls]
+    tags: [udp-path, app:meet, home:calls, tile:meet]
     verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 3.4}
   # The same host on the standard STUN port, for networks that block 19302.
   - name: Meet-STUN-3478
@@ -40,7 +40,7 @@ targets:
     port: 3478
     region: global
     anycast: true
-    tags: [udp-path, app:meet]
+    tags: [udp-path, app:meet, tile:meet]
     verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 3.5}
   # Anycast; 1.4 ms from Frankfurt (a local Cloudflare PoP).
   - name: Cloudflare-STUN
@@ -78,5 +78,5 @@ targets:
     port: 3478
     region: global
     anycast: true
-    tags: [udp-path, app:teams]
+    tags: [udp-path, app:teams, tile:teams]
     verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 56.2, cname: b-tr-teamsc-euwe-03.westeurope.cloudapp.azure.com}

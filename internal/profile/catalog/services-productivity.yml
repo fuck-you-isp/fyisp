@@ -10,12 +10,14 @@ notes: >-
   Main user-facing entrypoints of common work SaaS. Microsoft 365 uses
   outlook.office365.com (Exchange Online, endpoint set 1, category Optimize), the M365
   portal, and login.microsoftonline.com, the Entra ID sign-in every M365 app needs (a TCP
-  connect only: never a sign-in or token request). SharePoint/OneDrive (also Optimize) is
-  tenant-specific (<tenant>.sharepoint.com) and is left out. Google Workspace apps share
-  Google's front ends, so Gmail/Docs/Drive mostly measure the same GFE path. Every endpoint
+  connect only: never a sign-in or token request). Work SharePoint/OneDrive (also Optimize)
+  is tenant-specific (<tenant>.sharepoint.com) and is left out: the OneDrive target checks
+  the consumer OneDrive front door only. Google Workspace apps share Google's front ends,
+  so Gmail/Docs/Drive mostly measure the same GFE path. Every endpoint
   is an anycast, CDN or geo-DNS front (no fixed location). robots.txt keeps responses to a
   few hundred bytes to ~2 KB; 301/302 answers have empty bodies. Verified from Hetzner
-  Helsinki on 2026-09-27 (M365-Login from the Frankfurt area on 2026-10-10).
+  Helsinki on 2026-09-27 (M365-Login from the Frankfurt area on 2026-10-10, OneDrive on
+  2026-10-12).
 targets:
   # Exchange Online 'Optimize' endpoint (ID 1); ICMP answered by some front-end IPs and not
   # others, so not recorded. From Helsinki: TCP connect 52 ms.
@@ -24,7 +26,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [email, home:work]
+    tags: [email, home:work, tile:m365]
     verified:
       date: 2026-09-27
       icmp: false
@@ -39,7 +41,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [office, home:work]
+    tags: [office, home:work, tile:m365]
     verified:
       date: 2026-09-27
       icmp: true
@@ -57,7 +59,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [auth, home:work]
+    tags: [auth, home:work, tile:m365]
     verified:
       date: 2026-10-10
       tcp: true
@@ -70,7 +72,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [email, home:work]
+    tags: [email, home:work, tile:gws]
     verified:
       date: 2026-09-27
       icmp: true
@@ -84,7 +86,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [office, home:work]
+    tags: [office, home:work, tile:gws]
     verified:
       date: 2026-09-27
       icmp: true
@@ -98,7 +100,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [storage, home:work]
+    tags: [storage, home:work, tile:gws]
     verified:
       date: 2026-09-27
       icmp: true
@@ -112,13 +114,34 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [storage]
+    tags: [storage, tile:dropbox]
     verified:
       date: 2026-09-27
       icmp: true
       tcp: true
       https: 200
       bytes: 801
+  # Consumer OneDrive (OneDrive personal) API front door on Microsoft's edge
+  # (CNAME common-afd.fe.1drv.com -> *.msedge.net), the same edge
+  # as api.onedrive.com. Chosen over onedrive.live.com (the web app: 403 with an HTML page
+  # to non-browser requests) and api.onedrive.com (302 on /, 400 on /robots.txt) because
+  # /robots.txt answers a stable 200 of 26 bytes. Work OneDrive (OneDrive for Business) is
+  # <tenant>-my.sharepoint.com, tenant-specific, and not covered. 3/3 TCP connects and
+  # 3/3 HTTPS 200s on 2026-10-12: ping 46 ms / TCP connect 31-53 ms.
+  - name: OneDrive
+    host: skyapi.onedrive.live.com
+    kinds: [tcp]
+    path: /robots.txt
+    region: global
+    anycast: true
+    tags: [storage, tile:onedrive]
+    verified:
+      date: 2026-10-12
+      icmp: true
+      tcp: true
+      tcp_connects: 3/3
+      https: 200
+      bytes: 26
   # Box-operated edge (74.112.184.0/21, ~1 ms from Helsinki). From Helsinki: ping 1 ms / TCP
   # connect 4 ms.
   - name: Box
