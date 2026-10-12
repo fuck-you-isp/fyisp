@@ -1,767 +1,457 @@
-// fyisp Home: the default view. One answer ("is my internet OK for calls
-// and work right now, and if not, whose fault is it"), a tile per kind of
-// thing the user relies on, a Today/Week timeline, "Mark a bad call",
-// "What happened at…?" and "Make a report". Every sentence of the answer,
-// the tiles and the timeline summary comes from /api/home (Go, golden
-// tested); this file lays it out, formats times in the viewer's locale and
-// keeps it accessible. Plain ES module, no build step.
+// fyisp Home (v0.9.0): the default view. One answer ("is my internet OK,
+// and which apps work"), the connection strip, 11 app tiles with their last
+// 2 hours, the speed, and the problems of the last 7 days. Every sentence
+// comes from /api/home2 (Go, golden tested); this file lays it out, patches
+// it in place on each poll, and keeps it accessible: one live region that
+// speaks only when the answer changes, and the tab title. Plain ES module,
+// no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, tzParam, clock, when, minutes } from './core.js';
+import { h, fetchJSON, tzParam, smooth, hpClock } from './core.js';
+import { startSingleTest, queueError } from './speedqueue.js';
+import { Tiles, ico, setText } from './hometiles.js';
 
-/** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string,recovered?:number}} HomeAnswer */
-/** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
-/** @typedef {{id:string,title:string,level:string,state:string,label:string,note?:string,names:string[],more?:number,affected?:string[],ok:number,total:number,details:string}} HomeTile */
-/** @typedef {{state:string,delay?:string,dropouts?:string,smoothness?:string,words?:string,worst_at?:number}} HomeCalls */
-/** @typedef {{app:string,title:string,level:string,state:string,label:string,note?:string}} HomeApp */
-/** @typedef {{id:string,label:string,done:boolean}} HomeStep */
-/** @typedef {{part:string,at:number,answer:HomeAnswer,path:HomeNode[],tiles:HomeTile[],other?:{affected:number,total:number,line:string}|null,calls?:HomeCalls,apps:HomeApp[],apps_note?:string,steps?:HomeStep[],speed?:{text:string,level?:string,kind?:string,impact?:string}}} HomeLive */
-/** @typedef {{from:number,to:number,level:string,who:string,kind?:string,label:string,text?:string,source:string,incident?:number,ongoing?:boolean}} HomeRun */
-/** @typedef {{from:number,to:number}} HomeSpan */
-/** @typedef {{date:string,from:number,to:number,work_from?:number,work_to?:number,runs:HomeRun[],off:HomeSpan[],no_record?:boolean}} HomeDay */
-/** @typedef {{id:number,from:number,to?:number,ongoing?:boolean,kind:string,who:string,where:string,side?:string,level?:string,confidence?:string,text?:string,peak_loss:number,details:string}} HomeProblem */
-/** @typedef {{part:string,at:number,tz:number,span:string,from:number,to:number,first_data?:number,days:HomeDay[],summary:string,counts:Object<string,number>,problems:HomeProblem[],work?:{measured:number,bad:number,good:number},known?:{since:number,text:string}|null}} HomeHistory */
-/** @typedef {{part:string,at:number,time:number,from:number,to:number,measured:boolean,calls?:string,bad_from?:number,bad_to?:number,level:string,who:string,kind?:string,headline:string,cause?:string,fact?:string,fact_at?:number,speed_note?:string,speed_test_overlap_s?:number}} HomeAt */
-/** @typedef {{id:number,at:string,text:string,public:boolean}} HomeNote */
+/** @typedef {import('./hometiles.js').HomeTile} HomeTile */
+/** @typedef {{key:string,tone:string,icon:string,tab:string,headline:string,sub:string,day:{text:string,link:string}|null}} HomeAnswer */
+/** @typedef {{id:string,label:string,state:string,sub:string}} HomeHop */
+/** @typedef {{at:number,down_mbps:number,up_mbps:number,text:string,note:string}} HomeSpeedResult */
+/** @typedef {{available:boolean,latest:HomeSpeedResult|null,empty_text:string,usual:{down_mbps:number,up_mbps:number}|null,running:{entry:number,expected_end:number}|null,can_control:boolean}} HomeSpeed */
+/** @typedef {{id:string,from:number,to:number,ongoing:boolean,level:string,when:string,what:string,cause:string,cause_kind:string,evidence:string}} HomeProblem */
+/**
+ * part=now (docs/HOME-API.md, v2).
+ * @typedef {{v:number,at:number,last_check:number,stale:boolean,watching_since:number,footer:string,learning:{until:number,text:string}|null,monitored:number,
+ *   answer:HomeAnswer,path:HomeHop[],path_hint:string,tiles:HomeTile[],speed:HomeSpeed|null,problems:{summary:string,items:HomeProblem[]}|null}} HomeNow
+ */
 /**
  * What Home needs from the page (app.js owns the hash and the status).
- * @typedef {{
- *   span: () => string, setSpan: (s: string) => void,
- *   openDetails: (hash: string) => void,
- *   status: () => any,
- *   notesOn: () => boolean, notesChanged: () => void, reportsOn: () => boolean,
- * }} HomeHost
+ * @typedef {{openDetails: (hash: string) => void, detailsHash: () => string, status: () => any, speedOn: () => boolean}} HomeHost
  */
 
-const LIVE_MS = 15000;
-const HISTORY_MS = 60000;
-// The live part fails this many polls in a row before Home says it can't reach fyisp.
-const LIVE_FAILS = 2;
-// Undo for "Mark a bad call".
-const UNDO_MS = 10000;
-// Keep-it-running guide (README).
-const KEEP_RUNNING = 'https://github.com/fuck-you-isp/fyisp#keep-it-running';
+// The v2 API; it becomes api/home when the old Home is removed.
+export const HOME_API = 'api/home2';
+const NOW_MS = 15000;
+// In a background tab Home keeps polling, slower, so its title stays true.
+const HIDDEN_MS = 60000;
+// The startup probe gives up after this long (the old Home then shows).
+const PROBE_MS = 4000;
+// A poll that hasn't answered by then counts as failed, so the next one can start.
+const POLL_TIMEOUT_MS = 10000;
+// Home calls itself stale after this long without a fresh check, or this many failed polls in a row.
+const STALE_MS = 120e3;
+const FAILS = 2;
+// A speed test this page started: the queue is polled this often.
+const QUEUE_MS = 3000;
+// …and given up after this many failed polls in a row.
+const QUEUE_FAILS = 5;
+const SPEED_NOTE = 'This usually takes under a minute.';
+const SPEED_LOST = 'The speed test didn’t finish. Try again in a few minutes.';
 
-/** Icon and word per level: never colour alone. */
-/** @type {Object<string,{icon:string,word:string}>} */
-const LEVELS = {
-  good: { icon: '✓', word: 'OK' },
-  warn: { icon: '!', word: 'Minor problem' },
-  bad: { icon: '✕', word: 'Problem' },
-  info: { icon: 'i', word: 'Known issue' },
-  checking: { icon: '…', word: 'Checking' },
-  affected: { icon: '–', word: 'Affected' },
-};
-/** @type {Object<string,string>} path node states */
-const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '…', affected: '–' };
-// The tab title: the state first, so a background tab says it.
-/** @type {Object<string,string>} */
-const TITLE_WORD = { good: 'Fine', info: 'Fine', warn: 'Trouble', bad: 'Trouble', checking: 'Checking' };
+/** The v2 answer, or null when this server only has the old Home (before v0.9.0). */
+export async function probeHome() {
+  try {
+    const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }), { signal: AbortSignal.timeout(PROBE_MS) }, 1);
+    return d && d.v === 2 ? /** @type {HomeNow} */ (d) : null;
+  } catch {
+    return null;
+  }
+}
 
-/** "2:10 to 2:16 pm"-ish: both ends in the viewer's clock. */
-function range(/** @type {number} */ a, /** @type {number} */ b) { return b - a <= 60e3 ? when(a) : `${when(a)} to ${clock(b)}`; }
-/** "a few seconds ago", "2 minutes ago". */
+/** "a few seconds ago", "4 minutes ago", "2 hours ago". */
 function ago(/** @type {number} */ ms) {
   if (ms < 60e3) return 'a few seconds ago';
   const m = Math.round(ms / 60e3);
   if (m < 60) return `${m} minute${m === 1 ? '' : 's'} ago`;
-  return `at ${clock(Date.now() - ms)}`;
+  const hh = Math.round(m / 60);
+  return `${hh} hour${hh === 1 ? '' : 's'} ago`;
 }
-export function cls(/** @type {string} */ s) { return /^[a-z_]+$/.test(s) ? s : 'other'; }
-/** An icon (hidden from screen readers) and its word. */
-export function badge(/** @type {string} */ level, /** @type {string} */ word) {
-  const L = LEVELS[level] || LEVELS.checking;
-  return h('span', { class: `ho-badge lvl-${cls(level)}` }, h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: L.icon }), h('span', { text: word }));
+/** "in about 3 minutes", "in under a minute". */
+function inAbout(/** @type {number} */ ms) {
+  const m = Math.round(ms / 60e3);
+  return m < 1 ? 'in under a minute' : `in about ${m} minute${m === 1 ? '' : 's'}`;
 }
+function tone(/** @type {string} */ t) { return /^(ok|warn|bad|stale|checking|info)$/.test(t) ? t : 'checking'; }
+function hopState(/** @type {string} */ s) { return /^(good|slow|down)$/.test(s) ? s : 'none'; }
 
 export class Home {
-  /** @param {HomeHost} host */
-  constructor(host) {
+  /** @param {HomeHost} host @param {HomeNow|null} [first] the answer probeHome() already fetched */
+  constructor(host, first = null) {
     this.host = host;
-    /** @type {HomeLive|null} */
-    this.live = null;
-    /** @type {HomeHistory|null} */
-    this.history = null;
-    this.liveAt = 0; // when the last live answer arrived (client clock)
-    this.liveFails = 0;
-    this.liveBusy = false;
-    this.historyAt = 0;
-    this.historyBusy = false;
-    this.historyErr = false;
-    this.lastAnnounce = '';
-    /** @type {{note:HomeNote|null,at:number,undoUntil:number,answer:HomeAt|null,err:string}|null} */
-    this.marked = null;
-    this.markOpen = false;
-    this.markBusy = false;
-    /** @type {number|null} "What happened at…?": the picked time (ms); null before the first pick */
-    this.askAt = null;
-    this.askSeq = 0;
-    /** the timeline's roving focus (idx -1: not placed yet) */
-    this.focus = { idx: -1, span: '' };
+    /** @type {HomeNow|null} */
+    this.data = null;
+    this.recvAt = 0; // when the last answer arrived (client clock)
+    this.nowAt = 0; // when the last poll started
+    this.fails = 0;
+    /** The part=now request in flight. @type {Promise<void>|null} */
+    this.nowP = null;
+    this.lastKey = '';
+    this.rendered = false;
+    this.wasStale = false;
+    /** A speed test this page started: its queue entry, its state and what to say. @type {{id:number,state:string,text:string,fails:number}|null} */
+    this.mine = null;
+    /** @type {number|undefined} */
+    this.qTimer = undefined;
+    this.spErr = '';
 
-    // Live regions: one polite announcer (state changes only) and one
-    // assertive one for offline / calls breaking up.
-    this.announcer = h('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
-    this.alerter = h('div', { class: 'sr-only', role: 'alert', 'aria-live': 'assertive', 'aria-atomic': 'true' });
+    // Answer card: the headline and sub line are the only live region.
+    this.ansIco = ico('none', true);
+    this.headEl = h('h2', { class: 'hp-headline' });
+    this.subEl = h('p', { class: 'hp-sub' });
+    this.live = h('div', { role: 'status', 'aria-live': 'off', 'aria-atomic': 'true' }, this.headEl, this.subEl);
+    this.dayEl = h('p', { class: 'hp-day' });
+    this.checkedEl = h('p', { class: 'hp-checked' });
+    this.card = h('section', { class: 'hp-answer checking', 'aria-label': 'Your connection now' },
+      this.ansIco, h('div', { class: 'hp-answer-body' }, this.live, this.dayEl, this.checkedEl));
+    this.learnEl = h('div', { class: 'hp-learning', hidden: true });
 
-    // Answer card.
-    this.ansBadge = h('span', { class: 'ho-ans-badge' });
-    this.headEl = h('h2', { class: 'ho-headline', id: 'ho-headline' });
-    this.causeEl = h('p', { class: 'ho-cause' });
-    this.hintEl = h('p', { class: 'ho-hint' });
-    this.pathEl = h('ol', { class: 'ho-path', 'aria-label': 'Where the problem is' });
-    this.stepsEl = h('ol', { class: 'ho-steps', 'aria-label': 'What we have checked so far' });
-    this.metaEl = h('p', { class: 'ho-meta' });
-    this.moreBtn = h('button', { class: 'ho-link', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'ho-more', text: 'What does this mean?', onclick: () => this.toggleMore() });
-    this.moreEl = h('div', { class: 'ho-more', id: 'ho-more', hidden: true });
-    this.tryEl = h('details', { class: 'ho-try' }, h('summary', { text: 'What you can try' }), h('ul'));
-    this.card = h('section', { class: 'ho-card lvl-checking', 'aria-labelledby': 'ho-headline' },
-      h('div', { class: 'ho-card-top' }, this.ansBadge, this.headEl),
-      this.causeEl, this.hintEl, this.stepsEl, this.pathEl,
-      h('div', { class: 'ho-card-foot' }, this.metaEl, this.moreBtn),
-      this.moreEl, this.tryEl);
+    // Connection strip: router → provider → the internet.
+    this.hops = [0, 1, 2].map((i) => {
+      const o = { ico: ico('none'), label: h('span'), sub: h('div', { class: 'hp-hop-sub' }), li: h('li', { class: 'hp-hop' }) };
+      o.li.append(
+        i ? h('span', { class: 'hp-arrow', 'aria-hidden': 'true', text: '→' }) : '',
+        h('div', { class: 'hp-hopbox' }, h('div', { class: 'hp-hop-lbl' }, o.ico, o.label), o.sub));
+      return o;
+    });
+    this.hintEl = h('p', { class: 'hp-hint' });
+    this.pathSec = h('section', { class: 'hp-sec', 'aria-labelledby': 'hp-h-conn' },
+      h('h2', { id: 'hp-h-conn', text: 'Your connection' }),
+      h('ol', { class: 'hp-path' }, ...this.hops.map((o) => o.li)), this.hintEl);
 
-    // Mark a bad call.
-    this.markBtn = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary ho-markbtn', type: 'button', text: 'Mark a bad call', onclick: () => this.mark() }));
-    this.earlierBtn = h('button', { class: 'ho-link', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'ho-earlier', text: 'Was it earlier?', onclick: () => { this.markOpen = !this.markOpen; this.renderMark(); } });
-    this.earlierEl = h('div', { class: 'ho-presets', id: 'ho-earlier', role: 'group', 'aria-label': 'When was the bad call?', hidden: true });
-    this.markOut = h('div', { class: 'ho-mark-out', role: 'status' });
-    this.markEl = h('section', { class: 'ho-mark', 'aria-label': 'Mark a bad call' },
-      h('div', { class: 'ho-mark-row' }, this.markBtn, this.earlierBtn), this.earlierEl, this.markOut);
-    // On a phone the button floats at the bottom of the screen once it has
-    // been scrolled past (never over the answer); the wrapper keeps its place.
-    this.markWrap = h('div', { class: 'ho-markwrap' }, this.markEl);
-    this.floating = false;
-    new IntersectionObserver((es) => {
-      for (const e of es) this.setFloat(!e.isIntersecting && e.boundingClientRect.top < 0);
-    }).observe(this.markWrap);
+    this.tiles = new Tiles({
+      loadTile: (id) => fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'tile', id, tz: tzParam() })),
+      stale: () => this.isStale(),
+      shown: () => this.shown(),
+    });
 
-    // Tiles.
-    this.tilesEl = h('ul', { class: 'ho-tiles', 'aria-label': 'What you use' });
-    this.otherEl = h('p', { class: 'ho-other' });
+    // Speed.
+    this.spLine = h('p', { class: 'hp-speed-line' });
+    this.spNote = h('p', { class: 'hp-speed-note' });
+    this.spBtn = /** @type {HTMLButtonElement} */ (h('button', { type: 'button', class: 'btn hp-speed-btn', text: 'Test speed now', onclick: () => this.testSpeed() }));
+    // What this page's own test is doing, said once per step (the line above isn't live).
+    this.spSay = h('p', { class: 'sr-only', role: 'status' });
+    this.speedSec = h('section', { class: 'hp-sec hp-speed', 'aria-labelledby': 'hp-h-speed', hidden: true },
+      h('h2', { id: 'hp-h-speed', text: 'Speed' }), this.spLine, this.spNote, this.spBtn, this.spSay);
 
-    // Timeline.
-    this.spanSeg = h('div', { class: 'seg sm ho-span', role: 'group', 'aria-label': 'Timeline span' });
-    this.sumEl = h('p', { class: 'ho-summary' });
-    this.stripsEl = h('div', { class: 'ho-strips' });
-    this.timeErr = h('p', { class: 'ho-err', hidden: true }, 'Couldn’t load the history. ',
-      h('button', { class: 'ho-link', type: 'button', text: 'Try again', onclick: () => this.loadHistory() }));
-    this.legendEl = h('div', { class: 'ho-legend' });
-    // Speed tests' time-of-day pattern: one plain line, only when there is one.
-    this.speedEl = h('p', { class: 'ho-speed', hidden: true });
-    this.timeEl = h('section', { class: 'ho-time', 'aria-labelledby': 'ho-time-h' },
-      h('div', { class: 'ho-sec-head' }, h('h2', { id: 'ho-time-h', text: 'When was it bad?' }), this.spanSeg),
-      this.sumEl, this.timeErr, this.stripsEl, this.legendEl, this.speedEl);
+    // Problems in the last 7 days, keyed by id.
+    this.probHead = h('h2', { id: 'hp-problems', tabindex: '-1', text: 'Problems in the last 7 days' });
+    this.probSum = h('p', { class: 'hp-summary' });
+    this.probList = h('ul', { class: 'hp-problems' });
+    /** @type {Map<string, {li:HTMLElement, ico:HTMLElement, when:HTMLElement, what:HTMLElement, cause:HTMLElement, causeB:HTMLElement, ev:HTMLElement}>} */
+    this.probs = new Map();
+    this.probSec = h('section', { class: 'hp-sec', 'aria-labelledby': 'hp-problems' }, this.probHead, this.probSum, this.probList);
 
-    // What happened at…?
-    this.askIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', id: 'ho-ask-in' }));
-    this.askIn.addEventListener('change', () => { const t = fromLocalInput(this.askIn.value); if (isFinite(t)) this.ask(t); });
-    this.askPick = h('label', { class: 'fld ho-pick', for: 'ho-ask-in', hidden: true }, h('span', { text: 'Time' }), this.askIn);
-    this.askOut = h('p', { class: 'ho-answer' });
-    this.askLinks = h('div', { class: 'ho-links' });
-    this.askEl = h('section', { class: 'ho-ask', 'aria-labelledby': 'ho-ask-h' },
-      h('h2', { id: 'ho-ask-h', text: 'What happened at…?' }),
-      h('div', { class: 'ho-presets', role: 'group', 'aria-label': 'Pick a time' }, ...this.presetButtons((t) => this.ask(t), () => this.showPicker())),
-      this.askPick, this.askOut, this.askLinks);
+    this.footText = h('span', { class: 'hp-foot-text' });
+    this.detailsLink = h('a', {
+      href: '#', text: 'Technical details →',
+      onclick: (/** @type {MouseEvent} */ e) => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return; e.preventDefault(); this.host.openDetails(''); },
+    });
+    this.foot = h('footer', { class: 'hp-foot' }, this.footText, this.detailsLink);
 
-    // Make a report.
-    this.reportOut = h('div', { class: 'ho-report-out' });
-    this.reportEl = h('section', { class: 'ho-report', 'aria-labelledby': 'ho-report-h' },
-      h('h2', { id: 'ho-report-h', text: 'Make a report' }),
-      h('p', { class: 'ho-muted', text: 'A page you can save and send to your internet provider or your IT team: the last 7 days, with no private addresses.' }),
-      h('button', { class: 'btn primary ho-big', type: 'button', text: 'Make a report', onclick: () => this.report() }),
-      this.reportOut);
+    this.el = h('main', { id: 'home', class: 'hp', hidden: true },
+      this.card, this.learnEl, this.pathSec, this.tiles.el, this.speedSec, this.probSec, this.foot);
 
-    this.el = h('main', { id: 'home', class: 'home', hidden: true },
-      this.announcer, this.alerter,
-      this.card, this.markWrap, this.tilesEl, this.otherEl, this.timeEl,
-      h('div', { class: 'ho-actions' }, this.askEl, this.reportEl));
-  }
+    // Coming back to the tab fetches at once (app.js's handler skips Home); in the background polls are every 60 s.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && this.shown()) this.loadNow(); });
 
-  /** The presets shared by "Was it earlier?" and "What happened at…?". */
-  presetButtons(/** @type {(t:number)=>void} */ pick, /** @type {()=>void} */ picker) {
-    return [
-      h('button', { class: 'btn', type: 'button', text: 'A few minutes ago', onclick: () => pick(Date.now() - 5 * 60e3) }),
-      h('button', { class: 'btn', type: 'button', text: 'An hour ago', onclick: () => pick(Date.now() - 60 * 60e3) }),
-      h('button', { class: 'btn', type: 'button', text: 'Pick a time', onclick: picker }),
-    ];
+    if (first) { this.data = first; this.recvAt = Date.now(); this.nowAt = this.recvAt; }
   }
 
   shown() { return !this.el.hidden; }
 
-  /** Floats the Mark button (phones only, while Home is on screen). */
-  setFloat(/** @type {boolean} */ on) {
-    on = on && this.shown() && !this.markEl.hidden && window.matchMedia('(max-width: 767.98px)').matches;
-    if (on === this.floating) return;
-    this.markWrap.style.minHeight = on ? `${this.markEl.offsetHeight}px` : '';
-    this.floating = on;
-    this.markEl.classList.toggle('float', on);
-    document.body.classList.toggle('ho-floating', on);
+  /** Home opened (or the page's refresh): render what we have, then poll. */
+  refresh() {
+    this.render();
+    // The panel's chart may have been resized or re-themed while Details was on screen.
+    this.tiles.refit();
+    return this.loadNow();
   }
 
-  /** Loads both parts now (Home opened, or a refresh). */
-  refresh() { return Promise.all([this.loadLive(), this.loadHistory()]); }
-
-  /** Every second: reload what is due while Home is on screen. */
+  /** Every second: poll when due (every 60 s in a background tab), keep "Checked …" and the stale state current. */
   tick() {
-    if (!this.shown() || document.hidden) return;
+    if (!this.shown()) return;
     const now = Date.now();
-    if (now - this.liveAt >= LIVE_MS && !this.liveBusy) this.loadLive();
-    if (now - this.historyAt >= HISTORY_MS && !this.historyBusy) this.loadHistory();
-    if (now % 15000 < 1000) this.renderMeta();
-    if (this.marked && this.marked.undoUntil && now > this.marked.undoUntil) { this.marked.undoUntil = 0; this.renderMark(); }
+    if (!this.nowP && now - this.nowAt >= (document.hidden ? HIDDEN_MS : NOW_MS)) this.loadNow();
+    // Going stale between polls (an asleep host can't answer) redraws everything; else just "Checked …".
+    else if (this.isStale() !== this.wasStale) this.render();
+    else this.renderAnswer();
+    if (!document.hidden && !this.isStale()) this.tiles.tick(now);
   }
 
-  tz() { return tzParam(); }
+  /**
+   * Polls part=now. A call while one is in flight shares it, or with
+   * fresh waits for it and then asks again (an answer started earlier may
+   * predate what the caller is waiting for).
+   */
+  async loadNow(fresh = false) {
+    if (this.nowP) {
+      if (!fresh) return this.nowP;
+      await this.nowP.catch(() => {});
+      if (this.nowP) return this.loadNow(true);
+    }
+    this.nowP = this.fetchNow().finally(() => { this.nowP = null; });
+    return this.nowP;
+  }
 
-  async loadLive() {
-    if (this.liveBusy) return;
-    this.liveBusy = true;
-    const started = Date.now();
+  async fetchNow() {
+    this.nowAt = Date.now();
     try {
-      this.live = await fetchJSON('api/home?' + new URLSearchParams({ part: 'live', tz: this.tz() }));
-      this.liveFails = 0;
-      this.liveAt = Date.now();
+      const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }), { signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
+      if (!d || d.v !== 2) throw new Error('not a v2 answer');
+      this.data = /** @type {HomeNow} */ (d);
+      this.recvAt = Date.now();
+      this.fails = 0;
     } catch {
-      this.liveFails++;
-      this.liveAt = started; // retry on the next poll
-    } finally {
-      this.liveBusy = false;
+      this.fails++;
     }
-    this.renderLive();
+    this.render();
   }
 
-  async loadHistory() {
-    if (this.historyBusy) return;
-    this.historyBusy = true;
-    this.historyAt = Date.now();
-    try {
-      this.history = await fetchJSON('api/home?' + new URLSearchParams({ part: 'history', span: this.host.span(), tz: this.tz() }));
-      this.historyErr = false;
-    } catch {
-      this.historyErr = true;
-      this.historyAt = Date.now() - HISTORY_MS + 15000; // retry in 15 s
-    } finally {
-      this.historyBusy = false;
-    }
-    this.renderHistory();
+  /** How old the newest check is now (ms), or NaN before the first one. */
+  age() {
+    const d = this.data;
+    if (!d || !d.last_check) return NaN;
+    return Math.max(0, d.at - d.last_check) + (Date.now() - this.recvAt);
   }
 
-  render() { this.renderLive(); this.renderHistory(); this.renderMark(); }
-
-  // ---------- answer card ----------
-
-  renderLive() {
-    const d = this.live;
-    const lost = this.liveFails >= LIVE_FAILS;
-    this.card.classList.toggle('stale', lost);
-    if (!d) {
-      this.card.className = 'ho-card lvl-checking';
-      this.ansBadge.replaceChildren(badge('checking', LEVELS.checking.word));
-      this.headEl.textContent = lost ? 'Can’t reach fyisp on this computer' : 'Checking your connection';
-      this.causeEl.textContent = lost ? 'Is it still running? We’ll keep trying.' : '';
-      this.hintEl.textContent = '';
-      this.pathEl.replaceChildren();
-      this.stepsEl.replaceChildren();
-      this.tilesEl.replaceChildren();
-      this.renderMeta();
-      return;
-    }
-    // One plain line, never during a Problem: the card owns "now". "Speed:" says it isn't a problem count.
-    const sp = d.speed && d.answer.level !== 'bad' ? d.speed : null;
-    this.speedEl.hidden = !sp;
-    if (sp) {
-      this.speedEl.replaceChildren(...[
-        // The warm-up line has no icon: nothing is slowing yet.
-        sp.kind === 'warmup' && sp.impact !== 'video_risk' ? '' : h('span', { class: 'ho-speed-i', 'aria-hidden': 'true', text: sp.impact === 'video_risk' ? '!' : '↘' }),
-        // The server's warm-up line already starts with "Speed:".
-        /^Speed:/.test(sp.text) ? h('span', { text: sp.text }) : h('span', {}, h('b', { text: 'Speed: ' }), sp.text.charAt(0).toLowerCase() + sp.text.slice(1)), ' ',
-        h('a', { class: 'ho-link', href: '#v=speed', text: 'See speed by hour', onclick: (/** @type {Event} */ e) => { e.preventDefault(); this.host.openDetails('#v=speed'); } })].filter((x) => x !== ''));
-    }
-    const a = d.answer;
-    // Can't reach fyisp: grey, never red, and the last answer "as of".
-    const level = lost ? 'checking' : a.level;
-    this.card.className = `ho-card lvl-${cls(level)}${lost ? ' stale' : ''}`;
-    this.ansBadge.replaceChildren(badge(level, lost ? 'Not connected' : (LEVELS[level] || LEVELS.checking).word));
-    if (lost) {
-      this.headEl.textContent = 'Can’t reach fyisp on this computer';
-      this.causeEl.textContent = `Is it still running? This is the last answer, as of ${clock(this.liveAt)}: ${a.headline}`;
-      this.hintEl.textContent = '';
-    } else {
-      this.headEl.textContent = a.headline;
-      this.causeEl.textContent = a.cause || '';
-      this.hintEl.textContent = a.hint || '';
-    }
-    this.causeEl.hidden = !this.causeEl.textContent;
-    this.hintEl.hidden = !this.hintEl.textContent;
-    document.title = `${TITLE_WORD[level] || 'Checking'} · fyisp`;
-
-    // Warm-up: the steps that fill, no numbers.
-    const steps = a.level === 'checking' ? d.steps || [] : [];
-    this.stepsEl.hidden = !steps.length;
-    this.stepsEl.replaceChildren(...steps.map((s) => h('li', { class: s.done ? 'done' : '' },
-      h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: s.done ? '✓' : '…' }), s.label,
-      h('span', { class: 'sr-only', text: s.done ? ', checked' : ', not checked yet' }))));
-
-    // The path chain: router → provider → internet (→ apps when at fault).
-    // This device and Apps & websites appear only when they are part of the story (offline; an app at fault).
-    const nodes = (d.path || []).filter((n) => (n.id !== 'device' && n.id !== 'apps') || n.state !== 'ok' || n.blamed);
-    this.pathEl.hidden = a.level === 'checking' || !nodes.length;
-    const items = [];
-    nodes.forEach((n, i) => {
-      if (i) items.push(h('li', { class: 'ho-arrow', 'aria-hidden': 'true', text: '→' }));
-      items.push(h('li', { class: `ho-node st-${cls(n.state)}${n.blamed ? ' blamed' : ''}` },
-        h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: NODE_ICON[n.state] || '?' }),
-        h('span', { class: 'ho-node-l', text: n.label }),
-        n.state !== 'ok' ? h('span', { class: 'ho-node-w', text: n.words }) : h('span', { class: 'sr-only', text: `: ${n.words}` }),
-        n.blamed ? h('span', { class: 'ho-node-b', text: n.culprit || 'Problem is probably here' }) : null));
-    });
-    this.pathEl.replaceChildren(...items);
-
-    // "What you can try" only when not OK.
-    const tries = lost ? [] : a.try || [];
-    this.tryEl.hidden = !tries.length;
-    /** @type {HTMLElement} */ (this.tryEl.lastElementChild).replaceChildren(...tries.map((t) => h('li', { text: t })));
-    this.renderMore();
-    this.renderMeta();
-    this.renderTiles();
-    this.announce(lost);
+  /**
+   * Stale: the server says so, it can't be reached, or its last check is
+   * too old by now. Time since the last answer only counts while a poll
+   * after it is pending or failed: a throttled background tab that simply
+   * hasn't asked is not evidence that fyisp stopped.
+   */
+  isStale() {
+    const d = this.data;
+    if (!d) return this.fails >= FAILS;
+    if (d.stale || this.fails >= FAILS) return true;
+    const asked = this.nowAt > this.recvAt;
+    return Math.max(0, d.at - d.last_check) + (asked ? Date.now() - this.recvAt : 0) >= STALE_MS && !!d.last_check;
   }
 
-  /** "Checked a few seconds ago" (and "since 2:41 pm, 6 minutes"); plain text, never a live region. */
-  renderMeta() {
-    const d = this.live;
-    const bits = [];
-    if (d && d.answer.since && d.answer.level !== 'good' && d.answer.level !== 'checking') {
-      bits.push(`Since ${when(d.answer.since)} (${minutes(Date.now() - d.answer.since)})`);
+  /** The answer to show: the server's, or the client's own when fyisp has gone quiet. @returns {HomeAnswer} */
+  answer() {
+    const d = this.data;
+    if (this.isStale()) {
+      const t = d && d.last_check ? hpClock(d.last_check) : '';
+      return {
+        key: 'stale', tone: 'stale', icon: 'none', tab: '? Not checking', day: d ? d.answer.day : null,
+        headline: t ? `fyisp hasn’t checked since ${t}.` : 'fyisp can’t be reached right now.',
+        sub: t ? `Is the computer it runs on asleep or turned off? Everything below is from ${t} and may be out of date.`
+          : 'Is the computer it runs on asleep or turned off?',
+      };
     }
-    // Just after an outage ended: a calm "back to normal" line.
-    if (d && d.answer.recovered && d.answer.level === 'good') bits.push(`Back to normal since ${when(d.answer.recovered)}`);
-    if (d && d.answer.level === 'checking') bits.push('First results in about 2 minutes');
-    else if (this.liveAt && d) bits.push(`Checked ${ago(Date.now() - this.liveAt)}`);
-    this.metaEl.textContent = bits.join(' · ');
+    if (!d) return { key: 'checking', tone: 'checking', icon: 'none', tab: 'Checking', headline: 'Checking your connection…', sub: '', day: null };
+    return d.answer;
   }
 
-  toggleMore() {
-    const open = this.moreEl.hidden;
-    this.moreEl.hidden = !open;
-    this.moreBtn.setAttribute('aria-expanded', String(open));
-  }
-
-  /** The "What does this mean?" disclosure: the path explained, the call facts in words. */
-  renderMore() {
-    const d = this.live;
-    if (!d) return;
-    const kids = [];
-    const a = d.answer;
-    if (a.fact) kids.push(h('p', { text: a.fact_at ? `${a.fact.replace(/^In the worst minute/, `In the worst minute (${clock(a.fact_at)})`)}` : a.fact }));
-    if (d.calls && d.calls.words) kids.push(h('p', {}, h('b', { text: 'Calls right now: ' }), d.calls.words));
-    const dl = h('dl', { class: 'ho-glossary' });
-    for (const n of d.path || []) {
-      if (!n.tooltip) continue;
-      dl.append(h('dt', { text: n.label }), h('dd', { text: n.tooltip }));
+  render() {
+    const d = this.data;
+    const stale = this.isStale();
+    this.wasStale = stale;
+    this.el.classList.toggle('is-stale', stale);
+    this.renderAnswer();
+    if (d) {
+      this.renderLearning(d);
+      this.renderPath(d);
+      this.tiles.update(d.tiles || [], d.last_check);
+      this.renderSpeed(d);
+      this.renderProblems(d);
+      setText(this.footText, d.footer || '');
     }
-    if (dl.childElementCount) kids.push(dl);
-    const apps = d.apps || [];
-    if (apps.length) {
-      kids.push(h('p', { class: 'ho-apps-h', text: 'Your call apps' }),
-        h('ul', { class: 'ho-apps' }, ...apps.map((x) => h('li', {}, badge(x.level, x.label), ' ', h('b', { text: x.title }), x.note ? h('span', { class: 'ho-muted', text: ` ${x.note}` }) : null))));
+    const href = this.host.detailsHash() || '#';
+    if (this.detailsLink.getAttribute('href') !== href) this.detailsLink.setAttribute('href', href);
+    if (!this.rendered) {
+      this.rendered = true;
+      // The first answer is on screen before the region goes live, so loading the page announces nothing.
+      requestAnimationFrame(() => requestAnimationFrame(() => this.live.setAttribute('aria-live', 'polite')));
     }
-    if (d.apps_note) kids.push(h('p', { class: 'ho-muted', text: d.apps_note }));
-    kids.push(h('p', { class: 'ho-muted', text: 'Every few seconds we send small test messages to your router, your provider and the apps and websites you use, from this device. We can’t see the other people on a call.' }));
-    this.moreEl.replaceChildren(...kids);
   }
 
-  /** Speaks the answer only when it changes (level or who): never on a refresh. */
-  announce(/** @type {boolean} */ lost) {
-    const a = this.live && this.live.answer;
-    const key = lost ? 'lost' : a ? `${a.level}|${a.who}|${a.calls || ''}` : '';
-    if (!key || key === this.lastAnnounce) return;
-    const first = this.lastAnnounce === '';
-    this.lastAnnounce = key;
-    if (first) return; // the page itself says it on load
-    const text = lost ? 'Can’t reach fyisp on this computer.' : /** @type {HomeAnswer} */ (a).announce;
-    const urgent = lost || (a && (a.who === 'offline' || a.calls === 'unusable'));
-    (urgent ? this.alerter : this.announcer).textContent = text;
+  renderAnswer() {
+    const a = this.answer();
+    const cc = `hp-answer ${tone(a.tone)}`, ic = `hp-ico big ${/^(good|slow|down|info)$/.test(a.icon) ? a.icon : 'none'}`;
+    if (this.card.className !== cc) this.card.className = cc;
+    if (this.ansIco.className !== ic) this.ansIco.className = ic;
+    // The live region changes only with the answer's key; same-key text changes are rare and logged.
+    if (a.key !== this.lastKey || this.headEl.textContent !== a.headline || this.subEl.textContent !== a.sub) {
+      if (a.key === this.lastKey) console.debug('fyisp home: answer text changed under key', a.key);
+      this.lastKey = a.key;
+      setText(this.headEl, a.headline);
+      setText(this.subEl, a.sub);
+      this.subEl.hidden = !a.sub;
+    }
+    this.renderDay(a.day);
+    const age = this.age();
+    setText(this.checkedEl, !isFinite(age) ? '' : this.isStale()
+      ? `Last checked ${hpClock(/** @type {HomeNow} */ (this.data).last_check)}, ${ago(age)}`
+      : `Checked ${ago(age)} · updates on its own`);
+    if (this.shown()) {
+      const title = `${a.tab} – fyisp`;
+      if (document.title !== title) document.title = title;
+    }
   }
 
-  // ---------- tiles ----------
-
-  renderTiles() {
-    const d = this.live;
-    if (!d) return;
-    const lost = this.liveFails >= LIVE_FAILS;
-    this.tilesEl.replaceChildren(...(d.tiles || []).map((t) => {
-      const lvl = lost ? 'checking' : t.level;
-      const names = t.names.join(' · ') + (t.more ? ` +${t.more}` : '');
-      const label = lost ? `${t.label} (as of ${clock(this.liveAt)})` : t.label;
-      const a = h('a', {
-        class: `ho-tile lvl-${cls(lvl)}`, href: tileHash(t),
-        'aria-label': `${t.title}: ${label}.${t.note ? ' ' + t.note : ''} See details`,
-        onclick: (/** @type {MouseEvent} */ e) => { if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return; e.preventDefault(); this.host.openDetails(tileHash(t)); },
+  /** "Last 24 hours: 4 short problems, …" with the server's link words pointing at the problems list. @param {{text:string,link:string}|null} day */
+  renderDay(day) {
+    const text = day ? day.text : '';
+    const sig = text + '\u0000' + (day ? day.link : '');
+    if (this.dayEl.dataset.sig === sig) return;
+    this.dayEl.dataset.sig = sig;
+    this.dayEl.hidden = !text;
+    const i = day && day.link ? text.indexOf(day.link) : -1;
+    if (!day || i < 0) { this.dayEl.textContent = text; return; }
+    this.dayEl.replaceChildren(text.slice(0, i), h('a', {
+      href: '#hp-problems', text: day.link,
+      onclick: (/** @type {MouseEvent} */ e) => {
+        // A real hash change would be routed as a view change: scroll and focus instead.
+        e.preventDefault();
+        this.probHead.focus({ preventScroll: true });
+        this.probHead.scrollIntoView({ block: 'start', behavior: smooth() });
       },
-      h('span', { class: 'ho-tile-t' }, h('span', { class: 'ho-icon', 'aria-hidden': 'true', text: (LEVELS[lvl] || LEVELS.checking).icon }), t.title),
-      h('span', { class: 'ho-tile-l', text: label }),
-      t.note ? h('span', { class: 'ho-tile-n', text: t.note }) : null,
-      names ? h('span', { class: 'ho-tile-x', 'aria-hidden': 'true', text: names }) : null);
-      return h('li', {}, a);
-    }));
-    this.tilesEl.dataset.n = String((d.tiles || []).length);
-    const o = d.other;
-    this.otherEl.hidden = !o || !o.line || (d.tiles || []).some((t) => t.id === 'other');
-    this.otherEl.textContent = o && o.line ? o.line : '';
+    }), text.slice(i + day.link.length));
   }
 
-  // ---------- timeline ----------
-
-  renderHistory() {
-    const span = this.host.span();
-    this.spanSeg.replaceChildren(...[['d', 'Today'], ['w', 'Week']].map(([v, l]) => h('button', {
-      type: 'button', text: l, 'aria-pressed': String(span === v),
-      onclick: () => { if (this.host.span() !== v) { this.host.setSpan(v); this.history = null; this.renderHistory(); this.loadHistory(); } },
-    })));
-    this.timeErr.hidden = !this.historyErr;
-    const d = this.history;
-    if (!d || d.span !== span) {
-      this.sumEl.textContent = this.historyErr ? '' : 'Loading…';
-      this.stripsEl.replaceChildren();
-      this.legendEl.replaceChildren();
-      return;
-    }
-    // The summary sentence, with the times of the first few problems.
-    // The server's sentence; a known issue with its start; then the problems' times (known issues aren't problems).
-    const probs = d.problems.filter((p) => p.level !== 'info');
-    const times = probs.slice(0, 3).map((p) => (p.ongoing ? `${when(p.from)} until now` : range(p.from, /** @type {number} */ (p.to))));
-    this.sumEl.replaceChildren(h('span', { text: d.summary }));
-    if (d.known && d.known.text) this.sumEl.append(' ', h('span', { text: `${d.known.text} ${when(d.known.since)}.` }));
-    if (times.length) this.sumEl.append(h('span', { class: 'ho-times', text: `When: ${times.join('; ')}${probs.length > 3 ? '; …' : ''}.` }));
-    const t = buildTimeline(d, this.focus, (st, a, b) => this.pickBlock(st, a, b));
-    this.stripsEl.replaceChildren(t.grid);
-    this.legendEl.replaceChildren(...t.legend);
-    if (d.work && d.span === 'd' && d.work.measured) {
-      this.legendEl.append(h('span', { class: 'ho-muted', text: `Working hours so far: good for calls ${Math.round(d.work.good * 100)}% of the time.` }));
-    }
+  /** @param {HomeNow} d */
+  renderLearning(d) {
+    this.learnEl.hidden = !d.learning;
+    setText(this.learnEl, d.learning ? d.learning.text : '');
   }
 
-  /** A block picked on the timeline fills "What happened at…?". */
-  pickBlock(/** @type {{kind:string,run?:HomeRun|null}} */ st, /** @type {number} */ a, /** @type {number} */ b) {
-    const t = st.run ? Math.max(a, st.run.from) : Math.min(Date.now(), (a + b) / 2);
-    this.ask(t);
-    this.askEl.scrollIntoView({ block: 'nearest' });
+  /** @param {HomeNow} d */
+  renderPath(d) {
+    const path = d.path || [];
+    this.hops.forEach((o, i) => {
+      const p = path[i] || { id: '', label: '', state: 'unknown', sub: '' };
+      const s = hopState(p.state);
+      if (o.li.className !== `hp-hop is-${s}`) o.li.className = `hp-hop is-${s}`;
+      if (o.ico.className !== `hp-ico ${s}`) o.ico.className = `hp-ico ${s}`;
+      setText(o.label, p.label);
+      setText(o.sub, p.sub);
+    });
+    setText(this.hintEl, d.path_hint || '');
+    this.hintEl.hidden = !d.path_hint;
   }
 
-  // ---------- what happened at…? ----------
+  // ---------- speed ----------
 
-  showPicker() {
-    this.askPick.hidden = false;
-    const now = Date.now();
-    this.askIn.max = toLocalInput(now);
-    const first = this.history && this.history.first_data;
-    if (first) this.askIn.min = toLocalInput(first);
-    if (!this.askIn.value) this.askIn.value = toLocalInput(now - 30 * 60e3);
-    this.askIn.focus();
-  }
-
-  /** "What happened at…?" for around t (null: a few minutes ago), in the server's words. */
-  async ask(/** @type {number|null} */ t) {
-    this.askAt = t;
-    const seq = ++this.askSeq;
-    const r = await this.at(t == null ? Date.now() - 5 * 60e3 : t);
-    if (seq !== this.askSeq) return;
-    this.askOut.className = `ho-answer lvl-${cls(r ? r.level : 'checking')}`;
-    this.askOut.replaceChildren(...this.atNodes(r));
-    const links = [];
-    if (r && r.measured) {
-      const a = r.bad_from || r.from, b = r.bad_to || r.to;
-      const hash = `#v=calls&from=${Math.round(a - 10 * 60e3)}&to=${Math.round(Math.min(Date.now(), b + 10 * 60e3))}`;
-      links.push(h('a', { class: 'ho-link', href: hash, onclick: (/** @type {MouseEvent} */ e) => { e.preventDefault(); this.host.openDetails(hash); }, text: 'See details' }));
-    }
-    this.askLinks.replaceChildren(...links);
-  }
-
-  /**
-   * The server's answer for around t (api/home?part=at), or null.
-   * @param {number} t
-   * @returns {Promise<HomeAt|null>}
-   */
-  async at(t) {
-    try {
-      return await fetchJSON('api/home?' + new URLSearchParams({ part: 'at', at: String(Math.round(Math.min(t, Date.now()))), tz: this.tz() }));
-    } catch {
-      return null;
-    }
-  }
-
-  /** An answer for a time: the time (bold), the headline, then the cause and the fact. */
-  atNodes(/** @type {HomeAt|null} */ r) {
-    if (!r) return [h('span', { text: 'Couldn’t check that time. Try again.' })];
-    const span = r.bad_from && r.bad_to ? `${when(r.bad_from)} to ${clock(r.bad_to)}` : `Around ${when(r.time)}`;
-    const L = LEVELS[r.level] || LEVELS.checking;
-    const kids = [badge(r.level, L.word), ' ', h('b', { text: `${span}: ` }), `${r.headline}.`];
-    // A speed test in the window comes first: at 10 s or more it is the most likely cause.
-    if (r.speed_note) kids.splice(3, 0, `${r.speed_note} `);
-    if (r.cause) kids.push(' ', r.cause);
-    if (r.fact) kids.push(' ', r.fact_at ? r.fact.replace(/^In the worst minute/, `In the worst minute (${clock(r.fact_at)})`) : r.fact);
-    return kids;
-  }
-
-  // ---------- mark a bad call ----------
-
-  renderMark() {
-    this.markBtn.disabled = this.markBusy;
-    this.earlierBtn.setAttribute('aria-expanded', String(this.markOpen));
-    this.earlierEl.hidden = !this.markOpen;
-    if (this.markOpen && !this.earlierEl.childElementCount) {
-      this.earlierEl.append(...this.presetButtons((t) => this.mark(t), () => this.markPicker()));
-    }
-    const m = this.marked;
-    const kids = [];
-    if (m) {
-      kids.push(h('p', { class: 'ho-mark-a' }, ...(m.answer ? this.atNodes(m.answer) : [this.markBusy ? 'Checking that time…' : ''])));
-      if (m.err) kids.push(h('p', { class: 'ho-muted', text: m.err }));
-      else if (m.note) {
-        kids.push(h('p', { class: 'ho-muted' }, `Saved a private note at ${clock(m.at)}. `,
-          m.undoUntil ? h('button', { class: 'ho-link', type: 'button', text: 'Undo', onclick: () => this.undo() }) : null));
-      }
-    }
-    this.markOut.replaceChildren(...kids);
-  }
-
-  markPicker() {
-    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', id: 'ho-mark-in', max: toLocalInput(Date.now()), value: toLocalInput(Date.now() - 15 * 60e3) }));
-    input.addEventListener('change', () => { const t = fromLocalInput(input.value); if (isFinite(t)) this.mark(t); });
-    const lab = h('label', { class: 'fld ho-pick', for: 'ho-mark-in' }, h('span', { text: 'Time of the call' }), input);
-    this.earlierEl.querySelector('.ho-pick')?.remove();
-    this.earlierEl.append(lab);
-    input.focus();
-  }
-
-  /**
-   * Why writes (notes, reports) can't happen from this page, in plain
-   * words, or '' when they can. Never mentions flags.
-   */
-  writeBlock() {
+  /** @param {HomeNow} d */
+  renderSpeed(d) {
+    const sp = d.speed;
+    this.speedSec.hidden = !sp || !sp.available || !this.host.speedOn();
+    if (!sp || this.speedSec.hidden) return;
     const st = this.host.status();
-    if (!st || !this.host.notesOn() || st.controls === 'disabled') return 'Not saved: this dashboard is read-only on this device.';
-    if (st.controls === 'admin' && !st.admin) return 'Not saved yet: to save notes or make reports from this browser, open the link fyisp showed when it started (in its log or terminal window).';
-    return canWrite() ? '' : 'Not saved: this dashboard is read-only on this device.';
+    let line, note;
+    if (this.mine) { line = this.mine.text; note = this.spErr || (this.mine.state === 'running' ? SPEED_NOTE : ''); }
+    else if (sp.running) { line = 'Testing your speed…'; note = SPEED_NOTE; }
+    else if (sp.latest) { line = sp.latest.text; note = this.spErr || sp.latest.note; }
+    else { line = sp.empty_text; note = this.spErr; }
+    setText(this.spLine, line);
+    setText(this.spNote, note);
+    this.spNote.hidden = !note;
+    // Admin-token dashboards ask for the token on click (apiWrite); disabled controls hide the button.
+    this.spBtn.hidden = !(sp.can_control || (st && st.controls === 'admin'));
+    this.spBtn.disabled = !!this.mine || !!sp.running || this.isStale();
   }
 
-  /** One click: a private note at t (now by default) and, beside it, what happened then. */
-  async mark(/** @type {number|undefined} */ t) {
-    if (this.markBusy) return;
-    const at = t == null ? Date.now() : t;
-    // "Was it earlier?" moves the note just saved instead of adding a second one.
-    const prev = t != null && this.marked ? this.marked.note : null;
-    this.markBusy = true;
-    this.marked = { note: prev, at, undoUntil: 0, answer: null, err: '' };
-    this.renderMark();
-    const answer = await this.at(at);
-    this.marked.answer = answer;
-    const block = this.writeBlock();
-    if (block) {
-      this.marked.note = null;
-      this.marked.err = block;
-    } else {
-      const body = { at: new Date(at).toISOString(), text: answer ? `Bad call: ${answer.headline}. ${answer.cause || ''}`.trim() : 'Bad call', public: false };
-      try {
-        const note = prev
-          ? await apiWrite('PUT', `api/annotations/${prev.id}`, body)
-          : await apiWrite('POST', 'api/annotations', body);
-        this.marked.note = note;
-        this.marked.undoUntil = Date.now() + UNDO_MS;
-        this.host.notesChanged();
-      } catch {
-        this.marked.err = 'Couldn’t save the note. Try again.';
-      }
-    }
-    this.markBusy = false;
-    this.renderMark();
-  }
-
-  async undo() {
-    const m = this.marked;
-    if (!m || !m.note) return;
+  /** Test speed now: queue one test of the nearest servers, then follow it until it's done. */
+  async testSpeed() {
+    if (this.mine) return;
+    this.spErr = '';
+    // Cleared first, so the same message twice in a row is still announced.
+    setText(this.spSay, '');
+    this.mine = { id: 0, state: 'starting', text: 'Testing your speed…', fails: 0 };
+    this.render();
     try {
-      await apiWrite('DELETE', `api/annotations/${m.note.id}`);
-      this.marked = null;
-      this.markOut.replaceChildren(h('p', { class: 'ho-muted', text: 'Removed.' }));
-      this.host.notesChanged();
-    } catch {
-      m.err = 'Couldn’t remove the note. Try again.';
-      this.renderMark();
-    }
-  }
-
-  // ---------- make a report ----------
-
-  /** A redacted report of the last 7 days, saved with the others in Details. */
-  async report() {
-    const st = this.host.status();
-    const out = this.reportOut;
-    // The home-network warning needs the week's counts, whatever span is on screen.
-    let counts = this.history && this.history.span === 'w' ? this.history.counts : null;
-    if (!counts) {
-      try { counts = (await fetchJSON('api/home?' + new URLSearchParams({ part: 'history', span: 'w', tz: this.tz() }))).counts; } catch { /* no warning then */ }
-    }
-    const kids = [];
-    // Honest when the evidence points home.
-    if (counts && counts.home > (counts.provider || 0) + (counts.beyond || 0)) {
-      kids.push(h('p', { class: 'ho-warn', text: 'Most problems this week were in your home network (Wi-Fi or router). Your provider will likely say the same.' }));
-    }
-    if (!this.host.reportsOn() || !canWrite() || (st && st.controls === 'disabled')) {
-      kids.push(h('p', { class: 'ho-muted', text: 'Reports can’t be made from this browser on this setup. Run fyisp report --redact on the device running fyisp instead.' }));
-      out.replaceChildren(...kids);
-      return;
-    }
-    kids.push(h('p', { class: 'ho-muted', role: 'status', text: 'Making your report…' }));
-    out.replaceChildren(...kids);
-    kids.pop();
-    const to = Date.now();
-    try {
-      /** @type {{id:string}} */
-      const r = await apiWrite('POST', 'api/reports', { from: new Date(to - 7 * 864e5).toISOString(), to: new Date(to).toISOString(), title: 'Internet quality report', redact: true },
-        'Making a report needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
-      kids.push(h('div', { class: 'ho-links' },
-        h('a', { class: 'btn', href: `api/reports/${r.id}`, target: '_blank', rel: 'noopener', text: 'Open report' }),
-        h('a', { class: 'btn', href: `api/reports/${r.id}?download=1`, download: '', text: 'Download' })),
-      h('p', { class: 'ho-muted', text: 'Send the downloaded file, or print it to PDF. It has no private addresses and only the notes you marked for redacted reports. It’s also listed under Reports in Details.' }));
+      const r = await startSingleTest();
+      this.mine.id = r.entry.id;
+      this.follow(r.entry);
+      setText(this.spSay, this.mine.text);
+      this.render();
+      this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS);
     } catch (e) {
-      const err = /** @type {any} */ (e);
-      if (err.status === 0) { out.replaceChildren(...kids); return; } // the admin dialog was cancelled
-      kids.push(h('p', { class: 'ho-warn', role: 'alert', text: 'We couldn’t make the report: ' + err.message }));
+      this.mine = null;
+      this.spErr = queueError(e);
+      setText(this.spSay, this.spErr);
+      this.render();
     }
-    out.replaceChildren(...kids);
   }
-}
 
-/** A tile's Details link, as the server picks it (#v=calls, or the Overview filtered with ot=). */
-function tileHash(/** @type {HomeTile} */ t) { return t.details; }
+  /** The line for this page's entry: running, or waiting its turn. @param {any} e */
+  follow(e) {
+    if (!this.mine) return;
+    this.mine.state = e.state;
+    this.mine.text = e.state === 'running' ? 'Testing your speed…' : `Waiting for another test, starts ${inAbout((e.est_start || Date.now()) - Date.now())}.`;
+  }
 
-/**
- * The Today/Week timeline: one row of blocks per day (an hour each, 3 hours
- * on a phone) whose height and pattern carry the state, a "now" marker, the
- * hour axis and the legend. One tab stop; arrow keys move across blocks.
- * focus keeps the roving position across refreshes.
- * @param {HomeHistory} d
- * @param {{idx:number,span:string}} focus
- * @param {(st:{kind:string,level?:string,run?:HomeRun|null}, a:number, b:number) => void} onPick
- */
-function buildTimeline(d, focus, onPick) {
-  const phone = window.matchMedia('(max-width: 767.98px)').matches;
-  const per = phone ? 3 : 1; // hours per block: blocks stay ≥ 24 px wide on a phone
-  const rows = [];
-  /** @type {HTMLElement[]} */
-  const blocks = [];
-  for (const day of d.days) {
-    const cells = [];
-    const name = new Date(day.from + 12 * 3600e3).toLocaleDateString([], { weekday: 'short' });
-    for (let hr = 0; hr < 24; hr += per) {
-      const a = day.from + hr * 3600e3, b = Math.min(day.from + (hr + per) * 3600e3, day.from + 86400e3);
-      const st = blockState(day, d, a, b);
-      const label = blockLabel(name, a, b, st);
-      const cell = h('button', {
-        type: 'button', class: `ho-blk b-${st.kind}${st.level ? ' lvl-' + st.level : ''}`, 'aria-label': label, title: label, tabindex: '-1',
-        disabled: st.kind === 'later' || null,
-        onclick: () => onPick(st, a, b),
-      });
-      if (st.kind !== 'later') blocks.push(cell);
-      cells.push(cell);
+  async pollQueue() {
+    const mine = this.mine;
+    if (!mine) return;
+    // Left Home: stop following; the next part=now shows a test still running.
+    if (!this.shown()) { this.mine = null; return; }
+    try {
+      const q = await fetchJSON('api/speed?part=queue');
+      mine.fails = 0;
+      const e = q.running && q.running.id === mine.id ? q.running : (q.waiting || []).find((/** @type {any} */ x) => x.id === mine.id);
+      if (e) {
+        const before = mine.text;
+        this.follow(e);
+        if (mine.text !== before) setText(this.spSay, mine.text);
+        this.render();
+        this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS);
+        return;
+      }
+      // It left the queue: how did it end? Then the fresh result.
+      const done = await fetchJSON('api/speed?part=entry&id=' + mine.id).catch(() => null);
+      this.mine = null;
+      await this.loadNow(true);
+      const latest = this.data && this.data.speed && this.data.speed.latest;
+      this.spErr = done && done.state === 'done' ? '' : SPEED_LOST;
+      setText(this.spSay, this.spErr || (latest ? latest.text : ''));
+      this.render();
+      if (document.activeElement === document.body) this.spBtn.focus();
+    } catch {
+      if (++mine.fails < QUEUE_FAILS) { this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS); return; }
+      this.mine = null;
+      this.spErr = SPEED_LOST;
+      setText(this.spSay, SPEED_LOST);
+      this.render();
     }
-    const strip = h('div', { class: 'ho-cells' }, ...cells);
-    if (day.to < day.from + 86400e3) {
-      // Today: a "now" marker; the hours after it are faded.
-      // The word "now" only on the one-day strip: on the week it would sit on the row above.
-      const now = h('span', { class: 'ho-now', 'aria-hidden': 'true' }, d.span === 'd' ? h('span', { text: 'now' }) : null);
-      now.style.left = `${((day.to - day.from) / 86400e3) * 100}%`;
-      strip.append(now);
+  }
+
+  // ---------- problems ----------
+
+  /** @param {HomeNow} d */
+  renderProblems(d) {
+    const p = d.problems || { summary: '', items: [] };
+    setText(this.probSum, p.summary || '');
+    const items = p.items || [];
+    const seen = new Set();
+    /** @type {HTMLElement[]} */
+    const order = [];
+    for (const it of items) {
+      seen.add(it.id);
+      let r = this.probs.get(it.id);
+      if (!r) {
+        r = { li: h('li'), ico: ico('none'), when: h('div', { class: 'hp-when' }), what: h('div', { class: 'hp-what' }), cause: h('div', { class: 'hp-cause' }), causeB: h('b'), ev: h('span', { class: 'hp-ev' }) };
+        r.cause.append('Likely cause: ', r.causeB, '. ', r.ev);
+        r.li.append(r.ico, h('div', { class: 'hp-pbody' }, r.when, r.what, r.cause));
+        this.probs.set(it.id, r);
+      }
+      const c = `hp-problem${it.ongoing ? ' live' : ''}`;
+      if (r.li.className !== c) r.li.className = c;
+      const lv = it.level === 'down' ? 'down' : 'slow';
+      if (r.ico.className !== `hp-ico ${lv}`) r.ico.className = `hp-ico ${lv}`;
+      setText(r.when, it.when);
+      setText(r.what, it.what);
+      setText(r.causeB, it.cause || '');
+      setText(r.ev, it.evidence || '');
+      r.cause.hidden = !it.cause;
+      order.push(r.li);
     }
-    rows.push(h('div', { class: 'ho-row' },
-      h('span', { class: 'ho-day', 'aria-hidden': 'true', text: d.span === 'd' ? 'Today' : name }), strip));
+    for (const [id, r] of this.probs) if (!seen.has(id)) { r.li.remove(); this.probs.delete(id); }
+    // Re-append only when the order changed, so unchanged items keep their nodes and place.
+    if ([...this.probList.children].some((li, i) => li !== order[i]) || this.probList.children.length !== order.length) this.probList.append(...order);
+    this.probList.hidden = !order.length;
   }
-  // Hour marks under the strips, each at hour/24 of the strip.
-  const axis = h('div', { class: 'ho-axis' });
-  for (const x of [0, 6, 12, 18]) {
-    const m = h('span', { text: clock(new Date(d.days[0].from).setHours(x, 0, 0, 0)).replace(':00', '') });
-    m.style.left = `${(x / 24) * 100}%`;
-    axis.append(m);
-  }
-  const marks = h('div', { class: 'ho-row ho-marks', 'aria-hidden': 'true' }, h('span', { class: 'ho-day' }), axis);
-  const grid = h('div', { class: 'ho-grid', role: 'group', 'aria-label': `${d.span === 'd' ? 'Today' : 'The last 7 days'}, ${per === 1 ? 'one block per hour' : `one block per ${per} hours`}. Use the arrow keys to move between blocks.` }, ...rows, marks);
-  // Roving focus: one tab stop, arrows move across blocks (and rows).
-  // It starts at the latest problem block, else the current hour (the last block that has happened).
-  if (focus.idx < 0 || focus.idx >= blocks.length || focus.span !== d.span) {
-    const lastRun = blocks.map((b) => b.classList.contains('b-run')).lastIndexOf(true);
-    focus.idx = lastRun >= 0 ? lastRun : blocks.length - 1;
-    focus.span = d.span;
-  }
-  if (blocks[focus.idx]) blocks[focus.idx].tabIndex = 0;
-  grid.addEventListener('keydown', (e) => {
-    const i = blocks.indexOf(/** @type {HTMLElement} */ (e.target));
-    if (i < 0) return;
-    const cols = 24 / per;
-    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols, Home: -i, End: blocks.length - 1 - i }[e.key];
-    if (step == null) return;
-    e.preventDefault();
-    const j = Math.max(0, Math.min(blocks.length - 1, i + step));
-    blocks[i].tabIndex = -1;
-    blocks[j].tabIndex = 0;
-    blocks[j].focus();
-    focus.idx = j;
-  });
-  const anyOff = d.days.some((x) => x.off.length);
-  const legend = [
-    h('span', {}, h('span', { class: 'ho-key b-fine', 'aria-hidden': 'true' }), 'No problems'),
-    h('span', {}, h('span', { class: 'ho-key b-run lvl-warn', 'aria-hidden': 'true' }), LEVELS.warn.word),
-    h('span', {}, h('span', { class: 'ho-key b-run lvl-bad', 'aria-hidden': 'true' }), LEVELS.bad.word),
-    d.days.some((x) => x.runs.some((r) => r.level === 'info')) ? h('span', {}, h('span', { class: 'ho-key b-run lvl-info', 'aria-hidden': 'true' }), LEVELS.info.word) : null,
-    h('span', {}, h('span', { class: 'ho-key b-off', 'aria-hidden': 'true' }), 'fyisp wasn’t running'),
-    d.days.some((x) => x.no_record) || (d.first_data && d.first_data > d.from) ? h('span', {}, h('span', { class: 'ho-key b-none', 'aria-hidden': 'true' }), 'No record yet') : null,
-    anyOff ? h('a', { class: 'ho-keep', href: KEEP_RUNNING, target: '_blank', rel: 'noopener', text: 'How to keep it running' }) : null,
-  ].filter((x) => x != null);
-  return { grid, legend: /** @type {HTMLElement[]} */ (legend) };
-}
 
-/** @type {Object<string,number>} run levels: a known issue (info) ranks below every problem */
-const RUN_RANK = { bad: 3, warn: 2, info: 1 };
-/** The worst run overlapping [a, b): bad over warn over info, then the longest. */
-function worstRun(/** @type {HomeRun[]} */ runs, /** @type {number} */ a, /** @type {number} */ b) {
-  let best = null;
-  for (const r of runs) {
-    if (!(r.from < b && r.to > a)) continue;
-    const rank = RUN_RANK[r.level] || 1;
-    const bestRank = best ? RUN_RANK[best.level] || 1 : 0;
-    if (!best || rank > bestRank || (rank === bestRank && r.to - r.from > best.to - best.from)) best = r;
-  }
-  return best;
-}
-
-/**
- * The state of one timeline block [a, b): the worst run, else not running,
- * no record, later today, or fine.
- * @param {HomeDay} day @param {HomeHistory} d @param {number} a @param {number} b
- * @returns {{kind:string,level?:string,run?:HomeRun|null}}
- */
-function blockState(day, d, a, b) {
-  if (a >= day.to) return { kind: 'later' };
-  if (day.no_record || (d.first_data && b <= d.first_data)) return { kind: 'none' };
-  const run = worstRun(day.runs, a, b);
-  if (run) return { kind: 'run', level: run.level, run };
-  const end = Math.min(b, day.to);
-  const off = day.off.filter((s) => s.from < end && s.to > a).reduce((n, s) => n + Math.min(end, s.to) - Math.max(a, s.from), 0);
-  if (off >= (end - a) / 2) return { kind: 'off' };
-  return { kind: 'fine' };
-}
-
-/** "Tue 14:00 to 15:00, problem: The problem was most likely with your internet provider. …" (the run's text is the server's). */
-function blockLabel(/** @type {string} */ day, /** @type {number} */ a, /** @type {number} */ b, /** @type {{kind:string,level?:string,run?:HomeRun|null}} */ st) {
-  const t = `${day} ${clock(a)} to ${clock(b)}`;
-  switch (st.kind) {
-    case 'later': return `${t}, later today`;
-    case 'none': return `${t}, no record yet`;
-    case 'off': return `${t}, fyisp wasn’t running`;
-    case 'fine': return `${t}, no problems`;
-  }
-  const r = /** @type {HomeRun} */ (st.run);
-  return `${t}, ${(LEVELS[st.level || 'warn'] || LEVELS.warn).word.toLowerCase()}: ${r.text || r.label}`;
+  /** The theme changed: only the open panel's canvas chart needs redrawing. */
+  themeChanged() { this.tiles.themeChanged(); }
 }

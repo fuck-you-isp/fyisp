@@ -1,4 +1,4 @@
-// fyisp dashboard: helpers shared by the views (app.js, home.js). Plain ES
+// fyisp dashboard: helpers shared by the views (app.js, home*.js). Plain ES
 // module, no build step: DOM building, theme and colour tokens, formatting,
 // fetch with retry, the tooltip, and the owner's write calls.
 // @ts-check
@@ -154,6 +154,12 @@ export function fmtStep(/** @type {number} */ ms) {
 
 /** Clock time in the viewer's locale (12 or 24 h). */
 export function clock(/** @type {number} */ ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+const usClock = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
+/** "10:14 am" (or "10:14" without the day period) in the viewer's zone: Home's style, as the server writes its copy. */
+export function hpClock(/** @type {number} */ ms, ampm = true) {
+  const p = Object.fromEntries(usClock.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return `${p.hour}:${p.minute}${ampm ? ' ' + String(p.dayPeriod || '').toLowerCase() : ''}`;
+}
 /** Weekday and clock, when not today. */
 export function when(/** @type {number} */ ms) {
   const d = new Date(ms);

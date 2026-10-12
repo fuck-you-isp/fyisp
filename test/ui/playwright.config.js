@@ -12,6 +12,9 @@ module.exports = defineConfig({
   reporter: [['list'], ['html', { outputFolder: './out/report', open: 'never' }]],
   use: {
     baseURL: process.env.FYISP_URL || 'http://127.0.0.1:3000',
+    // The Home fixtures' copy is written for 10:30 am on 2026-10-09 in New York.
+    timezoneId: 'America/New_York',
+    locale: 'en-US',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
