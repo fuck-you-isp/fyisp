@@ -18,11 +18,12 @@ import (
 // incidents that follow a script: inc as the verdict engine would report
 // them at now (ongoing until their End).
 type lagScene struct {
-	p     *model.Profile
-	start time.Time
-	now   time.Time
-	inc   []model.Incident
-	loss  float64 // the verdict's evidence "loss"
+	p      *model.Profile
+	start  time.Time
+	now    time.Time
+	inc    []model.Incident
+	loss   float64 // the verdict's evidence "loss"
+	acDown bool
 }
 
 func newLagScene(t *testing.T) *lagScene {
@@ -78,6 +79,9 @@ func (s *lagScene) sources() Sources {
 			gw, edge, ac := true, true, true
 			if in := s.current(); in != nil && in.Kind == model.VerdictISP {
 				edge, ac = false, false
+			}
+			if in := s.current(); in != nil && in.Kind == model.VerdictUpstream && s.acDown {
+				ac = false
 			}
 			return map[string]*bool{model.LayerGateway: &gw, model.LayerEdge: &edge, model.LayerAnycast: &ac}
 		},
@@ -219,42 +223,46 @@ func TestDropVerdictLag(t *testing.T) {
 	}
 }
 
-// TestBlipLeavesNothing is netns S1b: a 20 s provider drop (too short for
-// a drop) with an isp incident that lasts 100 s after it: a minute after
-// it, the card is good, the provider's hop is too, and nothing is listed
-// (a).
+// TestBlipLeavesNothing is netns S1b and B6: a 20 s provider drop (too
+// short for a drop) with an isp incident that lasts 100 s after it, inside
+// a minute or straddling a minute boundary (B6: its lost bursts were loss
+// in both minutes, calls Down for 5 minutes). From a minute after it, the
+// card is good, so are the strip and every tile, and nothing is listed (a).
 func TestBlipLeavesNothing(t *testing.T) {
-	s := newLagScene(t)
-	d := s.start.Add(20*time.Minute + 15*time.Second)
-	end := d.Add(20 * time.Second)
-	s.inc = []model.Incident{{ID: 1, Kind: model.VerdictISP, Start: d.Add(9 * time.Second), End: end.Add(100 * time.Second), PeakLoss: 1}}
-	failed := map[string]bool{}
-	s.run(t, []eEvent{{d, end, notGateway, 0}}, end.Add(75*time.Second), end.Add(5*time.Minute), func(e *engine, now time.Time) {
-		snap := e.Snapshot()
-		errorf := func(what, format string, args ...any) {
-			t.Helper()
-			if !failed[what] {
-				failed[what] = true
-				t.Errorf("%v after a 20 s drop: "+format, append([]any{now.Sub(end)}, args...)...)
+	for _, off := range []time.Duration{15 * time.Second, 50 * time.Second} {
+		s := newLagScene(t)
+		s.fast()
+		d := s.start.Add(20*time.Minute + off)
+		end := d.Add(20 * time.Second)
+		s.inc = []model.Incident{{ID: 1, Kind: model.VerdictISP, Start: d.Add(9 * time.Second), End: end.Add(100 * time.Second), PeakLoss: 1}}
+		failed := map[string]bool{}
+		s.run(t, []eEvent{{d, end, notGateway, 0}}, end.Add(60*time.Second), end.Add(6*time.Minute), func(e *engine, now time.Time) {
+			snap := e.Snapshot()
+			errorf := func(what, format string, args ...any) {
+				t.Helper()
+				if !failed[what] {
+					failed[what] = true
+					t.Errorf("drop at :%02d, %v after it: "+format, append([]any{d.Second(), now.Sub(end)}, args...)...)
+				}
 			}
-		}
-		if snap.Conn.Kind != ConnGood {
-			errorf("card", "card %s %s, want good", snap.Conn.Kind, snap.Conn.Key)
-		}
-		if len(snap.Eps) != 0 {
-			errorf("eps", "problems:\n%s", epsText(snap.Eps))
-		}
-		for l, ls := range snap.Layers {
-			if ls.State != Good {
-				errorf("layers", "layer %d %s, want good", l, ls.State)
+			if snap.Conn.Kind != ConnGood {
+				errorf("card", "card %s %s, want good", snap.Conn.Kind, snap.Conn.Key)
 			}
-		}
-		for _, ts := range snap.Tiles {
-			if ts.LastDrop != nil || ts.State != Good {
-				errorf("tiles", "tile %s %s, drop %+v", ts.ID, ts.State, ts.LastDrop)
+			if len(snap.Eps) != 0 {
+				errorf("eps", "problems:\n%s", epsText(snap.Eps))
 			}
-		}
-	})
+			for l, ls := range snap.Layers {
+				if ls.State != Good {
+					errorf("layers", "layer %d %s, want good", l, ls.State)
+				}
+			}
+			for _, ts := range snap.Tiles {
+				if ts.LastDrop != nil || ts.State != Good {
+					errorf("tiles", "tile %s %s, drop %+v", ts.ID, ts.State, ts.LastDrop)
+				}
+			}
+		})
+	}
 }
 
 // TestProviderLossCard: an isp verdict from partial loss is the amber
@@ -286,7 +294,7 @@ func TestProviderLossCard(t *testing.T) {
 	if c = connState(in); c.Kind != string(model.VerdictISP) {
 		t.Errorf("not known to be clean, long after: %+v, want the isp card", c)
 	}
-	in.clean = func(from time.Time) bool { return from.Equal(drop.End) }
+	in.clean = func(_ model.VerdictKind, from time.Time) bool { return from.Equal(drop.End) }
 	if c = connState(in); c.Kind != ConnGood {
 		t.Errorf("clean since the drop: %+v, want good", c)
 	}
@@ -531,4 +539,26 @@ func TestWorkingAgainOwnSpan(t *testing.T) {
 	if r == nil || r.Variant != AgainTrouble || r.Dur != 150*sec || !r.End.Equal(at(12*m+30*sec)) {
 		t.Errorf("working again %+v, want trouble for the incident's 150 s", r)
 	}
+}
+
+// TestBlipLiveVsReplay: a 20 s provider blip and a 3-burst STUN run, each
+// across a minute boundary: the minutes leave the path's outage out (and
+// keep the STUN run as loss) alike live and in replay, checked while they
+// are fresh and later.
+func TestBlipLiveVsReplay(t *testing.T) {
+	s := newScene(t)
+	var stun []string
+	for _, tg := range s.p.Targets {
+		if slices.Contains(tg.ProbeKinds(), model.KindUDP) {
+			stun = append(stun, tg.Name)
+		}
+	}
+	b := s.drop.to.Add(5*time.Minute + 50*time.Second)
+	u := b.Add(3 * time.Minute)
+	s.evs = append(s.evs, eEvent{b, b.Add(20 * time.Second), notGateway, 0}, eEvent{u, u.Add(15 * time.Second), eNames(stun...), 0})
+	arr := eGen(eSeries(s.engine(nil)), s.start, s.end, s.evs, 4)
+	checks := []time.Time{b.Add(45 * time.Second).Truncate(tickEvery), u.Add(50 * time.Second).Truncate(tickEvery), s.end}
+	s.live(t, arr, checks, func(a *engine, now time.Time) {
+		sameEngines(t, now.Format("15:04:05"), a, s.replayed(t, stored(arr, now), now))
+	})
 }

@@ -118,19 +118,23 @@ const (
 
 // Connection state, grouping and attribution.
 const (
-	staleAfter    = 2 * time.Minute
-	verdictLag    = 65 * time.Second // the verdict's 60 s window (and a tick) outlasts a drop by this much
-	absorbBefore  = time.Minute      // a connection episode absorbs what starts this long before it ...
-	absorbAfter   = 2 * time.Minute  // ... and ends this long after it
-	dropLate      = 30 * time.Second // a drop absorbs only the tile parts that start before its end + this
-	lagSlack      = 10 * time.Second // a verdict incident starting this soon after a drop ended can still be its lag
-	blockedLead   = 3 * time.Minute  // a blocked-UDP episode takes call-tile problems that started this long before it
-	causeSlack    = time.Minute      // incidents this close to an episode explain it (web/home.go homePathLead)
-	vendorMerge   = 2 * time.Minute  // tile episodes with one cause starting this close are one problem
-	sameTileMerge = 5 * time.Minute  // episodes of one tile closer than this are one problem
-	broadShare    = 0.6              // broad slowdown: this share of the covered tiles bad ...
-	broadVendors  = 3                // ... across this many vendors
-	fullLoss      = 0.9              // an incident with this peak loss lost everything
+	staleAfter   = 2 * time.Minute
+	verdictLag   = 65 * time.Second // the verdict's 60 s window (and a tick) outlasts a drop by this much
+	absorbBefore = time.Minute      // a connection episode absorbs what starts this long before it ...
+	absorbAfter  = 2 * time.Minute  // ... and ends this long after it
+	dropLate     = 30 * time.Second // a drop absorbs only the tile parts that start before its end + this
+	lagSlack     = 10 * time.Second // a verdict incident starting this soon after a drop ended can still be its lag
+	// lagMax bounds that lag: the verdict's 60 s window and its recovery
+	// (netns: incidents end 100–110 s after a drop). An incident still on
+	// this long after the drop ended is a problem of its own.
+	lagMax        = 150 * time.Second
+	blockedLead   = 3 * time.Minute // a blocked-UDP episode takes call-tile problems that started this long before it
+	causeSlack    = time.Minute     // incidents this close to an episode explain it (web/home.go homePathLead)
+	vendorMerge   = 2 * time.Minute // tile episodes with one cause starting this close are one problem
+	sameTileMerge = 5 * time.Minute // episodes of one tile closer than this are one problem
+	broadShare    = 0.6             // broad slowdown: this share of the covered tiles bad ...
+	broadVendors  = 3               // ... across this many vendors
+	fullLoss      = 0.9             // an incident with this peak loss lost everything
 	// lossyBelow: an isp verdict whose loss at the edge is under this, with
 	// no drop in progress, is partial loss: the amber "losing some data"
 	// card. 6% is a degraded line (calls choppy, sites fine); 40% breaks
@@ -228,10 +232,24 @@ func (m minute) lossPct() float64 {
 // list short): it scans them per lost check. rule says which runs are
 // drops.
 func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) minute {
+	return summarizeOut(cs, rs, rule, from, closeAt, nil)
+}
+
+// summarizeOut is summarize, also leaving out the lost checks of web and
+// UDP series inside out: the path's own outages (pathOut), so a 20 s blip
+// of the whole connection, too short for a drop, leaves no loss behind
+// (calls Down or Choppy for minutes after it), while an endpoint's own
+// short runs stay loss.
+func summarizeOut(cs []check, rs []failRun, rule runRule, from, closeAt time.Time, out []window) minute {
 	lo, hi, cl := from.UnixMilli(), from.Add(time.Minute).UnixMilli(), closeAt.UnixMilli()
 	skip := func(c check) bool {
 		if rule == rulePath {
 			return false
+		}
+		for _, w := range out {
+			if c.ms >= w.from.UnixMilli() && (w.to.IsZero() || c.ms < w.to.UnixMilli()) {
+				return true
+			}
 		}
 		for _, r := range rs {
 			if c.ms < r.firstMs || c.ms > r.lastMs {

@@ -279,7 +279,7 @@ func (s *server) watchingSince(ctx context.Context, first, now time.Time) time.T
 // homeNow builds part=now.
 func (s *server) homeNow(r *http.Request, p homeParams, now time.Time) *HomeNow {
 	snap, checking, stale := s.homeState(now)
-	c := homeCopy{loc: p.zone.loc, now: now, wifi: s.wifiWording(r)}
+	c := homeCopy{loc: p.zone.loc, now: now, wifi: s.wifiWording(r), stun: snap.Conn.Kind == string(model.VerdictSTUNBlocked)}
 	learning := snap.Learning && !checking
 	out := &HomeNow{V: 2, At: now.UnixMilli(), Stale: stale, Monitored: snap.Monitored}
 	if !snap.LastMeasured.IsZero() && !checking { // a (re)start's last stored check isn't news
@@ -874,7 +874,7 @@ func (s *server) homeTile(p homeParams, now time.Time) (*HomeTileDetail, int, st
 	if t.State == tiles.Off {
 		return nil, http.StatusNotFound, "tile not monitored"
 	}
-	c := homeCopy{loc: p.zone.loc, now: now}
+	c := homeCopy{loc: p.zone.loc, now: now, stun: snap.Conn.Kind == string(model.VerdictSTUNBlocked)}
 	d := tileDef(p.id)
 	v := homeView{checking: checking, blocked: !checking && !stale && udpBlocked(snap.Conn.Kind), first: snap.FirstData}
 	byID := map[string]tiles.Episode{}

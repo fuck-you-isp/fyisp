@@ -83,6 +83,8 @@ func TestGroupEpisodes(t *testing.T) {
 	now := at(time.Hour)
 	drop := dropEpisode(Drop{Start: at(10 * m), End: at(10*m + 40*time.Second), Dur: 40 * time.Second}, "")
 	isp, _ := incidentEpisode(model.Incident{Kind: model.VerdictISP, Start: at(10*m + 15*time.Second), End: at(11*m + 30*time.Second), PeakLoss: 0.7}, false)
+	// the engine ends an incident that is the drop's lag with the drop
+	lagged, _ := incidentEpisode(model.Incident{Kind: model.VerdictISP, Start: at(10*m + 15*time.Second), End: drop.End, PeakLoss: 0.7}, false)
 	cases := []struct {
 		name        string
 		conn, tiles []Episode
@@ -114,7 +116,8 @@ func TestGroupEpisodes(t *testing.T) {
 				tileRun("teams", Slow, 20*m, 25*m),
 			},
 			[]string{"t-" + ms(20*m) + "-teams [teams]", "c-" + ms(10*m) + " [zoom meet]"}},
-		{"a drop absorbs the incident", []Episode{isp, drop}, nil, []string{"c-" + ms(10*m) + " []"}},
+		{"a drop absorbs the incident that is its lag", []Episode{lagged, drop}, nil, []string{"c-" + ms(10*m) + " []"}},
+		{"a drop keeps an incident that outlasts it apart", []Episode{isp, drop}, nil, []string{"c-" + ms(10*m+15*time.Second) + " []", "c-" + ms(10*m) + " []"}},
 		{"an incident later is its own problem", []Episode{drop, func() Episode { e := isp; e.Start, e.End = at(30*m), at(31*m); return e }()}, nil,
 			[]string{"c-" + ms(30*m) + " []", "c-" + ms(10*m) + " []"}},
 		{"a drop doesn't absorb a long UDP block",
@@ -149,7 +152,7 @@ func TestGroupEpisodes(t *testing.T) {
 
 	// the merged drop keeps the drop, its span included, and gains the
 	// incident (the verdict's window catching up)
-	got := groupEpisodes([]Episode{isp, drop}, nil, byVendor, now)
+	got := groupEpisodes([]Episode{lagged, drop}, nil, byVendor, now)
 	if e := got[0]; e.Kind != EpDrop || e.Verdict != model.VerdictISP || !e.Start.Equal(drop.Start) || !e.End.Equal(drop.End) || e.DropDur != 40*time.Second || e.Sev != Down || e.Cause.Who != WhoProvider {
 		t.Errorf("drop + incident: got %+v", e)
 	}

@@ -30,7 +30,7 @@ func TestHomeSTUNBlockedTiles(t *testing.T) {
 		t.Errorf("card %+v, want the blocked card naming the ports", a)
 	}
 	for _, x := range d.Tiles[:4] {
-		if x.State != "slow" || !strings.HasPrefix(x.Reason, "Can’t use its fast path") {
+		if x.State != "slow" || !strings.HasPrefix(x.Reason, "Can’t use its fast path") || !strings.HasSuffix(x.Reason, "over another port or a slower route.") {
 			t.Errorf("%s: %s %q, want choppy over a slower route", x.ID, x.State, x.Reason)
 		}
 	}

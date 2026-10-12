@@ -257,15 +257,17 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 	}
 	s.Conn = connState(connIn{now: now, stale: stale(now, e.lastMeasured), ready: ready, verdict: in.verdict,
 		dropNow: v.connCur, drops: slices.Concat(v.connDrops, v.blips), layersOK: layersOK, tiles: tn, eps: v.eps,
-		clean: func(from time.Time) bool { return e.pathClean(v, from, time.Time{}) }})
+		clean: func(k model.VerdictKind, from time.Time) bool {
+			return e.layersClean(v, from, time.Time{}, blamed(k)...)
+		}})
 	// After a drop or a blip the verdict's layer health lags by its 60 s
-	// window: while the card no longer blames the path, a layer that has
-	// been clean since is Good.
+	// window: while the card no longer blames the path, for lagMax at
+	// most, a layer that has been clean (of loss) since is Good.
 	switch s.Conn.Kind {
 	case ConnWorkingAgain, ConnApp, ConnGood:
 		var end time.Time
 		for _, d := range slices.Concat(v.connDrops, v.blips) {
-			if d.End.After(end) && now.Sub(d.End) < recoveredFor {
+			if d.End.After(end) && now.Sub(d.End) < lagMax {
 				end = d.End
 			}
 		}

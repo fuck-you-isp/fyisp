@@ -82,17 +82,15 @@ const (
 
 // dropLike reports a run that counts as a drop (open or not): after a
 // recent success, tileDropChecks or more lost checks on a web endpoint,
-// dropMin or more, or tileDropChecks bursts or more, on a UDP one. Its
-// checks count only as the drop, never as loss; any other run's checks are
-// loss. So a 20 s blip of the whole connection, too short for a drop,
-// leaves no Choppy calls behind; a burst or two lost is loss. Path runs
-// are never left out.
+// dropMin or more on a UDP one. Its checks count only as the drop, never as
+// loss; any other run's checks are loss (unless the whole path was out
+// then: see summarize). Path runs are never left out.
 func (r failRun) dropLike(rule runRule) bool {
 	switch rule {
 	case ruleWeb:
 		return r.prior && r.lost >= tileDropChecks
 	case ruleUDP:
-		return r.prior && (r.est() >= dropMin || r.lost >= tileDropChecks)
+		return r.prior && r.est() >= dropMin
 	}
 	return false
 }
@@ -246,10 +244,9 @@ type runSet struct {
 
 // pathRuns returns the runs of total loss of a 1 s (or 5 s) path series for
 // connection drops: runs of connDropNow or more, where those with less
-// than dropEndedOK of success between them are one (a drop does not end at
-// its first answer; a link flapping faster than that reads as one long
-// drop), and the newest is open until the series has been OK for
-// dropEndedOK. Shorter runs (scattered loss) are left out; a run after a
+// than dropEndedOK of success between them, and fullLoss of the checks
+// lost all told, are one (a drop does not end at its first answer), and
+// the newest is open until the series has been OK for dropEndedOK. Shorter runs (scattered loss) are left out; a run after a
 // sleep is never joined to the one before.
 func pathRuns(s runSet) []failRun {
 	var out []failRun
@@ -257,7 +254,8 @@ func pathRuns(s runSet) []failRun {
 		if r.est() < connDropNow {
 			continue
 		}
-		if n := len(out); n > 0 && !out[n-1].open() && r.prior && r.firstMs-out[n-1].toMs < dropEndedOK.Milliseconds() {
+		if n := len(out); n > 0 && !out[n-1].open() && r.prior && r.firstMs-out[n-1].toMs < dropEndedOK.Milliseconds() &&
+			mostlyLost(out[n-1], r) {
 			p := &out[n-1]
 			p.lost += r.lost
 			p.lastMs, p.toMs = r.lastMs, r.toMs
@@ -269,6 +267,16 @@ func pathRuns(s runSet) []failRun {
 		out[n-1].toMs = 0
 	}
 	return out
+}
+
+// mostlyLost reports that two runs and the answers between them would be
+// one run of total loss: fullLoss of its checks lost. A link that drops
+// for a few seconds at a time inside heavy random loss (netns: 40%) has
+// many answers between: that is loss, not one long drop.
+func mostlyLost(a, b failRun) bool {
+	every := int64(max(a.everyMs, 1))
+	slots := (b.lastMs-a.firstMs)/every + 1
+	return float64(a.lost+b.lost) >= fullLoss*float64(slots)
 }
 
 // window is a time span; to is zero while it is open.

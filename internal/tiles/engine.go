@@ -604,12 +604,13 @@ func (e *engine) closeMinute(from time.Time) {
 	k := minIdx(from)
 	var lm [nLayers]minute
 	data := false
+	out := e.pathOut(from)
 	for _, s := range e.ss {
 		s.runs = pruneRuns(s.runs, from, s.rule)
 		if n := len(s.runs); n > 0 && !s.runs[0].open() && s.runs[0].toMs < cut {
 			s.runs = slices.DeleteFunc(s.runs, func(r failRun) bool { return !r.open() && r.toMs < cut })
 		}
-		m := summarize(s.raw, s.runsFor(from), s.rule, from, closeAt)
+		m := summarizeOut(s.raw, s.runsFor(from), s.rule, from, closeAt, out)
 		s.raw = slices.DeleteFunc(s.raw, func(c check) bool { return c.ms < end })
 		data = data || m.n() > 0
 		copy(s.mins[:], s.mins[1:])
@@ -661,6 +662,45 @@ func (e *engine) closeMinute(from time.Time) {
 		}
 	}
 	e.broadMinute(from, bad, cov, lm)
+}
+
+// pathOut returns the gateway's and the edge's runs of total loss
+// (layerDrops: connDropNow or more, the one in progress too) that touch the
+// minute from, as of the latest tick: the connection was out then, for
+// every web and UDP endpoint alike.
+func (e *engine) pathOut(from time.Time) []window {
+	var out []window
+	ep := window{from, from.Add(time.Minute)}
+	for _, l := range []int{layerGateway, layerEdge} {
+		var series []runSet
+		for _, i := range e.paths[l] {
+			// only the runs near the minute (a week of them is kept)
+			s := e.ss[i]
+			rs := runSet{every: s.every}
+			if s.tr.last != 0 {
+				rs.last = msTime(s.tr.last)
+			}
+			lo := from.Add(-time.Minute).UnixMilli()
+			for j := len(s.runs) - 1; j >= 0 && s.runs[j].toMs >= lo; j-- {
+				rs.runs = append(rs.runs, s.runs[j])
+			}
+			slices.Reverse(rs.runs)
+			if r, ok := s.tr.open(); ok {
+				rs.runs = append(rs.runs, r)
+			}
+			series = append(series, rs)
+		}
+		ended, cur := layerDrops(series, e.last)
+		if cur != nil {
+			ended = append(ended, window{from: cur.Start})
+		}
+		for _, w := range ended {
+			if w.overlaps(ep, e.last) {
+				out = append(out, w)
+			}
+		}
+	}
+	return out
 }
 
 // runsFor returns the series' runs that can touch the minute from: the

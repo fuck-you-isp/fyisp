@@ -24,6 +24,9 @@ type homeCopy struct {
 	// wifi: the Wi-Fi wording ("Your Wi-Fi & router"): fyisp's own uplink
 	// is Wi-Fi and the page is viewed on the same machine.
 	wifi bool
+	// stun: the network blocks only the STUN ports (stun_blocked), so
+	// call apps can fall back to another port
+	stun bool
 }
 
 // ---------- times ----------
@@ -210,7 +213,11 @@ func (c homeCopy) tileReason(d profile.TileDef, t tiles.TileSnap, checking, bloc
 		return "fyisp is still checking."
 	}
 	if blocked && d.Kind == profile.TileCall && t.State.Bad() {
-		return "Can’t use its fast path on this network " + c.since(t.Since) + ". Calls may still connect over a slower route."
+		route := "a slower route"
+		if c.stun {
+			route = "another port or a slower route"
+		}
+		return "Can’t use its fast path on this network " + c.since(t.Since) + ". Calls may still connect over " + route + "."
 	}
 	var r string
 	switch t.State {

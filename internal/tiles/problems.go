@@ -81,15 +81,19 @@ func (e *engine) view(now time.Time) *view {
 }
 
 // lagged returns the drop or blip that ended at most lagSlack before a
-// lan, isp, upstream or no_network verdict incident starting at start
-// began (and at most absorbBefore after it), when the gateway and the edge
-// have been clean from its end to to (zero: now): the incident is the
-// verdict's 60 s window still holding it (nil: none).
-func (e *engine) lagged(v *view, start, to time.Time) *Drop {
+// lan, isp, upstream or no_network verdict incident of kind k starting at
+// start began (and at most absorbBefore after it), when the incident ended
+// (to; zero: now) at most lagMax after it and the layers it blames have
+// been clean from its end to then: the incident is the verdict's 60 s
+// window still holding the drop (nil: none).
+func (e *engine) lagged(v *view, k model.VerdictKind, start, to time.Time) *Drop {
+	if to.IsZero() {
+		to = v.now
+	}
 	for _, ds := range [][]Drop{v.connDrops, v.blips} {
 		for i, d := range ds {
 			if d.Ended() && !start.Before(d.Start.Add(-absorbBefore)) && !start.After(d.End.Add(lagSlack)) &&
-				e.pathClean(v, d.End, to) {
+				!to.After(d.End.Add(lagMax)) && e.layersClean(v, d.End, to, blamed(k)...) {
 				return &ds[i]
 			}
 		}
@@ -97,45 +101,63 @@ func (e *engine) lagged(v *view, start, to time.Time) *Drop {
 	return nil
 }
 
-// pathClean reports that the gateway and the edge lost nothing of note
-// after from, up to to (zero: now): no run of total loss of theirs started
-// then, and their closed minutes wholly inside, and their checks not
-// summarized yet, lost under layerLossy.
-func (e *engine) pathClean(v *view, from, to time.Time) bool {
-	return e.layersClean(v, from, to, layerGateway, layerEdge)
+// blamed are the path layers a verdict kind says are fine up to the one it
+// blames: they must be clean for its incident to be a drop's lag.
+func blamed(k model.VerdictKind) []int {
+	switch k {
+	case model.VerdictLAN:
+		return []int{layerGateway}
+	case model.VerdictISP:
+		return []int{layerGateway, layerEdge}
+	}
+	return []int{layerGateway, layerEdge, layerAnycast}
 }
 
-// layersClean is pathClean for the given layers.
+// layersClean reports that the layers lost nothing of note after from, up
+// to to (zero: now; a span of lagMax at most is walked): each was measured
+// then, no run of total loss of its started, and its closed minutes
+// wholly inside, and its checks not summarized yet, lost under
+// layerLossy. A layer without checks is not clean.
 func (e *engine) layersClean(v *view, from, to time.Time, layers ...int) bool {
+	if to.IsZero() || to.After(v.now) {
+		to = v.now
+	}
+	if lim := from.Add(lagMax + time.Minute); to.After(lim) {
+		to = lim
+	}
 	ep := window{from, to}
 	hi := e.nextMin // exclusive
-	if !to.IsZero() && to.Before(hi) {
+	if to.Before(hi) {
 		hi = to.Truncate(time.Minute)
 	}
 	for _, l := range layers {
 		if slices.ContainsFunc(e.layerWindows(v, l), func(w window) bool { return w.from.After(from) && w.overlaps(ep, v.now) }) {
 			return false
 		}
-		for t := from.Truncate(time.Minute).Add(time.Minute); t.Before(hi); t = t.Add(time.Minute) {
-			if m := e.layerMins[l][minIdx(t)]; m.n() > 0 && float64(m.lost) >= layerLossy*float64(m.n()) {
+		n, lost := 0, 0
+		for t := from.Truncate(time.Minute); t.Before(e.nextMin) && !t.After(to); t = t.Add(time.Minute) {
+			m := e.layerMins[l][minIdx(t)]
+			n += m.n() // the partial minutes at either end count as measured ...
+			// ... the whole ones inside count for loss too
+			if t.After(from) && t.Before(hi) && m.n() > 0 && float64(m.lost) >= layerLossy*float64(m.n()) {
 				return false
 			}
 		}
 		// the minutes not summarized yet, from their raw checks: loss
 		// right after a drop must not wait for its minute to close
-		n, lost := 0, 0
+		rn := 0
 		for _, i := range e.paths[l] {
 			for _, c := range e.ss[i].raw {
-				if c.gap || c.ms <= from.UnixMilli() || !to.IsZero() && c.ms > to.UnixMilli() {
+				if c.gap || c.ms <= from.UnixMilli() || c.ms > to.UnixMilli() {
 					continue
 				}
-				n++
+				rn++
 				if c.lost {
 					lost++
 				}
 			}
 		}
-		if lost >= 2 && float64(lost) >= layerLossy*float64(n) {
+		if n+rn == 0 || lost >= 2 && float64(lost) >= layerLossy*float64(rn) {
 			return false
 		}
 	}
@@ -153,6 +175,11 @@ func (e *engine) episodes(v *view) []Episode {
 		conn = append(conn, dropEpisode(*c, ""))
 	}
 	for _, d := range v.blips {
+		// a blip leaves nothing behind only when the path was clean after
+		// it: one inside a lossy spell is part of the spell
+		if !e.layersClean(v, d.End, d.End.Add(lagMax), layerGateway, layerEdge, layerAnycast) {
+			continue
+		}
 		x := dropEpisode(d, "")
 		x.Kind = epBlip
 		conn = append(conn, x)
@@ -165,6 +192,7 @@ func (e *engine) episodes(v *view) []Episode {
 		return in.Kind == vk.Kind && in.End.IsZero() && in.Start.Sub(vk.Since).Abs() < time.Second
 	}) {
 		if _, ok := incidentEpisode(model.Incident{Kind: vk.Kind}, false); ok {
+			// its peak loss so far is not known: the window's loss stands in
 			incs, cloned = append(slices.Clip(incs), model.Incident{Kind: vk.Kind, Start: vk.Since, PeakLoss: vk.Evidence["loss"]}), true
 		}
 	}
@@ -174,7 +202,7 @@ func (e *engine) episodes(v *view) []Episode {
 		if !pathKind(in.Kind) {
 			continue
 		}
-		d := e.lagged(v, in.Start, in.End)
+		d := e.lagged(v, in.Kind, in.Start, in.End)
 		if d == nil || !in.End.IsZero() && !in.End.After(d.End) {
 			continue
 		}

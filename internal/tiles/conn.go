@@ -35,9 +35,10 @@ const (
 //  1. stale; 2. checking (not ready, or the verdict is warming up);
 //  3. verdict no_network / lan / isp / upstream, unless its incident
 //     started inside a connection drop or a path blip (or lagSlack after
-//     it) since which the gateway and the edge have been clean, or, when
-//     that is not known, inside one that ended less than verdictLag ago
-//     (then skip it: the verdict's window still holds the drop). An isp verdict from partial
+//     it) that ended less than lagMax ago and since which the layers up
+//     to the blamed one have been clean, or, when that is not known,
+//     inside one that ended less than verdictLag ago (then skip it: the
+//     verdict's window still holds the drop). An isp verdict from partial
 //     loss (under lossyBelow), with no drop in progress, is amber (Lossy);
 //  4. a connection drop in progress; 5. verdict dns;
 //  6. udp_blocked / stun_blocked (Quiet: info); 7. udp_degraded;
@@ -143,8 +144,9 @@ type connIn struct {
 	verdict model.Verdict
 	dropNow *Drop  // a connection drop in progress
 	drops   []Drop // the connection drops and the path blips (ended ones matter)
-	// clean reports the gateway and the edge clean since from (nil: unknown)
-	clean    func(from time.Time) bool
+	// clean reports the layers a verdict kind needs clean (blamed) clean
+	// since from (nil: unknown)
+	clean    func(k model.VerdictKind, from time.Time) bool
 	layersOK bool // no path layer is unhealthy
 	tiles    []tileNow
 	eps      []Episode // for Working again
@@ -173,7 +175,7 @@ func connState(in connIn) ConnState {
 				return false
 			}
 			if in.clean != nil {
-				return in.clean(d.End)
+				return in.now.Before(d.End.Add(lagMax)) && in.clean(v.Kind, d.End)
 			}
 			return !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
 		}) {
@@ -199,10 +201,19 @@ func connState(in connIn) ConnState {
 	case model.VerdictUDPDegraded:
 		return vk(string(v.Kind), ToneWarn, Slow)
 	}
+	// a tile that went bad in a drop or blip that just ended is its tail
+	// (an outage clears a few checks after the path does): not an app's
+	// problem
+	tail := func(t tileNow) bool {
+		return slices.ContainsFunc(in.drops, func(d Drop) bool {
+			return d.Ended() && in.now.Before(d.End.Add(lagMax)) &&
+				!t.since.Before(d.Start.Add(-absorbBefore)) && !t.since.After(d.End.Add(dropLate))
+		})
+	}
 	var bad []tileNow
 	vendors := map[string]bool{}
 	for _, t := range in.tiles {
-		if t.state.Bad() {
+		if t.state.Bad() && !tail(t) {
 			bad = append(bad, t)
 			vendors[t.vendor] = true
 		}
