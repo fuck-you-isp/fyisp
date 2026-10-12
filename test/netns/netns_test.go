@@ -13,7 +13,8 @@
 // covers gateway/ISP edge discovery, TestVerdict (verdict_test.go) the
 // verdict and the outage log, TestUDP (udp_test.go) the call path: STUN
 // bursts, the UDP verdicts and /api/calls under UDP-only faults, TestSpeed
-// (speed_test.go) speed tests against lab iperf3 servers on a shaped line.
+// (speed_test.go) speed tests against lab iperf3 servers on a shaped line,
+// TestHome10 (home10_test.go) the new Home's answer, strip and tiles.
 //
 // The topologies share nothing (namespaces, responders, resolver, CA, data
 // directories, fyisp processes), so the scenarios run in parallel: a full
@@ -23,7 +24,7 @@
 // It needs root (namespaces, nft, tc) and Linux. Run it with
 // test/netns/run.sh (builds everything in Docker), or with a Go toolchain:
 //
-//	sudo -E go test -tags netns -v -timeout 20m ./test/netns
+//	sudo -E go test -tags netns -v -timeout 30m ./test/netns
 //
 // FYISP_BIN selects a prebuilt fyisp binary (default: go build ./cmd/fyisp).
 // FYISP_NETNS_OUT, if set, receives the raw API responses and fyisp's logs,
@@ -88,6 +89,8 @@ var (
 	dnsTargetAddr = netip.MustParseAddr("203.0.113.14") // what svc.fyisp.test resolves to
 	addrGolf      = netip.MustParseAddr("203.0.113.15") // route withdrawn
 	stunAddr      = netip.MustParseAddr("203.0.113.30") // the STUN responder (udp_test.go; .20 is trace_test.go's hotel)
+	stunAddr2     = netip.MustParseAddr("203.0.113.31") // more STUN servers (home10_test.go)
+	stunAddr3     = netip.MustParseAddr("203.0.113.32")
 	dnsAddr       = netip.MustParseAddr("203.0.113.53") // the test resolver
 )
 
@@ -644,7 +647,8 @@ func (h *harness) setupTopology(t *testing.T) {
 	}
 	// Targets live on the internet namespace's loopback; every namespace's default route
 	// leads there through the chain.
-	for _, a := range slices.Concat([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr, stunAddr}, anycastAddrs, iperfAddrs) {
+	for _, a := range slices.Concat([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr, stunAddr, stunAddr2, stunAddr3},
+		anycastAddrs, iperfAddrs, home10Addrs) {
 		h.run(t, "ip", "-n", h.inet, "addr", "add", a.String()+"/32", "dev", "lo")
 	}
 	// Unprivileged ICMP (ping sockets) is off in a new namespace

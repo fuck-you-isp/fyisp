@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -35,9 +36,10 @@ import (
 //   - DNS on dnsAddr:53/udp: svc.fyisp.test and www.fyisp.test ->
 //     dnsTargetAddr, stun.provider-a.test and stun.provider-b.test ->
 //     stunAddr, NXDOMAIN for everything else;
-//   - STUN (RFC 5389) on stunAddr, UDP ports stunPorts: a Binding Success
-//     carrying XOR-MAPPED-ADDRESS mappedAddr:mappedPort for every Binding
-//     Request (udp_test.go checks that fyisp never shows it);
+//   - STUN (RFC 5389) on stunAddr, UDP ports stunPorts, and on the
+//     addresses of stunMore: a Binding Success carrying XOR-MAPPED-ADDRESS
+//     mappedAddr:mappedPort for every Binding Request (udp_test.go checks
+//     that fyisp never shows it);
 //   - iperf3 on iperfAddrs, ports iperfPorts (iperf_test.go).
 //
 // ICMP echo is answered by the kernel.
@@ -54,13 +56,19 @@ const (
 	stunPortA  = 3478 // stun-a (provider A)
 	stunPortB  = 3479 // stun-b (provider B)
 	stunPort53 = 53   // stun-53 (provider B, tagged udp-53)
-	mappedPort = 40077
+	// stunPortGoogle is Google's STUN port (stunAddr3).
+	stunPortGoogle = 19302
+	mappedPort     = 40077
 )
 
 // mappedAddr is the "public address" the STUN responder reports.
 var (
 	mappedAddr = netip.MustParseAddr("198.51.100.77")
 	stunPorts  = []int{stunPortA, stunPortB, stunPort53}
+	// stunMore are the STUN servers on other addresses (TestHome10, where
+	// every address is a provider of its own): a second one on 3478, and a
+	// third on Google's 19302 and 3478.
+	stunMore = map[netip.Addr][]int{stunAddr2: {stunPortA}, stunAddr3: {stunPortGoogle, stunPortA}}
 )
 
 // dnsRecords are the names the test resolver answers.
@@ -179,12 +187,16 @@ func runResponder(dir string) {
 		log.Fatal(err)
 	}
 	go serveDNS(pc)
-	for _, port := range stunPorts {
-		pc, err := net.ListenPacket("udp4", net.JoinHostPort(stunAddr.String(), strconv.Itoa(port)))
-		if err != nil {
-			log.Fatal(err)
+	stun := map[netip.Addr][]int{stunAddr: stunPorts}
+	maps.Copy(stun, stunMore)
+	for a, ports := range stun {
+		for _, port := range ports {
+			pc, err := net.ListenPacket("udp4", net.JoinHostPort(a.String(), strconv.Itoa(port)))
+			if err != nil {
+				log.Fatal(err)
+			}
+			go serveSTUN(pc)
 		}
-		go serveSTUN(pc)
 	}
 	serveIperf()
 	fmt.Println("responder ready") // the test waits for this line

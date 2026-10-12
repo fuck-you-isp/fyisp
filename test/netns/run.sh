@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Network-fault harness for fyisp (Linux, needs sudo). See netns_test.go.
 #
-#   test/netns/run.sh                      # build in Docker, run all scenarios in parallel (~5 min)
+#   test/netns/run.sh                      # build in Docker, run all scenarios in parallel (~20 min)
 #   test/netns/run.sh -test.run 'Faults/b' # extra args go to the test binary
 #   FYISP_NETNS_PARALLEL=0 test/netns/run.sh   # one scenario at a time (~35 min)
 #
@@ -14,7 +14,9 @@
 # firewall are never touched.
 #
 # FYISP_NETNS_OUT=dir keeps the raw API responses and fyisp's logs, one
-# subdirectory per scenario.
+# subdirectory per scenario (TestHome10: timeline.jsonl and timeline.txt).
+# FYISP_NETNS_HOME=/api/home2 sets the path TestHome10 reads the Home from
+# (default: /api/home if it answers v2, else /api/home2).
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 bin=$(mktemp -d)
@@ -47,12 +49,14 @@ echo "run.sh: built in $((SECONDS - start))s, run id $run_id" >&2
 
 env=(FYISP_BIN="$bin/fyisp" FYISP_NETNS_RUNID="$run_id")
 [ -n "${FYISP_NETNS_OUT:-}" ] && env+=(FYISP_NETNS_OUT="$(realpath -m "$FYISP_NETNS_OUT")")
-# The longest scenario takes about 5 minutes; one at a time, all of them
-# take about 35. A -test.timeout among the extra args wins.
-timeout=20m
+[ -n "${FYISP_NETNS_HOME:-}" ] && env+=(FYISP_NETNS_HOME="$FYISP_NETNS_HOME")
+# The longest scenario (TestHome10's S3) takes about 18 minutes; one at a
+# time, all of them take about 3 hours. A -test.timeout among the extra
+# args wins.
+timeout=30m
 if [ "${FYISP_NETNS_PARALLEL:-1}" = 0 ]; then
   env+=(FYISP_NETNS_PARALLEL=0)
-  timeout=90m
+  timeout=240m
 fi
 test_start=$SECONDS
 rc=0
