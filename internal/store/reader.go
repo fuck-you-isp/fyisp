@@ -406,6 +406,19 @@ func (s *SQLite) Raw(ctx context.Context, keys []model.SeriesKey, from, to time.
 	if err != nil {
 		return err
 	}
+	// The hours looked up in the table: the range clamped to the hours it
+	// has (min and max of its key), so a far-past from (an export from
+	// 2000, a zero time) costs nothing. Hours in memory come from mem.
+	var dbMin, dbMax sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT min(hour), max(hour) FROM samples`).Scan(&dbMin, &dbMax); err != nil {
+		return err
+	}
+	qFrom, qTo := hFrom, hTo
+	if dbMin.Valid {
+		qFrom, qTo = max(qFrom, dbMin.Int64), min(qTo, dbMax.Int64)
+	} else {
+		qTo = qFrom - 1 // an empty table
+	}
 
 	emit := func(k model.SeriesKey, b *blob.Block) error {
 		t := b.Slot0
@@ -449,8 +462,8 @@ func (s *SQLite) Raw(ctx context.Context, keys []model.SeriesKey, from, to time.
 		// range of hours with series = ? would scan every series' rows in
 		// it (thousands per hour with --profile all).
 		id, stored := ids[k]
-		for h := hFrom; stored && h <= hTo; h += rawHours {
-			n := min(rawHours, hTo-h+1)
+		for h := qFrom; stored && h <= qTo; h += rawHours {
+			n := min(rawHours, qTo-h+1)
 			args := make([]any, 0, n+1)
 			args = append(args, id)
 			for i := range n {
