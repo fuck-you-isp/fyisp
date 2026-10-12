@@ -665,13 +665,17 @@ func (e *engine) closeMinute(from time.Time) {
 	e.broadMinute(from, bad, cov, lm)
 }
 
-// pathOut returns the gateway's and the edge's runs of total loss
-// (layerDrops: connDropNow or more, the one in progress too) that touch the
-// minute from, as of the latest tick: the connection was out then, for
-// every web and UDP endpoint alike.
+// pathOut returns the connection's own short outages that touch the
+// minute from, as of the latest tick: runs of total loss of the gateway or
+// the edge (layerDrops: connDropNow or more, the one in progress too)
+//   - that are isolated: no other one ended in the outIsolated before it
+//     (a flapping link is loss, not a row of blips), and
+//   - in which most covered tiles lost checks too (the gateway's or the
+//     edge's ICMP alone going silent, a rate limit, is no outage of the
+//     apps: their own loss stays loss).
 func (e *engine) pathOut(from time.Time) []window {
-	var out []window
-	ep := window{from, from.Add(time.Minute)}
+	var all []window
+	lo := from.Add(-time.Minute - outIsolated).UnixMilli()
 	for _, l := range []int{layerGateway, layerEdge} {
 		var series []runSet
 		for _, i := range e.paths[l] {
@@ -681,7 +685,6 @@ func (e *engine) pathOut(from time.Time) []window {
 			if s.tr.last != 0 {
 				rs.last = msTime(s.tr.last)
 			}
-			lo := from.Add(-time.Minute).UnixMilli()
 			for j := len(s.runs) - 1; j >= 0 && s.runs[j].toMs >= lo; j-- {
 				rs.runs = append(rs.runs, s.runs[j])
 			}
@@ -695,13 +698,55 @@ func (e *engine) pathOut(from time.Time) []window {
 		if cur != nil {
 			ended = append(ended, window{from: cur.Start})
 		}
-		for _, w := range ended {
-			if w.overlaps(ep, e.last) {
-				out = append(out, w)
-			}
+		all = append(all, ended...)
+	}
+	all = union(all, e.last)
+	var out []window
+	ep := window{from, from.Add(time.Minute)}
+	for i, w := range all {
+		if !w.overlaps(ep, e.last) {
+			continue
+		}
+		if i > 0 && !all[i-1].to.IsZero() && w.from.Sub(all[i-1].to) < outIsolated {
+			continue
+		}
+		if e.tilesOut(w) {
+			out = append(out, w)
 		}
 	}
 	return out
+}
+
+// tilesOut reports that more than half of the covered tiles had a failure
+// run on one of their series during w.
+func (e *engine) tilesOut(w window) bool {
+	cov, n := 0, 0
+	for _, t := range e.tiles {
+		if t.off {
+			continue
+		}
+		cov++
+		ids := slices.Clone(t.web)
+		for _, m := range t.udp {
+			ids = append(ids, m...)
+		}
+		if slices.ContainsFunc(ids, func(i int) bool {
+			s := e.ss[i]
+			hit := func(r failRun) bool { return (window{msTime(r.firstMs), msTime(r.lastMs + 1)}).overlaps(w, e.last) }
+			if r, ok := s.tr.open(); ok && hit(r) {
+				return true
+			}
+			for j := len(s.runs) - 1; j >= 0 && (s.runs[j].toMs == 0 || !msTime(s.runs[j].toMs).Before(w.from)); j-- {
+				if hit(s.runs[j]) {
+					return true
+				}
+			}
+			return false
+		}) {
+			n++
+		}
+	}
+	return 2*n > cov
 }
 
 // runsFor returns the series' runs that can touch the minute from: the

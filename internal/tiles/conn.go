@@ -119,10 +119,23 @@ func workingAgain(eps []Episode, now time.Time) *Recovered {
 
 // tileNow is a tile's word for the card.
 type tileNow struct {
-	id     string
-	vendor string
-	state  State // Off for an off tile
-	since  time.Time
+	id      string
+	vendor  string
+	state   State // Off for an off tile
+	since   time.Time
+	failing bool // most of its measured series' latest checks failed (an open run)
+}
+
+// tilesFailing reports that more than half of the covered tiles are still
+// failing: the connection, whatever its ICMP says, is not back.
+func tilesFailing(ts []tileNow) bool {
+	n := 0
+	for _, t := range ts {
+		if t.state != Off && t.failing {
+			n++
+		}
+	}
+	return 2*n > monitored(ts)
 }
 
 // monitored counts the tiles that are not off.
@@ -176,7 +189,10 @@ func connState(in connIn) ConnState {
 				return false
 			}
 			if in.clean != nil {
-				return in.now.Before(d.End.Add(lagMax)) && in.clean(v.Kind, d.End)
+				// the apps must be back too: ICMP answering while most
+				// apps still fail (an uplink dead past the edge, a full
+				// state table) is no lag
+				return in.now.Before(d.End.Add(lagMax)) && in.clean(v.Kind, d.End) && !tilesFailing(in.tiles)
 			}
 			return !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
 		}) {
@@ -208,6 +224,9 @@ func connState(in connIn) ConnState {
 	// (an outage clears a few checks after the path does): not an app's
 	// problem
 	tail := func(t tileNow) bool {
+		if t.failing || tilesFailing(in.tiles) {
+			return false
+		}
 		return slices.ContainsFunc(in.drops, func(d Drop) bool {
 			return d.Ended() && in.now.Before(d.End.Add(lagMax)) &&
 				!t.since.Before(d.Start.Add(-absorbBefore)) && !t.since.After(d.End.Add(dropLate))

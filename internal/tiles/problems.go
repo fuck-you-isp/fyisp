@@ -97,12 +97,30 @@ func (e *engine) lagged(v *view, k model.VerdictKind, start, to time.Time) *Drop
 	for _, ds := range [][]Drop{v.connDrops, v.blips} {
 		for i, d := range ds {
 			if d.Ended() && !start.Before(d.Start.Add(-absorbBefore)) && !start.After(d.End.Add(lagSlack)) &&
-				!to.After(d.End.Add(lagMax)) && e.layersClean(v, d.End, to, blamed(k)...) {
+				!to.After(d.End.Add(lagMax)) && e.layersClean(v, d.End, to, blamed(k)...) && !e.tilesDropped(v, d.End.Add(dropLate), to) {
 				return &ds[i]
 			}
 		}
 	}
 	return nil
+}
+
+// tilesDropped reports that more than half of the covered tiles were in
+// a tile drop after from (up to to): the apps were not back, whatever the
+// path's ICMP said.
+func (e *engine) tilesDropped(v *view, from, to time.Time) bool {
+	cov, n := 0, 0
+	w := window{from, to}
+	for i, t := range e.tiles {
+		if t.off {
+			continue
+		}
+		cov++
+		if slices.ContainsFunc(v.tileDrops[i], func(d Drop) bool { return (window{d.Start, d.End}).overlaps(w, v.now) }) {
+			n++
+		}
+	}
+	return to.After(from) && 2*n > cov
 }
 
 // blamed are the path layers a verdict kind says are fine up to the one it

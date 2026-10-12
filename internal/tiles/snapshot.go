@@ -218,7 +218,7 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		}
 		st, since := t.w.state()
 		ts.State, ts.Since = st, since
-		tn = append(tn, tileNow{id: t.def.ID, vendor: vendorOf(t.def.TileDef), state: st, since: since})
+		tn = append(tn, tileNow{id: t.def.ID, vendor: vendorOf(t.def.TileDef), state: st, since: since, failing: e.failing(t)})
 		drops := slices.Concat(v.tileDrops[i], v.connDrops)
 		if d := lastDrop(drops, st, now); d != nil {
 			c := *d
@@ -285,6 +285,27 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 	s.Day = dayCounts(v.eps, now)
 	s.Rev = epsHash(v.eps)
 	return s
+}
+
+// failing reports that most of a tile's measured series are in an open
+// failure run (their latest applied check failed).
+func (e *engine) failing(t *tile) bool {
+	n, open := 0, 0
+	ids := slices.Clone(t.web)
+	for _, m := range t.udp {
+		ids = append(ids, m...)
+	}
+	for _, i := range ids {
+		tr := &e.ss[i].tr
+		if tr.last == 0 {
+			continue
+		}
+		n++
+		if _, ok := tr.open(); ok {
+			open++
+		}
+	}
+	return n > 0 && 2*open > n
 }
 
 // lossyRun reports a run of total loss of the edge that is part of heavy

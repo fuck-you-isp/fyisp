@@ -127,7 +127,10 @@ const (
 	// lagMax bounds that lag: the verdict's 60 s window and its recovery
 	// (netns: incidents end 100–110 s after a drop). An incident still on
 	// this long after the drop ended is a problem of its own.
-	lagMax        = 150 * time.Second
+	lagMax = 150 * time.Second
+	// outIsolated: a path outage this soon after another is part of a
+	// flapping link (loss), not a blip of its own (pathOut)
+	outIsolated   = 2 * time.Minute
 	blockedLead   = 3 * time.Minute // a blocked-UDP episode takes call-tile problems that started this long before it
 	causeSlack    = time.Minute     // incidents this close to an episode explain it (web/home.go homePathLead)
 	vendorMerge   = 2 * time.Minute // tile episodes with one cause starting this close are one problem
