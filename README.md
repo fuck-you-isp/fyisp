@@ -411,22 +411,7 @@ docker run ... -e FYISP_PROFILE=default,streaming ghcr.io/fuck-you-isp/fyisp
 
 Targets outside the default show on Home in an **Other services** tile: its state counts, but it never names one of hundreds of endpoints. Target names are identities (a name keeps its history), so a target in several profiles is one series.
 
-There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open Details on the [Overview](#the-overview-large-profiles) instead of hundreds of charts. The cost grows roughly linearly with the target count; see [What it costs](#what-it-costs).
-
-### What it costs
-
-Measured on 2026-10-10 with the v1.0 `default` (Linux amd64, Docker, Frankfurt area; CPU, memory and traffic from the `/metrics` `process_*` counters over 8.6 minutes, after an 8-minute warm-up; the Network path group included), next to the v0.5 runs of the same method:
-
-| Profile | Targets | CPU (one core) | Memory (RSS) | Download / upload | Traffic per month | Disk for 90 days |
-|---|---:|---:|---:|---:|---:|---:|
-| **`default` (v1.0)** | 22 + 5 (4 STUN) | **0.8%** | **74 MB** | **0.75 / 0.76 KB/s** | **4.0 GB** | **0.08 GB** |
-| `default` (v0.5, 91 targets) | 91 + 5 (4 STUN) | 2.4% | 77 MB | 1.7 / 2.0 KB/s | 10 GB | 0.29 GB |
-| `calls` | 31 + 5 (15 STUN) | 0.6% | 60 MB | 0.9 / 0.8 KB/s | 4.5 GB | 0.07 GB |
-| `all` (TCP only, v0.4) | 1411 | 5.9% | 96 MB | 10.3 / 18.8 KB/s | 76 GB | |
-
-- Traffic per month matters on metered connections (mobile hotspots, LTE/5G home internet, satellite): every target is checked around the clock.
-- Disk is extrapolated from the stored data, not from the file size, because a young database is mostly empty 16 KB pages. The v1.0 run covered one full clock hour: its compressed sample blobs took 32.9 KB and the hourly summaries about 0.9 KB per hour, × 2,160 hours = 73 MB, plus a few percent for SQLite's pages and indexes. (The v0.5 rows were fitted from two partial hours.)
-- Per 100 extra TCP targets: about 0.4% of one CPU core, 0.7 KB/s of download and 1.3 KB/s of upload (a TCP connect sends more small packets than it receives). The two always-on traceroutes of `default` (Microsoft Teams and Cloudflare) cost a little CPU on top.
+There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open Details on the [Overview](#the-overview-large-profiles) instead of hundreds of charts.
 
 A `--config` file can start from any profiles and change them:
 
