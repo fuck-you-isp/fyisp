@@ -260,7 +260,7 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		clean: func(k model.VerdictKind, from time.Time) bool {
 			return e.layersClean(v, from, time.Time{}, blamed(k)...)
 		},
-		edgeLoss: e.recentLoss(layerEdge, recentFrom(now, in.verdict.Since))})
+		edgeLoss: e.ispPeak(in.verdict, now)})
 	// After a drop or a blip the verdict's layer health lags by its 60 s
 	// window: while the card no longer blames the path, for lagMax at
 	// most, a layer that has been clean (of loss) since is Good.
@@ -295,9 +295,37 @@ func recentFrom(now, since time.Time) time.Time {
 	return from
 }
 
-// recentLoss is the share of a layer's checks since from that were lost
-// (0 with fewer than 10 of them).
-func (e *engine) recentLoss(l int, from time.Time) float64 {
+// ispPeak is the highest loss seen of the current isp incident: the
+// verdict's 60 s window, and while the incident is young (its window still
+// holds the clean checks from before) the edge's own checks since it
+// began. Kept per incident, so a dip of the noisy estimate does not turn a
+// red card amber for a poll.
+func (e *engine) ispPeak(v model.Verdict, now time.Time) float64 {
+	if v.Kind != model.VerdictISP {
+		e.peak = lossPeak{}
+		return 0
+	}
+	if !e.peak.since.Equal(v.Since) {
+		e.peak = lossPeak{since: v.Since}
+	}
+	e.peak.loss = max(e.peak.loss, v.Evidence["loss"])
+	if now.Sub(v.Since) < edgeRecent {
+		if l, n := e.recentLoss(layerEdge, recentFrom(now, v.Since)); n >= 15 {
+			e.peak.loss = max(e.peak.loss, l)
+		}
+	}
+	return e.peak.loss
+}
+
+// lossPeak is the highest loss seen of the isp incident since since.
+type lossPeak struct {
+	since time.Time
+	loss  float64
+}
+
+// recentLoss is the share of a layer's checks since from that were lost,
+// and how many there were.
+func (e *engine) recentLoss(l int, from time.Time) (float64, int) {
 	n, lost := 0, 0
 	for _, i := range e.paths[l] {
 		for _, c := range e.ss[i].raw {
@@ -310,10 +338,10 @@ func (e *engine) recentLoss(l int, from time.Time) float64 {
 			}
 		}
 	}
-	if n < 10 {
-		return 0
+	if n == 0 {
+		return 0, 0
 	}
-	return float64(lost) / float64(n)
+	return float64(lost) / float64(n), n
 }
 
 // closedFrom returns the closed minutes from from on: [from, nextMin).

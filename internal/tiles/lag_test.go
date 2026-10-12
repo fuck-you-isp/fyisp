@@ -581,3 +581,24 @@ func TestRecentFrom(t *testing.T) {
 		t.Errorf("old incident: %v", got)
 	}
 }
+
+// TestISPPeak: the card's loss for an isp incident is its peak: the
+// young incident's edge checks count, and a later dip does not lower it.
+func TestISPPeak(t *testing.T) {
+	e := newEngine(nil, nil, Sources{}, Options{})
+	v := model.Verdict{Kind: model.VerdictISP, Since: at(time.Minute), Evidence: map[string]float64{"loss": 0.35}}
+	if got := e.ispPeak(v, at(2*time.Minute)); got != 0.35 {
+		t.Errorf("first: %v", got)
+	}
+	v.Evidence["loss"] = 0.2
+	if got := e.ispPeak(v, at(3*time.Minute)); got != 0.35 {
+		t.Errorf("after a dip: %v, want the peak", got)
+	}
+	v.Since = at(10 * time.Minute)
+	if got := e.ispPeak(v, at(11*time.Minute)); got != 0.2 {
+		t.Errorf("a new incident: %v", got)
+	}
+	if got := e.ispPeak(model.Verdict{Kind: model.VerdictOK}, at(12*time.Minute)); got != 0 {
+		t.Errorf("no incident: %v", got)
+	}
+}

@@ -172,6 +172,7 @@ type engine struct {
 	edge         netip.Addr
 	incidents    []model.Incident
 	verdict      model.Verdict // the latest tick's
+	peak         lossPeak      // the current isp incident's highest loss (the card)
 	incAt        time.Time
 	stored       speedWindows
 	storedAt     time.Time
