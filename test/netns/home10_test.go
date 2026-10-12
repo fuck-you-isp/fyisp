@@ -191,10 +191,11 @@ func TestHome10(t *testing.T) {
 		}
 	})
 
-	// S2b: 40% loss inside the provider for 2.5 minutes: the amber "losing
-	// some data" provider card (partial loss is never red), the call tiles
-	// out of Down within 3 minutes of the end, then "had trouble for about
-	// N minutes" (the third Working again variant).
+	// S2b: 40% loss inside the provider for 2.5 minutes: the red provider
+	// card (the amber "losing some data" one is for edge loss under 30%),
+	// the call tiles out of Down within 3 minutes of the end, then "had
+	// trouble for about N minutes" (the third Working again variant: traffic
+	// kept flowing, so never "was down" or "Nothing could get through").
 	t.Run("S2b-provider-lossy", func(t *testing.T) {
 		parallel(t)
 		lab := startHome10(t, home10Opts{})
@@ -206,14 +207,20 @@ func TestHome10(t *testing.T) {
 		// Calls may stay Choppy a while after Down; until they are Good,
 		// their card (row 9) carries the Working again sentence.
 		time.Sleep(10 * time.Minute)
-		if p := lab.first(t0, t1, func(n *h10Now) bool { return strings.HasPrefix(n.Answer.Key, "isp_lossy:") }); p == nil {
-			t.Errorf("40%% loss in the provider's network: the card never said the provider is losing data")
-		} else if p.n.Answer.Tone != "warn" || p.n.Answer.Tab != "! Provider losing data" || p.n.Path[1].State != "slow" {
-			lab.errorf(t, *p, "want the amber ! Provider losing data card and the provider hop slow")
+		if p := lab.first(t0, t1, func(n *h10Now) bool { return strings.HasPrefix(n.Answer.Key, "isp:") }); p == nil {
+			t.Errorf("40%% loss in the provider's network: the card never named the provider")
+		} else if p.n.Answer.Tone != "bad" || p.n.Answer.Tab != "✕ Provider problem" || p.n.Path[1].State != "slow" {
+			lab.errorf(t, *p, "want the red ✕ Provider problem card and the provider hop slow (losing data)")
 		}
 		for _, p := range lab.polls(t0, time.Now()) {
-			if p.n.Answer.Tone == "bad" {
-				lab.errorf(t, p, "partial loss in the provider's network: want no red card")
+			if strings.HasPrefix(p.n.Answer.Key, "isp_lossy:") {
+				lab.errorf(t, p, "40%% loss in the provider's network: want the red card, not the amber one")
+				break
+			}
+		}
+		for _, p := range lab.polls(t1, time.Now()) {
+			if slices.ContainsFunc(p.n.Problems.Items, func(it h10Problem) bool { return strings.HasPrefix(it.What, "Nothing could get through") }) {
+				lab.errorf(t, p, "40%% loss: want no \"Nothing could get through\" problem, traffic kept flowing")
 				break
 			}
 		}
