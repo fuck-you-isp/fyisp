@@ -155,7 +155,11 @@ func tileOrder(id string) int {
 //     absorbAfter]: one problem, not two. Other incidents (dns, blocked
 //     UDP) and longer ones stay their own problems.
 //  2. Tile parts (runEpisode, dropEpisode of a tile) fully covered by a
-//     connection episode fold into it and add their tiles.
+//     connection episode fold into it: they add their tiles and widen its
+//     span (a 90 s app drop around a 1 min upstream incident is one
+//     problem of 90 s), but its severity, kind and drop stay the
+//     connection's own: the card's "Working again" reads them, and the
+//     apps' drops must not make it say the connection was down.
 //  3. The other tile parts of one tile less than sameTileMerge apart are
 //     one episode. Then each gets its cause, and tile episodes with the
 //     same cause (who and vendor) that overlap or start within vendorMerge
@@ -191,6 +195,13 @@ func groupEpisodes(conn, tiles []Episode, cause func(Episode) Cause, now time.Ti
 	var ts []Episode
 	for _, e := range tiles {
 		if i := slices.IndexFunc(cs, func(c Episode) bool { return c.absorbs(e) }); i >= 0 {
+			c := &cs[i]
+			if e.Start.Before(c.Start) {
+				c.Start = e.Start
+			}
+			if !c.Ongoing() && e.End.After(c.End) { // absorbs: e is not ongoing
+				c.End = e.End
+			}
 			for _, t := range e.Tiles {
 				if !slices.Contains(cs[i].Tiles, t) {
 					cs[i].Tiles = append(cs[i].Tiles, t)

@@ -145,8 +145,10 @@ func (e *engine) goLive(ctx context.Context, wall time.Time) {
 	e.walk(buf, now) // feed() drops what the replay already read
 	e.live.Store(true)
 	e.bufMu.Unlock()
-	e.ready.Store(true)
 	s := e.snapshot(now, in, true)
 	e.mu.Unlock()
+	// publish the first live snapshot before Ready says so: a reader that
+	// sees Ready never gets the checking one
 	e.snap.Store(s)
+	e.ready.Store(true)
 }

@@ -16,13 +16,16 @@
 //     checks fail (downShare) and Slow from a quarter (webSlowLoss).
 //   - verdict spike 3× / +50 ms and normal 2.5× / p95+30 ms (7-day
 //     baseline): the tiles compare with a 24 h usual of good minutes only,
-//     Slow at 2× AND +30 ms, Down at 3× AND +100 ms (slowFactor/ downFactor).
+//     Slow at 2× AND +30 ms (slowFactor). Latency alone never makes an app
+//     or stream tile Down: only failed checks do (a 150 ms TCP connect to
+//     a service that usually takes 24 ms is slow, not down).
 //   - verdict Slow hint 2× / +10 ms: the tiles want +30 ms, so 5 ms → 12 ms
 //     is not Slow.
 //   - verdict udp_degraded 5% loss or 30 ms jitter on ≥ 2 providers for
-//     3 min (verdict/udp.go): a call tile is Choppy from 2% loss, 30 ms jitter
-//     or 150 ms delay over 3 min. A call tile can go Choppy well before
-//     udp_degraded: tiles describe apps, the card describes the connection.
+//     3 min (verdict/udp.go): a call tile is Choppy from 2% loss (in at
+//     least 2 bursts), 30 ms jitter or 150 ms delay over 3 min. A call tile
+//     can go Choppy well before udp_degraded: tiles describe apps, the card
+//     describes the connection.
 //   - callq JitterFairMs 30 ms: the same jitter limit as callChoppyJitterMs.
 package tiles
 
@@ -39,10 +42,13 @@ const (
 	callWindow         = 3 * time.Minute
 	callChoppyDelayMs  = 150.0 // median delay above this: Choppy
 	callChoppyJitterMs = 30.0  // median burst jitter above this: Choppy
-	callChoppyLossPct  = 2     // mean burst loss (%) at or above this: Choppy
-	callDownDelayMs    = 400.0 // median delay above this: Down
-	callDownLossPct    = 10    // mean burst loss (%) at or above this ...
-	callDownLossMins   = 2     // ... in each of the last this many minutes: Down
+	callChoppyLossPct  = 2     // mean burst loss (%) at or above this ...
+	// ... in at least this many bursts: Choppy. One lost burst is 2.8% of
+	// a 36-burst window, a stall of ~100 ms that call software hides.
+	callChoppyLossBursts = 2
+	callDownDelayMs      = 400.0 // median delay above this: Down
+	callDownLossPct      = 10    // mean burst loss (%) at or above this ...
+	callDownLossMins     = 2     // ... in each of the last this many minutes: Down
 	// callMinBursts bursts are needed in the window, and at least half the
 	// bursts the cadence should give (36 at 5 s, 12 for UDP 53 at 15 s);
 	// fewer is "not enough data".
@@ -51,9 +57,8 @@ const (
 
 // Web (app and stream) endpoints, per minute, against the usual latency.
 const (
-	slowFactor, slowExtraMs = 2.0, 30.0  // Slow: median > 2× usual AND > usual + 30 ms
-	downFactor, downExtraMs = 3.0, 100.0 // Down: median > 3× usual AND > usual + 100 ms
-	downShare               = 0.5        // Down: more than this share of the checks lost (streams too: they stop loading)
+	slowFactor, slowExtraMs = 2.0, 30.0 // Slow: median > 2× usual AND > usual + 30 ms
+	downShare               = 0.5       // Down: more than this share of the checks lost (the only Down of a web minute)
 	// webSlowLoss of a minute's checks lost (1 of 4 at 15 s) is Slow, on
 	// app and stream tiles alike: partial loss is never Good. The verdict
 	// calls a target unhealthy only at lossBad 20% with ≥ 2 lost.
@@ -65,7 +70,6 @@ const (
 const (
 	learnFor    = 24 * time.Hour // after the first stored sample
 	learnSlowMs = 300.0
-	learnDownMs = 1000.0
 )
 
 // Word hysteresis and the immediate outage ("Down now").
@@ -190,6 +194,7 @@ type minute struct {
 	// noJitter. A call window takes the median of these minute medians.
 	jitUs      uint32
 	lossPctSum uint32 // UDP: the bursts' loss (%), summed; a lost burst counts 100
+	lossy      uint16 // UDP: bursts that lost anything (lost, or lossPct > 0)
 }
 
 func (m minute) n() int            { return int(m.ok) + int(m.lost) }
@@ -240,11 +245,15 @@ func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) 
 			if !skip(c) {
 				m.lost++
 				m.lossPctSum += 100
+				m.lossy++
 			}
 		default:
 			m.ok++
 			rtts = append(rtts, c.rttUs)
 			m.lossPctSum += uint32(c.lossPct)
+			if c.lossPct > 0 {
+				m.lossy++
+			}
 			if c.jitUs != noJitter {
 				jits = append(jits, c.jitUs)
 			}
@@ -270,32 +279,28 @@ func median[T ~uint32 | ~float64](v []T) T {
 	return (v[n/2-1] + v[n/2]) / 2
 }
 
-// limits are a web endpoint's latency limits in ms.
-type limits struct{ slowMs, downMs float64 }
+// limits are a web endpoint's latency limit in ms (latency alone never
+// makes it Down).
+type limits struct{ slowMs float64 }
 
 // limitsFor returns the limits for a usual latency: fixed while learning or
 // while the usual is unknown (ok false).
 func limitsFor(usualMs float64, ok, learning bool) limits {
 	if learning || !ok {
-		return limits{learnSlowMs, learnDownMs}
+		return limits{learnSlowMs}
 	}
-	return limits{
-		slowMs: max(slowFactor*usualMs, usualMs+slowExtraMs),
-		downMs: max(downFactor*usualMs, usualMs+downExtraMs),
-	}
+	return limits{slowMs: max(slowFactor*usualMs, usualMs+slowExtraMs)}
 }
 
 // judgeWeb judges one app or stream endpoint-minute: Down when most checks
-// failed, Slow when a quarter did. Streams are Down only when their checks
-// fail, never on latency.
-func judgeWeb(m minute, l limits, stream bool) State {
+// failed, Slow when a quarter did or on latency. Latency alone is never
+// Down: apps and streams are Down only when their checks fail.
+func judgeWeb(m minute, l limits) State {
 	n := m.n()
 	switch {
 	case n < minChecks:
 		return None
 	case float64(m.lost) > downShare*float64(n):
-		return Down
-	case m.medMs() > l.downMs && !stream:
 		return Down
 	case float64(m.lost) >= webSlowLoss*float64(n), m.medMs() > l.slowMs:
 		return Slow
@@ -320,9 +325,11 @@ func judgeCall(ms []minute, every time.Duration) (State, callStats) {
 	var mb, jb [8]float64
 	meds, jits := mb[:0], jb[:0]
 	var loss uint32
+	lossy := 0
 	for _, m := range ms {
 		st.bursts += m.n()
 		loss += m.lossPctSum
+		lossy += int(m.lossy)
 		if m.ok > 0 {
 			meds = append(meds, m.medMs())
 		}
@@ -351,7 +358,8 @@ func judgeCall(ms []minute, every time.Duration) (State, callStats) {
 	switch {
 	case st.delayMs > callDownDelayMs || lossDown:
 		return Down, st
-	case st.delayMs > callChoppyDelayMs || st.jitterMs > callChoppyJitterMs || loss >= callChoppyLossPct*uint32(st.bursts):
+	case st.delayMs > callChoppyDelayMs || st.jitterMs > callChoppyJitterMs,
+		loss >= callChoppyLossPct*uint32(st.bursts) && lossy >= callChoppyLossBursts:
 		return Slow, st
 	}
 	return Good, st

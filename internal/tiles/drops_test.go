@@ -363,7 +363,7 @@ func TestDropRecovery(t *testing.T) {
 		t.Errorf("good again at the slot %v, want %v (one interval after the first answer)", goodAt, want)
 	}
 	for _, m := range []time.Time{t0, at(time.Minute), at(2 * time.Minute)} {
-		if got := judgeWeb(summarize(cs, runs, ruleWeb, m, m.Add(80*time.Second)), limitsFor(10, true, false), false); got != Good && got != None {
+		if got := judgeWeb(summarize(cs, runs, ruleWeb, m, m.Add(80*time.Second)), limitsFor(10, true, false)); got != Good && got != None {
 			t.Errorf("minute %v: got %s", m, got)
 		}
 	}

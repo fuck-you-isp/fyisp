@@ -24,7 +24,7 @@ import (
 // Wiring (cmd/fyisp):
 //
 //	tl := tiles.New(prof, profile.ResolveTiles(prof), tiles.Sources{Store: st, …}, tiles.Options{Log: log})
-//	probeSinks = append(probeSinks, tl) // Observe never blocks
+//	probeSinks = append(probeSinks, tl) // Observe returns at once (see Observe)
 //	go tl.Run(ctx)                      // replay 8 days, then tick every 5 s
 //
 // Only the series that feed a tile and the path layers' ICMP series are
@@ -103,6 +103,9 @@ type Engine interface {
 	// Problems are the problems that ended after from or go on, newest
 	// first, at most 100 of the last 7 days.
 	Problems(from time.Time) []Episode
+	// LateSamples counts the samples ignored because they arrived after a
+	// newer slot of their series was applied (more than holdFor late).
+	LateSamples() int
 }
 
 // ser is one tracked series. A STUN target is one series (KindUDP): its
@@ -112,11 +115,9 @@ type ser struct {
 	rule  runRule
 	every time.Duration
 	layer int // a path layer, or -1
-	// stream: a web endpoint of a stream tile (Down only on failures)
-	stream bool
-	tr     tracker
-	runs   []failRun // closed; pruned once their minutes are judged (pruneRuns), then after keepFor
-	raw    []check   // the checks of the minutes not summarized yet
+	tr    tracker
+	runs  []failRun // closed; pruned once their minutes are judged (pruneRuns), then after keepFor
+	raw   []check   // the checks of the minutes not summarized yet
 	// the latest closed minutes, oldest first (the call window)
 	mins  [callMinutes]minute
 	state State     // the latest minute's judgement
@@ -132,7 +133,6 @@ type tile struct {
 	def    profile.ResolvedTile
 	idx    int
 	off    bool
-	stream bool
 	web    []int   // series
 	udp    [][]int // members: an own STUN target, or a shared-path provider's targets
 	source string  // CallOwn, CallShared, CallTCPOnly
@@ -254,11 +254,8 @@ func newEngine(p *model.Profile, rts []profile.ResolvedTile, src Sources, o Opti
 		}
 		t.def = rts[i]
 		t.off = rts[i].Off()
-		t.stream = t.def.Kind == profile.TileStream
 		for _, tg := range t.def.Web {
-			s := add(tg, webKind(tg), ruleWeb, -1)
-			e.ss[s].stream = t.stream
-			t.web = append(t.web, s)
+			t.web = append(t.web, add(tg, webKind(tg), ruleWeb, -1))
 		}
 		byProv := map[string]int{}
 		for _, tg := range t.def.UDP {
@@ -338,7 +335,10 @@ func rttUs(d time.Duration) uint32 {
 	return uint32(min(q/time.Microsecond, math.MaxUint32-1))
 }
 
-// Observe implements model.Sink. Untracked keys return before any lock.
+// Observe implements model.Sink. Untracked keys return before any lock. A
+// tracked sample takes the engine's lock: it waits while a tick runs (a
+// snapshot is built under it, about 1.5 ms here, at worst some 20 ms, more
+// on a Pi), never for I/O.
 func (e *engine) Observe(s model.Sample) {
 	i, ok := e.index[s.Key]
 	if !ok || (s.Lost && s.Reason == model.ReasonGap) {
@@ -542,8 +542,7 @@ func (e *engine) start(t time.Time) {
 	e.lastRel = time.Time{}
 }
 
-// LateSamples counts the checks ignored because they arrived after a newer
-// slot was applied (more than holdFor late).
+// LateSamples implements Engine.
 func (e *engine) LateSamples() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -617,7 +616,7 @@ func (e *engine) closeMinute(from time.Time) {
 		switch s.rule {
 		case ruleWeb:
 			us, ok := s.u.value(usAt)
-			s.state = judgeWeb(m, limitsFor(us, ok, learn), s.stream)
+			s.state = judgeWeb(m, limitsFor(us, ok, learn))
 			s.u.add(from, m, s.state)
 		case ruleUDP:
 			s.state, s.call = judgeCall(s.mins[:], s.every)

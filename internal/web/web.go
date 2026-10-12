@@ -83,6 +83,7 @@ type TilesSource interface {
 	Snapshot() *tiles.Snapshot
 	Chart(id string) (*tiles.Chart, bool)
 	Problems(from time.Time) []tiles.Episode
+	LateSamples() int // samples that arrived too late to count
 }
 
 // Status is what /api/status reports.

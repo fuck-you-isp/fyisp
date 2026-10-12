@@ -182,3 +182,33 @@ func TestDayCounts(t *testing.T) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 }
+
+// TestFoldKeepsConnectionSeverity: tile drops folded into a lossy
+// connection episode (10-09: a 1 min upstream incident, apps dropped for
+// 90 s around it) widen its span, but it stays a lossy problem: "Working
+// again" says the internet had trouble, not that it was down.
+func TestFoldKeepsConnectionSeverity(t *testing.T) {
+	m, s := time.Minute, time.Second
+	for _, k := range []model.VerdictKind{model.VerdictUpstream, model.VerdictISP} {
+		inc, _ := incidentEpisode(model.Incident{Kind: k, Start: at(10*m + 28*s), End: at(11*m + 28*s), PeakLoss: 0.48}, false)
+		parts := []Episode{
+			dropEpisode(Drop{Start: at(10 * m), End: at(11*m + 30*s), Dur: 90 * s}, "gws"),
+			dropEpisode(Drop{Start: at(10*m + 15*s), End: at(11*m + 25*s), Dur: 70 * s}, "slack"),
+			tileRun("gws", Down, 10*m, 11*m+30*s),
+		}
+		eps := groupEpisodes([]Episode{inc}, parts, byVendor, at(20*m))
+		if len(eps) != 1 {
+			t.Fatalf("%s: %d problems, want 1: %+v", k, len(eps), eps)
+		}
+		e := eps[0]
+		if !e.Start.Equal(at(10*m)) || !e.End.Equal(at(11*m+30*s)) {
+			t.Errorf("%s: span %v..%v, want the tile drops' 10:00..11:30", k, e.Start, e.End)
+		}
+		if e.Sev != Slow || e.Kind != EpSlow || e.DropDur != 0 || !slices.Equal(e.Tiles, []string{"slack", "gws"}) {
+			t.Errorf("%s: %+v, want a lossy connection problem of slack and gws", k, e)
+		}
+		if r := workingAgain(eps, at(20*m)); r == nil || r.Variant != AgainTrouble {
+			t.Errorf("%s: working again %+v, want %s", k, r, AgainTrouble)
+		}
+	}
+}

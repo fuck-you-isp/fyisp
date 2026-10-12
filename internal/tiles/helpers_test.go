@@ -69,7 +69,9 @@ func rep(s string, n int) string {
 }
 
 // callMin is a UDP minute of n answered bursts with a delay, jitter and a
-// sum of burst losses (%).
+// sum of burst losses (%), spread over bursts that lost 1 of 5 requests
+// (20%) each.
 func callMin(n int, delayMs, jitterMs float64, lossPctSum uint32) minute {
-	return minute{ok: uint16(n), medUs: uint32(delayMs * 1000), jitUs: uint32(jitterMs * 1000), lossPctSum: lossPctSum}
+	return minute{ok: uint16(n), medUs: uint32(delayMs * 1000), jitUs: uint32(jitterMs * 1000), lossPctSum: lossPctSum,
+		lossy: uint16(min(n, int(lossPctSum+19)/20))}
 }

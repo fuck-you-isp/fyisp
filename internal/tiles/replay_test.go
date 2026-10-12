@@ -251,7 +251,7 @@ func (e *hEng) tick(wall time.Time) {
 			switch s.sp.rule {
 			case ruleWeb:
 				us, ok := s.u.value(closeAt)
-				st := judgeWeb(m, limitsFor(us, ok, false), false)
+				st := judgeWeb(m, limitsFor(us, ok, false))
 				s.u.add(from, m, st)
 				states[i] = st
 			case ruleUDP:

@@ -9,21 +9,21 @@ import (
 
 func TestLimits(t *testing.T) {
 	cases := []struct {
-		name           string
-		usual          float64
-		ok, learning   bool
-		slowMs, downMs float64
+		name         string
+		usual        float64
+		ok, learning bool
+		slowMs       float64
 	}{
-		{"short path: +30 and +100 decide", 5, true, false, 35, 105},
-		{"long path: 2x and 3x decide", 100, true, false, 200, 300},
-		{"crossover", 30, true, false, 60, 130},
-		{"learning: fixed", 5, true, true, learnSlowMs, learnDownMs},
-		{"no usual yet: fixed", 0, false, false, learnSlowMs, learnDownMs},
+		{"short path: +30 decides", 5, true, false, 35},
+		{"long path: 2x decides", 100, true, false, 200},
+		{"crossover", 30, true, false, 60},
+		{"learning: fixed", 5, true, true, learnSlowMs},
+		{"no usual yet: fixed", 0, false, false, learnSlowMs},
 	}
 	for _, c := range cases {
 		l := limitsFor(c.usual, c.ok, c.learning)
-		if l.slowMs != c.slowMs || l.downMs != c.downMs {
-			t.Errorf("%s: got %+v, want slow %v down %v", c.name, l, c.slowMs, c.downMs)
+		if l.slowMs != c.slowMs {
+			t.Errorf("%s: got %+v, want slow %v", c.name, l, c.slowMs)
 		}
 	}
 }
@@ -35,34 +35,31 @@ func TestJudgeWeb(t *testing.T) {
 		return minute{ok: uint16(ok), lost: uint16(lost), medUs: uint32(medMs * 1000)}
 	}
 	cases := []struct {
-		name   string
-		m      minute
-		l      limits
-		stream bool
-		want   State
+		name string
+		m    minute
+		l    limits
+		want State
 	}{
-		{"usual 5: 35 ms is not slow", m(4, 0, 35), u5, false, Good},
-		{"usual 5: needs more than 35", m(4, 0, 35.001), u5, false, Slow},
-		{"usual 5: 105 is slow, not down", m(4, 0, 105), u5, false, Slow},
-		{"usual 5: down above 105", m(4, 0, 105.001), u5, false, Down},
-		{"stream: never down on latency", m(4, 0, 900), u5, true, Slow},
-		{"stream: down when checks fail", m(1, 3, 5), u5, true, Down},
-		{"3 of 4 lost: down", m(1, 3, 5), u5, false, Down},
-		{"all lost: down", m(0, 4, 0), u5, false, Down},
-		{"half lost is not most: slow", m(2, 2, 5), u5, false, Slow},
-		{"1 of 4 lost: slow", m(3, 1, 5), u5, false, Slow},
-		{"1 of 5 lost: good", m(4, 1, 5), u5, false, Good},
-		{"stream: 1 of 4 lost: slow", m(3, 1, 5), u5, true, Slow},
-		{"stream: 2 of 4 lost: slow", m(2, 2, 5), u5, true, Slow},
-		{"stream: 3 of 4 lost: down", m(1, 3, 5), u5, true, Down},
-		{"one check: not enough data", m(1, 0, 5), u5, false, None},
-		{"no checks", m(0, 0, 0), u5, false, None},
-		{"learning: 300 ms is fine", m(4, 0, 300), learn, false, Good},
-		{"learning: slow above 300", m(4, 0, 301), learn, false, Slow},
-		{"learning: down above 1000", m(4, 0, 1001), learn, false, Down},
+		{"usual 5: 35 ms is not slow", m(4, 0, 35), u5, Good},
+		{"usual 5: needs more than 35", m(4, 0, 35.001), u5, Slow},
+		{"usual 5: 105 is slow", m(4, 0, 105), u5, Slow},
+		{"latency alone is never down", m(4, 0, 900), u5, Slow},
+		// 10-07 16:23 UTC: dev-GitHub answered every check in 101–195 ms
+		// (usual 24 ms); that is slow, not "GitHub is down"
+		{"GitHub 10-07: 148 ms against 24 ms", m(4, 0, 148), limitsFor(24, true, false), Slow},
+		{"3 of 4 lost: down", m(1, 3, 5), u5, Down},
+		{"all lost: down", m(0, 4, 0), u5, Down},
+		{"half lost is not most: slow", m(2, 2, 5), u5, Slow},
+		{"1 of 4 lost: slow", m(3, 1, 5), u5, Slow},
+		{"1 of 5 lost: good", m(4, 1, 5), u5, Good},
+		{"one check: not enough data", m(1, 0, 5), u5, None},
+		{"no checks", m(0, 0, 0), u5, None},
+		{"learning: 300 ms is fine", m(4, 0, 300), learn, Good},
+		{"learning: slow above 300", m(4, 0, 301), learn, Slow},
+		{"learning: 1001 ms is slow, not down", m(4, 0, 1001), learn, Slow},
 	}
 	for _, c := range cases {
-		if got := judgeWeb(c.m, c.l, c.stream); got != c.want {
+		if got := judgeWeb(c.m, c.l); got != c.want {
 			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
 	}
@@ -101,6 +98,12 @@ func TestJudgeCall(t *testing.T) {
 		{"UDP 53 at 15 s: 6 of 12 is enough", three(callMin(2, 20, 5, 0)), 15 * time.Second, Good},
 		{"UDP 53 at 15 s: 5 is not", []minute{callMin(2, 20, 5, 0), callMin(2, 20, 5, 0), callMin(1, 20, 5, 0)}, 15 * time.Second, None},
 		{"no minutes", nil, every, None},
+		// one fully lost burst is 100/36 = 2.8%, a ~100 ms stall: not Choppy
+		{"one lost burst: good", []minute{callMin(12, 20, 5, 0), {ok: 11, lost: 1, medUs: 20000, jitUs: 5000, lossPctSum: 100, lossy: 1}, callMin(12, 20, 5, 0)}, every, Good},
+		{"one burst losing 3 of 5 (60%, 1.7%): good", three(minute{ok: 12, medUs: 20000, jitUs: 5000, lossPctSum: 20, lossy: 1}), every, Good},
+		{"two lossy bursts reaching 2%: choppy", []minute{callMin(12, 20, 5, 0), {ok: 12, medUs: 20000, jitUs: 5000, lossPctSum: 80, lossy: 2}, callMin(12, 20, 5, 0)}, every, Slow},
+		{"a lost burst and a stray partial one: choppy", []minute{{ok: 11, lost: 1, medUs: 20000, jitUs: 5000, lossPctSum: 100, lossy: 1}, {ok: 12, medUs: 20000, jitUs: 5000, lossPctSum: 20, lossy: 1}, callMin(12, 20, 5, 0)}, every, Slow},
+		{"two lossy bursts under 2%: good", three(minute{ok: 12, medUs: 20000, jitUs: 5000, lossPctSum: 23, lossy: 2}), every, Good},
 	}
 	for _, c := range cases {
 		if got, _ := judgeCall(c.ms, c.every); got != c.want {
@@ -108,8 +111,26 @@ func TestJudgeCall(t *testing.T) {
 		}
 	}
 
+	// one lost burst on a single-member tile (Teams' relay): the tile stays
+	// Good through summarize, judgeCall and tileMinute
+	cs := pattern(every, t0, rep(".", 17)+"x"+rep(".", 18), ms10)
+	_, rs := series(every, t0, rep(".", 17)+"x"+rep(".", 18))
+	var ms []minute
+	for i := range 3 {
+		from := t0.Add(time.Duration(i) * time.Minute)
+		ms = append(ms, summarize(cs, rs.runs, ruleUDP, from, from.Add(80*time.Second)))
+	}
+	if ms[1].lossy != 1 || ms[1].lost != 1 {
+		t.Fatalf("the lost burst's minute: %+v", ms[1])
+	}
+	if st, _ := judgeCall(ms, every); st != Good {
+		t.Errorf("one lost burst: %s, want good", st)
+	} else if tm := tileMinute(profile.TileCall, []State{Good}, []State{st}); tm != Good {
+		t.Errorf("one lost burst: tile-minute %s", tm)
+	}
+
 	// every burst timed out: down; the stats say so
-	lost := minute{lost: 12, lossPctSum: 1200, jitUs: noJitter}
+	lost := minute{lost: 12, lossPctSum: 1200, lossy: 12, jitUs: noJitter}
 	got, st := judgeCall([]minute{lost, lost, lost}, every)
 	if got != Down || st.lossPct != 100 || st.hasJitter {
 		t.Errorf("all lost: got %s %+v", got, st)
@@ -470,14 +491,14 @@ func TestLossIsCounted(t *testing.T) {
 	if m.lost != 2 || m.ok != 2 {
 		t.Errorf("xx..: got %+v, want 2 lost of 4", m)
 	}
-	if st := judgeWeb(m, limitsFor(10, true, false), false); st != Slow {
+	if st := judgeWeb(m, limitsFor(10, true, false)); st != Slow {
 		t.Errorf("xx..: got %s, want slow", st)
 	}
 	// one lost check of four: Slow; three (never in a drop-like run): Down
 	for p, want := range map[string]State{"....x...": Slow, "....xx.x": Down} {
 		cs := pattern(every, t0, p, ms10)
 		_, s := feed(every, cs)
-		if st := judgeWeb(summarize(cs, s.runs, ruleWeb, at(time.Minute), at(time.Minute+80*time.Second)), limitsFor(10, true, false), false); st != want {
+		if st := judgeWeb(summarize(cs, s.runs, ruleWeb, at(time.Minute), at(time.Minute+80*time.Second)), limitsFor(10, true, false)); st != want {
 			t.Errorf("%s: got %s, want %s", p, st, want)
 		}
 	}
@@ -489,7 +510,7 @@ func TestLossIsCounted(t *testing.T) {
 	downs := 0
 	for i := range 25 {
 		from := at(time.Duration(i) * time.Minute)
-		st := judgeWeb(summarize(cs, s.runs, ruleWeb, from, from.Add(80*time.Second)), limitsFor(10, true, false), false)
+		st := judgeWeb(summarize(cs, s.runs, ruleWeb, from, from.Add(80*time.Second)), limitsFor(10, true, false))
 		if st == Down {
 			downs++
 		}
@@ -521,13 +542,13 @@ func TestWordOutageInsideGoodRun(t *testing.T) {
 	}
 }
 
-// TestLiveVsReplayClose: a UDP run 3:00–3:10 lost, OK from 3:15, after a
-// lost burst at 2:55. Live, results arrive up to 6 s after their slot and
+// TestLiveVsReplayClose: a UDP run 3:00–3:10 lost, OK from 3:15, after
+// lost bursts at 1:40 and 2:55. Live, results arrive up to 6 s after their slot and
 // the engine summarizes minute 2 at its first grid tick at or after
 // closeAt + holdFor; replay sees all checks at once. Both judge alike.
 func TestLiveVsReplayClose(t *testing.T) {
 	const every = 5 * time.Second
-	cs := pattern(every, t0, rep(".", 35)+"x"+"xxx"+rep(".", 20), ms10)
+	cs := pattern(every, t0, rep(".", 20)+"x"+rep(".", 14)+"x"+"xxx"+rep(".", 20), ms10)
 	judge := func(runs []failRun) State {
 		var ms []minute
 		for i := range 3 {
@@ -554,7 +575,7 @@ func TestLiveVsReplayClose(t *testing.T) {
 		runs = append(runs, r)
 	}
 	if live := judge(runs); live != replay || live != Slow {
-		t.Errorf("live %s, replay %s, want slow (4 of 36 lost)", live, replay)
+		t.Errorf("live %s, replay %s, want slow (2 of 36 lost)", live, replay)
 	}
 }
 

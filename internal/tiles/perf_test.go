@@ -2,6 +2,7 @@ package tiles
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -16,7 +17,10 @@ import (
 // TestPerfEngineReplay (FYISP_PERF=1, without -race) times the engine's
 // start on the live instance's profile (--profile all,calls): 8 days of
 // its tracked series in a SQLite store, read, decoded and replayed, then a
-// live tick. The budget is 2 s here (5 s on a Pi 4).
+// live tick. Like the live database, the store also holds ~3,700
+// untracked series (every target of --profile all, at 15 min here): the
+// table is keyed by (hour, series), so they are what a careless Raw
+// query would scan. The budget is 2 s here (5 s on a Pi 4).
 func TestPerfEngineReplay(t *testing.T) {
 	if os.Getenv("FYISP_PERF") != "1" {
 		t.Skip("set FYISP_PERF=1")
@@ -28,11 +32,16 @@ func TestPerfEngineReplay(t *testing.T) {
 	end := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
 	start := end.Add(-8 * 24 * time.Hour)
 	now := start
+	const nOther, otherEvery = 3700, 15 * time.Minute
 	every := func(k model.SeriesKey) time.Duration {
 		if i, ok := src.index[k]; ok {
 			return src.ss[i].every
 		}
-		return 15 * time.Second
+		return otherEvery
+	}
+	others := make([]model.SeriesKey, nOther)
+	for i := range others {
+		others[i] = model.SeriesKey{Target: fmt.Sprintf("Other-%04d", i), Kind: model.KindTCP}
 	}
 	st, err := store.Open(t.TempDir(), store.Options{Interval: every, Now: func() time.Time { return now }})
 	if err != nil {
@@ -55,12 +64,17 @@ func TestPerfEngineReplay(t *testing.T) {
 				n++
 			}
 		}
+		for tt := h; tt.Before(h.Add(time.Hour)); tt = tt.Add(otherEvery) {
+			for _, k := range others {
+				st.Observe(model.Sample{Key: k, Slot: tt, RTT: 20 * time.Millisecond})
+			}
+		}
 		now = h.Add(time.Hour + 3*time.Minute)
 		if err := st.Flush(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
-	t.Logf("filled %d samples of %d tracked series (%d targets) in %v", n, len(src.ss), len(p.Targets), time.Since(fill).Round(time.Millisecond))
+	t.Logf("filled %d samples of %d tracked series (%d targets) and %d untracked series in %v", n, len(src.ss), len(p.Targets), nOther, time.Since(fill).Round(time.Millisecond))
 
 	var keys []model.SeriesKey
 	for k := range src.index {

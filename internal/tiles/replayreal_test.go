@@ -23,7 +23,9 @@ import (
 // summary: per tile the minutes in each state, the word changes per day
 // and the drops; the connection drops; the problems with their causes;
 // what happened during the speed tests. It runs the replay twice: the two
-// must be identical. Never point it at a running instance's files.
+// must be identical. FYISP_REPLAY_INCIDENTS=off leaves the stored verdict
+// incidents out; FYISP_REPLAY_AT=<RFC 3339> adds the raw checks around a
+// time. Never point it at a running instance's files.
 func TestReplayReal(t *testing.T) {
 	path := os.Getenv("FYISP_REPLAY_DB")
 	if path == "" {
@@ -61,8 +63,12 @@ func TestReplayReal(t *testing.T) {
 	}
 	end = end.Add(time.Minute).Truncate(tickEvery)
 	run := func() (*engine, time.Duration) {
-		e := newEngine(p, rts, Sources{Store: st, SpeedTests: st.SpeedTests, Incidents: st.Incidents,
-			Verdict: func() model.Verdict { return model.Verdict{Kind: model.VerdictOK} }}, Options{})
+		src := Sources{Store: st, SpeedTests: st.SpeedTests, Incidents: st.Incidents,
+			Verdict: func() model.Verdict { return model.Verdict{Kind: model.VerdictOK} }}
+		if os.Getenv("FYISP_REPLAY_INCIDENTS") == "off" { // the tiles' own attribution only
+			src.Incidents = nil
+		}
+		e := newEngine(p, rts, src, Options{})
 		a := time.Now()
 		if err := e.replay(ctx, end); err != nil {
 			t.Fatal(err)
