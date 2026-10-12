@@ -5,8 +5,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -99,10 +97,8 @@ type overviewParams struct {
 
 // parseOverview parses /api/overview?from=&to=&kind= with /api/panel's time
 // rules. kind is one of tcp, https, icmp (default tcp: every shipped profile
-// probes its targets with TCP only). On the public link
-// absolute bounds are rounded outward to the minute so that viewers share
-// cache entries.
-func parseOverview(q url.Values, now time.Time, public bool) (overviewParams, error) {
+// probes its targets with TCP only).
+func parseOverview(q url.Values, now time.Time) (overviewParams, error) {
 	var p overviewParams
 	if err := checkParams(q, "from", "to", "kind"); err != nil {
 		return p, err
@@ -135,24 +131,6 @@ func parseOverview(q url.Values, now time.Time, public bool) (overviewParams, er
 	if p.to.After(now) {
 		p.to, tk = now, "now"
 	}
-	if public {
-		if !strings.HasPrefix(tk, "now") {
-			to := p.to.Truncate(time.Minute)
-			if to.Before(p.to) {
-				to = to.Add(time.Minute)
-			}
-			if to.After(now) {
-				to, tk = now, "now"
-			} else {
-				tk = strconv.FormatInt(to.UnixMilli(), 10)
-			}
-			p.to = to
-		}
-		if !strings.HasPrefix(fk, "now") {
-			p.from = p.from.Truncate(time.Minute)
-			fk = strconv.FormatInt(p.from.UnixMilli(), 10)
-		}
-	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
@@ -167,7 +145,7 @@ func parseOverview(q url.Values, now time.Time, public bool) (overviewParams, er
 // with its state over the window, and summary counts. Numbers and profile
 // target names only; one store query.
 func (s *server) serveOverview(w http.ResponseWriter, r *http.Request) {
-	p, err := parseOverview(r.URL.Query(), s.now(), s.public)
+	p, err := parseOverview(r.URL.Query(), s.now())
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return

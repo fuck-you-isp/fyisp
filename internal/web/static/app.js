@@ -11,14 +11,13 @@
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
 
 import {
-  meta, MODE, TOKEN, $, h, storageGet, storageSet, mqLight,
+  meta, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput, copyText,
+  hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput,
   useStatus,
 } from './core.js';
 import { Home } from './home.js';
-import { Report } from './report.js';
 import { Speed } from './speed.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
@@ -62,7 +61,7 @@ const QUIET_LABEL = { udp_blocked: 'This network blocks UDP', stun_blocked: 'Thi
 const LAYERS = [
   { id: 'gateway', key: 'gateway', label: 'Gateway', why: 'Your router: the first thing every packet goes through.' },
   { id: 'isp-edge', key: 'edge', label: 'ISP edge', why: 'The first hop on your ISP\'s side of the line.' },
-  { id: 'anycast', key: 'anycast', label: 'Internet (anycast)', why: 'Big anycast resolvers (Cloudflare, Google, Quad9) that are close to almost every ISP.' },
+  { id: 'anycast', key: 'anycast', label: 'Internet (anycast)', why: 'Big anycast resolvers (Cloudflare, Google) that are close to almost every ISP.' },
   { id: 'services', key: 'services', label: 'Services', why: 'The services and cloud regions in the panels below.' },
 ];
 // Which layer each verdict kind blames.
@@ -97,7 +96,7 @@ function fixKinds() {
 /** @type {Panel[]} */
 let panels = [];
 // Profiles with more panels than this load only the panels near the viewport
-// (big catalog profiles have 50+ panels; the public link is rate limited).
+// (big catalog profiles have 50+ panels).
 const LAZY_PANELS = 12;
 // At most this many panel requests in flight at once.
 const PANEL_CONCURRENCY = 4;
@@ -164,7 +163,7 @@ const GLOSSARY = {
   rtt: 'Time for a message to reach a server and come back, in milliseconds. Under 150 ms feels instant on a call.',
   stun: 'A tiny “what’s my address?” request that call apps send before a call. fyisp uses it to test the path call audio takes.',
   udp: 'The fast, no-retry way call audio and video travel. If it’s blocked, calls fall back to slower routes.',
-  anycast: 'Big services (Cloudflare, Google, Quad9 DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.',
+  anycast: 'Big services (Cloudflare and Google DNS) that answer from a site near almost every provider. If they’re fine, the wider internet is fine.',
   'isp edge': 'The first piece of your internet provider’s equipment past your router.',
   p95: '95 out of 100 measurements were faster than this. Shows the slow moments the median hides.',
   bursts: '5 STUN requests sent quickly, 20 ms apart, like call audio packets. Loss and jitter are measured per burst.',
@@ -953,7 +952,7 @@ function incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
 
 // ---------- investigate (per-hop traces) ----------
 
-/** @typedef {{hop:number,ip?:string,no_reply?:boolean,private?:boolean,masked?:boolean,rdns?:string,asn?:number,owner?:string}} HopRef */
+/** @typedef {{hop:number,ip?:string,no_reply?:boolean,private?:boolean,rdns?:string,asn?:number,owner?:string}} HopRef */
 /** @typedef {HopRef & {n:number,lost:number,loss:number,min:number|null,mean:number|null,max:number|null,p95:number|null,jitter:number|null,loss_continues:boolean}} HopRow */
 /** @typedef {{id:number,target:string,at:string,first_diff:number,from:HopRef[],to:HopRef[]}} RouteChange */
 /** @typedef {{target:string,traced:boolean,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigation?:InvState}} TraceData */
@@ -982,7 +981,7 @@ function incidentTraceTarget(/** @type {Incident} */ inc) {
   if (!traceOn) return '';
   for (const n of inc.targets || []) {
     const t = targetInfo(n);
-    if (t) return n; // anyone can start an on-demand trace (the share link too)
+    if (t) return n;
   }
   return defaultTraceTarget();
 }
@@ -1026,10 +1025,8 @@ function showView() {
 
 /**
  * Why an on-demand trace couldn't start, in plain words, from the API's
- * stable error code (never its wording): busy (no free slot: 4 in all, of
- * which share-link viewers may use 3), rate_limited (this viewer's starts)
- * and cooldown (this target finished less than 5 minutes ago, share link
- * only), each with retry_after; unknown_target, unavailable, forbidden.
+ * stable error code (never its wording): busy (no free slot: 4 in all, with
+ * retry_after); unknown_target, unavailable, forbidden.
  * @param {any} e
  */
 function invError(e) {
@@ -1037,18 +1034,11 @@ function invError(e) {
   const s = Number(b.retry_after) || Number(e.retryAfter) || 0;
   const wait = s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while';
   switch (b.code) {
-    // The owner always keeps one of the 4 slots: on the share link, busy can mean 3.
-    case 'busy': return MODE === 'public'
-      ? 'The most traces at once are already running. Try again in a few minutes.'
-      : 'Four traces are already running, which is the most at once. Try again in a few minutes.';
-    case 'rate_limited': return `You’ve started several traces recently. Try again ${wait}.`;
-    case 'cooldown': {
-      const m = Math.max(1, Math.ceil(s / 60));
-      return `This target was traced a few minutes ago. Try again in ${m} minute${m === 1 ? '' : 's'}.`;
-    }
+    case 'busy': return 'Four traces are already running, which is the most at once. Try again in a few minutes.';
     case 'unknown_target': return 'Tracing isn’t available for this target.';
     case 'unavailable': return 'Tracing is turned off on this setup.';
-    case 'forbidden': return 'This page can’t start traces: open the dashboard at its own address.';
+    case 'forbidden': return /admin token/.test(String(b.error || '')) ? 'Tracing needs the admin token: open the link fyisp printed when it started.'
+      : 'This page can’t start traces: open the dashboard at its own address.';
   }
   return e.status === 429 ? `Too many traces right now. Try again ${wait}.` : 'Couldn’t start the trace. Try again.';
 }
@@ -1142,8 +1132,7 @@ class Investigate {
           'Routers forward your traffic in hardware but answer trace probes in software, at low priority and often rate-limited. A middle hop that drops replies while the hops after it (and the destination) do not is just busy answering: your traffic passes through it fine.'),
         h('p', {}, h('b', { text: 'Real loss continues to the destination. ' }),
           'When loss starts at one hop and every later hop shows at least as much, packets are really being dropped there, on that router or the link just before it. The first such hop is where to point the finger; if it is marked "your ISP", it is your ISP\'s network.'),
-        h('p', { text: 'Latency works the same way: a spike at one middle hop that later hops do not show is the router being slow to reply, not slow to forward. The latency bar shows each hop\'s min–max range with a tick at the average.' }),
-        MODE === 'public' ? h('p', { class: 'muted', text: 'Public view: addresses inside the home and the ISP\'s private network are hidden, the ISP\'s first public address is shortened, and router names are hidden for the first public hops.' }) : null));
+        h('p', { text: 'Latency works the same way: a spike at one middle hop that later hops do not show is the router being slow to reply, not slow to forward. The latency bar shows each hop\'s min–max range with a tick at the average.' })));
     new ResizeObserver(() => this.resize()).observe(this.rttEl);
   }
 
@@ -1202,18 +1191,31 @@ class Investigate {
   }
 
   /**
-   * Starts an on-demand trace (POST api/investigate). Anyone can, the share
-   * link too; it runs at most rounds_max rounds and stops by itself, so it
-   * is never re-posted to keep it alive. On a running trace the POST only
-   * returns its state.
+   * Starts an on-demand trace (POST api/investigate; the admin token where
+   * the dashboard has one). It runs at most rounds_max rounds and stops by
+   * itself, so it is never re-posted to keep it alive. On a running trace
+   * the POST only returns its state.
+   * @param {boolean} [auto] started by opening the view, not by a click
    */
-  async poke() {
+  async poke(auto = false) {
     const target = this.target;
     if (this.poking) return;
+    // Opening the view never asks for the admin token by itself: "Try again" does.
+    if (auto && status && status.controls === 'admin' && !status.admin) {
+      this.invErr = 'Tracing needs the admin token.';
+      this.renderStatus();
+      return;
+    }
     this.poking = true;
     /** @type {Record<string,string>} */
     const headers = {};
     if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
+    if (!await addAdmin(headers, 'Tracing needs the admin token. Open the link fyisp printed when it started, or paste the token here.')) {
+      this.poking = false;
+      this.invErr = 'Tracing needs the admin token.';
+      this.renderStatus();
+      return;
+    }
     try {
       /** @type {InvState} */
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
@@ -1296,12 +1298,12 @@ class Investigate {
       const d = await fetchJSON('api/trace?' + new URLSearchParams({ target, from, to }), { signal: ctl.signal });
       if (ctl.signal.aborted || target !== this.target) return;
       this.data = d;
-      // A cached response (the share link caches for 10 s) can predate our start: never forget a known trace.
+      // A response can predate our start: never forget a known trace.
       if (d.investigation) this.setInv(d.investigation);
       // Opening a target without an always-on trace starts one, unless one is running or just finished.
       if (this.wantStart) {
         this.wantStart = false;
-        if (!d.investigation) this.poke();
+        if (!d.investigation) this.poke(true);
       }
       const dest = this.dest();
       if (!this.userSel) {
@@ -1400,8 +1402,7 @@ class Investigate {
       const isp = !!(x.asn && d.isp_asn && x.asn === d.isp_asn);
       const addr = h('td', { class: 'addr', 'data-label': 'Address' },
         h('div', { class: 'ip' + (x.private || x.no_reply ? ' muted' : ''), text: hopAddr(x) },
-          x.masked ? h('span', { class: 'masked', title: 'Shortened on the public link', text: ' (shortened)' }) : null,
-          x.private && MODE === 'local' ? h('span', { class: 'masked', text: ' private' }) : null),
+          x.private ? h('span', { class: 'masked', text: ' private' }) : null),
         x.rdns ? h('div', { class: 'rdns', title: x.rdns, text: x.rdns }) : null);
       const own = h('td', { class: 'own', 'data-label': 'Network' },
         hopOwner(x) ? h('span', { text: hopOwner(x) }) : h('span', { class: 'muted', text: x.private ? 'private network' : '—' }),
@@ -1769,8 +1770,17 @@ async function speedAvailable() {
 }
 /** @type {SpeedWindow[]} */
 let speedWins = [];
+// Whether charts mark speed-test windows: off by default (a test every few
+// minutes would cover the chart), toggled from the strip legend, remembered.
+let speedShow = false;
+try { speedShow = localStorage.getItem('fyisp.speedShow') === '1'; } catch { /* no storage */ }
+function toggleSpeedShow() {
+  speedShow = !speedShow;
+  try { localStorage.setItem('fyisp.speedShow', speedShow ? '1' : '0'); } catch { /* no storage */ }
+  redrawCharts();
+}
 
-/** Speed-test windows in the view: probes inside are "not measured", never judged. */
+/** Speed-test windows in the view: probes inside are measured as usual (a spike may be the test). */
 async function loadSpeedWindows() {
   if (!speedOn) return;
   const { from, to } = queryRange();
@@ -1790,71 +1800,63 @@ async function loadSpeedWindows() {
  * grid: with a test every 88 s they'd cover a day view.
  */
 function drawSpeedWindows(/** @type {any} */ u) {
-  if (!speedWins.length) return;
+  if (!speedShow || !speedWins.length) return;
   const ctx = u.ctx;
   const { left, top, width, height } = u.bbox;
   const vmin = u.scales.x.min, vmax = u.scales.x.max;
   const dpr = window.devicePixelRatio || 1;
   const c = css('--muted') || '#898781';
   // Merge windows that touch on screen, each at least 2 px wide.
-  // Tests a share-link visitor asked for get the accent, so the owner can tell them apart; merged spans keep it if any part was public.
-  /** @type {[number, number, boolean][]} */
+  /** @type {[number, number][]} */
   const spans = [];
   for (const w of speedWins) {
     if (w.end / 1000 < vmin || w.start / 1000 > vmax) continue;
     let x0 = u.valToPos(w.start / 1000, 'x', true), x1 = u.valToPos(w.end / 1000, 'x', true);
     if (x1 - x0 < 2 * dpr) { const m = (x0 + x1) / 2; x0 = m - dpr; x1 = m + dpr; }
     const last = spans[spans.length - 1];
-    const pub = MODE === 'local' && w.origin === 'public'; // the share link never tells tests apart
-    if (last && x0 <= last[1] + dpr) { last[1] = Math.max(last[1], x1); last[2] = last[2] || pub; } else spans.push([x0, x1, pub]);
+    if (last && x0 <= last[1] + dpr) last[1] = Math.max(last[1], x1); else spans.push([x0, x1]);
   }
   ctx.save();
   ctx.beginPath();
   ctx.rect(left, top, width, height);
   ctx.clip();
-  const acc = css('--accent') || '#3987e5';
-  for (const [x0, x1, pub] of spans) {
+  for (const [x0, x1] of spans) {
     if (x1 - x0 >= 6 * dpr) {
       ctx.fillStyle = rgba(c, 0.10);
       ctx.fillRect(x0, top, x1 - x0, height);
     }
-    // The owner's and the schedule's tests: a solid grey tick. A share-link visitor's: a dashed blue outline (shape, not colour alone).
-    if (pub) {
-      ctx.strokeStyle = acc;
-      ctx.lineWidth = 1.5 * dpr;
-      ctx.setLineDash([3 * dpr, 2 * dpr]);
-      ctx.strokeRect(x0 + 0.75 * dpr, top + 0.75 * dpr, Math.max(dpr, x1 - x0 - 1.5 * dpr), 4 * dpr);
-      ctx.setLineDash([]);
-    } else {
-      ctx.fillStyle = c;
-      ctx.fillRect(x0, top, x1 - x0, 4 * dpr);
-    }
+    // A solid grey tick along the top.
+    ctx.fillStyle = c;
+    ctx.fillRect(x0, top, x1 - x0, 4 * dpr);
   }
   ctx.restore();
 }
 
 /**
  * Legend entries for speed-test windows, only when the chart's range holds
- * one. The share-link entry is the owner's only (the share link's windows
- * are all "test").
+ * one.
  * @param {[number, number]} view seconds
  */
 function speedLegend(view) {
   if (!view || !speedWins.length) return [];
   const inView = speedWins.filter((w) => w.end / 1000 >= view[0] && w.start / 1000 <= view[1]);
   if (!inView.length) return [];
-  const out = [h('span', {}, h('span', { class: 'chip sp-tick', 'aria-hidden': 'true' }), 'speed test running (left out of these numbers)')];
-  if (MODE === 'local' && inView.some((w) => w.origin === 'public')) out.push(h('span', {}, h('span', { class: 'chip sp-tick pub', 'aria-hidden': 'true' }), 'speed test someone started from your share link'));
-  return out;
+  const toggle = h('span', {
+    class: 'sp-toggle' + (speedShow ? '' : ' off'), tabindex: '0', role: 'button', 'aria-pressed': String(speedShow),
+    title: speedShow ? 'Hide speed-test marks' : 'Show when speed tests ran (they can raise latency while they run)',
+    onclick: toggleSpeedShow,
+    onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSpeedShow(); } },
+  }, h('span', { class: 'chip sp-tick', 'aria-hidden': 'true' }), speedShow ? 'speed tests (shown)' : 'show speed tests');
+  return [toggle];
 }
 
 /** Tooltip line for a bucket that overlaps a speed test. */
 function speedTipNodes(/** @type {number} */ a, /** @type {number} */ b) {
+  if (!speedShow) return [];
   const hit = speedWins.filter((w) => w.start < b && w.end > a);
   if (!hit.length) return [];
-  const n = hit.length, pub = MODE === 'local' ? hit.filter((w) => w.origin === 'public').length : 0;
-  const from = pub ? (pub === n ? ' from the share link' : `, ${pub} from the share link`) : '';
-  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`}${from}: not measured` })];
+  const n = hit.length;
+  return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`} running` })];
 }
 
 function noteTipNodes(/** @type {Note[]} */ list) {
@@ -1864,7 +1866,7 @@ function noteTipNodes(/** @type {Note[]} */ list) {
   for (const n of list.slice(0, 3)) {
     const flag = h('span', { class: 'nflag' + (n.public ? ' pub' : '') });
     nodes.push(h('div', { class: 'row note' }, flag, h('span', { class: 'ntext', text: n.text }),
-      MODE === 'local' ? h('span', { class: 'nbadge' + (n.public ? ' pub' : ''), text: n.public ? 'public' : 'private' }) : null));
+      h('span', { class: 'nbadge' + (n.public ? ' pub' : ''), text: n.public ? 'in redacted reports' : 'private' })));
   }
   if (list.length > 3) nodes.push(h('div', { class: 'muted', text: `+${list.length - 3} more notes` }));
   return nodes;
@@ -1963,7 +1965,7 @@ function openNoteEditor(note, x, y, preset) {
     h('label', { class: 'fld' }, h('span', { text: 'When' }), atIn),
     h('label', { class: 'fld' }, h('span', { text: 'Until' }), endIn),
     text,
-    h('label', { class: 'chk', title: 'Public notes are shown on your public link and in redacted reports. Private notes stay on this machine.' }, pub, ' Show on my public link'),
+    h('label', { class: 'chk', title: 'Redacted reports include only these notes. Others stay on this machine.' }, pub, ' Include in redacted reports'),
     err,
     h('div', { class: 'pop-actions' },
       note ? h('button', { class: 'btn ghost danger', type: 'button', text: 'Delete', onclick: () => deleteNote(note) }) : null,
@@ -2021,7 +2023,7 @@ function renderNotes() {
   const list = $('#notes-list');
   const kids = [];
   if (!n) {
-    kids.push(h('p', { class: 'muted o-empty', text: MODE === 'public' ? 'No public notes in this range.' : 'No notes in this range. Right-click a chart (long-press on a phone) to add one at that time, or Shift-drag for a range.' }));
+    kids.push(h('p', { class: 'muted o-empty', text: 'No notes in this range. Right-click a chart (long-press on a phone) to add one at that time, or Shift-drag for a range.' }));
   }
   for (const note of [...notes].reverse()) {
     const { a, b } = noteSpan(note);
@@ -2032,7 +2034,7 @@ function renderNotes() {
     h('span', { class: 'o-when' }, fmtWhen(a), b > a ? ` – ${fmtWhen(b)}` : ''),
     h('span', { class: 'nflag' + (note.public ? ' pub' : ''), 'aria-hidden': 'true' }),
     h('span', { class: 'o-sum n-text', text: note.text }),
-    MODE === 'local' ? h('span', { class: 'nbadge' + (note.public ? ' pub' : ''), title: note.public ? 'Shown on your public link' : 'Only on this machine', text: note.public ? 'public' : 'private' }) : null);
+    h('span', { class: 'nbadge' + (note.public ? ' pub' : ''), title: note.public ? 'Included in redacted reports' : 'Only on this machine', text: note.public ? 'in redacted reports' : 'private' }));
     const acts = canWrite() ? h('span', { class: 'n-acts' },
       h('button', { class: 'tbtn', type: 'button', text: 'Edit', onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect(); openNoteEditor(note, r.left - 300, r.bottom); } }),
       h('button', { class: 'tbtn danger', type: 'button', text: 'Delete', onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); deleteNote(note); } })) : null;
@@ -2871,7 +2873,7 @@ class Calls {
     this.strip.addEventListener('mouseleave', hideTip);
     this.strip.addEventListener('click', (e) => {
       const t = this.stripTime(e);
-      if (t != null && MODE === 'local') { this.askAt = t; this.renderAskInput(); this.ask(); }
+      if (t != null) { this.askAt = t; this.renderAskInput(); this.ask(); }
     });
 
     this.askIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', 'aria-label': 'Around this time' }));
@@ -2889,8 +2891,6 @@ class Calls {
       h('div', { class: 'panel-head' }, h('h2', { text: 'By app' }), h('span', { class: 'meta', text: 'last 5 minutes' })),
       this.appList);
 
-    // The public link shows the top card and the strip (and public notes, above).
-    if (MODE === 'public') { this.askBox.hidden = true; this.appsBox.hidden = true; }
     this.el = h('section', { id: 'calls', class: 'calls', 'aria-label': 'Calls', hidden: true },
       this.top, this.markWrap, this.stripBox, this.askBox, this.appsBox);
     new ResizeObserver(() => this.drawStrip()).observe(this.strip);
@@ -3033,7 +3033,7 @@ class Calls {
 
   /** The "Mark a bad call" row: local and writable only. */
   renderMark() {
-    const on = MODE === 'local' && notesOn && canWrite();
+    const on = notesOn && canWrite();
     this.markEl.hidden = !on;
     if (!on) return;
     this.whenSeg.replaceChildren(...[[0, 'now'], [15, '15 min ago'], [30, '30 min ago']].map(([m, l]) => h('button', {
@@ -3197,7 +3197,7 @@ class Calls {
       nodes.push(h('div', { class: 'row' }, sw, h('b', { text: callLabel(m.state) }), m.mos != null ? ` · MOS ${m.mos.toFixed(2)}` : ''));
       nodes.push(h('div', { text: [m.rtt_ms != null ? `${fmtMs(m.rtt_ms)} ms` : '', m.loss != null ? `${fmtPct(m.loss)} loss` : '', m.jitter_ms != null ? `jitter ${fmtMs(m.jitter_ms)} ms` : ''].filter(Boolean).join(' · ') }));
     }
-    if (MODE === 'local') nodes.push(h('div', { class: 'muted', text: 'Click: what happened at this time?' }));
+    nodes.push(h('div', { class: 'muted', text: 'Click: what happened at this time?' }));
     showTip(nodes, e.clientX, e.clientY);
   }
 
@@ -3205,7 +3205,6 @@ class Calls {
 
   /** "What happened at …?": one sentence naming the layer at fault, from the call minutes and the incidents. */
   async ask() {
-    if (MODE !== 'local') return;
     const seq = ++this.askSeq;
     const now = Date.now();
     const a = this.askAt == null ? now - 3600e3 : this.askAt - 15 * 60e3;
@@ -3393,7 +3392,7 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
 
 // ---------- Home and the Home | Details switch ----------
 
-/** Home, or on the share link the report. @type {Home|Report|null} */
+/** Home. @type {Home|null} */
 let home = null;
 /** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
 let onNav = () => {};
@@ -3403,7 +3402,7 @@ function homeShown() { return !!home && currentView() === 'h' && !(state.inv && 
 function renderViewNav() {
   const nav = $('#viewnav');
   nav.replaceChildren(
-    h('button', { type: 'button', text: MODE === 'public' ? 'Report' : 'Home', 'aria-current': homeShown() ? 'page' : null, onclick: () => { if (!homeShown()) { state.inv = null; goHome(); } } }),
+    h('button', { type: 'button', text: 'Home', 'aria-current': homeShown() ? 'page' : null, onclick: () => { if (!homeShown()) { state.inv = null; goHome(); } } }),
     h('button', { type: 'button', text: 'Details', 'aria-current': !homeShown() ? 'page' : null, onclick: () => { if (homeShown()) openDetails(''); } }));
 }
 
@@ -3469,7 +3468,7 @@ function applyView() {
   const homeOn = v === 'h' && !(state.inv && inv);
   document.body.classList.toggle('home-on', homeOn);
   if (home) home.el.hidden = !homeOn;
-  if (v !== 'h') document.title = MODE === 'public' ? 'Details · Internet quality report' : 'Details · fyisp';
+  if (v !== 'h') document.title = 'Details · fyisp';
   renderViewNav();
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
@@ -3549,20 +3548,12 @@ function closeFocus(/** @type {boolean} */ toOverview) {
 
 // ---------- reports ----------
 
-/** @typedef {{id:string,title:string,from:string,to:string,created:string,public:boolean,bytes:number,redacted:boolean}} ReportMeta */
+/** @typedef {{id:string,title:string,from:string,to:string,created:string,bytes:number,redacted:boolean}} ReportMeta */
 
 let reportsOn = false;
 /** @type {ReportMeta[]} */
 let reports = [];
 
-function shareURL() {
-  const sh = status && status.share;
-  return sh && sh.phase === 'connected' && sh.url ? String(sh.url) : '';
-}
-function reportPublicURL(/** @type {ReportMeta} */ r) {
-  const base = shareURL();
-  return base && r.public && r.redacted ? base.replace(/\/?$/, '/') + 'r/' + r.id : '';
-}
 function fmtBytes(/** @type {number} */ n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`; }
 
 async function loadReports() {
@@ -3576,7 +3567,6 @@ async function loadReports() {
   renderReports();
 }
 
-/** Open / Download / Copy public link / Publish / Delete for one report. */
 /**
  * After an action re-renders the control that started it, focus would fall to
  * <body>: put it on the replacement (or a fallback) instead.
@@ -3589,34 +3579,14 @@ function refocus(find) {
   el?.focus({ preventScroll: true });
 }
 
+/** Open / Download / Delete for one report. */
 function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ after, big = false) {
   const cls = big ? 'btn' : 'tbtn';
   const kids = [
     h('a', { class: cls + (big ? ' primary' : ''), href: `api/reports/${r.id}`, target: '_blank', rel: 'noopener', text: 'Open' }),
     h('a', { class: cls, href: `api/reports/${r.id}?download=1`, download: '', text: 'Download' }),
   ];
-  const link = reportPublicURL(r);
-  if (r.public && r.redacted) {
-    const copy = h('button', {
-      class: cls, type: 'button', text: 'Copy link', disabled: !link,
-      title: link ? link : 'Share a live view first (top of the page) to get this report’s link',
-      onclick: () => copyText(link, copy),
-    });
-    kids.push(copy);
-  }
   if (canWrite()) {
-    if (r.redacted) {
-      kids.push(h('button', {
-        class: cls, type: 'button', text: r.public ? 'Remove from shared link' : 'Show on shared link', 'data-rid': r.id, 'data-act': 'pub',
-        title: r.public ? 'Stop showing this report on your shared link' : 'Show this report (safe to share) on your shared link',
-        onclick: async () => {
-          try { await apiWrite('PUT', `api/reports/${r.id}`, { public: !r.public }); } catch (e) { await alertDialog('Couldn’t change the report', /** @type {Error} */ (e).message); }
-          await loadReports();
-          after();
-          refocus(() => document.querySelector(`[data-rid="${r.id}"][data-act="pub"]`) || $('#reports > summary'));
-        },
-      }));
-    }
     kids.push(h('button', {
       class: cls + ' danger', type: 'button', text: 'Delete',
       onclick: async () => {
@@ -3647,8 +3617,7 @@ function renderReports() {
       h('span', { class: 'r-title', text: r.title }),
       h('span', { class: 'r-meta muted' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · created ${fmtWhen(Date.parse(r.created))} · ${fmtBytes(r.bytes)}`),
       h('span', { class: 'r-badges' },
-        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; public notes only' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'safe to share' : 'private' }),
-        r.public && r.redacted ? h('span', { class: 'nbadge pub', title: 'Shown on your shared link while sharing is on', text: 'on shared link' }) : null)),
+        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; only notes marked for redacted reports' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'safe to share' : 'private' }))),
     reportActions(r, renderReports))));
 }
 
@@ -3667,17 +3636,6 @@ function openReportDialog(preset) {
   const fromIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(rng.from), required: true }));
   const toIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(Math.min(rng.to, Date.now())), required: true }));
   const priv = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
-  const pub = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
-  const pubHint = h('span', { class: 'hint' });
-  const syncPub = () => {
-    pub.disabled = priv.checked;
-    if (priv.checked) pub.checked = false;
-    pubHint.textContent = priv.checked
-      ? 'Reports with private details stay on this device.'
-      : shareURL() ? 'Anyone with your shared link can open it.' : 'It will appear when you share a live view.';
-  };
-  priv.addEventListener('change', syncPub);
-  syncPub();
   const err = h('div', { class: 'perr', role: 'alert' });
   const go = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: 'Make the report' }));
   const form = h('form', { class: 'dlg-form', method: 'dialog' },
@@ -3688,7 +3646,6 @@ function openReportDialog(preset) {
       h('label', { class: 'fld' }, h('span', { text: 'From' }), fromIn),
       h('label', { class: 'fld' }, h('span', { text: 'To' }), toIn)),
     h('label', { class: 'chk' }, priv, h('span', {}, ' Include private details', h('span', { class: 'hint', text: 'Your network addresses, device names and private notes. Leave this off if you’ll send the report to anyone else.' }))),
-    h('label', { class: 'chk' }, pub, h('span', {}, ' Also show it on my shared link', pubHint)),
     err,
     h('div', { class: 'pop-actions' },
       h('span', { class: 'grow' }),
@@ -3704,7 +3661,7 @@ function openReportDialog(preset) {
     try {
       /** @type {ReportMeta} */
       const r = await apiWrite('POST', 'api/reports', {
-        from: new Date(a).toISOString(), to: new Date(b).toISOString(), title: title.value.trim(), redact: !priv.checked, public: pub.checked,
+        from: new Date(a).toISOString(), to: new Date(b).toISOString(), title: title.value.trim(), redact: !priv.checked,
       });
       await loadReports();
       showReportDone(dlg, r);
@@ -3730,8 +3687,7 @@ function showReportDone(/** @type {HTMLDialogElement} */ dlg, /** @type {ReportM
     h('h2', { text: 'Your report is ready' }),
     h('p', { class: 'r-title', text: r.title }),
     h('p', { class: 'muted small' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · ${fmtBytes(r.bytes)} · `,
-      r.redacted ? 'safe to share' : 'private: for you only', r.public && r.redacted ? ' · on your shared link' : ''),
-    r.public && r.redacted && !shareURL() ? h('p', { class: 'hint', text: 'Share a live view first, then you can copy this report’s link.' }) : null,
+      r.redacted ? 'safe to share' : 'private: for you only'),
     reportActions(r, refresh, true),
     h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }), h('button', { class: 'btn', type: 'button', text: 'Close', onclick: () => dlg.close() }))));
 }
@@ -3761,7 +3717,7 @@ async function refreshAll() {
   updateRefreshLabel();
   try {
     if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), loadSpeedWindows(), inv.load()]);
-    // Home makes two requests; the status (for sharing and notes) at most twice a minute.
+    // Home makes two requests; the status (for notes and reports) at most twice a minute.
     else if (homeShown()) await Promise.all([Date.now() - statusAt > 30e3 ? loadStatus() : null, /** @type {Home} */ (home).refresh()]);
     else {
       // Hidden panels (the Overview is showing, or focus) load when shown.
@@ -4038,82 +3994,14 @@ async function adminLogin(t) {
 /** Why an "open this link" URL did not work (shown as a notice). */
 let adminLinkErr = '';
 
-async function shareAction(/** @type {'start'|'stop'} */ what) {
-  /** @type {Record<string,string>} */
-  const headers = { 'X-FYISP-Token': TOKEN };
-  if (!await addAdmin(headers)) return; // the token dialog was cancelled
-  try {
-    const r = await fetchJSON(`api/share/${what}`, { method: 'POST', headers }, 1);
-    status.share = r.share;
-  } catch (e) {
-    const err = /** @type {any} */ (e);
-    if (err.status === 403 && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
-    status.share = { ...(status.share || {}), phase: 'error', last_err: err.message };
-  }
-  renderShare();
-  // The button that started this was replaced: focus the new controls.
-  refocus(() => $('#share').querySelector('button, input'));
-  loadStatus();
-}
-
-function renderShare() {
-  const el = $('#share');
-  const badge = $('#mode-badge');
-  if (MODE === 'public') {
-    badge.hidden = false;
-    badge.textContent = 'Shared view (read-only)';
-    el.replaceChildren();
-    return;
-  }
-  if (!status) return;
-  const sh = status.share || { phase: 'off' };
-  const dot = h('span', { class: 'dot' + (sh.phase === 'connected' ? ' on' : sh.phase === 'error' ? ' err' : sh.phase === 'off' || sh.phase === 'unavailable' ? '' : ' busy') });
-  const kids = [dot];
-  const disabled = status.controls === 'disabled';
-  switch (sh.phase) {
-    case 'off':
-      kids.push(h('span', { class: 'muted', text: 'Not shared' }));
-      if (!disabled) kids.push(h('button', { class: 'btn primary', type: 'button', text: 'Create public link', title: 'Publish a read-only, redacted view through a Cloudflare quick tunnel', onclick: () => shareAction('start') }));
-      break;
-    case 'connected': {
-      const input = /** @type {HTMLInputElement} */ (h('input', { type: 'text', readonly: true, value: sh.url || '', 'aria-label': 'Public link' }));
-      input.addEventListener('focus', () => input.select());
-      const copy = h('button', {
-        class: 'btn', type: 'button', text: 'Copy',
-        onclick: async () => {
-          try { await navigator.clipboard.writeText(sh.url); copy.textContent = 'Copied'; } catch { input.select(); document.execCommand('copy'); copy.textContent = 'Copied'; }
-          setTimeout(() => { copy.textContent = 'Copy'; }, 1500);
-        },
-      });
-      kids.push(h('span', { class: 'muted', text: 'Public link' + (sh.protocol ? ` (${sh.protocol})` : '') }), input, copy);
-      if (!disabled) kids.push(h('button', { class: 'btn', type: 'button', text: 'Stop sharing', onclick: () => shareAction('stop') }));
-      break;
-    }
-    case 'error':
-      kids.push(h('span', { text: `Sharing failed${sh.last_err ? ': ' + sh.last_err : ''}` }));
-      if (!disabled) kids.push(h('button', { class: 'btn', type: 'button', text: 'Retry', onclick: () => shareAction('start') }),
-        h('button', { class: 'btn ghost', type: 'button', text: 'Stop', onclick: () => shareAction('stop') }));
-      break;
-    default:
-      kids.push(h('span', { class: 'muted', text: sh.phase === 'starting' ? 'Creating public link…' : sh.phase === 'reconnecting' ? 'Reconnecting public link…' : `Sharing: ${sh.phase}` }));
-      if (!disabled) kids.push(h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => shareAction('stop') }));
-  }
-  if (disabled) kids.push(h('span', { class: 'muted small', text: 'Share controls disabled: the dashboard is reachable from your network and fyisp was started with --admin-token=off' }));
-  // It re-renders on every status poll: keep keyboard focus on the same control (or the first one).
-  const ae = document.activeElement;
-  const had = ae instanceof HTMLElement && el.contains(ae) ? ae.textContent || ae.tagName : '';
-  el.replaceChildren(...kids);
-  if (had) {
-    const ctl = /** @type {HTMLElement[]} */ ([...el.querySelectorAll('button, input')]);
-    (ctl.find((x) => (x.textContent || x.tagName) === had) || ctl[0])?.focus({ preventScroll: true });
-  }
-}
-
 function renderNotices() {
   const el = $('#notices');
   const out = [];
   if (!status) { el.replaceChildren(); return; }
   if (adminLinkErr) out.push(h('div', { class: 'notice danger' }, adminLinkErr));
+  if (status.controls === 'disabled') {
+    out.push(h('div', { class: 'notice' }, 'Dashboard controls (notes, reports, speed tests) are off: the dashboard is reachable from your network and fyisp was started with --admin-token=off.'));
+  }
   if (status.targets && status.ready < status.targets) {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));
   }
@@ -4132,7 +4020,6 @@ function renderNotices() {
   el.replaceChildren(...out);
 }
 
-let statusTimer = 0;
 /** When the status was last loaded. */
 let statusAt = 0;
 async function loadStatus() {
@@ -4142,13 +4029,8 @@ async function loadStatus() {
   } catch {
     return;
   }
-  renderShare();
   renderNotices();
   renderTools();
-  // Poll faster while the share link is changing state.
-  clearTimeout(statusTimer);
-  const ph = status.share && status.share.phase;
-  if (MODE === 'local' && (ph === 'starting' || ph === 'reconnecting')) statusTimer = setTimeout(loadStatus, 2000);
 }
 
 // ---------- boot ----------
@@ -4193,14 +4075,13 @@ async function main() {
   };
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
-  renderShare();
-  if (adminTok && MODE === 'local') await adminLogin(adminTok);
+  if (adminTok) await adminLogin(adminTok);
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
   if (st) statusAt = Date.now();
   traceOn = !!(prof.features && prof.features.trace);
   notesOn = !!(prof.features && prof.features.notes);
-  reportsOn = MODE === 'local' && !!(prof.features && prof.features.reports);
+  reportsOn = !!(prof.features && prof.features.reports);
   baseOn = !!(prof.features && prof.features.baselines);
   allTargets = prof.targets;
   // Which target profile(s) this run measures, unless the default.
@@ -4219,7 +4100,6 @@ async function main() {
   // The reports list is Details only (Home loads it when Details opens).
   if (reportsOn && state.view && state.view !== 'h') loadReports();
   renderControls();
-  renderShare();
   renderNotices();
   /** @type {TargetInfo[]} */
   const targets = prof.targets;
@@ -4262,18 +4142,11 @@ async function main() {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
-  if (MODE === 'public') {
-    const r = new Report();
-    r.openDetails = openDetails;
-    home = r;
-    $('h1').textContent = 'Internet quality report';
-    document.body.classList.add('public');
-  } else home = new Home({
+  home = new Home({
     span: () => state.hw,
     setSpan: (s) => { state.hw = s; writeHash(); },
     openDetails,
     status: () => status,
-    startShare: () => shareAction('start'),
     notesOn: () => notesOn,
     notesChanged: () => { if (!homeShown()) loadNotes(); },
     reportsOn: () => reportsOn,

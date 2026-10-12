@@ -1,7 +1,6 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "you",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
@@ -15,7 +14,6 @@
   },
   "history_today": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -46,12 +44,6 @@
       "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 0
-    },
-    "coverage": 0,
     "problems": [],
     "work": {
       "measured": 1,
@@ -61,7 +53,6 @@
   },
   "history_week": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -148,12 +139,6 @@
       "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 0
-    },
-    "coverage": 0,
     "problems": [],
     "work": {
       "measured": 1,
@@ -163,7 +148,6 @@
   },
   "live": {
     "part": "live",
-    "voice": "you",
     "at": 1791549000000,
     "answer": {
       "level": "checking",

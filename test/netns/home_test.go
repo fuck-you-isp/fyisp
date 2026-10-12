@@ -4,8 +4,6 @@ package netns
 
 import (
 	"encoding/json"
-	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -151,38 +149,4 @@ func (h *harness) checkHome(t *testing.T, name, kind string, targets []string) {
 			}
 		}
 	}
-	h.checkHomePublic(t, name)
-}
-
-// yourWord is the second person, which the public voice never uses.
-var yourWord = regexp.MustCompile(`(?i)\byour\b`)
-
-// checkHomePublic: /api/home?part=live&voice=public has no "your" in any
-// string (copy fields and names alike).
-func (h *harness) checkHomePublic(t *testing.T, name string) {
-	t.Helper()
-	b := h.get(t, "/api/home?part=live&voice=public")
-	h.save(t, "home-public-"+name+".json", b)
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		t.Fatalf("/api/home public: %v: %s", err, b)
-	}
-	var walk func(path string, v any)
-	walk = func(path string, v any) {
-		switch x := v.(type) {
-		case string:
-			if yourWord.MatchString(x) {
-				t.Errorf("Home %s, public voice: %s = %q says \"your\"", name, path, x)
-			}
-		case []any:
-			for i, e := range x {
-				walk(fmt.Sprintf("%s[%d]", path, i), e)
-			}
-		case map[string]any:
-			for k, e := range x {
-				walk(path+"."+k, e)
-			}
-		}
-	}
-	walk("", v)
 }

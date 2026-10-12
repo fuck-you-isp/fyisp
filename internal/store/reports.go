@@ -111,11 +111,11 @@ func (s *SQLite) SaveReport(ctx context.Context, meta model.ReportMeta, html []b
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO reports(id, title, from_ms, to_ms, created_ms, public, bytes, html)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO reports(id, title, from_ms, to_ms, created_ms, bytes, html)
+		VALUES(?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET title = excluded.title, from_ms = excluded.from_ms, to_ms = excluded.to_ms,
-			created_ms = excluded.created_ms, public = excluded.public, bytes = excluded.bytes, html = excluded.html`,
-		meta.ID, meta.Title, nullMs(meta.From), nullMs(meta.To), meta.Created.UnixMilli(), meta.Public, meta.Bytes, data); err != nil {
+			created_ms = excluded.created_ms, bytes = excluded.bytes, html = excluded.html`,
+		meta.ID, meta.Title, nullMs(meta.From), nullMs(meta.To), meta.Created.UnixMilli(), meta.Bytes, data); err != nil {
 		return fmt.Errorf("store: save report: %w", err)
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM reports WHERE rowid IN
@@ -132,7 +132,7 @@ func (s *SQLite) SaveReport(ctx context.Context, meta model.ReportMeta, html []b
 	return nil
 }
 
-const reportCols = `id, title, from_ms, to_ms, created_ms, public, bytes`
+const reportCols = `id, title, from_ms, to_ms, created_ms, bytes`
 
 func scanReport(sc interface{ Scan(...any) error }, extra ...any) (model.ReportMeta, error) {
 	var (
@@ -140,7 +140,7 @@ func scanReport(sc interface{ Scan(...any) error }, extra ...any) (model.ReportM
 		title             sql.NullString
 		from, to, created sql.NullInt64
 	)
-	if err := sc.Scan(append([]any{&m.ID, &title, &from, &to, &created, &m.Public, &m.Bytes}, extra...)...); err != nil {
+	if err := sc.Scan(append([]any{&m.ID, &title, &from, &to, &created, &m.Bytes}, extra...)...); err != nil {
 		return m, err
 	}
 	m.Title = title.String
@@ -193,19 +193,6 @@ func (s *SQLite) Reports(ctx context.Context) ([]model.ReportMeta, error) {
 		out = append(out, m)
 	}
 	return out, rows.Err()
-}
-
-// SetReportPublic marks a report public or private; ErrNotFound if there is
-// none.
-func (s *SQLite) SetReportPublic(ctx context.Context, id string, public bool) error {
-	if s.lock == nil {
-		return errReadOnly
-	}
-	res, err := s.db.w.ExecContext(ctx, `UPDATE reports SET public = ? WHERE id = ?`, public, id)
-	if err != nil {
-		return fmt.Errorf("store: report public: %w", err)
-	}
-	return notFoundIfNone(res, "report", id)
 }
 
 // DeleteReport deletes a report and returns its pages to the OS;

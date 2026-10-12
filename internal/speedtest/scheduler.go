@@ -56,31 +56,27 @@ const (
 	RepickEvery    = 24 * time.Hour // nearby servers by RTT
 	MaxAttempts    = 3              // per server: busy or refused tries another port (not on a single-port server)
 	AttemptGap     = 2 * time.Second
-	DirTimeout     = 15 * time.Second // one direction, connect to results
-	// SlotBudget: no new attempt or fallback server after this much of a
-	// slot; SlotCap is the hard limit of one slot.
-	SlotBudget = 25 * time.Second
-	SlotCap    = 45 * time.Second
 	// MinMeasure..MaxMeasure is the adaptive measured time per direction,
-	// after an adaptive ramp-up of at most 1 s.
+	// after an adaptive ramp-up of at most MaxOmit: the time cap (the
+	// owner's tests and the schedule have no byte cap).
 	MinMeasure = 3 * time.Second
-	MaxMeasure = 8 * time.Second
-	// MaxBytes caps each direction (ramp-up included): one test never
-	// moves more than 2 × MaxBytes.
-	MaxBytes = 100_000_000 // 100 MB (decimal, as the docs and the owner's 200 MB per test mean it)
+	MaxMeasure = 10 * time.Second
+	MaxOmit    = time.Second
+	// TimeBackstop: from a direction's data phase start, its streams are
+	// cut with an RST whatever the server does.
+	TimeBackstop = MaxOmit + MaxMeasure + 2*time.Second
+	// DirTimeout bounds one direction, connect to results.
+	DirTimeout = TimeBackstop + 5*time.Second
+	// SlotBudget: no new attempt or fallback server after this much of a
+	// slot; SlotCap is the hard limit of one slot: an attempt started at
+	// SlotBudget still has both directions and the pause between them.
+	SlotBudget = 25 * time.Second
+	SlotCap    = SlotBudget + 2*DirTimeout + relisten
 	// SweepUnreachable unreachable servers in a row end a sweep.
 	SweepUnreachable = 3
-	// SlotMaxBytes caps a whole test, every server and retry included.
-	SlotMaxBytes = 2 * MaxBytes
-	// BackstopBytes is where a direction is cut with an RST whatever the
-	// server does (Backstop(MaxBytes): MaxBytes + 5%).
-	BackstopBytes = MaxBytes + MaxBytes/20
-	// TestMaxBytes bounds one test's data, every server and retry included,
-	// against any server: what a share-link test needs free.
-	TestMaxBytes = 2 * BackstopBytes
 	// EstTestTime is a typical test (both directions, adaptive): the
 	// planned share of time under test is slots × EstTestTime / interval.
-	EstTestTime = 15 * time.Second
+	EstTestTime = 20 * time.Second
 	ShareWarn   = 0.25
 	// relisten is the pause before the upload: a stock iperf3 server
 	// closes and reopens its listener after every test, and refuses
@@ -153,14 +149,8 @@ type Options struct {
 	Ping func(ctx context.Context, host string) (time.Duration, error)
 	// OnResult is called after every saved test (metrics).
 	OnResult func(model.SpeedTest)
-	// Public (--speedtest-public), when set, is whether the share link may
-	// queue tests at start; otherwise the saved Details choice, else off.
-	// PublicBudget is its bytes per rolling 24 hours (default
-	// DefaultPublicBudget).
-	Public       *bool
-	PublicBudget int64
-	Log          *slog.Logger
-	Now          func() time.Time
+	Log      *slog.Logger
+	Now      func() time.Time
 	// Fake replaces the network (cmd/fyisp-webdev and the web tests).
 	Fake *Fake
 
@@ -323,12 +313,7 @@ func New(o Options) *Scheduler {
 	}
 	s := &Scheduler{o: o, wake: make(chan struct{}, 1), rtts: map[string]time.Duration{}, mode: ModeOff,
 		extra: slices.Clone(o.Extra), seed: o.rand.Uint32(), skip: map[string]bool{}, busyRun: map[string]int{}, rest: map[string]time.Time{}}
-	qo := QueueOptions{Resolve: s.resolve, Exec: s.execJob, Pause: s.pause, EstSweepPause: MaskTail + SweepGap, Live: s.live, Log: o.Log, Now: o.Now,
-		Public: o.Public, PublicBudget: o.PublicBudget}
-	if o.Store != nil {
-		qo.Settings = o.Store
-	}
-	s.q = NewQueue(qo)
+	s.q = NewQueue(QueueOptions{Resolve: s.resolve, Exec: s.execJob, Pause: s.pause, EstSweepPause: MaskTail + SweepGap, Live: s.live, Log: o.Log, Now: o.Now})
 	return s
 }
 

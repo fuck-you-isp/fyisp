@@ -1,21 +1,20 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "public",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
     "to": 1791549000000,
     "measured": true,
-    "calls": "good",
-    "level": "good",
-    "who": "none",
-    "headline": "The connection was good for calls then",
-    "cause": "If a call was bad then, the problem was probably the app or the other side's connection."
+    "calls": "blocked",
+    "level": "bad",
+    "who": "calltraffic",
+    "kind": "stun_blocked",
+    "headline": "This network was blocking call traffic",
+    "cause": "Calls may still have connected, through a slower backup route."
   },
   "history_today": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -31,20 +30,22 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791536400000,
-            "to": 1791536640000,
-            "level": "warn",
+            "from": 1791496800000,
+            "to": 1791549000000,
+            "level": "info",
             "who": "calltraffic",
-            "kind": "fair",
+            "kind": "stun_blocked",
             "label": "Call traffic",
-            "source": "calls",
-            "text": "Calls had some glitches. No cause was seen on this side."
+            "source": "incident",
+            "incident": 61,
+            "ongoing": true,
+            "text": "The network was blocking call traffic."
           }
         ],
         "off": []
       }
     ],
-    "summary": "Calls had 1 rough patch today. No cause was seen on this side.",
+    "summary": "No new problems today.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -55,24 +56,30 @@
       "calltraffic": 0,
       "offline": 0,
       "services": 0,
-      "call_patches": 1
+      "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 0
-    },
-    "coverage": 1,
-    "problems": [],
-    "work": {
-      "measured": 330,
-      "bad": 0,
-      "good": 1
+    "problems": [
+      {
+        "id": 61,
+        "from": 1791455400000,
+        "ongoing": true,
+        "kind": "stun_blocked",
+        "who": "calltraffic",
+        "where": "The connection calls use",
+        "side": "other",
+        "level": "info",
+        "text": "The network was blocking call traffic.",
+        "peak_loss": 1,
+        "details": "#v=calls\u0026from=1791453600000\u0026to=1791549000000\u0026o=1"
+      }
+    ],
+    "known": {
+      "since": 1791455400000,
+      "text": "Some call connections have been blocked since"
     }
   },
   "history_week": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -127,7 +134,20 @@
         "to": 1791496800000,
         "work_from": 1791442800000,
         "work_to": 1791471600000,
-        "runs": [],
+        "runs": [
+          {
+            "from": 1791455400000,
+            "to": 1791496800000,
+            "level": "info",
+            "who": "calltraffic",
+            "kind": "stun_blocked",
+            "label": "Call traffic",
+            "source": "incident",
+            "incident": 61,
+            "ongoing": true,
+            "text": "The network was blocking call traffic."
+          }
+        ],
         "off": []
       },
       {
@@ -138,20 +158,22 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791536400000,
-            "to": 1791536640000,
-            "level": "warn",
+            "from": 1791496800000,
+            "to": 1791549000000,
+            "level": "info",
             "who": "calltraffic",
-            "kind": "fair",
+            "kind": "stun_blocked",
             "label": "Call traffic",
-            "source": "calls",
-            "text": "Calls had some glitches. No cause was seen on this side."
+            "source": "incident",
+            "incident": 61,
+            "ongoing": true,
+            "text": "The network was blocking call traffic."
           }
         ],
         "off": []
       }
     ],
-    "summary": "No other problems in the last 7 days. Calls had 1 rough patch today.",
+    "summary": "No new problems in the last 7 days.",
     "counts": {
       "problems": 0,
       "home": 0,
@@ -162,59 +184,70 @@
       "calltraffic": 0,
       "offline": 0,
       "services": 0,
-      "call_patches": 1
+      "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 0
-    },
-    "coverage": 0.91,
-    "problems": [],
-    "work": {
-      "measured": 330,
-      "bad": 0,
-      "good": 1
+    "problems": [
+      {
+        "id": 61,
+        "from": 1791455400000,
+        "ongoing": true,
+        "kind": "stun_blocked",
+        "who": "calltraffic",
+        "where": "The connection calls use",
+        "side": "other",
+        "level": "info",
+        "text": "The network was blocking call traffic.",
+        "peak_loss": 1,
+        "details": "#v=calls\u0026from=1791453600000\u0026to=1791549000000\u0026o=1"
+      }
+    ],
+    "known": {
+      "since": 1791455400000,
+      "text": "Some call connections have been blocked since"
     }
   },
   "live": {
     "part": "live",
-    "voice": "public",
     "at": 1791549000000,
     "answer": {
-      "level": "good",
-      "who": "none",
-      "kind": "ok",
-      "calls": "good",
-      "headline": "This connection is fine",
-      "cause": "Calls, work apps and websites are all working.",
-      "try": [],
-      "announce": "This connection is fine. Calls, work apps and websites are all working."
+      "level": "info",
+      "who": "calltraffic",
+      "kind": "stun_blocked",
+      "calls": "blocked",
+      "since": 1791455400000,
+      "headline": "This network always blocks some of the connections calls use",
+      "cause": "Most call apps will still work, but may be slower to connect or lower quality.",
+      "hint": "It's been this way for a while. We'll keep checking, but there's nothing new.",
+      "try": [
+        "Try another network (for example, your phone's hotspot) to compare.",
+        "If it's your home network, check your router's firewall or security app settings."
+      ],
+      "announce": "This network always blocks some of the connections calls use. Most call apps will still work, but may be slower to connect or lower quality."
     },
     "path": [
       {
         "id": "device",
-        "label": "Monitoring device",
+        "label": "This device",
         "state": "ok",
         "words": "OK"
       },
       {
         "id": "router",
-        "label": "Home router",
+        "label": "Your router",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The router that connects the home to the internet."
+        "tooltip": "The box that connects your home to the internet."
       },
       {
         "id": "provider",
-        "label": "Provider network",
+        "label": "Your provider",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The provider's first piece of equipment past the home router."
+        "tooltip": "The first piece of your internet provider's equipment, just outside your home."
       },
       {
         "id": "internet",
-        "label": "The wider internet",
+        "label": "The internet",
         "state": "ok",
         "words": "OK",
         "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
@@ -224,23 +257,23 @@
         "label": "Apps \u0026 websites",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The apps and websites checked from this connection."
+        "tooltip": "The apps and websites we check for you."
       }
     ],
     "tiles": [
       {
         "id": "calls",
         "title": "Calls",
-        "level": "good",
-        "state": "good",
-        "label": "Good for calls",
+        "level": "info",
+        "state": "blocked",
+        "label": "Some call connections blocked",
         "names": [
           "Teams",
           "Google Meet",
           "Zoom"
         ],
         "more": 4,
-        "ok": 7,
+        "ok": 6,
         "total": 7,
         "details": "#v=calls"
       },
@@ -278,11 +311,7 @@
       }
     ],
     "calls": {
-      "state": "good",
-      "delay": "very_short",
-      "dropouts": "none",
-      "smoothness": "steady",
-      "words": "Delay very short · Dropouts none · Smoothness steady"
+      "state": "blocked"
     },
     "apps": [
       {
@@ -291,14 +320,14 @@
         "level": "good",
         "state": "reachable",
         "label": "Reachable",
-        "note": "Same call quality as the other apps: Good."
+        "note": "Some call connections blocked, as for your other apps."
       },
       {
         "app": "meet",
         "title": "Google Meet",
-        "level": "good",
-        "state": "good",
-        "label": "Good"
+        "level": "warn",
+        "state": "blocked",
+        "label": "Blocked"
       },
       {
         "app": "zoom",
@@ -336,6 +365,6 @@
         "label": "Reachable"
       }
     ],
-    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so they can't be tested ahead of time."
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

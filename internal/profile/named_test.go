@@ -141,13 +141,13 @@ func TestResolveCombine(t *testing.T) {
 	if p.Name != "aws,europe" {
 		t.Errorf("name %q", p.Name)
 	}
-	want := []string{"Gateway", "ISP edge", "Cloudflare DNS 1.1.1.1", "Google DNS 8.8.8.8", "Quad9 DNS 9.9.9.9",
+	want := []string{"Gateway", "ISP edge", "Cloudflare DNS 1.1.1.1", "Google DNS 8.8.8.8",
 		"AWS-us-east-1", "AWS-us-west-2", "AWS-eu-central-1", "AWS-global-accelerator", "Hetzner-Falkenstein", "Zoom-eu"}
 	if got := names(p.Targets); !slices.Equal(got, want) {
 		t.Errorf("targets %v", got)
 	}
 	// AWS-eu-central-1 stays in the aws group; europe's aws group merges.
-	wantG := []string{"path=Network path/5", "aws=Amazon Web Services/4", "hetzner=Hetzner/1", "services-voice=Voice & video/1"}
+	wantG := []string{"path=Network path/4", "aws=Amazon Web Services/4", "hetzner=Hetzner/1", "services-voice=Voice & video/1"}
 	if got := groupSummary(p); !slices.Equal(got, wantG) {
 		t.Errorf("groups %v", got)
 	}
@@ -190,7 +190,7 @@ func TestResolveCombine(t *testing.T) {
 		t.Errorf("calls,default: duplicates in %v", names(p.Targets))
 	}
 	// Repeating a profile changes nothing.
-	if q := resolve(t, r, false, "aws", "aws", "hyperscalers"); len(q.Targets) != 5+4 || len(q.Groups) != 2 {
+	if q := resolve(t, r, false, "aws", "aws", "hyperscalers"); len(q.Targets) != 4+4 || len(q.Groups) != 2 {
 		t.Errorf("aws,aws,hyperscalers: %v", groupSummary(q))
 	}
 
@@ -227,7 +227,7 @@ func TestGeoFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := names(p.Targets); len(got) != 5 || p.Groups[0].ID != PathGroup {
+	if got := names(p.Targets); len(got) != 4 || p.Groups[0].ID != PathGroup {
 		t.Errorf("default@na: %v", got)
 	}
 	if _, err := r.Resolve([]string{"aws"}, ResolveOptions{Geos: []string{"europe"}}); err == nil {
@@ -370,13 +370,13 @@ add:
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"Gateway", "ISP edge", "Cloudflare DNS 1.1.1.1", "Google DNS 8.8.8.8", "Quad9 DNS 9.9.9.9",
+	want := []string{"Gateway", "ISP edge", "Cloudflare DNS 1.1.1.1", "Google DNS 8.8.8.8",
 		"AWS-us-east-1", "AWS-eu-central-1", "AWS-global-accelerator", "Hetzner-Falkenstein", "Zoom-eu", "router"}
 	if got := names(p.Targets); !slices.Equal(got, want) || p.Name != "mine" {
 		t.Errorf("%s: %v", p.Name, got)
 	}
-	if p.Targets[9].Interval != 30e9 {
-		t.Errorf("override: %+v", p.Targets[9])
+	if p.Targets[8].Interval != 30e9 {
+		t.Errorf("override: %+v", p.Targets[8])
 	}
 	if _, err := Load(write(t, "extends: [nope]\n")); err == nil || !strings.Contains(err.Error(), "unknown profile") {
 		t.Errorf("unknown: %v", err)

@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"encoding/json"
 	"net/url"
 	"regexp"
 	"slices"
@@ -82,7 +81,7 @@ func homeFixtureFn(t *testing.T, p *model.Profile, now time.Time, lost func(stri
 	fv := &fakeVerdict{v: model.Verdict{Kind: model.VerdictOK, Since: now.Add(-time.Hour)}}
 	d := Deps{Profile: func() *model.Profile { return p }, Store: cs, Verdict: fv,
 		Status: func() Status { return Status{Version: "v9"} }}
-	s := newServer(d, false, "")
+	s := newServer(d, "")
 	s.now = func() time.Time { return now }
 	return s, cs, fv
 }
@@ -92,36 +91,33 @@ var homeNow = time.Date(2026, 10, 9, 14, 30, 0, 0, time.FixedZone("", 120*60))
 
 func TestHomeParams(t *testing.T) {
 	for _, tc := range []struct {
-		q, part, span, voice string
-		tz                   int
-		public               bool
-		bad                  bool
+		q, part, span string
+		tz            int
+		bad           bool
 	}{
-		{q: "", part: "live", span: "d", voice: "you"},
-		{q: "part=history&span=w&tz=120", part: "history", span: "w", voice: "you", tz: 120},
-		{q: "part=history&tz=-187", part: "history", span: "d", voice: "you", tz: -180},
-		{q: "part=history&tz=338", part: "history", span: "d", voice: "you", tz: 345},
-		{q: "part=live&voice=public", part: "live", span: "d", voice: "public"},
-		{q: "part=live&voice=you", part: "live", span: "d", voice: "public", public: true},
+		{q: "", part: "live", span: "d"},
+		{q: "part=history&span=w&tz=120", part: "history", span: "w", tz: 120},
+		{q: "part=history&tz=-187", part: "history", span: "d", tz: -180},
+		{q: "part=history&tz=338", part: "history", span: "d", tz: 345},
 		{q: "part=live&span=w", bad: true},
 		{q: "part=day", bad: true},
 		{q: "part=history&span=m", bad: true},
 		{q: "tz=900", bad: true},
 		{q: "tz=abc", bad: true},
-		{q: "voice=them", bad: true},
+		{q: "voice=you", bad: true}, // the share link's third person is gone
 		{q: "from=now-1h", bad: true},
-		{q: "part=at&at=1760000000000", part: "at", span: "d", voice: "you"},
+		{q: "part=at&at=1760000000000", part: "at", span: "d"},
 		{q: "part=at", bad: true},
 		{q: "part=at&at=soon", bad: true},
 		{q: "part=live&at=1760000000000", bad: true},
 	} {
 		q, _ := url.ParseQuery(tc.q)
-		p, err := parseHome(q, tc.public)
+		p, err := parseHome(q)
 		if (err != nil) != tc.bad {
 			t.Errorf("%q: err %v", tc.q, err)
 			continue
 		}
-		if !tc.bad && (p.part != tc.part || p.span != tc.span || p.voice != tc.voice || p.tz != tc.tz) {
+		if !tc.bad && (p.part != tc.part || p.span != tc.span || p.tz != tc.tz) {
 			t.Errorf("%q: %+v", tc.q, p)
 		}
 	}
@@ -130,7 +126,7 @@ func TestHomeParams(t *testing.T) {
 func TestHomeLiveGood(t *testing.T) {
 	now := homeNow
 	s, _, _ := homeFixture(t, homeProfile(), now, nil, false)
-	l, err := s.homeLive(context.Background(), voiceYou, now)
+	l, err := s.homeLive(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +168,7 @@ func TestHomeLiveRelevance(t *testing.T) {
 	now := homeNow
 	s, _, fv := homeFixture(t, homeProfile(), now, []string{"AWS-me-south-1", "M365-Outlook"}, false)
 	fv.v = model.Verdict{Kind: model.VerdictService, Since: now.Add(-10 * time.Minute), Targets: []string{"AWS-me-south-1"}}
-	l, err := s.homeLive(context.Background(), voiceYou, now)
+	l, err := s.homeLive(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +186,7 @@ func TestHomeLiveRelevance(t *testing.T) {
 
 	// The same verdict about one work app out of three: what works, and the tile's sentence.
 	fv.v.Targets = []string{"M365-Outlook"}
-	l, _ = s.homeLive(context.Background(), voiceYou, now)
+	l, _ = s.homeLive(context.Background(), now)
 	if a := l.Answer; a.Level != levelGood || a.Who != whoNone ||
 		a.Cause != "Calls and websites are working. Outlook isn't answering from here. That's most likely a problem on their side." {
 		t.Errorf("answer %+v", a)
@@ -199,7 +195,7 @@ func TestHomeLiveRelevance(t *testing.T) {
 	// Two of three raise it.
 	s, _, fv = homeFixture(t, homeProfile(), now, []string{"M365-Outlook", "Google-Gmail"}, false)
 	fv.v = model.Verdict{Kind: model.VerdictService, Since: now.Add(-10 * time.Minute), Targets: []string{"M365-Outlook", "Google-Gmail"}}
-	l, _ = s.homeLive(context.Background(), voiceYou, now)
+	l, _ = s.homeLive(context.Background(), now)
 	if a := l.Answer; a.Level != levelBad || a.Who != whoApp || a.App != "Outlook" || a.Headline != "Outlook and Gmail aren't answering" || a.Since == 0 {
 		t.Errorf("answer %+v", a)
 	}
@@ -215,7 +211,7 @@ func TestHomeLiveOnlyOther(t *testing.T) {
 	}
 	s, _, fv := homeFixture(t, p, now, []string{"AWS-ap-south-1", "AWS-me-south-1"}, false)
 	fv.v = model.Verdict{Kind: model.VerdictService, Since: now.Add(-5 * time.Minute), Targets: []string{"AWS-ap-south-1", "AWS-me-south-1"}}
-	l, err := s.homeLive(context.Background(), voiceYou, now)
+	l, err := s.homeLive(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,22 +231,17 @@ func TestHomeLiveChoppy(t *testing.T) {
 	now := homeNow.Add(30 * time.Second)
 	s, _, fv := homeFixture(t, homeProfile(), now, nil, true)
 	fv.v = model.Verdict{Kind: model.VerdictUDPDegraded, Since: now.Add(-3 * time.Minute)}
-	l, err := s.homeLive(context.Background(), voiceYou, now)
+	l, err := s.homeLive(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := l.Answer
-	if a.Level != levelBad || a.Who != whoCallTraffic || (a.Calls != "poor" && a.Calls != "unusable") || a.Headline != copyFor(voiceYou).callHead(a.Calls, false) ||
+	if a.Level != levelBad || a.Who != whoCallTraffic || (a.Calls != "poor" && a.Calls != "unusable") || a.Headline != (homeCopy{}).callHead(a.Calls, false) ||
 		a.Fact == "" || a.FactAt == 0 || len(a.Try) != 3 || !strings.HasPrefix(a.Cause, "Browsing looks fine") {
 		t.Errorf("answer %+v", a)
 	}
 	if l.Calls == nil || (l.Calls.Smoothness != "uneven" && l.Calls.Smoothness != "bit_uneven") || l.Calls.WorstAt == 0 {
 		t.Errorf("calls %+v", l.Calls)
-	}
-	// The public voice: third person, nothing to try.
-	l, _ = s.homeLive(context.Background(), voicePublic, now)
-	if a := l.Answer; len(a.Try) != 0 || strings.Contains(a.Cause, "your") || !strings.Contains(a.Cause, "call traffic") {
-		t.Errorf("public answer %+v", a)
 	}
 }
 
@@ -258,7 +249,7 @@ func TestHomeLiveWarming(t *testing.T) {
 	now := homeNow
 	s, _, fv := homeFixture(t, homeProfile(), now, nil, false)
 	fv.v = model.Verdict{Kind: model.VerdictWarmingUp}
-	l, err := s.homeLive(context.Background(), voiceYou, now)
+	l, err := s.homeLive(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +320,7 @@ func TestHomeAnswer(t *testing.T) {
 			[]HomeTile{down}, levelBad, whoApp, "", "YouTube and Netflix aren't answering"},
 		{"tile down, no verdict", model.Verdict{Kind: model.VerdictOK}, "good", []HomeTile{down}, levelBad, whoApp, "", "Some websites aren't loading"},
 	} {
-		a := homeAnswerOf(homeIn(p, tc.v, tc.own, tc.tiles...), copyFor(voiceYou))
+		a := homeAnswerOf(homeIn(p, tc.v, tc.own, tc.tiles...), homeCopy{})
 		if a.Level != tc.level || a.Who != tc.who || a.Confidence != tc.conf || a.Headline != tc.hdl {
 			t.Errorf("%s: level %s who %s conf %s headline %q (cause %q)", tc.name, a.Level, a.Who, a.Confidence, a.Headline, a.Cause)
 		}
@@ -360,13 +351,13 @@ func TestHomeTCPTile(t *testing.T) {
 		for i, st := range tc.states {
 			rows = append(rows, row(ts[i].Name, st))
 		}
-		got := tcpTile(tileWork, ts, rows, names, copyFor(voiceYou))
+		got := tcpTile(tileWork, ts, rows, names, homeCopy{})
 		if got.State != tc.want || got.Total != 4 || len(got.Names) != 3 || got.More != 1 {
 			t.Errorf("%v: %+v", tc.states, got)
 		}
 	}
 	// A set of two: one failing out of two is down, not "mostly".
-	got := tcpTile(tileWeb, ts[:2], []overviewRow{row("A", "ok"), row("B", "failing")}, names, copyFor(voiceYou))
+	got := tcpTile(tileWeb, ts[:2], []overviewRow{row("A", "ok"), row("B", "failing")}, names, homeCopy{})
 	if got.State != tileSlow && got.State != tileDown {
 		t.Errorf("two: %+v", got)
 	}
@@ -395,7 +386,7 @@ func historyFixture(t *testing.T, now time.Time, loc *time.Location) (*server, *
 		{ID: 1, Start: today.AddDate(0, 0, -1).Add(-30 * time.Minute), End: today.AddDate(0, 0, -1).Add(15 * time.Minute), Kind: model.VerdictISP, PeakLoss: 1},
 	}}
 	d := Deps{Profile: func() *model.Profile { return p }, Store: cs, Verdict: fv, Status: func() Status { return Status{} }}
-	s := newServer(d, false, "")
+	s := newServer(d, "")
 	s.now = func() time.Time { return now }
 	return s, cs
 }
@@ -404,7 +395,7 @@ func TestHomeHistory(t *testing.T) {
 	loc := time.FixedZone("", 120*60)
 	now := time.Date(2026, 10, 9, 14, 30, 0, 0, loc) // a Friday
 	s, _ := historyFixture(t, now, loc)
-	h, err := s.homeHistory(context.Background(), homeParams{part: "history", span: "w", voice: voiceYou, tz: 120}, now)
+	h, err := s.homeHistory(context.Background(), homeParams{part: "history", span: "w", tz: 120}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,56 +433,18 @@ func TestHomeHistory(t *testing.T) {
 		t.Errorf("summary %q", h.Summary)
 	}
 	// Measured: from noon 3 days before (first data) to now, minus 6 h off.
-	if want := round2(float64(now.Sub(time.Date(2026, 10, 6, 12, 0, 0, 0, loc))-6*time.Hour) / float64(h.To-h.From) / 1e6); h.Coverage != want {
-		t.Errorf("coverage %v, want %v", h.Coverage, want)
-	}
 	if h.FirstData == 0 || h.Problems[1].Where != "Most likely your provider's network (past your router)" {
 		t.Errorf("first %d where %q", h.FirstData, h.Problems[1].Where)
 	}
 
-	h, _ = s.homeHistory(context.Background(), homeParams{part: "history", span: "d", voice: voicePublic, tz: 120}, now)
-	if len(h.Days) != 1 || h.Summary != "1 problem today, most likely in the home network." || h.Problems[0].Where != "Most likely the home network (Wi-Fi or router)" {
-		t.Errorf("public today: %q %+v", h.Summary, h.Problems)
-	}
-}
-
-// The public route: always the public voice, history cached, no relay
-// region, no "your".
-func TestHomePublic(t *testing.T) {
-	now := time.Now()
-	_, d, _ := callsFixture(t, now, true, nil)
-	h := Public(d, testSecret)
-	base := "/s/" + testSecret + "/api/home"
-	w := do(h, "GET", base+"?part=live&voice=you", nil)
-	if w.Code != 200 {
-		t.Fatalf("live: %d %s", w.Code, w.Body.String())
-	}
-	var l HomeLive
-	if err := json.Unmarshal(w.Body.Bytes(), &l); err != nil {
-		t.Fatal(err)
-	}
-	if l.Voice != voicePublic || strings.Contains(w.Body.String(), "swedencentral") || regexp.MustCompile(`\b[Yy]our\b`).MatchString(w.Body.String()) {
-		t.Errorf("public live: %s", w.Body.String())
-	}
-	cs := d.Store.(*countingStore)
-	w = do(h, "GET", base+"?part=history&span=w&tz=60", nil)
-	n := cs.calls.Load()
-	w2 := do(h, "GET", base+"?part=history&span=w&tz=61", nil) // rounds to the same key
-	if w.Code != 200 || w2.Code != 200 || cs.calls.Load() != n || w.Body.String() != w2.Body.String() {
-		t.Errorf("history not cached: %d %d, %d -> %d panels", w.Code, w2.Code, n, cs.calls.Load())
-	}
-	if w := do(h, "GET", base+"?part=history&tz=9999", nil); w.Code != 400 {
-		t.Errorf("bad tz: %d", w.Code)
-	}
 }
 
 // bannedOnHome are words Home never says (docs/HOME-API.md). DNS may
 // appear in parentheses and in the owner's tips.
 var bannedOnHome = regexp.MustCompile(`(?i)\b(stun|udp|tcp|icmp|anycast|mos|jitter|p95|probes?|targets?|baseline|verdict|profile|gateway|isp edge|ms)\b|×\d|--[a-z]`)
 
-// TestHomeCopyWords runs every answer the table can make, in both voices,
-// and every other copy function, through the banned-word check; and the
-// public voice never says "your".
+// TestHomeCopyWords runs every answer the table can make, and every other
+// copy function, through the banned-word check.
 func TestHomeCopyWords(t *testing.T) {
 	p := homeProfile()
 	kinds := []model.VerdictKind{model.VerdictOK, model.VerdictWarmingUp, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream,
@@ -499,99 +452,87 @@ func TestHomeCopyWords(t *testing.T) {
 		model.VerdictUDPDegraded, VerdictUnknown}
 	evs := []map[string]float64{nil, {"services_loss": 0.2}, {"services_loss": 0.02}}
 	var all []string
-	for _, voice := range []string{voiceYou, voicePublic} {
-		cp := copyFor(voice)
-		var texts []string
-		for _, k := range kinds {
-			for _, ev := range evs {
-				for _, own := range []string{"good", "fair", "poor", "unusable", "blocked", "not_enough_data", "server_not_answering"} {
-					for _, quiet := range []bool{false, true} {
-						a := homeAnswerOf(homeIn(p, model.Verdict{Kind: k, Evidence: ev, Quiet: quiet, Targets: []string{"YouTube"}}, own), cp)
-						if r := repeats(a.Headline, a.Cause); r != "" {
-							t.Errorf("%s/%s/%s: headline %q and cause %q both say %q", k, own, voice, a.Headline, a.Cause, r)
-						}
-						texts = append(texts, a.Headline, a.Cause, a.Hint, a.Fact, a.Announce)
-						if voice == voicePublic && len(a.Try) > 0 {
-							t.Errorf("public try: %v", a.Try)
-						}
-						for _, x := range a.Try {
-							all = append(all, strings.ReplaceAll(x, "DNS", ""))
-						}
+	cp := homeCopy{}
+	var texts []string
+	for _, k := range kinds {
+		for _, ev := range evs {
+			for _, own := range []string{"good", "fair", "poor", "unusable", "blocked", "not_enough_data", "server_not_answering"} {
+				for _, quiet := range []bool{false, true} {
+					a := homeAnswerOf(homeIn(p, model.Verdict{Kind: k, Evidence: ev, Quiet: quiet, Targets: []string{"YouTube"}}, own), cp)
+					if r := repeats(a.Headline, a.Cause); r != "" {
+						t.Errorf("%s/%s: headline %q and cause %q both say %q", k, own, a.Headline, a.Cause, r)
+					}
+					texts = append(texts, a.Headline, a.Cause, a.Hint, a.Fact, a.Announce)
+					for _, x := range a.Try {
+						all = append(all, strings.ReplaceAll(x, "DNS", ""))
 					}
 				}
 			}
 		}
-		for _, st := range []string{"good", "fair", "poor", "unusable", "blocked", "not_enough_data", "server_not_answering", "reachable", "not_answering"} {
-			texts = append(texts, cp.callHead(st, false), cp.callLabel(st))
+	}
+	for _, st := range []string{"good", "fair", "poor", "unusable", "blocked", "not_enough_data", "server_not_answering", "reachable", "not_answering"} {
+		texts = append(texts, cp.callHead(st, false), cp.callLabel(st))
+	}
+	for _, st := range []string{tileWorking, tileMostly, tileSlow, tileDown, tileChecking} {
+		for _, dead := range []int{0, 2} {
+			texts = append(texts, cp.tileLabel(st, false, dead > 0, dead > 0), cp.tileLabel(st, true, dead > 0, dead > 0), cp.tileNote(tileWork, st, []string{"A", "websites using B", "C", "D"}, 2, dead, 4), cp.tileNote(tileWeb, st, []string{"A", "B"}, 2, dead, 4))
 		}
-		for _, st := range []string{tileWorking, tileMostly, tileSlow, tileDown, tileChecking} {
-			for _, dead := range []int{0, 2} {
-				texts = append(texts, cp.tileLabel(st, false, dead > 0, dead > 0), cp.tileLabel(st, true, dead > 0, dead > 0), cp.tileNote(tileWork, st, []string{"A", "websites using B", "C", "D"}, 2, dead, 4), cp.tileNote(tileWeb, st, []string{"A", "B"}, 2, dead, 4))
-			}
+	}
+	for _, id := range []string{"device", "router", "provider", "internet", "apps"} {
+		for _, st := range []string{"ok", "warn", "bad", "unknown"} {
+			texts = append(texts, cp.nodeLabel(id), cp.nodeTip(id), cp.nodeWords(id, st, 0.3, true))
 		}
-		for _, id := range []string{"device", "router", "provider", "internet", "apps"} {
-			for _, st := range []string{"ok", "warn", "bad", "unknown"} {
-				texts = append(texts, cp.nodeLabel(id), cp.nodeTip(id), cp.nodeWords(id, st, 0.3, true))
-			}
+	}
+	for _, who := range []string{whoHome, whoProvider, whoBeyond, whoDNS, whoApp, whoCallTraffic, whoOffline} {
+		texts = append(texts, cp.where(who, ""), cp.runLabel(who, ""))
+	}
+	if got := cp.summary(HomeCounts{Problems: 7, Provider: 3, Home: 1, DNS: 1, App: 1, CallTraffic: 1}, "w", false, "", false); got != "7 problems this week: 3 most likely from your internet provider, 1 most likely in your home network and 3 others." {
+		t.Errorf("summary %q", got)
+	}
+	for _, tc := range []struct {
+		n    HomeCounts
+		span string
+		want string
+	}{
+		{HomeCounts{CallPatches: 1}, "d", "Calls had 1 rough patch today. We didn't see a cause on your side."},
+		{HomeCounts{CallPatches: 2}, "w", "No other problems in the last 7 days. Calls had 2 rough patches today."},
+		{HomeCounts{Problems: 1, Provider: 1, CallPatches: 2}, "d", "1 problem today, most likely from your internet provider. Calls also had 2 other rough patches today."},
+	} {
+		if got := cp.summary(tc.n, tc.span, false, "", false); got != tc.want {
+			t.Errorf("summary %+v: %q", tc.n, got)
 		}
-		for _, who := range []string{whoHome, whoProvider, whoBeyond, whoDNS, whoApp, whoCallTraffic, whoOffline} {
-			texts = append(texts, cp.where(who, ""), cp.runLabel(who, ""))
-		}
-		if got := cp.summary(HomeCounts{Problems: 7, Provider: 3, Home: 1, DNS: 1, App: 1, CallTraffic: 1}, "w", false, "", false); voice == voiceYou &&
-			got != "7 problems this week: 3 most likely from your internet provider, 1 most likely in your home network and 3 others." {
-			t.Errorf("summary %q", got)
-		}
-		for _, tc := range []struct {
-			n    HomeCounts
-			span string
-			want string
-		}{
-			{HomeCounts{CallPatches: 1}, "d", "Calls had 1 rough patch today. We didn't see a cause on your side."},
-			{HomeCounts{CallPatches: 2}, "w", "No other problems in the last 7 days. Calls had 2 rough patches today."},
-			{HomeCounts{Problems: 1, Provider: 1, CallPatches: 2}, "d", "1 problem today, most likely from your internet provider. Calls also had 2 other rough patches today."},
-		} {
-			if got := cp.summary(tc.n, tc.span, false, "", false); voice == voiceYou && got != tc.want {
-				t.Errorf("summary %+v: %q", tc.n, got)
-			}
-			texts = append(texts, cp.summary(tc.n, tc.span, false, "", false))
-		}
-		if got := cp.summary(HomeCounts{Problems: 1, App: 1}, "d", false, "Outlook", false); got != "1 problem today, with Outlook." {
-			t.Errorf("summary one app %q", got)
-		}
-		if got := cp.summary(HomeCounts{}, "d", false, "", true); got != "No new problems today." {
-			t.Errorf("summary known %q", got)
-		}
-		texts = append(texts, cp.callPatch(levelWarn), cp.callPatch(levelBad), cp.otherNote(tileDown, 3, 3, 3, 1330), cp.otherNote(tileMostly, 1, 0, 0, 84))
-		if got := cp.otherNote(tileDown, 3, 3, 3, 1330); got != "3 of 1,330 aren't answering from here." {
-			t.Errorf("other note %q", got)
-		}
-		for _, n := range []HomeCounts{{}, {Problems: 1, Provider: 1}, {Problems: 3, Provider: 2, Home: 1}, {Problems: 4, App: 1, DNS: 1, Offline: 1, CallTraffic: 1}} {
-			texts = append(texts, cp.summary(n, "d", false, "", false), cp.summary(n, "w", false, "", false), cp.summary(n, "w", true, "", false))
-		}
-		for _, f := range []string{"loss", "jitter", "latency", ""} {
-			texts = append(texts, cp.fact(f, 0.14), cp.pathCause(f))
-		}
-		for _, m := range []bool{false, true} {
-			for _, st := range []string{"", "good", "fair", "poor", "unusable", "blocked", "server_not_answering"} {
-				for _, who := range []string{whoNone, whoHome, whoProvider, whoBeyond, whoDNS, whoApp, whoCallTraffic, whoOffline} {
-					for _, k := range []string{"", "udp_blocked"} {
-						h, c := cp.atWords(m, st, who != whoNone, who, k)
-						texts = append(texts, h, c)
-					}
+		texts = append(texts, cp.summary(tc.n, tc.span, false, "", false))
+	}
+	if got := cp.summary(HomeCounts{Problems: 1, App: 1}, "d", false, "Outlook", false); got != "1 problem today, with Outlook." {
+		t.Errorf("summary one app %q", got)
+	}
+	if got := cp.summary(HomeCounts{}, "d", false, "", true); got != "No new problems today." {
+		t.Errorf("summary known %q", got)
+	}
+	texts = append(texts, cp.callPatch(levelWarn), cp.callPatch(levelBad), cp.otherNote(tileDown, 3, 3, 3, 1330), cp.otherNote(tileMostly, 1, 0, 0, 84))
+	if got := cp.otherNote(tileDown, 3, 3, 3, 1330); got != "3 of 1,330 aren't answering from here." {
+		t.Errorf("other note %q", got)
+	}
+	for _, n := range []HomeCounts{{}, {Problems: 1, Provider: 1}, {Problems: 3, Provider: 2, Home: 1}, {Problems: 4, App: 1, DNS: 1, Offline: 1, CallTraffic: 1}} {
+		texts = append(texts, cp.summary(n, "d", false, "", false), cp.summary(n, "w", false, "", false), cp.summary(n, "w", true, "", false))
+	}
+	for _, f := range []string{"loss", "jitter", "latency", ""} {
+		texts = append(texts, cp.fact(f, 0.14), cp.pathCause(f))
+	}
+	for _, m := range []bool{false, true} {
+		for _, st := range []string{"", "good", "fair", "poor", "unusable", "blocked", "server_not_answering"} {
+			for _, who := range []string{whoNone, whoHome, whoProvider, whoBeyond, whoDNS, whoApp, whoCallTraffic, whoOffline} {
+				for _, k := range []string{"", "udp_blocked"} {
+					h, c := cp.atWords(m, st, who != whoNone, who, k)
+					texts = append(texts, h, c)
 				}
 			}
 		}
-		texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good"), cp.picksServer([]string{"Zoom"}), cp.picksServer([]string{"Zoom", "Slack"}), cp.culprit(true), cp.culprit(false), cp.affectedBy(whoHome), cp.affectedBy(whoOffline), cp.knownBlock(),
-			cp.callWords("short", "rare", "bit_uneven"), cp.appsWords("warn", []string{"work apps", "websites"}), cp.cantTell(), cp.callLabel("cant_tell"), cp.quietHint())
-		for _, x := range texts {
-			if voice == voicePublic && regexp.MustCompile(`\b[Yy]our\b`).MatchString(x) {
-				t.Errorf("public voice says your: %q", x)
-			}
-			if voice == voicePublic {
-				x = strings.ReplaceAll(x, "(DNS)", "")
-			}
-			all = append(all, x)
-		}
+	}
+	texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good"), cp.picksServer([]string{"Zoom"}), cp.picksServer([]string{"Zoom", "Slack"}), cp.culprit(true), cp.culprit(false), cp.affectedBy(whoHome), cp.affectedBy(whoOffline), cp.knownBlock(),
+		cp.callWords("short", "rare", "bit_uneven"), cp.appsWords("warn", []string{"work apps", "websites"}), cp.cantTell(), cp.callLabel("cant_tell"), cp.quietHint())
+	for _, x := range texts {
+		all = append(all, x)
 	}
 	for _, x := range all {
 		if m := bannedOnHome.FindString(x); m != "" {
@@ -607,7 +548,7 @@ func TestHomeAt(t *testing.T) {
 	now := homeNow.Add(30 * time.Second)
 	s, _, fv := homeFixture(t, homeProfile(), now, nil, true)
 	fv.list = []model.Incident{{ID: 7, Start: now.Add(-4 * time.Minute), Kind: model.VerdictISP, PeakLoss: 0.3}}
-	a, err := s.homeAt(context.Background(), now.Add(-2*time.Minute), voiceYou, now)
+	a, err := s.homeAt(context.Background(), now.Add(-2*time.Minute), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,13 +559,13 @@ func TestHomeAt(t *testing.T) {
 	}
 	// Twenty minutes earlier: good, no incident; the honest answer.
 	fv.list = nil
-	a, _ = s.homeAt(context.Background(), now.Add(-25*time.Minute), voicePublic, now)
-	if !a.Measured || a.Calls != "good" || a.Level != levelGood || a.Headline != "The connection was good for calls then" ||
-		!strings.Contains(a.Cause, "other side") {
+	a, _ = s.homeAt(context.Background(), now.Add(-25*time.Minute), now)
+	if !a.Measured || a.Calls != "good" || a.Level != levelGood || a.Headline != "Your connection was good for calls then" ||
+		!strings.Contains(a.Cause, "other person") {
 		t.Errorf("good: %+v", a)
 	}
 	// Before the history: not measured.
-	a, _ = s.homeAt(context.Background(), now.Add(-3*time.Hour), voiceYou, now)
+	a, _ = s.homeAt(context.Background(), now.Add(-3*time.Hour), now)
 	if a.Measured || a.Headline != "We weren't checking at that time" {
 		t.Errorf("unmeasured: %+v", a)
 	}
@@ -743,7 +684,7 @@ func TestHomeRecovery(t *testing.T) {
 				start = faultFrom.Add(50 * time.Second)
 			}
 			fv.list = []model.Incident{{ID: 1, Start: start, End: end, Kind: tc.kind}}
-			l, err := s.homeLive(context.Background(), voiceYou, now)
+			l, err := s.homeLive(context.Background(), now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -760,7 +701,7 @@ func TestHomeRecovery(t *testing.T) {
 			}
 			// Without the incident the same samples are the apps' or the calls' trouble.
 			fv.list = nil
-			if l, _ = s.homeLive(context.Background(), voiceYou, now); l.Answer.Level == levelGood {
+			if l, _ = s.homeLive(context.Background(), now); l.Answer.Level == levelGood {
 				t.Errorf("without the incident: %+v", l.Answer)
 			}
 		})
@@ -775,25 +716,25 @@ func TestHomeConfidenceConfined(t *testing.T) {
 	p := homeProfile()
 	ev := map[string]float64{"anycast_loss": 0.128, "anycast_targets": 3, "edge_loss": 0.133, "edge_targets": 1,
 		"gateway_loss": 0, "internet_targets": 5, "internet_unhealthy": 0, "services_loss": 0}
-	a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), copyFor(voiceYou))
+	a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), homeCopy{})
 	if a.Confidence != confLikely || a.Level != levelWarn {
 		t.Errorf("c-isp: %+v", a)
 	}
 	// Only the first provider hop: weak.
 	ev["anycast_loss"] = 0
-	if a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), copyFor(voiceYou)); a.Confidence != confWeak {
+	if a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), homeCopy{}); a.Confidence != confWeak {
 		t.Errorf("edge only: %+v", a)
 	}
 	// No outer evidence: can't tell it's confined.
 	delete(ev, "anycast_loss")
-	if a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), copyFor(voiceYou)); a.Confidence != confLikely {
+	if a := homeAnswerOf(homeIn(p, model.Verdict{Kind: model.VerdictISP, Evidence: ev}, "good"), homeCopy{}); a.Confidence != confLikely {
 		t.Errorf("no outer evidence: %+v", a)
 	}
 }
 
 // TestHomeTileGrammar: tile titles are plural ("Websites are working").
 func TestHomeTileGrammar(t *testing.T) {
-	cp := copyFor(voiceYou)
+	cp := homeCopy{}
 	tiles := []HomeTile{{ID: tileWeb, Title: "Websites", Level: levelGood},
 		{ID: tileWork, Title: "Work apps", Level: levelWarn, Affected: []string{"Outlook"}, Note: "Outlook isn't answering from here."}}
 	if got := cp.oneApp(tiles, []string{"Outlook"}); got != "Websites are working. Outlook isn't answering from here." {

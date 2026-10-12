@@ -2,7 +2,7 @@
 // UI development and manual checks. It is not part of any release: the
 // release matrix builds ./cmd/fyisp only.
 //
-//	fyisp-webdev -listen 0.0.0.0:3000 -public 0.0.0.0:3001 -backfill 6h
+//	fyisp-webdev -listen 0.0.0.0:3000 -backfill 6h
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 //	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
 //	fyisp-webdev -home isp                    # a Home scenario (internal/web/homescen)
@@ -10,8 +10,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -21,7 +19,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -143,46 +140,12 @@ func (s oldestStore) Stats(ctx context.Context) (store.Stats, error) {
 	return st, err
 }
 
-// devShare simulates the tunnel: starting for 2s, then connected.
-type devShare struct {
-	mu  sync.Mutex
-	st  web.ShareState
-	url string
-}
-
-func (s *devShare) State() web.ShareState { s.mu.Lock(); defer s.mu.Unlock(); return s.st }
-func (s *devShare) Start(context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.st.Phase == web.ShareConnected || s.st.Phase == web.ShareStarting {
-		return nil
-	}
-	s.st = web.ShareState{Phase: web.ShareStarting}
-	time.AfterFunc(2*time.Second, func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.st.Phase == web.ShareStarting {
-			s.st = web.ShareState{Phase: web.ShareConnected, URL: s.url, Protocol: "quic"}
-		}
-	})
-	return nil
-}
-func (s *devShare) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.st = web.ShareState{Phase: web.ShareOff}
-	return nil
-}
-
 func main() {
 	listen := flag.String("listen", "127.0.0.1:3000", "local listener")
-	public := flag.String("public", "127.0.0.1:3001", "public listener (the tunnel origin)")
-	publicURL := flag.String("public-url", "http://localhost:3001", "base URL the fake share reports")
 	bf := flag.Duration("backfill", 6*time.Hour, "synthetic history to generate")
 	loss := flag.Float64("loss", 0.01, "live loss rate")
 	noICMP := flag.Bool("no-icmp", false, "report ICMP as unavailable")
-	admin := flag.String("admin-token", "", "admin token for share controls")
-	secret := flag.String("secret", "", "public path secret (random if empty)")
+	admin := flag.String("admin-token", "", "admin token for dashboard controls")
 	vCycle := flag.Duration("verdict-cycle", 20*time.Second, "how long each fake verdict kind lasts")
 	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, udp_blocked, stun_blocked (quiet), udp_degraded, warming_up)")
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
@@ -196,9 +159,6 @@ func main() {
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
 	home := flag.String("home", "", "a Home scenario instead of the fake probes and verdict (the real /api/home over its data): "+strings.Join(homescen.Names, ", "))
 	flag.Parse()
-	if *home == "public" { // the isp scenario; open the share link for the public voice
-		*home = "isp"
-	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -287,13 +247,6 @@ func main() {
 		go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm})) }()
 	}
 
-	sec := *secret
-	if sec == "" {
-		var b [16]byte
-		_, _ = rand.Read(b[:])
-		sec = hex.EncodeToString(b[:])
-	}
-	share := &devShare{st: web.ShareState{Phase: web.ShareOff}, url: *publicURL + "/s/" + sec + "/"}
 	caps := pr.Caps()
 	if *noICMP {
 		caps.ICMP, caps.ICMPHint = "unavailable", "Allow unprivileged ICMP with: sudo sysctl -w net.ipv4.ping_group_range='0 2147483647'"
@@ -307,15 +260,13 @@ func main() {
 		Metrics: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "# fyisp-webdev: no real metrics")
 		}),
-		Share: share,
-		UDP:   pr,
-		Log:   log,
+		UDP: pr,
+		Log: log,
 	}
 	if !*noTrace {
 		ft := newFakeTrace(st, now, *bf)
 		go ft.run(ctx)
 		d.Trace = ft
-		d.Investigations = web.NewInvestigations()
 	}
 	switch {
 	case sc != nil:
@@ -336,7 +287,7 @@ func main() {
 		if *bf > 0 {
 			_, isp, _ := windows(*bf, now)
 			if id, err := fr.seed(ctx, isp.from.Add(-30*time.Minute), isp.to.Add(30*time.Minute)); err == nil {
-				log.Info("sample report", "public", *publicURL+"/s/"+sec+"/r/"+id)
+				log.Info("sample report", "url", "http://"+*listen+"/api/reports/"+id)
 			}
 		}
 		d.Reports = fr
@@ -354,19 +305,15 @@ func main() {
 			WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	}
 	ls := srv(*listen, web.Local(d, web.LocalOptions{Addr: *listen, AdminToken: *admin}))
-	ps := srv(*public, web.Public(d, sec))
-	for _, s := range []*http.Server{ls, ps} {
-		go func() {
-			if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Error("listen", "addr", s.Addr, "err", err)
-				stop()
-			}
-		}()
-	}
-	log.Info("serving", "local", "http://"+*listen+"/", "public", share.url)
+	go func() {
+		if err := ls.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("listen", "addr", ls.Addr, "err", err)
+			stop()
+		}
+	}()
+	log.Info("serving", "local", "http://"+*listen+"/")
 	<-ctx.Done()
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = ls.Shutdown(sctx)
-	_ = ps.Shutdown(sctx)
 }

@@ -1,7 +1,6 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "public",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
@@ -11,16 +10,15 @@
     "bad_from": 1791548400000,
     "bad_to": 1791549000000,
     "level": "bad",
-    "who": "home",
-    "kind": "lan",
+    "who": "beyond",
+    "kind": "upstream",
     "headline": "Calls would have broken up",
-    "cause": "The problem was most likely in the home network (Wi-Fi or router).",
+    "cause": "Your Wi-Fi, router and provider's nearest equipment looked fine. The problem was further out on the internet.",
     "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
     "fact_at": 1791548400000
   },
   "history_today": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -39,24 +37,24 @@
             "from": 1791548400000,
             "to": 1791549000000,
             "level": "bad",
-            "who": "home",
-            "kind": "lan",
-            "label": "Most likely the home network",
+            "who": "beyond",
+            "kind": "upstream",
+            "label": "Further out",
             "source": "incident",
-            "incident": 12,
+            "incident": 31,
             "ongoing": true,
-            "text": "The problem was most likely in the home network (Wi-Fi or router)."
+            "text": "Your Wi-Fi, router and provider's nearest equipment looked fine. The problem was further out on the internet."
           }
         ],
         "off": []
       }
     ],
-    "summary": "1 problem today, most likely in the home network.",
+    "summary": "1 problem today, further out on the internet.",
     "counts": {
       "problems": 1,
-      "home": 1,
+      "home": 0,
       "provider": 0,
-      "beyond": 0,
+      "beyond": 1,
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
@@ -64,25 +62,18 @@
       "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 1,
-      "provider": 0,
-      "other": 0
-    },
-    "coverage": 1,
     "problems": [
       {
-        "id": 12,
+        "id": 31,
         "from": 1791548400000,
         "ongoing": true,
-        "kind": "lan",
-        "who": "home",
-        "where": "Most likely the home network (Wi-Fi or router)",
-        "side": "home",
+        "kind": "upstream",
+        "who": "beyond",
+        "where": "Further out on the internet",
+        "side": "other",
         "level": "bad",
-        "confidence": "likely",
-        "text": "The problem was most likely in the home network (Wi-Fi or router).",
-        "peak_loss": 0.35,
+        "text": "Your Wi-Fi, router and provider's nearest equipment looked fine. The problem was further out on the internet.",
+        "peak_loss": 0.6,
         "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
       }
     ],
@@ -94,7 +85,6 @@
   },
   "history_week": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -140,19 +130,7 @@
         "to": 1791410400000,
         "work_from": 1791356400000,
         "work_to": 1791385200000,
-        "runs": [
-          {
-            "from": 1791360300000,
-            "to": 1791360660000,
-            "level": "bad",
-            "who": "home",
-            "kind": "lan",
-            "label": "Most likely the home network",
-            "source": "incident",
-            "incident": 11,
-            "text": "The problem was most likely in the home network (Wi-Fi or router)."
-          }
-        ],
+        "runs": [],
         "off": []
       },
       {
@@ -175,24 +153,24 @@
             "from": 1791548400000,
             "to": 1791549000000,
             "level": "bad",
-            "who": "home",
-            "kind": "lan",
-            "label": "Most likely the home network",
+            "who": "beyond",
+            "kind": "upstream",
+            "label": "Further out",
             "source": "incident",
-            "incident": 12,
+            "incident": 31,
             "ongoing": true,
-            "text": "The problem was most likely in the home network (Wi-Fi or router)."
+            "text": "Your Wi-Fi, router and provider's nearest equipment looked fine. The problem was further out on the internet."
           }
         ],
         "off": []
       }
     ],
-    "summary": "2 problems this week, both most likely in the home network.",
+    "summary": "1 problem this week, further out on the internet.",
     "counts": {
-      "problems": 2,
-      "home": 2,
+      "problems": 1,
+      "home": 0,
       "provider": 0,
-      "beyond": 0,
+      "beyond": 1,
       "dns": 0,
       "app": 0,
       "calltraffic": 0,
@@ -200,40 +178,19 @@
       "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 2,
-      "provider": 0,
-      "other": 0
-    },
-    "coverage": 0.91,
     "problems": [
       {
-        "id": 12,
+        "id": 31,
         "from": 1791548400000,
         "ongoing": true,
-        "kind": "lan",
-        "who": "home",
-        "where": "Most likely the home network (Wi-Fi or router)",
-        "side": "home",
+        "kind": "upstream",
+        "who": "beyond",
+        "where": "Further out on the internet",
+        "side": "other",
         "level": "bad",
-        "confidence": "likely",
-        "text": "The problem was most likely in the home network (Wi-Fi or router).",
-        "peak_loss": 0.35,
+        "text": "Your Wi-Fi, router and provider's nearest equipment looked fine. The problem was further out on the internet.",
+        "peak_loss": 0.6,
         "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
-      },
-      {
-        "id": 11,
-        "from": 1791360300000,
-        "to": 1791360660000,
-        "kind": "lan",
-        "who": "home",
-        "where": "Most likely the home network (Wi-Fi or router)",
-        "side": "home",
-        "level": "bad",
-        "confidence": "likely",
-        "text": "The problem was most likely in the home network (Wi-Fi or router).",
-        "peak_loss": 0.4,
-        "details": "#v=calls\u0026from=1791358500000\u0026to=1791362460000\u0026o=1"
       }
     ],
     "work": {
@@ -244,50 +201,52 @@
   },
   "live": {
     "part": "live",
-    "voice": "public",
     "at": 1791549000000,
     "answer": {
       "level": "bad",
-      "who": "home",
+      "who": "beyond",
       "confidence": "sure",
-      "kind": "lan",
+      "kind": "upstream",
       "calls": "unusable",
       "since": 1791548400000,
-      "headline": "There's a problem in the home network",
-      "cause": "The Wi-Fi or router is losing data. The provider looks fine from here.",
-      "try": [],
+      "headline": "Many websites and apps are hard to reach",
+      "cause": "Your Wi-Fi and your provider's nearest equipment look fine. The problem is further out: either your provider's links to the rest of the internet, or a wider outage.",
+      "try": [
+        "There's usually nothing to fix at home.",
+        "If it lasts, check your provider's status page, or make a report."
+      ],
       "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
       "fact_at": 1791548700000,
-      "announce": "There's a problem in the home network. The Wi-Fi or router is losing data."
+      "announce": "Many websites and apps are hard to reach. Your Wi-Fi and your provider's nearest equipment look fine."
     },
     "path": [
       {
         "id": "device",
-        "label": "Monitoring device",
+        "label": "This device",
         "state": "ok",
         "words": "OK"
       },
       {
         "id": "router",
-        "label": "Home router",
-        "state": "warn",
-        "words": "Dropping some data",
-        "blamed": true,
-        "culprit": "Problem is here",
-        "tooltip": "The router that connects the home to the internet."
+        "label": "Your router",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The box that connects your home to the internet."
       },
       {
         "id": "provider",
-        "label": "Provider network",
-        "state": "affected",
-        "words": "Affected",
-        "tooltip": "The provider's first piece of equipment past the home router."
+        "label": "Your provider",
+        "state": "ok",
+        "words": "OK",
+        "tooltip": "The first piece of your internet provider's equipment, just outside your home."
       },
       {
         "id": "internet",
-        "label": "The wider internet",
-        "state": "affected",
-        "words": "Affected",
+        "label": "The internet",
+        "state": "bad",
+        "words": "Not answering",
+        "blamed": true,
+        "culprit": "Problem is here",
         "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
       },
       {
@@ -295,7 +254,7 @@
         "label": "Apps \u0026 websites",
         "state": "affected",
         "words": "Calls, work apps and websites affected",
-        "tooltip": "The apps and websites checked from this connection."
+        "tooltip": "The apps and websites we check for you."
       }
     ],
     "tiles": [
@@ -312,15 +271,9 @@
         ],
         "more": 4,
         "affected": [
-          "Teams",
-          "Google Meet",
-          "Zoom",
-          "Slack",
-          "Discord",
-          "WhatsApp",
-          "Webex"
+          "Google Meet"
         ],
-        "ok": 0,
+        "ok": 6,
         "total": 7,
         "details": "#v=calls"
       },
@@ -387,7 +340,7 @@
         "level": "checking",
         "state": "cant_tell",
         "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "meet",
@@ -402,7 +355,7 @@
         "level": "checking",
         "state": "cant_tell",
         "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "slack",
@@ -410,7 +363,7 @@
         "level": "checking",
         "state": "cant_tell",
         "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "discord",
@@ -418,7 +371,7 @@
         "level": "checking",
         "state": "cant_tell",
         "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "whatsapp",
@@ -426,7 +379,7 @@
         "level": "checking",
         "state": "cant_tell",
         "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "webex",
@@ -434,9 +387,9 @@
         "level": "checking",
         "state": "cant_tell",
         "label": "Can't tell right now",
-        "note": "This app can't be checked while the connection has a problem."
+        "note": "We can't check this app while your connection has a problem."
       }
     ],
-    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so they can't be tested ahead of time."
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

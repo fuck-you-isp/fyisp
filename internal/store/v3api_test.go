@@ -309,7 +309,7 @@ func TestReports(t *testing.T) {
 			if err := st.SaveReport(ctx, m1, html); err != nil {
 				t.Fatal(err)
 			}
-			m2 := model.ReportMeta{ID: strings.Repeat("Z", 64), Title: "big", Public: true}
+			m2 := model.ReportMeta{ID: strings.Repeat("Z", 64), Title: "big"}
 			big := testHTML(MaxReportBytes)
 			if err := st.SaveReport(ctx, m2, big); err != nil {
 				t.Fatal(err)
@@ -319,7 +319,7 @@ func TestReports(t *testing.T) {
 				t.Fatalf("Reports %+v %v", list, err)
 			}
 			want1 := model.ReportMeta{ID: m1.ID, Title: "Week 36", From: t0, To: t0.Add(24 * time.Hour), Created: t0.Add(25 * time.Hour), Bytes: len(html)}
-			if list[1] != want1 || !list[0].Created.Equal(now) || list[0].Bytes != MaxReportBytes || !list[0].Public {
+			if list[1] != want1 || !list[0].Created.Equal(now) || list[0].Bytes != MaxReportBytes {
 				t.Fatalf("metas %+v", list)
 			}
 			got, gotHTML, err := st.Report(ctx, m1.ID)
@@ -334,21 +334,12 @@ func TestReports(t *testing.T) {
 					t.Fatalf("Report(%q): %v", id, err)
 				}
 			}
-			if err := st.SetReportPublic(ctx, m1.ID, true); err != nil {
-				t.Fatal(err)
-			}
-			if got, _, _ := st.Report(ctx, m1.ID); !got.Public {
-				t.Fatal("not public")
-			}
-			if err := st.SetReportPublic(ctx, "missing1", true); !errors.Is(err, ErrNotFound) {
-				t.Fatalf("public missing: %v", err)
-			}
 			// Saving the same ID replaces it.
 			m1.Title = "Week 36 v2"
 			if err := st.SaveReport(ctx, m1, html[:1000]); err != nil {
 				t.Fatal(err)
 			}
-			if got, h, _ := st.Report(ctx, m1.ID); got.Title != "Week 36 v2" || got.Public || len(h) != 1000 {
+			if got, h, _ := st.Report(ctx, m1.ID); got.Title != "Week 36 v2" || len(h) != 1000 {
 				t.Fatalf("replace: %+v %d", got, len(h))
 			}
 			if err := st.DeleteReport(ctx, m2.ID); err != nil {

@@ -7,7 +7,7 @@
 // no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, MODE, tzParam } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, tzParam } from './core.js';
 import { clock } from './home.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -24,13 +24,13 @@ const KICKER = /** @type {Object<string,string>} */ ({ early_sign: 'Early sign',
  * household, behind another router). The server already writes the far
  * regions into the sentence, the slower days into the evidence and the
  * far end's evening into the sentence; each is added here only when it
- * is not, so nothing says it twice. publicVoice for the report.
- * @param {SpeedSummary} d @param {import('./speed.js').SpeedFinding} f @param {boolean} publicVoice
+ * is not, so nothing says it twice.
+ * @param {SpeedSummary} d @param {import('./speed.js').SpeedFinding} f
  */
-export function findingExtras(d, f, publicVoice) {
+function findingExtras(d, f) {
   const lines = [];
-  const caveat = publicVoice ? f.caveat_public || f.caveat : f.caveat;
-  const said = `${publicVoice ? f.text_public : f.text} ${f.evidence || ''} ${caveat || ''}`;
+  const caveat = f.caveat;
+  const said = `${f.text} ${f.evidence || ''} ${caveat || ''}`;
   const evening = f.hours && f.hours.length && f.hours.every((x) => x >= 17 || x <= 1);
   if (f.slow_days && f.day_count && !/Slower on \d/.test(said)) lines.push(`Slower at those hours on ${f.slow_days} of ${f.day_count} ${evening ? 'evenings' : 'days'} with tests.`);
   if (f.far_regions && f.far_regions.length && !/too far away/.test(said)) {
@@ -64,14 +64,14 @@ function hourShort(/** @type {number} */ hr) {
   return hr === 0 ? '12a' : hr === 12 ? '12p' : String(n);
 }
 /** The slower hours to mark: the finding's when it found a dip, else the pattern's. @param {SpeedSummary} d */
-export function dipHoursOf(d) {
+function dipHoursOf(d) {
   const f = d.finding;
   // Only a finding with hours: not while still learning, and not for mixed or nothing.
   if (f) return f.hours && f.hours.length && !['nothing', 'mixed', 'not_enough_data'].includes(f.case) ? f.hours : [];
   return d.pattern ? d.pattern.hours : [];
 }
 /** "8 to 11 pm" for a run of hours (the end is the last hour's end). @param {number[]} hours */
-export function hourRange(hours) {
+function hourRange(hours) {
   hours = hours || [];
   if (!hours.length) return '';
   const a = hours[0], b = (hours[hours.length - 1] + 1) % 24;
@@ -102,12 +102,21 @@ function resultWord(t) {
 }
 /**
  * A lower bound: the direction was still speeding up when it reached its
- * 100 MB limit (A2, *_lower_bound), so the speed was at least this.
+ * 10 seconds (A2, *_lower_bound), so the speed was at least this.
  * @param {SpeedTest} t @param {'down'|'up'} dir
  */
 export function lowerBound(t, dir) { return /** @type {any} */ (t)[`${dir}_lower_bound`] === true; }
-const LB_MORE = 'Still speeding up when it reached its 100 MB limit, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.';
-const LB_OUT = 'This test reached its 100 MB limit while still speeding up, so it shows only a lower limit and isn’t used in the time-of-day pattern.';
+/**
+ * When the test stopped: every test runs up to 10 seconds each way. Older
+ * rows that stopped at the old data limit (down_short / up_short) say so
+ * neutrally.
+ * @param {SpeedTest} t
+ */
+function stopWords(t) { const x = /** @type {any} */ (t); return x.cap === 'bytes' || (!x.cap && (t.down_short || t.up_short)) ? 'when the test stopped' : 'when its 10 seconds ran out'; }
+/** @param {SpeedTest} t */
+function lbMore(t) { return `Still speeding up ${stopWords(t)}, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.`; }
+/** @param {SpeedTest} t */
+function lbOut(t) { return `This test was still speeding up ${stopWords(t)}, so it shows only a lower limit and isn’t used in the time-of-day pattern.`; }
 /** A server or region left out because most tests to it end while still speeding up (A2). */
 const TOO_FAST = 'Too fast to measure from here';
 /** @param {SpeedRow} r @param {boolean} region */
@@ -125,8 +134,8 @@ function tooFastWhy(r, region) {
 /** Whether a lower bound counts as at least normal: the server's *_lb_counted (omitted when false). @param {SpeedTest} t @param {'down'|'up'} dir */
 function lbCounted(t, dir) { return /** @type {any} */ (t)[`${dir}_lb_counted`] === true; }
 /** The "% of normal" cell of a lower bound: "at least normal", or "not counted", muted either way. @param {boolean} atLeast */
-function lbCell(atLeast) {
-  const why = atLeast ? LB_MORE : LB_OUT;
+function lbCell(atLeast, /** @type {SpeedTest} */ t) {
+  const why = atLeast ? lbMore(t) : lbOut(t);
   return h('td', { class: 'num sp-nc', 'data-k': '% of normal', title: why }, atLeast ? 'at least normal' : 'not counted', h('span', { class: 'sr-only', text: `: ${why}` }));
 }
 export function readingCell(k, b, lb, mark) {
@@ -215,10 +224,10 @@ export class SpeedMap {
     const failing = ok + bad >= 20 && bad / (ok + bad) >= 0.3;
     const unreachable = rows.reduce((s, r) => s + r.unreachable, 0);
     this.foundEl.replaceChildren(
-      h('h2', { id: 'sp-found-h', text: MODE === 'public' ? 'What the tests show' : 'What we found' }),
+      h('h2', { id: 'sp-found-h', text: 'What we found' }),
       kick ? h('p', { class: 'sp-kicker', text: kick }) : '',
       h('p', { class: 'sp-found-text', text }),
-      f ? findingExtras(d, f, false) : '',
+      f ? findingExtras(d, f) : '',
       f && f.evidence ? h('p', { class: 'muted small', text: f.evidence })
         : ok ? h('p', { class: 'muted small', text: `Based on ${ok.toLocaleString()} test${ok === 1 ? '' : 's'} over ${d.days} days${d.exclude_fallback ? ', without backup servers' : ''}.` }) : '',
       failing ? h('p', { class: 'notice warn', text: unreachable > bad * 0.8
@@ -497,7 +506,7 @@ export class SpeedMap {
       r.why ? h('p', { class: 'muted small', text: `Tested because: ${r.why}` }) : '',
       /** @type {any} */ (r).too_fast ? h('p', { class: 'sp-note' }, h('b', { text: `${TOO_FAST}. ` }), tooFastWhy(r, isRegion)) : '',
       r.note ? h('p', { class: 'notice warn', text: r.note }) : '',
-      h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}${r.learning && this.unit === 'pct' ? ' (learning: its normal isn’t known yet)' : ''}` }),
+      h('h3', { text: `${this.dir === 'down' ? 'Download' : 'Upload'} by hour of day, ${this.unit === 'pct' ? '% of normal' : 'Mbit/s'}${r.learning && !/** @type {any} */ (r).too_fast && this.unit === 'pct' ? ' (learning: its normal isn’t known yet)' : ''}` }),
       h('div', { class: 'sp-chart' }, byHour),
       legend,
       h('p', { class: 'muted small', text: 'One mark per test; the line is each hour’s median.' + (dipHours.length ? ` Shaded: ${hourRange(dipHours)}.` : '') }),
@@ -591,20 +600,20 @@ export class SpeedMap {
       const x = /** @type {any} */ (t);
       const shortWin = !lbDown && !lbUp && (t.down_short || t.up_short) && x.win_ms ? `short test (${(x.win_ms / 1000).toFixed(1)} s)` : '';
       const cancelled = t.outcome === 'cancelled'
-        ? (MODE === 'local' && x.cancelled_by === 'owner' ? `Stopped by you at ${clock(t.end)}.` : `Cancelled at ${clock(t.end)}.`) : '';
+        ? (x.cancelled_by === 'owner' ? `Stopped by you at ${clock(t.end)}.` : `Cancelled at ${clock(t.end)}.`) : '';
       const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More', 'aria-label': `More about the ${clock(t.start)} test (${t.label})` }),
         h('dl', {},
           ...[cancelled ? ['Cancelled', cancelled] : null,
-            lbDown || lbUp ? ['Speed', lbDown && !lbCounted(t, 'down') ? LB_OUT : LB_MORE] : null,
+            lbDown || lbUp ? ['Speed', lbDown && !lbCounted(t, 'down') ? lbOut(t) : lbMore(t)] : null,
             ['Attempts', String(t.attempts)],
-            MODE === 'local' && /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
+            /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
             ['Retransmits', t.down_retrans != null || t.up_retrans != null ? `${t.down_retrans ?? '—'} down, ${t.up_retrans ?? '—'} up` : 'not known'],
-            ['Test length', shortWin || (t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up${t.down_short || t.up_short ? ' (hit the 100 MB cap)' : ''}` : `${Math.round((t.end - t.start) / 1000)} s`)],
+            ['Test length', shortWin || (t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up` : `${Math.round((t.end - t.start) / 1000)} s`)],
             t.bytes ? ['Data', `${Math.round(t.bytes / 1e6)} MB`] : null,
             ['Delay through your provider', t.latency?.edge ? `${lat(t.latency.edge.idle, t.latency.edge.down)} downloading; ${lat(t.latency.edge.idle, t.latency.edge.up)} uploading` : 'not known'],
             ['Router delay', t.latency?.gateway ? `${lat(t.latency.gateway.idle, t.latency.gateway.down)} downloading` : t.idle_gateway_ms != null ? `${Math.round(t.idle_gateway_ms)} → ${Math.round(/** @type {number} */ (t.loaded_gateway_ms))} ms` : 'not known'],
             t.conn && t.conn !== 'unknown' ? ['Connection', t.conn === 'wifi' ? 'Wi-Fi' : 'cable'] : null,
-            MODE === 'local' && t.handoff ? ['Handed off to', handoffWords(t.handoff)] : null,
+            t.handoff ? ['Handed off to', handoffWords(t.handoff)] : null,
             t.fallback && t.region ? ['Why a backup', fallbackWhy(d, t)] : null]
             .filter((x) => !!x).flatMap((x) => [h('dt', { text: /** @type {string[]} */ (x)[0] }), h('dd', { text: /** @type {string[]} */ (x)[1] })])));
       return h('tr', { class: bad ? 'bad' : '' },
@@ -615,7 +624,7 @@ export class SpeedMap {
         readingCell(cd.all ? 'Down (at least)' : 'Down', t.down_bps, lbDown, !cd.all),
         readingCell(cu.all ? 'Up (at least)' : 'Up', t.up_bps, lbUp, !cu.all),
         // A lower bound counts as at least normal only when the server says so (down_lb_counted); otherwise it's left out: never slow.
-        lbDown && !bad ? lbCell(lbCounted(t, 'down'))
+        lbDown && !bad ? lbCell(lbCounted(t, 'down'), t)
           : h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));
@@ -626,8 +635,9 @@ export class SpeedMap {
           type: 'button', text: /** @type {string} */ (l), 'aria-pressed': String(this.problems === p), onclick: () => { this.problems = /** @type {boolean} */ (p); this.shown = 15; this.renderRow(); },
         })))),
       // One note above the table: all lower bounds, or a mix.
-      cd.all || cu.all ? h('p', { class: 'muted small', text: 'Your line is faster than these tests can fully measure: each one stops after 100 MB in each direction. Treat the numbers as ‘at least’.' })
-        : cd.some || cu.some ? h('p', { class: 'muted small', text: '≥ means the test stopped at its 100 MB limit, so the speed was at least this.' }) : '',
+      // Every test runs up to 10 seconds each way.
+      cd.all || cu.all ? h('p', { class: 'muted small', text: `Your line is faster than these tests can fully measure in 10 seconds each way. Treat the numbers as ‘at least’.` })
+        : cd.some || cu.some ? h('p', { class: 'muted small', text: '≥ means the test was still speeding up when it stopped, so the speed was at least this.' }) : '',
       rows.length ? h('table', { class: 'sp-tt' },
         h('thead', {}, h('tr', {}, ...['When', 'Region', 'Server', cd.all ? 'Down (Mbit/s, at least)' : 'Down (Mbit/s)', cu.all ? 'Up (Mbit/s, at least)' : 'Up (Mbit/s)', '% of normal', 'Result', ''].map((x, i) => h('th', { scope: 'col', class: i >= 3 && i <= 5 ? 'num' : '', text: x })))),
         h('tbody', {}, ...rows)) : h('p', { class: 'muted', text: this.problems ? 'No problems in this span.' : 'No tests in this span yet.' }),
@@ -662,7 +672,7 @@ export class SpeedMap {
       down_median_bps: null, down_p10_bps: null, up_median_bps: null, up_p10_bps: null, best_down_bps: null, dip: null, hours: [] });
     const list = regions ? d.per_region : d.servers.map((x) => have.get(x.id) || empty(x));
     const srv = new Map(d.servers.map((x) => [x.id, x]));
-    const owner = !regions && MODE === 'local' && canWrite();
+    const owner = !regions && canWrite();
     /** @type {[string,string,(r:SpeedRow)=>number|string|null,(r:SpeedRow)=>string][]} */
     const cols = [
       ['label', regions ? 'Region' : 'Server', (r) => r.label, (r) => r.label],

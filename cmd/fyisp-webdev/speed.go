@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"math"
 	"math/rand/v2"
@@ -45,8 +44,7 @@ func newFakeSpeed(ctx context.Context, now time.Time, bf time.Duration, log *slo
 			_ = st.SaveSpeedTest(ctx, &x)
 		}
 	}
-	public := true // the share link may queue tests here
-	s := speedtest.New(speedtest.Options{Catalog: cat, Store: st, Log: log, Public: &public, Fake: &speedtest.Fake{Run: n.run, RTT: n.rtt}})
+	s := speedtest.New(speedtest.Options{Catalog: cat, Store: st, Log: log, Fake: &speedtest.Fake{Run: n.run, RTT: n.rtt}})
 	go func() { _ = s.Run(ctx) }()
 	return s
 }
@@ -121,7 +119,6 @@ func (n *fakeNet) result(at time.Time, reg speedtest.Region, chain []speedtest.S
 	t.DownRetrans, t.UpRetrans = pi(int64(n.float()*400)), pi(int64(n.float()*60))
 	t.DownSecs, t.UpSecs = 3+n.float()*2, 3+n.float()*2
 	t.Bytes = int64((down*t.DownSecs + up*t.UpSecs) / 8 * 1.2)
-	t.DownShort = down*t.DownSecs/8 > speedtest.MaxBytes
 	t.CappedByServer = sv.CapacityMbps > 0 && down >= 0.9*sv.CapacityMbps*1e6
 	t.IdleGatewayMs, t.LoadedGatewayMs = pf(1+n.float()), pf(1.5+n.float())
 	ls := func(p50, spread, loss float64) *model.LoadStats {
@@ -137,9 +134,6 @@ func (n *fakeNet) result(at time.Time, reg speedtest.Region, chain []speedtest.S
 		t.Handoff = &h
 	}
 	t.Extra = `{"ramp_ms":[700,500]}`
-	if t.DownShort { // capped, levelled off (A2's estimator)
-		t.Extra = fmt.Sprintf(`{"ramp_ms":[700,500],"rate_method":["peak90",""],"win_ms":[%.0f,0]}`, t.DownSecs*1000)
-	}
 	return t
 }
 

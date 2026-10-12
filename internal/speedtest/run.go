@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,9 @@ type Extra struct {
 	RateMethod [2]string  `json:"rate_method,omitzero"`
 	WinMs      [2]float64 `json:"win_ms,omitzero"`
 	LowerBound [2]bool    `json:"lower_bound,omitzero"`
+	// Cap is the limit tests ran under: "time" (v0.7.2: up to 10 s each
+	// way); "" for v0.7.0/v0.7.1 rows (100 MB each way).
+	Cap string `json:"cap,omitempty"`
 	// CancelledBy (a cancelled test): "owner" when the owner stopped it
 	// (the cancel's cause); "" otherwise (a shutdown).
 	CancelledBy string `json:"cancelled_by,omitempty"`
@@ -103,8 +107,7 @@ func (s *Scheduler) slotJob(t target) Job {
 	return j
 }
 
-// pause runs before each queued job (QueueOptions.Pause, never charged to
-// the share link's time cap: the line is neither tested nor masked then).
+// pause runs before each queued job (QueueOptions.Pause).
 // A sweep's tests would blind the monitoring for minutes back to back: it
 // leaves the probes SweepGap of unmasked time after the last window's
 // tail. StopCancelled: ctx ended while waiting.
@@ -112,7 +115,7 @@ func (s *Scheduler) slotJob(t target) Job {
 // A sweep also stops (StopUnreachable) after SweepUnreachable unreachable
 // servers in a row: during an outage it would only mask the monitoring.
 func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) string {
-	if trigger != "sweep" && trigger != "public_sweep" {
+	if trigger != "sweep" {
 		return ""
 	}
 	s.mu.Lock()
@@ -133,9 +136,9 @@ func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) string {
 	return ""
 }
 
-// execJob runs one queued test (QueueOptions.Exec): the stored test's ID,
-// whether it was saved, and the bytes on the wire, every attempt's.
-func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool, int64) {
+// execJob runs one queued test (QueueOptions.Exec): the stored test's ID
+// and whether it was saved.
+func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, bool) {
 	region, steps := j.Region, []Step(nil)
 	if j.steps != nil {
 		region, steps = j.steps(ctx)
@@ -150,13 +153,13 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 	}
 	if n := len(steps); n > 0 {
 		if steps = s.filter(steps, trigger == "schedule"); len(steps) == 0 {
-			return 0, false, 0 // every server skipped or resting: no test, not a failure
+			return 0, false // every server skipped or resting: no test, not a failure
 		}
 	}
-	t, saved, bytes := s.runSteps(ctx, region, steps, trigger)
+	t, saved, _ := s.runSteps(ctx, region, steps, trigger)
 	s.mu.Lock()
 	switch {
-	case trigger != "sweep" && trigger != "public_sweep":
+	case trigger != "sweep":
 		s.sweepUnreach = 0
 	case t != nil && t.Outcome == model.SpeedUnreachable:
 		s.sweepUnreach++
@@ -165,9 +168,9 @@ func (s *Scheduler) execJob(ctx context.Context, j Job, trigger string) (int64, 
 	}
 	s.mu.Unlock()
 	if t == nil {
-		return 0, false, bytes
+		return 0, false
 	}
-	return t.ID, saved, bytes
+	return t.ID, saved
 }
 
 // live is the running test's direction and server and its expected end
@@ -282,6 +285,7 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
 	var x Extra
+	x.Cap = "time"
 	t.Conn = model.ConnUnknown
 	if s.o.Conn != nil {
 		t.Conn = s.o.Conn()
@@ -306,14 +310,13 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	s.o.Windows.Begin(t.Start)
 	var used Server
 	var ip netip.Addr // the address the measuring server was dialled at (checked)
-	left := int64(SlotMaxBytes)
 	for i, st := range steps {
 		if i > 0 && s.o.Now().Sub(t.Start) >= SlotBudget {
 			break
 		}
 		t.Server, t.FallbackLevel, t.Fallback, t.Port, used = st.Server.ID, st.Level, st.Level != FallbackNone, 0, st.Server
 		ip = netip.Addr{}
-		s.testServer(sctx, st.Server, &t, &x, lr, &ip, &left)
+		s.testServer(sctx, st.Server, &t, &x, lr, &ip)
 		if trigger == "schedule" && sctx.Err() == nil {
 			s.noteBusy(st.Server.ID, t.Outcome == model.SpeedBusy)
 		}
@@ -531,22 +534,37 @@ const (
 // Baseline is the server's baseline (down, up) as of at, false while
 // learning.
 func Baseline(ts []model.SpeedTest, server string, at time.Time) (down, up float64, ok bool) {
-	var d, u []float64
+	// Rows from before the time cap (v0.7.0/v0.7.1) that stopped at 100
+	// MB read low on far servers: once a server has any, its normal waits
+	// for BaselineMin time-capped rows and leaves those out.
+	var d, u, dt, ut []float64
+	byteCapped := false
 	for _, t := range ts {
 		if t.Server != server || t.Trigger != "schedule" || t.Outcome != model.SpeedOK || t.FallbackLevel != FallbackNone ||
 			t.CappedByServer || t.Start.Before(at.Add(-BaselineSpan)) || !t.Start.Before(at) {
 			continue
 		}
 		var x Extra // capped directions: v0.7.0 ones and lower bounds stay out
-		if t.DownShort || t.UpShort {
+		if mayBound(&t) || strings.Contains(t.Extra, `"cap"`) {
 			x = ParseExtra(t.Extra)
 		}
+		timeCap := x.Cap == "time"
+		if !timeCap && (t.DownShort || t.UpShort) {
+			byteCapped = true
+		}
 		if t.DownBps != nil && baselineRate(t.DownShort, &x, 0) {
-			d = append(d, *t.DownBps)
+			if d = append(d, *t.DownBps); timeCap {
+				dt = append(dt, *t.DownBps)
+			}
 		}
 		if t.UpBps != nil && baselineRate(t.UpShort, &x, 1) {
-			u = append(u, *t.UpBps)
+			if u = append(u, *t.UpBps); timeCap {
+				ut = append(ut, *t.UpBps)
+			}
 		}
+	}
+	if byteCapped {
+		d, u = dt, ut
 	}
 	if len(d) < BaselineMin {
 		return 0, 0, false
@@ -583,9 +601,7 @@ func (s *Scheduler) score(ctx context.Context, t *model.SpeedTest) {
 
 // testServer runs download then upload against sv.
 // It probes latency under load during each direction (lr nil: none).
-// left is the slot's bytes still allowed (SlotMaxBytes over every server
-// and retry).
-func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest, x *Extra, lr *loadRun, ip *netip.Addr, left *int64) {
+func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTest, x *Extra, lr *loadRun, ip *netip.Addr) {
 	port := 0
 	for i, dir := range []Direction{Download, Upload} {
 		s.setLive(dir.String(), sv.ID)
@@ -597,7 +613,7 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 		if lr != nil {
 			stop = lr.probe(ctx)
 		}
-		res, p, attempts, outcome, wire := s.direction(ctx, sv, dir, port, t.Start, left)
+		res, p, attempts, outcome, wire := s.direction(ctx, sv, dir, port, t.Start)
 		if stop != nil {
 			if smp := stop(); dir == Download {
 				lr.down = smp
@@ -624,7 +640,7 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			re = &r
 		}
 		x.RampMs[i] = round2(float64(res.Ramp) / float64(time.Millisecond))
-		if res.CappedByBytes {
+		if res.RateMethod != "" { // capped by bytes, or by time
 			x.RateMethod[i], x.LowerBound[i] = res.RateMethod, res.LowerBound
 			x.WinMs[i] = round2(float64(res.Elapsed) / float64(time.Millisecond))
 		}
@@ -644,7 +660,7 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 // try. A timeout or DNS failure (ErrUnreachable) and protocol errors end
 // it at once.
 // wire is every attempt's bytes on the wire.
-func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time, left *int64) (res Result, used, attempts int, outcome string, wire int64) {
+func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, port int, slotStart time.Time) (res Result, used, attempts int, outcome string, wire int64) {
 	tried := map[int]bool{}
 	tries := MaxAttempts
 	if sv.SinglePort() {
@@ -655,20 +671,14 @@ func (s *Scheduler) direction(ctx context.Context, sv Server, dir Direction, por
 			port = s.randomPort(sv, tried)
 		}
 		tried[port] = true
-		if *left <= 0 {
-			s.o.Log.Info("speed test: the slot's data cap is used up", "server", sv.ID)
-			return Result{}, port, attempt - 1, model.SpeedFailed, wire
-		}
 		var err error
 		res, err = s.o.run(ctx, Config{
 			Addr: net.JoinHostPort(sv.Host, strconv.Itoa(port)), Direction: dir, Timeout: DirTimeout,
-			Duration: MaxMeasure, MinDuration: MinMeasure, MaxBytes: min(MaxBytes, *left), Check: sv.check, Log: s.o.Log,
+			Duration: MaxMeasure, MinDuration: MinMeasure, Backstop: TimeBackstop, Check: sv.check, Log: s.o.Log,
 		})
-		w := max(res.WireBytes, res.TotalBytes, res.Bytes)
-		wire += w
-		*left -= w
+		wire += max(res.WireBytes, res.TotalBytes, res.Bytes)
 		if res.Overrun || errors.Is(err, ErrOverrun) {
-			s.o.Log.Info("speed test: the server kept sending past the byte cap; cut", "server", sv.ID, "direction", dir.String())
+			s.o.Log.Info("speed test: the server kept sending past the time cap; cut", "server", sv.ID, "direction", dir.String())
 		}
 		switch {
 		case err == nil:

@@ -402,7 +402,7 @@ const pageTmpl = `<!doctype html>
 <tbody>{{range .Rows}}<tr><td>{{.Name}}</td><td>{{.Server}}</td><td class="n">{{.Tests}}</td><td class="n">{{.Down}}</td><td class="n">{{.DownP10}}</td><td class="n">{{.Up}}</td><td class="t">{{.Dip}}</td><td>{{.Trouble}}</td></tr>
 {{end}}</tbody>
 </table></div>
-<p class="note">Probes that ran during a speed test measure the test, not your connection: they are left out everywhere in this report.{{if .Origins}} {{.Origins}}{{end}}{{if .TooFast}} Servers that this line reaches faster than a 100 MB test can measure are left out of the time-of-day comparison.{{end}}</p>
+<p class="note">Probes that ran during a speed test measure the test, not your connection: they are left out everywhere in this report.{{if .Origins}} {{.Origins}}{{end}}{{if .TooFast}} Servers that this line reaches faster than these tests can measure are left out of the time-of-day comparison.{{end}}</p>
 </section>
 {{- end}}
 {{- if .HasNotes}}
@@ -424,7 +424,7 @@ const pageTmpl = `<!doctype html>
 <h2>How to read this report</h2>
 <dl class="kinds">
 <dt>ISP problem</dt><dd>Your router answered normally, but the first router on your ISP's side did not: the fault is in your ISP's access network.</dd>
-<dt>Internet problem beyond your ISP</dt><dd>Your router and your ISP's first router were fine, but the big anycast resolvers (Cloudflare, Google, Quad9) and most services failed: your ISP's upstream links or peering.</dd>
+<dt>Internet problem beyond your ISP</dt><dd>Your router and your ISP's first router were fine, but the big anycast resolvers (Cloudflare, Google) and most services failed: your ISP's upstream links or peering.</dd>
 <dt>Home network problem</dt><dd>Your own router did not answer reliably: Wi-Fi, cables or the router. Your internet provider looked fine from there.</dd>
 <dt>DNS problem</dt><dd>The network worked but name lookups failed widely: usually the router's or the ISP's DNS resolver.</dd>
 <dt>Some services down</dt><dd>Only some services failed: their problem, not your connection's.</dd>

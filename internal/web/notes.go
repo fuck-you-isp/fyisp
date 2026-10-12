@@ -59,7 +59,8 @@ func isNotFound(err error) bool {
 	return false
 }
 
-// noteJSON is one annotation as served. Created/Updated are local only.
+// noteJSON is one annotation as served. Public: the note goes into
+// redacted reports.
 type noteJSON struct {
 	ID      int64      `json:"id"`
 	At      time.Time  `json:"at"`
@@ -70,21 +71,19 @@ type noteJSON struct {
 	Updated *time.Time `json:"updated,omitempty"`
 }
 
-func toNoteJSON(a model.Annotation, public bool) noteJSON {
+func toNoteJSON(a model.Annotation) noteJSON {
 	j := noteJSON{ID: a.ID, At: a.At.UTC(), Text: a.Text, Public: a.Public}
 	if !a.End.IsZero() {
 		e := a.End.UTC()
 		j.End = &e
 	}
-	if !public {
-		if !a.Created.IsZero() {
-			c := a.Created.UTC()
-			j.Created = &c
-		}
-		if !a.Updated.IsZero() {
-			u := a.Updated.UTC()
-			j.Updated = &u
-		}
+	if !a.Created.IsZero() {
+		c := a.Created.UTC()
+		j.Created = &c
+	}
+	if !a.Updated.IsZero() {
+		u := a.Updated.UTC()
+		j.Updated = &u
 	}
 	return j
 }
@@ -174,7 +173,7 @@ func parseID(s string) (int64, bool) {
 	return n, err == nil && n > 0
 }
 
-// listNotes answers GET /api/annotations?from=&to= (public: public notes only).
+// listNotes answers GET /api/annotations?from=&to=.
 func (s *server) listNotes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if err := checkParams(q, "from", "to"); err != nil {
@@ -187,25 +186,18 @@ func (s *server) listNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	render := func(ctx context.Context) (*cached, error) {
-		list, err := s.d.Annotations.Annotations(ctx, p.from, p.to, s.public)
+		list, err := s.d.Annotations.Annotations(ctx, p.from, p.to, false)
 		if err != nil {
 			return nil, err
 		}
 		out := make([]noteJSON, 0, min(len(list), MaxAnnotations))
 		for _, a := range list {
-			if s.public && !a.Public {
-				continue // never trust the store's filter alone
-			}
 			if len(out) >= MaxAnnotations {
 				break
 			}
-			out = append(out, toNoteJSON(a, s.public))
+			out = append(out, toNoteJSON(a))
 		}
 		return jsonCached(out)
-	}
-	if s.public {
-		s.runCached(w, r, "notes\x00"+p.key, render)
-		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
 	defer cancel()
@@ -221,7 +213,7 @@ func (s *server) listNotes(w http.ResponseWriter, r *http.Request) {
 
 // serveNotes answers /api/annotations and /api/annotations/{id} on the
 // local listener: GET lists, POST adds, PUT replaces, DELETE removes.
-// Writes need the share controls' protections (see controlAllowed).
+// Writes need the write routes' protections (see controlAllowed).
 func (h *localHandler) serveNotes(w http.ResponseWriter, r *http.Request, rest string) {
 	if h.d.Annotations == nil {
 		writeErr(w, r, http.StatusNotFound, "notes are not available")
@@ -302,7 +294,7 @@ func (h *localHandler) writeNote(w http.ResponseWriter, r *http.Request, id int6
 	if a.Updated.IsZero() {
 		a.Updated = h.now()
 	}
-	writeJSON(w, r, code, toNoteJSON(a, false))
+	writeJSON(w, r, code, toNoteJSON(a))
 }
 
 // storeErr writes a store failure: 404 for a missing item, else 500.

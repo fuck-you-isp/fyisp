@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/netip"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -75,59 +74,6 @@ func (f *speedFlag) Set(v string) error {
 	return nil
 }
 
-// optBool is a bool flag that remembers whether it was given.
-type optBool struct {
-	set, on bool
-}
-
-func (b *optBool) String() string {
-	if !b.set {
-		return ""
-	}
-	return strconv.FormatBool(b.on)
-}
-
-func (b *optBool) IsBoolFlag() bool { return true }
-
-func (b *optBool) Set(v string) error {
-	on, err := strconv.ParseBool(v)
-	if err != nil {
-		return fmt.Errorf("want true or false")
-	}
-	b.set, b.on = true, on
-	return nil
-}
-
-// byteSize is a size flag: 50GB, 500MB, 2TB or plain bytes (decimal units).
-type byteSize int64
-
-func (b *byteSize) String() string {
-	if *b == 0 {
-		return ""
-	}
-	return strconv.FormatInt(int64(*b), 10)
-}
-
-func (b *byteSize) Set(v string) error {
-	v = strings.ToUpper(strings.TrimSpace(v))
-	mult := int64(1)
-	for _, u := range []struct {
-		suffix string
-		m      int64
-	}{{"TB", 1e12}, {"GB", 1e9}, {"MB", 1e6}, {"KB", 1e3}, {"B", 1}} {
-		if n, ok := strings.CutSuffix(v, u.suffix); ok {
-			v, mult = strings.TrimSpace(n), u.m
-			break
-		}
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil || f <= 0 {
-		return fmt.Errorf("want a size such as 50GB or 500MB")
-	}
-	*b = byteSize(f * float64(mult))
-	return nil
-}
-
 // checkSpeedFlags settles the mode (--speedtest alone: the default mode, or
 // custom with --speedtest-server) and checks the servers, the regions and
 // the interval floor.
@@ -190,11 +136,6 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 			return nil, nil, nil, err
 		}
 	}
-	if c.speedPublic.set {
-		on := c.speedPublic.on
-		o.Public = &on
-	}
-	o.PublicBudget = int64(c.speedBudget)
 	o.Skip = speedSkips(&c)
 	o.Load = speedtest.NewLoadTap(prof, nil)
 	// Latency under load (ISP edge and gateway), the connection type and
@@ -209,15 +150,6 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 	o.OnResult = sm.Observe
 	return speedtest.New(o), o.Load, o.Windows, nil
 }
-
-// maskedTrace blanks trace hop samples taken during a speed test, like
-// every other probe's.
-type maskedTrace struct {
-	traceSinks
-	mask speedtest.Mask
-}
-
-func (m maskedTrace) Observe(s model.Sample) { m.mask.Observe(s) }
 
 // speedSkips is --speedtest-skip's server IDs.
 func speedSkips(c *config) []string {

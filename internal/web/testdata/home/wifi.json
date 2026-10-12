@@ -1,7 +1,6 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "you",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
@@ -11,16 +10,15 @@
     "bad_from": 1791548400000,
     "bad_to": 1791549000000,
     "level": "bad",
-    "who": "calltraffic",
-    "kind": "udp_degraded",
+    "who": "home",
+    "kind": "lan",
     "headline": "Calls would have broken up",
-    "cause": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers.",
+    "cause": "The problem was most likely your Wi-Fi or router.",
     "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
     "fact_at": 1791548400000
   },
   "history_today": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -37,62 +35,47 @@
         "runs": [
           {
             "from": 1791548400000,
-            "to": 1791548460000,
-            "level": "bad",
-            "who": "calltraffic",
-            "kind": "unusable",
-            "label": "Call traffic",
-            "source": "calls",
-            "text": "Calls were choppy. We didn't see a cause on your side."
-          },
-          {
-            "from": 1791548460000,
             "to": 1791549000000,
-            "level": "warn",
-            "who": "calltraffic",
-            "kind": "udp_degraded",
-            "label": "Call traffic",
+            "level": "bad",
+            "who": "home",
+            "kind": "lan",
+            "label": "Most likely your home network",
             "source": "incident",
-            "incident": 51,
+            "incident": 12,
             "ongoing": true,
-            "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers."
+            "text": "The problem was most likely your Wi-Fi or router."
           }
         ],
         "off": []
       }
     ],
-    "summary": "1 problem today, with the connection calls use. Calls also had 1 other rough patch today.",
+    "summary": "1 problem today, most likely in your home network.",
     "counts": {
       "problems": 1,
-      "home": 0,
+      "home": 1,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
       "app": 0,
-      "calltraffic": 1,
+      "calltraffic": 0,
       "offline": 0,
       "services": 0,
-      "call_patches": 1
+      "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 1
-    },
-    "coverage": 1,
     "problems": [
       {
-        "id": 51,
-        "from": 1791548460000,
+        "id": 12,
+        "from": 1791548400000,
         "ongoing": true,
-        "kind": "udp_degraded",
-        "who": "calltraffic",
-        "where": "The connection calls use",
-        "side": "other",
-        "level": "warn",
-        "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers.",
-        "peak_loss": 0.2,
-        "details": "#v=calls\u0026from=1791546660000\u0026to=1791549000000\u0026o=1"
+        "kind": "lan",
+        "who": "home",
+        "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
+        "peak_loss": 0.35,
+        "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
       }
     ],
     "work": {
@@ -103,7 +86,6 @@
   },
   "history_week": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -149,7 +131,19 @@
         "to": 1791410400000,
         "work_from": 1791356400000,
         "work_to": 1791385200000,
-        "runs": [],
+        "runs": [
+          {
+            "from": 1791360300000,
+            "to": 1791360660000,
+            "level": "bad",
+            "who": "home",
+            "kind": "lan",
+            "label": "Most likely your home network",
+            "source": "incident",
+            "incident": 11,
+            "text": "The problem was most likely your Wi-Fi or router."
+          }
+        ],
         "off": []
       },
       {
@@ -170,62 +164,61 @@
         "runs": [
           {
             "from": 1791548400000,
-            "to": 1791548460000,
-            "level": "bad",
-            "who": "calltraffic",
-            "kind": "unusable",
-            "label": "Call traffic",
-            "source": "calls",
-            "text": "Calls were choppy. We didn't see a cause on your side."
-          },
-          {
-            "from": 1791548460000,
             "to": 1791549000000,
-            "level": "warn",
-            "who": "calltraffic",
-            "kind": "udp_degraded",
-            "label": "Call traffic",
+            "level": "bad",
+            "who": "home",
+            "kind": "lan",
+            "label": "Most likely your home network",
             "source": "incident",
-            "incident": 51,
+            "incident": 12,
             "ongoing": true,
-            "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers."
+            "text": "The problem was most likely your Wi-Fi or router."
           }
         ],
         "off": []
       }
     ],
-    "summary": "1 problem this week, with the connection calls use. Calls also had 1 other rough patch today.",
+    "summary": "2 problems this week, both most likely in your home network.",
     "counts": {
-      "problems": 1,
-      "home": 0,
+      "problems": 2,
+      "home": 2,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
       "app": 0,
-      "calltraffic": 1,
+      "calltraffic": 0,
       "offline": 0,
       "services": 0,
-      "call_patches": 1
+      "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 1
-    },
-    "coverage": 0.91,
     "problems": [
       {
-        "id": 51,
-        "from": 1791548460000,
+        "id": 12,
+        "from": 1791548400000,
         "ongoing": true,
-        "kind": "udp_degraded",
-        "who": "calltraffic",
-        "where": "The connection calls use",
-        "side": "other",
-        "level": "warn",
-        "text": "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers.",
-        "peak_loss": 0.2,
-        "details": "#v=calls\u0026from=1791546660000\u0026to=1791549000000\u0026o=1"
+        "kind": "lan",
+        "who": "home",
+        "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
+        "peak_loss": 0.35,
+        "details": "#v=calls\u0026from=1791546600000\u0026to=1791549000000\u0026o=1"
+      },
+      {
+        "id": 11,
+        "from": 1791360300000,
+        "to": 1791360660000,
+        "kind": "lan",
+        "who": "home",
+        "where": "Most likely your home network (Wi-Fi or router)",
+        "side": "home",
+        "level": "bad",
+        "confidence": "likely",
+        "text": "The problem was most likely your Wi-Fi or router.",
+        "peak_loss": 0.4,
+        "details": "#v=calls\u0026from=1791358500000\u0026to=1791362460000\u0026o=1"
       }
     ],
     "work": {
@@ -236,24 +229,24 @@
   },
   "live": {
     "part": "live",
-    "voice": "you",
     "at": 1791549000000,
     "answer": {
       "level": "bad",
-      "who": "calltraffic",
-      "kind": "udp_degraded",
+      "who": "home",
+      "confidence": "sure",
+      "kind": "lan",
       "calls": "unusable",
-      "since": 1791548460000,
-      "headline": "Calls will break up",
-      "cause": "Browsing looks fine, but the connection calls use is losing bits of sound and video, or delivering them unevenly. We didn't see a cause on your side.",
+      "since": 1791548400000,
+      "headline": "There's a problem in your home network",
+      "cause": "Your Wi-Fi or router is losing data. Your internet provider looks fine from here.",
       "try": [
-        "Use a cable instead of Wi-Fi if you can.",
-        "Pause big downloads or video streams during calls.",
-        "If it lasts, make a report."
+        "Move closer to your router, or plug in a cable.",
+        "Restart the router.",
+        "If other people are streaming or downloading, try again when they stop."
       ],
       "fact": "In the worst minute, about 1 in 8 bits of sound were lost.",
       "fact_at": 1791548700000,
-      "announce": "Calls will break up. Browsing looks fine, but the connection calls use is losing bits of sound and video, or delivering them unevenly."
+      "announce": "There's a problem in your home network. Your Wi-Fi or router is losing data."
     },
     "path": [
       {
@@ -265,29 +258,31 @@
       {
         "id": "router",
         "label": "Your router",
-        "state": "ok",
-        "words": "OK",
+        "state": "warn",
+        "words": "Dropping some data",
+        "blamed": true,
+        "culprit": "Problem is here",
         "tooltip": "The box that connects your home to the internet."
       },
       {
         "id": "provider",
         "label": "Your provider",
-        "state": "ok",
-        "words": "OK",
+        "state": "affected",
+        "words": "Affected",
         "tooltip": "The first piece of your internet provider's equipment, just outside your home."
       },
       {
         "id": "internet",
         "label": "The internet",
-        "state": "ok",
-        "words": "OK",
+        "state": "affected",
+        "words": "Affected",
         "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
       },
       {
         "id": "apps",
         "label": "Apps \u0026 websites",
-        "state": "bad",
-        "words": "Calls affected",
+        "state": "affected",
+        "words": "Calls, work apps and websites affected",
         "tooltip": "The apps and websites we check for you."
       }
     ],
@@ -305,41 +300,62 @@
         ],
         "more": 4,
         "affected": [
-          "Google Meet"
+          "Teams",
+          "Google Meet",
+          "Zoom",
+          "Slack",
+          "Discord",
+          "WhatsApp",
+          "Webex"
         ],
-        "ok": 6,
+        "ok": 0,
         "total": 7,
         "details": "#v=calls"
       },
       {
         "id": "work",
         "title": "Work apps",
-        "level": "good",
-        "state": "working",
-        "label": "Working",
+        "level": "affected",
+        "state": "down",
+        "label": "Affected by the problem above",
         "names": [
           "Outlook",
           "Microsoft 365",
           "Microsoft sign-in"
         ],
         "more": 3,
-        "ok": 6,
+        "affected": [
+          "Outlook",
+          "Microsoft 365",
+          "Microsoft sign-in",
+          "Gmail",
+          "Google Docs",
+          "Google Drive"
+        ],
+        "ok": 0,
         "total": 6,
         "details": "#v=o\u0026ot=work"
       },
       {
         "id": "web",
         "title": "Websites",
-        "level": "good",
-        "state": "working",
-        "label": "Working",
+        "level": "affected",
+        "state": "down",
+        "label": "Affected by the problem above",
         "names": [
           "Cloudflare",
           "Akamai",
           "Fastly"
         ],
         "more": 2,
-        "ok": 5,
+        "affected": [
+          "websites using Cloudflare",
+          "websites using Akamai",
+          "websites using Fastly",
+          "websites using Amazon CloudFront",
+          "websites using Google"
+        ],
+        "ok": 0,
         "total": 5,
         "details": "#v=o\u0026ot=web"
       }
@@ -356,10 +372,10 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Same call quality as your other apps: Breaking up."
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "meet",
@@ -371,37 +387,42 @@
       {
         "app": "zoom",
         "title": "Zoom",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable"
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "slack",
         "title": "Slack",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable"
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "discord",
         "title": "Discord",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable"
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "whatsapp",
         "title": "WhatsApp",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable"
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       },
       {
         "app": "webex",
         "title": "Webex",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable"
+        "level": "checking",
+        "state": "cant_tell",
+        "label": "Can't tell right now",
+        "note": "We can't check this app while your connection has a problem."
       }
     ],
     "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."

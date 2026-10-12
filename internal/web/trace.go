@@ -65,19 +65,10 @@ const (
 	// (internal/trace.DefaultInvestigate), reported to the UI.
 	InvestigateInterval = 2500 * time.Millisecond
 	// MaxInvestigations bounds concurrent on-demand traces (distinct
-	// targets), shared by the local and public listeners.
+	// targets).
 	MaxInvestigations = 4
 	// InvestigationKeep is how long a finished trace's state is shown.
 	InvestigationKeep = time.Hour
-	// Public starts: per client (Cf-Connecting-Ip), at most one new trace
-	// per PublicInvestigateEvery and PublicInvestigatePerHour an hour; at
-	// most MaxPublicInvestigations of the slots (the owner keeps one); and
-	// a finished target can be started again from the share link only
-	// after PublicInvestigateCooldown.
-	PublicInvestigateEvery    = 30 * time.Second
-	PublicInvestigatePerHour  = 10
-	MaxPublicInvestigations   = MaxInvestigations - 1
-	PublicInvestigateCooldown = 5 * time.Minute
 	// MaxTraceHops bounds hop numbers accepted by /api/trace/panel.
 	MaxTraceHops = 40
 	// MaxHopStats and MaxRouteChanges cap list lengths in responses.
@@ -104,7 +95,7 @@ func (d *Deps) traceInterval() time.Duration {
 
 var errUnknownTarget = errors.New("unknown target")
 
-// ---------- redaction ----------
+// ---------- hop addresses ----------
 
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
@@ -117,92 +108,27 @@ func privateAddr(a netip.Addr) bool {
 		(a.Is4() && a.As4()[0] == 0)
 }
 
-// maskAddr hides the host part: a.b.c.x for IPv4, the /48 for IPv6.
-func maskAddr(a netip.Addr) string {
-	a = a.Unmap()
-	if a.Is4() {
-		b := a.As4()
-		return strconv.Itoa(int(b[0])) + "." + strconv.Itoa(int(b[1])) + "." + strconv.Itoa(int(b[2])) + ".x"
-	}
-	p, _ := a.Prefix(48)
-	return strings.TrimSuffix(p.Addr().String(), "::") + "::x"
+// hopView names the addresses of one response from what is known about
+// them (reverse DNS, ASN, owner).
+type hopView struct {
+	info map[netip.Addr]model.HopInfo
 }
 
-// Redaction levels, from least to most strict.
-const (
-	lvlFull    = iota // later public hops: everything shown
-	lvlNoRDNS         // 2nd and 3rd public hops: rDNS hidden
-	lvlMasked         // 1st public hop (the ISP edge): IP masked to /24, no rDNS
-	lvlPrivate        // private hop: no address at all
-)
+func newHopView() *hopView { return &hopView{info: map[netip.Addr]model.HopInfo{}} }
 
-// redactor classifies every address in one response from all the hop
-// sequences it contains, keeping the strictest level an address gets in
-// any of them, so no address is masked in one place and shown elsewhere.
-type redactor struct {
-	public bool
-	lvl    map[netip.Addr]int
-	info   map[netip.Addr]model.HopInfo
-}
-
-func newRedactor(public bool) *redactor {
-	return &redactor{public: public, lvl: map[netip.Addr]int{}, info: map[netip.Addr]model.HopInfo{}}
-}
-
-// seq classifies a path: seq[i] are the addresses seen at TTL i+1.
-func (r *redactor) seq(seq [][]netip.Addr) {
-	pub := 0
-	for _, addrs := range seq {
-		any := false
-		for _, a := range addrs {
-			if !a.IsValid() {
-				continue
-			}
-			a = a.Unmap()
-			l := lvlFull
-			switch {
-			case privateAddr(a):
-				l = lvlPrivate
-			case pub == 0:
-				l, any = lvlMasked, true
-			case pub < 3:
-				l, any = lvlNoRDNS, true
-			default:
-				any = true
-			}
-			if old, ok := r.lvl[a]; !ok || l > old {
-				r.lvl[a] = l
-			}
-		}
-		if any {
-			pub++
-		}
-	}
-}
-
-func (r *redactor) route(hops []netip.Addr) {
-	seq := make([][]netip.Addr, len(hops))
-	for i, a := range hops {
-		seq[i] = []netip.Addr{a}
-	}
-	r.seq(seq)
-}
-
-// hopJSON is one hop address as served. Public: private hops carry only
-// "private", the ISP edge's address is masked, rDNS is omitted for the
-// first three public hops.
+// hopJSON is one hop address as served. Private marks an address of the
+// home or the ISP's internal network (RFC 1918, CGNAT, link-local, ...).
 type hopJSON struct {
 	Hop     int    `json:"hop"`
 	IP      string `json:"ip,omitempty"`
 	NoReply bool   `json:"no_reply,omitempty"`
 	Private bool   `json:"private,omitempty"`
-	Masked  bool   `json:"masked,omitempty"`
 	RDNS    string `json:"rdns,omitempty"`
 	ASN     uint32 `json:"asn,omitempty"`
 	Owner   string `json:"owner,omitempty"`
 }
 
-func (r *redactor) hop(n int, a netip.Addr) hopJSON {
+func (r *hopView) hop(n int, a netip.Addr) hopJSON {
 	j := hopJSON{Hop: n}
 	if !a.IsValid() {
 		j.NoReply = true
@@ -210,34 +136,16 @@ func (r *redactor) hop(n int, a netip.Addr) hopJSON {
 	}
 	a = a.Unmap()
 	info := r.info[a]
+	j.IP, j.RDNS = a.String(), info.RDNS
 	if privateAddr(a) {
 		j.Private = true
-		if !r.public {
-			j.IP, j.RDNS = a.String(), info.RDNS
-		}
 		return j
 	}
 	j.ASN, j.Owner = info.ASN, info.Owner
-	if !r.public {
-		j.IP, j.RDNS = a.String(), info.RDNS
-		return j
-	}
-	l, ok := r.lvl[a]
-	if !ok {
-		l = lvlMasked // not classified: be strict
-	}
-	switch {
-	case l >= lvlMasked:
-		j.IP, j.Masked = maskAddr(a), true
-	case l == lvlNoRDNS:
-		j.IP = a.String()
-	default:
-		j.IP, j.RDNS = a.String(), info.RDNS
-	}
 	return j
 }
 
-func (r *redactor) hops(hops []netip.Addr) []hopJSON {
+func (r *hopView) hops(hops []netip.Addr) []hopJSON {
 	out := make([]hopJSON, len(hops))
 	for i, a := range hops {
 		out[i] = r.hop(i+1, a)
@@ -348,7 +256,7 @@ func (s *server) checkTarget(w http.ResponseWriter, r *http.Request, target stri
 }
 
 // changesJSON redacts route changes with r (already fed every sequence).
-func changesJSON(r *redactor, list []model.RouteChange) []changeJSON {
+func changesJSON(r *hopView, list []model.RouteChange) []changeJSON {
 	out := make([]changeJSON, 0, len(list))
 	for _, c := range list {
 		out = append(out, changeJSON{ID: c.ID, Target: c.Target, At: c.At.UTC(), FirstDiff: c.FirstDiff,
@@ -398,7 +306,7 @@ func (s *server) trace(ctx context.Context, target string, p incidentParams, now
 		stats = stats[:MaxHopStats]
 	}
 
-	r := newRedactor(s.public)
+	r := newHopView()
 	maxHop := 0
 	for _, h := range stats {
 		maxHop = max(maxHop, h.Hop)
@@ -415,14 +323,6 @@ func (s *server) trace(ctx context.Context, target string, p incidentParams, now
 		if h.Hop >= 1 && h.Hop <= len(seq) {
 			seq[h.Hop-1] = append(seq[h.Hop-1], h.IP)
 		}
-	}
-	r.seq(seq)
-	if hasRoute {
-		r.route(route.Hops)
-	}
-	for _, c := range changes {
-		r.route(c.From)
-		r.route(c.To)
 	}
 
 	out := &traceJSON{Target: target, Traced: s.traced()[target], From: p.from.UnixMilli(), To: p.to.UnixMilli(),
@@ -458,25 +358,14 @@ func routeSeq(hops []netip.Addr) [][]netip.Addr {
 
 // ---------- handlers ----------
 
-// runCached renders through the public cache (and concurrency bound) when
-// there is one, and writes the result or a redacted error.
+// runCached renders and writes the result or the error.
 func (s *server) runCached(w http.ResponseWriter, r *http.Request, key string, render func(ctx context.Context) (*cached, error)) {
-	s.runCachedIn(s.cache, w, r, key, render)
+	s.runCachedIn(nil, w, r, key, render)
 }
 
-// runCachedIn is runCached with another response cache (nil: none).
+// runCachedIn is runCached through a response cache (nil: none).
 func (s *server) runCachedIn(cache *respCache, w http.ResponseWriter, r *http.Request, key string, render func(ctx context.Context) (*cached, error)) {
-	fill := func(ctx context.Context) (*cached, error) {
-		if s.sem != nil {
-			select {
-			case s.sem <- struct{}{}:
-				defer func() { <-s.sem }()
-			case <-ctx.Done():
-				return nil, errBusy
-			}
-		}
-		return render(ctx)
-	}
+	fill := render
 	ctx, cancel := context.WithTimeout(r.Context(), traceTimeout)
 	defer cancel()
 	var c *cached
@@ -500,11 +389,7 @@ func (s *server) runCachedIn(cache *respCache, w http.ResponseWriter, r *http.Re
 		return
 	default:
 		s.d.log().Error("query", "key", strings.SplitN(key, "\x00", 2)[0], "err", err)
-		msg := "query failed"
-		if !s.public {
-			msg += ": " + strings.TrimSpace(err.Error())
-		}
-		writeErr(w, r, http.StatusInternalServerError, msg)
+		writeErr(w, r, http.StatusInternalServerError, "query failed: "+strings.TrimSpace(err.Error()))
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -611,11 +496,7 @@ func (s *server) serveTracePanel(w http.ResponseWriter, r *http.Request) {
 		hk[i] = strconv.Itoa(n)
 	}
 	p.group = "trace\x00" + target + "\x00" + strings.Join(hk, ",")
-	if s.public {
-		p.quantize(now)
-	} else {
-		p.setKey()
-	}
+	p.setKey()
 	s.runCached(w, r, "tpanel\x00"+p.key, func(ctx context.Context) (*cached, error) {
 		pd, err := s.d.queryTracePanel(ctx, target, hops, p, now)
 		if err != nil {
@@ -685,12 +566,7 @@ func (s *server) serveRouteChanges(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		list = newestFirst(list)
-		rd := newRedactor(s.public)
-		for _, c := range list {
-			rd.route(c.From)
-			rd.route(c.To)
-		}
-		return jsonCached(changesJSON(rd, list))
+		return jsonCached(changesJSON(newHopView(), list))
 	})
 }
 
@@ -703,7 +579,7 @@ type Investigation interface {
 }
 
 // investigationJSON is an on-demand trace's state, in POST /api/investigate
-// and /api/trace: the same on both listeners (nothing in it is private).
+// and /api/trace.
 type investigationJSON struct {
 	Target     string `json:"target"`
 	State      string `json:"state"` // running | finished
@@ -717,7 +593,6 @@ type investigationJSON struct {
 type invSession struct {
 	inv     Investigation
 	started time.Time
-	public  bool // started from the share link
 }
 
 func (se *invSession) json(target string) *investigationJSON {
@@ -732,9 +607,7 @@ func (se *invSession) json(target string) *investigationJSON {
 
 func (se *invSession) running() bool { _, ended := se.inv.Progress(); return ended.IsZero() }
 
-// Investigations tracks on-demand traces. One value is shared by the local
-// and the public handler (Deps.Investigations), so the slot limits hold
-// across both.
+// Investigations tracks on-demand traces.
 type Investigations struct {
 	mu  sync.Mutex
 	m   map[string]*invSession
@@ -757,7 +630,7 @@ type invError struct {
 
 func (e *invError) Error() string { return e.msg }
 
-// errNoSlot: every slot this listener may use is taken.
+// errNoSlot: every slot is taken.
 var errNoSlot = &invError{http.StatusTooManyRequests, "busy", "too many on-demand traces running", 30 * time.Second}
 
 // pruneLocked drops finished traces older than InvestigationKeep. mu is held.
@@ -769,51 +642,31 @@ func (iv *Investigations) pruneLocked(now time.Time) {
 	}
 }
 
-// running reports whether target's trace is running.
-func (iv *Investigations) running(target string) bool {
-	iv.mu.Lock()
-	defer iv.mu.Unlock()
-	se := iv.m[target]
-	return se != nil && se.running()
-}
-
 // start starts target's trace for InvestigateRounds rounds. A running one
-// is returned as is (its count is not reset). A finished one starts afresh,
-// from the share link only after PublicInvestigateCooldown. Public starts
-// may hold at most MaxPublicInvestigations of the MaxInvestigations slots,
-// so the owner always has one.
-func (iv *Investigations) start(src TraceSource, target string, public bool) (st *investigationJSON, created bool, err error) {
+// is returned as is (its count is not reset); a finished one starts
+// afresh.
+func (iv *Investigations) start(src TraceSource, target string) (st *investigationJSON, created bool, err error) {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
 	now := iv.now()
 	iv.pruneLocked(now)
-	if se := iv.m[target]; se != nil {
-		_, ended := se.inv.Progress()
-		switch {
-		case ended.IsZero():
-			return se.json(target), false, nil
-		case public && now.Sub(ended) < PublicInvestigateCooldown:
-			return nil, false, &invError{http.StatusTooManyRequests, "cooldown", "this target was traced a moment ago; try again later",
-				PublicInvestigateCooldown - now.Sub(ended)}
-		}
+	if se := iv.m[target]; se != nil && se.running() {
+		return se.json(target), false, nil
 	}
-	all, pub := 0, 0
+	all := 0
 	for _, se := range iv.m {
 		if se.running() {
 			all++
-			if se.public {
-				pub++
-			}
 		}
 	}
-	if all >= MaxInvestigations || (public && pub >= MaxPublicInvestigations) {
+	if all >= MaxInvestigations {
 		return nil, false, errNoSlot
 	}
 	inv, err := src.Investigate(target, InvestigateRounds)
 	if err != nil {
 		return nil, false, err
 	}
-	se := &invSession{inv: inv, started: now, public: public}
+	se := &invSession{inv: inv, started: now}
 	iv.m[target] = se
 	return se.json(target), true, nil
 }
@@ -844,10 +697,10 @@ func writeInvErr(w http.ResponseWriter, r *http.Request, status int, code, msg s
 // investigateBodyMax caps the request body; the route takes none.
 const investigateBodyMax = 1 << 10
 
-// investigateRequest applies the request checks both listeners share: POST,
-// no body, exactly one target parameter. It writes the refusal and returns
-// "" on failure. The response is never cached. The listener then checks the
-// origin, and investigate the target name.
+// investigateRequest applies the request checks: POST, no body, exactly
+// one target parameter. It writes the refusal and returns "" on failure.
+// The response is never cached. The handler then checks the origin, and
+// investigate the target name.
 func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) string {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.d.Trace == nil {
@@ -877,21 +730,14 @@ func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) stri
 	return q.Get("target")
 }
 
-// investigate starts the trace once the listener's checks passed; limit
-// (public only) is asked before a new trace starts, not for one that
-// already runs. Logs name the target and the error, never the client.
-func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string, limit func() (bool, time.Duration), started func()) {
+// investigate starts the trace once the handler's checks passed. Logs name
+// the target and the error, never the client.
+func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string) {
 	if !s.knownTarget(target) { // profile target names only, never a host or an address
 		writeInvErr(w, r, http.StatusNotFound, "unknown_target", "unknown target", 0)
 		return
 	}
-	if limit != nil && !s.inv.running(target) {
-		if ok, wait := limit(); !ok {
-			writeInvErr(w, r, http.StatusTooManyRequests, "rate_limited", "too many traces started from here; try again later", wait)
-			return
-		}
-	}
-	st, created, err := s.inv.start(s.d.Trace, target, s.public)
+	st, _, err := s.inv.start(s.d.Trace, target)
 	var ie *invError
 	switch {
 	case errors.As(err, &ie):
@@ -899,22 +745,14 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, target stri
 		return
 	case err != nil:
 		s.d.log().Warn("investigate", "target", target, "err", err)
-		msg := "could not start trace"
-		if !s.public {
-			msg += ": " + err.Error()
-		}
-		writeInvErr(w, r, http.StatusInternalServerError, "failed", msg, 0)
+		writeInvErr(w, r, http.StatusInternalServerError, "failed", "could not start trace: "+err.Error(), 0)
 		return
-	}
-	if started != nil && created {
-		started()
 	}
 	writeJSON(w, r, http.StatusOK, st)
 }
 
-// serveInvestigate answers POST /api/investigate?target= on the local
-// listener: same origin and the CSRF token, no admin token (anyone who
-// can open the dashboard may trace a profile target).
+// serveInvestigate answers POST /api/investigate?target=: same origin, the
+// CSRF token and, when the dashboard has one, the admin token.
 func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) {
 	target := h.investigateRequest(w, r)
 	if target == "" {
@@ -928,92 +766,20 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 		writeInvErr(w, r, http.StatusForbidden, "forbidden", "missing or bad "+HeaderCSRF, 0)
 		return
 	}
-	h.investigate(w, r, target, nil, nil)
-}
-
-// startLimiter limits new public trace starts per client. Only starts that
-// happened count: a refused one (cooldown, no slot) does not. Clients are
-// grouped by address: IPv4 /32, IPv6 /64 (one home's prefix). The map is
-// bounded: when full, expired entries are pruned and new clients refused
-// until there is room again.
-type startLimiter struct {
-	mu  sync.Mutex
-	m   map[string][]time.Time // client group -> starts in the last hour
-	max int                    // capacity (0: startLimiterMax)
-}
-
-// startLimiterMax bounds the number of client groups remembered.
-const startLimiterMax = 4096
-
-// limitKey groups a client key: an IPv6 address by its /64.
-func limitKey(key string) string {
-	if a, err := netip.ParseAddr(key); err == nil && a.Is6() && !a.Is4In6() {
-		p, _ := a.Prefix(64)
-		return p.String()
-	}
-	return key
-}
-
-// recent returns key's starts in the last hour. mu is held.
-func (l *startLimiter) recent(key string, now time.Time) []time.Time {
-	var ts []time.Time
-	for _, t := range l.m[key] {
-		if now.Sub(t) < time.Hour {
-			ts = append(ts, t)
-		}
-	}
-	return ts
-}
-
-// check reports whether key may start a trace at now, or how long to wait.
-func (l *startLimiter) check(key string, now time.Time) (bool, time.Duration) {
-	key = limitKey(key)
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if _, known := l.m[key]; !known && len(l.m) >= l.capacity() {
-		l.pruneLocked(now)
-		if len(l.m) >= l.capacity() {
-			return false, PublicInvestigateEvery // full: no new clients for now
-		}
-	}
-	ts := l.recent(key, now)
+	// Traces need no admin token on a LAN listener without one, but where
+	// there is one (a network listener, a tunnel via --allow-host) they
+	// do: they cost the line and the routers on the path. Through
+	// --allow-host without a token (--admin-token=off) they are off.
 	switch {
-	case len(ts) > 0 && now.Sub(ts[len(ts)-1]) < PublicInvestigateEvery:
-		return false, PublicInvestigateEvery - now.Sub(ts[len(ts)-1])
-	case len(ts) >= PublicInvestigatePerHour:
-		return false, time.Hour - now.Sub(ts[0])
+	case h.controls == "disabled" && len(h.opts.ExtraHosts) > 0:
+		writeInvErr(w, r, http.StatusForbidden, "forbidden", "on-demand traces are disabled: the dashboard is reachable through --allow-host and fyisp was started with --admin-token=off", 0)
+		return
+	case h.controls == "enabled" && proxied(r):
+		writeInvErr(w, r, http.StatusForbidden, "forbidden", errProxied, 0)
+		return
+	case h.controls == "admin" && !h.adminOK(r):
+		writeInvErr(w, r, http.StatusForbidden, "forbidden", "admin token required", 0)
+		return
 	}
-	return true, 0
-}
-
-func (l *startLimiter) capacity() int {
-	if l.max > 0 {
-		return l.max
-	}
-	return startLimiterMax
-}
-
-// pruneLocked drops clients without a start in the last hour. mu is held.
-func (l *startLimiter) pruneLocked(now time.Time) {
-	for k := range l.m {
-		if ts := l.recent(k, now); len(ts) == 0 {
-			delete(l.m, k)
-		} else {
-			l.m[k] = ts
-		}
-	}
-}
-
-// record counts a start by key at now (check said yes just before).
-func (l *startLimiter) record(key string, now time.Time) {
-	key = limitKey(key)
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.m == nil {
-		l.m = map[string][]time.Time{}
-	}
-	if _, known := l.m[key]; !known && len(l.m) >= l.capacity() {
-		return // full: check refuses new clients; never grow past the bound
-	}
-	l.m[key] = append(l.recent(key, now), now)
+	h.investigate(w, r, target)
 }

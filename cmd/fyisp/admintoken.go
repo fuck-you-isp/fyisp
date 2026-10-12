@@ -25,15 +25,20 @@ const adminTokenOff = "off"
 // given with --admin-token:
 //   - "off": none;
 //   - an explicit token: that token;
-//   - a loopback listener: none (controls need no token there);
+//   - a loopback listener without --allow-host: none (controls need no
+//     token there);
 //   - otherwise the token in dir/admin-token, created on first use.
-func resolveAdminToken(flagVal, addr, dir string) (tok string, stored bool, err error) {
+//
+// Any --allow-host counts as exposed: the extra name is how a reverse
+// proxy or a tunnel (cloudflared, Tailscale) reaches a loopback listener,
+// and everyone behind it would otherwise get the owner's controls.
+func resolveAdminToken(flagVal, addr string, extraHosts []string, dir string) (tok string, stored bool, err error) {
 	switch {
 	case flagVal == adminTokenOff:
 		return "", false, nil
 	case flagVal != "":
 		return flagVal, false, nil
-	case isLoopbackAddr(addr):
+	case isLoopbackAddr(addr) && len(extraHosts) == 0:
 		return "", false, nil
 	}
 	p := filepath.Join(dir, adminTokenFile)

@@ -1,21 +1,20 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "you",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
     "to": 1791549000000,
     "measured": true,
+    "calls": "good",
     "level": "warn",
     "who": "app",
     "kind": "service",
-    "headline": "There was a problem then",
+    "headline": "Your connection was good for calls then",
     "cause": "Some online services had trouble at the time. That was on their side."
   },
   "history_today": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -31,14 +30,14 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791548280000,
+            "from": 1791547500000,
             "to": 1791549000000,
             "level": "warn",
             "who": "app",
             "kind": "service",
-            "label": "Some online services",
+            "label": "Outlook",
             "source": "incident",
-            "incident": 91,
+            "incident": 41,
             "ongoing": true,
             "text": "Some online services had trouble at the time. That was on their side."
           }
@@ -46,44 +45,42 @@
         "off": []
       }
     ],
-    "summary": "1 problem today, with online services.",
+    "summary": "1 problem today, with Outlook.",
     "counts": {
       "problems": 1,
       "home": 0,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
-      "app": 0,
+      "app": 1,
       "calltraffic": 0,
       "offline": 0,
-      "services": 1,
+      "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 1
-    },
-    "coverage": 1,
     "problems": [
       {
-        "id": 91,
-        "from": 1791548280000,
+        "id": 41,
+        "from": 1791547500000,
         "ongoing": true,
         "kind": "service",
         "who": "app",
-        "where": "Some online services",
+        "where": "Outlook",
         "side": "other",
         "level": "warn",
         "text": "Some online services had trouble at the time. That was on their side.",
         "peak_loss": 1,
-        "details": "#v=calls\u0026from=1791546480000\u0026to=1791549000000\u0026o=1"
+        "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
       }
-    ]
+    ],
+    "work": {
+      "measured": 330,
+      "bad": 0,
+      "good": 1
+    }
   },
   "history_week": {
     "part": "history",
-    "voice": "you",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -149,14 +146,14 @@
         "work_to": 1791558000000,
         "runs": [
           {
-            "from": 1791548280000,
+            "from": 1791547500000,
             "to": 1791549000000,
             "level": "warn",
             "who": "app",
             "kind": "service",
-            "label": "Some online services",
+            "label": "Outlook",
             "source": "incident",
-            "incident": 91,
+            "incident": 41,
             "ongoing": true,
             "text": "Some online services had trouble at the time. That was on their side."
           }
@@ -164,54 +161,52 @@
         "off": []
       }
     ],
-    "summary": "1 problem this week, with online services.",
+    "summary": "1 problem this week, with Outlook.",
     "counts": {
       "problems": 1,
       "home": 0,
       "provider": 0,
       "beyond": 0,
       "dns": 0,
-      "app": 0,
+      "app": 1,
       "calltraffic": 0,
       "offline": 0,
-      "services": 1,
+      "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 1
-    },
-    "coverage": 0.91,
     "problems": [
       {
-        "id": 91,
-        "from": 1791548280000,
+        "id": 41,
+        "from": 1791547500000,
         "ongoing": true,
         "kind": "service",
         "who": "app",
-        "where": "Some online services",
+        "where": "Outlook",
         "side": "other",
         "level": "warn",
         "text": "Some online services had trouble at the time. That was on their side.",
         "peak_loss": 1,
-        "details": "#v=calls\u0026from=1791546480000\u0026to=1791549000000\u0026o=1"
+        "details": "#v=calls\u0026from=1791545700000\u0026to=1791549000000\u0026o=1"
       }
-    ]
+    ],
+    "work": {
+      "measured": 330,
+      "bad": 0,
+      "good": 1
+    }
   },
   "live": {
     "part": "live",
-    "voice": "you",
     "at": 1791549000000,
     "answer": {
-      "level": "warn",
-      "who": "app",
+      "level": "good",
+      "who": "none",
       "kind": "service",
-      "since": 1791548280000,
-      "headline": "Some services aren't answering",
-      "cause": "Your connection looks fine, so this is most likely a problem on their side.",
+      "calls": "good",
+      "headline": "Your internet is fine",
+      "cause": "Calls and websites are working. Outlook isn't answering from here. That's most likely a problem on their side.",
       "try": [],
-      "announce": "Some services aren't answering. Your connection looks fine, so this is most likely a problem on their side."
+      "announce": "Your internet is fine. Calls and websites are working."
     },
     "path": [
       {
@@ -245,26 +240,123 @@
         "id": "apps",
         "label": "Apps \u0026 websites",
         "state": "warn",
-        "words": "Other services affected",
-        "blamed": true,
-        "culprit": "Problem is probably here",
+        "words": "Work apps affected",
         "tooltip": "The apps and websites we check for you."
       }
     ],
     "tiles": [
       {
-        "id": "other",
-        "title": "Other services",
+        "id": "calls",
+        "title": "Calls",
+        "level": "good",
+        "state": "good",
+        "label": "Good for calls",
+        "names": [
+          "Teams",
+          "Google Meet",
+          "Zoom"
+        ],
+        "more": 4,
+        "ok": 7,
+        "total": 7,
+        "details": "#v=calls"
+      },
+      {
+        "id": "work",
+        "title": "Work apps",
         "level": "warn",
-        "state": "slow",
-        "label": "Some aren't answering",
-        "note": "13 of 38 aren't answering reliably from here.",
-        "names": [],
-        "ok": 25,
-        "total": 38,
-        "details": "#v=o\u0026ot=other"
+        "state": "mostly",
+        "label": "Mostly working",
+        "note": "Outlook isn't answering from here. That's most likely a problem on their side.",
+        "names": [
+          "Outlook",
+          "Microsoft 365",
+          "Microsoft sign-in"
+        ],
+        "more": 3,
+        "affected": [
+          "Outlook"
+        ],
+        "ok": 5,
+        "total": 6,
+        "details": "#v=o\u0026ot=work"
+      },
+      {
+        "id": "web",
+        "title": "Websites",
+        "level": "good",
+        "state": "working",
+        "label": "Working",
+        "names": [
+          "Cloudflare",
+          "Akamai",
+          "Fastly"
+        ],
+        "more": 2,
+        "ok": 5,
+        "total": 5,
+        "details": "#v=o\u0026ot=web"
       }
     ],
-    "apps": []
+    "calls": {
+      "state": "good",
+      "delay": "very_short",
+      "dropouts": "none",
+      "smoothness": "steady",
+      "words": "Delay very short · Dropouts none · Smoothness steady"
+    },
+    "apps": [
+      {
+        "app": "teams",
+        "title": "Teams",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable",
+        "note": "Same call quality as your other apps: Good."
+      },
+      {
+        "app": "meet",
+        "title": "Google Meet",
+        "level": "good",
+        "state": "good",
+        "label": "Good"
+      },
+      {
+        "app": "zoom",
+        "title": "Zoom",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable"
+      },
+      {
+        "app": "slack",
+        "title": "Slack",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable"
+      },
+      {
+        "app": "discord",
+        "title": "Discord",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable"
+      },
+      {
+        "app": "whatsapp",
+        "title": "WhatsApp",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable"
+      },
+      {
+        "app": "webex",
+        "title": "Webex",
+        "level": "good",
+        "state": "reachable",
+        "label": "Reachable"
+      }
+    ],
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

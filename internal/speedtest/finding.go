@@ -59,12 +59,12 @@ const (
 type Finding struct {
 	Case       string `json:"case"`
 	Tier       string `json:"tier,omitempty"`
-	Text       string `json:"text"`        // the owner's wording
-	TextPublic string `json:"text_public"` // the share link's and report's wording
+	Text       string `json:"text"` // the owner's wording
+	TextPublic string `json:"-"`    // the evidence report's wording (third person)
 	Evidence   string `json:"evidence"`
 	Caveat     string `json:"caveat,omitempty"`
-	// CaveatPublic is the caveat in the share link's and report's voice.
-	CaveatPublic string   `json:"caveat_public,omitempty"`
+	// CaveatPublic is the caveat in the evidence report's voice.
+	CaveatPublic string   `json:"-"`
 	Hours        []int    `json:"hours"`
 	Regions      []string `json:"regions"`   // region IDs involved
 	Providers    []string `json:"providers"` // provider names involved
@@ -84,12 +84,12 @@ type Finding struct {
 	Tests int       `json:"tests"`
 	First time.Time `json:"-"`
 	Last  time.Time `json:"-"`
-	// EvidencePublic is Evidence without dates (the share link and report
-	// keep the owner's start date out). Coverage says why fewer than 7
-	// days are covered (owner voice; CoveragePublic without the date).
-	EvidencePublic string `json:"evidence_public,omitempty"`
+	// EvidencePublic is Evidence without dates (a redacted report keeps
+	// the owner's start date out). Coverage says why fewer than 7 days are
+	// covered (owner voice; CoveragePublic without the date).
+	EvidencePublic string `json:"-"`
 	Coverage       string `json:"coverage,omitempty"`
-	CoveragePublic string `json:"coverage_public,omitempty"`
+	CoveragePublic string `json:"-"`
 	// Slowest is the servers slowest in the dip's hours (see slowest);
 	// the caller sets their Display.
 	Slowest []SlowServer `json:"slowest,omitempty"`
@@ -149,8 +149,8 @@ func FindFinding(in FindingInput) (f Finding) {
 	}
 	if out > 0 && out == len(servers) && len(rawDays) >= MinDays {
 		f = Finding{Case: CaseTooFast, Days: len(rawDays), Tests: rawN, Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{},
-			Text:       "Your line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up.",
-			TextPublic: "The line is too fast for these tests to compare times of day: too many tests reach their 100 MB limit while still speeding up."}
+			Text:       "Your line is too fast for these tests to compare times of day: too many tests are still speeding up when they end.",
+			TextPublic: "The line is too fast for these tests to compare times of day: too many tests are still speeding up when they end."}
 		f.Evidence = fmt.Sprintf("Based on %s on %s.", plural(rawN, "test", "tests"), plural(len(rawDays), "day", "days"))
 		f.EvidencePublic = f.Evidence
 		return f

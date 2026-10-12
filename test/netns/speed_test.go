@@ -44,6 +44,7 @@ func TestSpeed(t *testing.T) {
 			h.nsRun(t, h.isp, "tc", "qdisc", "add", "dev", "i0", "root", "tbf", "rate", "50mbit", "burst", "32kb", "limit", "6250000") // 1 s
 			h.nsRun(t, h.gw, "tc", "qdisc", "add", "dev", "g1", "root", "tbf", "rate", "20mbit", "burst", "32kb", "limit", "2500000")  // 1 s
 		})
+		h.waitIdle(t)
 		r := h.speedTest(t, iperfA)
 		l := r.latency(t)
 		e, g := l.Edge, l.Gateway
@@ -92,6 +93,7 @@ func TestSpeed(t *testing.T) {
 				h.nsRun(t, x.ns, "tc", "qdisc", "add", "dev", x.dev, "parent", "1:10", "fq_codel")
 			}
 		})
+		h.waitIdle(t)
 		r := h.speedTest(t, iperfA)
 		e := r.latency(t).Edge
 		for _, x := range []struct {
@@ -244,6 +246,17 @@ func newSpeedLabData(t *testing.T, shape func(h *harness), data func(dir string)
 	return l
 }
 
+// waitIdle waits until a test has idle latency to compare with: the
+// first 2 minutes after fyisp starts are never idle (path discovery and
+// the first traceroutes), and the idle stats need 20 samples (the ISP edge
+// and the gateway are pinged every second).
+func (l *speedLab) waitIdle(t *testing.T) {
+	if d := time.Until(l.started.Add(2*time.Minute + 30*time.Second)); d > 0 {
+		t.Logf("waiting %s for idle latency samples", d.Round(time.Second))
+		time.Sleep(d)
+	}
+}
+
 func net4(a netip.Addr, port int) string { return a.String() + ":" + strconv.Itoa(port) }
 
 // lineRate shapes the line's download (the ISP's side, i0) to rate with an
@@ -280,12 +293,16 @@ type speedTestAPI struct {
 	DownBps *float64 `json:"down_bps"`
 	UpBps   *float64 `json:"up_bps"`
 	// Capped at 100 MB, and still speeding up there (lower bounds).
-	DownShort      bool   `json:"down_short"`
-	UpShort        bool   `json:"up_short"`
-	DownLowerBound bool   `json:"down_lower_bound"`
-	UpLowerBound   bool   `json:"up_lower_bound"`
-	Conn           string `json:"conn"`
-	Latency        *struct {
+	DownShort      bool `json:"down_short"`
+	UpShort        bool `json:"up_short"`
+	DownLowerBound bool `json:"down_lower_bound"`
+	UpLowerBound   bool `json:"up_lower_bound"`
+	// v0.7.2: the limit the test ran under, and seconds measured.
+	Cap     string  `json:"cap"`
+	DownS   float64 `json:"down_s"`
+	UpS     float64 `json:"up_s"`
+	Conn    string  `json:"conn"`
+	Latency *struct {
 		Edge    speedPhases `json:"edge"`
 		Gateway speedPhases `json:"gateway"`
 	} `json:"latency"`

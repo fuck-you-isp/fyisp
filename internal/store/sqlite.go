@@ -216,6 +216,14 @@ CREATE TABLE speedtests(
 );
 CREATE INDEX speedtests_start ON speedtests(start_ms);
 `,
+	// v6 (fyisp v0.8): the share link is gone. Reports are no longer
+	// published, and the share link's speed-test opt-in and time ledger
+	// settings go. Speed tests it started stay, with their triggers
+	// (public, public_sweep).
+	`
+ALTER TABLE reports DROP COLUMN public;
+DELETE FROM meta WHERE key IN ('setting:speedtest_public', 'setting:speedtest_public_bytes');
+`,
 }
 
 // SchemaVersion is the schema version this build writes.

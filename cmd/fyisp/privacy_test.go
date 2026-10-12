@@ -66,7 +66,7 @@ func fakeSTUN(t *testing.T) int {
 
 // TestUDPPrivacyEndToEnd runs the real probe runner against a STUN server
 // that reports a known public address, through the store, /metrics, the
-// dashboard API (local and public) and a report: the address appears
+// dashboard API and a report: the address appears
 // nowhere, and neither do logs at debug level.
 func TestUDPPrivacyEndToEnd(t *testing.T) {
 	port := fakeSTUN(t)
@@ -150,19 +150,17 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 		return string(b)
 	}
 	local := web.Local(deps, web.LocalOptions{Addr: "127.0.0.1:3000"})
-	public := web.Public(deps, "0123456789abcdef0123456789abcdef")
 	m := get(local, "/metrics")
 	if !strings.Contains(m, "fyisp_udp_jitter_seconds{") || !strings.Contains(m, "fyisp_udp_loss_ratio{") {
 		t.Errorf("/metrics has no UDP series:\n%s", m)
 	}
 	outputs = append(outputs, m,
-		get(local, "/api/status"), get(local, "/api/profile"), get(local, "/api/panel?group=calls&from=now-5m"),
-		get(public, "/s/0123456789abcdef0123456789abcdef/api/status"), get(public, "/s/0123456789abcdef0123456789abcdef/api/profile"), get(public, "/s/0123456789abcdef0123456789abcdef/api/panel?group=calls&from=now-5m"))
+		get(local, "/api/status"), get(local, "/api/profile"), get(local, "/api/panel?group=calls&from=now-5m"))
 	calls := get(local, "/api/calls?from=now-5m")
 	if !strings.Contains(calls, `"app":"meet","udp":"measured"`) {
 		t.Errorf("/api/calls does not measure Meet:\n%s", calls)
 	}
-	outputs = append(outputs, calls, get(public, "/s/0123456789abcdef0123456789abcdef/api/calls?from=now-5m"))
+	outputs = append(outputs, calls)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}

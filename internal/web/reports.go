@@ -36,15 +36,12 @@ type ReportOptions struct {
 // reports: every report route answers 404.
 //
 // The web layer chooses report IDs and the store must keep them: IDs of
-// reports built with Redact start with "r", others with "f". Only an "r"
-// report that is also marked Public is served on the public link, so a
-// report with private details can never be published, whatever its flag.
+// reports built with Redact start with "r", others with "f".
 type ReportSource interface {
 	Build(ctx context.Context, o ReportOptions) (html []byte, err error)
 	SaveReport(ctx context.Context, meta model.ReportMeta, html []byte) error
 	Report(ctx context.Context, id string) (model.ReportMeta, []byte, error) // not found: see isNotFound
 	Reports(ctx context.Context) ([]model.ReportMeta, error)                 // newest first
-	SetReportPublic(ctx context.Context, id string, public bool) error
 	DeleteReport(ctx context.Context, id string) error
 }
 
@@ -62,9 +59,9 @@ const (
 const ReportCSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; sandbox allow-popups allow-popups-to-escape-sandbox"
 
 var (
-	reportIDRE       = regexp.MustCompile(`^[rf][a-z2-7]{25}$`)
-	publicReportIDRE = regexp.MustCompile(`^r[a-z2-7]{25}$`)
-	b32              = base32.StdEncoding.WithPadding(base32.NoPadding)
+	reportIDRE         = regexp.MustCompile(`^[rf][a-z2-7]{25}$`)
+	redactedReportIDRE = regexp.MustCompile(`^r[a-z2-7]{25}$`)
+	b32                = base32.StdEncoding.WithPadding(base32.NoPadding)
 )
 
 func newReportID(redacted bool) string {
@@ -78,21 +75,17 @@ func newReportID(redacted bool) string {
 }
 
 // reportRedacted reports whether an ID was issued for a redacted build.
-func reportRedacted(id string) bool { return publicReportIDRE.MatchString(id) }
+func reportRedacted(id string) bool { return redactedReportIDRE.MatchString(id) }
 
 // reportJSON is one report as listed locally.
 type reportJSON struct {
 	model.ReportMeta
-	Redacted bool `json:"redacted"` // built without private details (may be published)
+	Redacted bool `json:"redacted"` // built without private details (fit to send to others)
 }
 
 func toReportJSON(m model.ReportMeta) reportJSON {
 	m.From, m.To, m.Created = m.From.UTC(), m.To.UTC(), m.Created.UTC()
-	red := reportRedacted(m.ID)
-	if !red {
-		m.Public = false // never shown as published: the public route refuses it
-	}
-	return reportJSON{ReportMeta: m, Redacted: red}
+	return reportJSON{ReportMeta: m, Redacted: reportRedacted(m.ID)}
 }
 
 // reportInput is the body of POST /api/reports.
@@ -101,7 +94,6 @@ type reportInput struct {
 	To     time.Time `json:"to"`
 	Title  string    `json:"title"`
 	Redact bool      `json:"redact"`
-	Public bool      `json:"public"`
 }
 
 func (in *reportInput) validate(now time.Time) error {
@@ -116,9 +108,6 @@ func (in *reportInput) validate(now time.Time) error {
 	}
 	if in.To.Sub(in.From) > MaxRange {
 		return badReq("a report may span at most 90 days")
-	}
-	if in.Public && !in.Redact {
-		return badReq("only redacted reports can be published: a report with private details stays on this machine")
 	}
 	in.Title = strings.TrimSpace(in.Title)
 	if !utf8.ValidString(in.Title) {
@@ -141,7 +130,7 @@ func (in *reportInput) validate(now time.Time) error {
 
 // serveReports answers /api/reports and /api/reports/{id} on the local
 // listener: GET lists or shows (?download=1 as an attachment), POST builds
-// and saves, PUT {"public":bool} publishes or withdraws, DELETE removes.
+// and saves, DELETE removes.
 func (h *localHandler) serveReports(w http.ResponseWriter, r *http.Request, rest string) {
 	if h.d.Reports == nil {
 		writeErr(w, r, http.StatusNotFound, "reports are not available")
@@ -183,40 +172,6 @@ func (h *localHandler) serveReports(w http.ResponseWriter, r *http.Request, rest
 			return
 		}
 		serveReportHTML(w, r, meta, body, dl == "1")
-	case http.MethodPut:
-		if len(r.URL.RawQuery) > 0 {
-			writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
-			return
-		}
-		if !h.controlAllowed(w, r, "reports") {
-			return
-		}
-		var in struct {
-			Public *bool `json:"public"`
-		}
-		if !readJSON(w, r, &in) {
-			return
-		}
-		if in.Public == nil {
-			writeErr(w, r, http.StatusBadRequest, "public is required")
-			return
-		}
-		if *in.Public && !reportRedacted(rest) {
-			writeErr(w, r, http.StatusConflict, "this report includes private details and cannot be published; build a redacted one")
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
-		defer cancel()
-		if err := h.d.Reports.SetReportPublic(ctx, rest, *in.Public); err != nil {
-			h.storeErr(w, r, "update report", err)
-			return
-		}
-		meta, _, err := h.d.Reports.Report(ctx, rest)
-		if err != nil {
-			h.storeErr(w, r, "load report", err)
-			return
-		}
-		writeJSON(w, r, http.StatusOK, toReportJSON(meta))
 	case http.MethodDelete:
 		if len(r.URL.RawQuery) > 0 {
 			writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
@@ -233,7 +188,7 @@ func (h *localHandler) serveReports(w http.ResponseWriter, r *http.Request, rest
 		}
 		writeJSON(w, r, http.StatusOK, map[string]any{"deleted": rest})
 	default:
-		w.Header().Set("Allow", "GET, HEAD, PUT, DELETE")
+		w.Header().Set("Allow", "GET, HEAD, DELETE")
 		writeErr(w, r, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
@@ -290,7 +245,7 @@ func (h *localHandler) createReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	meta := model.ReportMeta{ID: newReportID(in.Redact), Title: in.Title, From: in.From, To: in.To,
-		Created: now.UTC(), Public: in.Public && in.Redact, Bytes: len(body)}
+		Created: now.UTC(), Bytes: len(body)}
 	if err := h.d.Reports.SaveReport(ctx, meta, body); err != nil {
 		h.storeErr(w, r, "save report", err)
 		return
@@ -312,42 +267,4 @@ func serveReportHTML(w http.ResponseWriter, r *http.Request, meta model.ReportMe
 
 func reportFileName(m model.ReportMeta) string {
 	return "fyisp-report-" + m.From.UTC().Format("20060102T1504Z") + "-" + m.To.UTC().Format("20060102T1504Z") + ".html"
-}
-
-// servePublicReport answers /s/<secret>/r/<id>: a report snapshot that is
-// marked public and was built redacted. Anything else is the same 404.
-func (s *server) servePublicReport(w http.ResponseWriter, r *http.Request, id string) {
-	if s.d.Reports == nil || !publicReportIDRE.MatchString(id) {
-		notFound(w, r)
-		return
-	}
-	if err := checkParams(r.URL.Query()); err != nil {
-		writeErr(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
-	defer cancel()
-	if s.sem != nil {
-		select {
-		case s.sem <- struct{}{}:
-			defer func() { <-s.sem }()
-		case <-ctx.Done():
-			w.Header().Set("Retry-After", "2")
-			writeErr(w, r, http.StatusServiceUnavailable, "busy, retry shortly")
-			return
-		}
-	}
-	meta, body, err := s.d.Reports.Report(ctx, id)
-	if err != nil {
-		if !isNotFound(err) {
-			s.d.log().Warn("public report", "err", err)
-		}
-		notFound(w, r)
-		return
-	}
-	if !meta.Public || meta.ID != id || !reportRedacted(meta.ID) {
-		notFound(w, r)
-		return
-	}
-	serveReportHTML(w, r, meta, body, false)
 }

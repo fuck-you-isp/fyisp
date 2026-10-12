@@ -1,7 +1,6 @@
 {
   "at_5_minutes_ago": {
     "part": "at",
-    "voice": "public",
     "at": 1791549000000,
     "time": 1791548700000,
     "from": 1791547800000,
@@ -10,12 +9,11 @@
     "calls": "good",
     "level": "good",
     "who": "none",
-    "headline": "The connection was good for calls then",
-    "cause": "If a call was bad then, the problem was probably the app or the other side's connection."
+    "headline": "Your connection was good for calls then",
+    "cause": "If the call was bad, the problem was probably the app or the other person's connection."
   },
   "history_today": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "d",
@@ -46,12 +44,6 @@
       "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 0,
-      "provider": 0,
-      "other": 0
-    },
-    "coverage": 1,
     "problems": [],
     "work": {
       "measured": 330,
@@ -61,7 +53,6 @@
   },
   "history_week": {
     "part": "history",
-    "voice": "public",
     "at": 1791549000000,
     "tz": 120,
     "span": "w",
@@ -107,10 +98,10 @@
             "level": "bad",
             "who": "provider",
             "kind": "isp",
-            "label": "Most likely the provider's network",
+            "label": "Most likely your provider",
             "source": "incident",
             "incident": 81,
-            "text": "The problem was most likely in the provider's network. The home network looked fine."
+            "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
           }
         ],
         "off": [
@@ -147,10 +138,10 @@
             "level": "bad",
             "who": "provider",
             "kind": "isp",
-            "label": "Most likely the provider's network",
+            "label": "Most likely your provider",
             "source": "incident",
             "incident": 82,
-            "text": "The problem was most likely in the provider's network. The home network looked fine."
+            "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
           },
           {
             "from": 1791468120000,
@@ -158,10 +149,10 @@
             "level": "bad",
             "who": "home",
             "kind": "lan",
-            "label": "Most likely the home network",
+            "label": "Most likely your home network",
             "source": "incident",
             "incident": 83,
-            "text": "The problem was most likely in the home network (Wi-Fi or router)."
+            "text": "The problem was most likely your Wi-Fi or router."
           }
         ],
         "off": []
@@ -176,7 +167,7 @@
         "off": []
       }
     ],
-    "summary": "3 problems this week: 2 most likely in the provider's network and 1 most likely in the home network.",
+    "summary": "3 problems this week: 2 most likely from your internet provider and 1 most likely in your home network.",
     "counts": {
       "problems": 3,
       "home": 1,
@@ -189,12 +180,6 @@
       "services": 0,
       "call_patches": 0
     },
-    "sides": {
-      "home": 1,
-      "provider": 2,
-      "other": 0
-    },
-    "coverage": 0.55,
     "problems": [
       {
         "id": 83,
@@ -202,11 +187,11 @@
         "to": 1791468360000,
         "kind": "lan",
         "who": "home",
-        "where": "Most likely the home network (Wi-Fi or router)",
+        "where": "Most likely your home network (Wi-Fi or router)",
         "side": "home",
         "level": "bad",
         "confidence": "likely",
-        "text": "The problem was most likely in the home network (Wi-Fi or router).",
+        "text": "The problem was most likely your Wi-Fi or router.",
         "peak_loss": 0.35,
         "details": "#v=calls\u0026from=1791466320000\u0026to=1791470160000\u0026o=1"
       },
@@ -216,11 +201,11 @@
         "to": 1791445920000,
         "kind": "isp",
         "who": "provider",
-        "where": "Most likely the provider network (past the router)",
+        "where": "Most likely your provider's network (past your router)",
         "side": "provider",
         "level": "bad",
         "confidence": "likely",
-        "text": "The problem was most likely in the provider's network. The home network looked fine.",
+        "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
         "peak_loss": 0.7,
         "details": "#v=calls\u0026from=1791443400000\u0026to=1791447720000\u0026o=1"
       },
@@ -230,11 +215,11 @@
         "to": 1791289200000,
         "kind": "isp",
         "who": "provider",
-        "where": "Most likely the provider network (past the router)",
+        "where": "Most likely your provider's network (past your router)",
         "side": "provider",
         "level": "bad",
         "confidence": "likely",
-        "text": "The problem was most likely in the provider's network. The home network looked fine.",
+        "text": "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine.",
         "peak_loss": 1,
         "details": "#v=calls\u0026from=1791286500000\u0026to=1791291000000\u0026o=1"
       }
@@ -247,42 +232,41 @@
   },
   "live": {
     "part": "live",
-    "voice": "public",
     "at": 1791549000000,
     "answer": {
       "level": "good",
       "who": "none",
       "kind": "ok",
       "calls": "good",
-      "headline": "This connection is fine",
+      "headline": "Your internet is fine",
       "cause": "Calls, work apps and websites are all working.",
       "try": [],
-      "announce": "This connection is fine. Calls, work apps and websites are all working."
+      "announce": "Your internet is fine. Calls, work apps and websites are all working."
     },
     "path": [
       {
         "id": "device",
-        "label": "Monitoring device",
+        "label": "This device",
         "state": "ok",
         "words": "OK"
       },
       {
         "id": "router",
-        "label": "Home router",
+        "label": "Your router",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The router that connects the home to the internet."
+        "tooltip": "The box that connects your home to the internet."
       },
       {
         "id": "provider",
-        "label": "Provider network",
+        "label": "Your provider",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The provider's first piece of equipment past the home router."
+        "tooltip": "The first piece of your internet provider's equipment, just outside your home."
       },
       {
         "id": "internet",
-        "label": "The wider internet",
+        "label": "The internet",
         "state": "ok",
         "words": "OK",
         "tooltip": "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
@@ -292,7 +276,7 @@
         "label": "Apps \u0026 websites",
         "state": "ok",
         "words": "OK",
-        "tooltip": "The apps and websites checked from this connection."
+        "tooltip": "The apps and websites we check for you."
       }
     ],
     "tiles": [
@@ -359,7 +343,7 @@
         "level": "good",
         "state": "reachable",
         "label": "Reachable",
-        "note": "Same call quality as the other apps: Good."
+        "note": "Same call quality as your other apps: Good."
       },
       {
         "app": "meet",
@@ -404,6 +388,6 @@
         "label": "Reachable"
       }
     ],
-    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so they can't be tested ahead of time."
+    "apps_note": "Zoom, Slack, Discord, WhatsApp and Webex choose a server when each call starts, so we can't test them ahead of time."
   }
 }

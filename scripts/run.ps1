@@ -6,7 +6,7 @@
 # download is deleted when fyisp exits.
 #
 #   powershell -ExecutionPolicy Bypass -File run.ps1 [fyisp args]
-#   & ([scriptblock]::Create((irm https://github.com/fuck-you-isp/fyisp/releases/download/<version>/run.ps1))) --share
+#   & ([scriptblock]::Create((irm https://github.com/fuck-you-isp/fyisp/releases/download/<version>/run.ps1))) --speedtest
 #
 # Environment:
 #   FYISP_BASE_URL  download from here instead of the GitHub release (must be

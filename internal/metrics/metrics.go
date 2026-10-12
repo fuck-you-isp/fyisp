@@ -38,12 +38,12 @@
 // profile target is exported as fyisp_trace_hops{name} (its length) and one
 // fyisp_hop_info{name,hop,ip,asn,owner} 1 per hop (empty labels for a hop
 // that does not answer, or unknown values), plus fyisp_route_changes_total.
-// Hop samples themselves are not exported. /metrics is served on the local
-// listener only, so the ip label reveals nothing publicly.
+// Hop samples themselves are not exported. /metrics is served with the
+// dashboard, behind its Host check, like the hop addresses it shows.
 //
-// The Collector uses a private registry: cloudflared registers collectors
-// into (and fyisp's tunnel replaces) prometheus.DefaultRegisterer, so the
-// global registry is never used here.
+// The Collector uses a private registry, not prometheus.DefaultRegisterer:
+// /metrics holds fyisp's series only, whatever a dependency registers
+// globally.
 package metrics
 
 import (

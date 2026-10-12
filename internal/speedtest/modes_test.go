@@ -56,8 +56,8 @@ func TestSchedulerQueue(t *testing.T) {
 }
 
 // TestWireBytes: a test's bytes count every attempt's data phase on the
-// wire (ramp-up included), not only the measured window: the share link's
-// budget charges what was sent.
+// wire (ramp-up included), not only the measured window: the data use shown
+// is what was sent.
 func TestWireBytes(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.setRun(func(c Config, n int) (Result, error) {
@@ -66,8 +66,12 @@ func TestWireBytes(t *testing.T) {
 		}
 		return Result{Direction: c.Direction, Bytes: 10e6, WireBytes: 12e6, Elapsed: time.Second}, nil
 	})
-	_, _, bytes := h.s.execJob(context.Background(), h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
-	if bytes != 7e6+12e6+12e6 {
+	h.s.execJob(context.Background(), h.s.slotJob(target{server: "Near", nearby: -1}), "manual")
+	ts, _ := h.st.SpeedTests(context.Background(), time.Time{}, h.now.Add(time.Hour))
+	if len(ts) != 1 {
+		t.Fatalf("%d tests", len(ts))
+	}
+	if bytes := ts[0].Bytes; bytes != 7e6+12e6+12e6 {
 		t.Errorf("bytes %d, want %d", bytes, int64(7e6+12e6+12e6))
 	}
 }
@@ -255,22 +259,31 @@ func TestScheduleThroughQueue(t *testing.T) {
 	}
 }
 
-// TestSlotCap: SlotMaxBytes holds over a slot's retries and servers: each
-// attempt gets what is left, and none starts once it is spent.
+// TestSlotCap: no test has a byte cap: only
+// the time cap and its backstop. The slot's hard cap holds an attempt
+// started at SlotBudget: both directions to their deadlines and the pause
+// between them.
 func TestSlotCap(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{WireBytes: 150 << 20}, ErrBusy // busy, after moving data
 	})
-	h.slot(t, target{server: "Near"})
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.calls) != 2 || h.calls[0].MaxBytes != MaxBytes || h.calls[1].MaxBytes != SlotMaxBytes-150<<20 {
-		var caps []int64
+	for _, trigger := range []string{"schedule", "manual", "sweep", "public", "public_sweep"} {
+		h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), trigger)
+		h.mu.Lock()
 		for _, c := range h.calls {
-			caps = append(caps, c.MaxBytes)
+			if c.MaxBytes != 0 || c.Backstop != TimeBackstop || c.Duration != MaxMeasure || c.Timeout != DirTimeout {
+				t.Errorf("%s: %+v", trigger, c)
+			}
 		}
-		t.Errorf("%d attempts, caps %v", len(h.calls), caps)
+		if len(h.calls) != MaxAttempts {
+			t.Errorf("%s: %d attempts", trigger, len(h.calls))
+		}
+		h.calls = nil
+		h.mu.Unlock()
+	}
+	if SlotCap < SlotBudget+2*DirTimeout+relisten || DirTimeout < TimeBackstop || TimeBackstop != MaxOmit+MaxMeasure+2*time.Second {
+		t.Errorf("SlotCap %v, DirTimeout %v, TimeBackstop %v", SlotCap, DirTimeout, TimeBackstop)
 	}
 }
 
@@ -338,7 +351,7 @@ func TestSweepGap(t *testing.T) {
 	h.slept = nil
 	h.job(t, job, "sweep") // Exec itself never waits
 	if slices.Contains(h.slept, MaskTail+SweepGap) {
-		t.Error("execJob waited the gap: it would be charged to the share link")
+		t.Error("execJob waited the gap: Pause's job, outside the test")
 	}
 	if 2*LoadTimeout > MaskTail {
 		t.Errorf("MaskTail %v is under 2 × LoadTimeout", MaskTail)
@@ -370,7 +383,7 @@ func TestCancelMasksUntilStreamsClose(t *testing.T) {
 		}}})
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { <-started; time.Sleep(300 * time.Millisecond); cancel() }()
-	id, saved, _ := s.execJob(ctx, s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
+	id, saved := s.execJob(ctx, s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
 	if saved || id != 0 {
 		t.Fatalf("a cancelled test was saved (%d)", id)
 	}
@@ -445,7 +458,7 @@ func TestCancelAtCompletion(t *testing.T) {
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{Direction: c.Direction, Bytes: 1e6, Elapsed: time.Second, IP: netip.MustParseAddr("198.51.100.7")}, nil
 	})
-	id, saved, _ := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "sweep")
+	id, saved := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "sweep")
 	ts, _ := st.SpeedTests(context.Background(), time.Time{}, h.clock().Add(time.Hour))
 	if !saved || id == 0 || len(ts) != 1 || ts[0].Outcome != model.SpeedOK || ts[0].DownBps == nil {
 		t.Fatalf("saved %v id %d: %+v", saved, id, ts)
@@ -502,7 +515,7 @@ func TestAtMostNineConnections(t *testing.T) {
 			},
 			Sleep: func(ctx context.Context, _ time.Duration) bool { return ctx.Err() == nil },
 		}})
-	id, saved, _ := s.execJob(context.Background(), s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
+	id, saved := s.execJob(context.Background(), s.slotJob(target{server: sv.ID, nearby: -1}), "manual")
 	if !saved || id == 0 || !slices.Equal(runs, []Direction{Download, Upload, Upload}) {
 		t.Fatalf("saved %v, runs %v", saved, runs)
 	}
@@ -620,7 +633,7 @@ func TestHandoffBeforeWindow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.s.o.Handoff = func(context.Context, string) (*model.Handoff, error) { cancel(); return nil, context.Canceled }
 	n, calls := len(h.st.tests), len(h.calls)
-	if id, saved, _ := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "schedule"); id != 0 || saved || len(h.st.tests) != n || len(h.calls) != calls {
+	if id, saved := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "schedule"); id != 0 || saved || len(h.st.tests) != n || len(h.calls) != calls {
 		t.Errorf("shut down while tracing: saved %v, %d rows, %d runs", saved, len(h.st.tests)-n, len(h.calls)-calls)
 	}
 }

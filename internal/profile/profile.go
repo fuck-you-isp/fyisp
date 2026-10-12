@@ -141,7 +141,6 @@ func pathTargets() []model.Target {
 		{Name: "ISP edge", Host: model.HostEdge, Group: PathGroup, Layer: model.LayerEdge, Kinds: icmp, Interval: PathInterval},
 		{Name: "Cloudflare DNS 1.1.1.1", Host: "1.1.1.1", Group: PathGroup, Layer: model.LayerAnycast, Kinds: icmpTCP, Interval: DefaultInterval},
 		{Name: "Google DNS 8.8.8.8", Host: "8.8.8.8", Group: PathGroup, Layer: model.LayerAnycast, Kinds: icmpTCP, Interval: DefaultInterval},
-		{Name: "Quad9 DNS 9.9.9.9", Host: "9.9.9.9", Group: PathGroup, Layer: model.LayerAnycast, Kinds: icmpTCP, Interval: DefaultInterval},
 	}
 }
 

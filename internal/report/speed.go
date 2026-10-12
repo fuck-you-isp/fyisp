@@ -30,8 +30,9 @@ type speedView struct {
 	// ("" when there's nothing to ask).
 	Connection, Latency, Ask string
 	Rows                     []speedRow
-	// Owner and Public count the tests started by hand and from the share
-	// link (the rest were scheduled); Origins says so, "" when all were.
+	// Owner and Public count the tests started by hand and, before v0.8.0,
+	// from the share link (the rest were scheduled); Origins says so, ""
+	// when all were. TODO(v0.9): drop Public with model's legacy triggers.
 	Owner, Public int
 	Origins       string
 	// TooFast: some rows are too fast to measure from here (the method
@@ -95,7 +96,7 @@ func mbps(bps float64) string {
 	return fmt.Sprintf("%.2f Mbit/s", bps/1e6)
 }
 
-// speedDisplay names servers as the share link does: "Region · Provider,
+// speedDisplay names servers for anyone to read: "Region · Provider,
 // City" for catalog servers, "Your server N" for the owner's own (never a
 // host, label or address).
 func speedDisplay(cat *speedtest.Catalog, ts []model.SpeedTest) func(string) string {
@@ -206,7 +207,7 @@ func (r *run) speedSection() *speedView {
 		case speedtest.CaseISP, speedtest.CaseProvider, speedtest.CaseRoute, speedtest.CaseServer, speedtest.CaseMild, speedtest.CaseMixed, speedtest.CaseTooFast:
 			f.Text = strings.TrimSuffix(f.TextPublic, ".") + " (times in " + v.Zone + ")."
 			f.Caveat = f.CaveatPublic
-			if r.o.Redact { // the share link's rules: no start date, no networks by name
+			if r.o.Redact { // no start date, no networks by name
 				f.Evidence, f.Coverage, f.Network = f.EvidencePublic, f.CoveragePublic, ""
 			} else if f.Network != "" {
 				f.Evidence += " The slow tests left the provider's network through " + f.Network + "."
@@ -300,7 +301,7 @@ func (r *run) speedSection() *speedView {
 		asked = append(asked, fmt.Sprintf("%d started by hand", v.Owner))
 	}
 	if v.Public > 0 {
-		asked = append(asked, fmt.Sprintf("%d started from the share link", v.Public))
+		asked = append(asked, fmt.Sprintf("%d started from the share link (before v0.8.0)", v.Public))
 	}
 	if len(asked) > 0 {
 		v.Origins = "Of these, " + strings.Join(asked, " and ") + "; the rest were scheduled. Tests someone started are left out of the time-of-day patterns, but their probe gaps count like any other."
@@ -312,7 +313,7 @@ func (r *run) speedSection() *speedView {
 }
 
 // speedMethod states how the tests ran, with the durations actually
-// measured: on a fast line the 100 MB cap ends a direction in about a
+// measured: a share-link test's 100 MB cap can end a direction in about a
 // second, and the report must not claim more.
 func speedMethod(ts []model.SpeedTest) string {
 	var down, up []float64
@@ -335,7 +336,7 @@ func speedMethod(ts []model.SpeedTest) string {
 			}
 		}
 	}
-	s := "Each test is iperf3 over IPv4 with 8 streams, download then upload, after a ramp-up of up to 1 second and at most 100 MB each way"
+	s := "Each test is iperf3 over IPv4 with 8 streams, download then upload, for at most about 11 seconds each way, ramp-up included (the ramp-up is left out of the result)"
 	dur := func(v []float64) string {
 		return fmt.Sprintf("a median of %.1f s (%.1f–%.1f s)", callq.Median(v), slices.Min(v), slices.Max(v))
 	}

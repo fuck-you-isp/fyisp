@@ -17,9 +17,9 @@ Only the latest release receives security fixes.
 
 ## What leaves your machine
 
-fyisp has no telemetry. It talks to its probe targets, your DNS resolver and,
-only while sharing, Cloudflare's quick tunnel. Every probe target, TCP or UDP,
-sees your public IP address, as any website you visit does.
+fyisp has no telemetry and, since v0.8.0, no share link: it talks to its
+probe targets and your DNS resolver. Every probe target, TCP or UDP, sees
+your public IP address, as any website you visit does.
 
 The STUN servers fyisp measures calls with (listed in the README under
 "STUN servers") are no different: they see your
@@ -36,80 +36,56 @@ its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
 Scaleway and others; the README lists them) and to servers you name with
 `--speedtest-server`, and to no one else. The catalog is built into the
 binary and never fetched. Those servers see your public IP address. Each test
-moves at most 200 MB. Once a day per server, fyisp traceroutes the path to
-it to name the first network past your ISP (shown locally only). "Test now", sweeps, cancelling and the
-mode choice are write actions behind the same protections as notes (same
-origin, CSRF token, admin token). Only while speed tests are on and the owner turns it on
-(`--speedtest-public` or the Details toggle; off by default), people with
-the share link may queue a test or a sweep of every server (`POST
-/s/<secret>/api/speed/run`), but never change the mode or cancel anything.
-Their tests may transfer at most `--speedtest-public-budget` (default 10 GB)
-per rolling 24 hours, counted from every byte on the wire (all attempts,
-ramp-up included) and kept across restarts. It is a hard limit: a test
-from the share link starts only when a whole test (up to 210 MB) still
-fits in what's left, and every test is hard-stopped at that size, even
-against a server that ignores the end of the test. A budget under 210 MB
-turns the share link's tests off (with a warning at start). Because probes are masked
-during a test, the share link's tests may also keep the line under test at
-most 10 minutes per hour and 60 per day, a public sweep can start only 30
-minutes after the last one, and a public sweep yields to the owner's and
-scheduled tests between servers. Visitors can't blank out the monitoring. Every test waits in one queue and
-exactly one runs at a time: the owner's tests first, then scheduled ones, then
-the share link's. The share link's
-entries are capped: one waiting entry per visitor, 3 waiting sweeps and 12
-waiting entries in all. Each visitor (`Cf-Connecting-Ip`, IPv6 per /64)
-may start 1 per 30 s and 10 per hour. That route is same-origin only,
-takes only `kind` and `id` and no body, and is never cached. The share link
-shows server labels (provider and city) but never hosts, addresses or ports,
-shows your own servers only as "Your server", and shows the queue's other
-entries only as "someone".
+runs at most about 11 seconds each way, ramp-up included, with
+no byte cap, and each direction is hard-stopped 2 seconds later even against
+a server that ignores the end of the test. Once a day per server, fyisp traceroutes the path to
+it to name the first network past your ISP (shown in the dashboard only).
+"Test now", sweeps, cancelling and the mode choice are write actions behind
+the same protections as notes (same origin, CSRF token, admin token). Every
+test waits in one queue and exactly one runs at a time: the owner's tests
+first, then scheduled ones.
 
-The public share link hides the STUN target names and the Teams relay region
-(the Azure region fyisp's relay lookup landed in, which hints at where you
-are), along with the other redactions listed in the README.
-
-On-demand traces (*Investigate*) can be started by anyone who can open the
-dashboard, without the admin token, and by anyone with the share link: `POST
-/s/<secret>/api/investigate` is one of the public listener's two write
-routes (the other, `POST /s/<secret>/api/speed/run`, exists only while the
-owner allows tests from the share link; see below). The safeguards are:
+On-demand traces (*Investigate*) need the same origin and the CSRF token
+and, where the dashboard has an admin token (a network listener, or any
+`--allow-host`), the admin token. On a loopback dashboard without one,
+anyone who can open it may start them. The safeguards are:
 
 - only the profile's target names are accepted, never a host or address;
 - each trace stops by itself after 250 rounds (about 10 minutes); re-posting
   doesn't extend it;
-- at most 4 run at once, shared by the local and public listeners, of which
-  public starts may hold 3 (the owner always has a slot);
-- a target finished less than 5 minutes ago can't be restarted from the
-  public link;
+- at most 4 run at once;
 - the per-router probe cap is unchanged;
-- public starts are same-origin only (checked behind a real quick tunnel) and
-  limited per client by `Cf-Connecting-Ip` (IPv4 per address, IPv6 per /64;
-  1 per 30 s, 10 per hour), on top of the public rate limits; that key is
-  trustworthy because the public origin listens on 127.0.0.1 only; when the
-  limiter's table is full it prunes, then refuses new clients rather than
-  forgetting everyone;
 - the route takes exactly one `target` parameter and no body (a declared
-  length, chunking or anything read is refused), is never
-  cached, and its responses carry only the trace's state (target name,
-  rounds, times); hop addresses stay redacted as on every public trace view;
+  length, chunking or anything read is refused), is never cached, and its
+  responses carry only the trace's state (target name, rounds, times);
 - client addresses are never logged.
 
-The local route keeps the Host allowlist, the same-origin check and the CSRF
-token.
+## Exposing the dashboard
 
+fyisp serves one dashboard, by default on 127.0.0.1:3000. It has no public
+or redacted view: whoever can open it sees every address, host name, note
+and report. To show your connection to others, send a redacted report
+(`fyisp report --redact`). If you put a tunnel or reverse proxy in front of
+the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
+`--allow-host`: any `--allow-host` turns the admin token on, even on a
+loopback listener. A loopback dashboard without an admin token refuses
+write routes and traces from requests that carry proxy headers
+(`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`,
+`Tailscale-User-Login`), so a proxy that rewrites `Host` to 127.0.0.1 can't
+hand its visitors the owner's controls. The README's "Sharing" section has
+the details.
 
 In scope, for example:
 
-- anything reachable through the public share link (`--share`) that is not
-  meant to be public: private addresses, settings, local-only endpoints,
-  unpublished reports or notes;
-- bypasses of the local dashboard's protections (Host allowlist, CSRF,
-  `--admin-token`), or of the on-demand trace safeguards above (tracing
+- a redacted report (`--redact`) that shows what it should leave out:
+  private addresses, the ISP edge unmasked, notes not marked for redacted
+  reports;
+- bypasses of the dashboard's protections (Host allowlist, CSRF,
+  `--admin-token`, the proxy-header refusal above), or of the on-demand trace safeguards above (tracing
   anything but a profile target, more than 4 at once, past 250 rounds);
 - ways for a remote party to make fyisp run commands, read or write files, or
   exhaust memory or disk;
 - supply-chain issues in the release process (launchers, checksums, images).
 
-Out of scope: the quick tunnel's availability (it depends on Cloudflare's free
-trycloudflare service) and findings that require local access to the machine
-running fyisp.
+Out of scope: findings that require local access to the machine running
+fyisp, and the security of a tunnel or proxy you put in front of it.

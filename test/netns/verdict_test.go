@@ -43,7 +43,7 @@ const (
 	dnsEnterTimeout = 180 * time.Second
 )
 
-// Summaries are shown on the public link: no addresses, no lab host names.
+// Summaries go into redacted reports as they are: no addresses, no lab host names.
 var (
 	ipPattern = regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	labNames  = []string{"fyisp.test", "provider-a.test", "provider-b.test", dnsName, dnsName2, nsPrefix} // every namespace name starts with nsPrefix

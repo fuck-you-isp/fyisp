@@ -3,6 +3,7 @@ package speedtest
 import (
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -49,8 +50,14 @@ type estimate struct {
 //     stillRising's.
 //   - With no ticks, or none with bytes, it is MethodWhole.
 func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
+	return peak90From(0, cum, at, end, endBytes, rtt)
+}
+
+// peak90From is peak90 with the window starting at tick from or later
+// (written bytes: the first tick fills the send buffers, not the path).
+func peak90From(from int, cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
 	n := len(cum)
-	if n == 0 || end <= 0 || len(at) != n {
+	if n <= from || end <= 0 || len(at) != n {
 		return estimate{method: MethodWhole}
 	}
 	r := make([]float64, n)
@@ -63,8 +70,8 @@ func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, 
 		prev, prevAt = c, at[i]
 	}
 	sm := median3(r)
-	pk := 0
-	for i := range sm {
+	pk := from
+	for i := from; i < n; i++ {
 		if sm[i] > sm[pk] {
 			pk = i
 		}
@@ -72,7 +79,7 @@ func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, 
 	if sm[pk] <= 0 {
 		return estimate{method: MethodWhole}
 	}
-	k := 0
+	k := from
 	for sm[k] < 0.9*sm[pk] {
 		k++
 	}
@@ -202,18 +209,23 @@ func rising(sm []float64, w int) bool {
 
 // rateUse reports whether a direction (0 down, 1 up) is a lower bound.
 func rateUse(short bool, x *Extra, i int) bool {
-	if !short {
-		return false
-	}
-	if x.RateMethod[i] == "" { // v0.7.0
+	switch {
+	case x.RateMethod[i] != "":
+		return x.LowerBound[i]
+	case short: // v0.7.0
 		return x.RampMs[i] == 0
 	}
-	return x.LowerBound[i]
+	return false
+}
+
+// mayBound reports whether t may have a lower bound (capped, or flagged).
+func mayBound(t *model.SpeedTest) bool {
+	return t.DownShort || t.UpShort || strings.Contains(t.Extra, "lower_bound")
 }
 
 // LowerBounds reports which of t's directions are lower bounds.
 func LowerBounds(t *model.SpeedTest) (down, up bool) {
-	if !t.DownShort && !t.UpShort {
+	if !mayBound(t) {
 		return false, false
 	}
 	x := ParseExtra(t.Extra)
@@ -312,13 +324,26 @@ func tooFast(ts []model.SpeedTest, loc *time.Location) [2]map[string]bool {
 // above), hours local to loc; ts is not changed (and is returned as is
 // when nothing was capped).
 func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
-	if !slices.ContainsFunc(ts, func(t model.SpeedTest) bool { return t.DownShort || t.UpShort }) {
+	if !slices.ContainsFunc(ts, func(t model.SpeedTest) bool { return mayBound(&t) }) {
 		return ts
 	}
 	out := slices.Clone(ts)
 	fast := tooFast(ts, loc)
+	// A server with 100 MB rows (before v0.7.2) has no normal until
+	// BaselineMin time-capped rows exist (Baseline): its older rows'
+	// stored scores are left out too, so it doesn't look normal and then
+	// go quiet.
+	byteCapped := map[string]bool{}
+	for i := range ts {
+		if (ts[i].DownShort || ts[i].UpShort) && !timeCapped(&ts[i]) {
+			byteCapped[ts[i].Server] = true
+		}
+	}
 	for i := range out {
 		t := &out[i]
+		if byteCapped[t.Server] && !timeCapped(t) {
+			t.ScoreDown, t.ScoreUp = nil, nil
+		}
 		if fast[0][t.Server] {
 			t.ScoreDown = nil
 		}
@@ -331,6 +356,9 @@ func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
 	}
 	return out
 }
+
+// timeCapped reports a test run under the time cap (v0.7.2 and later).
+func timeCapped(t *model.SpeedTest) bool { return strings.Contains(t.Extra, `"cap":"time"`) }
 
 // atLeastNormal is a lower bound's score: 1 (normal) when it reaches
 // normal, else none (left out).

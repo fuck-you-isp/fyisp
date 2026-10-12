@@ -5,33 +5,28 @@ An on-demand trace follows one profile target's path hop by hop every 2.5 s, for
 ## Start
 
 ```
-POST api/investigate?target=<profile target name>          (local listener)
-POST /s/<secret>/api/investigate?target=<…>                 (share link)
+POST api/investigate?target=<profile target name>
 ```
 
 There is no body. The checks are:
 
-| | Local | Share link |
-|---|---|---|
-| Host allowlist | yes | (the secret path) |
-| Same origin (`Origin` / `Sec-Fetch-Site`) | yes | yes |
-| `X-FYISP-CSRF` (page meta) | yes | — (the public page has none) |
-| Admin token | **no** | — |
-| Per-client limit (`Cf-Connecting-Ip`; IPv6 per /64) | — | 1 new start per 30 s, 10 per hour (only starts that happen count; a full limiter table refuses new clients) |
-| Slots | any of the 4 | at most 3 of the 4: the owner always has one |
-| Restarting a finished target | at once | after a 5-minute cooldown |
+| Check | |
+|---|---|
+| Host allowlist | yes |
+| Same origin (`Origin` / `Sec-Fetch-Site`) | yes |
+| `X-FYISP-Token` (CSRF, page meta) | yes |
+| Admin token (`X-FYISP-Admin` or the session cookie) | where the dashboard has one: `--listen` beyond loopback (unless `--admin-token=off`) or any `--allow-host` |
+| Proxy headers | a loopback dashboard without an admin token refuses a request carrying `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`: its controls work only from the same machine |
+| Slots | at most 4 traces at once |
 
 **Request rules:**
 - Exactly one `target` parameter and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
 - Only profile target names are accepted; never a host or an address.
-- At most 4 traces run at once, shared by both listeners.
 - Every response has `Cache-Control: no-store`.
 - Logs name the target and the error, never the client.
 
-**Same origin behind the tunnel:** cloudflared passes the visitor's Host (the trycloudflare hostname) to the loopback origin unchanged, along with Origin and Sec-Fetch-Site, and Cloudflare's edge sets `Cf-Connecting-Ip`. This was checked on a real quick tunnel by `TestLiveSameOrigin` in `internal/tunnel`. The public origin binds 127.0.0.1 only, which is what makes `Cf-Connecting-Ip` trustworthy as the per-client key.
-
 **What a POST does:**
-- **Trace running:** returns its state. It doesn't extend the trace or reset the count, and it isn't counted against the per-client limit.
+- **Trace running:** returns its state. It doesn't extend the trace or reset the count.
 - **Trace finished:** starts a fresh 250 rounds.
 
 **Response 200:**
@@ -48,15 +43,17 @@ There is no body. The checks are:
 | Status | `code` | When |
 |---|---|---|
 | 400 | `bad_request` | a parameter other than one `target`, or a body |
-| 403 | `forbidden` | cross-origin; local: missing or bad `X-FYISP-Token` |
+| 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token`; admin token required; proxy headers on a loopback dashboard without a token |
 | 404 | `unknown_target` | not a profile target name |
 | 404 | `unavailable` | tracing is not available |
 | 405 | `method_not_allowed` | not POST |
-| 429 | `busy` | no free slot (4 in all, 3 for the share link) |
-| 429 | `rate_limited` | share link: this client's start limit (`retry_after`) |
-| 429 | `cooldown` | share link: this target finished less than 5 minutes ago (`retry_after`) |
-| 500 | `failed` | the tracer failed (the local listener adds the reason) |
+| 429 | `busy` | no free slot (4 in all; `retry_after`) |
+| 500 | `failed` | the tracer failed (with the reason) |
 
 ## Progress
 
-`GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes, on both listeners. The UI polls it and never re-posts to keep a trace alive.
+`GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
+
+## Removed in v0.8.0
+
+With the share link: `POST /s/<secret>/api/investigate`, the per-client start limit, the 5-minute restart cooldown (codes `rate_limited` and `cooldown`), the owner's reserved slot, and the redacted hop view (the `masked` field; hops always carry their address, private ones with `"private": true`).

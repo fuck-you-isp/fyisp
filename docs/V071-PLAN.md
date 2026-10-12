@@ -1,5 +1,7 @@
 # fyisp v0.7.1: plan (FINAL)
 
+> **Historical plan.** The share link it describes (`--share`, the Cloudflare quick tunnel, the public listener and everything served on it) was removed in v0.8.0; see the README's "Sharing" and "Upgrading to v0.8.0".
+
 **Status:** FINAL, 2026-10-11 (A2 scoring settled: net-isp's share-based hybrid). The execution team (cq-core, ux-eng, cq-ui) starts from this file.
 
 **Who and where:**

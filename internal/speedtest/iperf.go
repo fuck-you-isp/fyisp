@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -130,7 +131,12 @@ type Config struct {
 	// MaxBytes caps the bytes moved in this direction, ramp-up included
 	// (0: no cap): the test ends there, and Result.CappedByBytes is set.
 	MaxBytes int64
-	// Timeout bounds the whole run, default Omit+Duration+5s. The caller's
+	// Backstop is when, from the data phase's start, the streams are cut
+	// with an RST whatever the server does (a server that ignores TEST_END
+	// or keeps sending), default Omit+Duration+2s. A complete window
+	// still counts (Result.Overrun).
+	Backstop time.Duration
+	// Timeout bounds the whole run, default Omit+Duration+7s. The caller's
 	// ctx may end it sooner.
 	Timeout time.Duration
 	// Dial opens TCP connections (tests: a stub). Default net.Dialer.
@@ -200,8 +206,11 @@ func (c *Config) defaults() {
 	if c.MinDuration > 0 && c.Stable <= 0 {
 		c.Stable = 0.05
 	}
+	if c.Backstop <= 0 {
+		c.Backstop = c.Omit + c.Duration + 2*time.Second
+	}
 	if c.Timeout <= 0 {
-		c.Timeout = c.Omit + c.Duration + 5*time.Second
+		c.Timeout = c.Omit + c.Duration + 7*time.Second
 	}
 	if c.Dial == nil {
 		d := &net.Dialer{Timeout: 5 * time.Second}
@@ -292,16 +301,22 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	defer stop()
 
 	r, err := t.run(ctx, &res)
+	if err != nil && ctx.Err() == nil && t.measured.Load() {
+		// The client ended the direction, but the server didn't end the test
+		// (it ignored TEST_END, or its results never came): the window is
+		// the client's own, so it stands; the streams are cut.
+		t.overrun.Store(true)
+	}
 	if t.overrun.Load() {
 		// The measurement stands when the window was complete (only the
 		// server's retransmits are lost); else the run failed.
 		r, err = res, nil
 		r.Overrun = true
-		if !res.CappedByBytes || res.Elapsed <= 0 {
+		if res.Elapsed <= 0 {
 			err = ErrOverrun
 		}
 	}
-	if err != nil {
+	if err != nil || r.Overrun {
 		t.abort() // nothing more to send: drop what is queued
 	}
 	t.close() // the streams stop: their counters are final
@@ -382,11 +397,12 @@ type test struct {
 	// stopAt is where a download stops reading: MaxBytes less what is
 	// still in flight then (see inflightSlack), so the total that arrives
 	// stays within MaxBytes.
-	stopAt  atomic.Int64
-	dialRTT time.Duration // the control connection's connect time: the RTT without TCP_INFO
-	capped  atomic.Bool
-	capAt   atomic.Int64 // when capped (UnixNano)
-	overrun atomic.Bool  // the backstop cut the run
+	stopAt   atomic.Int64
+	dialRTT  time.Duration // the control connection's connect time: the RTT without TCP_INFO
+	capped   atomic.Bool
+	capAt    atomic.Int64 // when capped (UnixNano)
+	measured atomic.Bool  // the data phase ended with a complete window
+	overrun  atomic.Bool  // the backstop cut the run
 }
 
 func (t *test) close() { t.shut(false) }
@@ -507,11 +523,17 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 		t.wg.Add(1)
 		go t.backstop()
 	}
+	cut := time.AfterFunc(t.c.Backstop, func() { // the time backstop
+		t.overrun.Store(true)
+		t.abort()
+	})
+	defer cut.Stop()
 	per, err := t.dataPhase(counts, res)
 	done.Store(true)
 	if err != nil {
 		return *res, err
 	}
+	t.measured.Store(true)
 
 	if err := t.write([]byte{stateTestEnd}); err != nil {
 		return *res, err
@@ -564,8 +586,12 @@ func (t *test) idle(deadline time.Time) error {
 // tick is the data phase's clock: progress is read every 100 ms.
 const tick = 100 * time.Millisecond
 
-// dataPhase runs the ramp-up and the measured window on 100 ms ticks, then
-// fills res. per is each stream's bytes in the window (for our results).
+// dataPhase runs the data phase on 100 ms ticks until the time cap
+// (Omit + Duration), the byte cap, or, when adaptive, a plateau-aware early
+// stop, then fills res from the one estimator (peak90 over the
+// timestamped ticks: the ramp-up's end is decided after the fact, the
+// same way whatever ended the run). per is each stream's bytes (for our
+// results).
 func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	n := len(t.streams)
 	total := func() int64 {
@@ -577,16 +603,13 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	}
 	adaptive := t.c.MinDuration > 0
 	start := time.Now()
-	base := make([]int64, n)
 	retransStart := make([]int64, n)
 	ackedStart := make([]int64, n)
-	measuring := false
-	rampCapped := false
-	// cum is the bytes counted at each tick, for a capped direction's
-	// estimate: received for downloads, acked for uploads (Linux; nil
-	// without it).
+	t.snapshot(counts, make([]int64, n), retransStart, ackedStart)
+	// cum is the bytes counted at each tick and ats when it was read:
+	// received for downloads, acked for uploads (Linux; else written).
 	var cum []int64
-	var ats []time.Duration // when each tick was read, from start
+	var ats []time.Duration
 	ackedSum := func() int64 {
 		var x int64
 		for i := range n {
@@ -598,97 +621,55 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		}
 		return x
 	}
-	perTick := t.c.Direction == Download || ackedSum() >= 0
-	ack0 := make([]int64, n) // uploads: acked before any data
-	for i := range ack0 {
-		_, ack0[i] = t.tcpCounters(i)
-	}
-	var winStart time.Time
-	var prevMax, last, secBytes int64
-	kWin := 0 // the tick the window started at
-	prevSec := int64(-1)
+	acked := t.c.Direction == Upload && ackedSum() >= 0
+	timeCapped := false // the run reached Omit + Duration
+	var last int64
 	var lastAt time.Duration
 	for k := 1; ; k++ {
-		at := start.Add(time.Duration(k) * tick)
-		if err := t.idle(at); err != nil {
+		if err := t.idle(start.Add(time.Duration(k) * tick)); err != nil {
 			return nil, err
 		}
 		now := time.Since(start) // ticks are read late on a busy machine: rates use the actual time
 		b := total()
-		d := b - last
-		last = b
-		t.updateStop(float64(d) / max(now-lastAt, time.Millisecond).Seconds())
-		lastAt = now
-		if perTick {
-			c := b
-			if t.c.Direction == Upload {
-				if c = ackedSum(); c < 0 {
-					perTick, cum = false, nil
-				}
+		t.updateStop(float64(b-last) / max(now-lastAt, time.Millisecond).Seconds())
+		last, lastAt = b, now
+		c := b
+		if acked {
+			if c = ackedSum(); c < 0 {
+				acked, c = false, b
 			}
-			cum, ats = append(cum, c), append(ats, now)
 		}
+		cum, ats = append(cum, c), append(ats, now)
 		if t.capped.Load() {
 			res.CappedByBytes = true
-			if !measuring { // capped in the ramp-up: the whole run is the window,
-				rampCapped = true
-				winStart = start // counted from the connections' start
-				for i := range ackedStart {
-					retransStart[i], ackedStart[i] = 0, ack0[i] // acked counts the handshake and cookie
-					if t.c.Direction == Download {
-						retransStart[i], ackedStart[i] = -1, -1
-					}
-				}
-			}
 			break
 		}
-		if !measuring {
-			rampOver := time.Duration(k)*tick >= t.c.Omit ||
-				(adaptive && k >= 3 && float64(d) <= 1.05*float64(prevMax))
-			prevMax = max(prevMax, d)
-			if rampOver {
-				measuring = true
-				t.snapshot(counts, base, retransStart, ackedStart)
-				winStart, secBytes, kWin = time.Now(), b, k
-				res.Ramp = winStart.Sub(start)
-			}
-			continue
-		}
-		// Seconds are counted in ticks, so every second has the same length.
-		w := time.Duration(k-kWin) * tick
-		if w >= t.c.Duration {
+		if time.Duration(k)*tick >= t.c.Omit+t.c.Duration {
+			timeCapped = true
 			break
 		}
-		if adaptive && (k-kWin)%int(time.Second/tick) == 0 {
-			cur := b - secBytes
-			if w >= t.c.MinDuration && prevSec > 0 && math.Abs(float64(cur-prevSec)) <= t.c.Stable*float64(prevSec) {
-				break
-			}
-			prevSec, secBytes = cur, b
+		if adaptive && k%int(time.Second/tick) == 0 && t.steady(cum, ats, t.c.Direction == Upload && !acked) {
+			break
 		}
 	}
 	final := make([]int64, n)
 	retransEnd := make([]int64, n)
 	ackedEnd := make([]int64, n)
 	t.snapshot(counts, final, retransEnd, ackedEnd)
-	res.Elapsed = time.Since(winStart)
 	per := make([]int64, n)
-	acked := true
+	allAcked := true
 	var ackedBytes int64
 	for i := range per {
-		per[i] = final[i] - base[i]
-		res.Bytes += per[i]
+		per[i] = final[i]
 		res.TotalBytes += final[i]
 		if ackedStart[i] < 0 || ackedEnd[i] < 0 {
-			acked = false
+			allAcked = false
 		}
 		ackedBytes += ackedEnd[i] - ackedStart[i]
 	}
 	if t.c.Direction == Upload {
-		// What the server received, not what sat in our send buffers.
-		if acked {
-			res.Bytes = ackedBytes
-			t.acked = true
+		if allAcked {
+			t.acked = true // the bytes below are what the server acknowledged
 		}
 		if retransStart[0] >= 0 {
 			res.Retransmits = 0
@@ -697,39 +678,93 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			}
 		}
 	}
+	// The estimate: over complete ticks (the byte cap's tick is cut
+	// short), to the last byte.
+	ticks, at := cum, ats
+	end, endBytes := ats[len(ats)-1], cum[len(cum)-1]
 	if res.CappedByBytes {
-		e := estimate{method: MethodWhole}
-		if perTick && len(cum) > 0 {
-			// The last tick holds the cap: only the complete ones before
-			// it are ticks. The window ends at the last byte: the cap for
-			// a download (reads stop there), now for an upload's acks.
-			end, endBytes := time.Since(start), cum[len(cum)-1]
-			if t.c.Direction == Download {
-				endBytes = res.TotalBytes
-				if at := t.capAt.Load(); at > 0 {
-					end = time.Unix(0, at).Sub(start)
-				}
-			} else if a := ackedSum(); a >= 0 {
+		ticks, at = cum[:len(cum)-1], ats[:len(ats)-1]
+		end = time.Since(start)
+		if t.c.Direction == Download {
+			endBytes = res.TotalBytes
+			if a := t.capAt.Load(); a > 0 {
+				end = time.Unix(0, a).Sub(start)
+			}
+		} else if acked {
+			if a := ackedSum(); a >= 0 {
 				endBytes = a
 			}
-			e = peak90(cum[:len(cum)-1], ats[:len(ats)-1], end, endBytes, t.pathRTT())
-		}
-		res.RateMethod, res.LowerBound = e.method, e.lowerBound
-		if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
-			ms := make([]float64, len(ats))
-			for i, a := range ats {
-				ms[i] = float64(a.Microseconds()) / 1000
-			}
-			cmp.Or(t.c.Log, slog.Default()).Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
-				"rtt_ms", float64(t.pathRTT().Microseconds())/1000, "method", e.method, "lower_bound", e.lowerBound)
-		}
-		if e.method == MethodPeak90 {
-			res.Bytes, res.Elapsed, res.Ramp = e.bytes, e.win, e.start
-		} else if rampCapped {
-			res.LowerBound = true // the whole run, slow start included
 		}
 	}
+	from := 0
+	if t.c.Direction == Upload && !acked {
+		from = 1 // written bytes: the first tick fills the send buffers
+	}
+	e := peak90From(from, ticks, at, end, endBytes, t.pathRTT())
+	capped := res.CappedByBytes || timeCapped // an early stop has levelled off
+	res.RateMethod = e.method
+	if e.method == MethodPeak90 {
+		res.Bytes, res.Elapsed, res.Ramp = e.bytes, e.win, e.start
+		res.LowerBound = capped && e.lowerBound
+	} else { // no tick with bytes: the whole run
+		res.Bytes, res.Elapsed = endBytes, end
+		if t.c.Direction == Upload && allAcked {
+			res.Bytes = ackedBytes
+		}
+		res.LowerBound = capped
+	}
+	if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
+		ms := make([]float64, len(ats))
+		for i, a := range ats {
+			ms[i] = float64(a.Microseconds()) / 1000
+		}
+		cmp.Or(t.c.Log, slog.Default()).Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
+			"rtt_ms", float64(t.pathRTT().Microseconds())/1000, "method", e.method, "lower_bound", res.LowerBound,
+			"capped_by_bytes", res.CappedByBytes, "time_capped", timeCapped)
+	}
 	return per, nil
+}
+
+// steady is the plateau-aware early stop, at a 1 s boundary: the ticks so
+// far have levelled off (stillRising says no, over the idle RTT), at
+// least MinDuration has passed since the first smoothed tick at 90% of the
+// peak, and the last second is within Stable of the one before.
+// written: the bytes are written, not acked, so the first tick (filling
+// the send buffers) neither counts toward the plateau nor starts its clock.
+func (t *test) steady(cum []int64, at []time.Duration, written bool) bool {
+	k := len(cum)
+	per := int(time.Second / tick)
+	if k < 2*per+1 {
+		return false
+	}
+	r := make([]float64, k)
+	var prev int64
+	var prevAt time.Duration
+	for i := range cum {
+		if dt := at[i] - prevAt; dt > 0 {
+			r[i] = float64(cum[i]-prev) / dt.Seconds()
+		}
+		prev, prevAt = cum[i], at[i]
+	}
+	if stillRising(r, t.pathRTT()) {
+		return false
+	}
+	skip := 0
+	if written {
+		skip = 1
+	}
+	sm := median3(r)[skip:]
+	p := slices.Max(sm)
+	f := skip + slices.IndexFunc(sm, func(v float64) bool { return v >= 0.9*p })
+	var from time.Duration
+	if f > 0 {
+		from = at[f-1]
+	}
+	if at[k-1]-from < t.c.MinDuration {
+		return false
+	}
+	cur, prevSec := float64(cum[k-1]-cum[k-1-per]), float64(cum[k-1-per]-cum[k-1-2*per])
+	return prevSec > 0 && math.Abs(cur-prevSec) <= t.c.Stable*prevSec
 }
 
 // pathRTT is the path's idle RTT, for the estimator's smoothing: a

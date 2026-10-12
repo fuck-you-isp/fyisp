@@ -157,7 +157,7 @@ add:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "mine" || len(p.Targets) != 21+5 {
+	if p.Name != "mine" || len(p.Targets) != 21+4 {
 		t.Fatalf("name %q, %d targets", p.Name, len(p.Targets))
 	}
 	if len(p.Groups) != 6 || p.Groups[0].ID != PathGroup || p.Groups[5].ID != "home" || p.Groups[5].Order != 5 || p.Groups[4].Title != "Sites" {
@@ -196,7 +196,7 @@ targets:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Targets) != 2+5 || p.Targets[5].Port != 8443 || p.Groups[1].Order != 1 || p.Groups[0].ID != PathGroup {
+	if len(p.Targets) != 2+4 || p.Targets[4].Port != 8443 || p.Groups[1].Order != 1 || p.Groups[0].ID != PathGroup {
 		t.Errorf("%+v", p)
 	}
 	// Targets without kinds get a TCP connect only.
@@ -248,8 +248,8 @@ func TestShippedProfilesTCPOnly(t *testing.T) {
 				t.Errorf("%s: target %s kinds %v, want [tcp]", name, tg.Name, tg.ProbeKinds())
 			}
 		}
-		if pathICMP != 5 {
-			t.Errorf("%s: %d path targets with ICMP, want 5", name, pathICMP)
+		if pathICMP != 4 {
+			t.Errorf("%s: %d path targets with ICMP, want 4", name, pathICMP)
 		}
 	}
 	for _, tg := range def.Targets {
@@ -276,7 +276,6 @@ func TestPathGroup(t *testing.T) {
 		{"ISP edge", "@isp-edge", "isp-edge", icmp, 3 * time.Second},
 		{"Cloudflare DNS 1.1.1.1", "1.1.1.1", "anycast", icmpTCP, 15 * time.Second},
 		{"Google DNS 8.8.8.8", "8.8.8.8", "anycast", icmpTCP, 15 * time.Second},
-		{"Quad9 DNS 9.9.9.9", "9.9.9.9", "anycast", icmpTCP, 15 * time.Second},
 	}
 	for i, w := range want {
 		tg := p.Targets[i]
@@ -312,7 +311,7 @@ func TestPathGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Targets) != 22+5 || p.Groups[0].ID != PathGroup {
+	if len(p.Targets) != 22+4 || p.Groups[0].ID != PathGroup {
 		t.Errorf("path: true: %d targets, groups %+v", len(p.Targets), p.Groups)
 	}
 	// Negative orders still sort after the path group.
