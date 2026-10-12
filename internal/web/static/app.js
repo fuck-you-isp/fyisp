@@ -17,8 +17,7 @@ import {
   hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput,
   useStatus, hatch, resetHatch, smooth,
 } from './core.js';
-import { Home, probeHome } from './home.js';
-import { Home as HomeV1 } from './home-v1.js';
+import { Home, firstHome } from './home.js';
 import { Speed } from './speed.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
@@ -73,13 +72,13 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
  * Page state; everything but band lives in the URL hash. view: 'h' (Home),
  * 'calls' (Calls), 'o' (Overview), 'c' (charts) or 'speed' (Speed), null for Home; focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
- * problems-only, heatmap cell and heatmap mode; hw: Home's timeline span (d|w); ot: the Overview's Home-tile filter;
+ * problems-only, heatmap cell and heatmap mode; ot: the Overview's Home-tile filter;
  * sr/sd/snf/ssw: Speed's selected row, span in days, "leave out backup servers" and the full test (sweep=1).
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, hw:string, ot:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, ot:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', hw: 'd', ot: '', sr: '', sd: 7, snf: false, ssw: false };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', ot: '', sr: '', sd: 7, snf: false, ssw: false };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -139,7 +138,7 @@ function themeChanged() {
   renderLayers();
   if (inv && state.inv) { inv.sig = ''; inv.render(); }
   calls?.render();
-  if (home instanceof Home) home.themeChanged(); else home?.render();
+  home?.themeChanged();
 }
 
 // ---------- colours ----------
@@ -197,7 +196,6 @@ function readHash() {
   fixKinds();
   const v = p.get('v');
   state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' || v === 'speed' ? v : null;
-  state.hw = p.get('hw') === 'w' ? 'w' : 'd';
   const ot = p.get('ot');
   state.ot = ot && /^[a-z]+$/.test(ot) ? ot : '';
   state.focus = p.get('f') || null;
@@ -219,9 +217,9 @@ function readHash() {
 /** The last hash the page applied (hashchange and popstate both fire on Back). */
 let lastHash = '';
 function hashString() {
-  // Home's hash carries only Home's own state: no Details range or kinds.
+  // Home's hash is empty: no Details range or kinds.
   if (!state.view || state.view === 'h') {
-    if (!state.inv && !(state.focus && focusPanel())) return state.hw === 'w' ? '#hw=w' : '';
+    if (!state.inv && !(state.focus && focusPanel())) return '';
   }
   const p = new URLSearchParams();
   p.set('r', state.range);
@@ -232,7 +230,6 @@ function hashString() {
   if (state.reports) p.set('rp', '1');
   if (state.inv) p.set('t', state.inv);
   if (state.view) p.set('v', state.view);
-  if (state.hw === 'w') p.set('hw', 'w');
   if (state.ot) p.set('ot', state.ot);
   if (state.focus) p.set('f', state.focus);
   if (state.os) p.set('os', state.os);
@@ -3376,7 +3373,7 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
 
 // ---------- Home and the Home | Details switch ----------
 
-/** Home: the v0.9.0 Home when the server has /api/home2, else the old one. @type {Home|HomeV1|null} */
+/** Home (made once the first answer is in or given up on). @type {Home|null} */
 let home = null;
 /** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
 let onNav = () => {};
@@ -3405,7 +3402,7 @@ function openDetails(hash) {
   onNav();
   window.scrollTo({ top: 0 });
 }
-/** The hash openDetails('') would open: the new Home's "Technical details →" link. */
+/** The hash openDetails('') would open: Home's "Technical details →" link. */
 function detailsHash() {
   const v = state.view, f = state.focus;
   state.view = detailsView();
@@ -4070,9 +4067,9 @@ async function main() {
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
   if (adminTok) await adminLogin(adminTok);
-  // The new Home only when the server has its API (v0.9.0); probeHome() is null otherwise
-  // (or after a few seconds without an answer). Details doesn't wait for it.
-  const probe = probeHome();
+  // Home's first answer, fetched alongside the profile (null after a few seconds without
+  // one: Home then polls on its own). Details doesn't wait for it.
+  const first = firstHome();
   const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
   if (st) statusAt = Date.now();
@@ -4140,38 +4137,29 @@ async function main() {
     $('#panels').after(inv.el);
   }
   if (currentView() !== 'h' || (state.inv && inv)) {
-    // Details first; Home joins when the probe answers.
+    // Details first; Home joins when its first answer is in.
     applyView();
     showView();
     writeHash();
     const loaded = refreshAll();
-    makeHome(await probe);
+    makeHome(await first);
     applyView();
     showView();
-    // Back on Home already (the switch, or Back) while the probe was out.
-    if (homeShown()) /** @type {Home|HomeV1} */ (home).refresh();
+    // Back on Home already (the switch, or Back) while the first answer was out.
+    if (homeShown()) /** @type {Home} */ (home).refresh();
     await loaded;
     return;
   }
-  makeHome(await probe);
+  makeHome(await first);
   applyView();
   showView();
   writeHash();
   await refreshAll();
 }
 
-/** Builds Home: the new one for a v2 answer, else the old one. @param {import('./home.js').HomeNow|null} home2 */
-function makeHome(home2) {
-  home = home2 ? new Home({ openDetails, detailsHash, status: () => status, speedOn: () => !!speed }, home2) : new HomeV1({
-    span: () => state.hw,
-    setSpan: (s) => { state.hw = s; writeHash(); },
-    openDetails,
-    status: () => status,
-    notesOn: () => notesOn,
-    notesChanged: () => { if (!homeShown()) loadNotes(); },
-    reportsOn: () => reportsOn,
-  });
-  document.body.classList.toggle('hp-on', home instanceof Home);
+/** Builds Home. @param {import('./home.js').HomeNow|null} first its first answer, if in */
+function makeHome(first) {
+  home = new Home({ openDetails, detailsHash, status: () => status, speedOn: () => !!speed }, first);
   $('#notices').before(home.el);
 }
 

@@ -1,6 +1,6 @@
 # fyisp v0.6: Home first (plan v2)
 
-> **Historical plan.** The share link it describes (`--share`, the Cloudflare quick tunnel, the public listener and everything served on it) was removed in v0.8.0; see the README's "Sharing" and "Upgrading to v0.8.0".
+> **Historical plan.** This is the plan for the v0.6 Home, which v0.9.0 replaced: its API (`part=live`, `part=history`, `part=at`), the category tiles, the timeline, "Mark a bad call" and "What happened at…?" are gone. The current Home is described in [HOME-API.md](HOME-API.md). The share link it describes (`--share`, the Cloudflare quick tunnel, the public listener and everything served on it) was removed in v0.8.0; see the README's "Sharing" and "Upgrading to v0.8.0".
 
 **Released as v0.6.0 (owner decision: pre-1.0, not a major).**
 

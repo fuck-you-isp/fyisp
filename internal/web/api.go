@@ -677,10 +677,10 @@ type targetSummary struct {
 	// Tags label targets, e.g. "udp-path" or "app:teams" (the Calls view
 	// maps targets to apps by them).
 	Tags []string `json:"tags,omitempty"`
-	// Home is the target's Home tile (profile.HomeCategory: calls, work,
-	// web or other); omitted for path targets.
+	// Home is the target's Home category (profile.HomeCategory: calls,
+	// work, web or other; the Overview's filter); omitted for path targets.
 	Home string `json:"home,omitempty"`
-	// Tile is the new Home's tile the target feeds (its tile: tag, e.g.
+	// Tile is the Home tile the target feeds (its tile: tag, e.g.
 	// "zoom"); omitted when none.
 	Tile string `json:"tile,omitempty"`
 }
@@ -712,7 +712,7 @@ func buildProfile(p *model.Profile) profileJSON {
 		if !isPath(t) {
 			ts.Provider, ts.ProviderTitle = providerOf(t, titles)
 			ts.ProviderKind, ts.City, ts.Country, ts.Geo = t.ProviderKind, t.City, t.Country, t.Geo
-			ts.Home = homeCategory(t)
+			ts.Home = profile.HomeCategory(t)
 		}
 		for _, k := range t.ProbeKinds() {
 			ts.Kinds = append(ts.Kinds, k.String())

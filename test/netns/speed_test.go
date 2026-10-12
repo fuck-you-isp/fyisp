@@ -404,9 +404,8 @@ func (l *speedLab) speedTests(t *testing.T, server string) []speedTestAPI {
 }
 
 // checkMasking: tests are not judged. The verdict stayed ok (or warming
-// up), no incident was logged, and Home's history has no "not running"
-// span after the start: masked probes are not measured, not a gap in the
-// running time.
+// up), no incident was logged, and Home shows no problem and no drop:
+// masked probes are not measured, not a loss.
 func (l *speedLab) checkMasking(t *testing.T) {
 	t.Helper()
 	l.mu.Lock()
@@ -420,26 +419,36 @@ func (l *speedLab) checkMasking(t *testing.T) {
 	if list, raw := l.incidents(t, l.started.Add(-time.Minute)); len(list) != 0 {
 		t.Errorf("incidents during the speed tests: %s", raw)
 	}
-	var hist struct {
-		FirstData int64 `json:"first_data"`
-		Days      []struct {
-			Off []struct {
-				From int64 `json:"from"`
-				To   int64 `json:"to"`
-			} `json:"off"`
-		} `json:"days"`
+	// Home: no problem, no drop and no "working again" from the tests.
+	var home struct {
+		Answer struct {
+			Key string `json:"key"`
+		} `json:"answer"`
+		Path []struct {
+			ID  string `json:"id"`
+			Sub string `json:"sub"`
+		} `json:"path"`
+		Problems struct {
+			Items []struct {
+				When string `json:"when"`
+				What string `json:"what"`
+			} `json:"items"`
+		} `json:"problems"`
 	}
-	b := l.get(t, "/api/home?part=history&span=d")
-	l.save(t, "home-history.json", b)
-	if err := json.Unmarshal(b, &hist); err != nil {
+	b := l.get(t, "/api/home?part=now")
+	l.save(t, "home-now.json", b)
+	if err := json.Unmarshal(b, &home); err != nil {
 		t.Fatal(err)
 	}
-	from := l.started.Add(90 * time.Second).UnixMilli() // fyisp's first minute: not yet running everywhere
-	for _, d := range hist.Days {
-		for _, o := range d.Off {
-			if o.To > from {
-				t.Errorf("Home shows fyisp not running %s-%s, during the speed tests", time.UnixMilli(o.From).Format(time.TimeOnly), time.UnixMilli(o.To).Format(time.TimeOnly))
-			}
+	if k := home.Answer.Key; strings.HasPrefix(k, "drop:") || strings.HasPrefix(k, "working_again:") {
+		t.Errorf("Home's answer %s after the speed tests: %s", k, b)
+	}
+	for _, n := range home.Path {
+		if strings.HasPrefix(n.Sub, "Dropped") {
+			t.Errorf("Home's %s: %q after the speed tests", n.ID, n.Sub)
 		}
+	}
+	for _, p := range home.Problems.Items {
+		t.Errorf("Home shows a problem during the speed tests: %s: %s", p.When, p.What)
 	}
 }

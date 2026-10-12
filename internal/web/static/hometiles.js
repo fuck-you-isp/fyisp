@@ -1,7 +1,7 @@
 // fyisp Home (v0.9.0): the 11 app tiles, their 5-minute bars, the key, the
 // rules disclosure and the inline detail panel. The tiles are built once and
 // patched in place on every poll, so focus and screen-reader position survive
-// a refresh. All wording comes from /api/home2 (Go, golden tested), except
+// a refresh. All wording comes from /api/home (Go, golden tested), except
 // bar times, the bar scale and the static rules text below.
 // @ts-check
 

@@ -2,1781 +2,1025 @@ package web
 
 import (
 	"context"
+	"hash/fnv"
 	"math"
 	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/fuck-you-isp/fyisp/internal/callq"
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
-	"github.com/fuck-you-isp/fyisp/internal/store"
-	"github.com/fuck-you-isp/fyisp/internal/verdict"
+	"github.com/fuck-you-isp/fyisp/internal/tiles"
 )
 
-// Home windows and limits (docs/HOME-API.md).
+// /api/home is the Home (v0.9.0): part=now, the answer, the strip, the 11
+// tiles, the speed and the problems of the week, from the tiles engine's
+// snapshot; part=tile, a tile's panel. See docs/HOME-API.md.
+//
+// part=now is never cached as a whole: it is rendered from the snapshot of
+// the engine's latest tick, with the parts that depend on the viewer (the
+// Wi-Fi wording, can_control) decided per request. Only the problems block
+// (by the snapshot's Rev, the zone and the local date) and the stored speed
+// tests (for homeSpeedTTL, or until a test starts or ends) are kept.
+// part=tile keeps only its chart block, per tile, zone and 5-minute bucket;
+// its header follows the snapshot like the tile does.
+
 const (
-	// HomeHistoryTTL is how long a history response is cached. The live
-	// part is not cached.
-	HomeHistoryTTL = time.Minute
-	// homeCallsWindow is the call path's live window (as the Calls card);
-	// homeTileWindow the TCP tiles'; homePathWindow the path strip's.
-	homeCallsWindow = 5 * time.Minute
-	homeTileWindow  = 15 * time.Minute
-	homePathWindow  = 2 * time.Minute
-	homeMaxProblems = 50
-	homeMaxNames    = 3
-	// Working hours (local, Monday to Friday), as the Calls view's strip.
-	homeWorkFrom, homeWorkTo = 9, 17
-	// homeHeartbeat caps the series read to find when fyisp was not running.
-	homeHeartbeat = 8
+	homeWeek     = 7 * 24 * time.Hour
+	homeSpeedTTL = time.Minute
+	homeStale    = 2 * time.Minute // the engine's staleAfter
+	homeBucket   = 5 * time.Minute // the chart's step: its cache bucket
+	homeMemo     = 32              // problems blocks and charts kept
 )
-
-// nodeAffected is a path node beyond the culprit: it shows the trouble but
-// is not to blame (neutral, not amber or red).
-const nodeAffected = "affected"
-
-// Home tile ids, in display order: profile's Home categories.
-const (
-	tileCalls = profile.HomeCalls
-	tileWork  = profile.HomeWork
-	tileWeb   = profile.HomeWeb
-	tileOther = profile.HomeOther
-)
-
-var homeTiles = []string{tileCalls, tileWork, tileWeb, tileOther}
-
-// TCP tile states.
-const (
-	tileWorking  = "working"
-	tileMostly   = "mostly"
-	tileSlow     = "slow"
-	tileDown     = "down"
-	tileChecking = "checking"
-)
-
-// homeCategory returns a target's Home tile (profile.HomeCategory: calls,
-// work, web or other). A variable for tests.
-var homeCategory = profile.HomeCategory
-
-// homeName is a target's display name: never a host.
-// homeName is a target's display name: displayNames, else its call app's
-// title, else its name with "-" as spaces. Never a host.
-func homeName(t model.Target) string {
-	if n := displayNames[t.Name]; n != "" {
-		return n
-	}
-	for _, tag := range t.Tags {
-		if id, ok := strings.CutPrefix(tag, callq.TagApp); ok && appTitles[id] != "" {
-			return appTitles[id]
-		}
-	}
-	return strings.ReplaceAll(t.Name, "-", " ")
-}
-
-// appTitles are the call apps' display names (app.js APP_TITLE).
-var appTitles = map[string]string{"teams": "Teams", "meet": "Google Meet", "zoom": "Zoom", "slack": "Slack",
-	"discord": "Discord", "whatsapp": "WhatsApp", "webex": "Webex"}
-
-func appTitle(id string) string {
-	if t := appTitles[id]; t != "" {
-		return t
-	}
-	return id
-}
 
 // homeParams is a parsed /api/home query.
 type homeParams struct {
-	part, span string
-	tz         int            // minutes east of UTC, rounded to 15 (now, for an IANA zone)
-	loc        *time.Location // the zone: the speed line's hours (DST-correct with an IANA name)
-	tzKey      string
-	at         time.Time // part=at
-	key        string
+	part, id string
+	zone     zoneParam
 }
 
-func parseHome(q url.Values) (homeParams, error) {
-	p := homeParams{part: q.Get("part"), span: q.Get("span")}
-	if err := checkParams(q, "part", "span", "tz", "at"); err != nil {
+func parseHome(q url.Values, now time.Time) (homeParams, error) {
+	p := homeParams{part: q.Get("part"), id: q.Get("id")}
+	if err := checkParams(q, "part", "id", "tz"); err != nil {
 		return p, err
 	}
 	switch p.part {
-	case "":
-		p.part = "live"
-	case "live", "history", "at":
-	default:
-		return p, badReq("bad part %q: want live, history or at", p.part)
-	}
-	switch as := q.Get("at"); {
-	case p.part != "at" && as != "":
-		return p, badReq("at is for part=at")
-	case p.part == "at":
-		ms, err := strconv.ParseInt(as, 10, 64)
-		if err != nil || ms <= 0 {
-			return p, badReq("bad at %q: want Unix milliseconds", as)
+	case "now":
+		if q.Has("id") {
+			return p, badReq("id is for part=tile")
 		}
-		p.at = time.UnixMilli(ms)
-	}
-	switch {
-	case p.span != "" && p.part != "history":
-		return p, badReq("span is for part=history")
-	case p.span == "":
-		p.span = "d"
-	case p.span != "d" && p.span != "w":
-		return p, badReq("bad span %q: want d or w", p.span)
-	}
-	p.loc = time.Local // the speed line's hours without tz: the server's zone
-	if s := q.Get("tz"); s != "" {
-		z, err := parseZone(s, time.Now())
-		if err != nil {
-			return p, err
+	case "tile":
+		if p.id == "" {
+			return p, badReq("part=tile needs id")
 		}
-		p.tz, p.loc, p.tzKey = z.min, z.loc, z.key
-	}
-	switch p.part {
-	case "live":
-		p.key = "home\x00live\x00" + p.tzKey
-	case "at":
-		p.key = "home\x00at\x00" + strconv.FormatInt(p.at.UnixMilli(), 10)
 	default:
-		p.key = "home\x00history\x00" + p.span + "\x00" + p.tzKey
+		return p, badReq("bad part %q: want now or tile", p.part)
 	}
+	z, err := parseZone(q.Get("tz"), now)
+	if err != nil {
+		return p, err
+	}
+	p.zone = z
 	return p, nil
 }
 
-// serveHome answers /api/home (docs/HOME-API.md).
+// homeSpeedSource is what Home's speed block reads: s.d.Speed, or a test's
+// stand-in.
+type homeSpeedSource interface {
+	// On reports scheduled tests (the first one runs within the hour).
+	On() bool
+	Tests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+	Running() *speedtest.Entry
+}
+
+type speedOf struct{ SpeedSource }
+
+func (s speedOf) On() bool { return s.State().Mode != speedtest.ModeOff }
+func (s speedOf) Tests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+	return s.SpeedTests(ctx, from, to)
+}
+func (s speedOf) Running() *speedtest.Entry { return s.Queue().State().Running }
+
+// homeCache keeps what part=now and part=tile may reuse.
+type homeCache struct {
+	mu     sync.Mutex
+	probs  map[string]HomeProblems
+	charts map[string]homeChart
+	// the stored speed tests of the week, read at speedAt with speedRun
+	// running (0: none)
+	speedAt    time.Time
+	speedRun   uint64
+	speedTests []model.SpeedTest
+	// the profile's tiles (for the panels' coverage)
+	prof  *model.Profile
+	tiles []profile.ResolvedTile
+	// the store's oldest sample (the footer), read at oldestAt
+	oldestAt time.Time
+	oldest   time.Time
+}
+
+func newHomeCache() *homeCache {
+	return &homeCache{probs: map[string]HomeProblems{}, charts: map[string]homeChart{}}
+}
+
+// resolved returns the tiles of p, resolved once per profile.
+func (hc *homeCache) resolved(p *model.Profile) []profile.ResolvedTile {
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
+	if p != hc.prof || hc.tiles == nil {
+		hc.prof, hc.tiles = p, nil
+		if p != nil {
+			hc.tiles = profile.ResolveTiles(p)
+		}
+	}
+	return hc.tiles
+}
+
+// memo returns m[key], filling it with fill on a miss (ok false: not kept);
+// a full map loses one entry first.
+func memo[V any](mu *sync.Mutex, m map[string]V, key string, fill func() (V, bool)) (V, bool) {
+	mu.Lock()
+	v, ok := m[key]
+	mu.Unlock()
+	if ok {
+		return v, true
+	}
+	if v, ok = fill(); !ok {
+		return v, false
+	}
+	mu.Lock()
+	for k := range m {
+		if len(m) < homeMemo {
+			break
+		}
+		delete(m, k)
+	}
+	m[key] = v
+	mu.Unlock()
+	return v, true
+}
+
+// sameSite reports a request without browser evidence of another site:
+// only those may change the owner's zone (NoteZone).
+func sameSite(r *http.Request) bool {
+	sfs := r.Header.Get("Sec-Fetch-Site")
+	return sfs == "" || sfs == "same-origin"
+}
+
+// serveHome answers /api/home.
 func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
-	p, err := parseHome(r.URL.Query())
+	now := s.now()
+	p, err := parseHome(r.URL.Query(), now)
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	if s.d.Speed != nil && sameSite(r) {
-		s.d.Speed.NoteZone(p.tzKey) // the report's zone (only an IANA name loads)
+	if s.d.Tiles == nil {
+		// No tiles engine (only in tests and tools): no Home.
+		notFound(w, r)
+		return
 	}
-	if p.part == "at" {
-		if now := s.now(); p.at.After(now) || now.Sub(p.at) > MaxRange {
-			writeErr(w, r, http.StatusBadRequest, "at must be within the last 90 days")
+	if s.d.Speed != nil && sameSite(r) {
+		s.d.Speed.NoteZone(p.zone.name)
+	}
+	if p.part == "tile" {
+		t, code, msg := s.homeTile(p, now)
+		if t == nil {
+			writeErr(w, r, code, msg)
 			return
 		}
-		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
-			a, err := s.homeAt(ctx, p.at, s.now())
-			if err != nil {
-				return nil, err
-			}
-			return jsonCached(a)
-		})
+		writeJSON(w, r, http.StatusOK, t)
 		return
 	}
-	if p.part == "live" {
-		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
-			now := s.now()
-			l, err := s.homeLive(ctx, now)
-			if err != nil {
-				return nil, err
-			}
-			// Speed by time of day: one plain line (its hours are local,
-			// hence tz), never while the answer card shows a problem.
-			if l.Answer.Level != levelWarn && l.Answer.Level != levelBad {
-				l.Speed = s.speedHome(ctx, now, p.loc)
-			}
-			return jsonCached(l)
-		})
-		return
-	}
-	s.runCachedIn(s.hcache, w, r, p.key, func(ctx context.Context) (*cached, error) {
-		h, err := s.homeHistory(ctx, p, s.now())
-		if err != nil {
-			return nil, err
-		}
-		return jsonCached(h)
-	})
+	writeJSON(w, r, http.StatusOK, s.homeNow(r, p, now))
 }
 
-// homeSet sorts a profile's targets into Home tiles.
-type homeSet struct {
-	byTile map[string][]model.Target // TCP/HTTPS targets of each tile (calls: the apps' websites)
-	cat    map[string]string         // target name -> tile (calls includes STUN targets)
-	path   []model.Target
-	home   int // targets in the calls, work and web tiles
+// homeSnap is the engine's snapshot; before the engine's first tick, a
+// checking one.
+func (s *server) homeSnap(now time.Time) (*tiles.Snapshot, bool) {
+	snap := s.d.Tiles.Snapshot()
+	checking := !s.d.Tiles.Ready()
+	if snap == nil {
+		snap = &tiles.Snapshot{At: now, Conn: tiles.ConnState{Kind: tiles.ConnChecking, Key: tiles.ConnChecking}}
+		for i, d := range profile.Tiles {
+			snap.Tiles[i] = tiles.TileSnap{ID: d.ID, State: tiles.None}
+		}
+		checking = true
+	}
+	return snap, checking || snap.Conn.Kind == tiles.ConnChecking
 }
 
-func newHomeSet(p *model.Profile) homeSet {
-	hs := homeSet{byTile: map[string][]model.Target{}, cat: map[string]string{}}
-	if p == nil {
-		return hs
+// homeState is the snapshot with the page's checking and stale: a
+// process that started less than homeStale ago is checking, not stale
+// (its last stored sample can be hours old), and so is one whose covered
+// tiles have no word yet (their first minutes haven't closed).
+func (s *server) homeState(now time.Time) (snap *tiles.Snapshot, checking, stale bool) {
+	snap, checking = s.homeSnap(now)
+	stale = !checking && (snap.Conn.Kind == tiles.ConnStale || (!snap.LastMeasured.IsZero() && now.Sub(snap.LastMeasured) >= homeStale))
+	if stale && s.d.Status != nil && now.Sub(s.d.Status().Started) < homeStale {
+		stale, checking = false, true
 	}
-	for _, t := range p.Targets {
-		if isPath(t) {
-			hs.path = append(hs.path, t)
-			continue
-		}
-		c := homeCategory(t)
-		if !slices.Contains(homeTiles, c) || c == tileOther {
-			c = tileOther
-		} else {
-			hs.home++
-		}
-		hs.cat[t.Name] = c
-		if !t.IsUDP() {
-			hs.byTile[c] = append(hs.byTile[c], t)
-		}
-	}
-	return hs
+	checking = checking || !stale && noData(snap)
+	return snap, checking, stale
 }
 
-// onlyOther reports a profile with nothing in the Home tiles (e.g.
-// --profile clouds): its Other tile is then the user's set and may raise
-// the answer.
-func (hs homeSet) onlyOther() bool { return hs.home == 0 && len(hs.cat) > 0 }
-
-// relevant keeps the targets that belong to a Home tile (all of them with
-// onlyOther).
-func (hs homeSet) relevant(names []string) []string {
-	var out []string
-	for _, n := range names {
-		if c, ok := hs.cat[n]; ok && (c != tileOther || hs.onlyOther()) {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-// ---------- live ----------
-
-func (s *server) homeLive(ctx context.Context, now time.Time) (*HomeLive, error) {
-	prof := s.d.Profile()
-	hs := newHomeSet(prof)
-	v := model.Verdict{Kind: VerdictUnknown}
-	if s.d.Verdict != nil {
-		v = s.d.Verdict.Current()
-	}
-	// Outages that already ended don't count against the apps or calls
-	// while their samples age out of the windows.
-	tcpSkip, callSkip, recovered, err := s.explained(ctx, now)
-	if err != nil {
-		return nil, err
-	}
-	// Whole minutes, so a minute scores the same here and in part=at.
-	c, err := s.calls(ctx, callsParams{from: now.Add(-homeCallsWindow).Truncate(time.Minute), to: now, skip: callSkip})
-	if err != nil {
-		return nil, err
-	}
-	names := map[string]string{}
-	if prof != nil {
-		for _, t := range prof.Targets {
-			names[t.Name] = homeName(t)
-		}
-	}
-	out := &HomeLive{Part: "live", At: now.UnixMilli(), Apps: []HomeApp{}, Tiles: []HomeTile{}}
-	cp := homeCopy{}
-
-	// The TCP tiles: one rows query per kind in use (TCP for every shipped
-	// profile).
-	tileRows := map[string][]overviewRow{}
-	byKind := map[model.ProbeKind][]model.Target{}
-	for _, id := range homeTiles {
-		if id == tileCalls {
-			continue
-		}
-		for _, t := range hs.byTile[id] {
-			if k, ok := webKind(t); ok {
-				byKind[k] = append(byKind[k], t)
-			}
-		}
-	}
-	rowOf := map[string]overviewRow{}
-	for k, ts := range byKind {
-		rows, err := s.overviewRowsMasked(ctx, k, now.Add(-homeTileWindow), now, ts, tcpSkip)
-		if err != nil {
-			return nil, err
-		}
-		for i, t := range ts {
-			rowOf[t.Name] = rows[i]
-		}
-	}
-	for _, id := range homeTiles[1:] {
-		for _, t := range hs.byTile[id] {
-			if r, ok := rowOf[t.Name]; ok {
-				tileRows[id] = append(tileRows[id], r)
-			}
-		}
-	}
-
-	own := ownCallState(c)
-	hasCalls := len(hs.byTile[tileCalls]) > 0 || c.Path != nil || slices.ContainsFunc(c.Apps, func(a callsApp) bool { return a.callsGroup != nil })
-	if hasCalls {
-		out.Tiles = append(out.Tiles, callsTile(c, own, v.Quiet, cp))
-	}
-	for _, id := range homeTiles[1:] {
-		if len(hs.byTile[id]) == 0 || (id == tileOther && len(tileRows[id]) == 0) {
-			continue
-		}
-		out.Tiles = append(out.Tiles, tcpTile(id, hs.byTile[id], tileRows[id], names, cp))
-	}
-	if !hs.onlyOther() {
-		out.Other = otherLine(tileRows[tileOther], cp)
-	}
-	out.Apps, out.AppsNote = homeApps(c, cp)
-	if c.Path != nil {
-		out.Calls = homeCallsWords(c.Path, own, cp)
-	}
-
-	path, err := s.homePathRows(ctx, hs.path, now)
-	if err != nil {
-		return nil, err
-	}
-	in := answerIn{v: v, own: own, calls: c, tiles: out.Tiles, hs: hs, names: names, now: now}
-	out.Answer = homeAnswerOf(in, cp)
-	if out.Answer.Level == levelGood && recovered > 0 {
-		out.Answer.Recovered = recovered
-	}
-	out.Path = homePath(path, out.Answer, out.Tiles, cp)
-	// During a path problem a website that answers says little about the
-	// app: don't show it as fine.
-	if a := out.Answer; slices.Contains([]string{whoHome, whoProvider, whoBeyond, whoOffline, whoDNS}, a.Who) &&
-		(a.Level == levelBad || a.Level == levelWarn) {
-		for i := range out.Apps {
-			switch x := &out.Apps[i]; {
-			case a.Who == whoOffline:
-				x.State, x.Level, x.Label, x.Note = "cant_tell", levelChecking, cp.cantCheckOffline(), ""
-			case x.State == "reachable" || x.State == "not_answering":
-				x.State, x.Level, x.Label, x.Note = "cant_tell", levelChecking, cp.callLabel("cant_tell"), cp.cantTell()
-			}
-		}
-	}
-	// Tiles hit by a path problem say so instead of their own trouble.
-	if a := out.Answer; slices.Contains([]string{whoHome, whoProvider, whoBeyond, whoOffline}, a.Who) &&
-		a.Confidence != confWeak && (a.Level == levelBad || a.Level == levelWarn) {
-		for i := range out.Tiles {
-			t := &out.Tiles[i]
-			if a.Who == whoOffline || (t.ID != tileCalls && (t.Level == levelWarn || t.Level == levelBad)) {
-				t.Level, t.Label, t.Note = nodeAffected, cp.affectedBy(a.Who), ""
-			}
-		}
-	}
-	if out.Answer.Level == levelChecking {
-		out.Steps = homeSteps(path, out.Tiles, cp)
-		out.Calls = nil
-		out.Answer.Fact, out.Answer.FactAt = "", 0
-		// Warming up: nothing is Good yet.
-		for i := range out.Tiles {
-			if t := &out.Tiles[i]; t.ID == tileCalls {
-				t.Level, t.State, t.Label, t.Note = levelChecking, callNotEnoughData, cp.callHead(callNotEnoughData, false), ""
-			}
-		}
-		for i := range out.Apps {
-			x := &out.Apps[i]
-			x.Level, x.State, x.Label, x.Note = levelChecking, callNotEnoughData, "Checking…", ""
-		}
-		out.AppsNote = ""
-	}
-	return out, nil
-}
-
-// homeRecoveryGrace extends an ended outage: the verdict needs about a
-// minute of clean samples to clear, and so do the windows.
-const homeRecoveryGrace = time.Minute
-
-// How long before an incident's start its fault began: the verdict
-// engine's one-minute window for the path kinds; for a block, 10 timed-out
-// bursts in a row at up to 15 s plus its hold (netns: since came ~68 s
-// after the first timeout); for degraded calls, its 3 minutes of poor
-// bursts plus the window.
-const (
-	homePathLead     = time.Minute
-	homeBlockLead    = 3 * time.Minute
-	homeDegradedLead = 4 * time.Minute
-)
-
-// explained returns the spans of the outages that ended within the live
-// windows and explain the samples in them: path, DNS and no-network
-// incidents for the tiles (tcp), those and the UDP ones for calls; and
-// when the last of them ended (0: none).
-func (s *server) explained(ctx context.Context, now time.Time) (tcp, calls []HomeSpan, recovered int64, err error) {
-	if s.d.Verdict == nil {
-		return nil, nil, 0, nil
-	}
-	list, err := s.d.Verdict.Incidents(ctx, now.Add(-homeTileWindow-homeRecoveryGrace), now)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	for _, in := range list {
-		if in.End.IsZero() || in.End.After(now) {
-			continue // ongoing: the verdict says so itself
-		}
-		// The verdict starts after the fault does: it needs a window of bad
-		// samples first. Those leading minutes are the same outage.
-		sp := HomeSpan{To: in.End.Add(homeRecoveryGrace).UnixMilli()}
-		switch in.Kind {
-		case model.VerdictLAN, model.VerdictISP, model.VerdictUpstream, model.VerdictDNS, model.VerdictNoNetwork:
-			sp.From = in.Start.Add(-homePathLead).UnixMilli()
-			tcp = append(tcp, sp)
-		case model.VerdictUDPBlocked, model.VerdictSTUNBlocked:
-			sp.From = in.Start.Add(-homeBlockLead).UnixMilli()
-		case model.VerdictUDPDegraded:
-			sp.From = in.Start.Add(-homeDegradedLead).UnixMilli()
-		default:
-			continue
-		}
-		calls = append(calls, sp)
-		recovered = max(recovered, in.End.UnixMilli())
-	}
-	return tcp, calls, recovered, nil
-}
-
-// ownCallState is the call state the call path and the measured apps
-// score themselves, without the path verdict's say (calls() lets a lan,
-// isp or upstream verdict make the top state poor; Home names that cause
-// separately and must not claim calls are choppy when they are not).
-func ownCallState(c *callsJSON) string {
-	st := callNotEnoughData
-	if c.Path != nil {
-		st = c.Path.State
-	}
-	for _, a := range c.Apps {
-		if a.callsGroup == nil {
-			continue
-		}
-		if r := callRank(a.State); r >= callRank("unusable") && r <= callRank("fair") && r < callRank(st) {
-			st = a.State
-		}
-	}
-	return st
-}
-
-// callLevel maps a call state to a Home level ("" when it says nothing).
-func callLevel(st string, quiet bool) string {
-	switch st {
-	case string(callq.Good):
-		return levelGood
-	case string(callq.Fair):
-		return levelWarn
-	case string(callq.Poor), string(callq.Unusable):
-		return levelBad
-	case callBlocked:
-		if quiet {
-			return levelInfo
-		}
-		return levelWarn
-	case callNotEnoughData:
-		return levelChecking
-	case callNotAnswering:
-		return levelInfo
-	}
-	return ""
-}
-
-// levelRank orders levels worst first.
-func levelRank(l string) int {
-	switch l {
-	case levelBad:
-		return 0
-	case levelWarn:
-		return 1
-	case levelInfo:
-		return 2
-	case levelGood:
-		return 3
-	case levelChecking:
-		return 4
-	}
-	return 5
-}
-
-func callsTile(c *callsJSON, own string, quiet bool, cp homeCopy) HomeTile {
-	t := HomeTile{ID: tileCalls, Title: cp.tileTitle(tileCalls), Names: []string{}, Details: "#v=calls"}
-	st := own
-	if c.Path == nil && !slices.ContainsFunc(c.Apps, func(a callsApp) bool { return a.callsGroup != nil }) {
-		// No call path in the profile: the apps' websites only.
-		st = "reachable"
-		for _, a := range c.Apps {
-			if webState(a) == "not_answering" {
-				st = "not_answering"
-			}
-		}
-	}
-	t.State, t.Level, t.Label = st, callLevel(st, quiet), cp.callHead(st, quiet)
-	if t.Level == "" {
-		t.Level = map[string]string{"reachable": levelGood, "not_answering": levelWarn}[st]
-	}
-	for _, a := range c.Apps {
-		t.Total++
-		title := appTitle(a.App)
-		if len(t.Names) < homeMaxNames {
-			t.Names = append(t.Names, title)
-		} else {
-			t.More++
-		}
-		switch {
-		case a.callsGroup != nil && callLevel(a.State, quiet) == levelGood:
-			t.OK++
-		case a.callsGroup == nil && webState(a) == "reachable":
-			t.OK++
-		case a.callsGroup == nil && webState(a) == "not_answering":
-			t.Affected = append(t.Affected, title)
-		case a.callsGroup != nil && callLevel(a.State, quiet) == levelBad:
-			t.Affected = append(t.Affected, title)
-		}
-	}
-	if st == callNotAnswering {
-		t.Note = cp.serversDown()
-	}
-	return t
-}
-
-// webState is a call app's website state over the live window.
-func webState(a callsApp) string {
-	switch {
-	case a.WebSamples == 0 || a.WebLoss == nil:
-		return callNotEnoughData
-	case float64(*a.WebLoss) >= 0.5:
-		return "not_answering"
-	}
-	return "reachable"
-}
-
-// tcpTile rolls up a TCP tile: one unhealthy target out of 3 or more is
-// "mostly working"; more, or any of a smaller set, is slow or down.
-func tcpTile(id string, ts []model.Target, rows []overviewRow, names map[string]string, cp homeCopy) HomeTile {
-	t := HomeTile{ID: id, Title: cp.tileTitle(id), Names: []string{}, Total: len(ts), Details: "#v=o&ot=" + id}
-	for _, x := range ts {
-		if id == tileOther {
-			break // cloud regions and the like: counts only, never names
-		}
-		if len(t.Names) < homeMaxNames {
-			n, _ := strings.CutPrefix(homeName(x), cdnPrefix) // under the Websites title, the CDN's name alone
-			t.Names = append(t.Names, n)
-		} else {
-			t.More++
-		}
-	}
-	measured, failing, dead := 0, 0, 0
-	var affected []string
-	for _, r := range rows {
-		switch r.State {
-		case stateUnmeasured:
-			continue
-		case stateOK:
-			t.OK++
-		case stateFailing:
-			failing++
-			if r.N == 0 {
-				dead++ // nothing got through: not answering at all
-			}
-			affected = append(affected, names[r.Target])
-		default:
-			affected = append(affected, names[r.Target])
-		}
-		measured++
-	}
-	t.Affected = affected
-	if id == tileOther {
-		t.Affected = nil
-	}
-	switch {
-	case 2*measured < len(rows) || measured == 0:
-		t.State = tileChecking
-	case len(affected) == 0:
-		t.State = tileWorking
-	case len(affected) == 1 && measured >= 3:
-		t.State = tileMostly
-	case failing == measured || (failing >= 2 && 2*failing >= measured):
-		t.State = tileDown // most of the tile (13 of 38 is not most)
-	default:
-		t.State = tileSlow
-	}
-	t.Level = map[string]string{tileWorking: levelGood, tileMostly: levelWarn, tileSlow: levelWarn, tileDown: levelBad, tileChecking: levelChecking}[t.State]
-	t.Label = cp.tileLabel(t.State, id == tileOther, 2*dead >= measured, failing > 0)
-	if id == tileOther {
-		t.Note = cp.otherNote(t.State, len(affected), failing, dead, len(ts))
-	} else {
-		t.Note = cp.tileNote(id, t.State, affected, failing, dead, measured)
-	}
-	return t
-}
-
-// otherLine is the muted line about unhealthy targets outside the Home
-// tiles; nil when there are none.
-func otherLine(rows []overviewRow, cp homeCopy) *HomeOther {
-	o := &HomeOther{Total: len(rows)}
-	for _, r := range rows {
-		if r.State != stateOK && r.State != stateUnmeasured {
-			o.Affected++
-		}
-	}
-	if o.Affected == 0 {
-		return nil
-	}
-	o.Line = cp.otherLine(o.Affected)
-	return o
-}
-
-// homeApps lists the call apps in callq.Apps order.
-func homeApps(c *callsJSON, cp homeCopy) ([]HomeApp, string) {
-	out := []HomeApp{}
-	var picks []string
-	pathState := callNotEnoughData
-	if c.Path != nil {
-		pathState = c.Path.State
-	}
-	for _, a := range c.Apps {
-		x := HomeApp{App: a.App, Title: appTitle(a.App)}
-		switch {
-		case a.callsGroup != nil:
-			x.State = a.State
-		default:
-			x.State = webState(a)
-		}
-		x.Level = callLevel(x.State, false)
-		switch x.State {
-		case "reachable":
-			x.Level = levelGood
-		case "not_answering":
-			x.Level = levelWarn
-		}
-		x.Label = cp.callLabel(x.State)
-		switch a.UDP {
-		case "shared":
-			x.Note = cp.sharedPath(cp.callLabel(pathState), a.OwnDown)
-		case "not_measurable":
-			picks = append(picks, x.Title) // one line for all of them: AppsNote
-		}
-		out = append(out, x)
-	}
-	note := ""
-	if len(picks) > 0 {
-		note = cp.picksServer(picks)
-	}
-	return out, note
-}
-
-// homeCallsWords describes the call path in words.
-func homeCallsWords(g *callsGroup, own string, cp homeCopy) *HomeCalls {
-	out := &HomeCalls{State: g.State}
-	switch g.State {
-	case callBlocked, callNotEnoughData, callNotAnswering:
-		return out
-	}
-	rtt, loss, jit := float64(g.RTT), float64(g.Loss), float64(g.Jitter)
-	if !math.IsNaN(rtt) {
-		out.Delay = wordFor(rtt, []float64{50, 150, 300}, []string{"very_short", "short", "noticeable", "long"})
-	}
-	if !math.IsNaN(loss) {
-		out.Dropouts = "none"
-		if loss > 0 {
-			out.Dropouts = wordFor(loss, []float64{0.01, 0.05}, []string{"rare", "some", "frequent"})
-		}
-	}
-	if !math.IsNaN(jit) {
-		out.Smoothness = wordFor(jit, []float64{10, 30}, []string{"steady", "bit_uneven", "uneven"})
-	}
-	out.Words = cp.callWords(out.Delay, out.Dropouts, out.Smoothness)
-	if g.Worst != nil && own != string(callq.Good) {
-		out.WorstAt = g.Worst.At
-	}
-	return out
-}
-
-func wordFor(x float64, cuts []float64, names []string) string {
-	for i, c := range cuts {
-		if x < c {
-			return names[i]
-		}
-	}
-	return names[len(names)-1]
-}
-
-// layerStat is a path layer over homePathWindow.
-type layerStat struct {
-	n, lost int64
-	slow    bool
-}
-
-func (l layerStat) measured() bool { return l.n+l.lost > 0 }
-func (l layerStat) loss() float64 {
-	if !l.measured() {
-		return 0
-	}
-	return float64(l.lost) / float64(l.n+l.lost)
-}
-
-// homePathRows reads the path targets (ICMP where they have it, else TCP)
-// per layer.
-func (s *server) homePathRows(ctx context.Context, path []model.Target, now time.Time) (map[string]layerStat, error) {
-	out := map[string]layerStat{}
-	byKind := map[model.ProbeKind][]model.Target{}
-	for _, t := range path {
-		k := model.KindICMP
-		if !hasKind(t, k) {
-			k = model.KindTCP
-		}
-		byKind[k] = append(byKind[k], t)
-	}
-	for k, ts := range byKind {
-		rows, err := s.overviewRows(ctx, k, now.Add(-homePathWindow), now, ts)
-		if err != nil {
-			return nil, err
-		}
-		for i, t := range ts {
-			l := out[t.Layer]
-			l.n += rows[i].N
-			l.lost += rows[i].Lost
-			l.slow = l.slow || rows[i].State == stateSlow || rows[i].State == stateVerySlow
-			out[t.Layer] = l
-		}
-	}
-	return out, nil
-}
-
-// homePath builds the strip: device, router, provider, internet, apps.
-func homePath(ls map[string]layerStat, a HomeAnswer, tiles []HomeTile, cp homeCopy) []HomeNode {
-	blamed := map[string]string{whoOffline: "device", whoHome: "router", whoProvider: "provider", whoBeyond: "internet", whoApp: "apps", whoDNS: "apps"}[a.Who]
-	if a.Confidence == confWeak {
-		blamed = "" // slow to answer checks is not a culprit
-	}
-	order := []string{"device", "router", "provider", "internet", "apps"}
-	past := func(id string) bool { // beyond the culprit: shows its trouble, isn't to blame
-		bi := slices.Index(order, blamed)
-		return blamed != "" && bi >= 0 && slices.Index(order, id) > bi
-	}
-	node := func(id string, l layerStat) HomeNode {
-		n := HomeNode{ID: id, Label: cp.nodeLabel(id), Tooltip: cp.nodeTip(id)}
-		loss := l.loss()
-		switch {
-		case !l.measured():
-			n.State = "unknown"
-		case loss >= 0.5:
-			n.State = levelBad
-		case loss >= 0.05 || l.slow:
-			n.State = levelWarn
-		default:
-			n.State = "ok"
-		}
-		if id == blamed && (n.State == "ok" || n.State == "unknown") {
-			n.State = levelWarn
-		}
-		if past(id) && (n.State == levelWarn || n.State == levelBad) {
-			n.State = nodeAffected
-		}
-		n.Words = cp.nodeWords(id, n.State, loss, l.slow)
-		if a.Who == whoOffline {
-			n.State, n.Words = nodeAffected, cp.cantCheckOffline()
-		}
-		n.Blamed = id == blamed
-		if n.Blamed {
-			n.Culprit = cp.culprit(a.Confidence == confSure)
-		}
-		return n
-	}
-	out := []HomeNode{{ID: "device", Label: cp.nodeLabel("device"), State: "ok", Words: cp.nodeWords("device", "ok", 0, false)}}
-	if a.Who == whoOffline {
-		out[0].State, out[0].Words, out[0].Blamed, out[0].Culprit = levelBad, cp.nodeWords("device", levelBad, 1, false), true, cp.culprit(true)
-	}
-	out = append(out, node("router", ls[model.LayerGateway]), node("provider", ls[model.LayerEdge]), node("internet", ls[model.LayerAnycast]))
-
-	// Apps & websites: from the tiles, so the strip and the tiles agree.
-	apps := HomeNode{ID: "apps", Label: cp.nodeLabel("apps"), Tooltip: cp.nodeTip("apps"), State: "ok", Blamed: blamed == "apps"}
-	var hurt []string
-	worst, total, checking := levelGood, 0, 0
-	for _, t := range tiles {
-		if t.ID == tileOther && len(tiles) > 1 {
-			continue
-		}
-		total++
-		switch t.Level {
-		case levelChecking:
-			checking++
-		case levelWarn, levelBad:
-			hurt = append(hurt, strings.ToLower(t.Title))
-			if levelRank(t.Level) < levelRank(worst) {
-				worst = t.Level
-			}
-		}
-	}
-	switch {
-	case total == 0 || checking == total:
-		apps.State = "unknown"
-	case len(hurt) == 0:
-		apps.State = "ok"
-	case past("apps"):
-		apps.State = nodeAffected
-	default:
-		apps.State = worst
-	}
-	apps.Words = cp.appsWords(apps.State, hurt)
-	if a.Who == whoOffline {
-		apps.State, apps.Words = nodeAffected, cp.cantCheckOffline()
-	}
-	if apps.Blamed {
-		apps.Culprit = cp.culprit(a.Confidence == confSure)
-	}
-	return append(out, apps)
-}
-
-// homeSteps is the warm-up progress.
-func homeSteps(ls map[string]layerStat, tiles []HomeTile, cp homeCopy) []HomeStep {
-	out := []HomeStep{
-		{ID: "router", Label: cp.nodeLabel("router"), Done: ls[model.LayerGateway].measured()},
-		{ID: "provider", Label: cp.nodeLabel("provider"), Done: ls[model.LayerEdge].measured()},
-		{ID: "internet", Label: cp.nodeLabel("internet"), Done: ls[model.LayerAnycast].measured()},
-		{ID: "apps", Label: cp.nodeLabel("apps")},
-	}
-	for _, t := range tiles {
-		if t.Level != levelChecking {
-			out[3].Done = true
-		}
-	}
-	return out
-}
-
-// ---------- the answer ----------
-
-// answerIn is what the answer is made of.
-type answerIn struct {
-	v     model.Verdict
-	own   string // ownCallState
-	calls *callsJSON
-	tiles []HomeTile
-	hs    homeSet
-	names map[string]string // target name -> display name
-	now   time.Time
-}
-
-// whoOf maps a verdict kind to Home's who.
-func whoOf(k model.VerdictKind) string {
-	switch k {
-	case model.VerdictLAN:
-		return whoHome
-	case model.VerdictISP:
-		return whoProvider
-	case model.VerdictUpstream:
-		return whoBeyond
-	case model.VerdictDNS:
-		return whoDNS
-	case model.VerdictService:
-		return whoApp
-	case model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded:
-		return whoCallTraffic
-	case model.VerdictNoNetwork:
-		return whoOffline
-	case VerdictUnknown:
-		return whoUnknown
-	}
-	return whoNone
-}
-
-// confidenceOf picks the blame tier for a layer verdict: sure when the user
-// notices it (internet targets losing ≥ 5%, calls poor or worse, or a Home
-// tile slow or down), weak when only a router or provider hop answers
-// checks badly and nothing the user uses is affected, else likely.
-func confidenceOf(in answerIn) string {
-	ev := in.v.Evidence
-	sl, hasSL := ev["services_loss"]
-	impact := (hasSL && sl >= 0.05) || in.own == string(callq.Poor) || in.own == string(callq.Unusable)
-	quiet := (!hasSL || sl < 0.01) && callLevel(in.own, false) != levelBad && callLevel(in.own, false) != levelWarn
-	for _, t := range in.tiles {
-		if t.State == tileSlow || t.State == tileDown {
-			impact = true
-		}
-		if t.Level == levelWarn || t.Level == levelBad {
-			quiet = false
-		}
-	}
-	switch {
-	case impact:
-		return confSure
-	case quiet && confined(in.v):
-		return confWeak
-	}
-	return confLikely
-}
-
-// confined reports a lan or isp verdict whose loss stays on the blamed hop:
-// every known layer past it is clean. Loss that carries on outward is a
-// real fault even when apps don't show it (TCP retransmits hide loss from
-// services_loss); without the outer layers' evidence it can't be told.
-func confined(v model.Verdict) bool {
-	var outer []string
-	switch v.Kind {
-	case model.VerdictLAN:
-		outer = []string{"edge_loss", "anycast_loss"}
-	case model.VerdictISP:
-		outer = []string{"anycast_loss"}
-	default:
+// wifiWording reports the Wi-Fi wording for r: fyisp's own uplink is
+// Wi-Fi (never inside a container, which sees its own virtual link) and r
+// comes from this machine. Decided per request; never cached or logged.
+func (s *server) wifiWording(r *http.Request) bool {
+	if s.d.Path == nil || s.d.Path().Conn != model.ConnWiFi {
 		return false
 	}
-	known := false
-	for _, k := range outer {
-		l, ok := v.Evidence[k]
-		if !ok {
-			continue
-		}
-		if l >= confinedLoss {
-			return false
-		}
-		known = true
-	}
-	return known
+	return (s.inContainer == nil || !s.inContainer()) && s.sameMachine != nil && s.sameMachine(r)
 }
 
-// confinedLoss: an outer layer losing this much shares the fault.
-const confinedLoss = 0.02
+// noData reports covered tiles none of which has a word yet: right after
+// the replay, until their first minutes close.
+func noData(snap *tiles.Snapshot) bool {
+	n := 0
+	for _, t := range snap.Tiles {
+		switch t.State {
+		case tiles.Off:
+		case tiles.None:
+			n++
+		default:
+			return false
+		}
+	}
+	return n > 0
+}
 
-// homeAnswerOf makes the one answer: the worst of the verdict, the call
-// state and the tiles. The headline comes from the worst; the cause from
-// the verdict when it names a place (it knows the layer).
-func homeAnswerOf(in answerIn, cp homeCopy) HomeAnswer {
-	a := HomeAnswer{Kind: string(in.v.Kind), Try: []string{}}
-	if in.calls != nil && in.own != callNotEnoughData {
-		a.Calls = in.own
-	}
-	if in.v.Kind == model.VerdictWarmingUp {
-		a.Level, a.Who = levelChecking, whoNone
-		a.Headline, a.Cause = cp.checking()
-		a.Announce = a.Headline
-		return a
-	}
+// ongoingFirst sorts problems newest first, ongoing ones before the rest.
+func ongoingFirst(eps []tiles.Episode) []tiles.Episode {
+	eps = slices.Clone(eps)
+	slices.SortStableFunc(eps, func(a, b tiles.Episode) int {
+		switch {
+		case a.Ongoing() && !b.Ongoing():
+			return -1
+		case b.Ongoing() && !a.Ongoing():
+			return 1
+		}
+		return b.Start.Compare(a.Start)
+	})
+	return eps
+}
 
-	// The verdict's level and who.
-	who := whoOf(in.v.Kind)
-	vLevel := levelGood
-	var affected []string
-	switch who {
-	case whoHome, whoProvider, whoBeyond:
-		a.Confidence = confidenceOf(in)
-		vLevel = map[string]string{confSure: levelBad, confLikely: levelWarn, confWeak: levelInfo}[a.Confidence]
-		if who == whoBeyond && vLevel == levelInfo {
-			vLevel = levelWarn
-		}
-	case whoDNS:
-		a.Confidence = confidenceOf(in)
-		if a.Confidence == confWeak {
-			a.Confidence = confLikely
-		}
-		vLevel = levelWarn
-	case whoOffline:
-		vLevel = levelBad
-	case whoApp:
-		for _, n := range in.hs.relevant(in.v.Targets) {
-			affected = append(affected, in.names[n])
-		}
-		if len(affected) == 0 {
-			who = whoNone // a cloud region: Details only (and the muted line)
-			break
-		}
-		// As bad as the worst tile it touches: a call app always warns;
-		// one target out of a tile that is "mostly working" is a note,
-		// not an alarm.
-		vLevel = levelGood
-		touched := false
-		for _, t := range in.tiles {
-			// The Other tile names nobody: with onlyOther it is the set the verdict is about.
-			if !(t.ID == tileOther && in.hs.onlyOther()) && !slices.ContainsFunc(t.Affected, func(n string) bool { return slices.Contains(affected, n) }) {
-				continue
-			}
-			touched = true
-			l := t.Level
-			switch {
-			case t.ID == tileCalls:
-				l = levelWarn
-			case t.State == tileMostly:
-				l = levelGood
-			}
-			if levelRank(l) < levelRank(vLevel) {
-				vLevel = l
-			}
-		}
-		if !touched {
-			vLevel = levelWarn
-		}
-		if vLevel == levelGood {
-			a.Cause = cp.oneApp(in.tiles, affected)
-			who = whoNone
-		}
-	case whoCallTraffic:
-		vLevel = levelWarn
-		if in.v.Quiet {
-			vLevel = levelInfo
-		}
-	case whoUnknown:
-		who = whoNone
+// watchingSince is when fyisp started watching: the store's oldest sample
+// (read once a minute), which the engine's first data (capped by its
+// replay) only refines within the first stored hour.
+func (s *server) watchingSince(ctx context.Context, first, now time.Time) time.Time {
+	if s.d.Store == nil {
+		return first
 	}
+	hc := s.home
+	hc.mu.Lock()
+	oldest, at := hc.oldest, hc.oldestAt
+	hc.mu.Unlock()
+	if at.IsZero() || now.Sub(at) >= time.Minute || now.Before(at) {
+		if st, err := s.d.Store.Stats(ctx); err == nil {
+			oldest = st.Oldest
+		}
+		hc.mu.Lock()
+		hc.oldest, hc.oldestAt = oldest, now
+		hc.mu.Unlock()
+	}
+	// The store keeps whole hours: within the first one the engine knows better.
+	if oldest.IsZero() || !first.IsZero() && !oldest.Before(first.Truncate(time.Hour)) {
+		return first
+	}
+	return oldest
+}
 
-	// The call state's level and the tiles' (only slow or down raise the
-	// answer; "mostly working" is a note on its tile).
-	cLevel := callLevel(in.own, in.v.Quiet)
-	if cLevel == levelChecking {
-		cLevel = ""
+// homeNow builds part=now.
+func (s *server) homeNow(r *http.Request, p homeParams, now time.Time) *HomeNow {
+	snap, checking, stale := s.homeState(now)
+	c := homeCopy{loc: p.zone.loc, now: now, wifi: s.wifiWording(r)}
+	learning := snap.Learning && !checking
+	out := &HomeNow{V: 2, At: now.UnixMilli(), Stale: stale, Monitored: snap.Monitored}
+	if !snap.LastMeasured.IsZero() && !checking { // a (re)start's last stored check isn't news
+		out.LastCheck = snap.LastMeasured.UnixMilli()
 	}
-	tLevel, worstTile := "", HomeTile{}
-	for _, t := range in.tiles {
-		if t.ID == tileCalls || (t.ID == tileOther && !in.hs.onlyOther()) {
-			continue
-		}
-		if (t.State == tileSlow || t.State == tileDown) && (tLevel == "" || levelRank(t.Level) < levelRank(tLevel)) {
-			tLevel, worstTile = t.Level, t
-		}
+	if w := s.watchingSince(r.Context(), snap.FirstData, now); !w.IsZero() {
+		out.WatchingSince = w.UnixMilli()
+		out.Footer = "Watching your connection since " + c.watching(w)
 	}
-	level := vLevel
-	for _, l := range []string{cLevel, tLevel} {
-		if l != "" && levelRank(l) < levelRank(level) {
-			level = l
-		}
+	if learning && !snap.FirstData.IsZero() {
+		out.Learning = &HomeLearning{Until: snap.FirstData.Add(24 * time.Hour).UnixMilli(),
+			Text: "fyisp is still learning what’s usual for your connection. This takes about a day. Until then it only flags big problems, so small slowdowns won’t show yet."}
 	}
-	a.Level = level
-
-	// Who: the verdict's, else the call path's, else the tile's.
-	callsWho, callsApp := "", ""
-	if in.calls != nil && in.calls.Cause != nil && (cLevel == levelBad || cLevel == levelWarn) {
-		switch in.calls.Cause.Source {
-		case "path", "udp":
-			callsWho = whoCallTraffic
-		case "app":
-			callsWho, callsApp = whoApp, in.calls.Cause.App
-		}
+	var eps []tiles.Episode
+	if !checking {
+		eps = ongoingFirst(snap.Problems(now.Add(-homeWeek))) // the tiles' own tick
 	}
-	if (cLevel == levelBad || cLevel == levelWarn) && callsWho == "" {
-		callsWho = whoCallTraffic
+	byID := make(map[string]tiles.Episode, len(eps))
+	for _, e := range eps {
+		byID[e.ID] = e
 	}
+	v := homeView{checking: checking, stale: stale, blocked: !checking && !stale && snap.Conn.Kind == string(model.VerdictUDPBlocked),
+		first: snap.FirstData, custom: s.d.CustomProfile}
+	for _, t := range snap.Tiles {
+		out.Tiles = append(out.Tiles, c.tile(t, byID, v))
+	}
+	app := c.appState(snap, eps, checking || stale)
+	out.Answer = c.answer(snap, eps, app, checking, stale, learning)
+	out.Path = c.path(snap, app, checking, stale)
+	if !c.wifi {
+		out.PathHint = "fyisp checks from the box it runs on, up to your router. It can’t see the Wi-Fi on the device you’re using now — if calls are choppy here, try moving closer to your router or plugging in."
+	}
+	out.Speed = s.homeSpeed(r, c, snap.Conn, now)
 	switch {
-	case who != whoNone:
-	case callsWho != "":
-		who = callsWho
-		a.App = callsApp
-	case tLevel != "":
-		who = whoApp
-		affected = worstTile.Affected
-	}
-	a.Who = who
-	if who == whoApp && a.App == "" && len(affected) > 0 && !in.hs.onlyOther() {
-		a.App = affected[0]
-	}
-
-	// Since: the verdict's, or the start of the current bad call run.
-	if who != whoNone && whoOf(in.v.Kind) == who && !in.v.Since.IsZero() {
-		a.Since = in.v.Since.UnixMilli()
-	} else if callsWho != "" && who == callsWho {
-		a.Since = callRunStart(in.calls)
-	}
-
-	// Headline: from the worst source; cause from the verdict when it
-	// names a place.
-	// A path verdict (home network, provider, further out, offline, name
-	// lookups) names the place in the headline; the Calls tile says what
-	// it does to calls.
-	layer := who == whoOf(in.v.Kind) && slices.Contains([]string{whoHome, whoProvider, whoBeyond, whoOffline, whoDNS}, who) && a.Confidence != confWeak
-	callsDrive := !layer && cLevel != "" && cLevel == level && (level == levelBad || level == levelWarn) &&
-		in.v.Kind != model.VerdictUDPBlocked && in.v.Kind != model.VerdictSTUNBlocked
-	switch {
-	case level == levelGood || (level == levelInfo && a.Confidence == confWeak):
-		a.Headline = cp.fine(in.hs.home > 0)
-	case layer:
-		a.Headline = cp.verdictHead(in.v.Kind, a.Confidence, in.v.Quiet, affected, in.hs.onlyOther())
-	case callsDrive:
-		a.Headline = cp.callHead(in.own, false)
-	case vLevel == level && whoOf(in.v.Kind) == who && who != whoNone:
-		a.Headline = cp.verdictHead(in.v.Kind, a.Confidence, in.v.Quiet, affected, in.hs.onlyOther())
-	case tLevel != "":
-		a.Headline = cp.tileHead(worstTile)
+	case checking:
+		out.Problems = HomeProblems{Summary: "Checking…", Items: []HomeProblem{}}
 	default:
-		a.Headline = cp.callHead(in.own, in.v.Quiet)
+		key := strings.Join([]string{strconv.FormatUint(snap.Rev, 16), p.zone.key, now.In(p.zone.loc).Format(time.DateOnly),
+			strconv.FormatBool(learning), strconv.FormatInt(snap.FirstData.UnixMilli(), 10)}, "\x00")
+		out.Problems, _ = memo(&s.home.mu, s.home.probs, key, func() (HomeProblems, bool) { return c.problems(eps, learning, snap.FirstData), true })
 	}
-	switch {
-	case who == whoNone && a.Cause != "":
-	case who == whoNone:
-		a.Cause = cp.everything(in.hs.home > 0, in.tiles)
-	case whoOf(in.v.Kind) == who:
-		a.Cause = cp.verdictCause(in.v.Kind, a.Confidence, in.v.Quiet, affected, in.hs.onlyOther())
-	case who == whoCallTraffic:
-		factor := ""
-		if in.calls != nil && in.calls.Cause != nil {
-			factor = in.calls.Cause.Factor
+	return out
+}
+
+// homeView is how part=now's tiles are shown.
+type homeView struct {
+	checking, stale bool
+	blocked         bool      // udp_blocked: call tiles have lost their fast path, not their calls
+	first           time.Time // the engine's first data
+	custom          bool      // the profile is a --config file
+}
+
+// appRow is the card's row 9 (problems with some apps, no path verdict):
+// the bad tiles, their likely causes, and the strip's hop their common
+// cause is on (-1: none).
+type appRow struct {
+	bad      []tiles.TileSnap
+	causes   []tiles.Cause
+	hop      int
+	allCalls bool
+}
+
+// appState works out row 9 of the card.
+func (c homeCopy) appState(snap *tiles.Snapshot, eps []tiles.Episode, skip bool) appRow {
+	r := appRow{hop: -1}
+	if !skip && snap.Conn.Kind == string(model.VerdictUDPDegraded) {
+		// Choppy calls with no path verdict: their problems' common cause
+		// (e.g. the provider's loss) is the strip's too.
+		r.allCalls = true
+		for _, e := range eps {
+			if e.Ongoing() && !e.Connection && e.Cause.Who != "" {
+				r.causes = append(r.causes, e.Cause)
+			}
 		}
-		a.Cause = cp.pathCause(factor)
-	case who == whoApp && callsApp != "":
-		a.Cause = cp.appWorse(appTitle(callsApp))
-	default:
-		a.Cause = cp.tileCause(worstTile)
+		r.hop = hopOf(r.causes)
+		r.causes = nil
+		return r
 	}
-	if in.v.Quiet && who == whoCallTraffic {
-		a.Hint = cp.quietHint()
+	if skip || snap.Conn.Kind != tiles.ConnApp {
+		return r
 	}
-	if who != whoNone && level != levelGood {
-		a.Try = cp.try(who, in.v.Kind, a.Confidence)
+	r.allCalls = true
+	for _, id := range snap.Conn.Tiles {
+		if i := slices.IndexFunc(snap.Tiles[:], func(t tiles.TileSnap) bool { return t.ID == id }); i >= 0 {
+			t := snap.Tiles[i]
+			r.bad = append(r.bad, t)
+			r.causes = append(r.causes, causeOf(t, eps))
+			r.allCalls = r.allCalls && tileDef(id).Kind == profile.TileCall
+		}
 	}
-	if a.Calls != "" && (cLevel == levelBad || cLevel == levelWarn) {
-		a.Fact, a.FactAt = worstFact(in.calls, cp)
+	r.hop = hopOf(r.causes)
+	return r
+}
+
+// hopOf is the strip's hop of causes' common connection cause (-1: none).
+func hopOf(causes []tiles.Cause) int {
+	if len(causes) == 0 || slices.ContainsFunc(causes, func(y tiles.Cause) bool { return y.Who != causes[0].Who }) {
+		return -1
 	}
-	a.Announce = strings.TrimSpace(a.Headline + ". " + firstSentence(a.Cause))
+	switch causes[0].Who {
+	case tiles.WhoRouter, tiles.WhoOffline:
+		return 0
+	case tiles.WhoProvider:
+		return 1
+	case tiles.WhoInternet:
+		return 2
+	}
+	return -1
+}
+
+// watching is the footer's date: "Mar 3", "today 9:50 am".
+func (c homeCopy) watching(t time.Time) string {
+	switch n := c.daysAgo(t); {
+	case n <= 1:
+		return c.dayIn(t) + " " + c.clock(t)
+	case c.in(t).Year() != c.in(c.now).Year():
+		return c.in(t).Format("Jan 2, 2006")
+	}
+	return c.in(t).Format("Jan 2")
+}
+
+func iconOf(st tiles.State) string {
+	switch st {
+	case tiles.Good, tiles.Slow, tiles.Down:
+		return string(st)
+	}
+	return "none"
+}
+
+// answer is the card (tiles.ConnState's rows, worded).
+func (c homeCopy) answer(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, checking, stale, learning bool) HomeAnswer {
+	a := c.card(snap, eps, app, checking, stale, learning)
+	// One key, one text: the key carries a hash of the words (so a new
+	// day, which turns "Started at" into "Started yesterday at", is a new key).
+	h := fnv.New32a()
+	h.Write([]byte(a.Headline + "\x00" + a.Sub))
+	a.Key += ":" + strconv.FormatUint(uint64(h.Sum32()), 36)
 	return a
 }
 
-// callRunStart is the first minute of the current run of fair-or-worse
-// call-path minutes (0 when the last scored minute is good).
-func callRunStart(c *callsJSON) int64 {
-	if c == nil || c.Path == nil {
-		return 0
+// card is the answer card, before its key gets the text's hash.
+func (c homeCopy) card(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, checking, stale, learning bool) HomeAnswer {
+	cs := snap.Conn
+	a := HomeAnswer{Key: cs.Key, Tone: cs.Tone, Icon: iconOf(cs.Icon)}
+	if !learning {
+		a.Day = c.dayLine(eps)
 	}
-	st := c.Path.Minutes.State
-	start := int64(0)
-	for i := len(st) - 1; i >= 0; i-- {
-		switch st[i] {
-		case "":
+	started := func() string { return c.started(cs.Since) }
+	switch {
+	case checking:
+		return HomeAnswer{Key: tiles.ConnChecking, Tone: tiles.ToneChecking, Icon: "none", Tab: "Checking",
+			Headline: "Checking your connection…", Sub: "fyisp just started. The first answer takes about a minute."}
+	case stale:
+		a.Key, a.Tone, a.Icon, a.Tab = tiles.ConnStale, tiles.ToneStale, "none", "? Not checking"
+		if snap.LastMeasured.IsZero() {
+			a.Headline, a.Sub, a.Day = "fyisp hasn’t checked anything yet.", "Is the computer it runs on asleep or turned off?", nil
+			return a
+		}
+		at := c.when(snap.LastMeasured)
+		a.Headline = "fyisp hasn’t checked since " + at + "."
+		a.Sub = "Is the computer it runs on asleep or turned off? Everything below is from " + at + " and may be out of date."
+		return a
+	}
+	switch cs.Kind {
+	case string(model.VerdictLAN), string(model.VerdictISP), string(model.VerdictUpstream), string(model.VerdictNoNetwork), tiles.ConnDrop:
+		a.Headline, a.Sub, a.Tab = c.pathCard(cs.Kind, cs.Since)
+	case string(model.VerdictDNS):
+		a.Headline = "Websites can’t be found right now."
+		a.Sub = "Your connection is up, but name lookups (DNS) are failing, so apps can’t find their servers." + started()
+		a.Tab = "! Websites not found"
+	case string(model.VerdictUDPBlocked):
+		a.Headline = "Calls can’t use their fast path on this network."
+		if cs.Quiet {
+			a.Icon = "info" // known for a long time: information, not a warning
+			a.Sub = "This network blocks the kind of traffic calls prefer. Most call apps fall back to a slower route, so calls usually still work but may be choppier. Websites and apps are fine."
+			a.Tab = "ⓘ Calls limited"
+			break
+		}
+		a.Sub = "This network is blocking the kind of traffic calls prefer. Most call apps fall back to a slower route, so calls usually still work but may be choppier. Websites and apps are fine." + started()
+		a.Tab = "! Calls limited"
+	case string(model.VerdictUDPDegraded):
+		a.Headline = "Calls may be choppy right now."
+		a.Sub = "Calls are losing some data between your home and the internet, while websites and apps are fine." + started()
+		a.Tab = "! Calls choppy"
+	case tiles.ConnBroad:
+		a.Headline = "Most apps are slower than usual."
+		a.Sub = "Your router and your internet provider look fine, but most apps are slow at the same time." + started()
+		a.Tab = "! Apps slow"
+	case tiles.ConnApp:
+		if len(app.bad) == 0 {
+			break
+		}
+		var warn bool
+		a.Headline, a.Sub, a.Tab, warn = c.appCard(app.bad, app.causes, snap.Tiles[:])
+		if warn { // the connection or the calls' route, not the apps: amber
+			a.Tone, a.Icon = tiles.ToneWarn, "slow"
+		}
+		if cs.Again != nil {
+			a.Sub += " " + c.againAside(cs.Again)
+		}
+		return a
+	case tiles.ConnWorkingAgain:
+		g := cs.Again
+		a.Headline = c.againSentence(g)
+		a.Sub = "Likely cause: " + c.cause(g.Cause) + " — " + c.evidence(g.Cause, false) + "."
+		switch g.Variant {
+		case tiles.AgainDropped:
+			a.Sub += " If a call cut out around then, this is why."
+			a.Tab = "! Dropped at " + c.in(g.Start).Format("3:04")
+		case tiles.AgainDown:
+			a.Tab = "! Was down at " + c.in(g.Start).Format("3:04")
+		default:
+			a.Tab = "! Trouble at " + c.in(g.Start).Format("3:04")
+		}
+		return a
+	}
+	if a.Headline != "" {
+		return a
+	}
+	calls := slices.ContainsFunc(snap.Tiles[:], func(t tiles.TileSnap) bool {
+		return t.State != tiles.Off && tileDef(t.ID).Kind == profile.TileCall
+	})
+	a.Key, a.Tone, a.Icon, a.Tab = tiles.ConnGood, tiles.ToneOK, "good", "✓ All good"
+	a.Headline = "Everything you use is working normally."
+	measured := 0
+	for _, t := range snap.Tiles {
+		if t.State != tiles.Off && t.State != tiles.None {
+			measured++
+		}
+	}
+	a.Sub = c.healthy(snap.Monitored, measured, calls, learning, snap.Layers[1].State != tiles.None, snap.FirstData)
+	return a
+}
+
+// causeOf is a bad tile's likely cause: its own (the app's side), else
+// its newest ongoing problem's.
+func causeOf(t tiles.TileSnap, eps []tiles.Episode) tiles.Cause {
+	if t.Cause.Who != "" {
+		return t.Cause
+	}
+	for _, e := range eps {
+		if e.Ongoing() && slices.Contains(e.Tiles, t.ID) {
+			return e.Cause
+		}
+	}
+	return tiles.Cause{}
+}
+
+// path is the connection strip: the router, the provider, the internet.
+func (c homeCopy) path(snap *tiles.Snapshot, app appRow, checking, stale bool) []HomeHop {
+	labels := [3]string{c.routerName(), "Your internet provider", "The internet"}
+	ids := [3]string{"router", "provider", "internet"}
+	var out [3]HomeHop
+	for i := range out {
+		out[i] = HomeHop{ID: ids[i], Label: labels[i]}
+		if checking {
+			out[i].State, out[i].Sub = "unknown", "Checking…"
 			continue
-		case string(callq.Good):
-			return start
 		}
-		start = c.Start + int64(i)*c.Step
-	}
-	return start
-}
-
-// worstFact is the one labelled fact about the worst minute, in words.
-func worstFact(c *callsJSON, cp homeCopy) (string, int64) {
-	if c == nil {
-		return "", 0
-	}
-	// The call path's worst minute, so every view gives one figure for a
-	// minute; an app's only without a path.
-	g := c.Path
-	for _, a := range c.Apps {
-		if a.callsGroup != nil && a.Worst != nil && (g == nil || g.Worst == nil) {
-			g = a.callsGroup
+		l := snap.Layers[i]
+		switch l.State {
+		case tiles.Good:
+			out[i].State, out[i].Sub = "good", "Working normally"
+		case tiles.Slow:
+			out[i].State, out[i].Sub = "slow", "Having some trouble"
+		case tiles.Down:
+			out[i].State, out[i].Sub = "down", "Not answering "+c.since(l.Since)
+		default:
+			out[i].State = "unknown"
+			out[i].Sub = [3]string{"Can’t see your router from here", "Can’t see your provider from here", "Not checked yet"}[i]
 		}
 	}
-	if g == nil || g.Worst == nil || g.Worst.State == string(callq.Good) {
-		return "", 0
+	if checking {
+		return out[:]
 	}
-	return cp.fact(g.Factor, float64(g.Worst.Loss)), g.Worst.At
-}
-
-func firstSentence(s string) string {
-	if i := strings.Index(s, ". "); i >= 0 {
-		return s[:i+1]
+	cs := snap.Conn
+	culprit := -1
+	switch cs.Kind {
+	case string(model.VerdictLAN), string(model.VerdictNoNetwork):
+		culprit = 0
+	case string(model.VerdictISP):
+		culprit = 1
+	case string(model.VerdictUpstream):
+		culprit = 2
+	case tiles.ConnDrop:
+		culprit = slices.IndexFunc(snap.Layers[:], func(l tiles.LayerSnap) bool { return l.State == tiles.Down })
 	}
-	return s
-}
-
-// ---------- history ----------
-
-// homeIncident is an outage-log incident as Home sees it.
-type homeIncident struct {
-	model.Incident
-	who   string
-	level string
-	label string
-	// services: an app incident about "other" targets only (cloud regions
-	// and the like), worded as services, never apps or websites.
-	services bool
-}
-
-func (s *server) homeHistory(ctx context.Context, p homeParams, now time.Time) (*HomeHistory, error) {
-	prof := s.d.Profile()
-	hs := newHomeSet(prof)
-	cp := homeCopy{}
-	loc := time.FixedZone("", p.tz*60)
-	ln := now.In(loc)
-	today := time.Date(ln.Year(), ln.Month(), ln.Day(), 0, 0, 0, 0, loc)
-	days := 1
-	if p.span == "w" {
-		days = 7
-	}
-	from := today.AddDate(0, 0, 1-days)
-	out := &HomeHistory{Part: "history", At: now.UnixMilli(), TZ: p.tz, Span: p.span,
-		From: from.UnixMilli(), To: now.UnixMilli(), Days: []HomeDay{}, Problems: []HomeProblem{}}
-
-	// When fyisp was measuring: a few heartbeat series.
-	beat := heartbeatKeys(prof)
-	firsts, ok := s.d.firstSamples(ctx, now)
-	var first time.Time
-	if ok {
-		for _, k := range beat {
-			if f, ok := firsts[k]; ok && (first.IsZero() || f.Before(first)) {
-				first = f
-			}
+	through := [3]string{"Hard to reach through your router", "Hard to reach through your provider"}
+	switch {
+	case cs.Kind == string(model.VerdictNoNetwork):
+		out[0].State, out[0].Sub = "down", "No network connection "+c.since(cs.Since)
+		for i := 1; i < 3; i++ {
+			out[i].State, out[i].Sub = "unknown", "Can’t check while offline"
 		}
-	}
-	if !first.IsZero() {
-		out.FirstData = first.UnixMilli()
-	}
-	var off []HomeSpan
-	if !first.IsZero() && len(beat) > 0 {
-		var err error
-		if off, err = s.offSpans(ctx, beat, later(from, first), today, now); err != nil {
-			return nil, err
-		}
-		off = s.withoutSpeedTests(ctx, off, from, now)
-	}
-
-	// Incidents, relevant to Home.
-	var incs []homeIncident
-	if s.d.Verdict != nil {
-		list, err := s.d.Verdict.Incidents(ctx, from, now)
-		if err != nil {
-			return nil, err
-		}
-		for _, in := range list {
-			if !in.Start.Before(now) || (!in.End.IsZero() && !in.End.After(from)) {
-				continue
-			}
-			who := whoOf(in.Kind)
-			if who == whoNone || who == whoUnknown {
-				continue
-			}
-			x := homeIncident{Incident: in, who: who, level: levelWarn}
-			switch in.Kind {
-			case model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
-				x.level = levelBad
-			case model.VerdictUDPBlocked, model.VerdictSTUNBlocked:
-				end := now
-				if !in.End.IsZero() {
-					end = in.End
-				}
-				if end.Sub(in.Start) >= verdict.UDPQuietAfter {
-					x.level = levelInfo // a network that always blocks calls: information, not a problem
-				}
-			}
-			if who == whoApp {
-				rel := hs.relevant(in.Targets)
-				if len(rel) == 0 {
-					continue // a cloud region the user doesn't use
-				}
-				x.services = !slices.ContainsFunc(rel, func(n string) bool { return hs.cat[n] != tileOther })
-				if len(rel) == 1 && !x.services {
-					x.label = homeNameOf(prof, rel[0])
-				}
-				if x.services {
-					x.label = cp.someServices()
-				}
-			}
-			incs = append(incs, x)
-		}
-	}
-
-	// Today's bad call minutes that no incident covers.
-	var callRuns []HomeRun
-	var work *HomeWorkCalls
-	if c, err := s.callsToday(ctx, today, now); err != nil {
-		return nil, err
-	} else if c != nil && c.Path != nil {
-		callRuns = callMinuteRuns(c, incs, cp)
-		work = workCalls(c, incs, today, now)
-	}
-
-	for d := days - 1; d >= 0; d-- {
-		ds := today.AddDate(0, 0, -d)
-		de := ds.AddDate(0, 0, 1)
-		day := HomeDay{Date: ds.Format("2006-01-02"), From: ds.UnixMilli(), To: de.UnixMilli(), Runs: []HomeRun{}, Off: []HomeSpan{}}
-		if d == 0 {
-			day.To = now.UnixMilli()
-		}
-		if wd := ds.Weekday(); wd != time.Saturday && wd != time.Sunday {
-			day.WorkFrom = ds.Add(homeWorkFrom * time.Hour).UnixMilli()
-			day.WorkTo = ds.Add(homeWorkTo * time.Hour).UnixMilli()
-		}
-		day.NoRecord = first.IsZero() || !de.After(first)
-		for _, sp := range off {
-			if sp.From < day.To && sp.To > day.From {
-				day.Off = append(day.Off, HomeSpan{From: max(sp.From, day.From), To: min(sp.To, day.To)})
-			}
-		}
-		for _, in := range incs {
-			end := now
-			if !in.End.IsZero() {
-				end = in.End
-			}
-			if !in.Start.Before(de) || !end.After(ds) {
-				continue
-			}
-			day.Runs = append(day.Runs, HomeRun{From: max(in.Start.UnixMilli(), day.From), To: min(end.UnixMilli(), day.To),
-				Level: in.level, Who: in.who, Kind: string(in.Kind), Label: cp.runLabel(in.who, in.label), Source: "incident",
-				Text:     cp.wasWhere(in.who, in.Kind),
-				Incident: in.ID, Ongoing: in.End.IsZero()})
-		}
-		if d == 0 {
-			day.Runs = append(day.Runs, callRuns...)
-		}
-		slices.SortFunc(day.Runs, func(a, b HomeRun) int { return int(a.From - b.From) })
-		out.Days = append(out.Days, day)
-	}
-
-	for _, in := range incs { // newest first
+	case culprit >= 0:
+		// Down only when the layer lost everything; a lossy one is slow.
+		since := cs.Since
 		switch {
-		case in.level == levelInfo:
-			// not a problem; still in the table, the timeline and runs
-		case in.services:
-			out.Counts.Problems++
-			out.Counts.Services++
+		case snap.Layers[culprit].State == tiles.Down:
+			out[culprit].State, out[culprit].Sub = "down", "Not answering "+c.since(since)
+		case culprit == 2:
+			out[culprit].State, out[culprit].Sub = "slow", "Hard to reach "+c.since(since)
 		default:
-			out.Counts.add(in.who)
+			out[culprit].State, out[culprit].Sub = "slow", "Losing some data "+c.since(since)
 		}
-		if len(out.Problems) >= homeMaxProblems {
+		for i := culprit + 1; i < 3; i++ {
+			out[i].State, out[i].Sub = "slow", through[culprit]
+		}
+	case app.hop >= 0:
+		// Apps (calls) suffer from a layer no verdict blames: the strip says so too.
+		what := "Losing some data "
+		if app.allCalls {
+			what = "Losing some call data "
+		}
+		out[app.hop].State, out[app.hop].Sub = "slow", what+c.since(cs.Since)
+	default:
+		// The newest drop shows where it happened: on the first layer that lost everything.
+		for i, l := range snap.Layers {
+			if l.LastDrop != nil && out[i].State == "good" {
+				out[i].Sub = "Dropped for " + short(l.LastDrop.Dur) + " at " + c.when(l.LastDrop.Start) + ", fine now"
+				break
+			}
+		}
+	}
+	if stale {
+		for i := range out {
+			out[i].State = "unknown" // last known: no colour
+			if out[i].Sub == "Working normally" {
+				out[i].Sub = "Last known: working"
+			} else {
+				out[i].Sub = "Last known: " + strings.ToLower(out[i].Sub[:1]) + out[i].Sub[1:]
+			}
+		}
+	}
+	return out[:]
+}
+
+// tile is one tile of part=now.
+func (c homeCopy) tile(t tiles.TileSnap, eps map[string]tiles.Episode, v homeView) HomeTile {
+	d := tileDef(t.ID)
+	st := t.State
+	if v.checking && st != tiles.Off {
+		st = tiles.None
+	}
+	// A blocked fast path is choppier calls over a slower route, not calls
+	// that can't connect: only when the block is the tile's only problem
+	// (an app's own outage on such a network stays Down).
+	blocked := v.blocked && d.Kind == profile.TileCall && st == tiles.Down && onlyBlocked(t, eps)
+	if blocked {
+		st = tiles.Slow
+		for i := range t.Bars {
+			if t.Bars[i].State == tiles.Down && t.Bars[i].From.Add(5*time.Minute).After(t.Since) {
+				t.Bars[i].State = tiles.Slow
+			}
+		}
+	}
+	out := HomeTile{ID: d.ID, Name: d.Name, Kind: string(d.Kind), State: string(st), Word: c.word(st, d.Kind), Bars: []HomeBar{}}
+	t.State = st
+	out.Reason = c.tileReason(d, t, v.checking, blocked)
+	switch {
+	case st == tiles.Off:
+		out.Aria = d.Name + ": not checked on this setup"
+		out.EnableHint = c.enableHint(d, v.custom)
+		return out
+	case st == tiles.None:
+		out.Aria = d.Name + ": no data yet"
+	case st.Bad():
+		out.Since = ms(t.Since)
+		if !t.Since.IsZero() {
+			out.Note = c.since(t.Since)
+		}
+		out.Aria = d.Name + ": " + out.Word
+		if out.Note != "" {
+			out.Aria += ", " + out.Note
+		}
+	default:
+		out.Aria = d.Name + ": Good"
+		if t.LastDrop != nil {
+			out.Note = c.dropNote(t.LastDrop)
+			out.Aria += ", d" + out.Note[1:]
+		}
+	}
+	if v.stale {
+		out.Aria += " (last known)"
+	}
+	for _, b := range t.Bars {
+		if b.From.IsZero() {
 			continue
 		}
-		pr := HomeProblem{ID: in.ID, From: in.Start.UnixMilli(), Ongoing: in.End.IsZero(), Kind: string(in.Kind), Who: in.who,
-			Where: cp.where(in.who, in.label), Side: sideOf(in.who), Level: in.level, Text: cp.wasWhere(in.who, in.Kind),
-			PeakLoss: clamp01(in.PeakLoss)}
-		if in.who == whoHome || in.who == whoProvider {
-			pr.Confidence = confLikely
+		s := b.State
+		if v.checking || (s != tiles.Good && s != tiles.Slow && s != tiles.Down) {
+			s = tiles.None
 		}
-		end := now
-		if !in.End.IsZero() {
-			pr.To = in.End.UnixMilli()
-			end = in.End
-		}
-		pr.Details = "#v=calls&from=" + strconv.FormatInt(in.Start.Add(-30*time.Minute).UnixMilli(), 10) +
-			"&to=" + strconv.FormatInt(min(end.Add(30*time.Minute).UnixMilli(), now.UnixMilli()), 10) + "&o=1"
-		out.Problems = append(out.Problems, pr)
+		out.Bars = append(out.Bars, HomeBar{From: b.From.UnixMilli(), State: string(s), Note: c.barNote(b, s, d.Kind, eps)})
 	}
-	out.Counts.CallPatches = len(callRuns)
-	// One app named when every app problem was about the same one; a
-	// long-standing block is a known issue, not a problem.
-	app, apps, known := "", map[string]bool{}, false
-	for _, in := range incs {
-		if in.who == whoApp && !in.services {
-			apps[in.label] = true
-			app = in.label
-		}
-		if in.level == levelInfo {
-			known = true
-			if in.End.IsZero() && (out.Known == nil || in.Start.UnixMilli() < out.Known.Since) {
-				out.Known = &HomeKnown{Since: in.Start.UnixMilli(), Text: cp.knownBlock()}
-			}
-		}
-	}
-	if len(apps) != 1 {
-		app = ""
-	}
-	out.Summary = cp.summary(out.Counts, p.span, first.IsZero() || (first.After(now.Add(-10*time.Minute)) && out.Counts.Problems == 0), app, known)
-	if work != nil && work.Measured > 0 {
-		out.Work = work
-	}
-	return out, nil
-}
-
-func (c *HomeCounts) add(who string) {
-	c.Problems++
-	switch who {
-	case whoHome:
-		c.Home++
-	case whoProvider:
-		c.Provider++
-	case whoBeyond:
-		c.Beyond++
-	case whoDNS:
-		c.DNS++
-	case whoApp:
-		c.App++
-	case whoCallTraffic:
-		c.CallTraffic++
-	case whoOffline:
-		c.Offline++
-	}
-}
-
-func homeNameOf(p *model.Profile, name string) string {
-	if p != nil {
-		for _, t := range p.Targets {
-			if t.Name == name {
-				return homeName(t)
-			}
-		}
-	}
-	return strings.ReplaceAll(name, "-", " ")
-}
-
-// heartbeatKeys are the series that tell whether fyisp was running: the
-// path targets' main kind, else the first few targets'.
-func heartbeatKeys(p *model.Profile) []model.SeriesKey {
-	var out []model.SeriesKey
-	if p == nil {
-		return nil
-	}
-	add := func(t model.Target) {
-		if len(out) < homeHeartbeat {
-			out = append(out, model.SeriesKey{Target: t.Name, Kind: t.ProbeKinds()[0]})
-		}
-	}
-	for _, t := range p.Targets {
-		if isPath(t) {
-			add(t)
-		}
-	}
-	if len(out) == 0 {
-		for _, t := range p.Targets {
-			if len(t.ProbeKinds()) > 0 {
-				add(t)
-			}
-		}
+	if !v.checking {
+		out.BarsSummary = c.barsSummary(t.Bars[:], v.first)
 	}
 	return out
 }
 
-// offSpans finds when nothing was measured between from and now: per
-// minute today (raw tier), per hour before (hourly tier; a partly measured
-// hour counts as running). The last minute is never off (it may still be
-// arriving).
-func (s *server) offSpans(ctx context.Context, keys []model.SeriesKey, from, today, now time.Time) ([]HomeSpan, error) {
-	var out []HomeSpan
-	addRun := func(a, b int64) {
-		if n := len(out); n > 0 && out[n-1].To >= a {
-			out[n-1].To = max(out[n-1].To, b)
-			return
-		}
-		out = append(out, HomeSpan{From: a, To: b})
-	}
-	scan := func(qf, qt time.Time, maxPoints int) error {
-		if !qf.Before(qt) {
-			return nil
-		}
-		res, err := s.d.Store.Panel(ctx, store.PanelQuery{Keys: keys, From: qf, To: qt, MaxPoints: maxPoints})
-		if err != nil {
-			return err
-		}
-		step := res.Step
-		if step <= 0 {
-			return nil
-		}
-		nb := 0
-		for i := range res.Series {
-			nb = max(nb, len(res.Series[i].N))
-		}
-		for i := range nb {
-			bs := res.Start.Add(time.Duration(i) * step)
-			be := bs.Add(step)
-			if !be.After(qf) || !bs.Before(qt) {
-				continue
-			}
-			seen := false
-			for j := range res.Series {
-				c := &res.Series[j]
-				if at(c.N, i)+at(c.Lost, i) > 0 {
-					seen = true
-					break
-				}
-			}
-			if !seen {
-				addRun(later(bs, qf).UnixMilli(), min(be.UnixMilli(), qt.UnixMilli()))
-			}
-		}
-		return nil
-	}
-	if from.Before(today) {
-		hours := int(today.Sub(from)/time.Hour) + 2
-		if err := scan(from, today, hours); err != nil {
-			return nil, err
-		}
-	}
-	settled := now.Add(-time.Minute).Truncate(time.Minute)
-	start := later(from, today)
-	if err := scan(start, settled, int(settled.Sub(start)/time.Minute)+2); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// callsToday reads today's call minutes (at least CallsMinRange, at most
-// CallsMaxRange).
-func (s *server) callsToday(ctx context.Context, today, now time.Time) (*callsJSON, error) {
-	from := today
-	if now.Sub(from) < CallsMinRange {
-		from = now.Add(-CallsMinRange)
-	}
-	if now.Sub(from) > CallsMaxRange {
-		from = now.Add(-CallsMaxRange)
-	}
-	return s.calls(ctx, callsParams{from: from, to: now})
-}
-
-// callMinuteRuns are today's runs of fair (warn) or poor/unusable (bad)
-// call-path minutes, outside incidents.
-func callMinuteRuns(c *callsJSON, incs []homeIncident, cp homeCopy) []HomeRun {
-	covered := func(t int64) bool {
-		for _, in := range incs {
-			end := int64(math.MaxInt64)
-			if !in.End.IsZero() {
-				end = in.End.UnixMilli()
-			}
-			if t >= in.Start.UnixMilli() && t < end {
-				return true
-			}
-		}
+// onlyBlocked reports a tile whose ongoing problems are all a blocked
+// fast path (EpBlocked), with no app-side cause of its own.
+func onlyBlocked(t tiles.TileSnap, eps map[string]tiles.Episode) bool {
+	if t.Cause.Who == tiles.WhoApp || t.Cause.Who == tiles.WhoCallsPath {
 		return false
 	}
-	var out []HomeRun
-	for i, st := range c.Path.Minutes.State {
-		lv := ""
-		switch st {
-		case string(callq.Fair):
-			lv = levelWarn
-		case string(callq.Poor), string(callq.Unusable):
-			lv = levelBad
-		}
-		t := c.Start + int64(i)*c.Step
-		if lv == "" || covered(t) {
+	n := 0
+	for _, e := range eps {
+		if !e.Ongoing() || !slices.Contains(e.Tiles, t.ID) {
 			continue
 		}
-		if n := len(out); n > 0 && out[n-1].To == t {
-			out[n-1].To = t + c.Step
-			if levelRank(lv) < levelRank(out[n-1].Level) {
-				out[n-1].Level, out[n-1].Kind, out[n-1].Text = lv, st, cp.callPatch(lv)
+		if e.Kind != tiles.EpBlocked {
+			return false
+		}
+		n++
+	}
+	return n > 0
+}
+
+// barNote is a bar's note: "Dropped 40 s", "Down since 10:05 am",
+// "Choppy 9:41–9:45 am — likely Slack’s side", "Slow during a speed
+// test"; "" when the word says it.
+func (c homeCopy) barNote(b tiles.Bar, st tiles.State, kind profile.TileKind, eps map[string]tiles.Episode) string {
+	if !st.Bad() {
+		return ""
+	}
+	w := c.word(st, kind)
+	switch e, ok := eps[b.Episode]; {
+	case ok && e.Ongoing():
+		return w + " " + c.since(e.Start)
+	case st == tiles.Down && b.Drop > 0:
+		return "Dropped " + short(b.Drop)
+	case b.Speedtest:
+		return w + " during a speed test"
+	case !ok:
+		return ""
+	default:
+		return w + " " + c.span(e.Start, e.End) + c.likely(e.Cause)
+	}
+}
+
+// likely is " — likely Slack’s side" ("" when unclear).
+func (c homeCopy) likely(x tiles.Cause) string {
+	if x.Who == "" || x.Who == tiles.WhoUnknown {
+		return ""
+	}
+	return " — likely " + c.cause(x)
+}
+
+// problems is the problems block.
+func (c homeCopy) problems(eps []tiles.Episode, learning bool, first time.Time) HomeProblems {
+	out := HomeProblems{Summary: c.problemsSummary(eps, learning, first), Items: []HomeProblem{}}
+	for _, e := range eps {
+		p := HomeProblem{ID: e.ID, From: e.Start.UnixMilli(), Ongoing: e.Ongoing(), Level: string(e.Sev),
+			When: c.problemWhen(e), What: c.problemWhat(e), Cause: c.cause(e.Cause), CauseKind: e.Cause.Kind(),
+			Evidence: capFirst(c.evidence(e.Cause, e.Ongoing())) + "."}
+		if e.Kind == tiles.EpBlocked {
+			// Calls lost their fast path, not their calls: amber. No path
+			// layer explains a block: the network does it.
+			p.Level = string(tiles.Slow)
+			if p.CauseKind == tiles.KindOther {
+				p.Cause, p.Evidence = "a firewall or VPN on this network blocking call traffic", "Websites and apps were fine; only calls couldn’t use their usual route."
+				if e.Ongoing() {
+					p.Evidence = "Websites and apps are fine; only calls can’t use their usual route."
+				}
 			}
-			continue
 		}
-		out = append(out, HomeRun{From: t, To: t + c.Step, Level: lv, Who: whoCallTraffic, Kind: st,
-			Label: cp.runLabel(whoCallTraffic, ""), Source: "calls", Text: cp.callPatch(lv)})
+		if !e.Ongoing() {
+			p.To = e.End.UnixMilli()
+		}
+		if p.Level != string(tiles.Down) {
+			p.Level = string(tiles.Slow)
+		}
+		out.Items = append(out.Items, p)
 	}
 	return out
 }
 
-// workCalls is today's call quality in working hours so far.
-// Minutes while the network blocked call traffic don't count: calls take
-// a relay then, which this can't judge.
-func workCalls(c *callsJSON, incs []homeIncident, today, now time.Time) *HomeWorkCalls {
-	if wd := today.Weekday(); wd == time.Saturday || wd == time.Sunday {
-		return nil
-	}
-	wf, wt := today.Add(homeWorkFrom*time.Hour).UnixMilli(), today.Add(homeWorkTo*time.Hour).UnixMilli()
-	w := &HomeWorkCalls{}
-	good := 0
-	for i, st := range c.Path.Minutes.State {
-		t := c.Start + int64(i)*c.Step
-		if st == "" || t < wf || t >= wt || t >= now.UnixMilli() || blockedAt(incs, t) {
-			continue
-		}
-		w.Measured++
-		switch st {
-		case string(callq.Good), string(callq.Fair):
-			good++
-		default:
-			w.Bad++
-		}
-	}
-	if w.Measured > 0 {
-		w.Good = round2(float64(good) / float64(w.Measured))
-	}
-	return w
-}
+// ---------- speed ----------
 
-// ---------- what happened at ----------
-
-// homeAtWindow is the span around a picked time ("What happened at…?",
-// "I just had a bad call").
-const homeAtWindow = 15 * time.Minute
-
-// homeAt answers "what happened around at?": the worst call minute and the
-// incidents in at±15 min, in one headline and one cause.
-func (s *server) homeAt(ctx context.Context, at time.Time, now time.Time) (*HomeAt, error) {
-	cp := homeCopy{}
-	prof := s.d.Profile()
-	hs := newHomeSet(prof)
-	from, to := at.Add(-homeAtWindow).Truncate(time.Minute), at.Add(homeAtWindow)
-	if to.After(now) {
-		to = now
+// homeSpeed is the speed line.
+func (s *server) homeSpeed(r *http.Request, c homeCopy, cs tiles.ConnState, now time.Time) HomeSpeed {
+	out := HomeSpeed{EmptyText: "No speed test yet."}
+	src := s.homeSpeedSrc
+	if src == nil && s.d.Speed != nil {
+		src = speedOf{s.d.Speed}
 	}
-	if to.Sub(from) < CallsMinRange {
-		from = to.Add(-CallsMinRange)
+	if src == nil {
+		return out
 	}
-	out := &HomeAt{Part: "at", At: now.UnixMilli(), Time: at.UnixMilli(), From: from.UnixMilli(), To: to.UnixMilli()}
-
-	c, err := s.calls(ctx, callsParams{from: from, to: to})
-	if err != nil {
-		return nil, err
+	out.Available = true
+	out.CanControl = s.canControl != nil && s.canControl(r)
+	if src.On() {
+		out.EmptyText = "No speed test yet. The first one runs within the hour."
 	}
-	worst, scored := "", 0
-	var bad []int
-	if c.Path != nil {
-		for i, st := range c.Path.Minutes.State {
-			if st == "" {
-				continue
-			}
-			scored++
-			if worst == "" || callRank(st) < callRank(worst) {
-				worst, bad = st, bad[:0]
-			}
-			if st == worst {
-				bad = append(bad, i)
-			}
-		}
+	run := src.Running()
+	var runID uint64
+	if run != nil {
+		runID = run.ID
+		out.Running = &HomeSpeedRunning{Entry: run.ID, ExpectedEnd: run.EstFinish.UnixMilli()}
 	}
-	out.Measured = scored > 0
-	if scored > 0 {
-		out.Calls = worst
-		if worst != string(callq.Good) && len(bad) > 0 {
-			out.BadFrom = c.Start + int64(bad[0])*c.Step
-			out.BadTo = c.Start + int64(bad[len(bad)-1]+1)*c.Step
-			out.Fact, out.FactAt = worstFact(c, cp)
-		}
-	}
-
-	// The worst relevant incident overlapping the window names the cause.
-	var inc *model.Incident
-	if s.d.Verdict != nil {
-		list, err := s.d.Verdict.Incidents(ctx, from, to)
+	hc := s.home
+	hc.mu.Lock()
+	ts := hc.speedTests
+	fresh := !hc.speedAt.IsZero() && hc.speedRun == runID && !now.Before(hc.speedAt) && now.Sub(hc.speedAt) < homeSpeedTTL
+	hc.mu.Unlock()
+	if !fresh {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		xs, err := src.Tests(ctx, now.Add(-homeWeek), now)
+		cancel()
 		if err != nil {
-			return nil, err
+			s.d.log().Warn("home: reading the speed tests", "err", err)
+			return out
 		}
-		for i := range list {
-			in := &list[i]
-			if !in.Start.Before(to) || (!in.End.IsZero() && !in.End.After(from)) {
-				continue
-			}
-			who := whoOf(in.Kind)
-			if who == whoNone || who == whoUnknown || (who == whoApp && len(hs.relevant(in.Targets)) == 0) {
-				continue
-			}
-			if inc == nil || incidentRank(in.Kind) < incidentRank(inc.Kind) {
-				inc = in
-			}
-		}
+		ts = xs
+		hc.mu.Lock()
+		hc.speedAt, hc.speedRun, hc.speedTests = now, runID, xs
+		hc.mu.Unlock()
 	}
-	out.Level, out.Who = levelGood, whoNone
-	if l := callLevel(worst, false); l != "" && l != levelChecking && l != levelInfo {
-		out.Level = l
-	}
-	if inc != nil {
-		out.Kind, out.Who = string(inc.Kind), whoOf(inc.Kind)
-		l := levelWarn
-		switch inc.Kind {
-		case model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
-			l = levelBad
-		}
-		if levelRank(l) < levelRank(out.Level) {
-			out.Level = l
-		}
-	} else if out.Level != levelGood {
-		out.Who = whoCallTraffic
-	}
-	if inc != nil && (inc.Kind == model.VerdictUDPBlocked || inc.Kind == model.VerdictSTUNBlocked) && callRank(worst) <= callRank(string(callq.Poor)) {
-		out.Calls, worst = callBlocked, callBlocked // the block, not the call quality
-		out.Fact, out.FactAt, out.BadFrom, out.BadTo = "", 0, 0, 0
-	}
-	if !hasCallPath(prof) {
-		out.Measured = true // nothing to say about calls; the incidents answer
-		worst = ""
-	}
-	out.Headline, out.Cause = cp.atWords(out.Measured, worst, inc != nil, out.Who, out.Kind)
-	s.speedAt(ctx, out, from, to)
-	return out, nil
-}
-
-// speedAt notes a speed test that ran in the window: it fills the line for
-// a few seconds and can make calls stutter; at 10 s or more of overlap it
-// is the most likely explanation.
-func (s *server) speedAt(ctx context.Context, out *HomeAt, from, to time.Time) {
-	if s.d.Speed == nil {
-		return
-	}
-	ts, err := s.d.Speed.SpeedTests(ctx, from.Add(-time.Minute), to)
-	if err != nil {
-		return
-	}
-	var overlap time.Duration
+	// The OK tests with both directions, newest last.
+	var ok []model.SpeedTest
 	for _, t := range ts {
-		a, b := t.Start, t.End.Add(2*time.Second)
-		if a.Before(from) {
-			a = from
-		}
-		if b.After(to) {
-			b = to
-		}
-		if b.After(a) {
-			overlap += b.Sub(a)
+		if t.Outcome == model.SpeedOK && t.DownBps != nil && t.UpBps != nil && *t.DownBps > 0 && *t.UpBps > 0 {
+			ok = append(ok, t)
 		}
 	}
-	if overlap <= 0 {
-		return
+	slices.SortStableFunc(ok, func(a, b model.SpeedTest) int { return a.Start.Compare(b.Start) })
+	if len(ok) == 0 {
+		return out
 	}
-	out.SpeedTestOverlapS = int(overlap.Round(time.Second) / time.Second)
-	note := "A speed test was running then. It fills the line for a few seconds and can make calls stutter; we don't count that against the connection."
-	if overlap >= 10*time.Second {
-		note = "Most likely our speed test: it was running then, and it fills the line for a few seconds. We don't count that against the connection."
+	last := ok[len(ok)-1]
+	if len(ok) > 3 {
+		var down, up []float64
+		for _, t := range ok[:len(ok)-1] {
+			down, up = append(down, *t.DownBps/1e6), append(up, *t.UpBps/1e6)
+		}
+		out.Usual = &HomeSpeedUsual{DownMbps: roundMbps(medianOf(down)), UpMbps: roundMbps(medianOf(up))}
 	}
-	out.SpeedNote = note
+	dn, up := roundMbps(*last.DownBps/1e6), roundMbps(*last.UpBps/1e6)
+	during := cs.Tone == tiles.ToneBad && !cs.Since.IsZero() && !last.Start.Before(cs.Since)
+	out.Latest = &HomeSpeedResult{At: last.Start.UnixMilli(), DownMbps: dn, UpMbps: up,
+		Text: c.speedText(dn, up, out.Usual), Note: c.speedNote(last.Start, during)}
+	return out
 }
 
-// incidentRank orders incident kinds by how much they explain, worst first.
-func incidentRank(k model.VerdictKind) int {
-	for i, x := range []model.VerdictKind{model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream,
-		model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded, model.VerdictDNS, model.VerdictService} {
-		if x == k {
-			return i
+func roundMbps(v float64) float64 {
+	if v < 10 {
+		return math.Round(v*10) / 10
+	}
+	return math.Round(v)
+}
+
+func medianOf(v []float64) float64 {
+	v = slices.Clone(v)
+	slices.Sort(v)
+	n := len(v)
+	if n%2 == 1 {
+		return v[n/2]
+	}
+	return (v[n/2-1] + v[n/2]) / 2
+}
+
+// ---------- part=tile ----------
+
+// homeTile builds part=tile: nil with the status and message of a 404.
+func (s *server) homeTile(p homeParams, now time.Time) (*HomeTileDetail, int, string) {
+	i := slices.IndexFunc(profile.Tiles, func(d profile.TileDef) bool { return d.ID == p.id })
+	if i < 0 {
+		return nil, http.StatusNotFound, "unknown tile"
+	}
+	snap, checking, stale := s.homeState(now)
+	t := snap.Tiles[i]
+	if t.State == tiles.Off {
+		return nil, http.StatusNotFound, "tile not monitored"
+	}
+	c := homeCopy{loc: p.zone.loc, now: now}
+	d := tileDef(p.id)
+	v := homeView{checking: checking, blocked: !checking && !stale && snap.Conn.Kind == string(model.VerdictUDPBlocked), first: snap.FirstData}
+	byID := map[string]tiles.Episode{}
+	for _, e := range snap.Problems(now.Add(-homeWeek)) {
+		byID[e.ID] = e
+	}
+	h := c.tile(t, byID, v)
+	out := &HomeTileDetail{V: 2, At: now.UnixMilli(), ID: d.ID, State: h.State, Word: h.Word, Reason: h.Reason, Metrics: []HomeMetric{}}
+	if rs := s.home.resolved(s.d.Profile()); i < len(rs) {
+		src := ""
+		if t.Call != nil {
+			src = t.Call.Source
 		}
+		out.Coverage = c.coverage(rs[i], src)
 	}
-	return 99
-}
-
-// blockedAt reports a UDP or STUN block incident at t (ms).
-func blockedAt(incs []homeIncident, t int64) bool {
-	for _, in := range incs {
-		if in.Kind != model.VerdictUDPBlocked && in.Kind != model.VerdictSTUNBlocked {
-			continue
+	if !checking {
+		out.Metrics = c.metrics(d, t)
+	}
+	if t.Call != nil && t.Call.Source == tiles.CallShared {
+		out.Legend = "How quickly the general call path answers (lower is better)"
+	}
+	learning := snap.Learning && !checking
+	key := strings.Join([]string{p.id, p.zone.key, strconv.FormatInt(now.Truncate(homeBucket).UnixMilli(), 10),
+		strconv.FormatBool(learning), strconv.FormatBool(checking), h.State}, "\x00")
+	ch, ok := memo(&s.home.mu, s.home.charts, key, func() (homeChart, bool) {
+		x, ok := s.d.Tiles.Chart(p.id)
+		if !ok {
+			return homeChart{}, false
 		}
-		if t >= in.Start.UnixMilli() && (in.End.IsZero() || t < in.End.UnixMilli()) {
-			return true
+		eps := map[string]tiles.Episode{}
+		for _, e := range snap.Problems(x.From) {
+			eps[e.ID] = e
 		}
+		return c.chart(x, d, tiles.State(h.State), eps, snap, learning, checking), true
+	})
+	if !ok {
+		return nil, http.StatusNotFound, "tile not monitored"
 	}
-	return false
+	out.homeChart = ch
+	return out, 0, ""
 }
 
-// hasCallPath reports a profile with STUN targets on the call path.
-func hasCallPath(p *model.Profile) bool {
-	if p == nil {
-		return false
-	}
-	return slices.ContainsFunc(p.Targets, callq.IsCorePath)
-}
-
-// sideOf groups who for the report.
-func sideOf(who string) string {
-	switch who {
-	case whoHome, whoOffline:
-		return "home"
-	case whoProvider:
-		return "provider"
-	}
-	return "other"
-}
-
-// withoutSpeedTests removes speed test windows from "not running" spans:
-// probes in a test window are stored as not measured, but fyisp was
-// running. A window is widened to the whole minutes it touches (and the
-// mask's tail), the buckets it can empty.
-func (s *server) withoutSpeedTests(ctx context.Context, off []HomeSpan, from, now time.Time) []HomeSpan {
-	if s.d.Speed == nil || len(off) == 0 {
-		return off
-	}
-	ts, err := s.d.Speed.SpeedTests(ctx, from.Add(-time.Minute), now)
-	if err != nil || len(ts) == 0 {
-		return off
-	}
-	var out []HomeSpan
-	for _, sp := range off {
-		parts := []HomeSpan{sp}
-		for _, t := range ts {
-			a := t.Start.Truncate(time.Minute).UnixMilli()
-			b := t.End.Add(speedtest.MaskTail).Truncate(time.Minute).Add(time.Minute).UnixMilli()
-			var next []HomeSpan
-			for _, p := range parts {
-				if b <= p.From || a >= p.To {
-					next = append(next, p)
-					continue
-				}
-				if p.From < a {
-					next = append(next, HomeSpan{From: p.From, To: a})
-				}
-				if b < p.To {
-					next = append(next, HomeSpan{From: b, To: p.To})
-				}
+// metrics are the panel's figures: a call tile's delay, jitter and loss
+// against their limits (the general call path's, when the app has no
+// target of its own: the row says so); an app's usual and Slow limit. App
+// and stream tiles show none while the usual is learned (call tiles keep
+// theirs: their limits are fixed).
+func (c homeCopy) metrics(d profile.TileDef, t tiles.TileSnap) []HomeMetric {
+	out := []HomeMetric{}
+	switch d.Kind {
+	case profile.TileCall:
+		m := t.Call
+		if m == nil || m.Source == tiles.CallTCPOnly {
+			return out
+		}
+		delay, jitter, loss := "—", "—", "—"
+		bd, bj, bl := false, false, false
+		switch {
+		case m.Bursts > 0:
+			if m.DelayMs > 0 {
+				delay, bd = msText(m.DelayMs), m.DelayMs > 150
 			}
-			parts = next
+			if m.HasJitter {
+				jitter, bj = msText(m.JitterMs), m.JitterMs > 30
+			}
+			loss, bl = pctText(m.LossPct), m.LossPct >= 2
+		case t.State == tiles.Down:
+			loss, bl = "100%", true
 		}
-		out = append(out, parts...)
+		if m.Source == tiles.CallShared {
+			out = append(out, HomeMetric{Label: "General call path:"})
+		}
+		return append(out, HomeMetric{Label: "Delay", Value: delay, Limit: "choppy over 150 ms", Bad: &bd},
+			HomeMetric{Label: "Jitter", Value: jitter, Limit: "over 30 ms", Bad: &bj},
+			HomeMetric{Label: "Packet loss", Value: loss, Limit: "2% or more", Bad: &bl})
+	}
+	if t.UsualMs == nil {
+		return out
+	}
+	out = append(out, HomeMetric{Label: "Usual", Value: msText(*t.UsualMs)})
+	if t.SlowAboveMs != nil {
+		out = append(out, HomeMetric{Label: "Slow above", Value: msText(*t.SlowAboveMs)})
+	}
+	if d.Kind == profile.TileStream {
+		out = append(out, HomeMetric{Label: "Only marked Down if it stops loading"})
+	}
+	return out
+}
+
+// msText is "18 ms".
+func msText(v float64) string {
+	if v < 1 {
+		return "under 1 ms"
+	}
+	return strconv.FormatFloat(math.Round(v), 'f', 0, 64) + " ms"
+}
+
+// pctText is "0%", "2.8%", "12%".
+func pctText(v float64) string {
+	if v >= 10 || v == math.Round(v) {
+		return strconv.FormatFloat(math.Round(v), 'f', 0, 64) + "%"
+	}
+	return strconv.FormatFloat(math.Round(v*10)/10, 'f', -1, 64) + "%"
+}
+
+// chart is part=tile's chart block. state is the tile's word now: an
+// ongoing band is worded with it.
+func (c homeCopy) chart(x *tiles.Chart, d profile.TileDef, state tiles.State, eps map[string]tiles.Episode, snap *tiles.Snapshot, learning, checking bool) homeChart {
+	out := homeChart{From: x.From.UnixMilli(), Step: x.Step.Milliseconds(), Ms: make([]*float64, len(x.Ms)), Bands: []HomeBand{}}
+	for i, v := range x.Ms {
+		if !math.IsNaN(v) && !math.IsInf(v, 0) {
+			r := math.Round(v*10) / 10
+			out.Ms[i] = &r
+		}
+	}
+	if checking {
+		out.Text = "fyisp is still checking."
+		return out
+	}
+	head := "Still learning what’s usual."
+	if x.UsualMs != nil && !learning {
+		u := math.Round(*x.UsualMs*10) / 10
+		out.UsualMs = &u
+		head = "Usually about " + msText(u) + "."
+	}
+	var texts []string
+	for _, b := range x.Bands {
+		hb := HomeBand{From: b.From.UnixMilli(), To: b.To.UnixMilli(), Kind: b.Kind}
+		if b.To.IsZero() {
+			hb.To = snap.At.UnixMilli()
+		}
+		switch b.Kind {
+		case tiles.BandOff:
+			if !b.From.After(x.From) && !snap.FirstData.IsZero() && !snap.FirstData.Before(x.From) {
+				hb.Text = "Not watched before " + c.clock(snap.FirstData)
+			} else {
+				hb.Text = "fyisp wasn’t running " + c.span(b.From, b.To)
+			}
+		default:
+			e, ok := eps[b.Episode]
+			// A connection problem that never touched this tile isn't its band.
+			if ok && e.Connection && len(e.Tiles) > 0 && !slices.Contains(e.Tiles, d.ID) {
+				continue
+			}
+			w := c.word(b.Sev, d.Kind)
+			switch {
+			case b.To.IsZero() && state.Bad():
+				hb.Text = c.word(state, d.Kind) + " " + c.since(b.From)
+			case b.To.IsZero():
+				hb.Text = w + " " + c.since(b.From)
+			case ok && e.Kind == tiles.EpDrop:
+				hb.Text = "Dropped " + short(e.DropDur) + " at " + c.clock(e.Start)
+			default:
+				hb.Text = w + " " + c.span(b.From, b.To)
+			}
+			hb.Text += c.likely(b.Cause)
+		}
+		out.Bands = append(out.Bands, hb)
+		texts = append(texts, hb.Text)
+	}
+	if len(texts) == 0 {
+		out.Text = head + " No problems in the last 24 hours."
+	} else {
+		out.Text = head + " " + strings.Join(texts, ". ") + "."
 	}
 	return out
 }

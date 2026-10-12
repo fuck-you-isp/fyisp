@@ -2,133 +2,377 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/web/homescen"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden files of TestHomeGolden")
+var update = flag.Bool("update", false, "rewrite the golden files (TestHomeGolden, TestSpeedGolden)")
 
-// TestHomeGolden pins every Home scenario (internal/web/homescen, the same
-// ones fyisp-webdev -home serves): the live answer, today,
-// the week, and "what happened 5 minutes ago". The files under
-// testdata/home are where the copy is reviewed; rewrite them with
+// homeNow is the goldens' time: Friday 2026-10-09 10:30 am in New York
+// (the UI tests' zone).
+var homeNow = time.Date(2026, 10, 9, 14, 30, 0, 0, time.UTC)
+
+const homeTZ = "America/New_York"
+
+// homeServer is the local handler over a scenario, as fyisp would serve
+// it to the scenario's viewer.
+func homeServer(t *testing.T, sc *homescen.Scenario, now time.Time) *localHandler {
+	t.Helper()
+	d := Deps{Profile: func() *model.Profile { return sc.Profile }, Status: func() Status { return Status{} },
+		Tiles: sc, Path: func() netinfo.Path { return sc.Path }, CustomProfile: sc.CustomProfile}
+	h := Local(d, LocalOptions{Addr: sc.Viewer.Listen, CSRFToken: "t"}).(*localHandler)
+	h.now = func() time.Time { return now }
+	h.inContainer = func() bool { return sc.Container }
+	h.own = &ownAddrs{list: func() ([]netip.Addr, error) { return sc.Viewer.Own, nil }, now: h.now}
+	if sc.Speed != nil {
+		h.homeSpeedSrc = sc.Speed
+	}
+	return h
+}
+
+// homeGet asks h as the scenario's viewer.
+func homeGet(t *testing.T, h http.Handler, v homescen.Viewer, query string) (int, []byte) {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodGet, "http://"+v.Host+"/api/home?"+query, nil)
+	r.Host, r.RemoteAddr = v.Host, v.RemoteAddr
+	for k, x := range v.Header {
+		r.Header.Set(k, x)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	b, _ := io.ReadAll(w.Result().Body)
+	return w.Code, b
+}
+
+// TestHomeGolden pins every Home scenario (internal/web/homescen,
+// Names; the ones fyisp-webdev -home serves): part=now and the panels
+// of zoom, m365 and the scenario's own tiles (homescen.Tiles), as the
+// scenario's viewer gets them, in New York time. The files under
+// testdata/home are where the copy is reviewed (and the UI tests'
+// fixtures come from: test/ui/fixtures/gen.js); rewrite them with
 // go test ./internal/web -run TestHomeGolden -update.
 func TestHomeGolden(t *testing.T) {
 	for _, name := range homescen.Names {
-		sc, err := homescen.Build(name, homeNow, homeNow.Location())
+		now := homeNow
+		if name == "dst" {
+			now = homescen.DSTNow
+		}
+		sc, err := homescen.Build(name, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		d := Deps{Profile: func() *model.Profile { return sc.Profile }, Store: sc.Store, Verdict: sc.Verdict,
-			Status: func() Status { return Status{} }}
-		s := newServer(d, "")
-		s.now = func() time.Time { return homeNow }
-		ctx := context.Background()
-		live, err := s.homeLive(ctx, homeNow)
-		if err != nil {
+		h := homeServer(t, sc, now)
+		files := map[string][]byte{}
+		code, b := homeGet(t, h, sc.Viewer, "part=now&tz="+homeTZ)
+		if code != http.StatusOK {
+			t.Fatalf("%s: part=now: %d %s", name, code, b)
+		}
+		files[name+".now.json"] = b
+		var nowJSON HomeNow
+		if err := json.Unmarshal(b, &nowJSON); err != nil {
 			t.Fatal(err)
 		}
-		hp := homeParams{part: "history", tz: 120}
-		hp.span = "d"
-		today, err := s.homeHistory(ctx, hp, homeNow)
-		if err != nil {
-			t.Fatal(err)
-		}
-		hp.span = "w"
-		week, err := s.homeHistory(ctx, hp, homeNow)
-		if err != nil {
-			t.Fatal(err)
-		}
-		at, err := s.homeAt(ctx, homeNow.Add(-5*time.Minute), homeNow)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := json.MarshalIndent(map[string]any{"live": live, "history_today": today, "history_week": week, "at_5_minutes_ago": at}, "", "  ")
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, '\n')
-		checkGoldenCopy(t, name, got)
-		path := filepath.Join("testdata", "home", name+".json")
-		if *update {
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				t.Fatal(err)
+		checkHomeCopy(t, name, &nowJSON)
+		for _, id := range append([]string{"zoom", "m365"}, homescen.Tiles[name]...) {
+			code, b := homeGet(t, h, sc.Viewer, "part=tile&id="+id+"&tz="+homeTZ)
+			files[name+".tile-"+id+".json"] = b
+			switch code {
+			case http.StatusOK:
+				var d HomeTileDetail
+				if err := json.Unmarshal(b, &d); err != nil {
+					t.Fatal(err)
+				}
+				checkHomeTileCopy(t, name+" "+id, &d)
+			case http.StatusNotFound:
+				if i := tileIndex(id); nowJSON.Tiles[i].State != "off" {
+					t.Errorf("%s: part=tile id=%s: 404 for a tile that is %s", name, id, nowJSON.Tiles[i].State)
+				}
+			default:
+				t.Errorf("%s: part=tile id=%s: %d %s", name, id, code, b)
 			}
-			if err := os.WriteFile(path, got, 0o644); err != nil {
-				t.Fatal(err)
+		}
+		for f, b := range files {
+			got := goldenJSON(t, b)
+			path := filepath.Join("testdata", "home", f)
+			if *update {
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, got, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				continue
 			}
-			continue
-		}
-		want, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("%v (run with -update)", err)
-		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("%s differs from the golden file; run go test ./internal/web -run TestHomeGolden -update and review the diff", path)
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("%v (run with -update)", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("%s differs from the golden file; run go test ./internal/web -run TestHomeGolden -update and review the diff", path)
+			}
 		}
 	}
 }
 
-// copyKeys are the JSON fields that hold Home's words.
-var copyKeys = map[string]bool{"headline": true, "cause": true, "hint": true, "fact": true, "announce": true, "try": true,
-	"label": true, "note": true, "words": true, "line": true, "tooltip": true, "summary": true, "where": true, "title": true}
+func tileIndex(id string) int {
+	for i, n := range []string{"zoom", "teams", "meet", "slack", "m365", "gws", "github", "dropbox", "onedrive", "youtube", "netflix"} {
+		if n == id {
+			return i
+		}
+	}
+	return -1
+}
 
-// checkGoldenCopy runs the copy of a golden response through the
-// banned-word rules of TestHomeCopyWords.
-func checkGoldenCopy(t *testing.T, name string, b []byte) {
+// The copy rules of the Home (docs/HOME-API.md).
+var (
+	// Never on Home outside a panel's figures: "ISP", ms, jitter, loss, and
+	// no plan or fiber anywhere.
+	banned2 = regexp.MustCompile(`(?i)\b(isps?|ms|jitter|loss|plans?|fiber|fibre)\b`)
+	// US spelling.
+	ukSpelling = regexp.MustCompile(`(?i)\b(colour\w*|behaviour\w*|favourite|centre|recognis\w*|organis\w*|analys(e|ed|ing)|licence|programme|travell\w*|neighbour\w*|realis\w*|apologis\w*|catalogue|minimis\w*|prioritis\w*|optimis\w*|utilis\w*|signalling|whilst)\b`)
+	// No relative times in the card's text, which never changes under one key.
+	relative = regexp.MustCompile(`(?i)\b(ago|just now|in a (few|moment)|recently|minutes? from now|right now for)\b`)
+	allN     = regexp.MustCompile(`\ball (\d+) apps\b`)
+)
+
+// checkText applies the rules every sentence follows.
+func checkText(t *testing.T, where, s string) {
 	t.Helper()
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		t.Fatal(err)
+	if m := ukSpelling.FindString(s); m != "" {
+		t.Errorf("%s: %q: UK spelling %q", where, s, m)
 	}
-	var walk func(key string, v any)
-	walk = func(key string, v any) {
-		switch x := v.(type) {
-		case map[string]any:
-			for k, y := range x {
-				walk(k, y)
-			}
-		case []any:
-			for _, y := range x {
-				walk(key, y)
-			}
-		case string:
-			if !copyKeys[key] {
-				return
-			}
-			if key == "try" {
-				x = strings.ReplaceAll(x, "DNS", "")
-			}
-			if m := bannedOnHome.FindString(strings.ReplaceAll(x, "(DNS)", "")); m != "" {
-				t.Errorf("%s: %s %q says %q", name, key, x, m)
-			}
+	if strings.Contains(s, "Cause:") || strings.Count(s, "cause:") != strings.Count(s, "Likely cause:") {
+		t.Errorf("%s: %q: a cause not called likely", where, s)
+	}
+	if strings.Contains(s, "'") {
+		t.Errorf("%s: %q: a straight apostrophe (use ’)", where, s)
+	}
+}
+
+// checkHomeCopy runs part=now's words through the copy rules.
+func checkHomeCopy(t *testing.T, name string, d *HomeNow) {
+	t.Helper()
+	texts := map[string]string{"footer": d.Footer, "path_hint": d.PathHint, "headline": d.Answer.Headline, "sub": d.Answer.Sub,
+		"tab": d.Answer.Tab, "problems.summary": d.Problems.Summary}
+	if d.Learning != nil {
+		texts["learning"] = d.Learning.Text
+	}
+	if d.Answer.Day != nil {
+		texts["day"] = d.Answer.Day.Text
+		if !strings.Contains(d.Answer.Day.Text, d.Answer.Day.Link) {
+			t.Errorf("%s: the day line %q lacks its link %q", name, d.Answer.Day.Text, d.Answer.Day.Link)
 		}
 	}
-	walk("", v)
-	// The headline never repeats the cause.
-	var r struct {
-		Live struct{ Answer HomeAnswer } `json:"live"`
-		At   HomeAt                      `json:"at_5_minutes_ago"`
+	for _, h := range d.Path {
+		texts["path "+h.ID] = h.Label + " / " + h.Sub
 	}
-	if err := json.Unmarshal(b, &r); err != nil {
-		t.Fatal(err)
-	}
-	// One minute, one figure.
-	if a, b := r.Live.Answer, r.At; a.FactAt != 0 && a.FactAt == b.FactAt && a.Fact != b.Fact {
-		t.Errorf("%s: the minute %d reads %q live and %q in part=at", name, a.FactAt, a.Fact, b.Fact)
-	}
-	for _, x := range [][2]string{{r.Live.Answer.Headline, r.Live.Answer.Cause}, {r.At.Headline, r.At.Cause}} {
-		if rep := repeats(x[0], x[1]); rep != "" {
-			t.Errorf("%s: headline %q and cause %q both say %q", name, x[0], x[1], rep)
+	for _, x := range d.Tiles {
+		texts["tile "+x.ID] = strings.Join([]string{x.Word, x.Note, x.Aria, x.Reason, x.EnableHint, x.BarsSummary}, " / ")
+		for _, b := range x.Bars {
+			texts["bar "+x.ID] += b.Note + " / "
+		}
+		// The card names a router or provider cause once; tiles don't repeat it.
+		if r := x.Reason; strings.Contains(r, "your internet provider") || strings.Contains(r, "your home router") {
+			t.Errorf("%s: tile %s repeats the connection's cause: %q", name, x.ID, r)
+		}
+		if len(x.Bars) != 24 && x.State != "off" || x.State == "off" && len(x.Bars) != 0 {
+			t.Errorf("%s: tile %s (%s) has %d bars", name, x.ID, x.State, len(x.Bars))
 		}
 	}
+	if d.Speed.Latest != nil {
+		texts["speed"] = d.Speed.Latest.Text + " / " + d.Speed.Latest.Note
+	}
+	texts["speed.empty"] = d.Speed.EmptyText
+	for _, p := range d.Problems.Items {
+		texts["problem "+p.ID] = strings.Join([]string{p.When, p.What, "Likely cause: " + p.Cause + ".", p.Evidence}, " / ")
+		switch p.CauseKind {
+		case "provider", "home", "app", "speedtest", "other":
+		default:
+			t.Errorf("%s: problem %s: cause_kind %q", name, p.ID, p.CauseKind)
+		}
+	}
+	for k, s := range texts {
+		checkText(t, name+" "+k, s)
+		if m := banned2.FindString(s); m != "" {
+			t.Errorf("%s: %s %q says %q", name, k, s, m)
+		}
+	}
+	for _, s := range []string{d.Answer.Headline, d.Answer.Sub} {
+		if m := relative.FindString(s); m != "" {
+			t.Errorf("%s: the card %q has a relative time %q", name, s, m)
+		}
+		if m := allN.FindStringSubmatch(s); m != nil && m[1] != fmt.Sprint(d.Monitored) {
+			t.Errorf("%s: %q, but %d apps are monitored", name, s, d.Monitored)
+		}
+	}
+	if len(d.Tiles) != 11 || len(d.Path) != 3 {
+		t.Errorf("%s: %d tiles and %d path nodes", name, len(d.Tiles), len(d.Path))
+	}
+	switch d.Answer.Tone {
+	case "ok", "warn", "bad", "stale", "checking", "info":
+	default:
+		t.Errorf("%s: tone %q", name, d.Answer.Tone)
+	}
+	switch d.Answer.Icon {
+	case "good", "slow", "down", "none", "info":
+	default:
+		t.Errorf("%s: icon %q", name, d.Answer.Icon)
+	}
+}
+
+// checkHomeTileCopy runs a panel's words through the rules: its figures
+// (metrics) and the chart's text alternative (a chart in ms) may say ms.
+func checkHomeTileCopy(t *testing.T, name string, d *HomeTileDetail) {
+	t.Helper()
+	texts := map[string]string{"reason": d.Reason, "coverage": d.Coverage}
+	for _, b := range d.Bands {
+		texts["band"] += b.Text + " / "
+	}
+	for k, s := range texts {
+		checkText(t, name+" "+k, s)
+		if m := banned2.FindString(s); m != "" {
+			t.Errorf("%s: %s %q says %q", name, k, s, m)
+		}
+	}
+	checkText(t, name+" text", d.Text)
+	if m := banned2.FindString(strings.ReplaceAll(d.Text, " ms", "")); m != "" {
+		t.Errorf("%s: text %q says %q", name, d.Text, m)
+	}
+	if len(d.Ms) != 288 {
+		t.Errorf("%s: %d chart points", name, len(d.Ms))
+	}
+}
+
+// goldenJSON indents b for review: objects of a few plain values (bars,
+// figures, bands) and arrays of numbers stay on one line.
+func goldenJSON(t *testing.T, b []byte) []byte {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	n, err := readNode(dec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	n.write(&out, "")
+	out.WriteByte('\n')
+	return out.Bytes()
+}
+
+// node is a JSON value with its keys in order.
+type node struct {
+	obj, arr bool
+	keys     []string
+	kids     []node
+	raw      string // a plain value, as JSON
+}
+
+func readNode(dec *json.Decoder) (node, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return node{}, err
+	}
+	switch v := tok.(type) {
+	case json.Delim:
+		n := node{obj: v == '{', arr: v == '['}
+		for dec.More() {
+			if n.obj {
+				k, err := dec.Token()
+				if err != nil {
+					return n, err
+				}
+				n.keys = append(n.keys, k.(string))
+			}
+			kid, err := readNode(dec)
+			if err != nil {
+				return n, err
+			}
+			n.kids = append(n.kids, kid)
+		}
+		_, err := dec.Token()
+		return n, err
+	default:
+		b, err := json.Marshal(v)
+		return node{raw: string(b)}, err
+	}
+}
+
+func (n node) plain() bool { return !n.obj && !n.arr }
+
+// flat: written on one line.
+func (n node) flat() bool {
+	if n.plain() {
+		return true
+	}
+	for _, k := range n.kids {
+		if !k.plain() {
+			return false
+		}
+	}
+	return n.arr || len(n.kids) <= 4
+}
+
+func (n node) write(w *bytes.Buffer, ind string) {
+	switch {
+	case n.plain():
+		w.WriteString(n.raw)
+		return
+	case n.flat():
+		open, end := "{", "}"
+		if n.arr {
+			open, end = "[", "]"
+		}
+		w.WriteString(open)
+		for i, k := range n.kids {
+			if i > 0 {
+				w.WriteString(", ")
+			}
+			if n.obj {
+				kb, _ := json.Marshal(n.keys[i])
+				w.Write(kb)
+				w.WriteString(": ")
+			}
+			w.WriteString(k.raw)
+		}
+		w.WriteString(end)
+		return
+	}
+	open, end := "{", "}"
+	if n.arr {
+		open, end = "[", "]"
+	}
+	w.WriteString(open)
+	if len(n.kids) == 0 {
+		w.WriteString(end)
+		return
+	}
+	in := ind + "  "
+	for i, k := range n.kids {
+		if i > 0 {
+			w.WriteByte(',')
+		}
+		w.WriteString("\n" + in)
+		if n.obj {
+			kb, _ := json.Marshal(n.keys[i])
+			w.Write(kb)
+			w.WriteString(": ")
+		}
+		k.write(w, in)
+	}
+	w.WriteString("\n" + ind + end)
 }

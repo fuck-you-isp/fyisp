@@ -1,7 +1,7 @@
 // fyisp Home (v0.9.0): the default view. One answer ("is my internet OK,
 // and which apps work"), the connection strip, 11 app tiles with their last
 // 2 hours, the speed, and the problems of the last 7 days. Every sentence
-// comes from /api/home2 (Go, golden tested); this file lays it out, patches
+// comes from /api/home (Go, golden tested); this file lays it out, patches
 // it in place on each poll, and keeps it accessible: one live region that
 // speaks only when the answer changes, and the tab title. Plain ES module,
 // no build step.
@@ -27,13 +27,12 @@ import { Tiles, ico, setText } from './hometiles.js';
  * @typedef {{openDetails: (hash: string) => void, detailsHash: () => string, status: () => any, speedOn: () => boolean}} HomeHost
  */
 
-// The v2 API; it becomes api/home when the old Home is removed.
-export const HOME_API = 'api/home2';
+export const HOME_API = 'api/home';
 const NOW_MS = 15000;
 // In a background tab Home keeps polling, slower, so its title stays true.
 const HIDDEN_MS = 60000;
-// The startup probe gives up after this long (the old Home then shows).
-const PROBE_MS = 4000;
+// The first answer, fetched at startup, is given up on after this long (Home then polls on its own).
+const FIRST_MS = 4000;
 // A poll that hasn't answered by then counts as failed, so the next one can start.
 const POLL_TIMEOUT_MS = 10000;
 // Home calls itself stale after this long without a fresh check, or this many failed polls in a row.
@@ -46,11 +45,10 @@ const QUEUE_FAILS = 5;
 const SPEED_NOTE = 'This usually takes under a minute.';
 const SPEED_LOST = 'The speed test didn’t finish. Try again in a few minutes.';
 
-/** The v2 answer, or null when this server only has the old Home (before v0.9.0). */
-export async function probeHome() {
+/** The first part=now answer, fetched alongside the page's own startup requests; null on failure. */
+export async function firstHome() {
   try {
-    const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }), { signal: AbortSignal.timeout(PROBE_MS) }, 1);
-    return d && d.v === 2 ? /** @type {HomeNow} */ (d) : null;
+    return /** @type {HomeNow} */ (await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }), { signal: AbortSignal.timeout(FIRST_MS) }, 1));
   } catch {
     return null;
   }
@@ -73,7 +71,7 @@ function tone(/** @type {string} */ t) { return /^(ok|warn|bad|stale|checking|in
 function hopState(/** @type {string} */ s) { return /^(good|slow|down)$/.test(s) ? s : 'none'; }
 
 export class Home {
-  /** @param {HomeHost} host @param {HomeNow|null} [first] the answer probeHome() already fetched */
+  /** @param {HomeHost} host @param {HomeNow|null} [first] the answer firstHome() already fetched */
   constructor(host, first = null) {
     this.host = host;
     /** @type {HomeNow|null} */

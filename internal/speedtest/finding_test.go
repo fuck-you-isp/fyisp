@@ -224,60 +224,6 @@ func TestFinding(t *testing.T) {
 	}
 }
 
-func TestHomeLine(t *testing.T) {
-	c := findingCatalog(t)
-	now := time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)
-	dip := func(_ string, h int) float64 {
-		if evening(h) {
-			return 0.6
-		}
-		return 1
-	}
-	ts := synth(c, 9, dip, "wired")
-	f := FindFinding(FindingInput{Tests: ts, Catalog: c})
-	l := HomeLine(f, ts, nil, now)
-	if l == nil || l.Kind != "pattern" || l.Impact != "ok" || l.Text != "Speed: evenings are about 40% slower than daytime (around 7 to 11 pm), but still fast enough for video calls."+
-		" Every test server shows it, so it's most likely your internet provider's network, unless it's Wi-Fi or heavy use by others at home." {
-		t.Fatalf("%+v", l)
-	}
-	// A slow evening: may be too slow for video calls.
-	for i := range ts {
-		if evening(ts[i].Start.Hour()) {
-			v := 6e6
-			ts[i].DownBps = &v
-		}
-	}
-	if l := HomeLine(f, ts, nil, now); l == nil || l.Impact != "video_risk" || !strings.Contains(l.Text, "may be too slow for video calls") {
-		t.Errorf("%+v", l)
-	}
-	// Warm-up, steady, narrow and failing.
-	short := synth(c, 2, dip, "wired")
-	if l := HomeLine(FindFinding(FindingInput{Tests: short, Catalog: c}), short, nil, now.Add(-7*24*time.Hour)); l == nil || l.Kind != "warmup" {
-		t.Errorf("warm-up %+v", l)
-	}
-	flat := synth(c, 9, func(string, int) float64 { return 1 }, "wired")
-	if l := HomeLine(FindFinding(FindingInput{Tests: flat, Catalog: c}), flat, nil, now); l == nil || l.Kind != "steady" {
-		t.Errorf("steady %+v", l)
-	}
-	narrow := synth(c, 9, func(sv string, h int) float64 {
-		if evening(h) && sv == "C1" {
-			return 0.4
-		}
-		return 1
-	}, "wired")
-	if l := HomeLine(FindFinding(FindingInput{Tests: narrow, Catalog: c}), narrow, nil, now); l != nil {
-		t.Errorf("narrow %+v", l)
-	}
-	for i := range flat {
-		if flat[i].Start.After(now.Add(-24 * time.Hour)) {
-			flat[i].Outcome = model.SpeedBusy
-		}
-	}
-	if l := HomeLine(FindFinding(FindingInput{Tests: flat, Catalog: c}), flat, nil, now); l != nil {
-		t.Errorf("failing %+v", l)
-	}
-}
-
 func TestSummarize(t *testing.T) {
 	c := findingCatalog(t)
 	ts := synth(c, 9, func(_ string, h int) float64 {

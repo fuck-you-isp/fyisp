@@ -1,4 +1,4 @@
-// Home (v0.9.0) against the real /api/home2: one fyisp-webdev -home2 per
+// Home (v0.9.0) against the real /api/home: one fyisp-webdev -home per
 // scenario (internal/web/homescen, the same ones the goldens and the
 // fixtures come from), on its own port. The page must take the server's
 // answer as is: the card's tone, every tile's state, the problems, and no
@@ -17,7 +17,7 @@ async function webdev(port, args) {
   const up = (async () => {
     for (let i = 0; i < 100; i++) {
       try {
-        if ((await fetch(`http://127.0.0.1:${port}/api/home2?part=now`)).ok) return;
+        if ((await fetch(`http://127.0.0.1:${port}/api/home?part=now`)).ok) return;
       } catch { /* not yet */ }
       await new Promise((r) => setTimeout(r, 100));
     }
@@ -28,18 +28,18 @@ async function webdev(port, args) {
 }
 
 STATES.forEach((name, i) => {
-  test(`webdev -home2 ${name}`, async ({ page }) => {
+  test(`webdev -home ${name}`, async ({ page }) => {
     const port = 3101 + i;
     let proc;
     try {
-      proc = await webdev(port, ['-home2', name]);
+      proc = await webdev(port, ['-home', name]);
     } catch (e) {
       test.skip(/ENOENT/.test(String(e)), 'fyisp-webdev is not installed here (the uitest image has it)');
       throw e;
     }
     try {
       const want = fx(`now-${name}`);
-      const api = `http://127.0.0.1:${port}/api/home2?part=now&tz=America/New_York`;
+      const api = `http://127.0.0.1:${port}/api/home?part=now&tz=America/New_York`;
       await page.goto(`http://127.0.0.1:${port}/`);
       await expect(page.locator('#home.hp')).toBeVisible();
       await expect(page.locator('.hp-tile')).toHaveCount(11);

@@ -107,7 +107,7 @@ func TestUDP(t *testing.T) {
 			t.Errorf("/api/calls path %s, want blocked", c.Path)
 		}
 		h.expectTCPOK(t, "i-tcp", applied, time.Now())
-		h.checkHome(t, "i-udp-block", "udp_blocked", nil)
+		h.checkHome(t, "i-udp-block", "udp_blocked")
 
 		h.nft(t, "flush chain inet fyt fault")
 		reverted := time.Now()
@@ -116,7 +116,7 @@ func TestUDP(t *testing.T) {
 		if c, raw := h.calls(t); c.State == "blocked" {
 			t.Errorf("/api/calls still blocked after recovery: %s", raw)
 		}
-		h.checkHome(t, "i-recovered", "ok", nil)
+		h.checkHome(t, "i-recovered", "ok")
 		h.checkNoMappedAddr(t)
 	})
 
@@ -141,7 +141,7 @@ func TestUDP(t *testing.T) {
 			t.Errorf("/api/calls state %q cause %+v, want blocked by stun_blocked: %s", c.State, c.Cause, craw)
 		}
 		h.expectTCPOK(t, "i2-tcp", applied, time.Now())
-		h.checkHome(t, "i2-stun-ports-block", "stun_blocked", nil)
+		h.checkHome(t, "i2-stun-ports-block", "stun_blocked")
 		h.checkNoMappedAddr(t)
 	})
 

@@ -166,7 +166,7 @@ func jsStrings(src string) (lits []string, lines []int) {
 	return
 }
 
-// Home's own copy follows the server's rules (home2 goldens): "internet
+// Home's own copy follows the server's rules (home goldens): "internet
 // provider", never "ISP"; a cause is always "Likely cause:".
 func TestStaticHomeCopy(t *testing.T) {
 	files, err := fs.Glob(staticFS, "static/home*.js")

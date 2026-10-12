@@ -160,23 +160,6 @@ export function hpClock(/** @type {number} */ ms, ampm = true) {
   const p = Object.fromEntries(usClock.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
   return `${p.hour}:${p.minute}${ampm ? ' ' + String(p.dayPeriod || '').toLowerCase() : ''}`;
 }
-/** Weekday and clock, when not today. */
-export function when(/** @type {number} */ ms) {
-  const d = new Date(ms);
-  if (d.toDateString() === new Date().toDateString()) return clock(ms);
-  return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + clock(ms);
-}
-/** A duration in words: "6 minutes", "1 hour 5 minutes", "26 hours", "3 days". */
-export function minutes(/** @type {number} */ ms) {
-  const m = Math.max(1, Math.round(ms / 60e3));
-  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
-  const hh = Math.floor(m / 60), mm = m % 60;
-  // Past 2 hours the minutes are noise; past 2 days, so are the hours.
-  if (hh >= 48) { const dd = Math.round(hh / 24); return `${dd} days`; }
-  if (hh >= 2) return `${hh} hours`;
-  return `${hh} hour${hh === 1 ? '' : 's'}${mm ? ` ${mm} minute${mm === 1 ? '' : 's'}` : ''}`;
-}
-
 /** tz= for the API: the browser's IANA zone, so hours of day stay right across DST; minutes east of UTC when it has none. */
 export function tzParam() {
   try {

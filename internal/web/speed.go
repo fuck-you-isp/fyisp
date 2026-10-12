@@ -1081,21 +1081,6 @@ func withVia(ts []model.SpeedTest, st speedtest.State) []model.SpeedTest {
 	return out
 }
 
-// speedHome is Home's speed line (nil: nothing on Home).
-func (s *server) speedHome(ctx context.Context, now time.Time, tz *time.Location) *speedtest.HomeSpeed {
-	if s.d.Speed == nil || s.d.Speed.State().Mode == speedtest.ModeOff {
-		return nil
-	}
-	ts, err := s.d.Speed.SpeedTests(ctx, now.Add(-speedtest.PatternSpan), now)
-	if err != nil {
-		return nil
-	}
-	ts = withVia(ts, s.d.Speed.State())
-	eh, _ := s.edgeHours(ctx, now, tz)
-	f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, Loc: tz, Catalog: s.d.Speed.Catalog(), EdgeIdle: edgeIdle(eh)})
-	return speedtest.HomeLine(f, ts, tz, now)
-}
-
 // speedPOST checks a speed-test write: a source, POST, only the allowed
 // parameters, and the same protections as notes.
 func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params ...string) bool {

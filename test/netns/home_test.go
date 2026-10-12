@@ -4,149 +4,118 @@ package netns
 
 import (
 	"encoding/json"
-	"slices"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
 
-// The Home view's answer (/api/home?part=live, docs/HOME-API.md) under the
-// harness's faults: who is blamed, which path node carries the culprit,
-// and what the tiles say. The verdict and UDP profiles tag alpha, bravo and
-// charlie as work apps and delta and kilo as websites; the STUN targets
-// are the Calls tile.
+// The Home view's answer (/api/home?part=now, docs/HOME-API.md) under the
+// harness's faults: the answer card's key and tone, and which node of the
+// connection strip carries the culprit. The verdict and UDP profiles have
+// no tile: tags, so every tile is off here; the tiles are TestHome10's.
 
-// homeLive is the part of /api/home?part=live the harness reads.
-type homeLive struct {
-	Voice  string `json:"voice"`
+// homeNow is the part of /api/home?part=now the harness reads.
+type homeNow struct {
 	Answer struct {
-		Level      string `json:"level"`
-		Who        string `json:"who"`
-		Confidence string `json:"confidence"`
-		Kind       string `json:"kind"`
-		Headline   string `json:"headline"`
-		Cause      string `json:"cause"`
-		Hint       string `json:"hint"`
+		Key      string `json:"key"`
+		Tone     string `json:"tone"`
+		Headline string `json:"headline"`
+		Sub      string `json:"sub"`
 	} `json:"answer"`
 	Path []struct {
-		ID      string `json:"id"`
-		State   string `json:"state"`
-		Blamed  bool   `json:"blamed"`
-		Culprit string `json:"culprit"`
+		ID    string `json:"id"`
+		State string `json:"state"`
+		Sub   string `json:"sub"`
 	} `json:"path"`
-	Tiles []homeTile `json:"tiles"`
 }
 
-type homeTile struct {
-	ID       string   `json:"id"`
-	Level    string   `json:"level"`
-	State    string   `json:"state"`
-	Label    string   `json:"label"`
-	Affected []string `json:"affected"`
-}
+// kind is the answer key's kind: "isp" of "isp:1760261100000".
+func (l *homeNow) kind() string { k, _, _ := strings.Cut(l.Answer.Key, ":"); return k }
 
-func (l *homeLive) tile(id string) *homeTile {
-	for i := range l.Tiles {
-		if l.Tiles[i].ID == id {
-			return &l.Tiles[i]
-		}
-	}
-	return nil
-}
-
-// blamed returns the ids of the blamed path nodes.
-func (l *homeLive) blamed() []string {
+// hurt returns the ids of the strip's nodes that aren't good.
+func (l *homeNow) hurt() []string {
 	var out []string
 	for _, n := range l.Path {
-		if n.Blamed {
+		if n.State == "down" || n.State == "slow" {
 			out = append(out, n.ID)
 		}
 	}
 	return out
 }
 
-func (h *harness) home(t *testing.T, name string) (homeLive, []byte) {
+func (h *harness) home(t *testing.T, name string) (homeNow, []byte) {
 	t.Helper()
-	b := h.get(t, "/api/home?part=live")
+	b := h.get(t, "/api/home?part=now")
 	h.save(t, "home-"+name+".json", b)
-	var l homeLive
+	var l homeNow
 	if err := json.Unmarshal(b, &l); err != nil {
 		t.Fatalf("/api/home: %v: %s", err, b)
 	}
-	t.Logf("/api/home %s: answer %s/%s (%s) %q / %q / hint %q; blamed %v",
-		name, l.Answer.Level, l.Answer.Who, l.Answer.Confidence, l.Answer.Headline, l.Answer.Cause, l.Answer.Hint, l.blamed())
+	t.Logf("/api/home %s: answer %s (%s) %q / %q; path not good %v", name, l.Answer.Key, l.Answer.Tone, l.Answer.Headline, l.Answer.Sub, l.hurt())
 	return l, b
 }
 
-// homeSettle is how long after the verdict Home may take to say ok.
-const homeSettle = 60 * time.Second
+// homeSettle is how long after the verdict Home may take to say ok;
+// homeLag how long it may take to follow a fault's verdict (the engine
+// reads the verdict at its 5 s ticks).
+const (
+	homeSettle = 60 * time.Second
+	homeLag    = 15 * time.Second
+)
 
-// homeWho is the Home answer's who for each path verdict kind.
-var homeWho = map[string]string{"lan": "home", "isp": "provider", "upstream": "beyond", "dns": "dns"}
+// homeNode is the strip's node that carries the culprit for each path
+// verdict kind.
+var homeNode = map[string]int{"lan": 0, "isp": 1, "upstream": 2}
 
-// homeNode is the path node that carries the culprit for each who.
-var homeNode = map[string]string{"home": "router", "provider": "provider", "beyond": "internet"}
-
-// checkHome checks /api/home while the verdict is kind (targets: the
-// verdict's), and that the public voice says "your" nowhere.
-func (h *harness) checkHome(t *testing.T, name, kind string, targets []string) {
+// checkHome checks /api/home while the verdict is kind, polling until it
+// holds or Home had its time to follow.
+func (h *harness) checkHome(t *testing.T, name, kind string) {
 	t.Helper()
+	wait := homeLag
+	if kind == "ok" {
+		wait = homeSettle
+	}
 	l, raw := h.home(t, name)
+	for t0 := time.Now(); homeWrong(&l, kind) != "" && time.Since(t0) < wait; {
+		time.Sleep(5 * time.Second)
+		l, raw = h.home(t, name)
+	}
+	if w := homeWrong(&l, kind); w != "" {
+		t.Errorf("Home %s: answer %s (%s), path not good %v, want %s: %s", name, l.Answer.Key, l.Answer.Tone, l.hurt(), w, raw)
+	}
+}
+
+// homeWrong says what Home should say while the verdict is kind, or "" when
+// it does.
+func homeWrong(l *homeNow, kind string) string {
 	switch kind {
 	case "ok":
-		// Back to ok: the verdict has seen a minute of ok checks. Home may
-		// take a moment longer, but not long.
-		for t0 := time.Now(); (l.Answer.Level != "good" || l.Answer.Who != "none") && time.Since(t0) < homeSettle; {
-			time.Sleep(5 * time.Second)
-			l, raw = h.home(t, name)
-		}
-		if l.Answer.Level != "good" || l.Answer.Who != "none" || len(l.blamed()) != 0 {
-			t.Errorf("Home %s: answer %s/%s blamed %v %s after the verdict, want good/none and no culprit: %s",
-				name, l.Answer.Level, l.Answer.Who, l.blamed(), homeSettle, raw)
+		// Back to ok: after a fault Home says "working again" for a while.
+		if (l.kind() != "good" && l.kind() != "working_again") || l.Answer.Tone == "bad" || len(l.hurt()) != 0 {
+			return "good or working again, the path good"
 		}
 	case "lan", "isp", "upstream":
-		who := homeWho[kind]
-		if l.Answer.Who != who || l.Answer.Level == "good" || l.Answer.Kind != kind {
-			t.Errorf("Home %s: answer %s/%s (kind %s), want who %s, not good: %s", name, l.Answer.Level, l.Answer.Who, l.Answer.Kind, who, raw)
+		// The culprit is down or slow, and the nodes before it are fine.
+		i := homeNode[kind]
+		if l.kind() != kind || l.Answer.Tone != "bad" || len(l.Path) != 3 || (l.Path[i].State != "down" && l.Path[i].State != "slow") {
+			return fmt.Sprintf("%s, bad, path[%d] down or slow", kind, i)
 		}
-		// Weak ("slow to answer our checks", no culprit) is for a lossy
-		// first hop alone; these faults lose packets on everything past
-		// the fault, as the path nodes and the verdict's evidence show.
-		if b := l.blamed(); l.Answer.Confidence == "weak" || !slices.Equal(b, []string{homeNode[who]}) {
-			t.Errorf("Home %s: confidence %q, blamed nodes %v, want [%s] blamed: %s", name, l.Answer.Confidence, b, homeNode[who], raw)
-		}
-		for _, n := range l.Path {
-			if n.Blamed && n.Culprit == "" {
-				t.Errorf("Home %s: blamed node %s has no culprit label", name, n.ID)
+		for _, n := range l.Path[:i] {
+			if n.State != "good" {
+				return fmt.Sprintf("%s good before the culprit", n.ID)
 			}
 		}
 	case "service":
-		// One target of a working tile: no headline escalation; the cause
-		// (or the hint) names it (docs/HOME-API.md, "One app of a working
-		// tile").
-		hint := strings.ToLower(l.Answer.Cause + " " + l.Answer.Hint)
-		if l.Answer.Level != "good" || len(l.blamed()) != 0 {
-			t.Errorf("Home %s: answer %s/%s blamed %v, want good: %s", name, l.Answer.Level, l.Answer.Who, l.blamed(), raw)
-		}
-		for _, n := range targets {
-			if !strings.Contains(hint, n) {
-				t.Errorf("Home %s: cause %q and hint %q do not name %s", name, l.Answer.Cause, l.Answer.Hint, n)
-			}
-		}
-		if w := l.tile("work"); w == nil || w.State != "mostly" || !slices.Equal(w.Affected, targets) {
-			t.Errorf("Home %s: work tile %+v, want mostly with %v affected", name, w, targets)
+		// One app's target: the connection is fine (the tiles, off here,
+		// are where an app shows).
+		if l.Answer.Tone != "ok" || len(l.hurt()) != 0 {
+			return "ok, the path good"
 		}
 	case "udp_blocked", "stun_blocked":
-		if l.Answer.Who != "calltraffic" || l.Answer.Level == "good" {
-			t.Errorf("Home %s: answer %s/%s, want calltraffic, not good: %s", name, l.Answer.Level, l.Answer.Who, raw)
-		}
-		if c := l.tile("calls"); c == nil || c.Level == "good" || c.State != "blocked" {
-			t.Errorf("Home %s: calls tile %+v, want blocked, not good", name, c)
-		}
-		for _, id := range []string{"work", "web"} {
-			if c := l.tile(id); c == nil || c.Level != "good" || c.State != "working" {
-				t.Errorf("Home %s: %s tile %+v, want working", name, id, c)
-			}
+		if l.kind() != "udp_blocked" || l.Answer.Tone == "bad" || l.Answer.Tone == "ok" || len(l.hurt()) != 0 {
+			return "udp_blocked, a warning, the path good"
 		}
 	}
+	return ""
 }

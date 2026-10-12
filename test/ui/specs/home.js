@@ -1,4 +1,4 @@
-// Helpers for the Home (v0.9.0) specs: /api/home2 served from the JSON
+// Helpers for the Home (v0.9.0) specs: /api/home served from the JSON
 // fixtures (fixtures/gen.js) through page.route, so the client can be tested
 // before and independently of the server's engine. Everything else (status,
 // profile, Details) is the real fyisp-webdev API.
@@ -31,7 +31,7 @@ function tileFor(id, now) {
 }
 
 /**
- * Serves api/home2 from fixtures. The returned control changes what the
+ * Serves api/home from fixtures. The returned control changes what the
  * next poll gets (ctl.now), counts requests, and can make fyisp unreachable.
  * @param {import('@playwright/test').Page} page @param {string|object} now a fixture name or an answer
  */
@@ -43,7 +43,7 @@ async function serveHome(page, now) {
     down: false,
     /** @type {(id: string, now: any) => any} */ tile: tileFor,
   };
-  await page.route('**/api/home2?*', async (route) => {
+  await page.route('**/api/home?*', async (route) => {
     if (ctl.down) return route.abort('connectionrefused');
     const q = new URL(route.request().url()).searchParams;
     if (q.get('part') === 'now') {

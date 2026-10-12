@@ -1,305 +1,920 @@
-// Package homescen builds the Home view's scenarios: a profile, stored
-// samples and a verdict with its outage log, so that the real /api/home
-// roll-up can be shown (cmd/fyisp-webdev -home) and pinned (the golden
-// files of internal/web) for the same situations. Not used by fyisp itself.
+// Package homescen builds the Home's scenarios (/api/home): each is a tiles
+// engine snapshot, its charts and problems written out by hand (Scenario is
+// a web.TilesSource), the speed tests, the network path and who is looking.
+// They pin the server's words for every state of the answer card, the
+// strip, the tiles and the panels (internal/web/testdata/home) and are
+// served by cmd/fyisp-webdev -home. The engine's own rules are tested in
+// internal/tiles. Times are relative to now: the goldens use Friday
+// 2026-10-09 10:30 am in New York, so "10:05 am" is 25 minutes ago. Not
+// used by fyisp itself.
 package homescen
 
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"math"
+	"net/netip"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
-	"github.com/fuck-you-isp/fyisp/internal/store"
+	"github.com/fuck-you-isp/fyisp/internal/speedtest"
+	"github.com/fuck-you-isp/fyisp/internal/tiles"
 )
 
 // Names lists the scenarios.
-var Names = []string{"good", "warming", "wifi", "isp", "upstream", "one-app-down", "calls-choppy",
-	"udp-blocked", "no-network", "week-with-gaps", "clouds-other", "teams-relay-down"}
+var Names = []string{
+	// the mockup's states
+	"good", "blip", "isp", "zoom", "zoom-working-again", "learning", "stale",
+	// the other rows of the answer card
+	"checking", "router-down", "upstream", "no-network", "drop-now", "dns", "udp-blocked", "udp-quiet",
+	"udp-degraded", "broad-slow", "google-down", "no-data-yet",
+	// working again
+	"outage-2m-recovered", "trouble-recovered",
+	// drops and call quality
+	"drop-20s", "provider-loss-6", "provider-loss-3", "jitter",
+	// who is looking
+	"wifi-same-machine", "wifi-remote-viewer", "container-unknown", "edge-unknown",
+	// coverage and history
+	"calls-profile", "no-streaming", "custom-config", "week-with-problems", "not-running",
+	// speed
+	"speed-running", "speed-no-usual", "speed-done", "speedtest-labelled",
+	// the end of daylight saving time in New York (Sunday 2026-11-01)
+	"dst",
+}
 
-// Scenario is one situation. Store holds its samples up to the time Build
-// or Fill was last called with; Verdict is a verdict.Engine stand-in.
+// Tiles are the tiles whose panel (part=tile) a scenario pins: zoom and
+// m365 always, and these.
+var Tiles = map[string][]string{
+	"good": {"teams", "meet", "youtube"}, "learning": {"gws"}, "isp": {"netflix"}, "jitter": {"teams"},
+	"udp-degraded": {"meet"}, "google-down": {"meet", "youtube"}, "trouble-recovered": {"slack"},
+	"blip": {"teams"}, "speedtest-labelled": {"gws"}, "not-running": {"github"}, "dst": {"teams"},
+	"provider-loss-3": {"teams"}, "edge-unknown": {"onedrive"}, "udp-quiet": {"teams"}, "no-data-yet": {"teams"},
+}
+
+// DSTNow is the dst scenario's time: Sunday 2026-11-01 10:30 am in New
+// York, the morning clocks went back.
+var DSTNow = time.Date(2026, 11, 1, 15, 30, 0, 0, time.UTC)
+
+// Scenario is one situation: a web.TilesSource, plus what else the Home reads.
 type Scenario struct {
 	Name    string
 	Profile *model.Profile
-	Store   *store.Fake
-	Verdict *Verdict
-
-	loc   *time.Location
-	start time.Time // the scenario's "now" at Build
-	first time.Time // first data
-	off   [][2]time.Time
-	// lost says whether a probe at ts is lost; burst how a STUN burst goes.
-	lost  func(t model.Target, k model.ProbeKind, ts time.Time) bool
-	burst func(t model.Target, ts time.Time) (answered int, rtt, jitter float64)
-	mu    sync.Mutex
-	until time.Time // samples are written up to here
+	Snap    *tiles.Snapshot
+	Eps     []tiles.Episode // newest first
+	Charts  map[string]*tiles.Chart
+	// NotReady: the engine is still replaying (the checking card).
+	NotReady bool
+	// Path is fyisp's network path; Container that it runs in one.
+	Path      netinfo.Path
+	Container bool
+	// Viewer is who asks.
+	Viewer Viewer
+	// CustomProfile: the profile is a --config file.
+	CustomProfile bool
+	Speed         *Speed // nil: no speed tests
 }
 
-// Verdict is a fixed verdict and outage log (web.VerdictSource).
-type Verdict struct {
-	V    model.Verdict
-	List []model.Incident // newest first
+// Viewer is the request's origin: its RemoteAddr, proxy headers and Host,
+// this host's own addresses, and the address fyisp listens on.
+type Viewer struct {
+	Listen     string
+	RemoteAddr string
+	Host       string
+	Header     map[string]string
+	Own        []netip.Addr
 }
 
-func (v *Verdict) Current() model.Verdict { return v.V }
+// Speed is the speed tests a scenario has (the web package's speed source
+// for Home).
+type Speed struct {
+	Scheduled bool
+	List      []model.SpeedTest
+	Run       *speedtest.Entry
+}
 
-func (v *Verdict) Incidents(_ context.Context, from, to time.Time) ([]model.Incident, error) {
-	var out []model.Incident
-	for _, in := range v.List {
-		if in.Start.Before(to) && (in.End.IsZero() || in.End.After(from)) {
-			out = append(out, in)
+func (s *Speed) On() bool { return s.Scheduled }
+func (s *Speed) Tests(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+	var out []model.SpeedTest
+	for _, t := range s.List {
+		if !t.Start.Before(from) && t.Start.Before(to) {
+			out = append(out, t)
 		}
 	}
 	return out, nil
 }
+func (s *Speed) Running() *speedtest.Entry { return s.Run }
 
-// Build makes a scenario as of now; local days and times of day are in loc.
-func Build(name string, now time.Time, loc *time.Location) (*Scenario, error) {
+// Ready, Snapshot, Chart, Problems and LateSamples make Scenario a
+// web.TilesSource.
+func (v *Scenario) Ready() bool               { return !v.NotReady }
+func (v *Scenario) Snapshot() *tiles.Snapshot { return v.Snap }
+func (v *Scenario) LateSamples() int          { return 0 }
+func (v *Scenario) Chart(id string) (*tiles.Chart, bool) {
+	c, ok := v.Charts[id]
+	return c, ok
+}
+func (v *Scenario) Problems(from time.Time) []tiles.Episode {
+	var out []tiles.Episode
+	for _, e := range v.Eps {
+		if e.Ongoing() || !e.End.Before(from) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// usualMs are the tiles' usual latencies, in profile.Tiles' order.
+var usualMs = []float64{18, 14, 9, 22, 12, 8, 24, 15, 13, 7, 6}
+
+const (
+	bar     = 5 * time.Minute
+	nBars   = 24
+	nBucket = 288
+)
+
+// sb builds a scenario's snapshot.
+type sb struct {
+	now time.Time
+	v   *Scenario
+	s   *tiles.Snapshot
+	off [][2]time.Time // fyisp not running
+}
+
+func (b *sb) ago(d time.Duration) time.Time { return b.now.Add(-d) }
+
+func (b *sb) idx(id string) int {
+	return slices.IndexFunc(profile.Tiles, func(d profile.TileDef) bool { return d.ID == id })
+}
+
+func (b *sb) tile(id string) *tiles.TileSnap { return &b.s.Tiles[b.idx(id)] }
+
+// set gives tiles a word since a time (bars from then on follow it).
+func (b *sb) set(st tiles.State, since time.Time, ids ...string) {
+	for _, id := range ids {
+		t := b.tile(id)
+		t.State, t.Since = st, since
+		for i := range t.Bars {
+			if !t.Bars[i].From.Add(bar).After(since) {
+				continue
+			}
+			t.Bars[i].State = st
+		}
+	}
+}
+
+// add records a problem: its bars (when it has tiles; a connection
+// problem's bars come from the tiles' words or drops) and the list.
+func (b *sb) add(e tiles.Episode) {
+	e.ID = episodeID(e)
+	b.v.Eps = append(b.v.Eps, e)
+	ids := e.Tiles
+	for _, id := range ids {
+		t := b.tile(id)
+		for i := range t.Bars {
+			x := &t.Bars[i]
+			if !overlaps(x.From, x.From.Add(bar), e.Start, e.End, b.now) {
+				continue
+			}
+			// A bar notes the problem that coloured it.
+			switch {
+			case e.Kind == tiles.EpDrop:
+				x.State, x.Drop, x.Episode = tiles.Down, e.DropDur, e.ID
+				if e.Ongoing() {
+					x.Drop = b.now.Sub(e.Start)
+				}
+			case e.Connection:
+				// A connection problem colours no bar: the tiles' own minutes
+				// do (set, paint); it only explains a bad bar.
+				if x.Episode == "" && x.State.Bad() {
+					x.Episode = e.ID
+				}
+			case rank(e.Sev) >= rank(x.State):
+				x.State, x.Episode = e.Sev, e.ID
+			case x.Episode == "":
+				x.Episode = e.ID
+			}
+		}
+	}
+}
+
+// overlaps reports [a0, a1) and [b0, b1) overlapping; an ongoing b (b1
+// zero) reaches into the current bar.
+// paint colours tiles' bars over [from, to) (minutes judged then).
+func (b *sb) paint(st tiles.State, from, to time.Time, ids ...string) {
+	for _, id := range ids {
+		t := b.tile(id)
+		for i := range t.Bars {
+			if overlaps(t.Bars[i].From, t.Bars[i].From.Add(bar), from, to, b.now) {
+				t.Bars[i].State = st
+			}
+		}
+	}
+}
+
+func rank(s tiles.State) int {
+	return map[tiles.State]int{tiles.Good: 1, tiles.Slow: 2, tiles.Down: 3}[s]
+}
+
+// noCalls: nothing gets through, so the call tiles' bursts all time out.
+func (b *sb) noCalls() {
+	for _, id := range callTiles() {
+		if t := b.tile(id); t.Call != nil && t.State == tiles.Down {
+			*t.Call = tiles.CallMetrics{Source: t.Call.Source}
+		}
+	}
+}
+
+func overlaps(a0, a1, b0, b1, now time.Time) bool {
+	if b1.IsZero() {
+		b1 = now.Add(time.Nanosecond)
+	}
+	return a0.Before(b1) && b0.Before(a1)
+}
+
+func episodeID(e tiles.Episode) string {
+	ms := strconv.FormatInt(e.Start.UnixMilli(), 10)
+	if e.Connection {
+		return "c-" + ms
+	}
+	id := "t-" + ms + "-"
+	for i, t := range e.Tiles {
+		if i > 0 {
+			id += ","
+		}
+		id += t
+	}
+	return id
+}
+
+func allTiles() []string {
+	var out []string
+	for _, d := range profile.Tiles {
+		out = append(out, d.ID)
+	}
+	return out
+}
+
+func callTiles() []string { return []string{"zoom", "teams", "meet", "slack"} }
+
+// drop is a connection drop that ended: every covered tile notes it.
+func (b *sb) drop(start time.Time, dur time.Duration, who tiles.Who, ev string, verdict model.VerdictKind) tiles.Drop {
+	d := tiles.Drop{Start: start, End: start.Add(dur), Dur: dur}
+	b.add(tiles.Episode{Start: d.Start, End: d.End, Sev: tiles.Down, Kind: tiles.EpDrop, Tiles: b.covered(), Connection: true,
+		Verdict: verdict, Cause: tiles.Cause{Who: who, Evidence: ev}, DropDur: dur})
+	for i := range b.s.Tiles {
+		t := &b.s.Tiles[i]
+		if t.State == tiles.Good && b.now.Sub(d.End) < 30*time.Minute {
+			c := d
+			t.LastDrop = &c
+		}
+	}
+	return d
+}
+
+// covered are the tiles that are not off.
+func (b *sb) covered() []string {
+	var out []string
+	for _, t := range b.s.Tiles {
+		if t.State != tiles.Off {
+			out = append(out, t.ID)
+		}
+	}
+	return out
+}
+
+// history are the problems of the mockup: Slack choppy this morning,
+// Microsoft 365 slow last night, Google down yesterday afternoon, the
+// provider lossy yesterday at 2:10 pm, the router down on Wednesday.
+func (b *sb) history(only ...string) {
+	has := func(ids ...string) []string {
+		var out []string
+		for _, id := range ids {
+			if b.tile(id).State != tiles.Off {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	app := func(v, ev string) tiles.Cause { return tiles.Cause{Who: tiles.WhoApp, Vendor: v, Evidence: ev} }
+	if ts := has("slack"); len(ts) > 0 {
+		b.add(tiles.Episode{Start: b.ago(49 * time.Minute), End: b.ago(45 * time.Minute), Sev: tiles.Slow, Kind: tiles.EpChoppy,
+			Tiles: ts, Cause: app("slack", tiles.EvAppOnly)})
+	}
+	if ts := has("m365"); len(ts) > 0 {
+		b.add(tiles.Episode{Start: b.ago(14*time.Hour + 16*time.Minute), End: b.ago(14*time.Hour + 8*time.Minute), Sev: tiles.Slow,
+			Kind: tiles.EpSlow, Tiles: ts, Cause: app("microsoft", tiles.EvAppOnly)})
+	}
+	if ts := has("meet", "gws", "youtube"); len(ts) > 0 {
+		b.add(tiles.Episode{Start: b.ago(18*time.Hour + 3*time.Minute), End: b.ago(18 * time.Hour), Sev: tiles.Down,
+			Kind: tiles.EpOutage, Tiles: ts, Cause: app("google", tiles.EvVendorOnly)})
+	}
+	b.add(tiles.Episode{Start: b.ago(20*time.Hour + 20*time.Minute), End: b.ago(20*time.Hour + 5*time.Minute), Sev: tiles.Slow,
+		Kind: tiles.EpSlow, Tiles: has(callTiles()...), Connection: true, Verdict: model.VerdictISP,
+		Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
+	b.add(tiles.Episode{Start: b.ago(62*time.Hour + 28*time.Minute), End: b.ago(62*time.Hour + 26*time.Minute), Sev: tiles.Down,
+		Kind: tiles.EpDrop, Tiles: b.covered(), Connection: true, Verdict: model.VerdictLAN,
+		Cause: tiles.Cause{Who: tiles.WhoRouter, Evidence: tiles.EvRouterDown}, DropDur: 2 * time.Minute})
+}
+
+// conn sets the card to a connection row since a time.
+func (b *sb) conn(kind string, key string, tone string, icon tiles.State, since time.Time) {
+	b.s.Conn = tiles.ConnState{Kind: kind, Key: key + ":" + strconv.FormatInt(since.UnixMilli(), 10), Tone: tone, Icon: icon, Since: since}
+}
+
+// Build makes a scenario as of now.
+func Build(name string, now time.Time) (*Scenario, error) {
 	p, err := profile.Default()
 	if err != nil {
 		return nil, err
 	}
-	ln := now.In(loc)
-	today := time.Date(ln.Year(), ln.Month(), ln.Day(), 0, 0, 0, 0, loc)
-	day := func(daysAgo, h, m int) time.Time {
-		return today.AddDate(0, 0, -daysAgo).Add(time.Duration(h)*time.Hour + time.Duration(m)*time.Minute)
-	}
-	s := &Scenario{Name: name, Profile: p, Store: store.NewFake(), loc: loc, start: now, first: now.Add(-6 * 24 * time.Hour),
-		Verdict: &Verdict{V: model.Verdict{Kind: model.VerdictOK, Since: now.Add(-2 * time.Hour)}}}
-	recent := func(ts time.Time, d time.Duration) bool { return !ts.Before(now.Add(-d)) }
-	is := func(t model.Target, names ...string) bool { return slices.Contains(names, t.Name) }
-	group := func(t model.Target, groups ...string) bool { return slices.Contains(groups, t.Group) }
-	healthy := func(model.Target, time.Time) (int, float64, float64) { return 5, 18, 2 }
-	choppy := func(d time.Duration) func(model.Target, time.Time) (int, float64, float64) {
-		return func(_ model.Target, ts time.Time) (int, float64, float64) {
-			if recent(ts, d) {
-				if ts.Unix()%15 != 0 {
-					return 4, 60, 45 // 2 bursts in 3 lose a request: about 1 in 7 lost
-				}
-				return 5, 60, 45
+	v := &Scenario{Name: name, Profile: p, Charts: map[string]*tiles.Chart{},
+		Path:   netinfo.Path{Gateway: netip.MustParseAddr("192.168.1.1"), Iface: "eth0", Conn: model.ConnWired, Edge: netip.MustParseAddr("198.51.100.1"), EdgeHop: 2, Updated: now},
+		Viewer: Viewer{Listen: "127.0.0.1:3000", RemoteAddr: "127.0.0.1:50000", Host: "127.0.0.1:3000"},
+		Speed:  &Speed{Scheduled: true}}
+	s := &tiles.Snapshot{At: now, LastMeasured: now.Add(-4 * time.Second), FirstData: now.Add(-220 * 24 * time.Hour),
+		Conn: tiles.ConnState{Kind: tiles.ConnGood, Key: tiles.ConnGood, Tone: tiles.ToneOK, Icon: tiles.Good}}
+	v.Snap = s
+	b := &sb{now: now, v: v, s: s, off: [][2]time.Time{{now.Add(-7*time.Hour - 25*time.Minute), now.Add(-6*time.Hour - 40*time.Minute)}}}
+	first := now.Truncate(bar).Add(-(nBars - 1) * bar)
+	for i, d := range profile.Tiles {
+		t := &s.Tiles[i]
+		t.ID, t.State = d.ID, tiles.Good
+		for j := range t.Bars {
+			t.Bars[j] = tiles.Bar{From: first.Add(time.Duration(j) * bar), State: tiles.Good}
+		}
+		u := usualMs[i]
+		t.UsualMs = &u
+		switch d.Kind {
+		case profile.TileCall:
+			src := tiles.CallShared
+			if len(d.UDP) > 0 {
+				src = tiles.CallOwn
 			}
-			return 5, 18, 2
+			t.Call = &tiles.CallMetrics{Source: src, Bursts: 36, DelayMs: u + 3, JitterMs: 2, HasJitter: true}
+		default:
+			sl := max(2*u, u+30)
+			t.SlowAboveMs = &sl
 		}
 	}
-	s.burst = healthy
-	s.lost = func(model.Target, model.ProbeKind, time.Time) bool { return false }
-	since := func(d time.Duration) time.Time { return now.Add(-d).Truncate(time.Minute) }
-	inc := func(id int64, k model.VerdictKind, from, to time.Time, loss float64, targets ...string) model.Incident {
-		return model.Incident{ID: id, Start: from, End: to, Kind: k, PeakLoss: loss, Targets: targets,
-			Summary: fmt.Sprintf("Scenario %s incident %d.", name, id)}
+	for i := range s.Layers {
+		s.Layers[i].State = tiles.Good
 	}
-	v := s.Verdict
+	sp := func(daysAgo int, h, m int, down, up float64) model.SpeedTest {
+		at := now.Add(-time.Duration(daysAgo)*24*time.Hour - time.Duration(h)*time.Hour - time.Duration(m)*time.Minute)
+		d, u := down*1e6, up*1e6
+		return model.SpeedTest{Start: at, End: at.Add(40 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, DownBps: &d, UpBps: &u}
+	}
+	// 925 / 938 usual; the latest at 8:00 am
+	v.Speed.List = []model.SpeedTest{sp(6, 0, 0, 920, 935), sp(5, 0, 0, 925, 938), sp(4, 0, 0, 930, 940), sp(3, 0, 0, 925, 938),
+		sp(1, 0, 0, 918, 936), sp(0, 2, 30, 930, 940)}
+	hist := true
+
 	switch name {
-	case "good":
-		// A short fair stretch this morning, with no incident.
-		s.burst = func(_ model.Target, ts time.Time) (int, float64, float64) {
-			if !ts.Before(day(0, 11, 0)) && ts.Before(day(0, 11, 4)) {
-				return 5, 40, 32
-			}
-			return 5, 18, 2
-		}
-	case "warming":
-		s.first = now.Add(-40 * time.Second)
-		v.V = model.Verdict{Kind: model.VerdictWarmingUp}
-	case "wifi":
-		v.V = model.Verdict{Kind: model.VerdictLAN, Since: since(10 * time.Minute),
-			Evidence: map[string]float64{"gateway_loss": 0.3, "services_loss": 0.08}}
-		s.lost = func(t model.Target, _ model.ProbeKind, ts time.Time) bool {
-			return recent(ts, 10*time.Minute) && ts.Unix()%3 == 0
-		}
-		s.burst = choppy(10 * time.Minute)
-		v.List = []model.Incident{inc(12, model.VerdictLAN, since(10*time.Minute), time.Time{}, 0.35),
-			inc(11, model.VerdictLAN, day(2, 10, 5), day(2, 10, 11), 0.4)}
+	case "good", "drop-20s":
+		// drop-20s: a 20 s drop makes no problem, note or red bar.
+	case "blip":
+		b.drop(b.ago(16*time.Minute), 40*time.Second, tiles.WhoProvider, tiles.EvProviderDrop, model.VerdictISP)
+		b.again(tiles.AgainDropped)
+		b.layerDrop(1, 2)
 	case "isp":
-		v.V = model.Verdict{Kind: model.VerdictISP, Since: since(14 * time.Minute),
-			Evidence: map[string]float64{"edge_loss": 0.3, "services_loss": 0.1}}
-		s.lost = func(t model.Target, _ model.ProbeKind, ts time.Time) bool {
-			return recent(ts, 14*time.Minute) && t.Layer != model.LayerGateway && ts.Unix()%4 == 0
+		since := b.ago(18 * time.Minute)
+		b.conn(string(model.VerdictISP), string(model.VerdictISP), tiles.ToneBad, tiles.Down, since)
+		s.Layers[1].State, s.Layers[2].State = tiles.Slow, tiles.Slow
+		b.set(tiles.Slow, since, "zoom", "teams", "meet", "slack", "m365", "gws", "dropbox", "onedrive", "youtube")
+		b.set(tiles.Down, since, "github", "netflix")
+		b.callsBad(150, 41, 7)
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpSlow, Tiles: allTiles(), Connection: true, Verdict: model.VerdictISP,
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
+		v.Speed.List = append(v.Speed.List, sp(0, 0, 10, 140, 95))
+	case "zoom", "zoom-working-again":
+		since := b.ago(25 * time.Minute)
+		b.set(tiles.Down, since, "zoom")
+		b.tile("zoom").Cause = tiles.Cause{Who: tiles.WhoApp, Vendor: "zoom", Evidence: tiles.EvAppOnly}
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpOutage, Tiles: []string{"zoom"}, Cause: b.tile("zoom").Cause})
+		b.s.Conn = tiles.ConnState{Kind: tiles.ConnApp, Key: "app:zoom:" + ms(since), Tone: tiles.ToneOK, Icon: tiles.Good, Since: since, Tiles: []string{"zoom"}}
+		if name == "zoom-working-again" {
+			b.drop(b.ago(16*time.Minute), 40*time.Second, tiles.WhoProvider, tiles.EvProviderDrop, model.VerdictISP)
+			b.layerDrop(1, 2)
+			cs := b.s.Conn
+			b.again(tiles.AgainDropped)
+			cs.Again, cs.Key = b.s.Conn.Again, cs.Key+":"+ms(b.s.Conn.Again.End)
+			b.s.Conn = cs
 		}
-		s.burst = choppy(14 * time.Minute)
-		v.List = []model.Incident{inc(22, model.VerdictISP, since(14*time.Minute), time.Time{}, 0.62),
-			inc(21, model.VerdictISP, day(4, 14, 41), day(4, 14, 56), 1)}
+	case "learning":
+		b.learning(40 * time.Minute)
+		hist = false
+		v.Speed.List = nil
+	case "stale":
+		s.LastMeasured = b.ago(9 * time.Minute)
+		s.Conn = tiles.ConnState{Kind: tiles.ConnStale, Key: tiles.ConnStale, Tone: tiles.ToneStale, Icon: tiles.None}
+		for i := range s.Tiles {
+			for j := nBars - 3; j < nBars; j++ {
+				s.Tiles[i].Bars[j].State = tiles.None
+			}
+		}
+	case "checking":
+		v.NotReady, hist = true, false
+		*s = tiles.Snapshot{At: now, Conn: tiles.ConnState{Kind: tiles.ConnChecking, Key: tiles.ConnChecking, Tone: tiles.ToneChecking, Icon: tiles.None}}
+		for i, d := range profile.Tiles {
+			t := &s.Tiles[i]
+			t.ID, t.State = d.ID, tiles.None
+			for j := range t.Bars {
+				t.Bars[j] = tiles.Bar{From: first.Add(time.Duration(j) * bar), State: tiles.None}
+			}
+		}
+		for i := range s.Layers {
+			s.Layers[i].State = tiles.None
+		}
+	case "router-down", "wifi-same-machine", "wifi-remote-viewer", "container-unknown":
+		since := b.ago(6 * time.Minute)
+		b.conn(string(model.VerdictLAN), string(model.VerdictLAN), tiles.ToneBad, tiles.Down, since)
+		ev, sev := tiles.EvRouterDown, tiles.Down
+		kind := tiles.EpDrop // the router lost everything: a connection drop absorbs the incident
+		if name == "router-down" {
+			for i := range s.Layers {
+				s.Layers[i].State, s.Layers[i].Since = tiles.Down, since
+			}
+			b.set(tiles.Down, since, allTiles()...)
+			b.noCalls()
+		} else {
+			// Wi-Fi trouble: the router answers, but loses data.
+			ev, sev, kind = tiles.EvRouterLossy, tiles.Slow, tiles.EpSlow
+			s.Layers[0].State, s.Layers[1].State, s.Layers[2].State = tiles.Slow, tiles.Slow, tiles.Slow
+			b.set(tiles.Slow, since, allTiles()...)
+			b.callsBad(60, 45, 9)
+			v.Path.Iface, v.Path.Conn = "wlan0", model.ConnWiFi
+			switch name {
+			case "wifi-remote-viewer":
+				v.Viewer.Listen, v.Viewer.RemoteAddr, v.Viewer.Host = "0.0.0.0:3000", "192.168.1.20:50000", "192.168.1.10:3000"
+			case "container-unknown":
+				v.Container = true
+			}
+			v.Viewer.Own = []netip.Addr{netip.MustParseAddr("192.168.1.10")}
+		}
+		b.add(tiles.Episode{Start: since, Sev: sev, Kind: kind, Tiles: allTiles(), Connection: true, Verdict: model.VerdictLAN,
+			Cause: tiles.Cause{Who: tiles.WhoRouter, Evidence: ev}})
 	case "upstream":
-		v.V = model.Verdict{Kind: model.VerdictUpstream, Since: since(10 * time.Minute),
-			Evidence: map[string]float64{"anycast_loss": 0.6, "services_loss": 0.6}}
-		s.lost = func(t model.Target, _ model.ProbeKind, ts time.Time) bool {
-			return recent(ts, 10*time.Minute) && (t.Layer == model.LayerAnycast || group(t, "work", "web"))
-		}
-		s.burst = choppy(10 * time.Minute)
-		v.List = []model.Incident{inc(31, model.VerdictUpstream, since(10*time.Minute), time.Time{}, 0.6)}
-	case "one-app-down":
-		v.V = model.Verdict{Kind: model.VerdictService, Since: since(25 * time.Minute), Targets: []string{"M365-Outlook"}}
-		s.lost = func(t model.Target, _ model.ProbeKind, ts time.Time) bool {
-			return recent(ts, 25*time.Minute) && is(t, "M365-Outlook")
-		}
-		v.List = []model.Incident{inc(41, model.VerdictService, since(25*time.Minute), time.Time{}, 1, "M365-Outlook")}
-	case "calls-choppy":
-		v.V = model.Verdict{Kind: model.VerdictUDPDegraded, Since: since(9 * time.Minute)}
-		s.burst = choppy(10 * time.Minute)
-		v.List = []model.Incident{inc(51, model.VerdictUDPDegraded, since(9*time.Minute), time.Time{}, 0.2)}
-	case "udp-blocked":
-		v.V = model.Verdict{Kind: model.VerdictSTUNBlocked, Since: now.Add(-26 * time.Hour), Quiet: true}
-		s.burst = func(_ model.Target, ts time.Time) (int, float64, float64) {
-			if ts.After(now.Add(-26 * time.Hour)) {
-				return 0, 0, 0
-			}
-			return 5, 18, 2
-		}
-		v.List = []model.Incident{inc(61, model.VerdictSTUNBlocked, now.Add(-26*time.Hour), time.Time{}, 1)}
+		since := b.ago(10 * time.Minute)
+		b.conn(string(model.VerdictUpstream), string(model.VerdictUpstream), tiles.ToneBad, tiles.Down, since)
+		s.Layers[2].State = tiles.Slow
+		b.set(tiles.Slow, since, "m365", "gws", "dropbox", "onedrive", "youtube")
+		b.set(tiles.Down, since, "github", "netflix")
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpOutage, Tiles: []string{"m365", "gws", "github", "dropbox", "onedrive", "youtube", "netflix"},
+			Connection: true, Verdict: model.VerdictUpstream, Cause: tiles.Cause{Who: tiles.WhoInternet, Evidence: tiles.EvBeyond}})
 	case "no-network":
-		v.V = model.Verdict{Kind: model.VerdictNoNetwork, Since: since(8 * time.Minute)}
-		s.lost = func(_ model.Target, _ model.ProbeKind, ts time.Time) bool { return recent(ts, 8*time.Minute) }
-		s.burst = func(_ model.Target, ts time.Time) (int, float64, float64) {
-			if recent(ts, 8*time.Minute) {
-				return 0, 0, 0
+		since := b.ago(3 * time.Minute)
+		b.conn(string(model.VerdictNoNetwork), string(model.VerdictNoNetwork), tiles.ToneBad, tiles.Down, since)
+		for i := range s.Layers {
+			s.Layers[i].State, s.Layers[i].Since = tiles.Down, since
+		}
+		b.set(tiles.Down, since, allTiles()...)
+		b.noCalls()
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpDrop, Tiles: allTiles(), Connection: true, Verdict: model.VerdictNoNetwork,
+			Cause: tiles.Cause{Who: tiles.WhoOffline, Evidence: tiles.EvNoNetwork}})
+	case "drop-now":
+		// 50 s past the router: a drop in progress (a problem from 30 s
+		// on). The call tiles' 5 s bursts have been failing long enough
+		// (3 in a row + holdFor); the web tiles' 15 s checks not yet.
+		since := b.ago(50 * time.Second)
+		s.Conn = tiles.ConnState{Kind: tiles.ConnDrop, Key: "drop:" + ms(since), Tone: tiles.ToneBad, Icon: tiles.Down, Since: since}
+		s.Layers[1].State, s.Layers[1].Since = tiles.Down, since
+		s.Layers[2].State, s.Layers[2].Since = tiles.Down, since
+		b.set(tiles.Down, since.Add(15*time.Second), callTiles()...)
+		b.noCalls()
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpDrop, Tiles: callTiles(), Connection: true,
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderDrop}})
+	case "dns":
+		since := b.ago(4 * time.Minute)
+		b.conn(string(model.VerdictDNS), string(model.VerdictDNS), tiles.ToneWarn, tiles.Slow, since)
+		// Every check starts with a name lookup: calls can't connect either.
+		apps := allTiles()
+		b.set(tiles.Down, since, apps...)
+		b.noCalls()
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpOutage, Tiles: apps, Connection: true, Verdict: model.VerdictDNS,
+			Cause: tiles.Cause{Who: tiles.WhoNames, Evidence: tiles.EvDNS}})
+	case "udp-blocked", "udp-quiet":
+		since := b.ago(90 * time.Minute)
+		if name == "udp-quiet" {
+			since = b.ago(26 * time.Hour)
+		}
+		b.conn(string(model.VerdictUDPBlocked), string(model.VerdictUDPBlocked), tiles.ToneWarn, tiles.Slow, since)
+		if name == "udp-quiet" {
+			b.s.Conn.Tone, b.s.Conn.Quiet = tiles.ToneInfo, true
+		}
+		b.set(tiles.Down, since, callTiles()...)
+		for _, id := range callTiles() {
+			*b.tile(id).Call = tiles.CallMetrics{Source: b.tile(id).Call.Source}
+		}
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpBlocked, Tiles: callTiles(), Connection: true,
+			Verdict: model.VerdictUDPBlocked, Cause: tiles.Cause{Who: tiles.WhoUnknown}})
+	case "udp-degraded":
+		since := b.ago(9 * time.Minute)
+		b.conn(string(model.VerdictUDPDegraded), string(model.VerdictUDPDegraded), tiles.ToneWarn, tiles.Slow, since)
+		b.set(tiles.Slow, since, callTiles()...)
+		b.callsBad(70, 12, 6)
+		c := tiles.Cause{Who: tiles.WhoCallsPath, Evidence: tiles.EvCallsPath}
+		for _, id := range callTiles() {
+			b.tile(id).Cause = c
+		}
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(), Cause: c})
+	case "broad-slow":
+		since := b.ago(15 * time.Minute)
+		b.conn(tiles.ConnBroad, tiles.ConnBroad, tiles.ToneWarn, tiles.Slow, since)
+		slow := []string{"zoom", "teams", "meet", "m365", "gws", "github", "dropbox", "youtube"}
+		b.s.Conn.Tiles = slow
+		b.set(tiles.Slow, since, slow...)
+		b.callsBad(90, 20, 0)
+		for _, id := range slow {
+			b.tile(id).Cause = tiles.Cause{Who: tiles.WhoUnknown}
+		}
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpSlow, Tiles: slow, Connection: true, Cause: tiles.Cause{Who: tiles.WhoUnknown}})
+	case "google-down":
+		since := b.ago(10 * time.Minute)
+		ids := []string{"meet", "gws", "youtube"}
+		c := tiles.Cause{Who: tiles.WhoApp, Vendor: "google", Evidence: tiles.EvVendorOnly}
+		b.set(tiles.Down, since, ids...)
+		for _, id := range ids {
+			b.tile(id).Cause = c
+		}
+		*b.tile("meet").Call = tiles.CallMetrics{Source: tiles.CallOwn}
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpOutage, Tiles: ids, Cause: c})
+		b.s.Conn = tiles.ConnState{Kind: tiles.ConnApp, Key: "app:meet,gws,youtube:" + ms(since), Tone: tiles.ToneOK, Icon: tiles.Good, Since: since, Tiles: ids}
+	case "outage-2m-recovered":
+		b.drop(b.ago(10*time.Minute), 2*time.Minute, tiles.WhoProvider, tiles.EvProviderDrop, model.VerdictISP)
+		b.again(tiles.AgainDown)
+		b.layerDrop(1, 2)
+	case "trouble-recovered":
+		from, to := b.ago(28*time.Minute), b.ago(12*time.Minute)
+		b.paint(tiles.Slow, from, to, callTiles()...) // the calls were choppy then
+		b.add(tiles.Episode{Start: from, End: to, Sev: tiles.Slow, Kind: tiles.EpSlow, Tiles: callTiles(), Connection: true, Verdict: model.VerdictISP,
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
+		b.again(tiles.AgainTrouble)
+	case "provider-loss-6":
+		// 6% loss past the router for 6 minutes: the calls are choppy, and
+		// the verdict's udp_degraded (5% on 2 providers for 3 minutes) has
+		// the card; the problem's cause is the provider (layer evidence).
+		since := b.ago(6 * time.Minute)
+		b.conn(string(model.VerdictUDPDegraded), string(model.VerdictUDPDegraded), tiles.ToneWarn, tiles.Slow, since)
+		b.set(tiles.Slow, since, callTiles()...)
+		b.callsBad(30, 8, 6)
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(),
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
+	case "provider-loss-3":
+		// 3% loss past the router: choppy calls (2% or more), below the
+		// verdict's 5%: no path verdict, so the card is row 9, amber, and
+		// names the provider; the strip marks it.
+		since := b.ago(4 * time.Minute)
+		b.set(tiles.Slow, since, callTiles()...)
+		b.callsBad(30, 8, 3)
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(),
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
+		b.s.Conn = tiles.ConnState{Kind: tiles.ConnApp, Key: "app:zoom,teams,meet,slack:" + ms(since), Tone: tiles.ToneOK, Icon: tiles.Good, Since: since, Tiles: callTiles()}
+	case "jitter":
+		// 41 ms of jitter for 3 minutes: the call tiles just turned Choppy
+		// (3 bad minutes), before the verdict's udp_degraded needs 3 minutes
+		// and a window.
+		since := b.ago(3 * time.Minute)
+		b.set(tiles.Slow, since, callTiles()...)
+		b.callsBad(40, 41, 0)
+		c := tiles.Cause{Who: tiles.WhoCallsPath, Evidence: tiles.EvCallsPath}
+		for _, id := range callTiles() {
+			b.tile(id).Cause = c
+		}
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(), Cause: c})
+		b.s.Conn = tiles.ConnState{Kind: tiles.ConnApp, Key: "app:zoom,teams,meet,slack:" + ms(since), Tone: tiles.ToneOK, Icon: tiles.Good, Since: since, Tiles: callTiles()}
+	case "edge-unknown":
+		// The provider's edge isn't found yet, and OneDrive has no data yet.
+		s.Layers[1].State = tiles.None
+		b.set(tiles.None, b.ago(2*time.Minute), "onedrive")
+	case "no-data-yet":
+		// Replayed, but no tile's first minute has closed (a restart):
+		// still checking, never "all 11 apps look healthy".
+		for i := range s.Tiles {
+			s.Tiles[i].State, s.Tiles[i].Since = tiles.None, time.Time{}
+		}
+	case "calls-profile", "no-streaming", "custom-config":
+		var off []string
+		switch name {
+		case "calls-profile":
+			r, err := profile.Builtin()
+			if err == nil {
+				v.Profile, err = r.Resolve([]string{"calls"}, profile.ResolveOptions{})
 			}
-			return 5, 18, 2
-		}
-		v.List = []model.Incident{inc(71, model.VerdictNoNetwork, since(8*time.Minute), time.Time{}, 1)}
-	case "week-with-gaps":
-		s.first = day(4, 10, 0)
-		s.off = [][2]time.Time{{day(3, 18, 2), day(2, 9, 15)}}
-		v.List = []model.Incident{
-			inc(83, model.VerdictLAN, day(1, 16, 2), day(1, 16, 6), 0.35),
-			inc(82, model.VerdictISP, day(1, 9, 40), day(1, 9, 52), 0.7),
-			inc(81, model.VerdictISP, day(3, 14, 5), day(3, 14, 20), 1),
-		}
-	case "teams-relay-down":
-		// Microsoft's relay stops answering while the other STUN servers
-		// do: Teams falls back to the shared call path, no verdict.
-		s.burst = func(t model.Target, ts time.Time) (int, float64, float64) {
-			if is(t, "Teams-Relay") && recent(ts, 2*time.Hour) {
-				return 0, 0, 0
+			if err != nil {
+				return nil, err
 			}
-			return 5, 18, 2
+			off = []string{"m365", "gws", "github", "dropbox", "onedrive", "youtube", "netflix"}
+		case "no-streaming":
+			off = []string{"youtube", "netflix"}
+		default:
+			off = []string{"github", "dropbox", "youtube", "netflix"}
 		}
-	case "clouds-other":
-		r, err := profile.Builtin()
-		if err != nil {
-			return nil, err
+		if name != "calls-profile" {
+			v.Profile = without(p, off)
 		}
-		if s.Profile, err = r.Resolve([]string{"aws"}, profile.ResolveOptions{}); err != nil {
-			return nil, err
+		v.CustomProfile = name == "custom-config"
+		for _, id := range off {
+			*b.tile(id) = tiles.TileSnap{ID: id, State: tiles.Off}
 		}
-		var down []string
-		for i, t := range s.Profile.Targets {
-			if t.Layer == "" && i%3 == 0 {
-				down = append(down, t.Name)
+	case "week-with-problems":
+		b.week()
+	case "not-running":
+		// fyisp was stopped from 6:00 to 9:20 this morning.
+		from, to := b.ago(4*time.Hour+30*time.Minute), b.ago(70*time.Minute)
+		b.off = append(b.off, [2]time.Time{from, to})
+		for i := range s.Tiles {
+			for j := range s.Tiles[i].Bars {
+				x := &s.Tiles[i].Bars[j]
+				if x.From.Add(3 * time.Minute).Before(to) {
+					x.State = tiles.None
+				}
 			}
 		}
-		v.V = model.Verdict{Kind: model.VerdictService, Since: since(12 * time.Minute), Targets: down}
-		s.lost = func(t model.Target, _ model.ProbeKind, ts time.Time) bool {
-			return recent(ts, 12*time.Minute) && slices.Contains(down, t.Name)
+	case "speed-running":
+		v.Speed.Run = &speedtest.Entry{ID: 12, Kind: speedtest.KindSingle, State: "running", Started: b.ago(10 * time.Second), EstFinish: now.Add(20 * time.Second)}
+	case "speed-no-usual":
+		v.Speed.List = v.Speed.List[len(v.Speed.List)-3:]
+	case "speed-done":
+		x := sp(0, 0, 1, 925, 938) // Test now, a minute ago
+		x.Trigger = "manual"
+		v.Speed.List = append(v.Speed.List, x)
+	case "speedtest-labelled":
+		from, to := b.ago(90*time.Minute), b.ago(87*time.Minute)
+		c := tiles.Cause{Who: tiles.WhoSpeedtest, Evidence: tiles.EvSpeedtest}
+		b.add(tiles.Episode{Start: from, End: to, Sev: tiles.Slow, Kind: tiles.EpSlow, Tiles: []string{"m365", "gws"}, Cause: c})
+		for _, id := range allTiles() {
+			for j := range b.tile(id).Bars {
+				x := &b.tile(id).Bars[j]
+				x.Speedtest = overlaps(x.From, x.From.Add(bar), from.Add(-30*time.Second), to, now)
+			}
 		}
-		v.List = []model.Incident{inc(91, model.VerdictService, since(12*time.Minute), time.Time{}, 1, down...)}
+		v.Speed.List = append(v.Speed.List, sp(0, 1, 30, 910, 930))
+	case "dst":
+		// Clocks went back at 2 am: a provider problem from 1:50 am EDT
+		// to 1:10 am EST, 20 minutes later.
+		b.add(tiles.Episode{Start: time.Date(2026, 11, 1, 5, 50, 0, 0, time.UTC), End: time.Date(2026, 11, 1, 6, 10, 0, 0, time.UTC),
+			Sev: tiles.Slow, Kind: tiles.EpSlow, Tiles: callTiles(), Connection: true, Verdict: model.VerdictISP,
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
 	default:
 		return nil, fmt.Errorf("unknown scenario %q (want one of %v)", name, Names)
 	}
-	s.until = s.first
-	s.Fill(now)
-	return s, nil
+	if hist {
+		b.history()
+	}
+	b.finish()
+	return v, nil
 }
 
-// Fill writes the scenario's samples up to now (the way it "goes on"); the
-// first call writes its history. Safe for concurrent use.
-func (s *Scenario) Fill(now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	from := s.until
-	if !now.After(from) {
-		return
+func ms(t time.Time) string { return strconv.FormatInt(t.UnixMilli(), 10) }
+
+// again makes the card "Working again" after the newest ended connection
+// problem.
+func (b *sb) again(variant string) {
+	var e *tiles.Episode
+	for i, x := range b.v.Eps {
+		if x.Connection && !x.Ongoing() && (e == nil || x.End.After(e.End)) {
+			e = &b.v.Eps[i]
+		}
 	}
-	s.until = now
-	live := s.start.Add(-30 * time.Minute) // full rate from here; sparser before
-	ln := s.start.In(s.loc)
-	morning := time.Date(ln.Year(), ln.Month(), ln.Day(), 8, 0, 0, 0, s.loc)
-	off := func(ts time.Time) bool {
-		for _, o := range s.off {
-			if !ts.Before(o[0]) && ts.Before(o[1]) {
-				return true
+	r := &tiles.Recovered{Start: e.Start, End: e.End, Dur: e.End.Sub(e.Start), Variant: variant, Cause: e.Cause, Episode: e.ID}
+	if e.DropDur > 0 {
+		r.Dur = e.DropDur
+	}
+	b.s.Conn = tiles.ConnState{Kind: tiles.ConnWorkingAgain, Key: tiles.ConnWorkingAgain + ":" + ms(e.End), Tone: tiles.ToneWarn,
+		Icon: tiles.Slow, Since: e.End, Again: r}
+}
+
+// layerDrop notes the newest connection drop on the given path layers.
+func (b *sb) layerDrop(ls ...int) {
+	for _, e := range b.v.Eps {
+		if e.Connection && e.Kind == tiles.EpDrop && !e.Ongoing() {
+			for _, l := range ls {
+				b.s.Layers[l].LastDrop = &tiles.Drop{Start: e.Start, End: e.End, Dur: e.DropDur}
+			}
+			return
+		}
+	}
+}
+
+// callsBad sets the call tiles' figures (those not Good).
+func (b *sb) callsBad(delayMs, jitterMs, lossPct float64) {
+	for _, id := range callTiles() {
+		t := b.tile(id)
+		if t.State.Bad() && t.Call != nil {
+			t.Call.DelayMs, t.Call.JitterMs, t.Call.LossPct = delayMs, jitterMs, lossPct
+		}
+	}
+}
+
+// learning: fyisp started watching d ago.
+func (b *sb) learning(d time.Duration) {
+	start := b.ago(d)
+	b.s.FirstData, b.s.Learning = start, true
+	for i := range b.s.Tiles {
+		t := &b.s.Tiles[i]
+		t.UsualMs, t.SlowAboveMs = nil, nil
+		for j := range t.Bars {
+			if t.Bars[j].From.Add(2 * time.Minute).Before(start) {
+				t.Bars[j].State = tiles.None
 			}
 		}
-		return false
 	}
-	for _, t := range s.Profile.Targets {
-		for _, k := range t.ProbeKinds() {
-			iv := t.Interval
-			if iv == 0 {
-				iv = 15 * time.Second
+}
+
+// week is a busier week: every kind of cause.
+func (b *sb) week() {
+	day := 24 * time.Hour
+	add := func(start, dur time.Duration, sev tiles.State, kind string, ts []string, conn bool, vk model.VerdictKind, c tiles.Cause) {
+		e := tiles.Episode{Start: b.ago(start), End: b.ago(start - dur), Sev: sev, Kind: kind, Tiles: ts, Connection: conn, Verdict: vk, Cause: c}
+		if kind == tiles.EpDrop {
+			e.DropDur = dur
+		}
+		b.add(e)
+	}
+	add(2*day+10*time.Hour+40*time.Minute, 30*time.Minute, tiles.Slow, tiles.EpSlow, callTiles(), true, model.VerdictISP,
+		tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}) // Tue 11:50 pm – Wed 12:20 am
+	add(3*day+2*time.Hour, 50*time.Second, tiles.Down, tiles.EpDrop, allTiles(), true, model.VerdictISP,
+		tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderDrop})
+	add(4*day+5*time.Hour, 6*time.Minute, tiles.Down, tiles.EpOutage, []string{"m365", "gws", "github", "dropbox", "onedrive", "youtube", "netflix"}, true,
+		model.VerdictDNS, tiles.Cause{Who: tiles.WhoNames, Evidence: tiles.EvDNS})
+	add(5*day+3*time.Hour, 40*time.Minute, tiles.Down, tiles.EpBlocked, callTiles(), true, model.VerdictUDPBlocked, tiles.Cause{Who: tiles.WhoUnknown})
+	add(5*day+8*time.Hour, 3*time.Minute, tiles.Slow, tiles.EpSlow, []string{"github"}, false, "", tiles.Cause{Who: tiles.WhoSpeedtest, Evidence: tiles.EvSpeedtest})
+	add(6*day+1*time.Hour, 12*time.Minute, tiles.Down, tiles.EpOutage, allTiles(), true, model.VerdictUpstream,
+		tiles.Cause{Who: tiles.WhoInternet, Evidence: tiles.EvBeyond})
+	add(6*day+4*time.Hour, 45*time.Second, tiles.Down, tiles.EpDrop, []string{"dropbox"}, false, "", tiles.Cause{Who: tiles.WhoApp, Vendor: "dropbox", Evidence: tiles.EvAppOnly})
+	add(3*time.Hour, 5*time.Minute, tiles.Slow, tiles.EpChoppy, []string{"teams", "meet"}, false, "", tiles.Cause{Who: tiles.WhoCallsPath, Evidence: tiles.EvCallsPath})
+}
+
+// without is p minus the targets of the given tiles.
+func without(p *model.Profile, ids []string) *model.Profile {
+	q := *p
+	q.Targets = nil
+	for _, t := range p.Targets {
+		if !slices.Contains(ids, profile.TileOf(t)) {
+			q.Targets = append(q.Targets, t)
+		}
+	}
+	return &q
+}
+
+// finish sorts the problems, counts them and draws the charts.
+func (b *sb) finish() {
+	s, v := b.s, b.v
+	slices.SortStableFunc(v.Eps, func(x, y tiles.Episode) int { return y.Start.Compare(x.Start) })
+	h := fnv.New64a()
+	for _, e := range v.Eps {
+		if !e.Ongoing() && e.End.Before(b.now.Add(-24*time.Hour)) {
+			continue
+		}
+		s.Day.Total++
+		switch e.Cause.Kind() {
+		case tiles.KindProvider:
+			s.Day.Provider++
+		case tiles.KindHome:
+			s.Day.Home++
+		case tiles.KindApp:
+			s.Day.App++
+		}
+	}
+	for _, e := range v.Eps {
+		fmt.Fprint(h, e.ID, e.End.UnixMilli(), e.Cause, e.Tiles)
+	}
+	s.Rev = h.Sum64()
+	s.Eps = v.Eps
+	for _, t := range s.Tiles {
+		if t.State != tiles.Off {
+			s.Monitored++
+		}
+	}
+	for i, t := range s.Tiles {
+		if t.State != tiles.Off {
+			v.Charts[t.ID] = b.chart(i)
+		}
+	}
+}
+
+// chart draws a tile's last 24 hours: around its usual, higher in its
+// slow problems, gaps in its outages and while fyisp was off.
+func (b *sb) chart(i int) *tiles.Chart {
+	t, d := b.s.Tiles[i], profile.Tiles[i]
+	u := usualMs[i]
+	c := &tiles.Chart{ID: t.ID, Step: bar, From: b.now.Truncate(bar).Add(-(nBucket - 1) * bar)}
+	if t.UsualMs != nil {
+		x := *t.UsualMs
+		c.UsualMs = &x
+	}
+	seed := uint64(7)
+	for _, r := range t.ID {
+		seed += uint64(r)
+	}
+	x := seed * 97
+	rnd := func() float64 { x = x * 16807 % 2147483647; return float64(x) / 2147483647 }
+	var mine []tiles.Episode
+	for _, e := range b.v.Eps {
+		if (e.Connection || slices.Contains(e.Tiles, t.ID)) && (e.Ongoing() || !e.End.Before(c.From)) {
+			mine = append(mine, e)
+		}
+	}
+	if b.v.NotReady { // the replay isn't done: nothing to draw yet
+		for k := range c.Ms {
+			c.Ms[k] = math.NaN()
+		}
+		return c
+	}
+	for k := range c.Ms {
+		from := c.From.Add(time.Duration(k) * bar)
+		v := u * (0.92 + rnd()*0.16)
+		switch {
+		case !from.Before(b.now.Truncate(bar)):
+			v = math.NaN() // the current bucket: no closed minute yet
+		case from.Before(b.s.FirstData.Truncate(bar)), b.isOff(from):
+			v = math.NaN()
+		}
+		for _, e := range mine {
+			if !overlaps(from, from.Add(bar), e.Start, e.End, b.now) || (!slices.Contains(e.Tiles, t.ID) && !e.Connection) {
+				continue
 			}
-			sparse, begin := time.Minute, from
 			switch {
-			case k == model.KindICMP:
-				iv = 5 * time.Second
-			case k == model.KindUDP:
-				sparse = 15 * time.Second
-				begin = later(from, morning) // today's calls only
-			case t.Layer == "":
-				begin = later(from, live) // services: the live windows only
-			}
-			for ts := begin.Truncate(iv); ts.Before(now); {
-				if !ts.Before(from) && !off(ts) {
-					s.observe(t, k, ts)
-				}
-				if ts.Before(live) {
-					ts = ts.Add(sparse)
-				} else {
-					ts = ts.Add(iv)
-				}
+			case e.Kind == tiles.EpDrop || e.Sev == tiles.Down && slices.Contains(e.Tiles, t.ID):
+				v = math.NaN()
+			case e.Connection && d.Kind == profile.TileCall:
+				v = u + 12 + rnd()*6 // a lossy provider: the delay rises a little
+			case slices.Contains(e.Tiles, t.ID):
+				v = u*2.6 + rnd()*6
 			}
 		}
+		c.Ms[k] = v
 	}
-}
-
-func later(a, b time.Time) time.Time {
-	if a.After(b) {
-		return a
-	}
-	return b
-}
-
-func (s *Scenario) observe(t model.Target, k model.ProbeKind, ts time.Time) {
-	key := func(k model.ProbeKind) model.SeriesKey { return model.SeriesKey{Target: t.Name, Kind: k} }
-	if k != model.KindUDP {
-		x := model.Sample{Key: key(k), Slot: ts, RTT: rttOf(t)}
-		if s.lost(t, k, ts) {
-			x.Lost, x.Reason, x.RTT = true, model.ReasonTimeout, 0
+	for _, e := range mine {
+		if !e.Connection && !slices.Contains(e.Tiles, t.ID) {
+			continue
 		}
-		s.Store.Observe(x)
-		return
+		c.Bands = append(c.Bands, tiles.Band{From: e.Start, To: e.End, Kind: tiles.BandProblem, Episode: e.ID, Sev: e.Sev, Cause: e.Cause})
 	}
-	ans, rtt, jit := s.burst(t, ts)
-	u := model.Sample{Key: key(model.KindUDP), Slot: ts}
-	j := model.Sample{Key: key(model.KindUDPJitter), Slot: ts}
-	l := model.Sample{Key: key(model.KindUDPLoss), Slot: ts, RTT: time.Duration((5-ans)*20) * time.Millisecond}
-	if ans > 0 {
-		u.RTT = time.Duration(rtt * float64(time.Millisecond))
-	} else {
-		u.Lost, u.Reason = true, model.ReasonTimeout
+	if b.s.FirstData.After(c.From) {
+		c.Bands = append(c.Bands, tiles.Band{From: c.From, To: b.s.FirstData, Kind: tiles.BandOff})
 	}
-	if ans >= 2 {
-		j.RTT = time.Duration(jit * float64(time.Millisecond))
-	} else {
-		j.Lost, j.Reason = true, model.ReasonGap
+	for _, o := range b.off {
+		if o[1].After(c.From) && o[0].After(b.s.FirstData) {
+			c.Bands = append(c.Bands, tiles.Band{From: o[0], To: o[1], Kind: tiles.BandOff})
+		}
 	}
-	s.Store.Observe(u)
-	s.Store.Observe(j)
-	s.Store.Observe(l)
+	slices.SortStableFunc(c.Bands, func(x, y tiles.Band) int { return x.From.Compare(y.From) })
+	return c
 }
 
-// rttOf is a plausible, steady RTT per layer.
-func rttOf(t model.Target) time.Duration {
-	switch t.Layer {
-	case model.LayerGateway:
-		return 2 * time.Millisecond
-	case model.LayerEdge:
-		return 8 * time.Millisecond
-	case model.LayerAnycast:
-		return 12 * time.Millisecond
+func (b *sb) isOff(t time.Time) bool {
+	for _, o := range b.off {
+		if !t.Before(o[0].Truncate(bar)) && t.Before(o[1]) {
+			return true
+		}
 	}
-	return 24 * time.Millisecond
+	return false
 }
+
+// Live is a scenario that goes on (cmd/fyisp-webdev -home): it is
+// rebuilt every minute as of then, and between rebuilds its checks stay
+// a few seconds old.
+type Live struct {
+	Name string
+	Now  func() time.Time
+
+	mu    sync.Mutex
+	at    time.Time
+	built *Scenario
+}
+
+// Current is the scenario as of now.
+func (l *Live) Current() *Scenario {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.Now()
+	if t := now.Truncate(time.Minute); l.built == nil || !t.Equal(l.at) {
+		v, err := Build(l.Name, t)
+		if err != nil {
+			panic(err) // the name was checked at start
+		}
+		l.at, l.built = t, v
+	}
+	v := *l.built
+	s := *v.Snap
+	shift := now.Sub(l.at)
+	s.At = now
+	if !s.LastMeasured.IsZero() && s.Conn.Kind != tiles.ConnStale {
+		s.LastMeasured = s.LastMeasured.Add(shift)
+	}
+	v.Snap = &s
+	return &v
+}
+
+func (l *Live) Ready() bool                             { return l.Current().Ready() }
+func (l *Live) Snapshot() *tiles.Snapshot               { return l.Current().Snap }
+func (l *Live) Chart(id string) (*tiles.Chart, bool)    { return l.Current().Chart(id) }
+func (l *Live) Problems(from time.Time) []tiles.Episode { return l.Current().Problems(from) }
+func (l *Live) LateSamples() int                        { return 0 }
