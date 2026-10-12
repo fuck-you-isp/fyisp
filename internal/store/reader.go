@@ -379,6 +379,9 @@ func sortedMem(mem map[hourKey]*memBlock, k *model.SeriesKey) []*memBlock {
 	return out
 }
 
+// rawHours is how many hours one Raw query looks up.
+const rawHours = 256
+
 // Raw calls fn for every stored slot of keys in [from, to], key by key in
 // the given order, in time order: measured values, losses, and not-measured
 // slots (Lost true, Reason ReasonGap). It includes hours still in memory.
@@ -442,9 +445,19 @@ func (s *SQLite) Raw(ctx context.Context, keys []model.SeriesKey, from, to time.
 			}
 			return nil
 		}
-		if id, ok := ids[k]; ok {
+		// Point lookups on the (hour, series) key, rawHours at a time: a
+		// range of hours with series = ? would scan every series' rows in
+		// it (thousands per hour with --profile all).
+		id, stored := ids[k]
+		for h := hFrom; stored && h <= hTo; h += rawHours {
+			n := min(rawHours, hTo-h+1)
+			args := make([]any, 0, n+1)
+			args = append(args, id)
+			for i := range n {
+				args = append(args, h+i)
+			}
 			if err := func() error {
-				rows, err := tx.QueryContext(ctx, `SELECT hour, data FROM samples WHERE hour BETWEEN ? AND ? AND series = ? ORDER BY hour`, hFrom, hTo, id)
+				rows, err := tx.QueryContext(ctx, `SELECT hour, data FROM samples WHERE series = ? AND hour IN (`+inList(int(n))+`) ORDER BY hour`, args...)
 				if err != nil {
 					return err
 				}
