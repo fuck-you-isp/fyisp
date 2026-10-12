@@ -529,7 +529,7 @@ func TestHomeCopyWords(t *testing.T) {
 			}
 		}
 	}
-	texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good"), cp.picksServer([]string{"Zoom"}), cp.picksServer([]string{"Zoom", "Slack"}), cp.culprit(true), cp.culprit(false), cp.affectedBy(whoHome), cp.affectedBy(whoOffline), cp.knownBlock(),
+	texts = append(texts, cp.serversDown(), cp.otherLine(1), cp.otherLine(3), cp.sharedPath("Good", false), cp.sharedPath("Good", true), cp.picksServer([]string{"Zoom"}), cp.picksServer([]string{"Zoom", "Slack"}), cp.culprit(true), cp.culprit(false), cp.affectedBy(whoHome), cp.affectedBy(whoOffline), cp.knownBlock(),
 		cp.callWords("short", "rare", "bit_uneven"), cp.appsWords("warn", []string{"work apps", "websites"}), cp.cantTell(), cp.callLabel("cant_tell"), cp.quietHint())
 	for _, x := range texts {
 		all = append(all, x)

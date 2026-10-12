@@ -1,6 +1,7 @@
-# fyisp default profile: what a home and a remote worker rely on. 22 targets
+# fyisp default profile: what a home and a remote worker rely on. 28 targets
 # in 4 groups (one dashboard panel each); the Home view sorts them into its
-# tiles by their home: tag (see package profile, HomeCategory).
+# tiles by their home: and tile: tags (see package profile, HomeCategory and
+# Tiles): every one of Home's 11 app tiles has a target here.
 #
 # Every target is a catalog target (catalog/*.yml), named here with its
 # group and, optionally, `trace: true`: everything else (host, port, kinds,
@@ -16,9 +17,15 @@
 # path's STUN targets send a burst of 5 Binding Requests every 5s (15s for
 # Cloudflare-UDP53). Two targets have an always-on traceroute (every 5s).
 #
-# Left out on purpose, each a --profile away: the Teams relay (calls, opt-in),
-# streaming (its lookups would show up in an employer's DNS logs every
-# minute, as would social sites), clouds and gaming.
+# The trade-off: fyisp looks up every target's name about once a minute
+# (probe.ResolveEvery), so the DNS resolver, on a work laptop often the
+# employer's, sees github.com, dropbox.com, onedrive.live.com, youtube.com,
+# netflix.com and the Teams relay all day, as if they were in use; the relay
+# also gets a STUN burst every 5s. Opt out with a --config file that
+# `extends: [default]` and has `remove: [YouTube, Netflix]` (any target
+# here can be removed that way; see README, Privacy). Clouds, gaming, social
+# sites, the rest of streaming and the Teams relay pools over TCP stay a
+# --profile away.
 name: default
 version: "1"
 
@@ -29,11 +36,13 @@ groups:
   - {id: web, title: "Websites", order: 4}
 
 targets:
-  # Call path (UDP): STUN to three independent providers (catalog/calls-stun.yml)
+  # Call path (UDP): STUN to four independent providers (catalog/calls-stun.yml);
+  # Meet-STUN and Teams-Relay are Google Meet's and Microsoft Teams' own servers
   - {name: Meet-STUN, group: calls}
   - {name: Cloudflare-STUN, group: calls}
   - {name: Cloudflare-UDP53, group: calls}
   - {name: Twilio-STUN-global, group: calls}
+  - {name: Teams-Relay, group: calls}
   # Call & chat apps (catalog/services-communication.yml)
   - {name: Microsoft-Teams, group: call-apps, trace: true}
   - {name: Zoom, group: call-apps}
@@ -49,9 +58,15 @@ targets:
   - {name: Google-Gmail, group: work}
   - {name: Google-Docs, group: work}
   - {name: Google-Drive, group: work}
-  # Websites: most popular sites are served by one of these CDNs (catalog/cdn-*.yml)
+  - {name: dev-GitHub, group: work} # catalog/services-dev.yml
+  - {name: Dropbox, group: work}
+  - {name: OneDrive, group: work}
+  # Websites: most popular sites are served by one of these CDNs (catalog/cdn-*.yml),
+  # plus the two biggest streaming services (catalog/services-streaming.yml)
   - {name: CDN-Cloudflare, group: web, trace: true}
   - {name: CDN-Akamai, group: web}
   - {name: CDN-Fastly, group: web}
   - {name: CDN-CloudFront, group: web}
   - {name: CDN-Google, group: web}
+  - {name: YouTube, group: web}
+  - {name: Netflix, group: web}

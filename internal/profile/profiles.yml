@@ -3,10 +3,11 @@
 # --config file; list them with `fyisp profiles`.
 #
 # Not listed here:
-#   default    the embedded default.yml: 22 catalog targets a home and a
+#   default    the embedded default.yml: 28 catalog targets a home and a
 #              remote worker rely on (call path, call and chat apps, work apps,
-#              websites). Used when no --profile or --config is given (or
-#              FYISP_PROFILE); every other profile is opt-in
+#              websites, YouTube and Netflix). Used when no --profile or
+#              --config is given (or FYISP_PROFILE); every other profile is
+#              opt-in
 #   <provider> every catalog file is also a profile named by its provider ID
 #              (aws, gcp, azure, hetzner, ...), unless defined below
 #

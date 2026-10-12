@@ -167,7 +167,7 @@ func TestResolveCombine(t *testing.T) {
 		t.Errorf("default's part changed when combined: %v", names(p.Targets))
 	}
 	extra := names(p.Targets[len(def.Targets):])
-	if !slices.Contains(extra, "Teams-Relay") || slices.Contains(extra, "Microsoft-Teams") || slices.Contains(extra, "Meet-STUN") {
+	if !slices.Contains(extra, "Meet-STUN-3478") || slices.Contains(extra, "Teams-Relay") || slices.Contains(extra, "Microsoft-Teams") || slices.Contains(extra, "Meet-STUN") {
 		t.Errorf("added %v", extra)
 	}
 	if err := Validate(p, Limits{}); err != nil {

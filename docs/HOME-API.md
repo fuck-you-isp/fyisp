@@ -182,7 +182,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 - `fact` is set only when the call path or an app had a scored bad minute in the last 5 minutes. It never holds a time: show `fact_at` in the viewer's locale.
 - `since` is the verdict's `since`, or the first minute of the current bad call run.
 - `calls` is omitted when the profile has no `udp-path` targets; the Calls tile then has only web-reachable apps, and its state is `reachable` or `not_answering`.
-- `apps` lists every call app that has a target in the profile, in the fixed order teams, meet, zoom, slack, discord, whatsapp, webex. Teams without the opt-in relay is `reachable`/`not_answering`, with a `note` naming the shared call path's state.
+- `apps` lists every call app that has a target in the profile, in the fixed order teams, meet, zoom, slack, discord, whatsapp, webex. Teams without its relay (a profile that removes or lacks Teams-Relay), and Meet or Teams while their own call servers aren't answering but others are, are `reachable`/`not_answering`, with a `note` naming the shared call path's state ("Its own call server isn't answering; your other call servers: Good." in the second case).
 - **Warming up** (`answer.level = "checking"`):
   - Every tile is `checking`.
   - `fact`, `calls.words` and every number are omitted.
@@ -383,7 +383,7 @@ None of these may appear in any copy field: STUN, UDP, TCP, ICMP, anycast, MOS, 
 
 ## Development: scenarios and golden files
 
-`internal/web/homescen` builds the Home scenarios: the default profile (`--profile aws` for `clouds-other`), a week of stored samples, and a verdict with its outage log. It covers good, warming, wifi, isp, upstream, one-app-down, calls-choppy, udp-blocked, no-network, week-with-gaps and clouds-other.
+`internal/web/homescen` builds the Home scenarios: the default profile (`--profile aws` for `clouds-other`), a week of stored samples, and a verdict with its outage log. It covers good, warming, wifi, isp, upstream, one-app-down, calls-choppy, udp-blocked, no-network, week-with-gaps, clouds-other and teams-relay-down.
 
 - **`cmd/fyisp-webdev -home <scenario>`** serves the **real** `/api/home` (and the rest of the dashboard) over that data, and keeps adding samples as time passes.
 - **`internal/web/testdata/home/<scenario>.json`** pins every scenario: live, today, the week, and `part=at` 5 minutes ago, on Friday 2026-10-09 at 14:30 (UTC+2). This is where the copy is reviewed.

@@ -121,6 +121,11 @@ var displayNames = map[string]string{
 	"Google-Gmail":    "Gmail",
 	"Google-Docs":     "Google Docs",
 	"Google-Drive":    "Google Drive",
+	"dev-GitHub":      "GitHub",
+	"Dropbox":         "Dropbox",
+	"OneDrive":        "OneDrive",
+	"YouTube":         "YouTube",
+	"Netflix":         "Netflix",
 	"Microsoft-Teams": "Teams",
 	"Google-Meet":     "Google Meet",
 	"Zoom":            "Zoom",
@@ -273,7 +278,12 @@ func (c homeCopy) otherLine(n int) string {
 	return strconv.Itoa(n) + " other services aren't working well from here."
 }
 
-func (c homeCopy) sharedPath(label string) string {
+// sharedPath is the note of a call app judged on the shared call path;
+// ownDown: its own call server is not answering while others do.
+func (c homeCopy) sharedPath(label string, ownDown bool) string {
+	if ownDown {
+		return "Its own call server isn't answering; your other call servers: " + label + "."
+	}
 	if label == c.callLabel(callBlocked) {
 		return "Some call connections blocked, as for your other apps."
 	}

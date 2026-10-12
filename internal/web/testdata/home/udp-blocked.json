@@ -273,7 +273,7 @@
           "Zoom"
         ],
         "more": 4,
-        "ok": 6,
+        "ok": 5,
         "total": 7,
         "details": "#v=calls"
       },
@@ -288,9 +288,9 @@
           "Microsoft 365",
           "Microsoft sign-in"
         ],
-        "more": 3,
-        "ok": 6,
-        "total": 6,
+        "more": 6,
+        "ok": 9,
+        "total": 9,
         "details": "#v=o\u0026ot=work"
       },
       {
@@ -304,9 +304,9 @@
           "Akamai",
           "Fastly"
         ],
-        "more": 2,
-        "ok": 5,
-        "total": 5,
+        "more": 4,
+        "ok": 7,
+        "total": 7,
         "details": "#v=o\u0026ot=web"
       }
     ],
@@ -317,10 +317,9 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Some call connections blocked, as for your other apps."
+        "level": "warn",
+        "state": "blocked",
+        "label": "Blocked"
       },
       {
         "app": "meet",

@@ -78,7 +78,7 @@ func TestStructure(t *testing.T) {
 	}
 	// The default profile: TCP connects to the services, pings on the path.
 	for _, want := range []string{
-		"fyisp measured 22 targets in 5 groups from this connection: TCP connects (time to open a connection) every 15",
+		"fyisp measured 28 targets in 5 groups from this connection: TCP connects (time to open a connection) every 15",
 		"and UDP STUN bursts (5 requests 20 ms apart, the path call audio and video use) every 5",
 		"are pinged every 1",
 		"2 public resolvers (big anycast DNS resolvers) are pinged every 5",

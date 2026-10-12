@@ -41,8 +41,8 @@ func TestDefaultMatchesCatalog(t *testing.T) {
 		}
 		traced[tg.Name] = tg.Trace
 	}
-	if n := len(withoutPath(p.Targets)); n != 22 {
-		t.Errorf("%d targets, want 22", n)
+	if n := len(withoutPath(p.Targets)); n != 28 {
+		t.Errorf("%d targets, want 28", n)
 	}
 	for n, on := range traced {
 		if on != (n == "Microsoft-Teams" || n == "CDN-Cloudflare") {
@@ -97,10 +97,10 @@ func TestDefaultGroups(t *testing.T) {
 		count[tg.Group] = append(count[tg.Group], tg.Name)
 	}
 	want := map[string][]string{
-		"calls":     {"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global"},
+		"calls":     {"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global", "Teams-Relay"},
 		"call-apps": {"Microsoft-Teams", "Zoom", "Google-Meet", "Slack", "Webex", "Discord", "WhatsApp-Chat"},
-		"work":      {"M365-Outlook", "M365-Portal", "M365-Login", "Google-Gmail", "Google-Docs", "Google-Drive"},
-		"web":       {"CDN-Cloudflare", "CDN-Akamai", "CDN-Fastly", "CDN-CloudFront", "CDN-Google"},
+		"work":      {"M365-Outlook", "M365-Portal", "M365-Login", "Google-Gmail", "Google-Docs", "Google-Drive", "dev-GitHub", "Dropbox", "OneDrive"},
+		"web":       {"CDN-Cloudflare", "CDN-Akamai", "CDN-Fastly", "CDN-CloudFront", "CDN-Google", "YouTube", "Netflix"},
 	}
 	if !reflect.DeepEqual(count, want) {
 		t.Errorf("groups %v", count)
@@ -157,7 +157,7 @@ add:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Name != "mine" || len(p.Targets) != 21+4 {
+	if p.Name != "mine" || len(p.Targets) != 27+4 {
 		t.Fatalf("name %q, %d targets", p.Name, len(p.Targets))
 	}
 	if len(p.Groups) != 6 || p.Groups[0].ID != PathGroup || p.Groups[5].ID != "home" || p.Groups[5].Order != 5 || p.Groups[4].Title != "Sites" {
@@ -311,7 +311,7 @@ func TestPathGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Targets) != 22+4 || p.Groups[0].ID != PathGroup {
+	if len(p.Targets) != 28+4 || p.Groups[0].ID != PathGroup {
 		t.Errorf("path: true: %d targets, groups %+v", len(p.Targets), p.Groups)
 	}
 	// Negative orders still sort after the path group.
@@ -505,8 +505,8 @@ add:
 	}
 }
 
-// TestShippedUDP pins the STUN targets: default has four (no Teams relay:
-// it is opt-in), calls has every STUN target plus the call apps over TCP.
+// TestShippedUDP pins the STUN targets: default has five (the Teams relay
+// included), calls has every STUN target plus the call apps over TCP.
 func TestShippedUDP(t *testing.T) {
 	r, err := Builtin()
 	if err != nil {
@@ -522,7 +522,7 @@ func TestShippedUDP(t *testing.T) {
 		return out
 	}
 	def, _ := Default()
-	if got := udpNames(def); !slices.Equal(got, []string{"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global"}) {
+	if got := udpNames(def); !slices.Equal(got, []string{"Meet-STUN", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global", "Teams-Relay"}) {
 		t.Errorf("default UDP targets %v", got)
 	}
 	calls, err := r.Resolve([]string{"calls"}, ResolveOptions{})

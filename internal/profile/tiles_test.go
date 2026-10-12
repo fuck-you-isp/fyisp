@@ -90,6 +90,8 @@ func tileSummary(rs []ResolvedTile) []string {
 	return out
 }
 
+// TestResolveTilesDefault checks that the default covers every tile, one
+// target each at least, with Teams judged on its own relay.
 func TestResolveTilesDefault(t *testing.T) {
 	p, err := Default()
 	if err != nil {
@@ -98,15 +100,53 @@ func TestResolveTilesDefault(t *testing.T) {
 	shared := "udp=Cloudflare-STUN,Cloudflare-UDP53,Twilio-STUN-global shared"
 	want := []string{
 		"zoom web=Zoom " + shared,
-		"teams web=Microsoft-Teams " + shared + " missing=Teams-Relay-Global,Teams-Relay-EU,Teams-Relay-US,Teams-Relay",
+		"teams web=Microsoft-Teams udp=Teams-Relay missing=Teams-Relay-Global,Teams-Relay-EU,Teams-Relay-US",
 		"meet web=Google-Meet udp=Meet-STUN missing=Google-Meet-Web,Google-Meet-Media,Google-Meet-Media-Workspace,Meet-STUN-3478",
 		"slack web=Slack " + shared + " missing=Slack-Backup",
 		"m365 web=M365-Outlook,M365-Portal,M365-Login udp=",
 		"gws web=Google-Gmail,Google-Docs,Google-Drive udp=",
-		"github off", "dropbox off", "onedrive off", "youtube off", "netflix off",
+		"github web=dev-GitHub udp=",
+		"dropbox web=Dropbox udp=",
+		"onedrive web=OneDrive udp=",
+		"youtube web=YouTube udp= missing=YouTube-Video",
+		"netflix web=Netflix udp= missing=Netflix-Fast",
 	}
 	if got := tileSummary(ResolveTiles(p)); !slices.Equal(got, want) {
 		t.Errorf("default:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestDefaultWithoutStreaming checks the opt-out the README documents: a
+// --config file that extends the default and removes the streaming targets
+// turns their tiles off and keeps the others.
+func TestDefaultWithoutStreaming(t *testing.T) {
+	p, err := Load(write(t, "extends: [default]\nremove: [YouTube, Netflix]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var off []string
+	for _, rt := range ResolveTiles(p) {
+		if rt.Off() {
+			off = append(off, rt.ID)
+		}
+	}
+	if !slices.Equal(off, []string{"youtube", "netflix"}) {
+		t.Errorf("off %v, want [youtube netflix]", off)
+	}
+	if slices.ContainsFunc(p.Targets, func(t model.Target) bool { return slices.Contains(t.Tags, "streaming") }) {
+		t.Errorf("a streaming target is left")
+	}
+}
+
+// TestDefaultWithoutRelay checks the other opt-out: without the Teams
+// relay, Teams is judged on the shared call path again.
+func TestDefaultWithoutRelay(t *testing.T) {
+	p, err := Load(write(t, "extends: [default]\nremove: [Teams-Relay]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tileSummary(ResolveTiles(p))[1]; got != "teams web=Microsoft-Teams udp=Cloudflare-STUN,Cloudflare-UDP53,Twilio-STUN-global shared missing=Teams-Relay-Global,Teams-Relay-EU,Teams-Relay-US,Teams-Relay" {
+		t.Errorf("teams: %s", got)
 	}
 }
 
@@ -125,7 +165,7 @@ func TestResolveTilesNamed(t *testing.T) {
 		{"all", "", "zoom slack"},
 		{"calls", "m365 gws github dropbox onedrive youtube netflix", "zoom slack"},
 		{"all,calls", "", "zoom slack"},
-		{"default,streaming", "github dropbox onedrive", "zoom teams slack"},
+		{"default,streaming", "", "zoom slack"},
 		{"clouds", "zoom teams meet slack m365 gws github dropbox onedrive youtube netflix", ""},
 	}
 	for _, c := range cases {

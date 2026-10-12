@@ -31,7 +31,13 @@ func TestHomeCategory(t *testing.T) {
 
 // TestHomeCategoriesShipped checks the home: tags of the catalog and the
 // default: at most one per catalog target, exactly one per default target,
-// and each agrees with what the target's other tags and provider imply.
+// and each agrees with what the target's other tags and provider imply,
+// except where a default target is tagged on purpose (homeTagged).
+// homeTagged are default targets whose home: tag differs from the derived
+// category on purpose: GitHub is a work app for the default's remote
+// workers, while the rest of the developer services stay "other".
+var homeTagged = map[string]bool{"dev-GitHub": true}
+
 func TestHomeCategoriesShipped(t *testing.T) {
 	r, err := Builtin()
 	if err != nil {
@@ -68,11 +74,11 @@ func TestHomeCategoriesShipped(t *testing.T) {
 				untagged.Tags = append(untagged.Tags, tag)
 			}
 		}
-		if d := HomeCategory(untagged); d != c {
+		if d := HomeCategory(untagged); d != c && !homeTagged[tg.Name] {
 			t.Errorf("default %s: tagged %s, derived %s", tg.Name, c, d)
 		}
 	}
-	if got[HomeCalls] != 11 || got[HomeWork] != 6 || got[HomeWeb] != 5 || len(got) != 3 {
+	if got[HomeCalls] != 12 || got[HomeWork] != 9 || got[HomeWeb] != 7 || len(got) != 3 {
 		t.Errorf("default categories %v", got)
 	}
 }

@@ -12,11 +12,11 @@ Checked on 2026-10-10 before the call-quality release (v0.5.0), as the plan's "B
 | Cloudflare `stun.cloudflare.com:3478` and `:53` | default | **OK** | It's documented as "free and unlimited", and both ports are listed; no account is needed. |
 | Twilio `global.stun.twilio.com:3478` | default | **OK with caveat** | Twilio documents STUN as free and shows the host with no credentials. Its AUP bans "automated means … to gain access to or use the Services", which is aimed at bots but is literally broad. |
 | Twilio `{us1,us2,ie1,de1,sg1,jp1,au1,br1,in1}.stun.twilio.com:3478` | calls | **Do not ship** | These hostnames aren't documented. The regions page lists only IP ranges, and region pinning is documented only by **edge name** (`frankfurt.stun.twilio.com`). The `us1`-style codes are retired legacy region IDs, and `in1` is not even on that legacy list. |
-| Microsoft Teams `worldaz.tr.teams.microsoft.com:3478` | calls only (opt-in) | **Do not ship** | The hostname isn't documented; only `world.tr.teams.microsoft.com`, which is a CNAME to it, is named. Microsoft documents the relays for licensed Microsoft 365 use by its own clients, not as a public STUN service, and its relay test tool "is not intended for load/stress testing". |
+| Microsoft Teams `worldaz.tr.teams.microsoft.com:3478` | default, calls (`calls` only when reviewed; in `default` since the [2026-10-12 owner decision](#owner-decision-2026-10-12-the-teams-relay-joins-the-default)) | **Do not ship** (overridden by the owner) | The hostname isn't documented; only `world.tr.teams.microsoft.com`, which is a CNAME to it, is named. Microsoft documents the relays for licensed Microsoft 365 use by its own clients, not as a public STUN service, and its relay test tool "is not intended for load/stress testing". |
 
 > **Do not ship:**
 > - **The 9 Twilio regional hosts** in the `calls` profile (`us1` … `in1`.stun.twilio.com).
-> - **The Microsoft Teams relay** `worldaz.tr.teams.microsoft.com` (opt-in, `calls` only).
+> - **The Microsoft Teams relay** `worldaz.tr.teams.microsoft.com` (`calls` only at the time of this review; in `default` since 2026-10-12).
 >
 > I didn't change the catalog or profiles; the owner decides. The team lead's recommendation is to ship Google and Cloudflare only, and drop Twilio and Teams. If Twilio regions are kept, the documented edge names (`ashburn`, `umatilla`, `dublin`, `frankfurt`, `singapore`, `tokyo`, `sydney`, `sao-paulo`, `mumbai`.stun.twilio.com) would make them **OK with caveat**, the same as global. Each would have to be re-verified first.
 
@@ -26,7 +26,7 @@ Also for the owner (not part of the STUN feature): the TCP targets `Teams-Relay-
 
 After reading this review, the owner decided to **ship every endpoint as it is**:
 - the Twilio regional hosts under their current names;
-- the Teams relay `worldaz` (opt-in, `calls` profile only);
+- the Teams relay `worldaz` (then opt-in, `calls` profile only; moved into `default` on 2026-10-12, see below);
 - the existing TCP targets `Teams-Relay-EU` and `Teams-Relay-US`.
 
 The verdicts above are kept as the record of the review.
@@ -36,6 +36,10 @@ If a provider objects, or a hostname stops resolving, drop or rename that target
 - Teams → `world.tr.teams.microsoft.com` probed every few minutes, or removed.
 
 Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.yml`, `twilio.yml`), and the README's STUN server table lists them all.
+
+## Owner decision (2026-10-12): the Teams relay joins the default
+
+For v0.9.0's Home, every call tile should be judged on its own call path where one exists, so the owner moved the Teams relay `worldaz` (unchanged: same host, 5 s bursts) into `default`. This overrides the "Keep it opt-in" advice below. The traffic estimate at the top (about 8 KB/s per provider for every 1,000 installs) now reaches Microsoft from every default install, not only from `calls` users. It can be left out with a `--config` file that `extends: [default]` and has `remove: [Teams-Relay]` (README, Privacy). The rest of the advice still stands if Microsoft objects: switch to the documented `world.tr.teams.microsoft.com`, slow the cadence, or drop it from the default again.
 
 ## Google: `stun.l.google.com`
 
@@ -85,7 +89,7 @@ If Twilio objects, the target can be removed in a release without breaking anyth
 - https://www.twilio.com/en-us/legal/aup: "Do not violate the integrity of the Services, including: … Harmful Code or Bots. … or using automated means, such as bots, to gain access to or use the Services."
 - https://www.twilio.com/en-us/legal/tos: "THE SERVICES ARE INTENDED FOR BUSINESS USE OR USE IN CONNECTION WITH AN INDIVIDUAL'S TRADE, CRAFT, OR PROFESSION ONLY."
 
-## Microsoft Teams: `worldaz.tr.teams.microsoft.com` (opt-in)
+## Microsoft Teams: `worldaz.tr.teams.microsoft.com` (in default since 2026-10-12)
 
 **Verdict: Do not ship.** This is the closest call in this review; the arguments both ways are below.
 
@@ -102,7 +106,7 @@ If Twilio objects, the target can be removed in a release without breaking anyth
 - The Network Assessment Tool page says it "is not intended for load/stress testing". About 1 request/s isn't load testing, but it does show that Microsoft cares how its relays are exercised.
 
 **If the owner keeps it anyway:**
-- Keep it opt-in, as it is today: only in `calls`, never in `default`.
+- Keep it opt-in, as it was at the time of this review: only in `calls`, never in `default`. (Overridden on 2026-10-12: it is in `default`; see the owner decision above.)
 - Probe the documented `world.tr.teams.microsoft.com` (the same pool) instead of `worldaz`.
 - Consider a slower cadence.
 

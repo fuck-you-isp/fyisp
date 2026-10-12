@@ -33,10 +33,10 @@ The old 91-target `default.yml` is **deleted**, along with `testdata/network_exp
 | **Websites** | **Websites** | CDN-Cloudflare (trace), CDN-Akamai, CDN-Fastly, CDN-CloudFront, CDN-Google |
 
 - **Size:** 22 targets (18 TCP, 4 UDP) plus 5 path targets, with 2 always-on traces (down from 8).
-- **Measured footprint:** the 26-target draft, including streaming, used **0.77% CPU, 70 MB and 4.3 GB/month**, against 2.45% CPU, 76 MB and 9.9 GB/month for the v0.5 default. Without streaming it will be lower. The README row gets re-measured with the 17-minute method, disk included.
-- ⚖ **Streaming is out of the default.** Netflix and Disney+ lookups would appear in an employer's DNS logs every minute, the same reason social sites are excluded. It's available with `--profile streaming`.
+- **Measured footprint:** the 26-target draft, including streaming, used **0.77% CPU, 70 MB and 4.3 GB/month**, against 2.45% CPU, 76 MB and 9.9 GB/month for the v0.5 default. Without streaming it will be lower.
+- ⚖ **Streaming is out of the default** (reversed in v0.9.0: YouTube and Netflix joined it). Netflix and Disney+ lookups would appear in an employer's DNS logs every minute, the same reason social sites are excluded. It's available with `--profile streaming`.
 - **The old DNS group is dropped.** It duplicated the path's TCP probes, and the `dns` verdict still covers DNS failures.
-- **Teams-Relay stays opt-in** (owner decision). Teams gets a "By app" row from its TCP target plus the shared call path: "Teams: reachable. Calls use your call path (Good)". This is **new code**: calls.go:461 drops Teams when the relay is missing. It needs a test. The `--profile default,calls` hint is removed from the UI.
+- **Teams-Relay stays opt-in** (owner decision; reversed in v0.9.0, when it joined the default). Teams gets a "By app" row from its TCP target plus the shared call path: "Teams: reachable. Calls use your call path (Good)". This is **new code**: calls.go:461 drops Teams when the relay is missing. It needs a test. The `--profile default,calls` hint is removed from the UI.
 - **Categories come from tags.** A fixed `home:calls|work|web` vocabulary is added to the catalog entries above.
   - `profile.Validate` rejects unknown `home:*` values.
   - The "exactly one category" test applies to the catalog and the default only.

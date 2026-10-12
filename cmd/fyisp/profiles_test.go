@@ -51,7 +51,7 @@ func TestLoadProfileFlags(t *testing.T) {
 		}
 	}
 	c, _ := parseFlags([]string{"--no-path"})
-	if p, _ := loadProfile(c); len(p.Targets) != 22 || p.Groups[0].ID == profile.PathGroup {
+	if p, _ := loadProfile(c); len(p.Targets) != 28 || p.Groups[0].ID == profile.PathGroup {
 		t.Errorf("--no-path: %d targets", len(p.Targets))
 	}
 	c, _ = parseFlags([]string{"--profile", "nope"})
@@ -127,7 +127,7 @@ func TestCmdProfiles(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	s := out.String()
-	for _, want := range []string{"PROFILE", "default", "22", "hyperscalers", "europe", "gaming", "all", "calls", "PROVIDER"} {
+	for _, want := range []string{"PROFILE", "default", "28", "hyperscalers", "europe", "gaming", "all", "calls", "PROVIDER"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("list lacks %q:\n%s", want, s)
 		}
@@ -140,7 +140,7 @@ func TestCmdProfiles(t *testing.T) {
 	if code := cmdProfiles([]string{"default"}, &out, &errb); code != 0 {
 		t.Fatal(code)
 	}
-	if s := out.String(); !strings.Contains(s, "Profile default: 22 targets in 4 panels") || !strings.Contains(s, "CDN-Google      www.gstatic.com/generate_204") {
+	if s := out.String(); !strings.Contains(s, "Profile default: 28 targets in 4 panels") || !strings.Contains(s, "CDN-Google      www.gstatic.com/generate_204") {
 		t.Errorf("default:\n%s", s)
 	}
 
@@ -179,7 +179,7 @@ func TestNoUDP(t *testing.T) {
 		return slices.ContainsFunc(p.Targets, func(tg model.Target) bool { return tg.IsUDP() })
 	}
 	p, err := loadProfile(c)
-	if err != nil || hasUDP(p) || len(p.Targets) != 18+4 || slices.ContainsFunc(p.Groups, func(g model.Group) bool { return g.ID == "calls" }) {
+	if err != nil || hasUDP(p) || len(p.Targets) != 23+4 || slices.ContainsFunc(p.Groups, func(g model.Group) bool { return g.ID == "calls" }) {
 		t.Fatalf("default --no-udp: %v, %d targets", err, len(p.Targets))
 	}
 	c, _ = parseFlags([]string{"--profile", "calls", "--no-udp"})

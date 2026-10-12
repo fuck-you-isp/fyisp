@@ -32,8 +32,8 @@ import (
 )
 
 // udpBase are base RTTs (ms) of the STUN targets' fake bursts (see
-// probe.FakeBurst), with the opt-in Teams relay for -profile default,calls
-// (its region shows in the state hook).
+// probe.FakeBurst), the Teams relay included (its region shows in the
+// state hook).
 var udpBase = map[string]float64{
 	"Meet-STUN": 9, "Cloudflare-STUN": 6, "Cloudflare-UDP53": 6, "Twilio-STUN-global": 24, "Teams-Relay": 31,
 }

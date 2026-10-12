@@ -148,9 +148,9 @@ type HomeApp struct {
 	App   string `json:"app"`
 	Title string `json:"title"`
 	Level string `json:"level"`
-	// State: a call state when its call path is measured (Meet; Teams with
-	// the opt-in relay); "reachable" or "not_answering" when only its
-	// website is (Teams by default, Zoom, Slack, ...).
+	// State: a call state when its call path is measured (Meet, Teams);
+	// "reachable" or "not_answering" when only its website is (Zoom, Slack,
+	// ..., and Teams when its relay is removed or not answering).
 	State string `json:"state"`
 	Label string `json:"label"`
 	Note  string `json:"note,omitempty"`

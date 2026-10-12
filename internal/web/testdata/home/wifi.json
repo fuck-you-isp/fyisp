@@ -323,17 +323,20 @@
           "Microsoft 365",
           "Microsoft sign-in"
         ],
-        "more": 3,
+        "more": 6,
         "affected": [
           "Outlook",
           "Microsoft 365",
           "Microsoft sign-in",
           "Gmail",
           "Google Docs",
-          "Google Drive"
+          "Google Drive",
+          "GitHub",
+          "Dropbox",
+          "OneDrive"
         ],
         "ok": 0,
-        "total": 6,
+        "total": 9,
         "details": "#v=o\u0026ot=work"
       },
       {
@@ -347,16 +350,18 @@
           "Akamai",
           "Fastly"
         ],
-        "more": 2,
+        "more": 4,
         "affected": [
           "websites using Cloudflare",
           "websites using Akamai",
           "websites using Fastly",
           "websites using Amazon CloudFront",
-          "websites using Google"
+          "websites using Google",
+          "YouTube",
+          "Netflix"
         ],
         "ok": 0,
-        "total": 5,
+        "total": 7,
         "details": "#v=o\u0026ot=web"
       }
     ],
@@ -372,10 +377,9 @@
       {
         "app": "teams",
         "title": "Teams",
-        "level": "checking",
-        "state": "cant_tell",
-        "label": "Can't tell right now",
-        "note": "We can't check this app while your connection has a problem."
+        "level": "bad",
+        "state": "unusable",
+        "label": "Breaking up"
       },
       {
         "app": "meet",

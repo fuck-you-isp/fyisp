@@ -18,7 +18,7 @@ import (
 
 // Names lists the scenarios.
 var Names = []string{"good", "warming", "wifi", "isp", "upstream", "one-app-down", "calls-choppy",
-	"udp-blocked", "no-network", "week-with-gaps", "clouds-other"}
+	"udp-blocked", "no-network", "week-with-gaps", "clouds-other", "teams-relay-down"}
 
 // Scenario is one situation. Store holds its samples up to the time Build
 // or Fill was last called with; Verdict is a verdict.Engine stand-in.
@@ -167,6 +167,15 @@ func Build(name string, now time.Time, loc *time.Location) (*Scenario, error) {
 			inc(83, model.VerdictLAN, day(1, 16, 2), day(1, 16, 6), 0.35),
 			inc(82, model.VerdictISP, day(1, 9, 40), day(1, 9, 52), 0.7),
 			inc(81, model.VerdictISP, day(3, 14, 5), day(3, 14, 20), 1),
+		}
+	case "teams-relay-down":
+		// Microsoft's relay stops answering while the other STUN servers
+		// do: Teams falls back to the shared call path, no verdict.
+		s.burst = func(t model.Target, ts time.Time) (int, float64, float64) {
+			if is(t, "Teams-Relay") && recent(ts, 2*time.Hour) {
+				return 0, 0, 0
+			}
+			return 5, 18, 2
 		}
 	case "clouds-other":
 		r, err := profile.Builtin()

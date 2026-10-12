@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"time"
 
@@ -128,15 +129,18 @@ type callsGroup struct {
 }
 
 // callsApp is one app. UDP is "measured" (Group set; Region is the Teams
-// relay's cloud region, local only), "shared" (an app whose own call
-// target is not in the profile, e.g. Teams without its opt-in relay: its
-// calls take the call path, Path) or "not_measurable". Web* is the TCP
+// relay's cloud region, local only), "shared" (its calls take the call
+// path, Path: an app whose own call target is not in the profile, e.g.
+// Teams with its relay removed, or, with OwnDown, one whose own call
+// servers are not answering while others do, Meet or Teams) or
+// "not_measurable". Web* is the TCP
 // connect time to the app's websites over the window (omitted without TCP
 // targets): mean RTT, loss fraction and samples.
 type callsApp struct {
-	App    string `json:"app"`
-	UDP    string `json:"udp"`
-	Region string `json:"region,omitempty"`
+	App     string `json:"app"`
+	UDP     string `json:"udp"`
+	Region  string `json:"region,omitempty"`
+	OwnDown bool   `json:"own_down,omitempty"`
 	*callsGroup
 	WebMs      *num `json:"web_ms,omitempty"`
 	WebLoss    *num `json:"web_loss,omitempty"`
@@ -395,6 +399,12 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 			regions[st.Target] = st.Region
 		}
 	}
+	// ownAlive: not all of an app's own STUN targets are down while others
+	// answer (callq.NotAnswering; when nothing answers, e.g. UDP blocked,
+	// they count as alive and show the block).
+	ownAlive := func(ts []model.Target) bool {
+		return slices.ContainsFunc(ts, func(t model.Target) bool { return !dead[idx[t.Name]] })
+	}
 	for _, a := range callq.Apps {
 		var ut, wt []model.Target
 		for _, t := range udp {
@@ -409,7 +419,7 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		}
 		app := callsApp{App: a.ID, UDP: "not_measurable"}
 		switch {
-		case a.Measurable && len(ut) > 0:
+		case a.Measurable && len(ut) > 0 && (len(wt) == 0 || ownAlive(ut)):
 			app.UDP = "measured"
 			app.callsGroup = group(ut)
 			for _, t := range ut {
@@ -420,7 +430,9 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		case len(wt) == 0:
 			continue // an app not in the profile
 		case a.Measurable:
-			app.UDP = "shared" // Teams without its opt-in relay: its calls take the shared call path
+			// Teams without its relay, or with the relay not answering while
+			// other STUN servers do: its calls take the shared call path.
+			app.UDP, app.OwnDown = "shared", len(ut) > 0
 		}
 		var sum float64
 		var ok, lost int
