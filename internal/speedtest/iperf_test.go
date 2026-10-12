@@ -85,6 +85,14 @@ func newFakeServer(t *testing.T, mode string) *fakeServer {
 	return f
 }
 
+const (
+	// maxCatchUp bounds the ticks one download write makes up.
+	maxCatchUp = 4
+	// upRate is the bytes per second the fake reads per upload stream
+	// (~80 MB/s for 3 streams).
+	upRate = 256 << 10 * 100
+)
+
 func (f *fakeServer) addr() string { return f.ln.Addr().String() }
 
 func (f *fakeServer) fail(err error) {
@@ -210,25 +218,32 @@ func (f *fakeServer) session(c net.Conn) {
 		go func() {
 			defer wg.Done()
 			if reverse {
-				buf := make([]byte, f.rate)
+				// Each write carries the bytes due since the last one, so
+				// ticks a busy machine drops are made up and every second
+				// carries the same bytes (up to maxCatchUp ticks at once).
+				buf := make([]byte, maxCatchUp*f.rate)
 				tk := time.NewTicker(10 * time.Millisecond)
 				defer tk.Stop()
 				t0 := time.Now()
+				last := t0
 				for {
 					select {
 					case <-stop:
 						return
 					case <-tk.C:
-						n := len(buf)
+						now := time.Now()
+						n := int(float64(f.rate) * min(maxCatchUp, float64(now.Sub(last))/float64(10*time.Millisecond)))
+						last = now
 						if f.mode == "ramp" { // slow start: full rate after 500 ms
 							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(500*time.Millisecond)))
 						}
 						if f.mode == "slowramp" { // a far path's slow start: full rate after 2.5 s
 							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(2500*time.Millisecond)))
 						}
-						if f.mode == "climb" { // still speeding up, faster and faster, until 2 s
-							x := min(1, float64(time.Since(t0))/float64(2*time.Second))
-							n = int(float64(n) * x * x * x * x)
+						if f.mode == "climb" { // still speeding up, faster and faster, for 4 s: past
+							// a 2 s run however late the client's clock starts after ours
+							x := float64(time.Since(t0)) / float64(4*time.Second)
+							n = int(float64(n) * min(1, x*x*x*x))
 						}
 						k, err := s.Write(buf[:max(n, 1)])
 						sent[i] += int64(k)
@@ -239,9 +254,18 @@ func (f *fakeServer) session(c net.Conn) {
 					}
 				}
 			}
+			// Uploads are read at upRate: unpaced, one moves GB/s over the
+			// loopback, which drops the probe package's packets when go
+			// test runs the packages side by side (macOS, issue #15).
 			buf := make([]byte, 64<<10)
+			t0 := time.Now()
+			var got int64
 			for {
+				if ahead := time.Duration(float64(got)/upRate*float64(time.Second)) - time.Since(t0); ahead > 0 {
+					time.Sleep(ahead)
+				}
 				k, err := s.Read(buf)
+				got += int64(k)
 				recv[i] += int64(k)
 				f.in.Add(int64(k))
 				if err != nil {
@@ -802,6 +826,31 @@ func TestTimeCapped(t *testing.T) {
 		if err != nil || r.CappedByBytes || r.RateMethod != MethodPeak90 || r.LowerBound != c.lb {
 			t.Errorf("%q: %v %+v", c.mode, err, r)
 		}
+	}
+}
+
+// TestSteadyLateTick: a tick read late on a busy machine moves bytes from
+// one second to the next; at a level rate that is still steady.
+func TestSteadyLateTick(t *testing.T) {
+	const rate = 1e6 // bytes/s
+	tt := &test{c: Config{MinDuration: time.Second, Stable: 0.05}}
+	var cum []int64
+	var at []time.Duration
+	for i := range 30 {
+		a := time.Duration(i+1) * tick
+		if i == 19 { // the tick between the last two seconds, 60 ms late
+			a += 60 * time.Millisecond
+		}
+		cum, at = append(cum, int64(rate*a.Seconds())), append(at, a)
+	}
+	if !tt.steady(cum, at, false) {
+		t.Error("a level rate with a late tick is not steady")
+	}
+	for i := 20; i < 30; i++ { // the last second 10% faster
+		cum[i] += int64(float64(i-19) * rate * tick.Seconds() / 10)
+	}
+	if tt.steady(cum, at, false) {
+		t.Error("a 10% faster last second is steady")
 	}
 }
 

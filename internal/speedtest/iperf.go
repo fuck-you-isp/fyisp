@@ -713,6 +713,10 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		}
 		res.LowerBound = capped
 	}
+	// An upload's acked bytes can run ahead of the written count: the
+	// kernel acks part of a block before its Write returns. Every byte
+	// measured was moved.
+	res.TotalBytes = max(res.TotalBytes, res.Bytes)
 	if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
 		ms := make([]float64, len(ats))
 		for i, a := range ats {
@@ -763,7 +767,14 @@ func (t *test) steady(cum []int64, at []time.Duration, written bool) bool {
 	if at[k-1]-from < t.c.MinDuration {
 		return false
 	}
-	cur, prevSec := float64(cum[k-1]-cum[k-1-per]), float64(cum[k-1-per]-cum[k-1-2*per])
+	// Rates over the ticks' actual times: a tick read late on a busy
+	// machine moves bytes from one second to the next.
+	span := func(i, j int) float64 { return (at[j] - at[i]).Seconds() }
+	if span(k-1-per, k-1) <= 0 || span(k-1-2*per, k-1-per) <= 0 {
+		return false
+	}
+	cur := float64(cum[k-1]-cum[k-1-per]) / span(k-1-per, k-1)
+	prevSec := float64(cum[k-1-per]-cum[k-1-2*per]) / span(k-1-2*per, k-1-per)
 	return prevSec > 0 && math.Abs(cur-prevSec) <= t.c.Stable*prevSec
 }
 
