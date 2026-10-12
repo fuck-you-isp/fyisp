@@ -266,3 +266,64 @@ func TestOneDriveTarget(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveTilesOverride checks a --config override that replaces a
+// catalog target's tags: the target no longer feeds its tile and is
+// reported as untagged, not just missing.
+func TestResolveTilesOverride(t *testing.T) {
+	p, err := Load(write(t, `extends: [default]
+override:
+  - {name: Zoom, tags: [voice]}
+  - {name: Google-Meet, tags: [app:meet, tile:meet]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := ResolveTiles(p)
+	if z := rs[0]; !z.Off() || !slices.Equal(z.Missing, []string{"Zoom"}) || !slices.Equal(z.Untagged, []string{"Zoom"}) {
+		t.Errorf("zoom: off %v missing %v untagged %v", z.Off(), z.Missing, z.Untagged)
+	}
+	// Meet keeps its tag; its absent catalog targets are missing, not untagged.
+	if m := rs[2]; m.Off() || len(m.Missing) != 4 || len(m.Untagged) != 0 {
+		t.Errorf("meet: missing %v untagged %v", m.Missing, m.Untagged)
+	}
+}
+
+// TestResolveTilesNoAliasing checks that resolved tiles share no slices
+// with Tiles or with each other.
+func TestResolveTilesNoAliasing(t *testing.T) {
+	p, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := ResolveTiles(p)
+	rs[0].UDP[0].Name = "changed"
+	rs[0].UDP = append(rs[0].UDP[:1], model.Target{Name: "appended"})
+	rs[1].Targets[0], rs[1].Vendors[0] = "changed", "changed"
+	rs[2].TileDef.UDP[0] = "changed"
+	if Tiles[1].Targets[0] != "Microsoft-Teams" || Tiles[1].Vendors[0] != "microsoft" || Tiles[2].UDP[0] != "Meet-STUN" {
+		t.Errorf("Tiles changed: %+v %+v", Tiles[1], Tiles[2])
+	}
+	if got := tileSummary(rs)[3]; got != "slack web=Slack udp=Cloudflare-STUN,Cloudflare-UDP53,Twilio-STUN-global shared missing=Slack-Backup" {
+		t.Errorf("slack shares zoom's call path: %s", got)
+	}
+}
+
+// TestValidateTileUDP checks that a UDP target only feeds a call tile.
+func TestValidateTileUDP(t *testing.T) {
+	cfg := `extends: [default]
+add:
+  - {name: my-stun, host: stun.example.com, group: calls, kinds: [udp], port: 3478, tags: [udp-path, %s]}
+`
+	if _, err := Load(write(t, fmt.Sprintf(cfg, "tile:netflix"))); err == nil ||
+		!strings.Contains(err.Error(), `tag "tile:netflix": UDP targets only feed call tiles`) {
+		t.Errorf("udp tile:netflix: %v", err)
+	}
+	if _, err := Load(write(t, fmt.Sprintf(cfg, "tile:zoom"))); err != nil {
+		t.Errorf("udp tile:zoom: %v", err)
+	}
+	cat := "provider: p\ndisplay: P\nkind: service\ntargets:\n  - {name: a, host: a.example, kinds: [udp], port: 3478, anycast: true, tags: [tile:gws]}\n"
+	if _, err := LoadCatalog(fstest.MapFS{"a.yml": {Data: []byte(cat)}}); err == nil || !strings.Contains(err.Error(), "only feed call tiles") {
+		t.Errorf("catalog udp tile:gws: %v", err)
+	}
+}

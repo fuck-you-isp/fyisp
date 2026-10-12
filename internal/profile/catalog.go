@@ -280,7 +280,7 @@ func (p *Provider) validate() error {
 		if err := checkHomeTags(t.Tags); err != nil {
 			bad("target %q: %v", t.Name, err)
 		}
-		if err := checkTileTags(t.Tags); err != nil {
+		if err := checkTileTags(t.Tags, ks[model.KindUDP]); err != nil {
 			bad("target %q: %v", t.Name, err)
 		}
 		if t.Country != "" && !countryRe.MatchString(t.Country) {

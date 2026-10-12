@@ -56,7 +56,7 @@ var Tiles = []TileDef{
 	{ID: "gws", Name: "Google Workspace", Kind: TileApp, Vendors: []string{"google"},
 		Targets: []string{"Google-Gmail", "Google-Docs", "Google-Drive"}, Enable: "services-productivity"},
 	{ID: "github", Name: "GitHub", Kind: TileApp, Vendors: []string{"github"},
-		Targets: []string{"dev-GitHub"}, Enable: "dev"},
+		Targets: []string{"dev-GitHub"}, Enable: "services-dev"},
 	{ID: "dropbox", Name: "Dropbox", Kind: TileApp, Vendors: []string{"dropbox"},
 		Targets: []string{"Dropbox"}, Enable: "services-productivity"},
 	{ID: "onedrive", Name: "OneDrive", Kind: TileApp, Vendors: []string{"microsoft"},
@@ -93,8 +93,11 @@ type ResolvedTile struct {
 	// anycast STUN targets not tagged for an app or a tile.
 	UDP       []model.Target
 	SharedUDP bool
-	// Missing are the catalog targets of the tile the profile lacks.
-	Missing []string
+	// Missing are the catalog targets of the tile that do not feed it.
+	// Untagged are those of them the profile has by name, without the
+	// tile's tag (e.g. a --config override that replaced the tags).
+	Missing  []string
+	Untagged []string
 }
 
 // Off reports a tile the profile has no targets for.
@@ -105,10 +108,13 @@ func (r ResolvedTile) Off() bool { return len(r.Web) == 0 && len(r.UDP) == 0 }
 func ResolveTiles(p *model.Profile) []ResolvedTile {
 	out := make([]ResolvedTile, len(Tiles))
 	for i, d := range Tiles {
+		d.Vendors, d.Targets, d.UDP = slices.Clone(d.Vendors), slices.Clone(d.Targets), slices.Clone(d.UDP)
 		out[i].TileDef = d
 	}
 	var shared []model.Target
+	names := map[string]bool{}
 	for _, t := range p.Targets {
+		names[t.Name] = true
 		i := tileIndex(TileOf(t))
 		switch {
 		case i >= 0 && t.IsUDP():
@@ -122,26 +128,34 @@ func ResolveTiles(p *model.Profile) []ResolvedTile {
 	for i := range out {
 		r := &out[i]
 		if r.Kind == TileCall && len(r.UDP) == 0 && len(r.Web) > 0 && len(shared) > 0 {
-			r.UDP, r.SharedUDP = shared, true
+			r.UDP, r.SharedUDP = slices.Clone(shared), true
 		}
 		for _, n := range slices.Concat(r.Targets, r.TileDef.UDP) {
 			if !slices.ContainsFunc(slices.Concat(r.Web, r.UDP), func(t model.Target) bool { return t.Name == n }) {
 				r.Missing = append(r.Missing, n)
+				if names[n] {
+					r.Untagged = append(r.Untagged, n)
+				}
 			}
 		}
 	}
 	return out
 }
 
-// checkTileTags reports an unknown tile: id, or more than one tile: tag.
-func checkTileTags(tags []string) error {
+// checkTileTags reports an unknown tile: id, more than one tile: tag, or a
+// UDP target tagged for a tile other than a call tile.
+func checkTileTags(tags []string, udp bool) error {
 	n := 0
 	for _, tag := range tags {
 		id, ok := strings.CutPrefix(tag, TagTile)
 		if !ok {
 			continue
 		}
-		if tileIndex(id) < 0 {
+		i := tileIndex(id)
+		if i >= 0 && udp && Tiles[i].Kind != TileCall {
+			return fmt.Errorf("tag %q: UDP targets only feed call tiles", tag)
+		}
+		if i < 0 {
 			ids := make([]string, len(Tiles))
 			for i, d := range Tiles {
 				ids[i] = d.ID

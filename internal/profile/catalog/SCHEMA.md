@@ -56,7 +56,11 @@ A `tile:<id>` tag puts a target in one of the fixed tiles of the new Home view
 `tile:onedrive`, `tile:youtube` or `tile:netflix`. At most one per target, and
 no other values. Every catalog target listed by a tile carries its tag, and
 only those (a test checks both ways); a call tile's own STUN targets
-(Meet-STUN, Teams-Relay) carry it too.
+(Meet-STUN, Teams-Relay) carry it too, and a UDP target may only feed a call
+tile. Tiles are matched by tag, never by name: a `--config` target feeds a
+tile only through `extends` (catalog targets keep their tags) or its own
+`tile:` tag, and an `override` that sets `tags:` replaces them all, so it must
+keep the target's `tile:` tag.
 
 Rules for choosing endpoints:
 - Prefer endpoints **meant for latency checks** (published "ping"/speed-test hosts,
