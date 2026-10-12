@@ -7,6 +7,7 @@
 #   docker buildx build --target asndb --output type=local,dest=. .     # refresh internal/asn/data/ip2asn-v4.bin
 #   docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
+#   docker build --target imagetest .                               # runtime image smoke test (--ephemeral)
 
 ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
 # The browser image for the UI tests; its Playwright must match test/ui/package.json.
@@ -207,13 +208,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     GOARM=$(case "$TARGETVARIANT" in v6) echo 6;; v7|v8) echo 7;; *) echo "";; esac) \
     GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w -X main.version=$VERSION" -o /fyisp ./cmd/fyisp \
- && mkdir -m 0700 /data
+ && mkdir -m 0700 /data && mkdir -p /rootfs && mkdir -m 1777 /rootfs/tmp
 
-FROM scratch AS image
+FROM scratch AS runtime
 COPY --from=build-image /fyisp /fyisp
 # /data must exist in the image, owned by the runtime user: Docker copies its
 # ownership into new named volumes, otherwise they are root-owned and unwritable.
 COPY --from=build-image --chown=65532:65532 /data /data
+# scratch has no /tmp, and --ephemeral keeps its data in os.TempDir(). It is
+# copied via its parent: COPY sets a copied directory's own mode to 755, and
+# --chmod drops the sticky bit.
+COPY --from=build-image --chown=65532:65532 /rootfs/ /
 COPY LICENSE NOTICE /usr/share/doc/fyisp/
 COPY --from=licenses /THIRD_PARTY_LICENSES.txt /usr/share/doc/fyisp/
 USER 65532:65532
@@ -226,3 +231,35 @@ STOPSIGNAL SIGTERM
 # also where the runtime creates no /.dockerenv.
 ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000 container=oci
 ENTRYPOINT ["/fyisp"]
+
+# Runtime image smoke test: `docker run IMG --ephemeral` must start (the API
+# answers), and exit 0 on SIGTERM with its temporary directory removed. The
+# image's root filesystem is run with chroot as the runtime user, because a
+# build step cannot start a container.
+#   docker build --target imagetest .
+FROM debian:stable-slim AS imagetest
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+COPY --from=runtime / /img/
+RUN <<'SH'
+set -eu
+stat -c '%a %u:%g %n' /img/tmp /img/data
+[ "$(stat -c '%a %u' /img/tmp)" = "1777 65532" ]
+env -i FYISP_DATA_DIR=/data FYISP_LISTEN=127.0.0.1:3000 container=oci \
+  /usr/sbin/chroot --userspec=65532:65532 /img /fyisp --ephemeral > /fyisp.log 2>&1 &
+pid=$!
+ok=0
+for i in $(seq 1 100); do
+  curl -fsS -o /status.json http://127.0.0.1:3000/api/status && { ok=1; break; }
+  kill -0 $pid 2>/dev/null || break
+  sleep 0.2
+done
+if [ $ok = 1 ]; then kill -TERM $pid; else kill -KILL $pid 2>/dev/null || :; fi
+rc=0; wait $pid || rc=$?
+[ $ok = 1 ] || { cat /fyisp.log; echo "fyisp --ephemeral did not start"; exit 1; }
+[ $rc = 0 ] || { cat /fyisp.log; echo "fyisp exited with $rc"; exit 1; }
+[ -z "$(ls -A /img/tmp)" ] || { ls -la /img/tmp; echo "temporary directory left behind"; exit 1; }
+echo "imagetest ok: $(head -c 200 /status.json)"
+SH
+
+# The runtime image, last so it is the default target.
+FROM runtime AS image

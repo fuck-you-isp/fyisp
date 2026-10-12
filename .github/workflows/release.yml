@@ -43,11 +43,12 @@ jobs:
           retention-days: 1
       - name: fmt, vet, test -race
         run: docker buildx build --target test .
-      - name: launcher tests
+      - name: launcher tests, systemd unit, image --ephemeral
         run: |
           docker buildx build --target launchertest .
           docker buildx build --target launchertest-pwsh .
           docker buildx build --target servicetest .
+          docker buildx build --target imagetest .
       - name: cross-build release matrix
         env:
           VERSION: ${{ github.ref_name }}
