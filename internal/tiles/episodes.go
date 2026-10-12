@@ -179,10 +179,11 @@ func tileOrder(id string) int {
 // first:
 //
 //  1. Connection parts (connection drops, path blips, incidentEpisode,
-//     broadEpisode) are episodes; a connection drop or a blip absorbs the
-//     lan, isp, upstream and no_network incidents and the slowdowns
-//     within [drop − absorbBefore, end + absorbAfter]: one problem, not
-//     two. They keep the drop's span: the incident is mostly the
+//     broadEpisode) are episodes; a connection drop absorbs the lan,
+//     isp, upstream and no_network incidents and the slowdowns within
+//     [drop − absorbBefore, end + absorbAfter]: one problem, not two. A
+//     blip absorbs the slowdowns so, and only the incidents that end with
+//     it (the engine ends an incident that is a blip's lag). They keep the drop's span: the incident is mostly the
 //     verdict's window catching up. Other incidents (dns, blocked UDP)
 //     and longer ones stay their own problems.
 //  2. Tile parts (runEpisode, dropEpisode of a tile) fully covered by a
@@ -219,7 +220,13 @@ func groupEpisodes(conn, tiles []Episode, cause func(Episode) Cause, now time.Ti
 			continue
 		}
 		slowdown := e.Verdict == "" && e.Kind == EpSlow
-		if i := slices.IndexFunc(cs, func(d Episode) bool { return dropLike(d) && (pathKind(e.Verdict) || slowdown) && d.absorbs(e) }); i >= 0 {
+		if i := slices.IndexFunc(cs, func(d Episode) bool {
+			// a blip takes only the incident that is its lag (the engine
+			// ended it with the blip): one within a lossy spell is the
+			// spell's, and must stay
+			lag := d.Kind != epBlip || slowdown || !e.Ongoing() && !e.End.After(d.End.Add(lagSlack))
+			return dropLike(d) && (pathKind(e.Verdict) || slowdown) && lag && d.absorbs(e)
+		}); i >= 0 {
 			cs[i].addTiles(e.Tiles)
 			if cs[i].Verdict == "" {
 				cs[i].Verdict = e.Verdict

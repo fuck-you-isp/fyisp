@@ -382,10 +382,15 @@ func TestDropLateTiles(t *testing.T) {
 	}
 	blip := drop
 	blip.Kind, blip.End, blip.DropDur = epBlip, at(10*m+20*sec), 20*sec
-	inc, _ := incidentEpisode(model.Incident{Kind: model.VerdictISP, Start: at(10*m + 9*sec), End: at(12 * m), PeakLoss: 1}, false)
+	inc, _ := incidentEpisode(model.Incident{Kind: model.VerdictISP, Start: at(10*m + 9*sec), End: blip.End, PeakLoss: 1}, false)
 	slow := broadEpisode(at(9*m+30*sec), at(11*m))
 	if eps := groupEpisodes([]Episode{blip, inc, slow}, []Episode{tileRun("meet", Down, 10*m, 10*m+50*sec)}, byVendor, now); len(eps) != 0 {
 		t.Errorf("blip: got\n%s, want nothing", epsText(eps))
+	}
+	// a lossy spell's incident, a blip inside it (netns S2b): it stays
+	inc.End = at(12 * m)
+	if eps := groupEpisodes([]Episode{blip, inc}, nil, byVendor, now); len(eps) != 1 || eps[0].Verdict != model.VerdictISP {
+		t.Errorf("blip in a lossy spell: got\n%s, want the incident", epsText(eps))
 	}
 }
 
