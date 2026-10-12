@@ -87,8 +87,10 @@ func newFakeServer(t *testing.T, mode string) *fakeServer {
 
 const (
 	// maxCatchUp bounds the ticks one download write makes up (100 ms:
-	// one tick of the client's).
-	maxCatchUp = 10
+	// one tick of the client's), and maxCatchUpBytes its bytes (at a high
+	// rate, a large catch-up burst overshoots a byte cap).
+	maxCatchUp      = 10
+	maxCatchUpBytes = 640 << 10
 	// upRate is the bytes per second the fake reads per upload stream
 	// (~80 MB/s for 3 streams).
 	upRate = 256 << 10 * 100
@@ -222,7 +224,7 @@ func (f *fakeServer) session(c net.Conn) {
 				// Each write carries the bytes due since the last one, so
 				// ticks a busy machine drops are made up and every second
 				// carries the same bytes (up to maxCatchUp ticks at once).
-				buf := make([]byte, maxCatchUp*f.rate)
+				buf := make([]byte, max(f.rate, min(maxCatchUp*f.rate, maxCatchUpBytes)))
 				tk := time.NewTicker(10 * time.Millisecond)
 				defer tk.Stop()
 				t0 := time.Now()
@@ -233,7 +235,7 @@ func (f *fakeServer) session(c net.Conn) {
 						return
 					case <-tk.C:
 						now := time.Now()
-						n := int(float64(f.rate) * min(maxCatchUp, float64(now.Sub(last))/float64(10*time.Millisecond)))
+						n := min(len(buf), int(float64(f.rate)*min(maxCatchUp, float64(now.Sub(last))/float64(10*time.Millisecond))))
 						last = now
 						if f.mode == "ramp" { // slow start: full rate after 500 ms
 							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(500*time.Millisecond)))
@@ -390,7 +392,7 @@ func TestUpload(t *testing.T) {
 	// it received, plus what its kernel acked but the fake never read
 	// (it closes its streams on TEST_END, as iperf3 does): its receive
 	// buffers, a few MB per stream.
-	if r.Bytes == 0 || r.Bytes > f.recv+3*16<<20 || r.TotalBytes < r.Bytes || r.Elapsed <= 0 || r.Elapsed > 2500*time.Millisecond {
+	if r.Bytes == 0 || r.Bytes > f.recv+3*16<<20 || r.Elapsed <= 0 || r.Elapsed > 2500*time.Millisecond {
 		t.Errorf("result %+v, server received %d", r, f.recv)
 	}
 	if f.results.SenderHasRetransmits < 0 {
@@ -829,6 +831,21 @@ func TestTimeCapped(t *testing.T) {
 	}
 }
 
+// TestClampTotal: an upload's acked bytes ahead of its written count (CI,
+// issue #15) raise TotalBytes to Bytes; otherwise TotalBytes stays.
+func TestClampTotal(t *testing.T) {
+	r := Result{Bytes: 2264856247, TotalBytes: 2264662016}
+	r.clampTotal()
+	if r.TotalBytes != r.Bytes {
+		t.Errorf("total %d, bytes %d", r.TotalBytes, r.Bytes)
+	}
+	r = Result{Bytes: 100, TotalBytes: 300}
+	r.clampTotal()
+	if r.TotalBytes != 300 {
+		t.Errorf("total %d, want 300", r.TotalBytes)
+	}
+}
+
 // TestSteadyLateTick: a tick read late on a busy machine moves bytes from
 // one second to the next; at a level rate that is still steady.
 func TestSteadyLateTick(t *testing.T) {
@@ -851,6 +868,15 @@ func TestSteadyLateTick(t *testing.T) {
 	}
 	if tt.steady(cum, at, false) {
 		t.Error("a 10% faster last second is steady")
+	}
+	// After a stall the last 10 ticks are read back to back: 0.3 s is too
+	// short to call a second, whatever its rate.
+	for i := 20; i < 30; i++ {
+		at[i] = at[19] + time.Duration(i-19)*30*time.Millisecond
+		cum[i] = cum[19] + int64(rate*(at[i]-at[19]).Seconds())
+	}
+	if tt.steady(cum, at, false) {
+		t.Error("a 0.3 s second after a stall is steady")
 	}
 }
 

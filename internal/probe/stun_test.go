@@ -416,15 +416,18 @@ func TestRunnerUDP(t *testing.T) {
 // (no jitter from mixing two relays), and the epoch counts the change.
 func TestRunnerUDPAddressChange(t *testing.T) {
 	a := newSTUNServer(t, "127.0.0.1:0", nil)
-	// The second relay is 200 ms "further" away, on the same port of
+	// The second relay is 500 ms "further" away, on the same port of
 	// 127.0.0.2: a burst split between the relays would read as at least
-	// 200 ms / (BurstSize-1) = 50 ms of jitter, well above the timer noise
-	// of a busy CI machine (Windows: up to ~18 ms).
-	const further = 200 * time.Millisecond
+	// 500 ms / (BurstSize-1) = 125 ms of jitter, far above the timer noise
+	// of a busy CI machine (Windows: up to ~18 ms). The main guard against
+	// a split is the a.n/b.n % BurstSize check below; this one checks the
+	// jitter reported.
+	const further = 500 * time.Millisecond
 	b := newSTUNServer(t, fmt.Sprintf("127.0.0.2:%d", a.port()), func(int) (bool, time.Duration, bool) { return true, further, false })
 	var addrs sync.Map
 	addrs.Store("relay.test", netip.MustParseAddr("127.0.0.1"))
 	r := udpRunner(t, &addrs, nil, nil)
+	r.udpTimeout = time.Second // the far relay answers after further
 	tg := model.Target{Name: "R", Host: "relay.test", Port: a.port(), Interval: time.Second, Kinds: []model.ProbeKind{model.KindUDP}}
 	var switched atomic.Bool
 	ss := collect(t, r, profileOf(tg), 20*time.Second, func(ss []model.Sample) bool {
