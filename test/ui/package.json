@@ -1,0 +1,13 @@
+{
+  "name": "fyisp-ui-tests",
+  "private": true,
+  "description": "Browser tests for the fyisp web UI. Run through the Dockerfile (uitest), never on the host.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.55.0",
+    "playwright-core": "1.55.0"
+  }
+}

@@ -7,7 +7,7 @@
 // keeps it accessible. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, tzParam } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, toLocalInput, fromLocalInput, tzParam, clock, when, minutes } from './core.js';
 
 /** @typedef {{level:string,who:string,confidence?:string,kind:string,calls?:string,app?:string,since?:number,headline:string,cause?:string,hint?:string,try:string[],fact?:string,fact_at?:number,announce:string,recovered?:number}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,words:string,blamed?:boolean,culprit?:string,tooltip?:string}} HomeNode */
@@ -58,26 +58,8 @@ const NODE_ICON = { ok: '✓', warn: '!', bad: '✕', unknown: '?', finding: '�
 /** @type {Object<string,string>} */
 const TITLE_WORD = { good: 'Fine', info: 'Fine', warn: 'Trouble', bad: 'Trouble', checking: 'Checking' };
 
-/** Clock time in the viewer's locale (12 or 24 h). */
-export function clock(/** @type {number} */ ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
-/** Weekday and clock, when not today. */
-export function when(/** @type {number} */ ms) {
-  const d = new Date(ms);
-  if (d.toDateString() === new Date().toDateString()) return clock(ms);
-  return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + clock(ms);
-}
 /** "2:10 to 2:16 pm"-ish: both ends in the viewer's clock. */
 function range(/** @type {number} */ a, /** @type {number} */ b) { return b - a <= 60e3 ? when(a) : `${when(a)} to ${clock(b)}`; }
-/** A duration in words: "6 minutes", "1 hour 5 minutes", "26 hours", "3 days". */
-export function minutes(/** @type {number} */ ms) {
-  const m = Math.max(1, Math.round(ms / 60e3));
-  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
-  const hh = Math.floor(m / 60), mm = m % 60;
-  // Past 2 hours the minutes are noise; past 2 days, so are the hours.
-  if (hh >= 48) { const dd = Math.round(hh / 24); return `${dd} days`; }
-  if (hh >= 2) return `${hh} hours`;
-  return `${hh} hour${hh === 1 ? '' : 's'}${mm ? ` ${mm} minute${mm === 1 ? '' : 's'}` : ''}`;
-}
 /** "a few seconds ago", "2 minutes ago". */
 function ago(/** @type {number} */ ms) {
   if (ms < 60e3) return 'a few seconds ago';

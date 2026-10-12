@@ -49,6 +49,33 @@ jobs:
           ls -l dist
           for f in dist/fyisp-*; do s=$(stat -c %s "$f"); [ "$s" -le 52428800 ] || { echo "$f is $s bytes"; exit 1; }; done
 
+  # UI tests (Playwright in Docker). Advisory: not a required check; runs only
+  # when the web UI changes.
+  ui:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: web UI changed?
+        id: changed
+        run: |
+          base=${{ github.event.pull_request.base.sha || github.event.before }}
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null || [ "$base" = 0000000000000000000000000000000000000000 ]; then echo run=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --name-only "$base" HEAD -- Dockerfile .dockerignore .github/workflows/ci.yml go.mod go.sum 'internal/**' 'test/ui/**' 'cmd/fyisp-webdev/**' | grep -q .; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.changed.outputs.run == 'true'
+      - name: Playwright smoke and UI specs
+        if: steps.changed.outputs.run == 'true'
+        run: docker buildx build --target uitest-report --output type=local,dest=ui-out . && test "$(cat ui-out/status)" = 0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.changed.outputs.run == 'true'
+        with:
+          name: ui-report
+          path: ui-out/
+          retention-days: 7
+
   # Windows and macOS: native tests, because ICMP and paths are OS-specific.
   native:
     strategy:

@@ -80,6 +80,28 @@ export function shade(/** @type {string} */ hex, /** @type {number} */ t) {
   return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
 }
 
+let hatchPattern = /** @type {CanvasPattern|null} */ (null);
+/** The diagonal "not measured" fill for canvas charts, built once per theme. */
+export function hatch(/** @type {CanvasRenderingContext2D} */ ctx) {
+  if (hatchPattern) return hatchPattern;
+  const c = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  c.width = c.height = Math.round(6 * dpr);
+  const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+  g.strokeStyle = css('--hatch');
+  g.lineWidth = 1.2 * dpr;
+  g.beginPath();
+  for (let o = -c.width; o <= c.width; o += c.width) { g.moveTo(o, c.height); g.lineTo(o + c.width, 0); }
+  g.stroke();
+  hatchPattern = ctx.createPattern(c, 'repeat');
+  return hatchPattern;
+}
+/** Forget the cached hatch fill (the theme changed). */
+export function resetHatch() { hatchPattern = null; }
+
+/** Smooth scrolling unless the reader asked for reduced motion. @returns {ScrollBehavior} */
+export function smooth() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; }
+
 // ---------- formatting ----------
 
 export function fmtMs(/** @type {number|null|undefined} */ v) {
@@ -128,6 +150,25 @@ export function fmtStep(/** @type {number} */ ms) {
   if (ms < 3600e3) return `${Math.round(ms / 60e3)}m`;
   if (ms < 86400e3) return `${Math.round(ms / 3600e3)}h`;
   return `${Math.round(ms / 86400e3)}d`;
+}
+
+/** Clock time in the viewer's locale (12 or 24 h). */
+export function clock(/** @type {number} */ ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+/** Weekday and clock, when not today. */
+export function when(/** @type {number} */ ms) {
+  const d = new Date(ms);
+  if (d.toDateString() === new Date().toDateString()) return clock(ms);
+  return d.toLocaleDateString([], { weekday: 'short' }) + ' ' + clock(ms);
+}
+/** A duration in words: "6 minutes", "1 hour 5 minutes", "26 hours", "3 days". */
+export function minutes(/** @type {number} */ ms) {
+  const m = Math.max(1, Math.round(ms / 60e3));
+  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
+  const hh = Math.floor(m / 60), mm = m % 60;
+  // Past 2 hours the minutes are noise; past 2 days, so are the hours.
+  if (hh >= 48) { const dd = Math.round(hh / 24); return `${dd} days`; }
+  if (hh >= 2) return `${hh} hours`;
+  return `${hh} hour${hh === 1 ? '' : 's'}${mm ? ` ${mm} minute${mm === 1 ? '' : 's'}` : ''}`;
 }
 
 /** tz= for the API: the browser's IANA zone, so hours of day stay right across DST; minutes east of UTC when it has none. */
