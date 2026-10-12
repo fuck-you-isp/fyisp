@@ -569,3 +569,15 @@ func TestBlipLiveVsReplay(t *testing.T) {
 		sameEngines(t, now.Format("15:04:05"), a, s.replayed(t, stored(arr, now), now))
 	})
 }
+
+// TestRecentFrom: the card's edge window starts at the incident (less
+// lagSlack) when that is within edgeRecent.
+func TestRecentFrom(t *testing.T) {
+	now := at(10 * time.Minute)
+	if got := recentFrom(now, now.Add(-2*time.Second)); !got.Equal(now.Add(-12 * time.Second)) {
+		t.Errorf("young incident: %v", got)
+	}
+	if got := recentFrom(now, now.Add(-5*time.Minute)); !got.Equal(now.Add(-edgeRecent)) {
+		t.Errorf("old incident: %v", got)
+	}
+}

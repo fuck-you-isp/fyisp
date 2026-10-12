@@ -260,7 +260,7 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		clean: func(k model.VerdictKind, from time.Time) bool {
 			return e.layersClean(v, from, time.Time{}, blamed(k)...)
 		},
-		edgeLoss: e.recentLoss(layerEdge, now.Add(-edgeRecent))})
+		edgeLoss: e.recentLoss(layerEdge, recentFrom(now, in.verdict.Since))})
 	// After a drop or a blip the verdict's layer health lags by its 60 s
 	// window: while the card no longer blames the path, for lagMax at
 	// most, a layer that has been clean (of loss) since is Good.
@@ -282,6 +282,17 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 	s.Day = dayCounts(v.eps, now)
 	s.Rev = epsHash(v.eps)
 	return s
+}
+
+// recentFrom is where the edge's latest checks start for the card: the
+// last edgeRecent, but no earlier than lagSlack before the verdict's
+// incident began (the clean checks before loss began would dilute it).
+func recentFrom(now, since time.Time) time.Time {
+	from := now.Add(-edgeRecent)
+	if s := since.Add(-lagSlack); s.After(from) {
+		from = s
+	}
+	return from
 }
 
 // recentLoss is the share of a layer's checks since from that were lost
