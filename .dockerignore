@@ -2,3 +2,5 @@
 dist
 *.db
 *.db-*
+test/ui/node_modules
+test/ui/out

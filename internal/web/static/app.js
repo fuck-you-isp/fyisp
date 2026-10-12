@@ -15,7 +15,7 @@ import {
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
   hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput,
-  useStatus,
+  useStatus, hatch, resetHatch, smooth,
 } from './core.js';
 import { Home } from './home.js';
 import { Speed } from './speed.js';
@@ -133,7 +133,7 @@ function applyTheme(/** @type {string|null} */ t) {
 }
 function themeChanged() {
   cssCache.clear();
-  hatchPattern = null;
+  resetHatch();
   for (const p of panels) p.render();
   renderLayers();
   if (inv && state.inv) { inv.sig = ''; inv.render(); }
@@ -173,8 +173,6 @@ function term(/** @type {string} */ key, /** @type {string} */ text = key) {
   const tip = GLOSSARY[key.toLowerCase()];
   return tip ? h('abbr', { class: 'gl', title: tip, text }) : text;
 }
-/** Smooth scrolling unless the reader asked for reduced motion. @returns {ScrollBehavior} */
-function smooth() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; }
 function verdictColor(/** @type {string} */ kind) { return css(`--v-${kind}`) || css('--muted') || '#898781'; }
 
 // ---------- URL hash state ----------
@@ -261,22 +259,6 @@ function queryRange() {
 }
 
 // ---------- panels ----------
-
-let hatchPattern = /** @type {CanvasPattern|null} */ (null);
-function hatch(/** @type {CanvasRenderingContext2D} */ ctx) {
-  if (hatchPattern) return hatchPattern;
-  const c = document.createElement('canvas');
-  const dpr = window.devicePixelRatio || 1;
-  c.width = c.height = Math.round(6 * dpr);
-  const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
-  g.strokeStyle = css('--hatch');
-  g.lineWidth = 1.2 * dpr;
-  g.beginPath();
-  for (let o = -c.width; o <= c.width; o += c.width) { g.moveTo(o, c.height); g.lineTo(o + c.width, 0); }
-  g.stroke();
-  hatchPattern = ctx.createPattern(c, 'repeat');
-  return hatchPattern;
-}
 
 class Panel {
   /** @param {Group} group @param {TargetInfo[]} targets */

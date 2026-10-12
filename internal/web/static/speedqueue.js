@@ -6,8 +6,7 @@
 // cancel any entry. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, dialog } from './core.js';
-import { clock } from './home.js';
+import { h, fetchJSON, apiWrite, canWrite, dialog, clock } from './core.js';
 import { readingCell, lowerBound } from './speedmap.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -50,7 +49,7 @@ function whoWord(e) {
   return e.who === 'scheduled' ? 'the schedule' : 'you';
 }
 /** Why a start or cancel failed, from the API's code. @param {any} e */
-function queueError(e) {
+export function queueError(e) {
   const b = e.body || {};
   switch (b.code) {
     case 'skipped': return 'You skipped that server.';
@@ -60,6 +59,15 @@ function queueError(e) {
   if (e.status === 0) return ''; // the admin dialog was cancelled
   return 'Couldn’t reach fyisp. Try again.';
 }
+
+/** POST api/speed/run: resolves to {entry, duplicate}, throws like apiWrite (queueError says why). @param {string} kind @param {string} id */
+function queueRun(kind, id) {
+  const q = new URLSearchParams({ kind });
+  if (id) q.set('id', id);
+  return apiWrite('POST', 'api/speed/run?' + q, undefined, WHY);
+}
+/** Queues one test: of a server, a region, or ('') the nearest servers. @param {string} [id] */
+export function startSingleTest(id = '') { return queueRun('single', id); }
 
 export class SpeedQueue {
   /** @param {QueueHost} host */
@@ -147,10 +155,8 @@ export class SpeedQueue {
    */
   async start(kind, id, tag) {
     this.note = '';
-    const q = new URLSearchParams({ kind });
-    if (id) q.set('id', id);
     try {
-      const r = await apiWrite('POST', 'api/speed/run?' + q, undefined, WHY);
+      const r = await queueRun(kind, id);
       /** @type {QueueEntry} */
       const e = r.entry;
       this.watch.set(e.id, tag);

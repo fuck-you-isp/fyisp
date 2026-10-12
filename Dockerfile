@@ -5,9 +5,12 @@
 #   docker buildx build --target modfiles --output type=local,dest=. .  # go mod tidy -> go.mod/go.sum
 #   docker buildx build --target fmt --output type=local,dest=. .       # gofmt -w all Go files
 #   docker buildx build --target asndb --output type=local,dest=. .     # refresh internal/asn/data/ip2asn-v4.bin
+#   docker buildx build --target uitest-out --output type=local,dest=out .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
 
 ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
+# The browser image for the UI tests; its Playwright must match test/ui/package.json.
+ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.55.0-noble@sha256:b27e719ecbfef153e13fd24e8341736733bf2658b229677eb21ff57ff5d7fb29
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS base
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS=-trimpath
@@ -135,6 +138,54 @@ COPY --from=launcher-bin /lt/fyisp /usr/local/bin/fyisp
 COPY packaging/fyisp.service /etc/systemd/system/fyisp.service
 RUN out=$(systemd-analyze verify /etc/systemd/system/fyisp.service 2>&1); echo "$out"; \
     ! echo "$out" | grep -v -e 'Failed to .* bus' -e 'System has not been booted' -e '^$' | grep .
+
+# UI tests: Playwright against fyisp-webdev (fake probes, real API), all in
+# one container, so it works with Docker-outside-of-Docker. Separate from
+# `test` because the browser image is ~2.8 GB.
+#   docker buildx build --target uitest .                                     # pass/fail
+#   docker buildx build --target uitest-out --output type=local,dest=out .     # + out/shots, out/report
+#   docker buildx build --target uitest-report --output type=local,dest=out .  # report even when tests fail
+#   docker buildx build --target uilock --output type=local,dest=. .           # regenerate test/ui/package-lock.json
+
+FROM source AS webdev
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /fyisp-webdev ./cmd/fyisp-webdev
+
+FROM ${PLAYWRIGHT_IMAGE} AS uilock-gen
+WORKDIR /ui
+COPY test/ui/package.json ./
+RUN npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+FROM scratch AS uilock
+COPY --from=uilock-gen /ui/package-lock.json /test/ui/
+
+FROM ${PLAYWRIGHT_IMAGE} AS uitest-run
+WORKDIR /ui
+COPY test/ui/package.json test/ui/package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY test/ui/ ./
+COPY --from=webdev /fyisp-webdev /usr/local/bin/fyisp-webdev
+# Records the result instead of failing, so uitest-report can still export it.
+RUN <<'SH'
+set -u
+mkdir -p out
+fyisp-webdev -listen 127.0.0.1:3000 -verdict ok > out/webdev.log 2>&1 &
+ok=0
+for i in $(seq 1 100); do
+  node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" && { ok=1; break; }
+  sleep 0.2
+done
+if [ $ok = 1 ]; then npx playwright test; echo $? > out/status; else echo "webdev did not start"; echo 1 > out/status; fi
+cat out/webdev.log | tail -20
+kill %1 2>/dev/null
+exit 0
+SH
+FROM uitest-run AS uitest
+RUN s=$(cat out/status); [ "$s" = 0 ] || { echo "UI tests failed ($s): export --target uitest-report for the report"; exit 1; }
+FROM scratch AS uitest-out
+COPY --from=uitest /ui/out/ /
+FROM scratch AS uitest-report
+COPY --from=uitest-run /ui/out/ /
 
 # Runtime image: one static binary, non-root.
 FROM source AS build-image

@@ -7,8 +7,7 @@
 // no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, tzParam } from './core.js';
-import { clock } from './home.js';
+import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, tzParam, clock } from './core.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedRow} SpeedRow */

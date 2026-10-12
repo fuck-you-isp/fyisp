@@ -8,8 +8,7 @@
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, fetchShared, apiWrite, canWrite, dialog, tzParam } from './core.js';
-import { clock } from './home.js';
+import { h, fetchJSON, fetchShared, apiWrite, canWrite, dialog, tzParam, clock } from './core.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
 
