@@ -30,16 +30,24 @@ import { Tiles, ico, setText } from './hometiles.js';
 // The v2 API; it becomes api/home when the old Home is removed.
 export const HOME_API = 'api/home2';
 const NOW_MS = 15000;
+// In a background tab Home keeps polling, slower, so its title stays true.
+const HIDDEN_MS = 60000;
+// The startup probe gives up after this long (the old Home then shows).
+const PROBE_MS = 4000;
 // Home calls itself stale after this long without a fresh check, or this many failed polls in a row.
 const STALE_MS = 120e3;
 const FAILS = 2;
 // A speed test this page started: the queue is polled this often.
 const QUEUE_MS = 3000;
+// …and given up after this many failed polls in a row.
+const QUEUE_FAILS = 5;
+const SPEED_NOTE = 'This usually takes under a minute.';
+const SPEED_LOST = 'The speed test didn’t finish. Try again in a few minutes.';
 
 /** The v2 answer, or null when this server only has the old Home (before v0.9.0). */
 export async function probeHome() {
   try {
-    const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }));
+    const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }), { signal: AbortSignal.timeout(PROBE_MS) }, 1);
     return d && d.v === 2 ? /** @type {HomeNow} */ (d) : null;
   } catch {
     return null;
@@ -71,11 +79,12 @@ export class Home {
     this.recvAt = 0; // when the last answer arrived (client clock)
     this.nowAt = 0; // when the last poll started
     this.fails = 0;
-    this.busy = false;
+    /** The part=now request in flight. @type {Promise<void>|null} */
+    this.nowP = null;
     this.lastKey = '';
     this.rendered = false;
     this.wasStale = false;
-    /** A speed test this page started: its queue entry and what to say. @type {{id:number,text:string}|null} */
+    /** A speed test this page started: its queue entry, its state and what to say. @type {{id:number,state:string,text:string,fails:number}|null} */
     this.mine = null;
     /** @type {number|undefined} */
     this.qTimer = undefined;
@@ -149,23 +158,38 @@ export class Home {
   /** Home opened (or the page's refresh): render what we have, then poll. */
   refresh() {
     this.render();
+    // The panel's chart may have been resized or re-themed while Details was on screen.
+    this.tiles.refit();
     return this.loadNow();
   }
 
-  /** Every second: poll when due, keep "Checked …" and the stale state current. */
+  /** Every second: poll when due (every 60 s in a background tab), keep "Checked …" and the stale state current. */
   tick() {
     if (!this.shown()) return;
     const now = Date.now();
-    if (!document.hidden && !this.busy && now - this.nowAt >= NOW_MS) this.loadNow();
+    if (!this.nowP && now - this.nowAt >= (document.hidden ? HIDDEN_MS : NOW_MS)) this.loadNow();
     // Going stale between polls (an asleep host can't answer) redraws everything; else just "Checked …".
     else if (this.isStale() !== this.wasStale) this.render();
     else this.renderAnswer();
     if (!document.hidden && !this.isStale()) this.tiles.tick(now);
   }
 
-  async loadNow() {
-    if (this.busy) return;
-    this.busy = true;
+  /**
+   * Polls part=now. A call while one is in flight shares it, or with
+   * fresh waits for it and then asks again (an answer started earlier may
+   * predate what the caller is waiting for).
+   */
+  async loadNow(fresh = false) {
+    if (this.nowP) {
+      if (!fresh) return this.nowP;
+      await this.nowP.catch(() => {});
+      if (this.nowP) return this.loadNow(true);
+    }
+    this.nowP = this.fetchNow().finally(() => { this.nowP = null; });
+    return this.nowP;
+  }
+
+  async fetchNow() {
     this.nowAt = Date.now();
     try {
       const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }));
@@ -175,8 +199,6 @@ export class Home {
       this.fails = 0;
     } catch {
       this.fails++;
-    } finally {
-      this.busy = false;
     }
     this.render();
   }
@@ -188,11 +210,18 @@ export class Home {
     return Math.max(0, d.at - d.last_check) + (Date.now() - this.recvAt);
   }
 
-  /** Stale: the server says so, it can't be reached, or its last check is too old by now. */
+  /**
+   * Stale: the server says so, it can't be reached, or its last check is
+   * too old by now. Time since the last answer only counts while a poll
+   * after it is pending or failed: a throttled background tab that simply
+   * hasn't asked is not evidence that fyisp stopped.
+   */
   isStale() {
     const d = this.data;
     if (!d) return this.fails >= FAILS;
-    return !!d.stale || this.fails >= FAILS || this.age() >= STALE_MS;
+    if (d.stale || this.fails >= FAILS) return true;
+    const asked = this.nowAt > this.recvAt;
+    return Math.max(0, d.at - d.last_check) + (asked ? Date.now() - this.recvAt : 0) >= STALE_MS && !!d.last_check;
   }
 
   /** The answer to show: the server's, or the client's own when fyisp has gone quiet. @returns {HomeAnswer} */
@@ -236,8 +265,9 @@ export class Home {
 
   renderAnswer() {
     const a = this.answer();
-    this.card.className = `hp-answer ${tone(a.tone)}`;
-    this.ansIco.className = `hp-ico big ${/^(good|slow|down)$/.test(a.icon) ? a.icon : 'none'}`;
+    const cc = `hp-answer ${tone(a.tone)}`, ic = `hp-ico big ${/^(good|slow|down|info)$/.test(a.icon) ? a.icon : 'none'}`;
+    if (this.card.className !== cc) this.card.className = cc;
+    if (this.ansIco.className !== ic) this.ansIco.className = ic;
     // The live region changes only with the answer's key; same-key text changes are rare and logged.
     if (a.key !== this.lastKey || this.headEl.textContent !== a.headline || this.subEl.textContent !== a.sub) {
       if (a.key === this.lastKey) console.debug('fyisp home: answer text changed under key', a.key);
@@ -307,8 +337,8 @@ export class Home {
     if (!sp || this.speedSec.hidden) return;
     const st = this.host.status();
     let line, note;
-    if (this.mine) { line = this.mine.text; note = this.spErr; }
-    else if (sp.running) { line = 'Testing your speed…'; note = ''; }
+    if (this.mine) { line = this.mine.text; note = this.spErr || (this.mine.state === 'running' ? SPEED_NOTE : ''); }
+    else if (sp.running) { line = 'Testing your speed…'; note = SPEED_NOTE; }
     else if (sp.latest) { line = sp.latest.text; note = this.spErr || sp.latest.note; }
     else { line = sp.empty_text; note = this.spErr; }
     setText(this.spLine, line);
@@ -323,7 +353,9 @@ export class Home {
   async testSpeed() {
     if (this.mine) return;
     this.spErr = '';
-    this.mine = { id: 0, text: 'Testing your speed…' };
+    // Cleared first, so the same message twice in a row is still announced.
+    setText(this.spSay, '');
+    this.mine = { id: 0, state: 'starting', text: 'Testing your speed…', fails: 0 };
     this.render();
     try {
       const r = await startSingleTest();
@@ -343,14 +375,18 @@ export class Home {
   /** The line for this page's entry: running, or waiting its turn. @param {any} e */
   follow(e) {
     if (!this.mine) return;
+    this.mine.state = e.state;
     this.mine.text = e.state === 'running' ? 'Testing your speed…' : `Waiting for another test, starts ${inAbout((e.est_start || Date.now()) - Date.now())}.`;
   }
 
   async pollQueue() {
     const mine = this.mine;
     if (!mine) return;
+    // Left Home: stop following; the next part=now shows a test still running.
+    if (!this.shown()) { this.mine = null; return; }
     try {
       const q = await fetchJSON('api/speed?part=queue');
+      mine.fails = 0;
       const e = q.running && q.running.id === mine.id ? q.running : (q.waiting || []).find((/** @type {any} */ x) => x.id === mine.id);
       if (e) {
         const before = mine.text;
@@ -363,14 +399,18 @@ export class Home {
       // It left the queue: how did it end? Then the fresh result.
       const done = await fetchJSON('api/speed?part=entry&id=' + mine.id).catch(() => null);
       this.mine = null;
-      await this.loadNow();
+      await this.loadNow(true);
       const latest = this.data && this.data.speed && this.data.speed.latest;
-      this.spErr = done && done.state === 'done' ? '' : 'The speed test didn’t finish. Try again in a few minutes.';
+      this.spErr = done && done.state === 'done' ? '' : SPEED_LOST;
       setText(this.spSay, this.spErr || (latest ? latest.text : ''));
       this.render();
       if (document.activeElement === document.body) this.spBtn.focus();
     } catch {
-      this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS);
+      if (++mine.fails < QUEUE_FAILS) { this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS); return; }
+      this.mine = null;
+      this.spErr = SPEED_LOST;
+      setText(this.spSay, SPEED_LOST);
+      this.render();
     }
   }
 

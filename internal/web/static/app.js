@@ -4070,8 +4070,10 @@ async function main() {
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
   if (adminTok) await adminLogin(adminTok);
-  // The new Home only when the server has its API (v0.9.0); probeHome() is null otherwise.
-  const [st, prof, home2] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile'), probeHome()]);
+  // The new Home only when the server has its API (v0.9.0); probeHome() is null otherwise
+  // (or after a few seconds without an answer). Details doesn't wait for it.
+  const probe = probeHome();
+  const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
   status = st;
   if (st) statusAt = Date.now();
   traceOn = !!(prof.features && prof.features.trace);
@@ -4137,6 +4139,29 @@ async function main() {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
+  if (currentView() !== 'h' || (state.inv && inv)) {
+    // Details first; Home joins when the probe answers.
+    applyView();
+    showView();
+    writeHash();
+    const loaded = refreshAll();
+    makeHome(await probe);
+    applyView();
+    showView();
+    // Back on Home already (the switch, or Back) while the probe was out.
+    if (homeShown()) /** @type {Home|HomeV1} */ (home).refresh();
+    await loaded;
+    return;
+  }
+  makeHome(await probe);
+  applyView();
+  showView();
+  writeHash();
+  await refreshAll();
+}
+
+/** Builds Home: the new one for a v2 answer, else the old one. @param {import('./home.js').HomeNow|null} home2 */
+function makeHome(home2) {
   home = home2 ? new Home({ openDetails, detailsHash, status: () => status, speedOn: () => !!speed }, home2) : new HomeV1({
     span: () => state.hw,
     setSpan: (s) => { state.hw = s; writeHash(); },
@@ -4148,10 +4173,6 @@ async function main() {
   });
   document.body.classList.toggle('hp-on', home instanceof Home);
   $('#notices').before(home.el);
-  applyView();
-  showView();
-  writeHash();
-  await refreshAll();
 }
 
 main().catch((e) => {

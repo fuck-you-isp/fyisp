@@ -24,7 +24,7 @@ export const TILE_MS = 60e3;
 
 /** A status icon: colour plus a glyph, hidden from screen readers (the word says it). */
 export function ico(/** @type {string} */ state, big = false) {
-  const s = /^(good|slow|down|none|off)$/.test(state) ? state : 'none';
+  const s = /^(good|slow|down|none|off|info)$/.test(state) ? state : 'none';
   return h('span', { class: `hp-ico ${s}${big ? ' big' : ''}`, 'aria-hidden': 'true' });
 }
 
@@ -137,6 +137,7 @@ export class Tiles {
     this.tileAt = 0;
     this.seq = 0;
     this.busy = false;
+    this.dirty = false; // resized or re-themed while hidden
 
     this.grid = h('div', { class: 'hp-tiles' });
 
@@ -192,13 +193,22 @@ export class Tiles {
       if (e.key !== 'Escape' || !this.openId || !this.host.shown()) return;
       // The admin-token dialog (or any other) handles its own Escape.
       if (document.querySelector('dialog[open]') || (e.target instanceof Element && e.target.closest('dialog'))) return;
+      // Only from the panel or its tile: Escape elsewhere on the page isn't about the panel.
+      const a = document.activeElement;
+      if (!a || !(this.panel.contains(a) || a === this.tiles.get(this.openId)?.el)) return;
       this.close(true);
     });
     // 4 columns ↔ 2 columns, and the caret under the tile on any resize.
     let raf = 0;
     window.addEventListener('resize', () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => { if (this.openId) { this.place(); this.chart.resize(); } });
+      raf = requestAnimationFrame(() => {
+        if (!this.openId) return;
+        // Home hidden (Details on screen): nothing to measure; refit() catches up when it's back.
+        if (!this.host.shown()) { this.dirty = true; return; }
+        this.place();
+        this.chart.resize();
+      });
     });
   }
 
@@ -211,12 +221,14 @@ export class Tiles {
       // The set is fixed (11 tiles); this only runs on the first poll.
       this.order = list.map((t) => this.tiles.get(t.id) || new Tile(t.id, (x) => this.toggle(x)));
       this.tiles = new Map(this.order.map((t) => [t.id, t]));
+      if (this.openId && !this.tiles.has(this.openId)) this.close(false);
       this.grid.replaceChildren(...this.order.map((t) => t.el));
-      if (this.openId && !this.tiles.has(this.openId)) this.openId = null;
       if (this.openId) this.place();
     }
     for (const t of list) {
       const tile = /** @type {Tile} */ (this.tiles.get(t.id));
+      // The open tile changed state: a 404 from before may not hold any more.
+      if (t.id === this.openId && tile.data && tile.data.state !== t.state) this.unmonitored = false;
       tile.lastAt = lastAt;
       tile.update(t, stale);
     }
@@ -334,5 +346,17 @@ export class Tiles {
     if (this.chart.d !== d) this.chart.set(d);
   }
 
-  themeChanged() { this.chart.themeChanged(); }
+  themeChanged() {
+    if (!this.host.shown()) { this.dirty = true; return; }
+    this.chart.themeChanged();
+  }
+
+  /** Home is back on screen: re-place the panel and redraw its chart if the window or theme changed meanwhile. */
+  refit() {
+    if (!this.dirty) return;
+    this.dirty = false;
+    if (!this.openId) return;
+    this.place();
+    this.chart.themeChanged();
+  }
 }

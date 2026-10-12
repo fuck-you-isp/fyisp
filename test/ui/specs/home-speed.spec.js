@@ -38,8 +38,10 @@ test('Test speed now: waiting, testing, then the new result', async ({ page }) =
   await expect(btn).toBeDisabled();
   expect(q.runs).toBe(1);
   expect(q.headers['x-fyisp-token']).toBeTruthy();
+  await expect(page.locator('.hp-speed-note')).toBeHidden();
   await page.clock.runFor(3000);
   await expect(page.locator('.hp-speed-line')).toHaveText('Testing your speed…');
+  await expect(page.locator('.hp-speed-note')).toHaveText('This usually takes under a minute.');
   await expect(say).toHaveText('Testing your speed…');
   home.now = fx('now-speed-done');
   await page.clock.runFor(3000);
@@ -108,6 +110,7 @@ test('a test started elsewhere shows and disables the button', async ({ page }) 
   const ctl = await serveHome(page, 'now-speed-running');
   await openHome(page);
   await expect(page.locator('.hp-speed-line')).toHaveText('Testing your speed…');
+  await expect(page.locator('.hp-speed-note')).toHaveText('This usually takes under a minute.');
   await expect(page.getByRole('button', { name: 'Test speed now' })).toBeDisabled();
   // Nobody polls the queue for someone else's test; the next answer has the result.
   ctl.now = fx('now-speed-done');

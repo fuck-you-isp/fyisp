@@ -4,17 +4,17 @@
 // @ts-check
 const { test, expect } = require('./fixtures');
 const AxeBuilder = require('@axe-core/playwright').default;
-const { STATES, serveHome, openHome, setTheme, WIDTHS, THEMES } = require('./home');
+const { fx, STATES, serveHome, openHome, setTheme, WIDTHS, THEMES } = require('./home');
 
 /** axe violations, as short lines for a readable failure. @param {import('@playwright/test').Page} page */
 async function axe(page) {
-  const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   return r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).slice(0, 4).join(' | ')}`);
 }
 
 /** The lowest contrast of any bar against its tile's background (WCAG relative luminance). @param {import('@playwright/test').Page} page */
-function barContrast(page) {
-  return page.evaluate(() => {
+function barContrast(page, grey = false) {
+  return page.evaluate((grey) => {
     const rgb = (/** @type {string} */ s) => (s.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
     const lum = (/** @type {number[]} */ c) => {
       const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
@@ -23,12 +23,15 @@ function barContrast(page) {
     let worst = { ratio: 99, what: '' };
     for (const i of document.querySelectorAll('.hp-tile .hp-bars i:not(.hp-base)')) {
       const tile = /** @type {HTMLElement} */ (i.closest('.hp-tile'));
-      const a = lum(rgb(getComputedStyle(i).backgroundColor)), b = lum(rgb(getComputedStyle(tile).backgroundColor));
+      let c = rgb(getComputedStyle(i).backgroundColor);
+      // Stale: filter: grayscale(1) on the bars (the sRGB luma weights).
+      if (grey) { const y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; c = [y, y, y]; }
+      const a = lum(c), b = lum(rgb(getComputedStyle(tile).backgroundColor));
       const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
       if (ratio < worst.ratio) worst = { ratio, what: `${tile.dataset.id} ${i.className} on ${tile.className}` };
     }
     return worst;
-  });
+  }, grey);
 }
 
 for (const name of STATES) {
@@ -49,6 +52,20 @@ for (const name of STATES) {
     }
   });
 }
+
+test('stale bars on tinted tiles keep 3:1 in grey', async ({ page }) => {
+  const d = fx('now-isp');
+  d.stale = true;
+  await serveHome(page, d);
+  await openHome(page);
+  await expect(page.locator('.hp-tiles')).toHaveClass(/is-stale/);
+  expect(await page.locator('.hp-tile .hp-bars').first().evaluate((el) => getComputedStyle(el).filter)).toBe('grayscale(1)');
+  for (const theme of THEMES) {
+    await setTheme(page, theme);
+    const c = await barContrast(page, true);
+    expect(c.ratio, `${theme}: ${c.what}`).toBeGreaterThanOrEqual(3);
+  }
+});
 
 test('axe with a panel open, both themes, both widths', async ({ page }) => {
   await serveHome(page, 'now-zoom');

@@ -69,7 +69,8 @@ test('announces once per answer change, never on load', async ({ page }) => {
   await expect(page).toHaveTitle('! Zoom down – fyisp');
 });
 
-test('goes stale on its own when fyisp stops answering, and back', async ({ page }) => {
+test('goes stale on its own when fyisp stops answering, and back', async ({ page, failOk }) => {
+  failOk.push(/\/api\/home2\?part=now/);
   await page.clock.install();
   await page.addInitScript(recordLive);
   const ctl = await serveHome(page, 'now-good');
@@ -102,4 +103,34 @@ test('a last check older than 2 minutes is stale even when the server answers', 
   await openHome(page);
   await expect(page.locator('.hp-answer')).toHaveClass(/stale/);
   await expect(page.locator('.hp-headline')).toHaveText('fyisp hasn’t checked since 10:27 am.');
+});
+
+test('a background tab keeps polling and stays truthful', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(recordLive);
+  const ctl = await serveHome(page, 'now-good');
+  await openHome(page);
+  await expect(page.locator('.hp-answer [role="status"]')).toHaveAttribute('aria-live', 'polite');
+  // The tab goes to the background for 3 minutes.
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const n = ctl.nowCalls;
+  for (let i = 0; i < 3; i++) {
+    await page.clock.runFor(60e3);
+    await expect.poll(() => ctl.nowCalls).toBe(n + i + 1);
+    await settle(page);
+    await expect(page).toHaveTitle('✓ All good – fyisp');
+  }
+  // Back in front: no false alarm, nothing announced.
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await settle(page);
+  await expect(page.locator('.hp-answer')).toHaveClass(/\bok\b/);
+  expect(await spoken(page)).toBe(0);
 });

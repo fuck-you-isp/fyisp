@@ -131,7 +131,8 @@ test('an off tile: the reason and how to turn it on, no chart, no fetch', async 
   expect(ctl.tileCalls).toEqual([]);
 });
 
-test('a 404 for the tile shows the off panel, not an error', async ({ page }) => {
+test('a 404 for the tile shows the off panel, not an error', async ({ page, failOk }) => {
+  failOk.push(/\/api\/home2\?part=tile/);
   const ctl = await serveHome(page, 'now-good');
   ctl.tile = () => null;
   await openHome(page);
@@ -178,8 +179,33 @@ test('Escape is left to an open dialog', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(dlg).toHaveCount(0);
   await expect(page.locator('#hp-detail')).toBeVisible();
+  // Focus is back on the speed button: Escape there isn't about the panel.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#hp-detail')).toBeVisible();
+  await page.locator('#hp-detail h3').focus();
   await page.keyboard.press('Escape');
   await expect(page.locator('#hp-detail')).toHaveCount(0);
+  await expect(page.locator('.hp-tile[data-id="meet"]')).toBeFocused();
+});
+
+test('the chart fits again after a resize and a theme switch on Details', async ({ page }) => {
+  await serveHome(page, 'now-zoom');
+  await openHome(page);
+  await page.locator('.hp-tile[data-id="zoom"]').click();
+  await expect(page.locator('#hp-detail canvas')).toHaveCount(1);
+  await page.getByRole('link', { name: 'Technical details →' }).click();
+  await expect(page.locator('#home')).toBeHidden();
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await page.locator('#theme').click();
+  await page.goBack();
+  await expect(page.locator('#home')).toBeVisible();
+  await expect(page.locator('#hp-detail canvas')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => {
+    const box = /** @type {HTMLElement} */ (document.querySelector('#hp-detail .hp-chart'));
+    const c = /** @type {HTMLCanvasElement} */ (box.querySelector('canvas'));
+    return Math.abs(c.getBoundingClientRect().width - box.clientWidth);
+  })).toBeLessThan(2);
+  expect(await page.locator('#hp-detail .hp-chart').evaluate((el) => el.clientWidth)).toBeGreaterThan(600);
 });
 
 for (const theme of THEMES) {

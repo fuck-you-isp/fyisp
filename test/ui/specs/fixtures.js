@@ -4,16 +4,17 @@
 const base = require('@playwright/test');
 
 const test = base.test.extend({
-  // URLs whose failed requests a test expects (it checks how the page handles them).
-  // A failed /api/home2 request is always expected: the probe before the server has it,
-  // and the Home specs' unreachable and 404 cases.
-  failOk: async ({}, use) => { await use([/\/api\/home2\b/]); },
+  // Failed requests a test expects (it checks how the page handles them), matched
+  // against "<console text> <url>". Always expected: the Home probe's 404 (part=now
+  // on a server without /api/home2). Specs add their own (unreachable, 404 tiles).
+  failOk: async ({}, use) => { await use([/status of 404\b.* \S*\/api\/home2\?part=now\b/]); },
   page: async ({ page, failOk }, use) => {
     /** @type {string[]} */
     const problems = [];
     page.on('console', (m) => {
       if (m.type() !== 'error') return;
-      if (/Failed to load resource/.test(m.text()) && failOk.some((re) => re.test(m.location().url))) return;
+      const line = `${m.text()} ${m.location().url}`;
+      if (/Failed to load resource/.test(line) && failOk.some((re) => re.test(line))) return;
       problems.push(`console: ${m.text()}`);
     });
     page.on('pageerror', (e) => problems.push(`exception: ${e.message}`));

@@ -47,6 +47,19 @@ test('without /api/home2 the old Home stays', async ({ page }) => {
   await expect(page.locator('#viewnav button[aria-current="page"]')).toHaveText('Home');
 });
 
+test('a probe that never answers falls back to the old Home and doesn\'t hold up Details', async ({ page, failOk }) => {
+  failOk.push(/\/api\/home2/);
+  await page.route('**/api/home2?*', () => { /* never answers */ });
+  const t0 = Date.now();
+  await page.goto('/#v=c');
+  await expect(page.locator('#panels canvas:visible').first()).toBeVisible();
+  expect(Date.now() - t0).toBeLessThan(3500);
+  await page.goto('about:blank');
+  await page.goto('/');
+  await expect(page.locator('#home')).toHaveClass(/\bhome\b/, { timeout: 8000 });
+  await expect(page.locator('#home')).toBeVisible();
+});
+
 test('an answer that isn\'t v2 keeps the old Home', async ({ page }) => {
   await page.route('**/api/home2?*', (route) => route.fulfill({ json: { v: 1 } }));
   await page.goto('/');

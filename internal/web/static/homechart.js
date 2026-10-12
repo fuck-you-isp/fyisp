@@ -47,9 +47,15 @@ export class TileChart {
     /** @type {HomeTileDetail|null} */
     this.d = null;
     this.narrow = false;
+    this.lastW = 0;
   }
 
-  width() { return Math.max(260, this.box.clientWidth || 0); }
+  /** The box's width (at least 260), or the last one while the box isn't laid out (hidden). */
+  width() {
+    const w = this.box.clientWidth;
+    if (w) this.lastW = Math.max(260, w);
+    return this.lastW || 260;
+  }
 
   /** Draws (or redraws) the chart for one part=tile answer. @param {HomeTileDetail} d */
   set(d) {
