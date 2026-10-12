@@ -33,11 +33,11 @@ var V2Names = []string{
 	"good", "blip", "isp", "zoom", "zoom-working-again", "learning", "stale",
 	// the other rows of the answer card
 	"checking", "router-down", "upstream", "no-network", "drop-now", "dns", "udp-blocked", "udp-quiet",
-	"udp-degraded", "broad-slow", "google-down",
+	"udp-degraded", "broad-slow", "google-down", "no-data-yet",
 	// working again
 	"outage-2m-recovered", "trouble-recovered",
 	// drops and call quality
-	"drop-20s", "provider-loss-6", "jitter",
+	"drop-20s", "provider-loss-6", "provider-loss-3", "jitter",
 	// who is looking
 	"wifi-same-machine", "wifi-remote-viewer", "container-unknown", "edge-unknown",
 	// coverage and history
@@ -54,6 +54,7 @@ var V2Tiles = map[string][]string{
 	"good": {"teams", "meet", "youtube"}, "learning": {"gws"}, "isp": {"netflix"}, "jitter": {"teams"},
 	"udp-degraded": {"meet"}, "google-down": {"meet", "youtube"}, "trouble-recovered": {"slack"},
 	"blip": {"teams"}, "speedtest-labelled": {"gws"}, "not-running": {"github"}, "dst": {"teams"},
+	"provider-loss-3": {"teams"}, "edge-unknown": {"onedrive"}, "udp-quiet": {"teams"}, "no-data-yet": {"teams"},
 }
 
 // DSTNow is the dst scenario's time: Sunday 2026-11-01 10:30 am in New
@@ -74,7 +75,9 @@ type V2 struct {
 	Container bool
 	// Viewer is who asks.
 	Viewer Viewer
-	Speed  *Speed // nil: no speed tests
+	// CustomProfile: the profile is a --config file.
+	CustomProfile bool
+	Speed         *Speed // nil: no speed tests
 }
 
 // Viewer is the request's origin: its RemoteAddr, proxy headers and Host,
@@ -178,19 +181,37 @@ func (b *sb) add(e tiles.Episode) {
 			if !overlaps(x.From, x.From.Add(bar), e.Start, e.End, b.now) {
 				continue
 			}
+			// A bar notes the problem that coloured it.
 			switch {
 			case e.Kind == tiles.EpDrop:
-				x.State, x.Drop = tiles.Down, e.DropDur
-			case x.State != tiles.Down:
-				x.State = e.Sev
+				x.State, x.Drop, x.Episode = tiles.Down, e.DropDur, e.ID
+				if e.Ongoing() {
+					x.Drop = b.now.Sub(e.Start)
+				}
+			case rank(e.Sev) >= rank(x.State):
+				x.State, x.Episode = e.Sev, e.ID
+			case x.Episode == "":
+				x.Episode = e.ID
 			}
-			x.Episode = e.ID
 		}
 	}
 }
 
 // overlaps reports [a0, a1) and [b0, b1) overlapping; an ongoing b (b1
 // zero) reaches into the current bar.
+func rank(s tiles.State) int {
+	return map[tiles.State]int{tiles.Good: 1, tiles.Slow: 2, tiles.Down: 3}[s]
+}
+
+// noCalls: nothing gets through, so the call tiles' bursts all time out.
+func (b *sb) noCalls() {
+	for _, id := range callTiles() {
+		if t := b.tile(id); t.Call != nil && t.State == tiles.Down {
+			*t.Call = tiles.CallMetrics{Source: t.Call.Source}
+		}
+	}
+}
+
 func overlaps(a0, a1, b0, b1, now time.Time) bool {
 	if b1.IsZero() {
 		b1 = now.Add(time.Nanosecond)
@@ -396,14 +417,16 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 		since := b.ago(6 * time.Minute)
 		b.conn(string(model.VerdictLAN), string(model.VerdictLAN), tiles.ToneBad, tiles.Down, since)
 		ev, sev := tiles.EvRouterDown, tiles.Down
+		kind := tiles.EpDrop // the router lost everything: a connection drop absorbs the incident
 		if name == "router-down" {
 			for i := range s.Layers {
 				s.Layers[i].State, s.Layers[i].Since = tiles.Down, since
 			}
 			b.set(tiles.Down, since, allTiles()...)
+			b.noCalls()
 		} else {
 			// Wi-Fi trouble: the router answers, but loses data.
-			ev, sev = tiles.EvRouterLossy, tiles.Slow
+			ev, sev, kind = tiles.EvRouterLossy, tiles.Slow, tiles.EpSlow
 			s.Layers[0].State, s.Layers[1].State, s.Layers[2].State = tiles.Slow, tiles.Slow, tiles.Slow
 			b.set(tiles.Slow, since, allTiles()...)
 			b.callsBad(60, 45, 9)
@@ -416,7 +439,7 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 			}
 			v.Viewer.Own = []netip.Addr{netip.MustParseAddr("192.168.1.10")}
 		}
-		b.add(tiles.Episode{Start: since, Sev: sev, Kind: tiles.EpOutage, Tiles: allTiles(), Connection: true, Verdict: model.VerdictLAN,
+		b.add(tiles.Episode{Start: since, Sev: sev, Kind: kind, Tiles: allTiles(), Connection: true, Verdict: model.VerdictLAN,
 			Cause: tiles.Cause{Who: tiles.WhoRouter, Evidence: ev}})
 	case "upstream":
 		since := b.ago(10 * time.Minute)
@@ -433,19 +456,28 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 			s.Layers[i].State, s.Layers[i].Since = tiles.Down, since
 		}
 		b.set(tiles.Down, since, allTiles()...)
-		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpOutage, Tiles: allTiles(), Connection: true, Verdict: model.VerdictNoNetwork,
+		b.noCalls()
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpDrop, Tiles: allTiles(), Connection: true, Verdict: model.VerdictNoNetwork,
 			Cause: tiles.Cause{Who: tiles.WhoOffline, Evidence: tiles.EvNoNetwork}})
 	case "drop-now":
-		since := b.ago(20 * time.Second)
+		// 50 s past the router: a drop in progress (a problem from 30 s
+		// on). The call tiles' 5 s bursts have been failing long enough
+		// (3 in a row + holdFor); the web tiles' 15 s checks not yet.
+		since := b.ago(50 * time.Second)
 		s.Conn = tiles.ConnState{Kind: tiles.ConnDrop, Key: "drop:" + ms(since), Tone: tiles.ToneBad, Icon: tiles.Down, Since: since}
 		s.Layers[1].State, s.Layers[1].Since = tiles.Down, since
 		s.Layers[2].State, s.Layers[2].Since = tiles.Down, since
-		b.set(tiles.Down, since.Add(5*time.Second), allTiles()...)
+		b.set(tiles.Down, since.Add(15*time.Second), callTiles()...)
+		b.noCalls()
+		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpDrop, Tiles: callTiles(), Connection: true,
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderDrop}})
 	case "dns":
 		since := b.ago(4 * time.Minute)
 		b.conn(string(model.VerdictDNS), string(model.VerdictDNS), tiles.ToneWarn, tiles.Slow, since)
-		apps := []string{"m365", "gws", "github", "dropbox", "onedrive", "youtube", "netflix"}
+		// Every check starts with a name lookup: calls can't connect either.
+		apps := allTiles()
 		b.set(tiles.Down, since, apps...)
+		b.noCalls()
 		b.add(tiles.Episode{Start: since, Sev: tiles.Down, Kind: tiles.EpOutage, Tiles: apps, Connection: true, Verdict: model.VerdictDNS,
 			Cause: tiles.Cause{Who: tiles.WhoNames, Evidence: tiles.EvDNS}})
 	case "udp-blocked", "udp-quiet":
@@ -466,13 +498,13 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 	case "udp-degraded":
 		since := b.ago(9 * time.Minute)
 		b.conn(string(model.VerdictUDPDegraded), string(model.VerdictUDPDegraded), tiles.ToneWarn, tiles.Slow, since)
-		b.set(tiles.Slow, since.Add(time.Minute), callTiles()...)
+		b.set(tiles.Slow, since, callTiles()...)
 		b.callsBad(70, 12, 6)
 		c := tiles.Cause{Who: tiles.WhoCallsPath, Evidence: tiles.EvCallsPath}
 		for _, id := range callTiles() {
 			b.tile(id).Cause = c
 		}
-		b.add(tiles.Episode{Start: since.Add(time.Minute), Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(), Cause: c})
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(), Cause: c})
 	case "broad-slow":
 		since := b.ago(15 * time.Minute)
 		b.conn(tiles.ConnBroad, tiles.ConnBroad, tiles.ToneWarn, tiles.Slow, since)
@@ -505,16 +537,30 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
 		b.again(tiles.AgainTrouble)
 	case "provider-loss-6":
-		// 6% loss past the router: calls are choppy, the verdict sees no
-		// path problem, the card stays green, and the cause is the provider.
+		// 6% loss past the router for 6 minutes: the calls are choppy, and
+		// the verdict's udp_degraded (5% on 2 providers for 3 minutes) has
+		// the card; the problem's cause is the provider (layer evidence).
 		since := b.ago(6 * time.Minute)
+		b.conn(string(model.VerdictUDPDegraded), string(model.VerdictUDPDegraded), tiles.ToneWarn, tiles.Slow, since)
 		b.set(tiles.Slow, since, callTiles()...)
 		b.callsBad(30, 8, 6)
 		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(),
 			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
+	case "provider-loss-3":
+		// 3% loss past the router: choppy calls (2% or more), below the
+		// verdict's 5%: no path verdict, so the card is row 9, amber, and
+		// names the provider; the strip marks it.
+		since := b.ago(4 * time.Minute)
+		b.set(tiles.Slow, since, callTiles()...)
+		b.callsBad(30, 8, 3)
+		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(),
+			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
 		b.s.Conn = tiles.ConnState{Kind: tiles.ConnApp, Key: "app:zoom,teams,meet,slack:" + ms(since), Tone: tiles.ToneOK, Icon: tiles.Good, Since: since, Tiles: callTiles()}
 	case "jitter":
-		since := b.ago(7 * time.Minute)
+		// 41 ms of jitter for 3 minutes: the call tiles just turned Choppy
+		// (3 bad minutes), before the verdict's udp_degraded needs 3 minutes
+		// and a window.
+		since := b.ago(3 * time.Minute)
 		b.set(tiles.Slow, since, callTiles()...)
 		b.callsBad(40, 41, 0)
 		c := tiles.Cause{Who: tiles.WhoCallsPath, Evidence: tiles.EvCallsPath}
@@ -524,7 +570,15 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 		b.add(tiles.Episode{Start: since, Sev: tiles.Slow, Kind: tiles.EpChoppy, Tiles: callTiles(), Cause: c})
 		b.s.Conn = tiles.ConnState{Kind: tiles.ConnApp, Key: "app:zoom,teams,meet,slack:" + ms(since), Tone: tiles.ToneOK, Icon: tiles.Good, Since: since, Tiles: callTiles()}
 	case "edge-unknown":
+		// The provider's edge isn't found yet, and OneDrive has no data yet.
 		s.Layers[1].State = tiles.None
+		b.set(tiles.None, b.ago(2*time.Minute), "onedrive")
+	case "no-data-yet":
+		// Replayed, but no tile's first minute has closed (a restart):
+		// still checking, never "all 11 apps look healthy".
+		for i := range s.Tiles {
+			s.Tiles[i].State, s.Tiles[i].Since = tiles.None, time.Time{}
+		}
 	case "calls-profile", "no-streaming", "custom-config":
 		var off []string
 		switch name {
@@ -545,6 +599,7 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 		if name != "calls-profile" {
 			v.Profile = without(p, off)
 		}
+		v.CustomProfile = name == "custom-config"
 		for _, id := range off {
 			*b.tile(id) = tiles.TileSnap{ID: id, State: tiles.Off}
 		}
@@ -712,6 +767,7 @@ func (b *sb) finish() {
 		fmt.Fprint(h, e.ID, e.End.UnixMilli(), e.Cause, e.Tiles)
 	}
 	s.Rev = h.Sum64()
+	s.Eps = v.Eps
 	for _, t := range s.Tiles {
 		if t.State != tiles.Off {
 			s.Monitored++

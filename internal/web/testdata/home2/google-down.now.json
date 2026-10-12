@@ -8,13 +8,13 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "app:meet,gws,youtube:1791555600000",
+    "key": "app:meet,gws,youtube:1791555600000:18vb4er",
     "tone": "ok",
     "icon": "good",
     "tab": "! 3 apps with problems",
     "headline": "Your internet is fine. Google Meet, Google Workspace and YouTube have problems.",
     "sub": "Likely cause: Google’s side — the non-Google apps are working normally. Zoom and Teams are working if you need to switch.",
-    "day": {"text": "Last 24 hours: 5 short problems, 1 likely from your internet provider.", "link": "5 short problems"}
+    "day": {"text": "Last 24 hours: 5 problems, 1 likely from your internet provider.", "link": "5 problems"}
   },
   "path": [
     {"id": "router", "label": "Your home router", "state": "good", "sub": "Working normally"},
@@ -466,7 +466,7 @@
         "ongoing": true,
         "level": "down",
         "when": "Today since 10:20 am (still happening)",
-        "what": "Google Meet, Google Workspace and YouTube not loading.",
+        "what": "Google Meet not connecting; Google Workspace and YouTube not loading.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps are normal."
@@ -502,7 +502,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

@@ -8,7 +8,7 @@
   "learning": null,
   "monitored": 7,
   "answer": {
-    "key": "good",
+    "key": "good:7ougsa",
     "tone": "ok",
     "icon": "good",
     "tab": "✓ All good",
@@ -129,7 +129,7 @@
       "note": "",
       "aria": "GitHub: not checked on this setup",
       "reason": "fyisp isn’t checking GitHub on this setup.",
-      "enable_hint": "To check GitHub, add services-dev to fyisp’s --profile setting (FYISP_PROFILE in Docker).",
+      "enable_hint": "To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.",
       "bars_summary": "",
       "bars": []
     },
@@ -143,7 +143,7 @@
       "note": "",
       "aria": "Dropbox: not checked on this setup",
       "reason": "fyisp isn’t checking Dropbox on this setup.",
-      "enable_hint": "To check Dropbox, add services-productivity to fyisp’s --profile setting (FYISP_PROFILE in Docker).",
+      "enable_hint": "To check Dropbox, tag a target in your --config file tile:dropbox, or add extends: default to it.",
       "bars_summary": "",
       "bars": []
     },
@@ -170,7 +170,7 @@
       "note": "",
       "aria": "YouTube: not checked on this setup",
       "reason": "fyisp isn’t checking YouTube on this setup.",
-      "enable_hint": "To check YouTube, add streaming to fyisp’s --profile setting (FYISP_PROFILE in Docker).",
+      "enable_hint": "To check YouTube, tag a target in your --config file tile:youtube, or add extends: default to it.",
       "bars_summary": "",
       "bars": []
     },
@@ -184,7 +184,7 @@
       "note": "",
       "aria": "Netflix: not checked on this setup",
       "reason": "fyisp isn’t checking Netflix on this setup.",
-      "enable_hint": "To check Netflix, add streaming to fyisp’s --profile setting (FYISP_PROFILE in Docker).",
+      "enable_hint": "To check Netflix, tag a target in your --config file tile:netflix, or add extends: default to it.",
       "bars_summary": "",
       "bars": []
     }
@@ -240,7 +240,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet and Google Workspace didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

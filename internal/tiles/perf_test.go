@@ -118,7 +118,7 @@ func TestPerfEngineReplay(t *testing.T) {
 	pprof.StopCPUProfile()
 	t.Logf("live tick with snapshot: %v", (time.Since(a) / ticks).Round(time.Microsecond))
 	snap := e.Snapshot()
-	t.Logf("snapshot: %d problems, card %s, monitored %d", len(snap.eps), snap.Conn.Kind, snap.Monitored)
+	t.Logf("snapshot: %d problems, card %s, monitored %d", len(snap.Eps), snap.Conn.Kind, snap.Monitored)
 	if total > 2*time.Second {
 		t.Errorf("replay %v: over the 2 s budget", total)
 	}

@@ -8,15 +8,15 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "broad:1791555300000",
+    "key": "broad:1791555300000:ot78br",
     "tone": "warn",
     "icon": "slow",
     "tab": "! Apps slow",
     "headline": "Most apps are slower than usual.",
     "sub": "Your router and your internet provider look fine, but most apps are slow at the same time. Started at 10:15 am.",
     "day": {
-      "text": "Last 24 hours: 5 short problems, 1 likely from your internet provider.",
-      "link": "5 short problems"
+      "text": "Last 24 hours: 5 problems, 1 likely from your internet provider.",
+      "link": "5 problems"
     }
   },
   "path": [
@@ -203,7 +203,7 @@
     "can_control": true
   },
   "problems": {
-    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",
+    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves, 1 with other causes.",
     "items": [
       {
         "id": "c-1791555300000",
@@ -213,7 +213,7 @@
         "level": "slow",
         "when": "Today since 10:15 am (still happening)",
         "what": "Most apps are slow.",
-        "cause": "unclear",
+        "cause": "not clear yet",
         "cause_kind": "other",
         "evidence": "Your router and your internet provider look fine."
       },
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

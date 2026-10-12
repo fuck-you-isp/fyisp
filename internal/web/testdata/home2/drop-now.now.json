@@ -8,13 +8,13 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "drop:1791556180000",
+    "key": "drop:1791556150000:12jkd1v",
     "tone": "bad",
     "icon": "down",
     "tab": "✕ Internet down",
     "headline": "Your internet just dropped.",
     "sub": "Nothing is getting through right now. Started at 10:29 am.",
-    "day": {"text": "Last 24 hours: 4 short problems, 1 likely from your internet provider.", "link": "4 short problems"}
+    "day": {"text": "Last 24 hours: 5 problems, 2 likely from your internet provider.", "link": "5 problems"}
   },
   "path": [
     {"id": "router", "label": "Your home router", "state": "good", "sub": "Working normally"},
@@ -29,7 +29,7 @@
       "kind": "call",
       "state": "down",
       "word": "Down",
-      "since": 1791556185000,
+      "since": 1791556165000,
       "note": "since 10:29 am",
       "aria": "Zoom: Down, since 10:29 am",
       "reason": "Not connecting since 10:29 am.",
@@ -57,8 +57,8 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "down", "note": "Down since 10:29 am"},
+        {"from": 1791556200000, "state": "down", "note": "Down since 10:29 am"}
       ]
     },
     {
@@ -67,7 +67,7 @@
       "kind": "call",
       "state": "down",
       "word": "Down",
-      "since": 1791556185000,
+      "since": 1791556165000,
       "note": "since 10:29 am",
       "aria": "Microsoft Teams: Down, since 10:29 am",
       "reason": "Not connecting since 10:29 am.",
@@ -95,8 +95,8 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "down", "note": "Down since 10:29 am"},
+        {"from": 1791556200000, "state": "down", "note": "Down since 10:29 am"}
       ]
     },
     {
@@ -105,7 +105,7 @@
       "kind": "call",
       "state": "down",
       "word": "Down",
-      "since": 1791556185000,
+      "since": 1791556165000,
       "note": "since 10:29 am",
       "aria": "Google Meet: Down, since 10:29 am",
       "reason": "Not connecting since 10:29 am.",
@@ -133,8 +133,8 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "down", "note": "Down since 10:29 am"},
+        {"from": 1791556200000, "state": "down", "note": "Down since 10:29 am"}
       ]
     },
     {
@@ -143,7 +143,7 @@
       "kind": "call",
       "state": "down",
       "word": "Down",
-      "since": 1791556185000,
+      "since": 1791556165000,
       "note": "since 10:29 am",
       "aria": "Slack: Down, since 10:29 am",
       "reason": "Not connecting since 10:29 am.",
@@ -171,21 +171,21 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "down", "note": "Down since 10:29 am"},
+        {"from": 1791556200000, "state": "down", "note": "Down since 10:29 am"}
       ]
     },
     {
       "id": "m365",
       "name": "Microsoft 365",
       "kind": "app",
-      "state": "down",
-      "word": "Down",
-      "since": 1791556185000,
-      "note": "since 10:29 am",
-      "aria": "Microsoft 365: Down, since 10:29 am",
-      "reason": "Not loading since 10:29 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 2 of 24 five-minute periods.",
+      "state": "good",
+      "word": "Good",
+      "since": null,
+      "note": "",
+      "aria": "Microsoft 365: Good",
+      "reason": "Working normally.",
+      "bars_summary": "Last 2 hours: no problems.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -209,21 +209,21 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "good", "note": ""},
+        {"from": 1791556200000, "state": "good", "note": ""}
       ]
     },
     {
       "id": "gws",
       "name": "Google Workspace",
       "kind": "app",
-      "state": "down",
-      "word": "Down",
-      "since": 1791556185000,
-      "note": "since 10:29 am",
-      "aria": "Google Workspace: Down, since 10:29 am",
-      "reason": "Not loading since 10:29 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 2 of 24 five-minute periods.",
+      "state": "good",
+      "word": "Good",
+      "since": null,
+      "note": "",
+      "aria": "Google Workspace: Good",
+      "reason": "Working normally.",
+      "bars_summary": "Last 2 hours: no problems.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -247,21 +247,21 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "good", "note": ""},
+        {"from": 1791556200000, "state": "good", "note": ""}
       ]
     },
     {
       "id": "github",
       "name": "GitHub",
       "kind": "app",
-      "state": "down",
-      "word": "Down",
-      "since": 1791556185000,
-      "note": "since 10:29 am",
-      "aria": "GitHub: Down, since 10:29 am",
-      "reason": "Not loading since 10:29 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 2 of 24 five-minute periods.",
+      "state": "good",
+      "word": "Good",
+      "since": null,
+      "note": "",
+      "aria": "GitHub: Good",
+      "reason": "Working normally.",
+      "bars_summary": "Last 2 hours: no problems.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -285,21 +285,21 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "good", "note": ""},
+        {"from": 1791556200000, "state": "good", "note": ""}
       ]
     },
     {
       "id": "dropbox",
       "name": "Dropbox",
       "kind": "app",
-      "state": "down",
-      "word": "Down",
-      "since": 1791556185000,
-      "note": "since 10:29 am",
-      "aria": "Dropbox: Down, since 10:29 am",
-      "reason": "Not loading since 10:29 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 2 of 24 five-minute periods.",
+      "state": "good",
+      "word": "Good",
+      "since": null,
+      "note": "",
+      "aria": "Dropbox: Good",
+      "reason": "Working normally.",
+      "bars_summary": "Last 2 hours: no problems.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -323,21 +323,21 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "good", "note": ""},
+        {"from": 1791556200000, "state": "good", "note": ""}
       ]
     },
     {
       "id": "onedrive",
       "name": "OneDrive",
       "kind": "app",
-      "state": "down",
-      "word": "Down",
-      "since": 1791556185000,
-      "note": "since 10:29 am",
-      "aria": "OneDrive: Down, since 10:29 am",
-      "reason": "Not loading since 10:29 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 2 of 24 five-minute periods.",
+      "state": "good",
+      "word": "Good",
+      "since": null,
+      "note": "",
+      "aria": "OneDrive: Good",
+      "reason": "Working normally.",
+      "bars_summary": "Last 2 hours: no problems.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -361,21 +361,21 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "good", "note": ""},
+        {"from": 1791556200000, "state": "good", "note": ""}
       ]
     },
     {
       "id": "youtube",
       "name": "YouTube",
       "kind": "stream",
-      "state": "down",
-      "word": "Down",
-      "since": 1791556185000,
-      "note": "since 10:29 am",
-      "aria": "YouTube: Down, since 10:29 am",
-      "reason": "Not loading since 10:29 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 2 of 24 five-minute periods.",
+      "state": "good",
+      "word": "Good",
+      "since": null,
+      "note": "",
+      "aria": "YouTube: Good",
+      "reason": "Working normally. YouTube is reachable. If it’s buffering, test your speed below.",
+      "bars_summary": "Last 2 hours: no problems.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -399,21 +399,21 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "good", "note": ""},
+        {"from": 1791556200000, "state": "good", "note": ""}
       ]
     },
     {
       "id": "netflix",
       "name": "Netflix",
       "kind": "stream",
-      "state": "down",
-      "word": "Down",
-      "since": 1791556185000,
-      "note": "since 10:29 am",
-      "aria": "Netflix: Down, since 10:29 am",
-      "reason": "Not loading since 10:29 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 2 of 24 five-minute periods.",
+      "state": "good",
+      "word": "Good",
+      "since": null,
+      "note": "",
+      "aria": "Netflix: Good",
+      "reason": "Working normally. Netflix is reachable. If it’s buffering, test your speed below.",
+      "bars_summary": "Last 2 hours: no problems.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -437,8 +437,8 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "down", "note": ""},
-        {"from": 1791556200000, "state": "down", "note": ""}
+        {"from": 1791555900000, "state": "good", "note": ""},
+        {"from": 1791556200000, "state": "good", "note": ""}
       ]
     }
   ],
@@ -457,8 +457,20 @@
     "can_control": true
   },
   "problems": {
-    "summary": "5 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",
+    "summary": "6 problems: 2 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",
     "items": [
+      {
+        "id": "c-1791556150000",
+        "from": 1791556150000,
+        "to": 0,
+        "ongoing": true,
+        "level": "down",
+        "when": "Today since 10:29 am (still happening)",
+        "what": "Everything is dropping.",
+        "cause": "your internet provider",
+        "cause_kind": "provider",
+        "evidence": "Your router is answering, but nothing past it is."
+      },
       {
         "id": "t-1791553260000-slack",
         "from": 1791553260000,
@@ -490,7 +502,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

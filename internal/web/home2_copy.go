@@ -203,9 +203,13 @@ func (c h2copy) dropNote(d *tiles.Drop) string {
 
 // tileReason is a tile's plain-language state, with its likely cause when
 // it is on the app's side (a router or provider cause is the card's).
-func (c h2copy) tileReason(d profile.TileDef, t tiles.TileSnap, checking bool) string {
+// blocked: the network blocks the traffic calls prefer (udp_blocked).
+func (c h2copy) tileReason(d profile.TileDef, t tiles.TileSnap, checking, blocked bool) string {
 	if checking {
 		return "fyisp is still checking."
+	}
+	if blocked && d.Kind == profile.TileCall && t.State.Bad() {
+		return "Can’t use its fast path on this network " + c.since(t.Since) + ". Calls may still connect over a slower route."
 	}
 	var r string
 	switch t.State {
@@ -229,14 +233,19 @@ func (c h2copy) tileReason(d profile.TileDef, t tiles.TileSnap, checking bool) s
 	default:
 		return "No data yet."
 	}
-	if d.Kind == profile.TileStream && t.State != tiles.Down {
-		r += " " + d.Name + " is reachable. If it’s buffering, test your speed below."
-	}
 	if t.State.Bad() && t.Cause.Who != "" && t.Cause.Who != tiles.WhoUnknown {
-		r += " Likely cause: " + c.cause(t.Cause) + " — " + c.tileEvidence(t.Cause) + "."
+		ev := c.tileEvidence(t.Cause)
+		if t.Cause.Evidence == tiles.EvAppOnly && t.Call != nil && t.Call.Source == tiles.CallShared {
+			// its call figures are the general path's, and fine
+			ev = "the general call path and everything else are normal"
+		}
+		r += " Likely cause: " + c.cause(t.Cause) + " — " + ev + "."
 	}
 	if t.State == tiles.Good && t.LastDrop != nil {
 		r += " It dropped for " + about(t.LastDrop.Dur) + " at " + c.when(t.LastDrop.Start) + "."
+	}
+	if d.Kind == profile.TileStream && t.State != tiles.Down {
+		r += " " + d.Name + " is reachable. If it’s buffering, test your speed below."
 	}
 	return r
 }
@@ -256,10 +265,16 @@ func (c h2copy) tileEvidence(x tiles.Cause) string {
 	return c.evidence(x, true)
 }
 
-// barsSummary sums up a tile's bars for screen readers.
-func (c h2copy) barsSummary(bs []tiles.Bar) string {
+// barsSummary sums up a tile's bars for screen readers. Bars before
+// fyisp's first data (first) are its start, not a gap.
+func (c h2copy) barsSummary(bs []tiles.Bar, first time.Time) string {
 	var down, slow, none int
+	started := false
 	for _, b := range bs {
+		if !first.IsZero() && b.From.Add(5*time.Minute).Before(first.Add(3*time.Minute)) {
+			started = true
+			continue
+		}
 		switch b.State {
 		case tiles.Down:
 			down++
@@ -274,6 +289,9 @@ func (c h2copy) barsSummary(bs []tiles.Bar) string {
 		return ""
 	}
 	var parts []string
+	if started {
+		parts = append(parts, "fyisp started at "+c.clock(first))
+	}
 	of := fmt.Sprintf(" of %d five-minute periods", len(bs))
 	if down > 0 {
 		parts = append(parts, fmt.Sprintf("down or dropped in %d%s", down, of))
@@ -285,14 +303,21 @@ func (c h2copy) barsSummary(bs []tiles.Bar) string {
 	if none > 0 {
 		parts = append(parts, fmt.Sprintf("not watched for %d minutes", none*5))
 	}
-	if len(parts) == 0 {
+	switch {
+	case len(parts) == 0:
 		return "Last 2 hours: no problems."
+	case started && len(parts) == 1:
+		parts = append(parts, "no problems since")
 	}
 	return "Last 2 hours: " + strings.Join(parts, ", ") + "."
 }
 
-// enableHint says which profile adds an off tile's targets.
-func (c h2copy) enableHint(d profile.TileDef) string {
+// enableHint says how to check an off tile: the catalog profile that
+// adds its targets, or, with a --config file, its tile: tag.
+func (c h2copy) enableHint(d profile.TileDef, custom bool) string {
+	if custom {
+		return "To check " + d.Name + ", tag a target in your --config file tile:" + d.ID + ", or add extends: default to it."
+	}
 	return "To check " + d.Name + ", add " + d.Enable + " to fyisp’s --profile setting (FYISP_PROFILE in Docker)."
 }
 
@@ -303,7 +328,11 @@ func (c h2copy) coverage(r profile.ResolvedTile, src string) string {
 	case r.Kind == profile.TileCall && (src == tiles.CallTCPOnly || len(r.UDP) == 0):
 		return "Can connect; call quality isn’t checked on this setup."
 	case r.Kind == profile.TileCall && len(r.TileDef.UDP) == 0:
-		return "Call quality is judged from the general call path; fyisp can’t test " + r.Name + "’s own servers before a meeting."
+		before := "a meeting"
+		if r.ID == "slack" {
+			before = "a call"
+		}
+		return "Call quality is judged from the general call path; fyisp can’t test " + r.Name + "’s own servers before " + before + "."
 	case r.Kind == profile.TileCall && r.SharedUDP:
 		return "Call quality is judged from the general call path, because this setup doesn’t check " + vendorName(r.Vendors[0]) + "’s own call servers."
 	case r.ID == "onedrive":
@@ -330,11 +359,11 @@ func (c h2copy) cause(x tiles.Cause) string {
 	case tiles.WhoApp:
 		return vendorSide(x.Vendor)
 	case tiles.WhoCallsPath:
-		return "the path calls take"
+		return "the route calls take across the internet"
 	case tiles.WhoSpeedtest:
 		return "the speed test fyisp was running"
 	}
-	return "unclear"
+	return "not clear yet"
 }
 
 // evidence backs a cause, lower case: over (the problem ended) or now.
@@ -383,7 +412,7 @@ func (c h2copy) evidence(x tiles.Cause, now bool) string {
 // machine over Wi-Fi.
 func (c h2copy) routerName() string {
 	if c.wifi {
-		return "Your Wi-Fi & router"
+		return "Your Wi-Fi and router"
 	}
 	return "Your home router"
 }
@@ -400,17 +429,42 @@ func (c h2copy) againSentence(a *tiles.Recovered) string {
 	return "Working again. Your internet had trouble for " + about(a.Dur) + " (" + c.span(a.Start, a.End) + ")."
 }
 
-// healthy is the good card's sub line.
-func (c h2copy) healthy(monitored int, calls bool, learning bool, first time.Time) string {
+// againAside is the same news after an app problem's sub line:
+// "Separately, your internet dropped for about 40 seconds at 10:14 am and
+// is back now."
+func (c h2copy) againAside(a *tiles.Recovered) string {
+	switch a.Variant {
+	case tiles.AgainDropped:
+		return "Separately, your internet dropped for " + about(a.Dur) + " at " + c.clock(a.Start) + " and is back now."
+	case tiles.AgainDown:
+		return "Separately, your internet was down for " + about(a.Dur) + " (" + c.span(a.Start, a.End) + ") and is back now."
+	}
+	return "Separately, your internet had trouble for " + about(a.Dur) + " (" + c.span(a.Start, a.End) + ") and is fine now."
+}
+
+// started is " Started at 10:12 am." (another day: " Started yesterday at
+// 11:41 pm.").
+func (c h2copy) started(t time.Time) string {
+	if c.daysAgo(t) == 0 {
+		return " Started at " + c.clock(t) + "."
+	}
+	return " Started " + c.dayIn(t) + " at " + c.clock(t) + "."
+}
+
+// healthy is the good card's sub line. measured are the tiles with data:
+// right after the start some may have none yet.
+func (c h2copy) healthy(monitored, measured int, calls bool, learning bool, first time.Time) string {
 	who := "Your router, your internet provider"
 	if c.wifi {
 		who = "Your Wi-Fi and router, your internet provider"
 	}
 	var s string
-	switch monitored {
-	case 0:
+	switch {
+	case monitored == 0:
 		s = strings.Replace(who, ", your", " and your", 1) + " look healthy."
-	case 1:
+	case measured < monitored:
+		s = fmt.Sprintf("%s and %d of %d apps look healthy; the others have no data yet.", who, measured, monitored)
+	case monitored == 1:
 		s = who + " and the app fyisp checks look healthy."
 	default:
 		s = fmt.Sprintf("%s and all %d apps look healthy.", who, monitored)
@@ -424,11 +478,12 @@ func (c h2copy) healthy(monitored int, calls bool, learning bool, first time.Tim
 	return s
 }
 
-// appCard is the card of problems with some apps while the connection
-// is fine (the card stays green). causes are the bad tiles' likely causes:
-// their own, or, when the connection is to blame (6% loss past the router
-// makes calls choppy without a path verdict), their problem's.
-func (c h2copy) appCard(bad []tiles.TileSnap, causes []tiles.Cause, all []tiles.TileSnap) (headline, sub, tab string) {
+// appCard is the card of problems with some apps while no path verdict
+// holds. causes are the bad tiles' likely causes: their own, or, when the
+// connection is to blame (3% loss past the router makes calls choppy
+// without a path verdict), their problem's. warn: the connection or the
+// route calls take is to blame (an amber card), not the apps.
+func (c h2copy) appCard(bad []tiles.TileSnap, causes []tiles.Cause, all []tiles.TileSnap) (headline, sub, tab string, warn bool) {
 	var names []string
 	calls, down := 0, 0
 	for _, t := range bad {
@@ -441,6 +496,7 @@ func (c h2copy) appCard(bad []tiles.TileSnap, causes []tiles.Cause, all []tiles.
 			down++
 		}
 	}
+	allCalls := calls == len(bad)
 	switch d, t := tileDef(bad[0].ID), bad[0]; {
 	case len(bad) == 1:
 		switch {
@@ -454,9 +510,9 @@ func (c h2copy) appCard(bad []tiles.TileSnap, causes []tiles.Cause, all []tiles.
 			headline = d.Name + " is slower than usual."
 		}
 		tab = "! " + d.Name + " " + strings.ToLower(c.word(t.State, d.Kind))
-	case calls == len(bad) && down == 0:
+	case allCalls && down == 0:
 		headline, tab = "Calls may be choppy.", "! Calls choppy"
-	case calls == len(bad) && down == len(bad):
+	case allCalls && down == len(bad):
 		headline, tab = "Calls aren’t connecting.", "! Calls down"
 	case len(bad) <= 3:
 		headline, tab = andJoin(names)+" have problems.", fmt.Sprintf("! %d apps with problems", len(bad))
@@ -465,29 +521,45 @@ func (c h2copy) appCard(bad []tiles.TileSnap, causes []tiles.Cause, all []tiles.
 	}
 	x := causes[0]
 	same := !slices.ContainsFunc(causes, func(y tiles.Cause) bool { return y != x })
-	switch x.Kind() {
-	case tiles.KindApp, tiles.KindSpeedtest:
-		headline = "Your internet is fine. " + headline
-	case tiles.KindOther:
-		if x.Who == tiles.WhoCallsPath || x.Who == tiles.WhoUnknown || x.Who == "" {
-			headline = "Your internet is fine. " + headline
+	if !same {
+		x = tiles.Cause{}
+		if !slices.ContainsFunc(causes, func(y tiles.Cause) bool { return y.Who != tiles.WhoApp }) {
+			x.Who = tiles.WhoApp
 		}
+	}
+	what := "some data"
+	rest := ""
+	if allCalls {
+		what, rest = "some call data", " Websites and other apps are working normally."
+	}
+	switch x.Who {
+	case tiles.WhoProvider, tiles.WhoRouter, tiles.WhoOffline, tiles.WhoInternet:
+		warn = true
+	case tiles.WhoCallsPath:
+		warn = true
+		headline = "Your internet is fine. " + headline
+	default:
+		headline = "Your internet is fine. " + headline
 	}
 	switch {
 	case !same && x.Who == tiles.WhoApp:
 		sub = "Likely cause: the apps’ own side — your router and your internet provider look fine."
-	case !same, x.Who == "", x.Who == tiles.WhoUnknown:
-		sub = "Likely cause: unclear — your router and your internet provider look fine."
+	case x.Who == "", x.Who == tiles.WhoUnknown:
+		sub = "Likely cause: not clear yet — your router and your internet provider look fine."
+	case x.Who == tiles.WhoProvider:
+		sub = "Likely cause: your internet provider — your router is fine, but " + what + " is being lost just past it." + rest
+	case x.Who == tiles.WhoRouter, x.Who == tiles.WhoOffline:
+		sub = "Likely cause: your home router — " + what + " is being lost on the way to it." + rest
+	case x.Who == tiles.WhoInternet:
+		sub = "Likely cause: the internet past your provider — your router and your provider are fine, but " + what + " is being lost beyond them." + rest
 	case x.Evidence == tiles.EvAppOnly:
 		sub = "Likely cause: " + c.cause(x) + " — every other app is working normally."
 	case x.Evidence == tiles.EvVendorOnly:
 		sub = "Likely cause: " + c.cause(x) + " — the non-" + vendorName(x.Vendor) + " apps are working normally."
 	case x.Evidence == tiles.EvCallsPath:
 		sub = "Likely cause: " + c.cause(x) + " — websites and other apps are working normally."
-	case x.Kind() == tiles.KindApp, x.Who == tiles.WhoSpeedtest:
-		sub = "Likely cause: " + c.cause(x) + " — " + c.tileEvidence(x) + "."
 	default:
-		sub = "Likely cause: " + c.cause(x) + " — " + c.evidence(x, true) + "."
+		sub = "Likely cause: " + c.cause(x) + " — " + c.tileEvidence(x) + "."
 	}
 	// A meeting app that isn't connecting: name the ones that work.
 	stuck := slices.ContainsFunc(bad, func(t tiles.TileSnap) bool {
@@ -507,17 +579,17 @@ func (c h2copy) appCard(bad []tiles.TileSnap, causes []tiles.Cause, all []tiles.
 	default:
 		sub += " " + andJoin(alt) + " are working if you need to switch."
 	}
-	return headline, sub, tab
+	return headline, sub, tab, warn
 }
 
 // pathCard is a broken path's card (rows 3 and 4 of the connection state).
 func (c h2copy) pathCard(kind string, since time.Time) (headline, sub, tab string) {
-	started := " Started at " + c.when(since) + "."
+	started := c.started(since)
 	switch kind {
 	case "lan":
 		if c.wifi {
-			return "Your Wi-Fi or router is likely having trouble.",
-				"fyisp can’t reliably reach your router, so every app is affected at once." + started, "✕ Wi-Fi or router problem"
+			return "Your Wi-Fi and router are likely having trouble.",
+				"fyisp can’t reliably reach your router, so every app is affected at once." + started, "✕ Wi-Fi and router problem"
 		}
 		return "Your home router is likely having trouble.",
 			"fyisp can’t reliably reach your router, so every app is affected at once." + started, "✕ Router problem"
@@ -539,10 +611,14 @@ func (c h2copy) pathCard(kind string, since time.Time) (headline, sub, tab strin
 // ---------- problems ----------
 
 // problemWhen is "Today 9:41–9:45 am", "Today since 10:05 am (still
-// happening)" or "Today 10:14 am (about 40 seconds)".
+// happening)", "Since yesterday 8:30 am (still happening)" or "Today
+// 10:14 am (about 40 seconds)".
 func (c h2copy) problemWhen(e tiles.Episode) string {
 	if e.Ongoing() {
-		return c.day(e.Start) + " since " + c.clock(e.Start) + " (still happening)"
+		if c.daysAgo(e.Start) == 0 {
+			return "Today since " + c.clock(e.Start) + " (still happening)"
+		}
+		return "Since " + c.dayIn(e.Start) + " " + c.clock(e.Start) + " (still happening)"
 	}
 	d := e.End.Sub(e.Start)
 	if e.DropDur > 0 {
@@ -588,19 +664,18 @@ func (c h2copy) problemWhat(e tiles.Episode) string {
 		}
 		return pick("Calls may have been choppy and some sites slow.", "Calls choppy, some sites slow or not loading.")
 	}
-	var names []string
-	calls, apps := 0, 0
+	var names, callNames, appNames []string
 	for _, id := range e.Tiles {
 		d := tileDef(id)
 		names = append(names, d.Name)
 		if d.Kind == profile.TileCall {
-			calls++
+			callNames = append(callNames, d.Name)
 		} else {
-			apps++
+			appNames = append(appNames, d.Name)
 		}
 	}
 	who := andJoin(names)
-	one := len(names) == 1
+	calls, apps := len(callNames), len(appNames)
 	switch {
 	case e.Kind == tiles.EpDrop && !on:
 		return who + " dropped for " + about(e.DropDur) + "."
@@ -609,10 +684,11 @@ func (c h2copy) problemWhat(e tiles.Episode) string {
 	case e.Sev == tiles.Down && calls == 0:
 		return pick(who+" didn’t load.", who+" not loading.")
 	case e.Sev == tiles.Down:
-		return pick(who+" didn’t load.", who+" not loading.")
+		cw, aw := andJoin(callNames), andJoin(appNames)
+		return pick(cw+" couldn’t connect; "+aw+" didn’t load.", cw+" not connecting; "+aw+" not loading.")
 	case apps == 0:
 		return pick(who+" calls may have been choppy.", who+" calls may be choppy.")
-	case calls == 0 && one:
+	case calls == 0 && len(names) == 1:
 		return pick(who+" was slow to load.", who+" is slow to load.")
 	case calls == 0:
 		return pick(who+" were slow to load.", who+" are slow to load.")
@@ -620,9 +696,42 @@ func (c h2copy) problemWhat(e tiles.Episode) string {
 	return pick(who+" were slow or choppy.", who+" are slow or choppy.")
 }
 
+// buckets counts problems by cause kind; network: a home problem was the
+// computer's own network (offline), not only the router.
+type buckets struct {
+	total, prov, home, app, other int
+	network                       bool
+}
+
+func bucketsOf(eps []tiles.Episode) buckets {
+	var b buckets
+	for _, e := range eps {
+		b.total++
+		switch e.Cause.Kind() {
+		case tiles.KindProvider:
+			b.prov++
+		case tiles.KindHome:
+			b.home++
+			b.network = b.network || e.Cause.Who == tiles.WhoOffline
+		case tiles.KindApp:
+			b.app++
+		default:
+			b.other++
+		}
+	}
+	return b
+}
+
+func (b buckets) homeLabel() string {
+	if b.network {
+		return "from your home network"
+	}
+	return "from your home router"
+}
+
 // problemsSummary is "5 problems: 2 likely from your internet provider,
-// 1 from your home router, 2 from the apps themselves." Speed tests and
-// unclear causes count in the total only.
+// 1 from your home router, 2 from the apps themselves." The rest (speed
+// tests, unclear causes) are "with other causes", so the counts add up.
 func (c h2copy) problemsSummary(eps []tiles.Episode, learning bool, first time.Time) string {
 	if len(eps) == 0 {
 		if learning && !first.IsZero() {
@@ -630,52 +739,58 @@ func (c h2copy) problemsSummary(eps []tiles.Episode, learning bool, first time.T
 		}
 		return "No problems in the last 7 days."
 	}
-	var prov, home, app int
-	for _, e := range eps {
-		switch e.Cause.Kind() {
-		case tiles.KindProvider:
-			prov++
-		case tiles.KindHome:
-			home++
-		case tiles.KindApp:
-			app++
-		}
-	}
+	b := bucketsOf(eps)
 	var parts []string
-	if prov > 0 {
-		parts = append(parts, fmt.Sprintf("%d from your internet provider", prov))
+	if b.prov > 0 {
+		parts = append(parts, fmt.Sprintf("%d from your internet provider", b.prov))
 	}
-	if home > 0 {
-		parts = append(parts, fmt.Sprintf("%d from your home router", home))
+	if b.home > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s", b.home, b.homeLabel()))
 	}
-	if app > 0 {
-		parts = append(parts, fmt.Sprintf("%d from the apps themselves", app))
+	if b.app > 0 {
+		parts = append(parts, fmt.Sprintf("%d from the apps themselves", b.app))
 	}
-	s := count(len(eps), "problem")
-	if len(parts) == 0 {
-		return s + "."
+	if len(parts) > 0 {
+		n, rest, _ := strings.Cut(parts[0], " ")
+		parts[0] = n + " likely " + rest
 	}
-	n, rest, _ := strings.Cut(parts[0], " ")
-	parts[0] = n + " likely " + rest
-	return s + ": " + strings.Join(parts, ", ") + "."
+	if b.other > 0 {
+		parts = append(parts, fmt.Sprintf("%d with other causes", b.other))
+	}
+	return count(b.total, "problem") + ": " + strings.Join(parts, ", ") + "."
 }
 
-// dayLine is the card's "Last 24 hours: …" line.
-func (c h2copy) dayLine(n tiles.Counts) *Home2Day {
-	if n.Total == 0 {
+// dayLine is the card's "Last 24 hours: …" line over the problems that
+// ended in the last 24 hours or go on: "short" while none goes on or
+// lasted over 30 minutes.
+func (c h2copy) dayLine(eps []tiles.Episode) *Home2Day {
+	var day []tiles.Episode
+	short := true
+	for _, e := range eps {
+		if !e.Ongoing() && e.End.Before(c.now.Add(-24*time.Hour)) {
+			continue
+		}
+		day = append(day, e)
+		short = short && !e.Ongoing() && e.End.Sub(e.Start) <= 30*time.Minute
+	}
+	if len(day) == 0 {
 		return &Home2Day{Text: "Last 24 hours: no problems.", Link: ""}
 	}
-	link := count(n.Total, "short problem")
-	var parts []string
-	if n.Provider > 0 {
-		parts = append(parts, fmt.Sprintf("%d likely from your internet provider", n.Provider))
+	b := bucketsOf(day)
+	link := count(b.total, "problem")
+	if short {
+		link = count(b.total, "short problem")
 	}
-	if n.Home > 0 {
+	var parts []string
+	if b.prov > 0 {
+		parts = append(parts, fmt.Sprintf("%d likely from your internet provider", b.prov))
+	}
+	if b.home > 0 {
 		w := "likely "
 		if len(parts) > 0 {
 			w = ""
 		}
-		parts = append(parts, fmt.Sprintf("%d %sfrom your home router", n.Home, w))
+		parts = append(parts, fmt.Sprintf("%d %s%s", b.home, w, b.homeLabel()))
 	}
 	text := "Last 24 hours: " + link
 	if len(parts) > 0 {

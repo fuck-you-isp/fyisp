@@ -422,12 +422,12 @@ Unknown or repeated parameters return 400. Without the tiles engine the route an
   "v": 2, "at": 1791556200000,
   "last_check": 1791556196000,        // the newest measured sample; 0: none yet
   "stale": false,                     // last_check is 2 minutes old or more
-  "watching_since": 1772548200000,    // the oldest stored sample; 0: none
+  "watching_since": 1772548200000,    // the store's oldest sample (whole hours; the engine's first data within the first); 0: none
   "footer": "Watching your connection since Mar 3",
   "learning": null,                   // the first day: {"until": ms, "text": "fyisp is still learning what’s usual…"}
   "monitored": 11,                    // tiles that are not off
   "answer": {
-    "key": "app:zoom:1791554700000",  // changes only when the card's meaning does; announce on change
+    "key": "app:zoom:1791554700000:1xwl0ja",  // the state plus a hash of headline+sub: one key, one text; announce on change
     "tone": "ok",                     // ok | warn | bad | stale | checking | info
     "icon": "good",                   // good | slow | down | none | info
     "tab": "! Zoom down",             // the tab title; add " – fyisp"
@@ -447,11 +447,11 @@ Unknown or repeated parameters return 400. Without the tiles engine the route an
 }
 ```
 
-**`answer`** follows the engine's connection state, first match: stale; checking (the engine is replaying, or the verdict is warming up); a path verdict (`lan`, `isp`, `upstream`, `no_network`; tone `bad`); a connection drop in progress (`drop`); `dns`; `udp_blocked` (a block known for 6 hours or more is `info`, with icon `info`); `udp_degraded`; a broad slowdown (`broad`); problems with some apps while the connection is fine (`app`: the card stays green, and a recent "Working again" is appended to `sub`); "Working again" for 30 minutes after a connection problem ended (`working_again`, with the variants "dropped for about 40 seconds at 10:14 am", "was down for about 2 minutes (10:20–10:22 am)" and "had trouble for about 16 minutes (10:02–10:18 am)"); good. `headline` and `sub` never hold a relative time, so they don't change under one `key`. `day` is null while checking and on the first day.
+**`answer`** follows the engine's connection state, first match: stale; checking (the engine is replaying, the verdict is warming up, or no covered tile has its first word yet); a path verdict (`lan`, `isp`, `upstream`, `no_network`; tone `bad`); a connection drop in progress (`drop`); `dns`; `udp_blocked` (calls lost their fast path, not their calls: their tiles are Choppy, not Down; a block known for 6 hours or more is `info`, with icon `info` and tab "ⓘ Calls limited"); `udp_degraded`; a broad slowdown (`broad`); problems with some apps and no path verdict (`app`: green when the apps' side is to blame, amber (`warn`) when the cause is the connection, which the strip then marks, or the route calls take; a recent connection problem is appended to `sub` as "Separately, your internet dropped … and is back now."); "Working again" for 30 minutes after a connection problem ended (`working_again`, with the variants "dropped for about 40 seconds at 10:14 am", "was down for about 2 minutes (10:20–10:22 am)" and "had trouble for about 16 minutes (10:02–10:18 am)"); good. `headline` and `sub` never hold a relative time, and the key carries a hash of them, so they never change under one `key` ("Started at 10:12 am." becomes "Started yesterday at 10:12 am." after midnight: a new key). `day` is null while checking and on the first day; it says "N short problems" unless one goes on or lasted over 30 minutes ("N problems").
 
-**`path`.** The blamed node is `down` ("Not answering since …", "Losing data since …"), the nodes past it `slow` ("Hard to reach through your provider"). With no problem, the newest connection drop of the last 30 minutes shows on the node where it happened. A provider fyisp hasn't found yet is `unknown`: "Can’t see your provider from here".
+**`path`.** The blamed node is `down` when it lost everything ("Not answering since …"), else `slow` ("Losing some data since …"); the nodes past it are `slow` ("Hard to reach through your provider"). While stale every node is `unknown` ("Last known: working"). With no problem, the newest connection drop of the last 30 minutes shows on the node where it happened. A provider fyisp hasn't found yet is `unknown`: "Can’t see your provider from here".
 
-**Wi-Fi wording.** The first node is "Your Wi-Fi & router" (and `path_hint` is "") only when fyisp's own uplink is Wi-Fi (Linux), fyisp does not run in a container, and the request comes from the same machine: from a loopback address or one of the host's own, without a proxy header (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`), and not by an `--allow-host` name. Otherwise it is "Your home router", with the hint. The API returns only the words: no address, no interface and no flag; nothing about the viewer is logged or cached. A forwarder that adds no header (`ssh -L`, socat) reads as the same machine; only the wording is affected.
+**Wi-Fi wording.** The first node is "Your Wi-Fi and router" (and `path_hint` is "") only when fyisp's own uplink is Wi-Fi (Linux), fyisp does not run in a container, and the request comes from the same machine: from a loopback address or one of the host's own, without a proxy header (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`), and not by an `--allow-host` name. Otherwise it is "Your home router", with the hint. The API returns only the words: no address, no interface and no flag; nothing about the viewer is logged or cached. A forwarder that adds no header (`ssh -L`, socat) reads as the same machine; only the wording is affected.
 
 **`tiles[]`:**
 
@@ -469,7 +469,7 @@ Unknown or repeated parameters return 400. Without the tiles engine the route an
 
 - A tile's `reason` names a likely cause only when it is on the app's side (the app, the call path, a speed test). A router or provider cause is said once, by the card and the strip.
 - Bar `state`: good | slow | down | none. Bar `note`: "Dropped 40 s", "Down since 10:05 am", "Choppy 9:41–9:45 am — likely Slack’s side", "Slow during a speed test", or "" (the client then writes the word). The client writes the bar's times.
-- An `off` tile (the profile has no target for it) has `"bars": []`, an `enable_hint` ("To check GitHub, add services-dev to fyisp’s --profile setting (FYISP_PROFILE in Docker).") and no `since`. It never counts in `monitored`, the card, the tab or the problems.
+- An `off` tile (the profile has no target for it) has `"bars": []`, an `enable_hint` ("To check GitHub, add services-dev to fyisp’s --profile setting (FYISP_PROFILE in Docker).", or with a `--config` file "To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.") and no `since`. It never counts in `monitored`, the card, the tab or the problems.
 - While checking, every tile that isn't off is `none` with 24 `none` bars.
 
 **`speed`:**
@@ -487,7 +487,7 @@ Unknown or repeated parameters return 400. Without the tiles engine the route an
 
 Without a usual the text has no comparison ("Your speed: about 930 Mbps down / 940 Mbps up."). Slower than 60% of the usual in either direction is "much slower than usual (usually about 925 / 938 Mbps)", slower than 85% "a bit slower than usual (…)", faster by a quarter in both "faster than usual". There is no internet-plan setting and no plan text.
 
-**`problems.items[]`** (newest first, at most 100 of the last 7 days):
+**`problems.items[]`** (ongoing first, then newest first; at most 100 of the last 7 days; from the same engine tick as the tiles):
 
 ```jsonc
 {"id": "t-1791554700000-zoom",   // "c-<startms>" for the connection, "t-<startms>-<tiles>" otherwise: stable across restarts
@@ -500,7 +500,7 @@ Without a usual the text has no comparison ("Your speed: about 930 Mbps down / 9
  "evidence": "Your internet and all other apps are normal."}
 ```
 
-The summary counts `provider` ("likely from your internet provider"), `home` ("from your home router") and `app` ("from the apps themselves"); `speedtest` and `other` count in the total only. While checking it is "Checking…"; with no problem "No problems in the last 7 days." (on the first day "No problems since fyisp started at 9:50 am.").
+The summary counts `provider` ("likely from your internet provider"), `home` ("from your home router", or "from your home network" when fyisp itself was offline), `app` ("from the apps themselves") and the rest ("with other causes"), so the counts add up. A blocked fast path is `slow`, with "Likely cause: a firewall or VPN on this network blocking call traffic". While checking it is "Checking…"; with no problem "No problems in the last 7 days." (on the first day "No problems since fyisp started at 9:50 am.").
 
 ### `part=tile`
 
@@ -519,9 +519,9 @@ The summary counts `provider` ("likely from your internet provider"), `home` ("f
  "text": "Usually about 18 ms. … Down since 10:05 am — likely Zoom’s side."}   // the chart's text alternative
 ```
 
-- `metrics`: call tiles show delay, jitter and loss over the last 3 minutes against their limits (`—` without data; none for a tile judged on TCP only); app tiles `Usual` and `Slow above`; stream tiles `Usual` and "Only marked Down if it stops loading"; app and stream tiles show none while learning.
+- `metrics`: call tiles show delay, jitter and loss over the last 3 minutes against their limits (`—` without data; none for a tile judged on TCP only). When they are the general call path's (Zoom, Slack), a first row `{"label": "General call path:"}` says so, and `legend` names the chart's line ("How quickly the general call path answers (lower is better)"; absent otherwise). App tiles show `Usual` and `Slow above`; stream tiles those and "Only marked Down if it stops loading"; app and stream tiles show none while learning.
 - `coverage` says what the figures are judged on when it isn't the app's own servers: the general call path (Zoom, Slack; Teams and Meet without their own STUN targets), "Can connect; call quality isn’t checked on this setup." (no UDP at all), and OneDrive's consumer front door. Otherwise "".
-- What the chart plots: app and stream tiles the median of their endpoints' TCP connect times; call tiles their UDP delay (their own STUN targets, else the shared path; TCP when there is no UDP). `off` bands are fyisp not running (on the first day: "Not watched before 9:50 am").
+- What the chart plots: app and stream tiles the median of their endpoints' TCP connect times; call tiles their UDP delay (their own STUN targets, else the shared path; TCP when there is no UDP). `off` bands are fyisp not running (on the first day: "Not watched before 9:50 am"). A connection problem that didn't touch the tile has no band on it; an ongoing band is worded with the tile's word. While checking, `text` is "fyisp is still checking.".
 
 ### Rules for the new Home's words
 

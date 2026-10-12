@@ -31,7 +31,7 @@ const home2TZ = "America/New_York"
 func home2Server(t *testing.T, sc *homescen.V2, now time.Time) *localHandler {
 	t.Helper()
 	d := Deps{Profile: func() *model.Profile { return sc.Profile }, Status: func() Status { return Status{} },
-		Tiles: sc, Path: func() netinfo.Path { return sc.Path }}
+		Tiles: sc, Path: func() netinfo.Path { return sc.Path }, CustomProfile: sc.CustomProfile}
 	h := Local(d, LocalOptions{Addr: sc.Viewer.Listen, CSRFToken: "t"}).(*localHandler)
 	h.now = func() time.Time { return now }
 	h.inContainer = func() bool { return sc.Container }

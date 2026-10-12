@@ -149,9 +149,9 @@ func TestReplayReal(t *testing.T) {
 		w("in progress since %s", f(c.Start))
 	}
 
-	w("\n== problems (%d), newest first", len(snap.eps))
+	w("\n== problems (%d), newest first", len(snap.Eps))
 	perDay := map[string]int{}
-	for _, x := range snap.eps {
+	for _, x := range snap.Eps {
 		end := "ongoing"
 		dur := "-"
 		if !x.Ongoing() {
@@ -179,7 +179,7 @@ func TestReplayReal(t *testing.T) {
 	}
 	for _, x := range tests {
 		var hit []string
-		for _, ep := range snap.eps {
+		for _, ep := range snap.Eps {
 			if ep.window().overlaps(window{x.Start, x.End.Add(2 * time.Second)}, end) {
 				hit = append(hit, fmt.Sprintf("%s(%s,%s)", ep.ID, ep.Kind, ep.Cause.Who))
 			}

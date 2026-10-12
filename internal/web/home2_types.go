@@ -143,6 +143,9 @@ type Home2TileDetail struct {
 	Reason   string        `json:"reason"`
 	Coverage string        `json:"coverage"`
 	Metrics  []Home2Metric `json:"metrics"`
+	// Legend names the chart's line when it isn't the app's own ("" : the
+	// app's): "How quickly the general call path answers (lower is better)".
+	Legend string `json:"legend,omitempty"`
 	home2Chart
 }
 

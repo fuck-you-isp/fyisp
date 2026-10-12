@@ -12,7 +12,7 @@ import { TileChart } from './homechart.js';
 /** @typedef {{id:string,name:string,kind:string,state:string,word:string,since:number|null,note:string,aria:string,reason:string,enable_hint?:string,bars_summary:string,bars:HomeBar[]}} HomeTile */
 /** @typedef {{label:string,value:string,limit?:string,bad?:boolean}} HomeMetric */
 /** @typedef {{from:number,to:number,kind:string,text:string}} HomeBand */
-/** @typedef {{v:number,at:number,id:string,state:string,word:string,reason:string,coverage?:string,metrics:HomeMetric[],from:number,step:number,ms:(number|null)[],usual_ms:number|null,bands:HomeBand[],text:string}} HomeTileDetail */
+/** @typedef {{v:number,at:number,id:string,state:string,word:string,reason:string,coverage?:string,legend?:string,metrics:HomeMetric[],from:number,step:number,ms:(number|null)[],usual_ms:number|null,bands:HomeBand[],text:string}} HomeTileDetail */
 /**
  * What the tiles need from Home.
  * @typedef {{loadTile: (id: string) => Promise<HomeTileDetail>, stale: () => boolean, shown: () => boolean}} TilesHost
@@ -339,7 +339,8 @@ export class Tiles {
     this.chartWrap.hidden = !d;
     this.legend.hidden = !d;
     setAttr(this.chartWrap, 'aria-label', `${td.name}, how quickly it answered over the last 24 hours`);
-    setText(this.legendWho, `How quickly ${td.name} answers (lower is better)`);
+    // The server names the line when it isn't the app's own (the general call path).
+    setText(this.legendWho, (d && d.legend) || `How quickly ${td.name} answers (lower is better)`);
     if (!d) return;
     setText(this.chartDesc, d.text || '');
     this.legendUsual.hidden = d.usual_ms == null;

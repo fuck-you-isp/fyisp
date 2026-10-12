@@ -8,23 +8,23 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "lan:1791555840000",
+    "key": "lan:1791555840000:lkowd2",
     "tone": "bad",
     "icon": "down",
     "tab": "✕ Router problem",
     "headline": "Your home router is likely having trouble.",
     "sub": "fyisp can’t reliably reach your router, so every app is affected at once. Started at 10:24 am.",
     "day": {
-      "text": "Last 24 hours: 5 short problems, 1 likely from your internet provider, 1 from your home router.",
-      "link": "5 short problems"
+      "text": "Last 24 hours: 5 problems, 1 likely from your internet provider, 1 from your home router.",
+      "link": "5 problems"
     }
   },
   "path": [
     {
       "id": "router",
       "label": "Your home router",
-      "state": "down",
-      "sub": "Losing data since 10:24 am"
+      "state": "slow",
+      "sub": "Losing some data since 10:24 am"
     },
     {
       "id": "provider",
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

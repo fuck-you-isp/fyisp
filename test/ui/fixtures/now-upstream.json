@@ -8,15 +8,15 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "upstream:1791555600000",
+    "key": "upstream:1791555600000:mxjwtd",
     "tone": "bad",
     "icon": "down",
     "tab": "✕ Internet problem",
     "headline": "The internet past your provider is likely having trouble.",
     "sub": "Your router and your internet provider are answering normally, but sites past them are hard to reach, so many apps are affected at once. Started at 10:20 am.",
     "day": {
-      "text": "Last 24 hours: 5 short problems, 1 likely from your internet provider.",
-      "link": "5 short problems"
+      "text": "Last 24 hours: 5 problems, 1 likely from your internet provider.",
+      "link": "5 problems"
     }
   },
   "path": [
@@ -35,7 +35,7 @@
     {
       "id": "internet",
       "label": "The internet",
-      "state": "down",
+      "state": "slow",
       "sub": "Hard to reach since 10:20 am"
     }
   ],
@@ -203,7 +203,7 @@
     "can_control": true
   },
   "problems": {
-    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",
+    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves, 1 with other causes.",
     "items": [
       {
         "id": "c-1791555600000",
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

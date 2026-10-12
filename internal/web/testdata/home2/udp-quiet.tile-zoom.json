@@ -2,23 +2,25 @@
   "v": 2,
   "at": 1791556200000,
   "id": "zoom",
-  "state": "down",
-  "word": "Down",
-  "reason": "Not connecting since yesterday 8:30 am.",
+  "state": "slow",
+  "word": "Choppy",
+  "reason": "Can’t use its fast path on this network since yesterday 8:30 am. Calls may still connect over a slower route.",
   "coverage": "Call quality is judged from the general call path; fyisp can’t test Zoom’s own servers before a meeting.",
   "metrics": [
+    {"label": "General call path:", "value": ""},
     {"label": "Delay", "value": "—", "limit": "choppy over 150 ms", "bad": false},
     {"label": "Jitter", "value": "—", "limit": "over 30 ms", "bad": false},
     {"label": "Packet loss", "value": "100%", "limit": "2% or more", "bad": true}
   ],
+  "legend": "How quickly the general call path answers (lower is better)",
   "from": 1791470100000,
   "step": 300000,
   "ms": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
   "usual_ms": 18,
   "bands": [
-    {"from": 1791462600000, "to": 1791556200000, "kind": "problem", "text": "Down since yesterday 8:30 am"},
+    {"from": 1791462600000, "to": 1791556200000, "kind": "problem", "text": "Choppy since yesterday 8:30 am"},
     {"from": 1791483000000, "to": 1791483900000, "kind": "problem", "text": "Choppy 2:10–2:25 pm — likely your internet provider"},
     {"from": 1791529500000, "to": 1791532200000, "kind": "off", "text": "fyisp wasn’t running 3:05–3:50 am"}
   ],
-  "text": "Usually about 18 ms. Down since yesterday 8:30 am. Choppy 2:10–2:25 pm — likely your internet provider. fyisp wasn’t running 3:05–3:50 am."
+  "text": "Usually about 18 ms. Choppy since yesterday 8:30 am. Choppy 2:10–2:25 pm — likely your internet provider. fyisp wasn’t running 3:05–3:50 am."
 }

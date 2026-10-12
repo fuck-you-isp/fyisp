@@ -27,8 +27,9 @@ type Snapshot struct {
 	Day          Counts             // the problems of the last 24 hours
 	// Rev changes when the problems do (a hash: a memo key, not a count).
 	Rev uint64
-
-	eps []Episode
+	// Eps are the problems of the week, newest first (read them with
+	// Problems: the same tick as the tiles).
+	Eps []Episode
 }
 
 // LayerSnap is one path layer.
@@ -199,7 +200,7 @@ var layerKeys = [nLayers]string{model.LayerGateway, model.LayerEdge, model.Layer
 func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 	e.use(in)
 	v := e.view(now)
-	s := &Snapshot{At: now, LastMeasured: e.lastMeasured, FirstData: e.firstData, Learning: learning(now, e.firstData), eps: v.eps}
+	s := &Snapshot{At: now, LastMeasured: e.lastMeasured, FirstData: e.firstData, Learning: learning(now, e.firstData), Eps: v.eps}
 	sp := e.speed()
 	learn := s.Learning
 	first := now.Truncate(barStep).Add(-(nBars - 1) * barStep)
@@ -370,10 +371,13 @@ func epsHash(eps []Episode) uint64 {
 }
 
 // Problems implements Engine.
-func (e *engine) Problems(from time.Time) []Episode {
-	s := e.snap.Load()
+func (e *engine) Problems(from time.Time) []Episode { return e.snap.Load().Problems(from) }
+
+// Problems are the snapshot's problems that ended after from or go on,
+// newest first, at most maxProblems.
+func (s *Snapshot) Problems(from time.Time) []Episode {
 	var out []Episode
-	for _, x := range s.eps {
+	for _, x := range s.Eps {
 		if len(out) == maxProblems {
 			break
 		}

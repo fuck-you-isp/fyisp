@@ -70,9 +70,10 @@ test('open, close and focus', async ({ page }) => {
   await expect(zoom).toHaveAttribute('aria-expanded', 'true');
   await expect(panel.locator('h3')).toBeFocused();
   await expect(panel.locator('h3')).toHaveText('Zoom — last 24 hours');
-  await expect(panel.locator('.hp-reason')).toHaveText('Not connecting since 10:05 am. Likely cause: Zoom’s side — everything else is normal.');
-  // Zoom's own servers aren't tested: its call figures are the general call path's, which is fine.
-  await expect(panel.locator('.hp-metrics > span')).toHaveText(['Delay 21 ms (choppy over 150 ms)', 'Jitter 2 ms (over 30 ms)', 'Packet loss 0% (2% or more)']);
+  await expect(panel.locator('.hp-reason')).toHaveText('Not connecting since 10:05 am. Likely cause: Zoom’s side — the general call path and everything else are normal.');
+  // Zoom's own servers aren't tested: its call figures are the general call path's (fine), and say so.
+  await expect(panel.locator('.hp-metrics > span')).toHaveText(['General call path:', 'Delay 21 ms (choppy over 150 ms)', 'Jitter 2 ms (over 30 ms)', 'Packet loss 0% (2% or more)']);
+  await expect(panel.locator('.hp-legend')).toContainText('How quickly the general call path answers (lower is better)');
   await expect(panel.locator('.hp-coverage')).toHaveText('Call quality is judged from the general call path; fyisp can’t test Zoom’s own servers before a meeting.');
   await expect(panel.locator('.hp-chartwrap')).toHaveAccessibleName('Zoom, how quickly it answered over the last 24 hours');
   await expect(panel.locator('.hp-chartwrap')).toHaveAccessibleDescription(/^Usually about 18 ms\./);
@@ -109,7 +110,7 @@ test('a stream tile and a learning tile', async ({ page }) => {
   ctl.tile = (id) => fx(id === 'gws' ? 'tile-gws-learning' : 'tile-youtube');
   await openHome(page);
   await page.locator('.hp-tile[data-id="youtube"]').click();
-  await expect(page.locator('#hp-detail .hp-metrics > span')).toHaveText(['Usual 7 ms', 'Only marked Down if it stops loading']);
+  await expect(page.locator('#hp-detail .hp-metrics > span')).toHaveText(['Usual 7 ms', 'Slow above 37 ms', 'Only marked Down if it stops loading']);
   await page.locator('.hp-tile[data-id="gws"]').click();
   // Still learning: no metrics, no usual line in the legend.
   await expect(page.locator('#hp-detail .hp-metrics')).toBeHidden();
@@ -125,7 +126,7 @@ test('an off tile: the reason and how to turn it on, no chart, no fetch', async 
   const panel = page.locator('#hp-detail');
   await expect(panel).toBeVisible();
   await expect(panel.locator('.hp-reason')).toHaveText('fyisp isn’t checking GitHub on this setup.');
-  await expect(panel.locator('.hp-enable')).toHaveText('To check GitHub, add services-dev to fyisp’s --profile setting (FYISP_PROFILE in Docker).');
+  await expect(panel.locator('.hp-enable')).toHaveText('To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.');
   await expect(panel.locator('canvas')).toHaveCount(0);
   await expect(panel.locator('.hp-chartpart')).toBeHidden();
   await expect(panel.locator('.hp-metrics')).toBeHidden();

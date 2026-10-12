@@ -399,8 +399,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 
 	deps := web.Deps{
-		Profile: func() *model.Profile { return prof },
-		Store:   st,
+		Profile:       func() *model.Profile { return prof },
+		CustomProfile: c.configPath != "",
+		Store:         st,
 		Status: func() web.Status {
 			ms := speed.MaskedShare(24 * time.Hour)
 			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready(), SpeedMasked: &ms}

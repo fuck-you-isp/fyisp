@@ -7,10 +7,12 @@
   "reason": "Calls should be smooth.",
   "coverage": "Call quality is judged from the general call path; fyisp can’t test Zoom’s own servers before a meeting.",
   "metrics": [
+    {"label": "General call path:", "value": ""},
     {"label": "Delay", "value": "21 ms", "limit": "choppy over 150 ms", "bad": false},
     {"label": "Jitter", "value": "2 ms", "limit": "over 30 ms", "bad": false},
     {"label": "Packet loss", "value": "0%", "limit": "2% or more", "bad": false}
   ],
+  "legend": "How quickly the general call path answers (lower is better)",
   "from": 1791470100000,
   "step": 300000,
   "ms": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 18.9, 18.9, 19.2, 17.1, 19.4, 18.6, 17.1, 18.3, null],

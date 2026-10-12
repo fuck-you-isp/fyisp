@@ -8,13 +8,13 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "app:zoom,teams,meet,slack:1791555780000",
-    "tone": "ok",
-    "icon": "good",
+    "key": "app:zoom,teams,meet,slack:1791556020000:149ofz",
+    "tone": "warn",
+    "icon": "slow",
     "tab": "! Calls choppy",
     "headline": "Your internet is fine. Calls may be choppy.",
-    "sub": "Likely cause: the path calls take — websites and other apps are working normally.",
-    "day": {"text": "Last 24 hours: 5 short problems, 1 likely from your internet provider.", "link": "5 short problems"}
+    "sub": "Likely cause: the route calls take across the internet — websites and other apps are working normally.",
+    "day": {"text": "Last 24 hours: 5 problems, 1 likely from your internet provider.", "link": "5 problems"}
   },
   "path": [
     {"id": "router", "label": "Your home router", "state": "good", "sub": "Working normally"},
@@ -29,11 +29,11 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555780000,
-      "note": "since 10:23 am",
-      "aria": "Zoom: Choppy, since 10:23 am",
-      "reason": "Calls may be choppy since 10:23 am. Likely cause: the path calls take — websites and other apps are fine.",
-      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
+      "since": 1791556020000,
+      "note": "since 10:27 am",
+      "aria": "Zoom: Choppy, since 10:27 am",
+      "reason": "Calls may be choppy since 10:27 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
+      "bars_summary": "Last 2 hours: slow in 2 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -56,9 +56,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:23 am"}
+        {"from": 1791555600000, "state": "good", "note": ""},
+        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:27 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:27 am"}
       ]
     },
     {
@@ -67,11 +67,11 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555780000,
-      "note": "since 10:23 am",
-      "aria": "Microsoft Teams: Choppy, since 10:23 am",
-      "reason": "Calls may be choppy since 10:23 am. Likely cause: the path calls take — websites and other apps are fine.",
-      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
+      "since": 1791556020000,
+      "note": "since 10:27 am",
+      "aria": "Microsoft Teams: Choppy, since 10:27 am",
+      "reason": "Calls may be choppy since 10:27 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
+      "bars_summary": "Last 2 hours: slow in 2 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -94,9 +94,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:23 am"}
+        {"from": 1791555600000, "state": "good", "note": ""},
+        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:27 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:27 am"}
       ]
     },
     {
@@ -105,11 +105,11 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555780000,
-      "note": "since 10:23 am",
-      "aria": "Google Meet: Choppy, since 10:23 am",
-      "reason": "Calls may be choppy since 10:23 am. Likely cause: the path calls take — websites and other apps are fine.",
-      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
+      "since": 1791556020000,
+      "note": "since 10:27 am",
+      "aria": "Google Meet: Choppy, since 10:27 am",
+      "reason": "Calls may be choppy since 10:27 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
+      "bars_summary": "Last 2 hours: slow in 2 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -132,9 +132,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:23 am"}
+        {"from": 1791555600000, "state": "good", "note": ""},
+        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:27 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:27 am"}
       ]
     },
     {
@@ -143,11 +143,11 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555780000,
-      "note": "since 10:23 am",
-      "aria": "Slack: Choppy, since 10:23 am",
-      "reason": "Calls may be choppy since 10:23 am. Likely cause: the path calls take — websites and other apps are fine.",
-      "bars_summary": "Last 2 hours: slow in 4 of 24 five-minute periods.",
+      "since": 1791556020000,
+      "note": "since 10:27 am",
+      "aria": "Slack: Choppy, since 10:27 am",
+      "reason": "Calls may be choppy since 10:27 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
+      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -170,9 +170,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:23 am"},
-        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:23 am"}
+        {"from": 1791555600000, "state": "good", "note": ""},
+        {"from": 1791555900000, "state": "slow", "note": "Choppy since 10:27 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Choppy since 10:27 am"}
       ]
     },
     {
@@ -457,17 +457,17 @@
     "can_control": true
   },
   "problems": {
-    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",
+    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves, 1 with other causes.",
     "items": [
       {
-        "id": "t-1791555780000-zoom,teams,meet,slack",
-        "from": 1791555780000,
+        "id": "t-1791556020000-zoom,teams,meet,slack",
+        "from": 1791556020000,
         "to": 0,
         "ongoing": true,
         "level": "slow",
-        "when": "Today since 10:23 am (still happening)",
+        "when": "Today since 10:27 am (still happening)",
         "what": "Zoom, Microsoft Teams, Google Meet and Slack calls may be choppy.",
-        "cause": "the path calls take",
+        "cause": "the route calls take across the internet",
         "cause_kind": "other",
         "evidence": "Websites and other apps are fine; only calls are affected."
       },
@@ -502,7 +502,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

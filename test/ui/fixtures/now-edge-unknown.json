@@ -8,12 +8,12 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "good",
+    "key": "good:13f605q",
     "tone": "ok",
     "icon": "good",
     "tab": "✓ All good",
     "headline": "Everything you use is working normally.",
-    "sub": "Your router, your internet provider and all 11 apps look healthy. Calls and video should be smooth.",
+    "sub": "Your router, your internet provider and 10 of 11 apps look healthy; the others have no data yet. Calls and video should be smooth.",
     "day": {
       "text": "Last 24 hours: 4 short problems, 1 likely from your internet provider.",
       "link": "4 short problems"
@@ -149,14 +149,14 @@
       "id": "onedrive",
       "name": "OneDrive",
       "kind": "app",
-      "state": "good",
-      "word": "Good",
+      "state": "none",
+      "word": "No data",
       "since": null,
       "note": "",
-      "aria": "OneDrive: Good",
-      "reason": "Working normally.",
-      "bars_summary": "Last 2 hours: no problems.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"good","note":""},{"from":1791555900000,"state":"good","note":""},{"from":1791556200000,"state":"good","note":""}]
+      "aria": "OneDrive: no data yet",
+      "reason": "No data yet.",
+      "bars_summary": "Last 2 hours: not watched for 10 minutes.",
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"good","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
     },
     {
       "id": "youtube",
@@ -236,7 +236,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

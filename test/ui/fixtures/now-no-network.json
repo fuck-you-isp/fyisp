@@ -8,15 +8,15 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "no_network:1791556020000",
+    "key": "no_network:1791556020000:18qsbt9",
     "tone": "bad",
     "icon": "down",
     "tab": "✕ Offline",
     "headline": "fyisp has no network connection.",
     "sub": "The computer fyisp runs on isn’t connected to any network, so nothing can be checked. Started at 10:27 am.",
     "day": {
-      "text": "Last 24 hours: 5 short problems, 1 likely from your internet provider, 1 from your home router.",
-      "link": "5 short problems"
+      "text": "Last 24 hours: 5 problems, 1 likely from your internet provider, 1 from your home network.",
+      "link": "5 problems"
     }
   },
   "path": [
@@ -203,7 +203,7 @@
     "can_control": true
   },
   "problems": {
-    "summary": "6 problems: 1 likely from your internet provider, 2 from your home router, 3 from the apps themselves.",
+    "summary": "6 problems: 1 likely from your internet provider, 2 from your home network, 3 from the apps themselves.",
     "items": [
       {
         "id": "c-1791556020000",
@@ -212,7 +212,7 @@
         "ongoing": true,
         "level": "down",
         "when": "Today since 10:27 am (still happening)",
-        "what": "Nothing is getting through.",
+        "what": "Everything is dropping.",
         "cause": "no network connection",
         "cause_kind": "home",
         "evidence": "The computer fyisp runs on has no network connection."
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

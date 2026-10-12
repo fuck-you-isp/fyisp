@@ -8,7 +8,7 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "good",
+    "key": "good:3vnahz",
     "tone": "ok",
     "icon": "good",
     "tab": "✓ All good",
@@ -203,7 +203,7 @@
     "can_control": true
   },
   "problems": {
-    "summary": "13 problems: 3 likely from your internet provider, 1 from your home router, 4 from the apps themselves.",
+    "summary": "13 problems: 3 likely from your internet provider, 1 from your home router, 4 from the apps themselves, 5 with other causes.",
     "items": [
       {
         "id": "t-1791553260000-slack",
@@ -225,7 +225,7 @@
         "level": "slow",
         "when": "Today 7:30–7:35 am",
         "what": "Microsoft Teams and Google Meet calls may have been choppy.",
-        "cause": "the path calls take",
+        "cause": "the route calls take across the internet",
         "cause_kind": "other",
         "evidence": "Websites and other apps were fine; only calls were affected."
       },
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."
@@ -318,10 +318,10 @@
         "from": 1791113400000,
         "to": 1791115800000,
         "ongoing": false,
-        "level": "down",
+        "level": "slow",
         "when": "Sun 7:30–8:10 am",
         "what": "Calls couldn’t use their fast path.",
-        "cause": "the network blocking call traffic",
+        "cause": "a firewall or VPN on this network blocking call traffic",
         "cause_kind": "other",
         "evidence": "Websites and apps were fine; only calls couldn’t use their usual route."
       },

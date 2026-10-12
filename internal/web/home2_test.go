@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/tiles"
 	"github.com/fuck-you-isp/fyisp/internal/web/homescen"
@@ -165,7 +166,7 @@ func TestHome2WiFiPerViewer(t *testing.T) {
 		d := decode[Home2Now](t, b)
 		return res{d.Path[0].Label, d.PathHint, d.Answer.Headline}
 	}
-	wifi := res{"Your Wi-Fi & router", "", "Your Wi-Fi or router is likely having trouble."}
+	wifi := res{"Your Wi-Fi and router", "", "Your Wi-Fi and router are likely having trouble."}
 	for i, c := range []struct {
 		remote, xff string
 		wifi        bool
@@ -216,30 +217,45 @@ func TestHome2TileCache(t *testing.T) {
 		return decode[Home2TileDetail](t, b)
 	}
 	a := get("part=tile&id=zoom&tz=America/New_York")
-	// The tile goes down a minute later: the header says so, the chart is the cached one.
+	// A minute later the call path is slow: the figures say so, the chart is the cached one.
 	snap := *sc.Snap
-	snap.Tiles[0].State, snap.Tiles[0].Since = tiles.Down, now
+	call := *snap.Tiles[0].Call
+	call.DelayMs = 200
+	snap.Tiles[0].Call = &call
 	sc.Snap = &snap
 	now = now.Add(time.Minute)
 	b := get("part=tile&id=zoom&tz=America/New_York")
-	if a.State != "good" || b.State != "down" || b.Word != "Down" || !strings.HasPrefix(b.Reason, "Not connecting since 10:30 am.") {
-		t.Errorf("header: %s %s then %s %s %q", a.State, a.Word, b.State, b.Word, b.Reason)
+	if a.Metrics[1].Value != "21 ms" || b.Metrics[1].Value != "200 ms" || !*b.Metrics[1].Bad {
+		t.Errorf("figures: %+v then %+v", a.Metrics[1], b.Metrics[1])
 	}
 	if n := src.charts.Load(); n != 1 || b.Text != a.Text || b.From != a.From {
 		t.Errorf("same bucket: %d chart reads", n)
 	}
-	get("part=tile&id=zoom&tz=Europe/Berlin")
+	// The tile goes down: the header at once, and the chart again (its
+	// ongoing band is worded with the tile's word).
+	snap2 := *sc.Snap
+	snap2.Tiles[0].State, snap2.Tiles[0].Since = tiles.Down, now
+	sc.Snap = &snap2
+	c := get("part=tile&id=zoom&tz=America/New_York")
+	if c.State != "down" || c.Word != "Down" || !strings.HasPrefix(c.Reason, "Not connecting since 10:31 am.") {
+		t.Errorf("header: %s %s %q", c.State, c.Word, c.Reason)
+	}
 	if n := src.charts.Load(); n != 2 {
-		t.Errorf("another zone: %d chart reads, want 2", n)
+		t.Errorf("a new word: %d chart reads, want 2", n)
+	}
+	get("part=tile&id=zoom&tz=America/New_York")
+	get("part=tile&id=zoom&tz=Europe/Berlin")
+	if n := src.charts.Load(); n != 3 {
+		t.Errorf("another zone: %d chart reads, want 3", n)
 	}
 	now = now.Add(4 * time.Minute) // 10:35:30: the next bucket
 	get("part=tile&id=zoom&tz=America/New_York")
-	if n := src.charts.Load(); n != 3 {
-		t.Errorf("the next bucket: %d chart reads, want 3", n)
+	if n := src.charts.Load(); n != 4 {
+		t.Errorf("the next bucket: %d chart reads, want 4", n)
 	}
 	get("part=tile&id=m365&tz=America/New_York")
-	if n := src.charts.Load(); n != 4 {
-		t.Errorf("another tile: %d chart reads, want 4", n)
+	if n := src.charts.Load(); n != 5 {
+		t.Errorf("another tile: %d chart reads, want 5", n)
 	}
 }
 
@@ -257,17 +273,18 @@ func TestHome2ProblemsMemo(t *testing.T) {
 		return decode[Home2Now](t, b).Problems.Summary
 	}
 	first := summary()
-	sc.Eps = sc.Eps[1:]
+	snap := *sc.Snap
+	snap.Eps = snap.Eps[1:]
+	sc.Snap = &snap
 	if got := summary(); got != first {
 		t.Errorf("same Rev: %q, then %q", first, got)
 	}
-	snap := *sc.Snap
 	snap.Rev++
-	sc.Snap = &snap
 	if got := summary(); got == first || !strings.HasPrefix(got, "4 problems:") {
 		t.Errorf("new Rev: %q", got)
 	}
-	sc.Eps = nil
+	snap.Eps = nil
+	snap.LastMeasured = now.Add(14*time.Hour - 4*time.Second)
 	now = now.Add(14 * time.Hour) // after midnight in New York
 	if got := summary(); got != "No problems in the last 7 days." {
 		t.Errorf("the next day: %q", got)
@@ -331,7 +348,115 @@ func TestHome2NilSnapshot(t *testing.T) {
 		t.Fatalf("%d %s", code, b)
 	}
 	d := decode[Home2Now](t, b)
-	if d.Answer.Key != "checking" || d.Problems.Summary != "Checking…" || len(d.Tiles) != 11 || d.Tiles[0].State != "none" {
+	if !strings.HasPrefix(d.Answer.Key, "checking:") || d.Problems.Summary != "Checking…" || len(d.Tiles) != 11 || d.Tiles[0].State != "none" {
 		t.Errorf("%+v", d.Answer)
+	}
+}
+
+// One answer key, one text: a change of the words is a change of the key.
+func TestHome2AnswerKey(t *testing.T) {
+	key := func(sc *homescen.V2, now time.Time) Home2Answer {
+		h := home2Server(t, sc, now)
+		code, b := home2Get(t, h, sc.Viewer, "part=now&tz=America/New_York")
+		if code != 200 {
+			t.Fatalf("%d %s", code, b)
+		}
+		return decode[Home2Now](t, b).Answer
+	}
+	sc := scenario(t, "provider-loss-3")
+	a := key(sc, home2Now)
+	if a.Tone != "warn" || a.Headline != "Calls may be choppy." {
+		t.Fatalf("%+v", a)
+	}
+	// Teams stops connecting: the engine's key (the same tiles, since) stays, the words don't.
+	snap := *sc.Snap
+	snap.Tiles[1].State = tiles.Down
+	sc.Snap = &snap
+	if b := key(sc, home2Now); b.Key == a.Key || b.Headline == a.Headline {
+		t.Errorf("Teams down: %q %q, then %q %q", a.Key, a.Headline, b.Key, b.Headline)
+	}
+	// Past midnight "Started at 10:12 am." becomes "Started yesterday at 10:12 am.".
+	sc = scenario(t, "isp")
+	a = key(sc, home2Now)
+	later := *sc.Snap
+	later.LastMeasured = later.LastMeasured.Add(14 * time.Hour)
+	sc.Snap = &later
+	b := key(sc, home2Now.Add(14*time.Hour))
+	if a.Key == b.Key || !strings.Contains(b.Sub, "Started yesterday at 10:12 am.") {
+		t.Errorf("midnight: %q %q, then %q %q", a.Key, a.Sub, b.Key, b.Sub)
+	}
+	sc = scenario(t, "isp")
+	if c := key(sc, home2Now.Add(time.Minute)); c.Key != a.Key {
+		t.Errorf("a minute later: %q, then %q", a.Key, c.Key)
+	}
+}
+
+// Copy that no scenario shows, pinned here.
+func TestHome2CopyPins(t *testing.T) {
+	c := h2copy{loc: time.UTC, now: home2Now}
+	def := func(id string) profile.TileDef { return tileDef(id) }
+	check := func(what, got, want string) {
+		t.Helper()
+		if got != want {
+			t.Errorf("%s:\n got %q\nwant %q", what, got, want)
+		}
+	}
+	check("no data yet", c.tileReason(def("zoom"), tiles.TileSnap{ID: "zoom", State: tiles.None}, false, false), "No data yet.")
+	snap := scenario(t, "good").Snap
+	s2 := *snap
+	s2.Layers[1].State = tiles.Slow
+	check("a slow layer", c.path(&s2, appRow{hop: -1}, false, false)[1].Sub, "Having some trouble")
+	teams := profile.ResolvedTile{TileDef: def("teams"), Web: []model.Target{{Name: "Microsoft-Teams"}}}
+	check("tcp only", c.coverage(teams, tiles.CallTCPOnly), "Can connect; call quality isn’t checked on this setup.")
+	teams.UDP, teams.SharedUDP = []model.Target{{Name: "Cloudflare-STUN"}}, true
+	check("teams on the shared path", c.coverage(teams, tiles.CallShared),
+		"Call quality is judged from the general call path, because this setup doesn’t check Microsoft’s own call servers.")
+	slack := profile.ResolvedTile{TileDef: def("slack"), Web: []model.Target{{Name: "Slack"}}, UDP: []model.Target{{Name: "Cloudflare-STUN"}}, SharedUDP: true}
+	check("slack", c.coverage(slack, tiles.CallShared), "Call quality is judged from the general call path; fyisp can’t test Slack’s own servers before a call.")
+	check("onedrive", c.coverage(profile.ResolvedTile{TileDef: def("onedrive")}, ""),
+		"Checks that Microsoft’s OneDrive front door answers. Work OneDrive on your company’s SharePoint isn’t checked.")
+	m365 := tiles.TileSnap{ID: "m365", State: tiles.Slow}
+	gh := tiles.TileSnap{ID: "github", State: tiles.Down}
+	_, sub, _, warn := c.appCard([]tiles.TileSnap{m365, gh}, []tiles.Cause{{Who: tiles.WhoApp, Vendor: "microsoft", Evidence: tiles.EvAppOnly},
+		{Who: tiles.WhoApp, Vendor: "github", Evidence: tiles.EvAppOnly}}, nil)
+	check("two vendors", sub, "Likely cause: the apps’ own side — your router and your internet provider look fine.")
+	if warn {
+		t.Error("two vendors: amber")
+	}
+	h, _, _, _ := c.appCard([]tiles.TileSnap{{ID: "teams", State: tiles.Down}, {ID: "meet", State: tiles.Down}},
+		[]tiles.Cause{{Who: tiles.WhoUnknown}, {Who: tiles.WhoUnknown}}, nil)
+	check("calls down", h, "Your internet is fine. Calls aren’t connecting.")
+	u := &Home2SpeedUsual{DownMbps: 925, UpMbps: 938}
+	check("faster", c.speedText(1200, 1250, u), "Your speed: about 1200 Mbps down / 1250 Mbps up — faster than usual.")
+	check("a bit slower", c.speedText(700, 900, u), "Your speed: about 700 Mbps down / 900 Mbps up — a bit slower than usual (usually about 925 / 938 Mbps).")
+	check("dropping", c.problemWhat(tiles.Episode{Start: home2Now.Add(-time.Minute), Kind: tiles.EpDrop, Connection: true, Sev: tiles.Down}), "Everything is dropping.")
+	s3 := *snap
+	s3.LastMeasured, s3.Conn = time.Time{}, tiles.ConnState{Kind: tiles.ConnStale}
+	a := c.answer(&s3, nil, appRow{hop: -1}, false, true, false)
+	check("stale, never checked", a.Headline+" "+a.Sub, "fyisp hasn’t checked anything yet. Is the computer it runs on asleep or turned off?")
+	check("custom config", c.enableHint(def("github"), true), "To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.")
+}
+
+// A process that just started is checking, not stale, whatever its last
+// stored sample (a restart after a night off).
+func TestHome2RestartNotStale(t *testing.T) {
+	sc := scenario(t, "stale")
+	started := home2Now.Add(-30 * time.Second)
+	d := Deps{Profile: func() *model.Profile { return sc.Profile }, Status: func() Status { return Status{Started: started} }, Tiles: sc}
+	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
+	h.now = func() time.Time { return home2Now }
+	get := func() Home2Now {
+		code, b := home2Get(t, h, sc.Viewer, "part=now")
+		if code != 200 {
+			t.Fatalf("%d %s", code, b)
+		}
+		return decode[Home2Now](t, b)
+	}
+	if a := get(); a.Stale || a.Answer.Tone != "checking" {
+		t.Errorf("30 s after the start: stale %v, tone %s", a.Stale, a.Answer.Tone)
+	}
+	started = home2Now.Add(-3 * time.Minute)
+	if a := get(); !a.Stale || a.Answer.Tone != "stale" {
+		t.Errorf("3 min after the start: stale %v, tone %s", a.Stale, a.Answer.Tone)
 	}
 }

@@ -304,8 +304,8 @@ func diffSnap(t *testing.T, a, b *Snapshot) {
 	if !reflect.DeepEqual(a.Layers, b.Layers) {
 		t.Logf("  layers %+v vs %+v", a.Layers, b.Layers)
 	}
-	if !reflect.DeepEqual(a.eps, b.eps) {
-		t.Logf("  episodes:\n%s  vs\n%s", epsText(a.eps), epsText(b.eps))
+	if !reflect.DeepEqual(a.Eps, b.Eps) {
+		t.Logf("  episodes:\n%s  vs\n%s", epsText(a.Eps), epsText(b.Eps))
 	}
 	for _, f := range []string{"At", "LastMeasured", "FirstData", "Learning", "Monitored", "Day", "Rev"} {
 		x, y := reflect.ValueOf(*a).FieldByName(f).Interface(), reflect.ValueOf(*b).FieldByName(f).Interface()

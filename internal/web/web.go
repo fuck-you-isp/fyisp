@@ -71,7 +71,10 @@ type Deps struct {
 	Path func() netinfo.Path
 	// Tiles is the Home tiles engine (tiles.Engine); may be nil.
 	Tiles TilesSource
-	Log   *slog.Logger
+	// CustomProfile: the profile is a --config file (an off tile is turned
+	// on with a tile: tag there, not with --profile).
+	CustomProfile bool
+	Log           *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
 }

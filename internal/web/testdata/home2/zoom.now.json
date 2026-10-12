@@ -8,13 +8,13 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "app:zoom:1791554700000",
+    "key": "app:zoom:1791554700000:1lz2wls",
     "tone": "ok",
     "icon": "good",
     "tab": "! Zoom down",
     "headline": "Your internet is fine. Zoom isn’t connecting.",
     "sub": "Likely cause: Zoom’s side — every other app is working normally. Teams and Google Meet are working if you need to switch.",
-    "day": {"text": "Last 24 hours: 5 short problems, 1 likely from your internet provider.", "link": "5 short problems"}
+    "day": {"text": "Last 24 hours: 5 problems, 1 likely from your internet provider.", "link": "5 problems"}
   },
   "path": [
     {"id": "router", "label": "Your home router", "state": "good", "sub": "Working normally"},
@@ -32,7 +32,7 @@
       "since": 1791554700000,
       "note": "since 10:05 am",
       "aria": "Zoom: Down, since 10:05 am",
-      "reason": "Not connecting since 10:05 am. Likely cause: Zoom’s side — everything else is normal.",
+      "reason": "Not connecting since 10:05 am. Likely cause: Zoom’s side — the general call path and everything else are normal.",
       "bars_summary": "Last 2 hours: down or dropped in 6 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
@@ -502,7 +502,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

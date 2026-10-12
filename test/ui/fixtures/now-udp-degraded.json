@@ -8,15 +8,15 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "udp_degraded:1791555660000",
+    "key": "udp_degraded:1791555660000:188i8cv",
     "tone": "warn",
     "icon": "slow",
     "tab": "! Calls choppy",
     "headline": "Calls may be choppy right now.",
     "sub": "Calls are losing some data between your home and the internet, while websites and apps are fine. Started at 10:21 am.",
     "day": {
-      "text": "Last 24 hours: 5 short problems, 1 likely from your internet provider.",
-      "link": "5 short problems"
+      "text": "Last 24 hours: 5 problems, 1 likely from your internet provider.",
+      "link": "5 problems"
     }
   },
   "path": [
@@ -47,12 +47,12 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555720000,
-      "note": "since 10:22 am",
-      "aria": "Zoom: Choppy, since 10:22 am",
-      "reason": "Calls may be choppy since 10:22 am. Likely cause: the path calls take — websites and other apps are fine.",
+      "since": 1791555660000,
+      "note": "since 10:21 am",
+      "aria": "Zoom: Choppy, since 10:21 am",
+      "reason": "Calls may be choppy since 10:21 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
       "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:22 am"}]
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:21 am"}]
     },
     {
       "id": "teams",
@@ -60,12 +60,12 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555720000,
-      "note": "since 10:22 am",
-      "aria": "Microsoft Teams: Choppy, since 10:22 am",
-      "reason": "Calls may be choppy since 10:22 am. Likely cause: the path calls take — websites and other apps are fine.",
+      "since": 1791555660000,
+      "note": "since 10:21 am",
+      "aria": "Microsoft Teams: Choppy, since 10:21 am",
+      "reason": "Calls may be choppy since 10:21 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
       "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:22 am"}]
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:21 am"}]
     },
     {
       "id": "meet",
@@ -73,12 +73,12 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555720000,
-      "note": "since 10:22 am",
-      "aria": "Google Meet: Choppy, since 10:22 am",
-      "reason": "Calls may be choppy since 10:22 am. Likely cause: the path calls take — websites and other apps are fine.",
+      "since": 1791555660000,
+      "note": "since 10:21 am",
+      "aria": "Google Meet: Choppy, since 10:21 am",
+      "reason": "Calls may be choppy since 10:21 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
       "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:22 am"}]
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:21 am"}]
     },
     {
       "id": "slack",
@@ -86,12 +86,12 @@
       "kind": "call",
       "state": "slow",
       "word": "Choppy",
-      "since": 1791555720000,
-      "note": "since 10:22 am",
-      "aria": "Slack: Choppy, since 10:22 am",
-      "reason": "Calls may be choppy since 10:22 am. Likely cause: the path calls take — websites and other apps are fine.",
+      "since": 1791555660000,
+      "note": "since 10:21 am",
+      "aria": "Slack: Choppy, since 10:21 am",
+      "reason": "Calls may be choppy since 10:21 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
       "bars_summary": "Last 2 hours: slow in 4 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"slow","note":"Choppy 9:41–9:45 am — likely Slack’s side"},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:22 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:22 am"}]
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"slow","note":"Choppy 9:41–9:45 am — likely Slack’s side"},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 10:21 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 10:21 am"}]
     },
     {
       "id": "m365",
@@ -203,17 +203,17 @@
     "can_control": true
   },
   "problems": {
-    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",
+    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves, 1 with other causes.",
     "items": [
       {
-        "id": "t-1791555720000-zoom,teams,meet,slack",
-        "from": 1791555720000,
+        "id": "t-1791555660000-zoom,teams,meet,slack",
+        "from": 1791555660000,
         "to": 0,
         "ongoing": true,
         "level": "slow",
-        "when": "Today since 10:22 am (still happening)",
+        "when": "Today since 10:21 am (still happening)",
         "what": "Zoom, Microsoft Teams, Google Meet and Slack calls may be choppy.",
-        "cause": "the path calls take",
+        "cause": "the route calls take across the internet",
         "cause_kind": "other",
         "evidence": "Websites and other apps are fine; only calls are affected."
       },
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

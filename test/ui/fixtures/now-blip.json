@@ -8,7 +8,7 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "working_again:1791555280000",
+    "key": "working_again:1791555280000:t9e97c",
     "tone": "warn",
     "icon": "slow",
     "tab": "! Dropped at 10:14",
@@ -167,7 +167,7 @@
       "since": null,
       "note": "Dropped 40 s at 10:14 am",
       "aria": "YouTube: Good, dropped 40 s at 10:14 am",
-      "reason": "Working normally. YouTube is reachable. If it’s buffering, test your speed below. It dropped for about 40 seconds at 10:14 am.",
+      "reason": "Working normally. It dropped for about 40 seconds at 10:14 am. YouTube is reachable. If it’s buffering, test your speed below.",
       "bars_summary": "Last 2 hours: down or dropped in 1 of 24 five-minute periods.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"down","note":"Dropped 40 s"},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"good","note":""},{"from":1791555900000,"state":"good","note":""},{"from":1791556200000,"state":"good","note":""}]
     },
@@ -180,7 +180,7 @@
       "since": null,
       "note": "Dropped 40 s at 10:14 am",
       "aria": "Netflix: Good, dropped 40 s at 10:14 am",
-      "reason": "Working normally. Netflix is reachable. If it’s buffering, test your speed below. It dropped for about 40 seconds at 10:14 am.",
+      "reason": "Working normally. It dropped for about 40 seconds at 10:14 am. Netflix is reachable. If it’s buffering, test your speed below.",
       "bars_summary": "Last 2 hours: down or dropped in 1 of 24 five-minute periods.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"down","note":"Dropped 40 s"},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"good","note":""},{"from":1791555900000,"state":"good","note":""},{"from":1791556200000,"state":"good","note":""}]
     }
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

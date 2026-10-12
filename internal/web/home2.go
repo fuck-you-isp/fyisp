@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"hash/fnv"
 	"math"
 	"net/http"
 	"net/url"
@@ -99,6 +100,9 @@ type home2Cache struct {
 	// the profile's tiles (for the panels' coverage)
 	prof  *model.Profile
 	tiles []profile.ResolvedTile
+	// the store's oldest sample (the footer), read at oldestAt
+	oldestAt time.Time
+	oldest   time.Time
 }
 
 func newHome2Cache() *home2Cache {
@@ -118,23 +122,35 @@ func (hc *home2Cache) resolved(p *model.Profile) []profile.ResolvedTile {
 	return hc.tiles
 }
 
-// memo returns m[key], filling it with fill on a miss; a full map is
-// emptied first.
-func memo[V any](mu *sync.Mutex, m map[string]V, key string, fill func() V) V {
+// memo returns m[key], filling it with fill on a miss (ok false: not kept);
+// a full map loses one entry first.
+func memo[V any](mu *sync.Mutex, m map[string]V, key string, fill func() (V, bool)) (V, bool) {
 	mu.Lock()
 	v, ok := m[key]
 	mu.Unlock()
 	if ok {
-		return v
+		return v, true
 	}
-	v = fill()
+	if v, ok = fill(); !ok {
+		return v, false
+	}
 	mu.Lock()
-	if len(m) >= home2Memo {
-		clear(m)
+	for k := range m {
+		if len(m) < home2Memo {
+			break
+		}
+		delete(m, k)
 	}
 	m[key] = v
 	mu.Unlock()
-	return v
+	return v, true
+}
+
+// sameSite reports a request without browser evidence of another site:
+// only those may change the owner's zone (NoteZone).
+func sameSite(r *http.Request) bool {
+	sfs := r.Header.Get("Sec-Fetch-Site")
+	return sfs == "" || sfs == "same-origin"
 }
 
 // serveHome2 answers /api/home2.
@@ -150,7 +166,7 @@ func (s *server) serveHome2(w http.ResponseWriter, r *http.Request) {
 		notFound(w, r)
 		return
 	}
-	if s.d.Speed != nil {
+	if s.d.Speed != nil && sameSite(r) {
 		s.d.Speed.NoteZone(p.zone.name)
 	}
 	if p.part == "tile" {
@@ -180,6 +196,20 @@ func (s *server) home2Snap(now time.Time) (*tiles.Snapshot, bool) {
 	return snap, checking || snap.Conn.Kind == tiles.ConnChecking
 }
 
+// home2State is the snapshot with the page's checking and stale: a
+// process that started less than home2Stale ago is checking, not stale
+// (its last stored sample can be hours old), and so is one whose covered
+// tiles have no word yet (their first minutes haven't closed).
+func (s *server) home2State(now time.Time) (snap *tiles.Snapshot, checking, stale bool) {
+	snap, checking = s.home2Snap(now)
+	stale = !checking && (snap.Conn.Kind == tiles.ConnStale || (!snap.LastMeasured.IsZero() && now.Sub(snap.LastMeasured) >= home2Stale))
+	if stale && s.d.Status != nil && now.Sub(s.d.Status().Started) < home2Stale {
+		stale, checking = false, true
+	}
+	checking = checking || !stale && noData(snap)
+	return snap, checking, stale
+}
+
 // wifiWording reports the Wi-Fi wording for r: fyisp's own uplink is
 // Wi-Fi (never inside a container, which sees its own virtual link) and r
 // comes from this machine. Decided per request; never cached or logged.
@@ -190,19 +220,75 @@ func (s *server) wifiWording(r *http.Request) bool {
 	return (s.inContainer == nil || !s.inContainer()) && s.sameMachine != nil && s.sameMachine(r)
 }
 
+// noData reports covered tiles none of which has a word yet: right after
+// the replay, until their first minutes close.
+func noData(snap *tiles.Snapshot) bool {
+	n := 0
+	for _, t := range snap.Tiles {
+		switch t.State {
+		case tiles.Off:
+		case tiles.None:
+			n++
+		default:
+			return false
+		}
+	}
+	return n > 0
+}
+
+// ongoingFirst sorts problems newest first, ongoing ones before the rest.
+func ongoingFirst(eps []tiles.Episode) []tiles.Episode {
+	eps = slices.Clone(eps)
+	slices.SortStableFunc(eps, func(a, b tiles.Episode) int {
+		switch {
+		case a.Ongoing() && !b.Ongoing():
+			return -1
+		case b.Ongoing() && !a.Ongoing():
+			return 1
+		}
+		return b.Start.Compare(a.Start)
+	})
+	return eps
+}
+
+// watchingSince is when fyisp started watching: the store's oldest sample
+// (read once a minute), which the engine's first data (capped by its
+// replay) only refines within the first stored hour.
+func (s *server) watchingSince(ctx context.Context, first, now time.Time) time.Time {
+	if s.d.Store == nil {
+		return first
+	}
+	hc := s.h2
+	hc.mu.Lock()
+	oldest, at := hc.oldest, hc.oldestAt
+	hc.mu.Unlock()
+	if at.IsZero() || now.Sub(at) >= time.Minute || now.Before(at) {
+		if st, err := s.d.Store.Stats(ctx); err == nil {
+			oldest = st.Oldest
+		}
+		hc.mu.Lock()
+		hc.oldest, hc.oldestAt = oldest, now
+		hc.mu.Unlock()
+	}
+	// The store keeps whole hours: within the first one the engine knows better.
+	if oldest.IsZero() || !first.IsZero() && !oldest.Before(first.Truncate(time.Hour)) {
+		return first
+	}
+	return oldest
+}
+
 // home2Now builds part=now.
 func (s *server) home2Now(r *http.Request, p home2Params, now time.Time) *Home2Now {
-	snap, checking := s.home2Snap(now)
+	snap, checking, stale := s.home2State(now)
 	c := h2copy{loc: p.zone.loc, now: now, wifi: s.wifiWording(r)}
-	stale := !checking && (snap.Conn.Kind == tiles.ConnStale || (!snap.LastMeasured.IsZero() && now.Sub(snap.LastMeasured) >= home2Stale))
 	learning := snap.Learning && !checking
 	out := &Home2Now{V: 2, At: now.UnixMilli(), Stale: stale, Monitored: snap.Monitored}
 	if !snap.LastMeasured.IsZero() {
 		out.LastCheck = snap.LastMeasured.UnixMilli()
 	}
-	if !snap.FirstData.IsZero() {
-		out.WatchingSince = snap.FirstData.UnixMilli()
-		out.Footer = "Watching your connection since " + c.watching(snap.FirstData)
+	if w := s.watchingSince(r.Context(), snap.FirstData, now); !w.IsZero() {
+		out.WatchingSince = w.UnixMilli()
+		out.Footer = "Watching your connection since " + c.watching(w)
 	}
 	if learning && !snap.FirstData.IsZero() {
 		out.Learning = &Home2Learning{Until: snap.FirstData.Add(24 * time.Hour).UnixMilli(),
@@ -210,17 +296,20 @@ func (s *server) home2Now(r *http.Request, p home2Params, now time.Time) *Home2N
 	}
 	var eps []tiles.Episode
 	if !checking {
-		eps = s.d.Tiles.Problems(now.Add(-home2Week))
+		eps = ongoingFirst(snap.Problems(now.Add(-home2Week))) // the tiles' own tick
 	}
 	byID := make(map[string]tiles.Episode, len(eps))
 	for _, e := range eps {
 		byID[e.ID] = e
 	}
+	v := view2{checking: checking, stale: stale, blocked: !checking && !stale && snap.Conn.Kind == string(model.VerdictUDPBlocked),
+		first: snap.FirstData, custom: s.d.CustomProfile}
 	for _, t := range snap.Tiles {
-		out.Tiles = append(out.Tiles, c.tile(t, byID, checking))
+		out.Tiles = append(out.Tiles, c.tile(t, byID, v))
 	}
-	out.Answer = c.answer(snap, eps, checking, stale, learning)
-	out.Path = c.path(snap, checking, stale)
+	app := c.appState(snap, eps, checking || stale)
+	out.Answer = c.answer(snap, eps, app, checking, stale, learning)
+	out.Path = c.path(snap, app, checking, stale)
 	if !c.wifi {
 		out.PathHint = "fyisp checks from the box it runs on, up to your router. It can’t see the Wi-Fi on the device you’re using now — if calls are choppy here, try moving closer to your router or plugging in."
 	}
@@ -231,9 +320,55 @@ func (s *server) home2Now(r *http.Request, p home2Params, now time.Time) *Home2N
 	default:
 		key := strings.Join([]string{strconv.FormatUint(snap.Rev, 16), p.zone.key, now.In(p.zone.loc).Format(time.DateOnly),
 			strconv.FormatBool(learning), strconv.FormatInt(snap.FirstData.UnixMilli(), 10)}, "\x00")
-		out.Problems = memo(&s.h2.mu, s.h2.probs, key, func() Home2Problems { return c.problems(eps, learning, snap.FirstData) })
+		out.Problems, _ = memo(&s.h2.mu, s.h2.probs, key, func() (Home2Problems, bool) { return c.problems(eps, learning, snap.FirstData), true })
 	}
 	return out
+}
+
+// view2 is how part=now's tiles are shown.
+type view2 struct {
+	checking, stale bool
+	blocked         bool      // udp_blocked: call tiles have lost their fast path, not their calls
+	first           time.Time // the engine's first data
+	custom          bool      // the profile is a --config file
+}
+
+// appRow is the card's row 9 (problems with some apps, no path verdict):
+// the bad tiles, their likely causes, and the strip's hop their common
+// cause is on (-1: none).
+type appRow struct {
+	bad      []tiles.TileSnap
+	causes   []tiles.Cause
+	hop      int
+	allCalls bool
+}
+
+// appState works out row 9 of the card.
+func (c h2copy) appState(snap *tiles.Snapshot, eps []tiles.Episode, skip bool) appRow {
+	r := appRow{hop: -1}
+	if skip || snap.Conn.Kind != tiles.ConnApp {
+		return r
+	}
+	r.allCalls = true
+	for _, id := range snap.Conn.Tiles {
+		if i := slices.IndexFunc(snap.Tiles[:], func(t tiles.TileSnap) bool { return t.ID == id }); i >= 0 {
+			t := snap.Tiles[i]
+			r.bad = append(r.bad, t)
+			r.causes = append(r.causes, causeOf(t, eps))
+			r.allCalls = r.allCalls && tileDef(id).Kind == profile.TileCall
+		}
+	}
+	if len(r.causes) > 0 && !slices.ContainsFunc(r.causes, func(y tiles.Cause) bool { return y.Who != r.causes[0].Who }) {
+		switch r.causes[0].Who {
+		case tiles.WhoRouter, tiles.WhoOffline:
+			r.hop = 0
+		case tiles.WhoProvider:
+			r.hop = 1
+		case tiles.WhoInternet:
+			r.hop = 2
+		}
+	}
+	return r
 }
 
 // watching is the footer's date: "Mar 3", "today 9:50 am".
@@ -256,13 +391,24 @@ func iconOf(st tiles.State) string {
 }
 
 // answer is the card (tiles.ConnState's rows, worded).
-func (c h2copy) answer(snap *tiles.Snapshot, eps []tiles.Episode, checking, stale, learning bool) Home2Answer {
+func (c h2copy) answer(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, checking, stale, learning bool) Home2Answer {
+	a := c.card(snap, eps, app, checking, stale, learning)
+	// One key, one text: the key carries a hash of the words (so a new
+	// day, which turns "Started at" into "Started yesterday at", is a new key).
+	h := fnv.New32a()
+	h.Write([]byte(a.Headline + "\x00" + a.Sub))
+	a.Key += ":" + strconv.FormatUint(uint64(h.Sum32()), 36)
+	return a
+}
+
+// card is the answer card, before its key gets the text's hash.
+func (c h2copy) card(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, checking, stale, learning bool) Home2Answer {
 	cs := snap.Conn
 	a := Home2Answer{Key: cs.Key, Tone: cs.Tone, Icon: iconOf(cs.Icon)}
 	if !learning {
-		a.Day = c.dayLine(snap.Day)
+		a.Day = c.dayLine(eps)
 	}
-	started := func() string { return " Started at " + c.when(cs.Since) + "." }
+	started := func() string { return c.started(cs.Since) }
 	switch {
 	case checking:
 		return Home2Answer{Key: tiles.ConnChecking, Tone: tiles.ToneChecking, Icon: "none", Tab: "Checking",
@@ -270,7 +416,7 @@ func (c h2copy) answer(snap *tiles.Snapshot, eps []tiles.Episode, checking, stal
 	case stale:
 		a.Key, a.Tone, a.Icon, a.Tab = tiles.ConnStale, tiles.ToneStale, "none", "? Not checking"
 		if snap.LastMeasured.IsZero() {
-			a.Headline, a.Sub = "fyisp hasn’t checked anything yet.", "Is the computer it runs on asleep or turned off?"
+			a.Headline, a.Sub, a.Day = "fyisp hasn’t checked anything yet.", "Is the computer it runs on asleep or turned off?", nil
 			return a
 		}
 		at := c.when(snap.LastMeasured)
@@ -286,16 +432,15 @@ func (c h2copy) answer(snap *tiles.Snapshot, eps []tiles.Episode, checking, stal
 		a.Sub = "Your connection is up, but name lookups (DNS) are failing, so apps can’t find their servers." + started()
 		a.Tab = "! Websites not found"
 	case string(model.VerdictUDPBlocked):
+		a.Headline = "Calls can’t use their fast path on this network."
 		if cs.Quiet {
 			a.Icon = "info" // known for a long time: information, not a warning
-			a.Headline = "Calls can’t use their fast path on this network."
-			a.Sub = "This network blocks the kind of traffic calls prefer, so calls fall back to a slower route. Websites and apps are fine."
-			a.Tab = "! Calls limited"
+			a.Sub = "This network blocks the kind of traffic calls prefer. Most call apps fall back to a slower route, so calls usually still work but may be choppier. Websites and apps are fine."
+			a.Tab = "ⓘ Calls limited"
 			break
 		}
-		a.Headline = "Calls may not connect on this network."
-		a.Sub = "This network is blocking the kind of traffic calls use, so calls may fail or fall back to a slower route. Websites and apps are fine." + started()
-		a.Tab = "! Calls blocked"
+		a.Sub = "This network is blocking the kind of traffic calls prefer. Most call apps fall back to a slower route, so calls usually still work but may be choppier. Websites and apps are fine." + started()
+		a.Tab = "! Calls limited"
 	case string(model.VerdictUDPDegraded):
 		a.Headline = "Calls may be choppy right now."
 		a.Sub = "Calls are losing some data between your home and the internet, while websites and apps are fine." + started()
@@ -305,22 +450,16 @@ func (c h2copy) answer(snap *tiles.Snapshot, eps []tiles.Episode, checking, stal
 		a.Sub = "Your router and your internet provider look fine, but most apps are slow at the same time." + started()
 		a.Tab = "! Apps slow"
 	case tiles.ConnApp:
-		var bad []tiles.TileSnap
-		for _, id := range cs.Tiles {
-			if i := slices.IndexFunc(snap.Tiles[:], func(t tiles.TileSnap) bool { return t.ID == id }); i >= 0 {
-				bad = append(bad, snap.Tiles[i])
-			}
-		}
-		if len(bad) == 0 {
+		if len(app.bad) == 0 {
 			break
 		}
-		var causes []tiles.Cause
-		for _, t := range bad {
-			causes = append(causes, causeOf(t, eps))
+		var warn bool
+		a.Headline, a.Sub, a.Tab, warn = c.appCard(app.bad, app.causes, snap.Tiles[:])
+		if warn { // the connection or the calls' route, not the apps: amber
+			a.Tone, a.Icon = tiles.ToneWarn, "slow"
 		}
-		a.Headline, a.Sub, a.Tab = c.appCard(bad, causes, snap.Tiles[:])
 		if cs.Again != nil {
-			a.Sub += " " + c.againSentence(cs.Again)
+			a.Sub += " " + c.againAside(cs.Again)
 		}
 		return a
 	case tiles.ConnWorkingAgain:
@@ -346,7 +485,13 @@ func (c h2copy) answer(snap *tiles.Snapshot, eps []tiles.Episode, checking, stal
 	})
 	a.Key, a.Tone, a.Icon, a.Tab = tiles.ConnGood, tiles.ToneOK, "good", "✓ All good"
 	a.Headline = "Everything you use is working normally."
-	a.Sub = c.healthy(snap.Monitored, calls, learning, snap.FirstData)
+	measured := 0
+	for _, t := range snap.Tiles {
+		if t.State != tiles.Off && t.State != tiles.None {
+			measured++
+		}
+	}
+	a.Sub = c.healthy(snap.Monitored, measured, calls, learning, snap.FirstData)
 	return a
 }
 
@@ -365,7 +510,7 @@ func causeOf(t tiles.TileSnap, eps []tiles.Episode) tiles.Cause {
 }
 
 // path is the connection strip: the router, the provider, the internet.
-func (c h2copy) path(snap *tiles.Snapshot, checking, stale bool) []Home2Hop {
+func (c h2copy) path(snap *tiles.Snapshot, app appRow, checking, stale bool) []Home2Hop {
 	labels := [3]string{c.routerName(), "Your internet provider", "The internet"}
 	ids := [3]string{"router", "provider", "internet"}
 	var out [3]Home2Hop
@@ -411,19 +556,26 @@ func (c h2copy) path(snap *tiles.Snapshot, checking, stale bool) []Home2Hop {
 			out[i].State, out[i].Sub = "unknown", "Can’t check while offline"
 		}
 	case culprit >= 0:
+		// Down only when the layer lost everything; a lossy one is slow.
 		since := cs.Since
 		switch {
 		case snap.Layers[culprit].State == tiles.Down:
-			out[culprit].Sub = "Not answering " + c.since(since)
+			out[culprit].State, out[culprit].Sub = "down", "Not answering "+c.since(since)
 		case culprit == 2:
-			out[culprit].Sub = "Hard to reach " + c.since(since)
+			out[culprit].State, out[culprit].Sub = "slow", "Hard to reach "+c.since(since)
 		default:
-			out[culprit].Sub = "Losing data " + c.since(since)
+			out[culprit].State, out[culprit].Sub = "slow", "Losing some data "+c.since(since)
 		}
-		out[culprit].State = "down"
 		for i := culprit + 1; i < 3; i++ {
 			out[i].State, out[i].Sub = "slow", through[culprit]
 		}
+	case app.hop >= 0:
+		// Apps (calls) suffer from a layer no verdict blames: the strip says so too.
+		what := "Losing some data "
+		if app.allCalls {
+			what = "Losing some call data "
+		}
+		out[app.hop].State, out[app.hop].Sub = "slow", what+c.since(cs.Since)
 	default:
 		// The newest drop shows where it happened: on the first layer that lost everything.
 		for i, l := range snap.Layers {
@@ -435,6 +587,7 @@ func (c h2copy) path(snap *tiles.Snapshot, checking, stale bool) []Home2Hop {
 	}
 	if stale {
 		for i := range out {
+			out[i].State = "unknown" // last known: no colour
 			if out[i].Sub == "Working normally" {
 				out[i].Sub = "Last known: working"
 			} else {
@@ -446,19 +599,30 @@ func (c h2copy) path(snap *tiles.Snapshot, checking, stale bool) []Home2Hop {
 }
 
 // tile is one tile of part=now.
-func (c h2copy) tile(t tiles.TileSnap, eps map[string]tiles.Episode, checking bool) Home2Tile {
+func (c h2copy) tile(t tiles.TileSnap, eps map[string]tiles.Episode, v view2) Home2Tile {
 	d := tileDef(t.ID)
 	st := t.State
-	if checking && st != tiles.Off {
+	if v.checking && st != tiles.Off {
 		st = tiles.None
+	}
+	// A blocked fast path is choppier calls over a slower route, not calls
+	// that can't connect (their web group would say so).
+	blocked := v.blocked && d.Kind == profile.TileCall && st == tiles.Down
+	if blocked {
+		st = tiles.Slow
+		for i := range t.Bars {
+			if t.Bars[i].State == tiles.Down && t.Bars[i].From.Add(5*time.Minute).After(t.Since) {
+				t.Bars[i].State = tiles.Slow
+			}
+		}
 	}
 	out := Home2Tile{ID: d.ID, Name: d.Name, Kind: string(d.Kind), State: string(st), Word: c.word(st, d.Kind), Bars: []Home2Bar{}}
 	t.State = st
-	out.Reason = c.tileReason(d, t, checking)
+	out.Reason = c.tileReason(d, t, v.checking, blocked)
 	switch {
 	case st == tiles.Off:
 		out.Aria = d.Name + ": not checked on this setup"
-		out.EnableHint = c.enableHint(d)
+		out.EnableHint = c.enableHint(d, v.custom)
 		return out
 	case st == tiles.None:
 		out.Aria = d.Name + ": no data yet"
@@ -478,18 +642,21 @@ func (c h2copy) tile(t tiles.TileSnap, eps map[string]tiles.Episode, checking bo
 			out.Aria += ", d" + out.Note[1:]
 		}
 	}
+	if v.stale {
+		out.Aria += " (last known)"
+	}
 	for _, b := range t.Bars {
 		if b.From.IsZero() {
 			continue
 		}
 		s := b.State
-		if checking || (s != tiles.Good && s != tiles.Slow && s != tiles.Down) {
+		if v.checking || (s != tiles.Good && s != tiles.Slow && s != tiles.Down) {
 			s = tiles.None
 		}
 		out.Bars = append(out.Bars, Home2Bar{From: b.From.UnixMilli(), State: string(s), Note: c.barNote(b, s, d.Kind, eps)})
 	}
-	if !checking {
-		out.BarsSummary = c.barsSummary(t.Bars[:])
+	if !v.checking {
+		out.BarsSummary = c.barsSummary(t.Bars[:], v.first)
 	}
 	return out
 }
@@ -503,14 +670,14 @@ func (c h2copy) barNote(b tiles.Bar, st tiles.State, kind profile.TileKind, eps 
 	}
 	w := c.word(st, kind)
 	switch e, ok := eps[b.Episode]; {
+	case ok && e.Ongoing():
+		return w + " " + c.since(e.Start)
 	case st == tiles.Down && b.Drop > 0:
 		return "Dropped " + short(b.Drop)
 	case b.Speedtest:
 		return w + " during a speed test"
 	case !ok:
 		return ""
-	case e.Ongoing():
-		return w + " " + c.since(e.Start)
 	default:
 		return w + " " + c.span(e.Start, e.End) + c.likely(e.Cause)
 	}
@@ -531,11 +698,15 @@ func (c h2copy) problems(eps []tiles.Episode, learning bool, first time.Time) Ho
 		p := Home2Problem{ID: e.ID, From: e.Start.UnixMilli(), Ongoing: e.Ongoing(), Level: string(e.Sev),
 			When: c.problemWhen(e), What: c.problemWhat(e), Cause: c.cause(e.Cause), CauseKind: e.Cause.Kind(),
 			Evidence: capFirst(c.evidence(e.Cause, e.Ongoing())) + "."}
-		if e.Kind == tiles.EpBlocked && p.CauseKind == tiles.KindOther {
-			// No path layer explains a block: the network does it.
-			p.Cause, p.Evidence = "the network blocking call traffic", "Websites and apps were fine; only calls couldn’t use their usual route."
-			if e.Ongoing() {
-				p.Evidence = "Websites and apps are fine; only calls can’t use their usual route."
+		if e.Kind == tiles.EpBlocked {
+			// Calls lost their fast path, not their calls: amber. No path
+			// layer explains a block: the network does it.
+			p.Level = string(tiles.Slow)
+			if p.CauseKind == tiles.KindOther {
+				p.Cause, p.Evidence = "a firewall or VPN on this network blocking call traffic", "Websites and apps were fine; only calls couldn’t use their usual route."
+				if e.Ongoing() {
+					p.Evidence = "Websites and apps are fine; only calls can’t use their usual route."
+				}
 			}
 		}
 		if !e.Ongoing() {
@@ -641,14 +812,15 @@ func (s *server) home2Tile(p home2Params, now time.Time) (*Home2TileDetail, int,
 	if i < 0 {
 		return nil, http.StatusNotFound, "unknown tile"
 	}
-	snap, checking := s.home2Snap(now)
+	snap, checking, stale := s.home2State(now)
 	t := snap.Tiles[i]
 	if t.State == tiles.Off {
 		return nil, http.StatusNotFound, "tile not monitored"
 	}
 	c := h2copy{loc: p.zone.loc, now: now}
 	d := tileDef(p.id)
-	h := c.tile(t, nil, checking)
+	v := view2{checking: checking, blocked: !checking && !stale && snap.Conn.Kind == string(model.VerdictUDPBlocked), first: snap.FirstData}
+	h := c.tile(t, nil, v)
 	out := &Home2TileDetail{V: 2, At: now.UnixMilli(), ID: d.ID, State: h.State, Word: h.Word, Reason: h.Reason, Metrics: []Home2Metric{}}
 	if rs := s.h2.resolved(s.d.Profile()); i < len(rs) {
 		src := ""
@@ -660,18 +832,22 @@ func (s *server) home2Tile(p home2Params, now time.Time) (*Home2TileDetail, int,
 	if !checking {
 		out.Metrics = c.metrics(d, t)
 	}
+	if t.Call != nil && t.Call.Source == tiles.CallShared {
+		out.Legend = "How quickly the general call path answers (lower is better)"
+	}
 	learning := snap.Learning && !checking
-	key := strings.Join([]string{p.id, p.zone.key, strconv.FormatInt(now.Truncate(home2Bucket).UnixMilli(), 10), strconv.FormatBool(learning)}, "\x00")
-	ch, ok := s.h2Chart(key, func() (home2Chart, bool) {
+	key := strings.Join([]string{p.id, p.zone.key, strconv.FormatInt(now.Truncate(home2Bucket).UnixMilli(), 10),
+		strconv.FormatBool(learning), strconv.FormatBool(checking), h.State}, "\x00")
+	ch, ok := memo(&s.h2.mu, s.h2.charts, key, func() (home2Chart, bool) {
 		x, ok := s.d.Tiles.Chart(p.id)
 		if !ok {
 			return home2Chart{}, false
 		}
 		eps := map[string]tiles.Episode{}
-		for _, e := range s.d.Tiles.Problems(x.From) {
+		for _, e := range snap.Problems(x.From) {
 			eps[e.ID] = e
 		}
-		return c.chart(x, d.Kind, eps, snap, learning), true
+		return c.chart(x, d, tiles.State(h.State), eps, snap, learning, checking), true
 	})
 	if !ok {
 		return nil, http.StatusNotFound, "tile not monitored"
@@ -680,31 +856,11 @@ func (s *server) home2Tile(p home2Params, now time.Time) (*Home2TileDetail, int,
 	return out, 0, ""
 }
 
-// h2Chart is the cached chart block of key.
-func (s *server) h2Chart(key string, fill func() (home2Chart, bool)) (home2Chart, bool) {
-	hc := s.h2
-	hc.mu.Lock()
-	ch, ok := hc.charts[key]
-	hc.mu.Unlock()
-	if ok {
-		return ch, true
-	}
-	ch, ok = fill()
-	if !ok {
-		return ch, false
-	}
-	hc.mu.Lock()
-	if len(hc.charts) >= home2Memo {
-		clear(hc.charts)
-	}
-	hc.charts[key] = ch
-	hc.mu.Unlock()
-	return ch, true
-}
-
 // metrics are the panel's figures: a call tile's delay, jitter and loss
-// against their limits; an app's usual and Slow limit. None while the
-// usual is learned (call tiles keep theirs: their limits are fixed).
+// against their limits (the general call path's, when the app has no
+// target of its own: the row says so); an app's usual and Slow limit. App
+// and stream tiles show none while the usual is learned (call tiles keep
+// theirs: their limits are fixed).
 func (c h2copy) metrics(d profile.TileDef, t tiles.TileSnap) []Home2Metric {
 	out := []Home2Metric{}
 	switch d.Kind {
@@ -727,19 +883,24 @@ func (c h2copy) metrics(d profile.TileDef, t tiles.TileSnap) []Home2Metric {
 		case t.State == tiles.Down:
 			loss, bl = "100%", true
 		}
-		return []Home2Metric{{Label: "Delay", Value: delay, Limit: "choppy over 150 ms", Bad: &bd},
-			{Label: "Jitter", Value: jitter, Limit: "over 30 ms", Bad: &bj},
-			{Label: "Packet loss", Value: loss, Limit: "2% or more", Bad: &bl}}
-	case profile.TileStream:
-		if t.UsualMs == nil {
-			return out
+		if m.Source == tiles.CallShared {
+			out = append(out, Home2Metric{Label: "General call path:"})
 		}
-		return []Home2Metric{{Label: "Usual", Value: msText(*t.UsualMs)}, {Label: "Only marked Down if it stops loading"}}
+		return append(out, Home2Metric{Label: "Delay", Value: delay, Limit: "choppy over 150 ms", Bad: &bd},
+			Home2Metric{Label: "Jitter", Value: jitter, Limit: "over 30 ms", Bad: &bj},
+			Home2Metric{Label: "Packet loss", Value: loss, Limit: "2% or more", Bad: &bl})
 	}
-	if t.UsualMs == nil || t.SlowAboveMs == nil {
+	if t.UsualMs == nil {
 		return out
 	}
-	return []Home2Metric{{Label: "Usual", Value: msText(*t.UsualMs)}, {Label: "Slow above", Value: msText(*t.SlowAboveMs)}}
+	out = append(out, Home2Metric{Label: "Usual", Value: msText(*t.UsualMs)})
+	if t.SlowAboveMs != nil {
+		out = append(out, Home2Metric{Label: "Slow above", Value: msText(*t.SlowAboveMs)})
+	}
+	if d.Kind == profile.TileStream {
+		out = append(out, Home2Metric{Label: "Only marked Down if it stops loading"})
+	}
+	return out
 }
 
 // msText is "18 ms".
@@ -758,14 +919,19 @@ func pctText(v float64) string {
 	return strconv.FormatFloat(math.Round(v*10)/10, 'f', -1, 64) + "%"
 }
 
-// chart is part=tile's chart block.
-func (c h2copy) chart(x *tiles.Chart, kind profile.TileKind, eps map[string]tiles.Episode, snap *tiles.Snapshot, learning bool) home2Chart {
+// chart is part=tile's chart block. state is the tile's word now: an
+// ongoing band is worded with it.
+func (c h2copy) chart(x *tiles.Chart, d profile.TileDef, state tiles.State, eps map[string]tiles.Episode, snap *tiles.Snapshot, learning, checking bool) home2Chart {
 	out := home2Chart{From: x.From.UnixMilli(), Step: x.Step.Milliseconds(), Ms: make([]*float64, len(x.Ms)), Bands: []Home2Band{}}
 	for i, v := range x.Ms {
 		if !math.IsNaN(v) && !math.IsInf(v, 0) {
 			r := math.Round(v*10) / 10
 			out.Ms[i] = &r
 		}
+	}
+	if checking {
+		out.Text = "fyisp is still checking."
+		return out
 	}
 	head := "Still learning what’s usual."
 	if x.UsualMs != nil && !learning {
@@ -787,13 +953,19 @@ func (c h2copy) chart(x *tiles.Chart, kind profile.TileKind, eps map[string]tile
 				hb.Text = "fyisp wasn’t running " + c.span(b.From, b.To)
 			}
 		default:
-			w := c.word(b.Sev, kind)
 			e, ok := eps[b.Episode]
+			// A connection problem that never touched this tile isn't its band.
+			if ok && e.Connection && len(e.Tiles) > 0 && !slices.Contains(e.Tiles, d.ID) {
+				continue
+			}
+			w := c.word(b.Sev, d.Kind)
 			switch {
-			case ok && e.Kind == tiles.EpDrop && !e.Ongoing():
-				hb.Text = "Dropped " + short(e.DropDur) + " at " + c.clock(e.Start)
+			case b.To.IsZero() && state.Bad():
+				hb.Text = c.word(state, d.Kind) + " " + c.since(b.From)
 			case b.To.IsZero():
 				hb.Text = w + " " + c.since(b.From)
+			case ok && e.Kind == tiles.EpDrop:
+				hb.Text = "Dropped " + short(e.DropDur) + " at " + c.clock(e.Start)
 			default:
 				hb.Text = w + " " + c.span(b.From, b.To)
 			}

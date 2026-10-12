@@ -4,7 +4,7 @@
   "id": "meet",
   "state": "slow",
   "word": "Choppy",
-  "reason": "Calls may be choppy since 10:22 am. Likely cause: the path calls take — websites and other apps are fine.",
+  "reason": "Calls may be choppy since 10:21 am. Likely cause: the route calls take across the internet — websites and other apps are fine.",
   "coverage": "",
   "metrics": [
     {"label": "Delay", "value": "70 ms", "limit": "choppy over 150 ms", "bad": false},
@@ -19,7 +19,7 @@
     {"from": 1791483000000, "to": 1791483900000, "kind": "problem", "text": "Choppy 2:10–2:25 pm — likely your internet provider"},
     {"from": 1791491220000, "to": 1791491400000, "kind": "problem", "text": "Down 4:27–4:30 pm — likely Google’s side"},
     {"from": 1791529500000, "to": 1791532200000, "kind": "off", "text": "fyisp wasn’t running 3:05–3:50 am"},
-    {"from": 1791555720000, "to": 1791556200000, "kind": "problem", "text": "Choppy since 10:22 am — likely the path calls take"}
+    {"from": 1791555660000, "to": 1791556200000, "kind": "problem", "text": "Choppy since 10:21 am — likely the route calls take across the internet"}
   ],
-  "text": "Usually about 9 ms. Choppy 2:10–2:25 pm — likely your internet provider. Down 4:27–4:30 pm — likely Google’s side. fyisp wasn’t running 3:05–3:50 am. Choppy since 10:22 am — likely the path calls take."
+  "text": "Usually about 9 ms. Choppy 2:10–2:25 pm — likely your internet provider. Down 4:27–4:30 pm — likely Google’s side. fyisp wasn’t running 3:05–3:50 am. Choppy since 10:21 am — likely the route calls take across the internet."
 }

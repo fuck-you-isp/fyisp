@@ -1,0 +1,206 @@
+{
+  "v": 2,
+  "at": 1791556200000,
+  "last_check": 1791556196000,
+  "stale": false,
+  "watching_since": 1772548200000,
+  "footer": "Watching your connection since Mar 3",
+  "learning": null,
+  "monitored": 11,
+  "answer": {
+    "key": "checking:r2rvep",
+    "tone": "checking",
+    "icon": "none",
+    "tab": "Checking",
+    "headline": "Checking your connection…",
+    "sub": "fyisp just started. The first answer takes about a minute.",
+    "day": null
+  },
+  "path": [
+    {
+      "id": "router",
+      "label": "Your home router",
+      "state": "unknown",
+      "sub": "Checking…"
+    },
+    {
+      "id": "provider",
+      "label": "Your internet provider",
+      "state": "unknown",
+      "sub": "Checking…"
+    },
+    {
+      "id": "internet",
+      "label": "The internet",
+      "state": "unknown",
+      "sub": "Checking…"
+    }
+  ],
+  "path_hint": "fyisp checks from the box it runs on, up to your router. It can’t see the Wi-Fi on the device you’re using now — if calls are choppy here, try moving closer to your router or plugging in.",
+  "tiles": [
+    {
+      "id": "zoom",
+      "name": "Zoom",
+      "kind": "call",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Zoom: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "teams",
+      "name": "Microsoft Teams",
+      "kind": "call",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Microsoft Teams: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "meet",
+      "name": "Google Meet",
+      "kind": "call",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Google Meet: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "kind": "call",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Slack: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "m365",
+      "name": "Microsoft 365",
+      "kind": "app",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Microsoft 365: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "gws",
+      "name": "Google Workspace",
+      "kind": "app",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Google Workspace: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "github",
+      "name": "GitHub",
+      "kind": "app",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "GitHub: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "dropbox",
+      "name": "Dropbox",
+      "kind": "app",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Dropbox: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "onedrive",
+      "name": "OneDrive",
+      "kind": "app",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "OneDrive: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "youtube",
+      "name": "YouTube",
+      "kind": "stream",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "YouTube: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    },
+    {
+      "id": "netflix",
+      "name": "Netflix",
+      "kind": "stream",
+      "state": "none",
+      "word": "No data",
+      "since": null,
+      "note": "",
+      "aria": "Netflix: no data yet",
+      "reason": "fyisp is still checking.",
+      "bars_summary": "",
+      "bars": [{"from":1791549300000,"state":"none","note":""},{"from":1791549600000,"state":"none","note":""},{"from":1791549900000,"state":"none","note":""},{"from":1791550200000,"state":"none","note":""},{"from":1791550500000,"state":"none","note":""},{"from":1791550800000,"state":"none","note":""},{"from":1791551100000,"state":"none","note":""},{"from":1791551400000,"state":"none","note":""},{"from":1791551700000,"state":"none","note":""},{"from":1791552000000,"state":"none","note":""},{"from":1791552300000,"state":"none","note":""},{"from":1791552600000,"state":"none","note":""},{"from":1791552900000,"state":"none","note":""},{"from":1791553200000,"state":"none","note":""},{"from":1791553500000,"state":"none","note":""},{"from":1791553800000,"state":"none","note":""},{"from":1791554100000,"state":"none","note":""},{"from":1791554400000,"state":"none","note":""},{"from":1791554700000,"state":"none","note":""},{"from":1791555000000,"state":"none","note":""},{"from":1791555300000,"state":"none","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
+    }
+  ],
+  "speed": {
+    "available": true,
+    "latest": {
+      "at": 1791547200000,
+      "down_mbps": 930,
+      "up_mbps": 940,
+      "text": "Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.",
+      "note": "Today 8:00 am"
+    },
+    "empty_text": "No speed test yet. The first one runs within the hour.",
+    "usual": {
+      "down_mbps": 925,
+      "up_mbps": 938
+    },
+    "running": null,
+    "can_control": true
+  },
+  "problems": {
+    "summary": "Checking…",
+    "items": []
+  }
+}

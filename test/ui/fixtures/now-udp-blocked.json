@@ -8,15 +8,15 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "udp_blocked:1791550800000",
+    "key": "udp_blocked:1791550800000:508ldp",
     "tone": "warn",
     "icon": "slow",
-    "tab": "! Calls blocked",
-    "headline": "Calls may not connect on this network.",
-    "sub": "This network is blocking the kind of traffic calls use, so calls may fail or fall back to a slower route. Websites and apps are fine. Started at 9:00 am.",
+    "tab": "! Calls limited",
+    "headline": "Calls can’t use their fast path on this network.",
+    "sub": "This network is blocking the kind of traffic calls prefer. Most call apps fall back to a slower route, so calls usually still work but may be choppier. Websites and apps are fine. Started at 9:00 am.",
     "day": {
-      "text": "Last 24 hours: 5 short problems, 1 likely from your internet provider.",
-      "link": "5 short problems"
+      "text": "Last 24 hours: 5 problems, 1 likely from your internet provider.",
+      "link": "5 problems"
     }
   },
   "path": [
@@ -45,53 +45,53 @@
       "id": "zoom",
       "name": "Zoom",
       "kind": "call",
-      "state": "down",
-      "word": "Down",
+      "state": "slow",
+      "word": "Choppy",
       "since": 1791550800000,
       "note": "since 9:00 am",
-      "aria": "Zoom: Down, since 9:00 am",
-      "reason": "Not connecting since 9:00 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 19 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"down","note":"Down since 9:00 am"},{"from":1791551100000,"state":"down","note":"Down since 9:00 am"},{"from":1791551400000,"state":"down","note":"Down since 9:00 am"},{"from":1791551700000,"state":"down","note":"Down since 9:00 am"},{"from":1791552000000,"state":"down","note":"Down since 9:00 am"},{"from":1791552300000,"state":"down","note":"Down since 9:00 am"},{"from":1791552600000,"state":"down","note":"Down since 9:00 am"},{"from":1791552900000,"state":"down","note":"Down since 9:00 am"},{"from":1791553200000,"state":"down","note":"Down since 9:00 am"},{"from":1791553500000,"state":"down","note":"Down since 9:00 am"},{"from":1791553800000,"state":"down","note":"Down since 9:00 am"},{"from":1791554100000,"state":"down","note":"Down since 9:00 am"},{"from":1791554400000,"state":"down","note":"Down since 9:00 am"},{"from":1791554700000,"state":"down","note":"Down since 9:00 am"},{"from":1791555000000,"state":"down","note":"Down since 9:00 am"},{"from":1791555300000,"state":"down","note":"Down since 9:00 am"},{"from":1791555600000,"state":"down","note":"Down since 9:00 am"},{"from":1791555900000,"state":"down","note":"Down since 9:00 am"},{"from":1791556200000,"state":"down","note":"Down since 9:00 am"}]
+      "aria": "Zoom: Choppy, since 9:00 am",
+      "reason": "Can’t use its fast path on this network since 9:00 am. Calls may still connect over a slower route.",
+      "bars_summary": "Last 2 hours: slow in 19 of 24 five-minute periods.",
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553200000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553500000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 9:00 am"}]
     },
     {
       "id": "teams",
       "name": "Microsoft Teams",
       "kind": "call",
-      "state": "down",
-      "word": "Down",
+      "state": "slow",
+      "word": "Choppy",
       "since": 1791550800000,
       "note": "since 9:00 am",
-      "aria": "Microsoft Teams: Down, since 9:00 am",
-      "reason": "Not connecting since 9:00 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 19 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"down","note":"Down since 9:00 am"},{"from":1791551100000,"state":"down","note":"Down since 9:00 am"},{"from":1791551400000,"state":"down","note":"Down since 9:00 am"},{"from":1791551700000,"state":"down","note":"Down since 9:00 am"},{"from":1791552000000,"state":"down","note":"Down since 9:00 am"},{"from":1791552300000,"state":"down","note":"Down since 9:00 am"},{"from":1791552600000,"state":"down","note":"Down since 9:00 am"},{"from":1791552900000,"state":"down","note":"Down since 9:00 am"},{"from":1791553200000,"state":"down","note":"Down since 9:00 am"},{"from":1791553500000,"state":"down","note":"Down since 9:00 am"},{"from":1791553800000,"state":"down","note":"Down since 9:00 am"},{"from":1791554100000,"state":"down","note":"Down since 9:00 am"},{"from":1791554400000,"state":"down","note":"Down since 9:00 am"},{"from":1791554700000,"state":"down","note":"Down since 9:00 am"},{"from":1791555000000,"state":"down","note":"Down since 9:00 am"},{"from":1791555300000,"state":"down","note":"Down since 9:00 am"},{"from":1791555600000,"state":"down","note":"Down since 9:00 am"},{"from":1791555900000,"state":"down","note":"Down since 9:00 am"},{"from":1791556200000,"state":"down","note":"Down since 9:00 am"}]
+      "aria": "Microsoft Teams: Choppy, since 9:00 am",
+      "reason": "Can’t use its fast path on this network since 9:00 am. Calls may still connect over a slower route.",
+      "bars_summary": "Last 2 hours: slow in 19 of 24 five-minute periods.",
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553200000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553500000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 9:00 am"}]
     },
     {
       "id": "meet",
       "name": "Google Meet",
       "kind": "call",
-      "state": "down",
-      "word": "Down",
+      "state": "slow",
+      "word": "Choppy",
       "since": 1791550800000,
       "note": "since 9:00 am",
-      "aria": "Google Meet: Down, since 9:00 am",
-      "reason": "Not connecting since 9:00 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 19 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"down","note":"Down since 9:00 am"},{"from":1791551100000,"state":"down","note":"Down since 9:00 am"},{"from":1791551400000,"state":"down","note":"Down since 9:00 am"},{"from":1791551700000,"state":"down","note":"Down since 9:00 am"},{"from":1791552000000,"state":"down","note":"Down since 9:00 am"},{"from":1791552300000,"state":"down","note":"Down since 9:00 am"},{"from":1791552600000,"state":"down","note":"Down since 9:00 am"},{"from":1791552900000,"state":"down","note":"Down since 9:00 am"},{"from":1791553200000,"state":"down","note":"Down since 9:00 am"},{"from":1791553500000,"state":"down","note":"Down since 9:00 am"},{"from":1791553800000,"state":"down","note":"Down since 9:00 am"},{"from":1791554100000,"state":"down","note":"Down since 9:00 am"},{"from":1791554400000,"state":"down","note":"Down since 9:00 am"},{"from":1791554700000,"state":"down","note":"Down since 9:00 am"},{"from":1791555000000,"state":"down","note":"Down since 9:00 am"},{"from":1791555300000,"state":"down","note":"Down since 9:00 am"},{"from":1791555600000,"state":"down","note":"Down since 9:00 am"},{"from":1791555900000,"state":"down","note":"Down since 9:00 am"},{"from":1791556200000,"state":"down","note":"Down since 9:00 am"}]
+      "aria": "Google Meet: Choppy, since 9:00 am",
+      "reason": "Can’t use its fast path on this network since 9:00 am. Calls may still connect over a slower route.",
+      "bars_summary": "Last 2 hours: slow in 19 of 24 five-minute periods.",
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553200000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553500000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 9:00 am"}]
     },
     {
       "id": "slack",
       "name": "Slack",
       "kind": "call",
-      "state": "down",
-      "word": "Down",
+      "state": "slow",
+      "word": "Choppy",
       "since": 1791550800000,
       "note": "since 9:00 am",
-      "aria": "Slack: Down, since 9:00 am",
-      "reason": "Not connecting since 9:00 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 19 of 24 five-minute periods.",
-      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"down","note":"Down since 9:00 am"},{"from":1791551100000,"state":"down","note":"Down since 9:00 am"},{"from":1791551400000,"state":"down","note":"Down since 9:00 am"},{"from":1791551700000,"state":"down","note":"Down since 9:00 am"},{"from":1791552000000,"state":"down","note":"Down since 9:00 am"},{"from":1791552300000,"state":"down","note":"Down since 9:00 am"},{"from":1791552600000,"state":"down","note":"Down since 9:00 am"},{"from":1791552900000,"state":"down","note":"Down since 9:00 am"},{"from":1791553200000,"state":"down","note":"Down 9:41–9:45 am — likely Slack’s side"},{"from":1791553500000,"state":"down","note":"Down since 9:00 am"},{"from":1791553800000,"state":"down","note":"Down since 9:00 am"},{"from":1791554100000,"state":"down","note":"Down since 9:00 am"},{"from":1791554400000,"state":"down","note":"Down since 9:00 am"},{"from":1791554700000,"state":"down","note":"Down since 9:00 am"},{"from":1791555000000,"state":"down","note":"Down since 9:00 am"},{"from":1791555300000,"state":"down","note":"Down since 9:00 am"},{"from":1791555600000,"state":"down","note":"Down since 9:00 am"},{"from":1791555900000,"state":"down","note":"Down since 9:00 am"},{"from":1791556200000,"state":"down","note":"Down since 9:00 am"}]
+      "aria": "Slack: Choppy, since 9:00 am",
+      "reason": "Can’t use its fast path on this network since 9:00 am. Calls may still connect over a slower route.",
+      "bars_summary": "Last 2 hours: slow in 19 of 24 five-minute periods.",
+      "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791551700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791552900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553200000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553500000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791553800000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554100000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554400000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791554700000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555000000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555300000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555600000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791555900000,"state":"slow","note":"Choppy since 9:00 am"},{"from":1791556200000,"state":"slow","note":"Choppy since 9:00 am"}]
     },
     {
       "id": "m365",
@@ -203,8 +203,20 @@
     "can_control": true
   },
   "problems": {
-    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",
+    "summary": "6 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves, 1 with other causes.",
     "items": [
+      {
+        "id": "c-1791550800000",
+        "from": 1791550800000,
+        "to": 0,
+        "ongoing": true,
+        "level": "slow",
+        "when": "Today since 9:00 am (still happening)",
+        "what": "Calls can’t use their fast path.",
+        "cause": "a firewall or VPN on this network blocking call traffic",
+        "cause_kind": "other",
+        "evidence": "Websites and apps are fine; only calls can’t use their usual route."
+      },
       {
         "id": "t-1791553260000-slack",
         "from": 1791553260000,
@@ -216,18 +228,6 @@
         "cause": "Slack’s side",
         "cause_kind": "app",
         "evidence": "Your internet and every other app were normal."
-      },
-      {
-        "id": "c-1791550800000",
-        "from": 1791550800000,
-        "to": 0,
-        "ongoing": true,
-        "level": "down",
-        "when": "Today since 9:00 am (still happening)",
-        "what": "Calls can’t use their fast path.",
-        "cause": "the network blocking call traffic",
-        "cause_kind": "other",
-        "evidence": "Websites and apps are fine; only calls can’t use their usual route."
       },
       {
         "id": "t-1791504840000-m365",
@@ -248,7 +248,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

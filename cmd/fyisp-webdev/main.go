@@ -290,11 +290,15 @@ func main() {
 	if *noICMP {
 		caps.ICMP, caps.ICMPHint = "unavailable", "Allow unprivileged ICMP with: sudo sysctl -w net.ipv4.ping_group_range='0 2147483647'"
 	}
+	started := now
+	if live != nil {
+		started = now.Add(-time.Hour) // a scenario has been running a while: its stale is stale, not a fresh start
+	}
 	d := web.Deps{
 		Profile: func() *model.Profile { return p },
 		Store:   oldestStore{st, now.Add(-*bf)},
 		Status: func() web.Status {
-			return web.Status{Version: "dev", Started: now, Caps: caps, Targets: len(p.Targets), Ready: warm.Ready()}
+			return web.Status{Version: "dev", Started: started, Caps: caps, Targets: len(p.Targets), Ready: warm.Ready()}
 		},
 		Metrics: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "# fyisp-webdev: no real metrics")

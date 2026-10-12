@@ -22,12 +22,6 @@
   "usual_ms": 12,
   "bands": [
     {
-      "from": 1791483000000,
-      "to": 1791483900000,
-      "kind": "problem",
-      "text": "Slow 2:10–2:25 pm — likely your internet provider"
-    },
-    {
       "from": 1791504840000,
       "to": 1791505320000,
       "kind": "problem",
@@ -40,5 +34,5 @@
       "text": "fyisp wasn’t running 3:05–3:50 am"
     }
   ],
-  "text": "Usually about 12 ms. Slow 2:10–2:25 pm — likely your internet provider. Slow 8:14–8:22 pm — likely Microsoft’s side. fyisp wasn’t running 3:05–3:50 am."
+  "text": "Usually about 12 ms. Slow 8:14–8:22 pm — likely Microsoft’s side. fyisp wasn’t running 3:05–3:50 am."
 }

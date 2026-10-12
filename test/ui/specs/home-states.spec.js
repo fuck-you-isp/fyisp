@@ -116,7 +116,7 @@ test('app-only problem with "working again" appended', async ({ page }) => {
   await serveHome(page, 'now-zoom-working-again');
   await openHome(page);
   await expect(page.locator('.hp-answer')).toHaveClass(/\bok\b/);
-  await expect(page.locator('.hp-sub')).toHaveText(/Teams and Google Meet are working if you need to switch\. Working again\. Your internet dropped for about 40 seconds at 10:14 am\.$/);
+  await expect(page.locator('.hp-sub')).toHaveText(/Teams and Google Meet are working if you need to switch\. Separately, your internet dropped for about 40 seconds at 10:14 am and is back now\.$/);
   await expect(page).toHaveTitle('! Zoom down – fyisp');
 });
 

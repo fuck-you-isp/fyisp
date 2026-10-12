@@ -8,12 +8,12 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "good",
+    "key": "good:13f605q",
     "tone": "ok",
     "icon": "good",
     "tab": "✓ All good",
     "headline": "Everything you use is working normally.",
-    "sub": "Your router, your internet provider and all 11 apps look healthy. Calls and video should be smooth.",
+    "sub": "Your router, your internet provider and 10 of 11 apps look healthy; the others have no data yet. Calls and video should be smooth.",
     "day": {"text": "Last 24 hours: 4 short problems, 1 likely from your internet provider.", "link": "4 short problems"}
   },
   "path": [
@@ -331,13 +331,13 @@
       "id": "onedrive",
       "name": "OneDrive",
       "kind": "app",
-      "state": "good",
-      "word": "Good",
+      "state": "none",
+      "word": "No data",
       "since": null,
       "note": "",
-      "aria": "OneDrive: Good",
-      "reason": "Working normally.",
-      "bars_summary": "Last 2 hours: no problems.",
+      "aria": "OneDrive: no data yet",
+      "reason": "No data yet.",
+      "bars_summary": "Last 2 hours: not watched for 10 minutes.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -361,8 +361,8 @@
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
         {"from": 1791555600000, "state": "good", "note": ""},
-        {"from": 1791555900000, "state": "good", "note": ""},
-        {"from": 1791556200000, "state": "good", "note": ""}
+        {"from": 1791555900000, "state": "none", "note": ""},
+        {"from": 1791556200000, "state": "none", "note": ""}
       ]
     },
     {
@@ -490,7 +490,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

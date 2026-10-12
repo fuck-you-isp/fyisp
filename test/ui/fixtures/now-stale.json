@@ -8,7 +8,7 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "stale",
+    "key": "stale:17otuyl",
     "tone": "stale",
     "icon": "none",
     "tab": "? Not checking",
@@ -23,19 +23,19 @@
     {
       "id": "router",
       "label": "Your home router",
-      "state": "good",
+      "state": "unknown",
       "sub": "Last known: working"
     },
     {
       "id": "provider",
       "label": "Your internet provider",
-      "state": "good",
+      "state": "unknown",
       "sub": "Last known: working"
     },
     {
       "id": "internet",
       "label": "The internet",
-      "state": "good",
+      "state": "unknown",
       "sub": "Last known: working"
     }
   ],
@@ -49,7 +49,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Zoom: Good",
+      "aria": "Zoom: Good (last known)",
       "reason": "Calls should be smooth.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -62,7 +62,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Microsoft Teams: Good",
+      "aria": "Microsoft Teams: Good (last known)",
       "reason": "Calls should be smooth.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -75,7 +75,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Google Meet: Good",
+      "aria": "Google Meet: Good (last known)",
       "reason": "Calls should be smooth.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -88,7 +88,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Slack: Good",
+      "aria": "Slack: Good (last known)",
       "reason": "Calls should be smooth.",
       "bars_summary": "Last 2 hours: slow in 1 of 24 five-minute periods, not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"slow","note":"Choppy 9:41–9:45 am — likely Slack’s side"},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -101,7 +101,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Microsoft 365: Good",
+      "aria": "Microsoft 365: Good (last known)",
       "reason": "Working normally.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -114,7 +114,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Google Workspace: Good",
+      "aria": "Google Workspace: Good (last known)",
       "reason": "Working normally.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -127,7 +127,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "GitHub: Good",
+      "aria": "GitHub: Good (last known)",
       "reason": "Working normally.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -140,7 +140,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Dropbox: Good",
+      "aria": "Dropbox: Good (last known)",
       "reason": "Working normally.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -153,7 +153,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "OneDrive: Good",
+      "aria": "OneDrive: Good (last known)",
       "reason": "Working normally.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -166,7 +166,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "YouTube: Good",
+      "aria": "YouTube: Good (last known)",
       "reason": "Working normally. YouTube is reachable. If it’s buffering, test your speed below.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -179,7 +179,7 @@
       "word": "Good",
       "since": null,
       "note": "",
-      "aria": "Netflix: Good",
+      "aria": "Netflix: Good (last known)",
       "reason": "Working normally. Netflix is reachable. If it’s buffering, test your speed below.",
       "bars_summary": "Last 2 hours: not watched for 15 minutes.",
       "bars": [{"from":1791549300000,"state":"good","note":""},{"from":1791549600000,"state":"good","note":""},{"from":1791549900000,"state":"good","note":""},{"from":1791550200000,"state":"good","note":""},{"from":1791550500000,"state":"good","note":""},{"from":1791550800000,"state":"good","note":""},{"from":1791551100000,"state":"good","note":""},{"from":1791551400000,"state":"good","note":""},{"from":1791551700000,"state":"good","note":""},{"from":1791552000000,"state":"good","note":""},{"from":1791552300000,"state":"good","note":""},{"from":1791552600000,"state":"good","note":""},{"from":1791552900000,"state":"good","note":""},{"from":1791553200000,"state":"good","note":""},{"from":1791553500000,"state":"good","note":""},{"from":1791553800000,"state":"good","note":""},{"from":1791554100000,"state":"good","note":""},{"from":1791554400000,"state":"good","note":""},{"from":1791554700000,"state":"good","note":""},{"from":1791555000000,"state":"good","note":""},{"from":1791555300000,"state":"good","note":""},{"from":1791555600000,"state":"none","note":""},{"from":1791555900000,"state":"none","note":""},{"from":1791556200000,"state":"none","note":""}]
@@ -236,7 +236,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."

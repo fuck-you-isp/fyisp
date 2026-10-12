@@ -8,7 +8,7 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "good",
+    "key": "good:3vnahz",
     "tone": "ok",
     "icon": "good",
     "tab": "✓ All good",
@@ -236,7 +236,7 @@
         "ongoing": false,
         "level": "down",
         "when": "Yesterday 4:27–4:30 pm",
-        "what": "Google Meet, Google Workspace and YouTube didn’t load.",
+        "what": "Google Meet couldn’t connect; Google Workspace and YouTube didn’t load.",
         "cause": "Google’s side",
         "cause_kind": "app",
         "evidence": "Your internet and the non-Google apps were normal."
