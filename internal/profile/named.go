@@ -155,7 +155,7 @@ type Registry struct {
 }
 
 // DefaultDescription describes the built-in default profile.
-const DefaultDescription = "What a home and a remote worker rely on: the call path (STUN), call and chat apps, Microsoft 365 and Google Workspace, and websites (CDNs)"
+const DefaultDescription = "What a home and a remote worker rely on: the call path (STUN, with the Teams relay), call and chat apps, Microsoft 365, Google Workspace, GitHub, Dropbox, OneDrive, websites (CDNs), YouTube and Netflix"
 
 var (
 	profileNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)

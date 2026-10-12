@@ -25,8 +25,8 @@ var HomeCategories = []string{HomeCalls, HomeWork, HomeWeb}
 
 // HomeCategory returns the Home category of a target: HomeCalls, HomeWork,
 // HomeWeb or HomeOther. A home: tag wins; otherwise an app:* or udp-path
-// tag means calls, the productivity provider work, a CDN or the streaming
-// provider web, and anything else other.
+// tag means calls, the productivity and developer-services providers work,
+// a CDN or the streaming provider web, and anything else other.
 func HomeCategory(t model.Target) string {
 	for _, tag := range t.Tags {
 		if c, ok := strings.CutPrefix(tag, TagHome); ok && slices.Contains(HomeCategories, c) {
@@ -36,7 +36,7 @@ func HomeCategory(t model.Target) string {
 	switch {
 	case callq.IsApp(t) || slices.Contains(t.Tags, callq.TagUDPPath):
 		return HomeCalls
-	case t.Provider == "services-productivity":
+	case t.Provider == "services-productivity" || t.Provider == "services-dev":
 		return HomeWork
 	case t.ProviderKind == "cdn" || t.Provider == "services-streaming":
 		return HomeWeb

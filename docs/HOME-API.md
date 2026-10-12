@@ -100,7 +100,7 @@ Unknown parameters return 400, like the other routes.
 
 Tiles come in a fixed order: `calls`, `work`, `web`, `other`. A tile with no targets is left out. Categories come from `profile.HomeCategory(target)` (`internal/profile/home.go`):
 - `calls`: `udp-path` STUN targets and call apps' TCP targets (`app:*`);
-- `work`, `web`: the `home:work` and `home:web` tags, else the productivity provider (work) or a CDN or the streaming provider (web);
+- `work`, `web`: the `home:work` and `home:web` tags, else the productivity or developer-services provider (work) or a CDN or the streaming provider (web);
 - otherwise `other`.
 
 The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
@@ -182,7 +182,7 @@ The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
 - `fact` is set only when the call path or an app had a scored bad minute in the last 5 minutes. It never holds a time: show `fact_at` in the viewer's locale.
 - `since` is the verdict's `since`, or the first minute of the current bad call run.
 - `calls` is omitted when the profile has no `udp-path` targets; the Calls tile then has only web-reachable apps, and its state is `reachable` or `not_answering`.
-- `apps` lists every call app that has a target in the profile, in the fixed order teams, meet, zoom, slack, discord, whatsapp, webex. Teams without the opt-in relay is `reachable`/`not_answering`, with a `note` naming the shared call path's state.
+- `apps` lists every call app that has a target in the profile, in the fixed order teams, meet, zoom, slack, discord, whatsapp, webex. Teams without its relay (a profile that removes or lacks Teams-Relay) is `reachable`/`not_answering`, with a `note` naming the shared call path's state.
 - **Warming up** (`answer.level = "checking"`):
   - Every tile is `checking`.
   - `fact`, `calls.words` and every number are omitted.

@@ -129,7 +129,7 @@ type callsGroup struct {
 
 // callsApp is one app. UDP is "measured" (Group set; Region is the Teams
 // relay's cloud region, local only), "shared" (an app whose own call
-// target is not in the profile, e.g. Teams without its opt-in relay: its
+// target is not in the profile, e.g. Teams with its relay removed: its
 // calls take the call path, Path) or "not_measurable". Web* is the TCP
 // connect time to the app's websites over the window (omitted without TCP
 // targets): mean RTT, loss fraction and samples.

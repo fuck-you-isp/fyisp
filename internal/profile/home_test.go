@@ -16,6 +16,7 @@ func TestHomeCategory(t *testing.T) {
 		{model.Target{Tags: []string{"app:zoom"}}, HomeCalls},
 		{model.Target{Tags: []string{"udp-path"}, Kinds: []model.ProbeKind{model.KindUDP}}, HomeCalls},
 		{model.Target{Provider: "services-productivity"}, HomeWork},
+		{model.Target{Provider: "services-dev"}, HomeWork},
 		{model.Target{Provider: "cdn-fastly", ProviderKind: "cdn"}, HomeWeb},
 		{model.Target{Provider: "services-streaming", ProviderKind: "service"}, HomeWeb},
 		{model.Target{Provider: "aws", ProviderKind: "hyperscaler"}, HomeOther},
@@ -72,7 +73,7 @@ func TestHomeCategoriesShipped(t *testing.T) {
 			t.Errorf("default %s: tagged %s, derived %s", tg.Name, c, d)
 		}
 	}
-	if got[HomeCalls] != 11 || got[HomeWork] != 6 || got[HomeWeb] != 5 || len(got) != 3 {
+	if got[HomeCalls] != 12 || got[HomeWork] != 9 || got[HomeWeb] != 7 || len(got) != 3 {
 		t.Errorf("default categories %v", got)
 	}
 }

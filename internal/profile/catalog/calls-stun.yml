@@ -78,5 +78,5 @@ targets:
     port: 3478
     region: global
     anycast: true
-    tags: [udp-path, app:teams, tile:teams]
+    tags: [udp-path, app:teams, home:calls, tile:teams]
     verified: {date: 2026-10-10, stun: 2/2, rtt_ms: 56.2, cname: b-tr-teamsc-euwe-03.westeurope.cloudapp.azure.com}

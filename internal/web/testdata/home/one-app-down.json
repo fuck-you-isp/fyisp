@@ -273,12 +273,12 @@
           "Microsoft 365",
           "Microsoft sign-in"
         ],
-        "more": 3,
+        "more": 6,
         "affected": [
           "Outlook"
         ],
-        "ok": 5,
-        "total": 6,
+        "ok": 8,
+        "total": 9,
         "details": "#v=o\u0026ot=work"
       },
       {
@@ -292,9 +292,9 @@
           "Akamai",
           "Fastly"
         ],
-        "more": 2,
-        "ok": 5,
-        "total": 5,
+        "more": 4,
+        "ok": 7,
+        "total": 7,
         "details": "#v=o\u0026ot=web"
       }
     ],
@@ -310,9 +310,8 @@
         "app": "teams",
         "title": "Teams",
         "level": "good",
-        "state": "reachable",
-        "label": "Reachable",
-        "note": "Same call quality as your other apps: Good."
+        "state": "good",
+        "label": "Good"
       },
       {
         "app": "meet",

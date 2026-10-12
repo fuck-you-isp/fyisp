@@ -4,7 +4,7 @@ Is your internet good enough for calls and work right now, and when it isn't, is
 
 fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It runs on your computer (or a NAS or Raspberry Pi), checks your connection every few seconds, and shows the answer at <http://127.0.0.1:3000>:
 
-- **Calls, work apps and websites.** It checks the path that call audio and video take, the call and chat apps (Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp), Microsoft 365 and Google Workspace, and the networks most websites are served from.
+- **Calls, work apps and websites.** It checks the path that call audio and video take, the call and chat apps (Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp), Microsoft 365, Google Workspace, GitHub, Dropbox and OneDrive, the networks most websites are served from, and YouTube and Netflix.
 - **Whose fault it is.** It also checks your own router and your provider's first hop, so it can say *your Wi-Fi or router*, *your internet provider*, *the wider internet* or *one app*.
 - **When it was bad.** A timeline of today and this week, a *Mark a bad call* button, and *What happened at …?* for any time you pick.
 - **Proof for your provider.** *Make a report* builds a redacted 7-day report (no private addresses) as one HTML page you can save, print or send to your provider or your IT team.
@@ -12,7 +12,7 @@ fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It
 
 Technical users get every number under **Details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
 
-> **New in v1.0: the default changed.** Plain `fyisp` now checks the 22 targets above (calls, work apps, websites) instead of the 91 targets of v0.x (mostly cloud regions and developer services), and opens on the plain-words **Home** view. The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
+> **New in v1.0: the default changed.** Plain `fyisp` now checks the 28 targets above (calls, work apps, websites) instead of the 91 targets of v0.x (mostly cloud regions and developer services), and opens on the plain-words **Home** view. The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
 
 ## Quick start
 
@@ -218,7 +218,7 @@ Home's *Calls* tile and *Mark a bad call* are built on these measurements. **Det
 - **The top card** gives one answer, e.g. *● Good for calls · 32 ms · 0% loss · steady*, refreshed every few seconds with *updated 4 s ago*: the pre-call check. It is the worst of the path verdict (it never says Good while the banner shows an ISP outage, and it names that cause inline), the UDP verdicts below, your call path's score and the measured apps' scores. When it is not Good it says why, e.g. *Poor: 8% loss on your call path (worst minute 14:12)*.
 - **Working hours**: a strip for Mon–Fri 09–17 local time, coloured per minute (good, fair, poor, unusable, no data), with a summary such as *Today 09–17: Good 92% · Poor 14:10–14:16*. Click a minute to ask about it.
 - **What happened at …?**: pick a time (the default is the last 60 minutes) and get one sentence about the 15 minutes either side of it that names the layer at fault, e.g. *14:10–14:16: 8% loss at your ISP edge; Wi-Fi/router fine*. It uses the outage log, so it blames layers the same way the verdicts do. It links to the charts and to *Create evidence report*.
-- **By app**, over the last 5 minutes: Meet (and Teams with the opt-in relay) gets a state, round trip and loss; expanding a row shows the MOS, jitter, p95 round trip and the last hour. Without the relay, Teams gets its own row: its calls take your call path, plus whether its website answers. Zoom, Slack, Discord, WhatsApp and Webex share one row (see below) that says whether their websites are reachable over TCP.
+- **By app**, over the last 5 minutes: Meet and Teams get a state, round trip and loss from their own STUN servers; expanding a row shows the MOS, jitter, p95 round trip and the last hour. If you remove the Teams relay (see [Which apps are measured](#which-apps-are-measured)), Teams' row says whether its website answers and that its calls take your call path. Zoom, Slack, Discord, WhatsApp and Webex share one row (see below) that says whether their websites are reachable over TCP.
 - **Mark a bad call** (the same button as on Home): one click saves a **private** note at 2 minutes ago with the call stats of that moment (state, MOS, round trip, jitter, loss; no addresses). *When?* moves it to 15 or 30 minutes ago. The note can be edited, and *Create evidence report* builds a report around it. On a phone the button sticks to the bottom of the screen.
 
 A STUN server that stops answering while the others still answer is shown as *This test server isn't answering; your other call checks look normal*. After a start the view says *Not enough data yet* until 10 bursts have been measured.
@@ -243,7 +243,7 @@ This is the one list of the STUN servers fyisp ships; the catalog files ([`calls
 | Cloudflare-UDP53 | `stun.cloudflare.com:53` | 15 s | `default`, `calls` | call path; also tells *STUN ports blocked* from *UDP blocked* |
 | Twilio-STUN-global | `global.stun.twilio.com:3478` | 5 s | `default`, `calls` | call path (GeoDNS to the nearest Twilio region) |
 | Twilio-us1 … Twilio-in1 | `{us1,us2,ie1,de1,sg1,jp1,au1,br1,in1}.stun.twilio.com:3478` | 30 s | `calls` | fixed regions, a world map of the UDP path (not in the call path) |
-| Teams-Relay | `worldaz.tr.teams.microsoft.com:3478` | 5 s | `calls` (opt-in) | call path (GeoDNS to an Azure region); Microsoft Teams |
+| Teams-Relay | `worldaz.tr.teams.microsoft.com:3478` | 5 s | `default`, `calls` | call path (GeoDNS to an Azure region); Microsoft Teams |
 
 ### The score
 
@@ -273,12 +273,12 @@ The loss penalty is softer than G.711's tables because Opus forward error correc
 | App | Measured over | Profile |
 |---|---|---|
 | Google Meet | `stun.l.google.com`, the STUN server Chrome and Meet use | `default`, `calls` |
-| Microsoft Teams | `default`: your call path (Teams calls take it) plus its website over TCP. With the relay: the Teams Transport Relay that Teams clients use | relay **opt-in**: `--profile default,calls` (or `--profile calls`) |
+| Microsoft Teams | the Teams Transport Relay that Teams clients use | `default`, `calls` |
 | Zoom, Slack, Discord, WhatsApp, Webex | not measurable: your call path plus their websites over TCP | `default`, `calls` |
 
 Zoom, Slack (Amazon Chime), Discord, WhatsApp and Webex hand out a media server per meeting, only after you sign in, and those servers ignore STUN without that session. They can't be tested ahead of a call; if your call path is Good, they usually are too. fyisp still checks their websites over TCP.
 
-The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch region between lookups; the local view shows where it landed (*via Sweden Central*). It is opt-in because Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)).
+The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch region between lookups; the local view shows where it landed (*via Sweden Central*). Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)); it has been in the default since v0.9.0. To leave it out, use a `--config` file with `extends: [default]` and `remove: [Teams-Relay]`: Teams is then judged on your call path plus its website over TCP.
 
 ### Verdicts, metrics and the off switch
 
@@ -373,14 +373,14 @@ Limits: one test at a time, at most 15 seconds per direction and 45 seconds per 
 
 ## What to measure (profiles)
 
-By default fyisp measures **22 targets** a home and a remote worker rely on, plus your own [network path](#whose-fault-is-it-verdicts) (router, your provider's first hop, three public DNS resolvers):
+By default fyisp measures **28 targets** a home and a remote worker rely on, plus your own [network path](#whose-fault-is-it-verdicts) (router, your provider's first hop, three public DNS resolvers):
 
 | Home tile | Group in Details | Targets |
 |---|---|---|
-| **Calls** | Call path | 4 public STUN servers ([list](#stun-servers)): Google Meet's, Cloudflare's (on its STUN port and on port 53) and Twilio's |
+| **Calls** | Call path | 5 STUN servers ([list](#stun-servers)): Google Meet's, Cloudflare's (on its STUN port and on port 53), Twilio's and the Microsoft Teams relay |
 | **Calls** | Call & chat apps | Microsoft Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp |
-| **Work apps** | Work apps | Outlook, the Microsoft 365 portal, Microsoft sign-in, Gmail, Google Docs, Google Drive |
-| **Websites** | Websites | Cloudflare, Akamai, Fastly, Amazon CloudFront and Google's edge, the networks most websites are served from |
+| **Work apps** | Work apps | Outlook, the Microsoft 365 portal, Microsoft sign-in, Gmail, Google Docs, Google Drive, GitHub, Dropbox, OneDrive |
+| **Websites** | Websites | Cloudflare, Akamai, Fastly, Amazon CloudFront and Google's edge, the networks most websites are served from; YouTube and Netflix |
 
 Each service gets a TCP connect (handshake, then close; no data, no login) every 15 seconds. The STUN servers get a burst of 5 tiny Binding Requests every 5 seconds ([Call quality](#call-quality)); `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `fyisp profiles default` lists every target with its host.
 
@@ -397,9 +397,9 @@ docker run ... -e FYISP_PROFILE=default,streaming ghcr.io/fuck-you-isp/fyisp
 
 | Profiles | What |
 |---|---|
-| `default` | the 22 services above: calls, work apps, websites (used without `--profile`) |
+| `default` | the 28 services above: calls, work apps, websites (used without `--profile`) |
 | `calls` | call quality in depth: every [STUN server](#stun-servers), including the Teams relay and 9 Twilio regions, plus the call apps over TCP; `--profile default,calls` adds it to the default |
-| `streaming` | YouTube, Netflix, Spotify, Disney+, Prime Video, Twitch, Apple TV and Music (left out of the default, see [Privacy](#privacy)) |
+| `streaming` | YouTube, Netflix, Spotify, Disney+, Prime Video, Twitch, Apple TV and Music (YouTube and Netflix are also in the default; see [Privacy](#privacy)) |
 | `common` | everyday services: calls and chat, productivity, streaming, social sites |
 | `gaming` | game platforms and cloud gaming (Xbox, PlayStation, Battle.net, GeForce NOW, ...) |
 | `hyperscalers`, `devclouds`, `clouds` | AWS, Google Cloud, Azure, Oracle, IBM, Alibaba, Tencent, Huawei / VPS, bare-metal, regional and object-storage clouds (DigitalOcean, Linode, Vultr, Hetzner, OVH, ...) / both; one panel per provider and region |
@@ -460,8 +460,16 @@ The Overview's window is at most 30 days (it reads every target at once). Filter
 fyisp has no account and no telemetry, and its data stays on your machine. What others can see:
 
 - **The services it checks** see a TCP connection from your public IP address every 15 seconds (STUN servers: a few tiny packets every 5 seconds). No data is sent, nobody logs in, no cookies.
-- **Your DNS resolver** sees fyisp look up each service's name about once a minute, all day. That resolver is usually your provider's, a Pi-hole, or **on a work laptop, your employer's**, whose security tools may log every lookup. This is why the default sticks to call apps, work apps and the big CDNs: lookups for `netflix.com` or `tiktok.com` every minute from a work laptop would look like you stream all day. Streaming (`--profile streaming`) and social sites (part of `--profile common`) are opt-in for that reason.
-- **On a work laptop**, keep the default, and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists exactly which names fyisp looks up.
+- **Your DNS resolver** sees fyisp look up each service's name about once a minute, all day. That resolver is usually your provider's, a Pi-hole, or **on a work laptop, your employer's**, whose security tools may log every lookup. Since v0.9.0 the default has one target for each of Home's app tiles, including **GitHub, Dropbox, OneDrive, YouTube and Netflix**: lookups for `youtube.com` or `netflix.com` every minute from a work laptop can look like you stream all day. Social sites (part of `--profile common`) and the rest of streaming (`--profile streaming`) stay opt-in.
+- **To leave targets out**, start fyisp with `--config mine.yml`, a file that extends the default and removes them by name; fyisp then neither checks nor looks them up. In Docker, mount the file and pass `--config` after the image name (e.g. `-v "$PWD/mine.yml:/mine.yml:ro" ghcr.io/fuck-you-isp/fyisp --config /mine.yml`).
+
+  ```yaml
+  # mine.yml
+  name: default-no-streaming
+  extends: [default]
+  remove: [YouTube, Netflix]      # also possible: dev-GitHub, Dropbox, OneDrive, Teams-Relay
+  ```
+- **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists exactly which names fyisp looks up.
 - **A report you send** shows what it says to whoever gets it. A redacted one has no private addresses, no host names and only the notes you marked for redacted reports (see [Sharing](#sharing)).
 
 ## ICMP permissions

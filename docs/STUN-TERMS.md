@@ -12,7 +12,7 @@ Checked on 2026-10-10 before the call-quality release (v0.5.0), as the plan's "B
 | Cloudflare `stun.cloudflare.com:3478` and `:53` | default | **OK** | It's documented as "free and unlimited", and both ports are listed; no account is needed. |
 | Twilio `global.stun.twilio.com:3478` | default | **OK with caveat** | Twilio documents STUN as free and shows the host with no credentials. Its AUP bans "automated means … to gain access to or use the Services", which is aimed at bots but is literally broad. |
 | Twilio `{us1,us2,ie1,de1,sg1,jp1,au1,br1,in1}.stun.twilio.com:3478` | calls | **Do not ship** | These hostnames aren't documented. The regions page lists only IP ranges, and region pinning is documented only by **edge name** (`frankfurt.stun.twilio.com`). The `us1`-style codes are retired legacy region IDs, and `in1` is not even on that legacy list. |
-| Microsoft Teams `worldaz.tr.teams.microsoft.com:3478` | calls only (opt-in) | **Do not ship** | The hostname isn't documented; only `world.tr.teams.microsoft.com`, which is a CNAME to it, is named. Microsoft documents the relays for licensed Microsoft 365 use by its own clients, not as a public STUN service, and its relay test tool "is not intended for load/stress testing". |
+| Microsoft Teams `worldaz.tr.teams.microsoft.com:3478` | calls only (opt-in; default since 2026-10-12, see below) | **Do not ship** | The hostname isn't documented; only `world.tr.teams.microsoft.com`, which is a CNAME to it, is named. Microsoft documents the relays for licensed Microsoft 365 use by its own clients, not as a public STUN service, and its relay test tool "is not intended for load/stress testing". |
 
 > **Do not ship:**
 > - **The 9 Twilio regional hosts** in the `calls` profile (`us1` … `in1`.stun.twilio.com).
@@ -36,6 +36,10 @@ If a provider objects, or a hostname stops resolving, drop or rename that target
 - Teams → `world.tr.teams.microsoft.com` probed every few minutes, or removed.
 
 Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.yml`, `twilio.yml`), and the README's STUN server table lists them all.
+
+## Owner decision (2026-10-12): the Teams relay joins the default
+
+For v0.9.0's Home, every call tile should be judged on its own call path where one exists, so the owner moved the Teams relay `worldaz` (unchanged: same host, 5 s bursts) into `default`. This overrides the "Keep it opt-in" advice below. It can be left out with a `--config` file that `extends: [default]` and has `remove: [Teams-Relay]` (README, Privacy). The rest of the advice still stands if Microsoft objects: switch to the documented `world.tr.teams.microsoft.com`, slow the cadence, or drop it from the default again.
 
 ## Google: `stun.l.google.com`
 
