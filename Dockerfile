@@ -208,16 +208,15 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     GOARM=$(case "$TARGETVARIANT" in v6) echo 6;; v7|v8) echo 7;; *) echo "";; esac) \
     GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w -X main.version=$VERSION" -o /fyisp ./cmd/fyisp \
- && mkdir -m 0700 /data && mkdir -p /rootfs && mkdir -m 1777 /rootfs/tmp
+ && mkdir -p /rootfs && mkdir -m 0700 /rootfs/data && mkdir -m 1777 /rootfs/tmp
 
 FROM scratch AS runtime
 COPY --from=build-image /fyisp /fyisp
-# /data must exist in the image, owned by the runtime user: Docker copies its
-# ownership into new named volumes, otherwise they are root-owned and unwritable.
-COPY --from=build-image --chown=65532:65532 /data /data
-# scratch has no /tmp, and --ephemeral keeps its data in os.TempDir(). It is
-# copied via its parent: COPY sets a copied directory's own mode to 755, and
-# --chmod drops the sticky bit.
+# /data must exist in the image, private to the runtime user: Docker copies its
+# owner and mode into new named volumes, otherwise they are root-owned and
+# unwritable. scratch has no /tmp, and --ephemeral keeps its data in
+# os.TempDir(). Both are copied via their parent: COPY sets a copied
+# directory's own mode to 755, and --chmod drops the sticky bit.
 COPY --from=build-image --chown=65532:65532 /rootfs/ /
 COPY LICENSE NOTICE /usr/share/doc/fyisp/
 COPY --from=licenses /THIRD_PARTY_LICENSES.txt /usr/share/doc/fyisp/
@@ -232,8 +231,9 @@ STOPSIGNAL SIGTERM
 ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000 container=oci
 ENTRYPOINT ["/fyisp"]
 
-# Runtime image smoke test: `docker run IMG --ephemeral` must start (the API
-# answers), and exit 0 on SIGTERM with its temporary directory removed. The
+# Runtime image smoke test: /data is 0700 and /tmp 1777, both owned by the
+# runtime user; `docker run IMG --ephemeral` must start (the API answers), and
+# exit 0 on SIGTERM with its temporary directory removed. The
 # image's root filesystem is run with chroot as the runtime user, because a
 # build step cannot start a container.
 #   docker build --target imagetest .
@@ -243,7 +243,8 @@ COPY --from=runtime / /img/
 RUN <<'SH'
 set -eu
 stat -c '%a %u:%g %n' /img/tmp /img/data
-[ "$(stat -c '%a %u' /img/tmp)" = "1777 65532" ]
+[ "$(stat -c '%a %u:%g' /img/tmp)" = "1777 65532:65532" ]
+[ "$(stat -c '%a %u:%g' /img/data)" = "700 65532:65532" ]
 env -i FYISP_DATA_DIR=/data FYISP_LISTEN=127.0.0.1:3000 container=oci \
   /usr/sbin/chroot --userspec=65532:65532 /img /fyisp --ephemeral > /fyisp.log 2>&1 &
 pid=$!
