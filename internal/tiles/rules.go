@@ -131,8 +131,13 @@ const (
 	broadShare    = 0.6              // broad slowdown: this share of the covered tiles bad ...
 	broadVendors  = 3                // ... across this many vendors
 	fullLoss      = 0.9              // an incident with this peak loss lost everything
-	layerLossy    = 0.02             // a layer losing this much is lossy
-	layerClean    = 0.01             // a layer losing less is clean
+	// lossyBelow: an isp verdict whose loss at the edge is under this, with
+	// no drop in progress, is partial loss: the amber "losing some data"
+	// card. 6% is a degraded line (calls choppy, sites fine); 40% breaks
+	// most things and keeps the red "having trouble" card.
+	lossyBelow = 0.3
+	layerLossy = 0.02 // a layer losing this much is lossy
+	layerClean = 0.01 // a layer losing less is clean
 )
 
 // State is a tile's word, a minute's judgement or a bar's colour.
@@ -356,7 +361,9 @@ func judgeCall(ms []minute, every time.Duration) (State, callStats) {
 	}
 	lossDown := len(ms) >= callDownLossMins
 	for _, m := range ms[max(0, len(ms)-callDownLossMins):] {
-		lossDown = lossDown && m.n() > 0 && m.lossPctSum >= callDownLossPct*uint32(m.n())
+		// from callChoppyLossBursts lossy bursts a minute: one short outage
+		// straddling two minutes (a burst or two lost in each) is no Down
+		lossDown = lossDown && m.n() > 0 && m.lossPctSum >= callDownLossPct*uint32(m.n()) && int(m.lossy) >= callChoppyLossBursts
 	}
 	switch {
 	case st.delayMs > callDownDelayMs || lossDown:

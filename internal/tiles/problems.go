@@ -225,7 +225,8 @@ func (e *engine) episodes(v *view) []Episode {
 }
 
 // incidentDropped reports that the layer an incident blames lost
-// everything during it (any layer for no_network).
+// everything during it for dropMin or more (any layer for no_network): a
+// few seconds of total loss inside heavy loss is still loss, not a drop.
 func (e *engine) incidentDropped(in model.Incident, v *view) bool {
 	ls := []int{layerGateway, layerEdge, layerAnycast}
 	switch in.Kind {
@@ -239,7 +240,7 @@ func (e *engine) incidentDropped(in model.Incident, v *view) bool {
 	ep := window{in.Start, in.End}
 	for _, l := range ls {
 		for _, w := range e.layerWindows(v, l) {
-			if w.overlaps(ep, v.now) {
+			if w.dur(v.now) >= dropMin && w.overlaps(ep, v.now) {
 				return true
 			}
 		}

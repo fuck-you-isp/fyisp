@@ -835,17 +835,44 @@ func (c homeCopy) speedText(down, up float64, usual *HomeSpeedUsual) string {
 	if usual == nil {
 		return s + "."
 	}
-	r := min(down/usual.DownMbps, up/usual.UpMbps)
-	was := " (usually about " + mbps(usual.DownMbps) + " / " + mbps(usual.UpMbps) + " Mbps)"
-	switch {
-	case r < 0.6:
-		return s + " — much slower than usual" + was + "."
-	case r < 0.85:
-		return s + " — a bit slower than usual" + was + "."
-	case down > 1.25*usual.DownMbps && up > 1.25*usual.UpMbps:
-		return s + " — faster than usual."
+	// each direction against its own usual: a faster download must not
+	// hide a slower upload (or make it "much slower" too)
+	class := func(r float64) string {
+		switch {
+		case r < 0.6:
+			return "much slower"
+		case r < 0.85:
+			return "a bit slower"
+		case r > 1.25:
+			return "faster"
+		}
+		return ""
 	}
-	return s + " — about your usual speed."
+	dc, uc := class(down/usual.DownMbps), class(up/usual.UpMbps)
+	slower := func(c string) bool { return strings.HasSuffix(c, "slower") }
+	was := ""
+	switch {
+	case slower(dc) && slower(uc):
+		was = " (usually about " + mbps(usual.DownMbps) + " / " + mbps(usual.UpMbps) + " Mbps)"
+	case slower(dc):
+		was = " (usually about " + mbps(usual.DownMbps) + " Mbps down)"
+	case slower(uc):
+		was = " (usually about " + mbps(usual.UpMbps) + " Mbps up)"
+	}
+	switch {
+	case dc == "" && uc == "":
+		return s + " — about your usual speed."
+	case dc == uc:
+		return s + " — " + dc + " than usual" + was + "."
+	}
+	var parts []string
+	if dc != "" {
+		parts = append(parts, "download "+dc)
+	}
+	if uc != "" {
+		parts = append(parts, "upload "+uc)
+	}
+	return s + " — " + strings.Join(parts, ", ") + " than usual" + was + "."
 }
 
 // speedNote is when the test ran: "Today 8:00 am".

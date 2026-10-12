@@ -26,6 +26,10 @@ type Episode struct {
 	Verdict model.VerdictKind
 	Cause   Cause
 	DropDur time.Duration // the drop's duration, rounded; 0 when no drop
+	// own is a connection episode's own span (the drop's, the incident's),
+	// before the tile parts folded in widened Start and End: what
+	// "Working again" says the connection did
+	own window
 }
 
 // Episode kinds.
@@ -52,7 +56,7 @@ func (e Episode) window() window { return window{e.Start, e.End} }
 // Other kinds make no episode: udp_degraded shows as Choppy call tiles,
 // service as the tiles themselves.
 func incidentEpisode(in model.Incident, dropped bool) (Episode, bool) {
-	e := Episode{Start: in.Start, End: in.End, Connection: true, Verdict: in.Kind, Sev: Down, Kind: EpOutage}
+	e := Episode{Start: in.Start, End: in.End, Connection: true, Verdict: in.Kind, Sev: Down, Kind: EpOutage, own: window{in.Start, in.End}}
 	switch in.Kind {
 	case model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
 		if in.PeakLoss < fullLoss && !dropped {
@@ -83,6 +87,8 @@ func dropEpisode(d Drop, tile string) Episode {
 	e := Episode{Start: d.Start, End: d.End, Sev: Down, Kind: EpDrop, DropDur: d.Dur, Connection: tile == ""}
 	if tile != "" {
 		e.Tiles = []string{tile}
+	} else {
+		e.own = window{d.Start, d.End}
 	}
 	return e
 }
@@ -101,7 +107,7 @@ func runEpisode(tile string, kind profile.TileKind, r wordRun) Episode {
 
 // broadEpisode is a broad slowdown's episode.
 func broadEpisode(from, to time.Time) Episode {
-	return Episode{Start: from, End: to, Sev: Slow, Kind: EpSlow, Connection: true}
+	return Episode{Start: from, End: to, Sev: Slow, Kind: EpSlow, Connection: true, own: window{from, to}}
 }
 
 // absorbs reports whether o lies within e widened by absorbBefore and

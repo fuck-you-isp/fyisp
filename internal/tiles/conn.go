@@ -38,7 +38,7 @@ const (
 //     it) since which the gateway and the edge have been clean, or, when
 //     that is not known, inside one that ended less than verdictLag ago
 //     (then skip it: the verdict's window still holds the drop). An isp verdict from partial
-//     loss, with no drop in progress, is amber (Lossy);
+//     loss (under lossyBelow), with no drop in progress, is amber (Lossy);
 //  4. a connection drop in progress; 5. verdict dns;
 //  6. udp_blocked / stun_blocked (Quiet: info); 7. udp_degraded;
 //  8. broad slowdown; 9. app-only problems (with Working again appended
@@ -94,7 +94,14 @@ func workingAgain(eps []Episode, now time.Time) *Recovered {
 	if e == nil {
 		return nil
 	}
-	r := &Recovered{Start: e.Start, End: e.End, Dur: e.End.Sub(e.Start), Cause: e.Cause, Episode: e.ID}
+	// the connection's own span, not the tiles' folded in (calls Down from
+	// loss for minutes after a lossy spell must not make it "down for 4
+	// minutes")
+	span := e.window()
+	if !e.own.from.IsZero() && !e.own.to.IsZero() {
+		span = e.own
+	}
+	r := &Recovered{Start: span.from, End: span.to, Dur: span.to.Sub(span.from), Cause: e.Cause, Episode: e.ID}
 	if e.DropDur > 0 {
 		r.Dur = e.DropDur
 	}
@@ -170,7 +177,7 @@ func connState(in connIn) ConnState {
 			}
 			return !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
 		}) {
-			if loss, ok := v.Evidence["loss"]; ok && v.Kind == model.VerdictISP && in.dropNow == nil && loss > 0 && loss < fullLoss {
+			if loss, ok := v.Evidence["loss"]; ok && v.Kind == model.VerdictISP && in.dropNow == nil && loss > 0 && loss < lossyBelow {
 				c := vk("isp_lossy", ToneWarn, Slow)
 				c.Lossy = true
 				return c

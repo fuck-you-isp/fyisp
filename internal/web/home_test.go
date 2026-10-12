@@ -428,7 +428,20 @@ func TestHomeCopyPins(t *testing.T) {
 	check("calls down", h, "Your internet is fine. Calls aren’t connecting.")
 	u := &HomeSpeedUsual{DownMbps: 925, UpMbps: 938}
 	check("faster", c.speedText(1200, 1250, u), "Your speed: about 1200 Mbps down / 1250 Mbps up — faster than usual.")
-	check("a bit slower", c.speedText(700, 900, u), "Your speed: about 700 Mbps down / 900 Mbps up — a bit slower than usual (usually about 925 / 938 Mbps).")
+	check("a bit slower", c.speedText(700, 750, u), "Your speed: about 700 Mbps down / 750 Mbps up — a bit slower than usual (usually about 925 / 938 Mbps).")
+	check("usual", c.speedText(900, 950, u), "Your speed: about 900 Mbps down / 950 Mbps up — about your usual speed.")
+	// each direction on its own (the live preview said "much slower" with
+	// the download faster than usual)
+	u2 := &HomeSpeedUsual{DownMbps: 717, UpMbps: 885}
+	check("download faster, upload much slower", c.speedText(787, 285, u2),
+		"Your speed: about 787 Mbps down / 285 Mbps up — upload much slower than usual (usually about 885 Mbps up).")
+	check("download much faster, upload much slower", c.speedText(1000, 285, u2),
+		"Your speed: about 1000 Mbps down / 285 Mbps up — download faster, upload much slower than usual (usually about 885 Mbps up).")
+	check("download a bit slower", c.speedText(500, 900, u2),
+		"Your speed: about 500 Mbps down / 900 Mbps up — download a bit slower than usual (usually about 717 Mbps down).")
+	check("download much slower, upload a bit slower", c.speedText(300, 700, u),
+		"Your speed: about 300 Mbps down / 700 Mbps up — download much slower, upload a bit slower than usual (usually about 925 / 938 Mbps).")
+	check("upload faster", c.speedText(925, 1500, u), "Your speed: about 925 Mbps down / 1500 Mbps up — upload faster than usual.")
 	check("dropping", c.problemWhat(tiles.Episode{Start: homeNow.Add(-time.Minute), Kind: tiles.EpDrop, Connection: true, Sev: tiles.Down}), "Everything is dropping.")
 	s3 := *snap
 	s3.LastMeasured, s3.Conn = time.Time{}, tiles.ConnState{Kind: tiles.ConnStale}

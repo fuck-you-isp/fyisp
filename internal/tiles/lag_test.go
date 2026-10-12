@@ -269,12 +269,18 @@ func TestProviderLossCard(t *testing.T) {
 	if c.Lossy || c.Tone != ToneBad || !strings.HasPrefix(c.Key, "isp:") {
 		t.Errorf("a drop in progress: %+v, want the red isp card", c)
 	}
-	v.Evidence["loss"] = 1
-	if c = connState(connIn{ready: true, now: at(10 * time.Minute), verdict: v}); c.Lossy || c.Tone != ToneBad {
-		t.Errorf("full loss: %+v, want the red isp card", c)
+	for _, loss := range []float64{lossyBelow, 0.4, 1} {
+		v.Evidence["loss"] = loss
+		if c = connState(connIn{ready: true, now: at(10 * time.Minute), verdict: v}); c.Lossy || c.Tone != ToneBad {
+			t.Errorf("%.0f%% loss: %+v, want the red isp card", 100*loss, c)
+		}
+	}
+	v.Evidence["loss"] = 0.29
+	if c = connState(connIn{ready: true, now: at(10 * time.Minute), verdict: v}); !c.Lossy || c.Tone != ToneWarn {
+		t.Errorf("29%% loss: %+v, want the amber card", c)
 	}
 	// a lagging incident is skipped while the path has been clean since the drop
-	v = model.Verdict{Kind: model.VerdictISP, Since: at(10*time.Minute + 9*time.Second), Evidence: map[string]float64{"loss": 0.5}}
+	v = model.Verdict{Kind: model.VerdictISP, Since: at(10*time.Minute + 9*time.Second), Evidence: map[string]float64{"loss": 0.2}}
 	drop := Drop{Start: at(10 * time.Minute), End: at(10*time.Minute + 40*time.Second), Dur: 40 * time.Second}
 	in := connIn{ready: true, now: at(13 * time.Minute), verdict: v, drops: []Drop{drop}}
 	if c = connState(in); c.Kind != string(model.VerdictISP) {
@@ -459,14 +465,14 @@ func TestBlockedBeforeIncidentRead(t *testing.T) {
 
 // TestLaggedNeedsCleanPathNow: loss right after the drop (20% of the
 // edge's checks, no run long enough for a drop) is seen at once, before
-// its minute closes: the incident is no lag (netns S2b, 40% loss whose
+// its minute closes: the incident is no lag (netns S2b: heavy loss whose
 // runs made a drop).
 func TestLaggedNeedsCleanPathNow(t *testing.T) {
 	s := newLagScene(t)
 	d := s.start.Add(20 * time.Minute)
 	end := d.Add(40 * time.Second)
-	s.inc = []model.Incident{{ID: 1, Kind: model.VerdictISP, Start: d.Add(-30 * time.Second), End: end.Add(5 * time.Minute), PeakLoss: 0.4}}
-	s.loss = 0.4
+	s.inc = []model.Incident{{ID: 1, Kind: model.VerdictISP, Start: d.Add(-30 * time.Second), End: end.Add(5 * time.Minute), PeakLoss: 0.2}}
+	s.loss = 0.2
 	evs := []eEvent{{d, end, notGateway, 0}}
 	for k := range 6 {
 		from := end.Add(time.Duration(5+10*k) * time.Second)
@@ -477,5 +483,47 @@ func TestLaggedNeedsCleanPathNow(t *testing.T) {
 	s.run(t, evs, at, at, func(e *engine, now time.Time) { last = e.Snapshot() })
 	if c := last.Conn; c.Kind != string(model.VerdictISP) || !c.Lossy {
 		t.Errorf("card %s %s, want the lossy isp card", c.Kind, c.Key)
+	}
+}
+
+// TestShortOutageNoLossDown is B6: a 10 s total loss straddling a minute
+// boundary (a burst lost in each minute, over 10% of both) is no call
+// Down; Choppy at most.
+func TestShortOutageNoLossDown(t *testing.T) {
+	const every = 5 * time.Second
+	cs := pattern(every, t0, rep(".", 23)+"xx"+rep(".", 23), ms10)
+	_, s := feed(every, cs)
+	var ms []minute
+	for i := range 3 {
+		f := at(time.Duration(i) * time.Minute)
+		ms = append(ms, summarize(cs, s.runs, ruleUDP, f, f.Add(80*time.Second)))
+	}
+	if ms[1].lost != 1 || ms[2].lost != 1 {
+		t.Fatalf("minutes %+v, want a lost burst in each of the last 2", ms)
+	}
+	if st, _ := judgeCall(ms, every); st == Down {
+		t.Errorf("one burst lost in each of 2 minutes: %s, want no Down", st)
+	}
+	// real loss: 2 lossy bursts or more in each minute is Down
+	lossy := callMin(12, 30, 2, 240)
+	if st, _ := judgeCall([]minute{lossy, lossy, lossy}, every); st != Down {
+		t.Errorf("20%% loss: %s, want Down", st)
+	}
+}
+
+// TestWorkingAgainOwnSpan is B7: 150 s of provider loss, with the call
+// tiles Down from loss for 4 minutes folded in: Working again says the
+// connection had trouble for its own 150 s, not 4 minutes down.
+func TestWorkingAgainOwnSpan(t *testing.T) {
+	m, sec := time.Minute, time.Second
+	inc, _ := incidentEpisode(model.Incident{Kind: model.VerdictISP, Start: at(10 * m), End: at(12*m + 30*sec), PeakLoss: 0.6}, false)
+	parts := []Episode{tileRun("zoom", Down, 10*m+30*sec, 14*m), tileRun("teams", Down, 10*m+30*sec, 14*m)}
+	eps := groupEpisodes([]Episode{inc}, parts, byVendor, at(20*m))
+	if len(eps) != 1 || !eps[0].End.Equal(at(14*m)) {
+		t.Fatalf("got\n%s, want one problem widened by the tiles", epsText(eps))
+	}
+	r := workingAgain(eps, at(20*m))
+	if r == nil || r.Variant != AgainTrouble || r.Dur != 150*sec || !r.End.Equal(at(12*m+30*sec)) {
+		t.Errorf("working again %+v, want trouble for the incident's 150 s", r)
 	}
 }
