@@ -17,7 +17,8 @@ import {
   hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput,
   useStatus, hatch, resetHatch, smooth,
 } from './core.js';
-import { Home } from './home.js';
+import { Home, probeHome } from './home.js';
+import { Home as HomeV1 } from './home-v1.js';
 import { Speed } from './speed.js';
 
 const uPlot = /** @type {any} */ (window).uPlot;
@@ -138,7 +139,7 @@ function themeChanged() {
   renderLayers();
   if (inv && state.inv) { inv.sig = ''; inv.render(); }
   calls?.render();
-  home?.render();
+  if (home instanceof Home) home.themeChanged(); else home?.render();
 }
 
 // ---------- colours ----------
@@ -3375,7 +3376,7 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
 
 // ---------- Home and the Home | Details switch ----------
 
-/** Home. @type {Home|null} */
+/** Home: the v0.9.0 Home when the server has /api/home2, else the old one. @type {Home|HomeV1|null} */
 let home = null;
 /** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
 let onNav = () => {};
@@ -3403,6 +3404,16 @@ function openDetails(hash) {
   history.pushState({ fyispHome: true }, '', hash);
   onNav();
   window.scrollTo({ top: 0 });
+}
+/** The hash openDetails('') would open: the new Home's "Technical details →" link. */
+function detailsHash() {
+  const v = state.view, f = state.focus;
+  state.view = detailsView();
+  state.focus = null;
+  const s = hashString();
+  state.view = v;
+  state.focus = f;
+  return s;
 }
 /** Back to Home: Back when Details was opened from Home, else a new entry. */
 function goHome() {
@@ -4059,7 +4070,8 @@ async function main() {
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
   if (adminTok) await adminLogin(adminTok);
-  const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
+  // The new Home only when the server has its API (v0.9.0); probeHome() is null otherwise.
+  const [st, prof, home2] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile'), probeHome()]);
   status = st;
   if (st) statusAt = Date.now();
   traceOn = !!(prof.features && prof.features.trace);
@@ -4125,7 +4137,7 @@ async function main() {
     inv = new Investigate();
     $('#panels').after(inv.el);
   }
-  home = new Home({
+  home = home2 ? new Home({ openDetails, detailsHash, status: () => status, speedOn: () => !!speed }, home2) : new HomeV1({
     span: () => state.hw,
     setSpan: (s) => { state.hw = s; writeHash(); },
     openDetails,
@@ -4134,6 +4146,7 @@ async function main() {
     notesChanged: () => { if (!homeShown()) loadNotes(); },
     reportsOn: () => reportsOn,
   });
+  document.body.classList.toggle('hp-on', home instanceof Home);
   $('#notices').before(home.el);
   applyView();
   showView();

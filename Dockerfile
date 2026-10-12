@@ -150,6 +150,7 @@ RUN out=$(systemd-analyze verify /etc/systemd/system/fyisp.service 2>&1); echo "
 #   docker buildx build --target uitest-out --output type=local,dest=out .     # + out/shots, out/report
 #   docker buildx build --target uitest-report --output type=local,dest=out .  # report even when tests fail
 #   docker buildx build --target uilock --output type=local,dest=. .           # regenerate test/ui/package-lock.json
+#   docker buildx build --target uifixtures --output type=local,dest=. .       # regenerate test/ui/fixtures/*.json (gen.js)
 # Unchanged inputs reuse the cached run; add --no-cache-filter uitest-run to run the tests again.
 
 FROM source AS webdev
@@ -163,6 +164,12 @@ COPY test/ui/package.json ./
 RUN npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 FROM scratch AS uilock
 COPY --from=uilock-gen /ui/package-lock.json /test/ui/
+
+FROM ${PLAYWRIGHT_IMAGE} AS uifixtures-gen
+COPY test/ui/fixtures/gen.js /gen/
+RUN node /gen/gen.js /out
+FROM scratch AS uifixtures
+COPY --from=uifixtures-gen /out/ /test/ui/fixtures/
 
 FROM ${PLAYWRIGHT_IMAGE} AS uitest-run
 WORKDIR /ui

@@ -1,0 +1,23 @@
+{
+  "v": 2,
+  "at": 1791556200000,
+  "id": "gws",
+  "from": 1791469800000,
+  "step": 300000,
+  "usual_ms": null,
+  "state": "good",
+  "word": "Good",
+  "reason": "Working normally.",
+  "coverage": "",
+  "metrics": [],
+  "ms": [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,7.8,8.1,8.4,8.1,8.1,8.2,7.7,7.7],
+  "bands": [
+    {
+      "from": 1791469800000,
+      "to": 1791553800000,
+      "kind": "off",
+      "text": "Not watched before 9:50 am"
+    }
+  ],
+  "text": "Still learning what’s usual. Not watched before 9:50 am."
+}

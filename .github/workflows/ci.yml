@@ -49,11 +49,10 @@ jobs:
           ls -l dist
           for f in dist/fyisp-*; do s=$(stat -c %s "$f"); [ "$s" -le 52428800 ] || { echo "$f is $s bytes"; exit 1; }; done
 
-  # UI tests (Playwright in Docker). Advisory: not a required check; runs only
-  # when the web UI changes.
+  # UI tests (Playwright in Docker): the Home specs and a smoke test of
+  # Details. Runs only when the web UI changes.
   ui:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
