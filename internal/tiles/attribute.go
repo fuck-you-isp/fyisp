@@ -113,18 +113,17 @@ type layerEv struct {
 // windows kept for the week, and the one in progress). It needs no raw
 // checks, so it works for a week-old episode as well.
 func layerEvidence(mins []minute, drops []window, from, to, now time.Time) layerEv {
-	var ev layerEv
 	var n, lost int
 	for _, m := range mins {
 		n += m.n()
 		lost += int(m.lost)
 	}
-	if n == 0 {
-		return ev
-	}
 	ep := window{from, to}
-	ev.known, ev.loss = true, float64(lost)/float64(n)
-	ev.dropped = slices.ContainsFunc(drops, func(w window) bool { return w.dur(now) >= connDropNow && w.overlaps(ep, now) })
+	ev := layerEv{dropped: slices.ContainsFunc(drops, func(w window) bool { return w.dur(now) >= connDropNow && w.overlaps(ep, now) })}
+	ev.known = n > 0 || ev.dropped
+	if n > 0 {
+		ev.loss = float64(lost) / float64(n)
+	}
 	return ev
 }
 

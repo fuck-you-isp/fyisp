@@ -1,6 +1,7 @@
 package tiles
 
 import (
+	"math/bits"
 	"slices"
 	"time"
 )
@@ -30,35 +31,45 @@ func roundDur(d time.Duration) time.Duration {
 
 // failRun is a failure run of one series: its lost checks from the first
 // to the last before the next success. Gaps (not measured) are ignored,
-// unless they are a sleep (see tracker).
+// unless they are a sleep (see tracker). Times are Unix ms: a week of runs
+// is kept.
 type failRun struct {
-	first, last time.Time // the first and the last lost check
-	// from is the slot after the last success before the run (the first
-	// lost check when there was none recently), to the first success after
-	// it (zero while the run is open; the slot after its last check when a
-	// sleep ended it).
-	from, to time.Time
-	lost     int
+	firstMs, lastMs int64 // the first and the last lost check
+	// fromMs is the slot after the last success before the run (the first
+	// lost check when there was none recently), toMs the first success
+	// after it (0 while the run is open; the slot after its last check
+	// when a sleep ended it).
+	fromMs, toMs int64
+	everyMs      int32
+	lost         int32
 	// prior: the last success before the run was within sleepFactor
 	// intervals of it. A run after a sleep, a restart or no data at all is
 	// never a drop: nobody knows when it started.
 	prior bool
-	every time.Duration
 }
 
-func (r failRun) open() bool { return r.to.IsZero() }
+// msTime is a Unix ms time; 0 is the zero time.
+func msTime(ms int64) time.Time {
+	if ms == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms).UTC()
+}
+
+func (r failRun) open() bool { return r.toMs == 0 }
 
 // est is the run's estimated length: (first OK after − last OK before) −
 // interval. An open run is estimated as if its next check succeeded.
 func (r failRun) est() time.Duration {
+	end := r.toMs
 	if r.open() {
-		return r.last.Add(r.every).Sub(r.from)
+		end = r.lastMs + int64(r.everyMs)
 	}
-	return r.to.Sub(r.from)
+	return time.Duration(end-r.fromMs) * time.Millisecond
 }
 
 // window is the run's estimated outage; to is zero while it is open.
-func (r failRun) window() window { return window{r.from, r.to} }
+func (r failRun) window() window { return window{msTime(r.fromMs), msTime(r.toMs)} }
 
 // runRule is how a series' runs are judged.
 type runRule int8
@@ -66,13 +77,13 @@ type runRule int8
 const (
 	ruleWeb  runRule = iota // TCP/HTTPS/ICMP endpoints of a tile
 	ruleUDP                 // STUN bursts
-	rulePath                // path layers: runs are never left out of their minutes
+	rulePath                // path layers: their minutes count every lost check
 )
 
 // dropLike reports a run that counts as a drop (open or not): after a
 // recent success, tileDropChecks or more lost checks on a web endpoint,
 // dropMin or more on a UDP one. Its checks count only as the drop, never as
-// loss; any other run's checks are loss.
+// loss; any other run's checks are loss. Path runs are never left out.
 func (r failRun) dropLike(rule runRule) bool {
 	switch rule {
 	case ruleWeb:
@@ -83,64 +94,110 @@ func (r failRun) dropLike(rule runRule) bool {
 	return false
 }
 
+// kept reports a run worth keeping once the minutes it touches are judged:
+// a drop-like run, or a path run of connDropNow or more (pathRuns,
+// layerDrops). The others matter only to summarize.
+func (r failRun) kept(rule runRule) bool {
+	if rule == rulePath {
+		return r.est() >= connDropNow
+	}
+	return r.dropLike(rule)
+}
+
+// pruneRuns drops, in place, the closed runs that ended before judged (the
+// start of the oldest minute not yet summarized) and are not kept, so a
+// lossy series' runs stay bounded over the week.
+func pruneRuns(rs []failRun, judged time.Time, rule runRule) []failRun {
+	cut := judged.UnixMilli()
+	return slices.DeleteFunc(rs, func(r failRun) bool { return !r.open() && r.toMs < cut && !r.kept(rule) })
+}
+
+// holdFor is how long a series' results are held before they are applied:
+// a result for slot s arrives by s + phase (< every, probe/sched.go) +
+// the probe's timeout (resultLag), and later slots may answer first.
+func holdFor(every time.Duration) time.Duration { return every + resultLag }
+
 // tracker follows one series' failure runs, one check at a time, so a run
-// of any length is seen whole (a raw tail would forget its start). Results
-// are applied in slot order: a late one (a timeout) waits up to reorderFor
-// behind newer slots, and one older than the newest applied check is
-// ignored. Replay feeds the same checks through the same tracker.
+// of any length is seen whole (a raw tail would forget its start).
+//
+// The contract for the engine, live and in replay alike:
+//   - add only queues a check; flush(now) applies, in slot order, those
+//     with a slot at most now − holdFor(every), by when every result for
+//     them has arrived. A check older than the newest applied one, or a
+//     duplicate, is ignored; one more than clockBack older means the wall
+//     clock was set back, and the tracker starts over.
+//   - The engine ticks on the Unix-aligned 5 s grid (now.Truncate(5 s)),
+//     flushes every tracker, then evaluates immediate and the drops. Replay
+//     is one slot-ordered walk over all series that, before each grid
+//     tick, adds the checks whose slot is not after it (or a whole chunk
+//     ahead: held checks are not applied early).
+//
+// So every tick sees exactly the same applied checks live and in replay,
+// whatever the tick's phase or the results' arrival order.
 type tracker struct {
 	every  time.Duration
-	pend   []check // not applied yet, in slot order
+	pend   []check // queued, in slot order, from head on
+	head   int
 	last   int64   // the newest applied check (Unix ms); 0: none
 	lastOK int64   // the newest success
 	cur    failRun // the open run (lost 0: none)
-	okN    int     // successes in a row up to the newest check
-	okAt   int64   // the slot of the immClearOK-th of them
+	recent uint8   // the latest results, newest in bit 0 (1: answered)
+	okAt   int64   // the slot from which immClearOK of the latest immClearWin answered; 0: not now
 }
 
-// add takes one check (gaps are not checks) and returns the runs it closed.
-func (t *tracker) add(c check) []failRun {
-	if c.gap || c.ms <= t.last {
-		return nil
+// add queues one check (gaps are not checks).
+func (t *tracker) add(c check) {
+	if c.gap {
+		return
 	}
-	i, found := slices.BinarySearchFunc(t.pend, c.ms, func(x check, ms int64) int { return int(x.ms - ms) })
+	if t.last != 0 && c.ms < t.last-clockBack.Milliseconds() {
+		*t = tracker{every: t.every} // the clock was set back
+	}
+	if c.ms <= t.last {
+		return
+	}
+	q := t.pend[t.head:]
+	i, found := slices.BinarySearchFunc(q, c.ms, func(x check, ms int64) int { return int(x.ms - ms) })
 	if found {
-		return nil
+		return
 	}
-	t.pend = slices.Insert(t.pend, i, c)
-	return t.flush(t.pend[len(t.pend)-1].at())
+	t.pend = slices.Insert(t.pend, t.head+i, c)
 }
 
-// flush applies the checks older than reorderFor at now and returns the
-// runs that closed. Call it before judging anything at now.
+// flush applies the queued checks held long enough at now and returns the
+// runs that closed.
 func (t *tracker) flush(now time.Time) []failRun {
 	var out []failRun
-	cut := now.Add(-reorderFor).UnixMilli()
-	n := 0
-	for n < len(t.pend) && t.pend[n].ms <= cut {
-		if r := t.apply(t.pend[n]); r != nil {
-			out = append(out, *r)
+	cut := now.Add(-holdFor(t.every)).UnixMilli()
+	for t.head < len(t.pend) && t.pend[t.head].ms <= cut {
+		if r, ok := t.apply(t.pend[t.head]); ok {
+			out = append(out, r)
 		}
-		n++
+		t.head++
 	}
-	t.pend = slices.Delete(t.pend, 0, n)
+	if t.head > 0 && 2*t.head >= len(t.pend) { // reuse the front: the queue holds about one hold's checks
+		t.pend = t.pend[:copy(t.pend, t.pend[t.head:])]
+		t.head = 0
+	}
 	return out
 }
 
-func (t *tracker) apply(c check) *failRun {
+func (t *tracker) apply(c check) (closed failRun, ok bool) {
 	every := t.every.Milliseconds()
 	slept := t.last != 0 && c.ms-t.last > sleepFactor*every
-	var closed *failRun
+	if slept {
+		t.recent = 0
+	}
 	if t.cur.lost > 0 && (slept || !c.lost) {
 		// a sleep inside a run ends it where the checks stopped
-		to := c.ms
+		closed, ok = t.cur, true
+		closed.toMs = c.ms
 		if slept {
-			to = t.last + every
+			closed.toMs = t.last + every
 		}
-		r := t.cur
-		r.to = time.UnixMilli(to).UTC()
-		closed, t.cur = &r, failRun{}
+		t.cur = failRun{}
 	}
+	t.recent <<= 1
 	if c.lost {
 		if t.cur.lost == 0 {
 			prior := t.lastOK != 0 && t.lastOK == t.last && !slept
@@ -148,19 +205,23 @@ func (t *tracker) apply(c check) *failRun {
 			if prior {
 				from = t.lastOK + every
 			}
-			t.cur = failRun{first: c.at(), from: time.UnixMilli(from).UTC(), prior: prior, every: t.every}
+			t.cur = failRun{firstMs: c.ms, fromMs: from, prior: prior, everyMs: int32(every)}
 		}
-		t.cur.last = c.at()
+		t.cur.lastMs = c.ms
 		t.cur.lost++
-		t.okN = 0
 	} else {
-		if t.okN++; t.okN == immClearOK {
-			t.okAt = c.ms
-		}
+		t.recent |= 1
 		t.lastOK = c.ms
 	}
+	if bits.OnesCount8(t.recent&(1<<immClearWin-1)) >= immClearOK {
+		if t.okAt == 0 {
+			t.okAt = c.ms
+		}
+	} else {
+		t.okAt = 0
+	}
 	t.last = c.ms
-	return closed
+	return closed, ok
 }
 
 // open returns the run in progress, if any.
@@ -187,16 +248,16 @@ func pathRuns(s runSet) []failRun {
 		if r.est() < connDropNow {
 			continue
 		}
-		if n := len(out); n > 0 && !out[n-1].open() && r.prior && r.first.Sub(out[n-1].to) < dropEndedOK {
+		if n := len(out); n > 0 && !out[n-1].open() && r.prior && r.firstMs-out[n-1].toMs < dropEndedOK.Milliseconds() {
 			p := &out[n-1]
 			p.lost += r.lost
-			p.last, p.to = r.last, r.to
+			p.lastMs, p.toMs = r.lastMs, r.toMs
 			continue
 		}
 		out = append(out, r)
 	}
-	if n := len(out); n > 0 && !out[n-1].open() && s.last.Add(s.every).Sub(out[n-1].to) < dropEndedOK {
-		out[n-1].to = time.Time{}
+	if n := len(out); n > 0 && !out[n-1].open() && s.last.Add(s.every).UnixMilli()-out[n-1].toMs < dropEndedOK.Milliseconds() {
+		out[n-1].toMs = 0
 	}
 	return out
 }
@@ -368,10 +429,10 @@ func layerDrops(series []runSet, now time.Time) (ended []window, cur *Drop) {
 		case open == nil:
 			inProgress = false
 		case start.IsZero():
-			start, dur = open.from, open.est()
+			start, dur = msTime(open.fromMs), open.est()
 		default:
-			if open.from.After(start) {
-				start = open.from
+			if f := msTime(open.fromMs); f.After(start) {
+				start = f
 			}
 			dur = min(dur, open.est())
 		}

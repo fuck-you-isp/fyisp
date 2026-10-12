@@ -66,21 +66,44 @@ func TestTracker(t *testing.T) {
 	if !slices.Equal(got.runs, want.runs) || len(want.runs) != 1 || want.runs[0].lost != 35 {
 		t.Errorf("late result: got %+v, want %+v", got.runs, want.runs)
 	}
-	// a result later than reorderFor is ignored, a duplicate too
+	// add only queues: nothing is applied before flush, and flush applies
+	// only what is held long enough
 	tr := &tracker{every: every}
 	for _, c := range pattern(every, t0, rep(".", 10), ms10) {
 		tr.add(c)
 	}
+	if tr.last != 0 {
+		t.Errorf("add applied a check: last %v", tr.last)
+	}
+	tr.flush(at(5*time.Second + holdFor(every)))
+	if tr.last != at(5*time.Second).UnixMilli() {
+		t.Errorf("flush: last %v", msTime(tr.last).Sub(t0))
+	}
+	// a result older than the newest applied one is ignored, a duplicate too
 	tr.add(check{ms: at(2 * time.Second).UnixMilli(), lost: true})
 	tr.add(check{ms: at(9 * time.Second).UnixMilli(), lost: true})
 	tr.flush(at(time.Minute))
-	if _, open := tr.open(); open || tr.okN != 10 || tr.okAt != at(time.Second).UnixMilli() {
+	if _, open := tr.open(); open || tr.okAt != at(time.Second).UnixMilli() {
 		t.Errorf("too late: got %+v", tr)
 	}
 	// gaps are not checks
 	tr.add(check{ms: at(10 * time.Second).UnixMilli(), gap: true})
+	tr.flush(at(time.Minute))
 	if tr.last != at(9*time.Second).UnixMilli() {
-		t.Errorf("gap: last %v", tr.last)
+		t.Errorf("gap: last %v", msTime(tr.last).Sub(t0))
+	}
+
+	// the wall clock jumped ahead an hour, then back: the tracker starts
+	// over instead of ignoring every check from then on
+	tr = &tracker{every: every}
+	tr.add(check{ms: at(time.Hour).UnixMilli(), rttUs: 1000})
+	tr.flush(at(2 * time.Hour))
+	for _, c := range pattern(every, at(10*time.Second), "..xxx", ms10) {
+		tr.add(c)
+	}
+	tr.flush(at(time.Minute))
+	if r, open := tr.open(); !open || r.lost != 3 || !r.prior {
+		t.Errorf("clock set back: got %+v %v", r, open)
 	}
 
 	// a sleep inside a run ends it: STUN OK at 0, lost at 5 s and at 2 h,
@@ -98,6 +121,45 @@ func TestTracker(t *testing.T) {
 	}
 	if ds := tileDrops(nil, [][]runSet{{s}}, at(3*time.Hour)); ds != nil {
 		t.Errorf("sleep inside a run: drops %+v", ds)
+	}
+	var l [nLayers][]runSet
+	l[layerGateway] = []runSet{s}
+	if ds, cur := connDrops(l, nil, 0, at(3*time.Hour)); ds != nil || cur != nil {
+		t.Errorf("sleep inside a path run: %+v %+v", ds, cur)
+	}
+	// the same with three lost web checks across a sleep
+	cs = []check{
+		{ms: t0.UnixMilli(), rttUs: 10000},
+		{ms: at(15 * time.Second).UnixMilli(), lost: true},
+		{ms: at(2 * time.Hour).UnixMilli(), lost: true},
+		{ms: at(2*time.Hour + 15*time.Second).UnixMilli(), lost: true},
+		{ms: at(2*time.Hour + 30*time.Second).UnixMilli(), lost: true},
+		{ms: at(2*time.Hour + 45*time.Second).UnixMilli(), rttUs: 10000},
+	}
+	_, s = feed(15*time.Second, cs)
+	if ds := tileDrops([]runSet{s}, nil, at(3*time.Hour)); ds != nil {
+		t.Errorf("web sleep: drops %+v", ds)
+	}
+}
+
+func TestPruneRuns(t *testing.T) {
+	_, s := series(15*time.Second, t0, "..x...xx...xxxx..x"+rep(".", 4))
+	if len(s.runs) != 4 {
+		t.Fatalf("runs %+v", s.runs)
+	}
+	// minutes up to 5:00 are judged: only the drop-like run is kept
+	got := pruneRuns(slices.Clone(s.runs), at(5*time.Minute), ruleWeb)
+	if len(got) != 1 || got[0].lost != 4 {
+		t.Errorf("web: got %+v", got)
+	}
+	// runs that may still touch an unjudged minute stay
+	if got := pruneRuns(slices.Clone(s.runs), at(time.Minute), ruleWeb); len(got) != 3 {
+		t.Errorf("not yet judged: got %+v", got)
+	}
+	// path: runs of connDropNow or more
+	_, p := series(time.Second, t0, "..x.."+rep("x", 6)+rep(".", 20))
+	if got := pruneRuns(slices.Clone(p.runs), at(time.Minute), rulePath); len(got) != 1 || got[0].lost != 6 {
+		t.Errorf("path: got %+v", got)
 	}
 }
 
@@ -280,8 +342,8 @@ func TestDropRecovery(t *testing.T) {
 	var runs []failRun
 	var goodAt time.Time
 	for _, c := range cs {
-		now := c.at().Add(5 * time.Second)
-		runs = append(runs, tr.add(c)...)
+		now := c.at().Add(holdFor(every)) // the first tick that applies it
+		tr.add(c)
 		runs = append(runs, tr.flush(now)...)
 		sig, a := immediate([][]*tracker{{tr}})
 		w.outageSignal(tileSignal([]signal{sig}, []time.Time{a}))
@@ -298,7 +360,7 @@ func TestDropRecovery(t *testing.T) {
 		}
 	}
 	if want := at(2 * time.Minute); !goodAt.Equal(want) {
-		t.Errorf("good again at %v, want %v (one interval after the first answer)", goodAt, want)
+		t.Errorf("good again at the slot %v, want %v (one interval after the first answer)", goodAt, want)
 	}
 	for _, m := range []time.Time{t0, at(time.Minute), at(2 * time.Minute)} {
 		if got := judgeWeb(summarize(cs, runs, ruleWeb, m, m.Add(80*time.Second)), limitsFor(10, true, false), false); got != Good && got != None {
@@ -310,6 +372,13 @@ func TestDropRecovery(t *testing.T) {
 	if _, s := series(every, t0, "...."+"xx"+rep(".", 6)); tileDrops([]runSet{s}, nil, at(5*time.Minute)) != nil {
 		t.Error("short failure: a drop")
 	}
+
+	// an endpoint answering every other check after an outage is not Down
+	// for ever: 2 of the latest 3 answered clears it
+	tr, _ = series(every, t0, "..xxx"+rep(".x", 10)+".")
+	if sig, _ := immediate([][]*tracker{{tr}}); sig != cleared {
+		t.Errorf("every other check: got %v", sig)
+	}
 }
 
 // TestCheckSize: a check stays small; the engine keeps a few minutes of
@@ -317,6 +386,9 @@ func TestDropRecovery(t *testing.T) {
 func TestCheckSize(t *testing.T) {
 	if n := unsafe.Sizeof(check{}); n > 24 {
 		t.Errorf("check is %d bytes", n)
+	}
+	if n := unsafe.Sizeof(failRun{}); n > 48 {
+		t.Errorf("failRun is %d bytes", n)
 	}
 }
 
@@ -336,11 +408,30 @@ func BenchmarkTrackerReplay8d(b *testing.B) {
 	for range b.N {
 		tr := &tracker{every: time.Second}
 		n := 0
-		for _, c := range cs {
-			n += len(tr.add(c))
+		for i, c := range cs {
+			tr.add(c)
+			if i%5 == 4 { // a 5 s tick
+				n += len(tr.flush(c.at()))
+			}
 		}
 		if n == 0 {
 			b.Fatal("no runs")
 		}
+	}
+}
+
+// TestTrackerQueueBounded: a tracker flushed every tick keeps a queue of
+// about one hold's checks, however long it runs.
+func TestTrackerQueueBounded(t *testing.T) {
+	tr := &tracker{every: time.Second}
+	for i := range 24 * 3600 {
+		c := check{ms: at(time.Duration(i) * time.Second).UnixMilli(), rttUs: 1000}
+		tr.add(c)
+		if i%5 == 4 {
+			tr.flush(c.at())
+		}
+	}
+	if n := cap(tr.pend); n > 64 {
+		t.Errorf("queue capacity %d after a day", n)
 	}
 }

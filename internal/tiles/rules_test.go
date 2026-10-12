@@ -213,7 +213,9 @@ func TestImmediate(t *testing.T) {
 		{"multi: 2 failures on most members", many("....xx", "...xxx", "......"), failing, at(4 * every)},
 		{"multi: since is when most were failing", many("..xxxx", "....xx", "......"), failing, at(4 * every)},
 		{"multi: 1 of 3 failing", many("....xx", "......", "......"), cleared, at(1 * every)},
-		{"multi: 1 failure each is not enough", many(".....x", ".....x", "......"), hold, none},
+		{"multi: 1 failure each is not enough", many(".....x", ".....x", "......"), cleared, at(1 * every)},
+		{"multi: 2 of the latest 3 answered is OK", many("..x.x.", "..x.x.", "......"), cleared, at(5 * every)},
+		{"multi: 1 of the latest 3 is not", many("....xx", "...x.x", "....x."), hold, none},
 		// a tie is no majority for Down, so it clears (the Twilio-dead case)
 		{"multi: a tie clears", many("....xx", "......"), cleared, at(1 * every)},
 		{"multi: a dead member and a recovered one clear", many(rep("x", 6), "..xx.."), cleared, at(5 * every)},
@@ -293,8 +295,9 @@ func TestWordHysteresis(t *testing.T) {
 		{"slow escalates to down, since resets", "sssd", Down, 3 * time.Minute},
 		{"down steps back to slow without a down minute in 5", "gggd" + rep("s", 30), Slow, 4 * time.Minute},
 		{"down with slow minutes: still down within 5", "gggdssss", Down, 3 * time.Minute},
-		{"down, mixed minutes: slow", "dgggsgggg", Slow, 4 * time.Minute},
-		{"down, mixed minutes, then 5 good", "dgggsggggg", Good, -1},
+		{"down, then a lone slow minute: good once no down is left", "dgggsgggg", Good, -1},
+		{"one down minute doesn't change the rest", "d" + rep("gggs", 30), Good, -1},
+		{"the same minutes alone", rep("gggs", 30), Good, -1},
 		{"down, then slow minutes count toward 3 of 5", "dgggggsss", Slow, 6 * time.Minute},
 	}
 	for _, c := range cases {
@@ -500,5 +503,73 @@ func TestLossIsCounted(t *testing.T) {
 	}
 	if ds := tileDrops([]runSet{s}, nil, at(time.Hour)); ds != nil {
 		t.Errorf("60%% loss: drops %+v", ds)
+	}
+}
+
+// TestWordOutageInsideGoodRun: an outage that clears inside the good
+// minutes that end a Slow run: the run ends when the outage cleared, not
+// before it.
+func TestWordOutageInsideGoodRun(t *testing.T) {
+	var w word
+	steps(&w, t0, "sss")
+	steps(&w, at(3*time.Minute), "gg")
+	w.outageSignal(failing, at(5*time.Minute+10*time.Second))
+	w.outageSignal(cleared, at(5*time.Minute+55*time.Second))
+	rs := steps(&w, at(5*time.Minute), "ggg")
+	if len(rs) != 1 || !rs[0].Start.Equal(t0) || !rs[0].End.Equal(at(5*time.Minute+55*time.Second)) || rs[0].Sev != Down {
+		t.Errorf("runs %+v", rs)
+	}
+}
+
+// TestLiveVsReplayClose: a UDP run 3:00–3:10 lost, OK from 3:15, after a
+// lost burst at 2:55. Live, results arrive up to 6 s after their slot and
+// the engine summarizes minute 2 at its first grid tick at or after
+// closeAt + holdFor; replay sees all checks at once. Both judge alike.
+func TestLiveVsReplayClose(t *testing.T) {
+	const every = 5 * time.Second
+	cs := pattern(every, t0, rep(".", 35)+"x"+"xxx"+rep(".", 20), ms10)
+	judge := func(runs []failRun) State {
+		var ms []minute
+		for i := range 3 {
+			f := at(time.Duration(i) * time.Minute)
+			ms = append(ms, summarize(cs, runs, ruleUDP, f, f.Add(80*time.Second)))
+		}
+		st, _ := judgeCall(ms, every)
+		return st
+	}
+	_, s := feed(every, cs)
+	replay := judge(s.runs)
+	now := at(3*time.Minute + 20*time.Second).Add(holdFor(every)).Truncate(5 * time.Second)
+	if now.Before(at(3*time.Minute + 20*time.Second).Add(holdFor(every))) {
+		now = now.Add(5 * time.Second)
+	}
+	tr := &tracker{every: every}
+	for _, c := range cs {
+		if !c.at().Add(6 * time.Second).After(now) { // arrived by now
+			tr.add(c)
+		}
+	}
+	runs := tr.flush(now)
+	if r, ok := tr.open(); ok {
+		runs = append(runs, r)
+	}
+	if live := judge(runs); live != replay || live != Slow {
+		t.Errorf("live %s, replay %s, want slow (4 of 36 lost)", live, replay)
+	}
+}
+
+// TestImmediateAllocs: the tick path allocates nothing.
+func TestImmediateAllocs(t *testing.T) {
+	var ms [][]*tracker
+	for range 3 {
+		tr, _ := series(15*time.Second, t0, "....xx")
+		ms = append(ms, []*tracker{tr})
+	}
+	if n := testing.AllocsPerRun(100, func() { immediate(ms) }); n != 0 {
+		t.Errorf("immediate: %v allocs", n)
+	}
+	cs := pattern(time.Second, t0, rep(".", 50)+rep("x", 10), ms10)
+	if n := testing.AllocsPerRun(100, func() { summarize(cs, nil, rulePath, t0, at(80*time.Second)) }); n != 0 {
+		t.Errorf("summarize: %v allocs", n)
 	}
 }

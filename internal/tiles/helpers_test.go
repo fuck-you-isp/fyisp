@@ -30,19 +30,19 @@ func pattern(every time.Duration, start time.Time, p string, rtt time.Duration) 
 	return out
 }
 
-// feed runs checks through a new tracker and flushes it at the last
-// check's slot + reorderFor. It returns the tracker and the series' runs
-// (closed, then the open one).
+// feed runs checks through a new tracker and flushes it once all are held
+// long enough. It returns the tracker and the series' runs (closed, then
+// the open one).
 func feed(every time.Duration, cs []check) (*tracker, runSet) {
 	t := &tracker{every: every}
 	var rs []failRun
 	var last int64
 	for _, c := range cs {
-		rs = append(rs, t.add(c)...)
+		t.add(c)
 		last = max(last, c.ms)
 	}
 	if last > 0 {
-		rs = append(rs, t.flush(time.UnixMilli(last).Add(reorderFor))...)
+		rs = append(rs, t.flush(time.UnixMilli(last).Add(holdFor(every)))...)
 	}
 	if r, ok := t.open(); ok {
 		rs = append(rs, r)

@@ -145,6 +145,28 @@ func TestLayerEvidence(t *testing.T) {
 	if ev := layerEvidence(mins(0, 0, 3), nil, t0, at(time.Hour), now); ev.known {
 		t.Errorf("no checks: got %+v", ev)
 	}
+
+	// the gateway lost from 0:30 and still lost at 10:00: minute 2 (closed
+	// at 3:20, the run open) counts all 60 checks lost, and the layer is
+	// known and dropped
+	_, g := series(sec, t0, rep(".", 30)+rep("x", 600))
+	cs := pattern(sec, t0, rep(".", 30)+rep("x", 600), ms10)
+	m := summarize(cs, g.runs, rulePath, at(2*time.Minute), at(3*time.Minute+20*sec))
+	if m.lost != 60 || m.ok != 0 {
+		t.Errorf("path minute in an open run: got %+v", m)
+	}
+	ended, cur := layerDrops([]runSet{g}, at(10*time.Minute))
+	ws = ended
+	if cur != nil {
+		ws = append(ws, window{cur.Start, time.Time{}})
+	}
+	if ev := layerEvidence([]minute{m}, ws, at(2*time.Minute), at(3*time.Minute), at(10*time.Minute)); !ev.known || !ev.dropped || ev.loss != 1 {
+		t.Errorf("gateway down: got %+v", ev)
+	}
+	// dropped with no minutes at all (none judged yet) is still known
+	if ev := layerEvidence(nil, ws, at(2*time.Minute), time.Time{}, at(10*time.Minute)); !ev.known || !ev.dropped {
+		t.Errorf("dropped, no minutes: got %+v", ev)
+	}
 }
 
 func TestCauseKind(t *testing.T) {

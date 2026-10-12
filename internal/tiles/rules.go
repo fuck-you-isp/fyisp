@@ -74,7 +74,8 @@ const (
 	goodRun          = 5    // back to Good after 5 good minutes in a row
 	immFailMulti     = 2    // latest failed checks/bursts on most members: Down now ...
 	immFailSingle    = 3    // ... of a single-endpoint group (one front-door hiccup is not an outage)
-	immClearOK       = 2    // latest checks/bursts OK on most members: the outage is over
+	immClearOK       = 2    // checks/bursts OK of the latest immClearWin on at least half the members: the outage is over
+	immClearWin      = 3    // (not "in a row": an endpoint answering every other check is no outage)
 )
 
 // Drops.
@@ -87,7 +88,8 @@ const (
 	connDropNow    = 5 * time.Second  // gateway or edge fully lost this long: a drop in progress
 	sleepFactor    = 2                // checks further apart than 2× the interval: a sleep or restart between them
 	durRound       = 10 * time.Second // drop durations are rounded to this (half down)
-	reorderFor     = 4 * time.Second  // a late result (probe timeout 3 s, probe/runner.go) is put in order this long
+	resultLag      = 5 * time.Second  // the longest probe timeout (HTTPS, probe/runner.go): see holdFor
+	clockBack      = 2 * time.Minute  // a check this far behind the newest: the wall clock was set back
 	againDropped   = time.Minute      // full loss shorter than this "dropped"; longer "was down"
 )
 
@@ -203,28 +205,35 @@ func (m minute) lossPct() float64 {
 	return float64(m.lossPctSum) / float64(m.n())
 }
 
-// summarize builds the minute starting at from from a series' recent
-// checks (any order) and its failure runs as the tracker saw them, as of
-// closeAt (minute end + 20 s): checks and run ends after closeAt are
-// ignored, so live and replay judge a minute alike. rule says which runs
-// are drops.
+// summarize builds the minute starting at from from a series' checks (any
+// order; others are ignored) and its failure runs as the tracker saw them,
+// as of closeAt (minute end + 20 s): run ends after closeAt are ignored, so
+// a run still open then is left out whenever it ended. The engine calls it
+// once every check with a slot up to closeAt is applied (at the grid tick
+// where now − holdFor(every) ≥ closeAt), so live and replay judge a minute
+// alike. Pass only the runs that can touch the minute (pruneRuns keeps the
+// list short): it scans them per lost check. rule says which runs are
+// drops.
 func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) minute {
 	lo, hi, cl := from.UnixMilli(), from.Add(time.Minute).UnixMilli(), closeAt.UnixMilli()
 	skip := func(c check) bool {
+		if rule == rulePath {
+			return false
+		}
 		for _, r := range rs {
-			if c.ms < r.first.UnixMilli() || c.ms > r.last.UnixMilli() {
+			if c.ms < r.firstMs || c.ms > r.lastMs {
 				continue
 			}
-			open := r.to.IsZero() || r.to.UnixMilli() > cl
-			return open || r.dropLike(rule)
+			return r.toMs == 0 || r.toMs > cl || r.dropLike(rule)
 		}
 		return false
 	}
 	m := minute{jitUs: noJitter}
-	var rtts, jits []uint32
+	var rb, jb [64]uint32 // a minute has at most 60 checks (1 s)
+	rtts, jits := rb[:0], jb[:0]
 	for _, c := range cs {
 		switch {
-		case c.ms < lo || c.ms >= hi || c.ms > cl:
+		case c.ms < lo || c.ms >= hi:
 		case c.gap:
 			m.gap++
 		case c.lost:
@@ -251,15 +260,14 @@ func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) 
 }
 
 // median of a non-empty slice (the mean of the middle two for an even
-// count); it sorts a copy.
+// count). It sorts v in place.
 func median[T ~uint32 | ~float64](v []T) T {
-	s := slices.Clone(v)
-	slices.Sort(s)
-	n := len(s)
+	slices.Sort(v)
+	n := len(v)
 	if n%2 == 1 {
-		return s[n/2]
+		return v[n/2]
 	}
-	return (s[n/2-1] + s[n/2]) / 2
+	return (v[n/2-1] + v[n/2]) / 2
 }
 
 // limits are a web endpoint's latency limits in ms.
@@ -309,7 +317,8 @@ type callStats struct {
 // zero). every is the endpoint's burst interval.
 func judgeCall(ms []minute, every time.Duration) (State, callStats) {
 	var st callStats
-	var meds, jits []float64
+	var mb, jb [8]float64
+	meds, jits := mb[:0], jb[:0]
 	var loss uint32
 	for _, m := range ms {
 		st.bursts += m.n()
@@ -418,14 +427,17 @@ const (
 )
 
 // immediate is the "Down now" signal of one group (a tile's web endpoints,
-// or its UDP members) from the members' run trackers:
+// or its UDP members) from the members' run trackers, as flushed at the
+// current grid tick:
 //
 //   - failing when more than half of the members with checks have their
 //     latest k checks lost (k is immFailSingle for a single-member group,
 //     immFailMulti otherwise); at is when that majority started failing;
-//   - cleared when it is not failing and at least half have their latest
-//     immClearOK checks OK (a tie clears, as it is no majority for Down);
-//     at is the slot of the check that made it so.
+//   - cleared when it is not failing and at least half have immClearOK
+//     answers among their latest immClearWin checks (a tie clears, as it
+//     is no majority for Down); at is the slot of the check that made it
+//     so;
+//   - noData when no member has checks.
 //
 // A member with several series (a provider) fails when any of them does and
 // is OK when all are.
@@ -434,8 +446,9 @@ func immediate(members [][]*tracker) (signal, time.Time) {
 	if len(members) == 1 {
 		k = immFailSingle
 	}
-	var n int
-	var fails, oks []int64
+	var fb, ob [16]int64
+	fails, oks := fb[:0], ob[:0]
+	n := 0
 	for _, m := range members {
 		var has, fail bool
 		good := true
@@ -445,13 +458,13 @@ func immediate(members [][]*tracker) (signal, time.Time) {
 				continue
 			}
 			has = true
-			if t.cur.lost >= k {
+			if int(t.cur.lost) >= k {
 				fail = true
-				if s := t.cur.first.UnixMilli(); start == 0 || s < start {
-					start = s
+				if start == 0 || t.cur.firstMs < start {
+					start = t.cur.firstMs
 				}
 			}
-			good = good && t.okN >= immClearOK
+			good = good && t.okAt != 0
 			okAt = max(okAt, t.okAt)
 		}
 		if !has {
@@ -470,10 +483,10 @@ func immediate(members [][]*tracker) (signal, time.Time) {
 		return noData, time.Time{}
 	case 2*len(fails) > n:
 		slices.Sort(fails)
-		return failing, time.UnixMilli(fails[n/2]).UTC()
+		return failing, msTime(fails[n/2])
 	case 2*len(oks) >= n:
 		slices.Sort(oks)
-		return cleared, time.UnixMilli(oks[(n+1)/2-1]).UTC()
+		return cleared, msTime(oks[(n+1)/2-1])
 	}
 	return hold, time.Time{}
 }
@@ -520,10 +533,15 @@ type wordRun struct {
 //   - Slow (Choppy) is entered when badOf of the last badWindow judged
 //     minutes are bad, and left after goodRun good minutes in a row.
 //   - Down from latency or partial loss shows at once (since that minute)
-//     and is left after goodRun good minutes in a row; once the last
-//     badWindow judged minutes hold no Down minute it steps back to Slow
-//     (since the first bad minute among them).
+//     and is left after goodRun good minutes in a row, or as soon as the
+//     last badWindow judged minutes hold no Down minute: to Slow when
+//     badOf of them are bad (since the first of those), else to Good.
 //   - None minutes hold the word and do not count.
+//
+// A run that ends on good minutes ends at the first of them, or at the
+// end of an outage that cleared later. Runs of one tile can touch (an
+// outage inside a Slow run's last minutes): episodes merge them
+// (sameTileMerge).
 type word struct {
 	outage   bool
 	outSince time.Time
@@ -536,6 +554,7 @@ type word struct {
 	nRecent  int
 	good     int       // good minutes in a row
 	goodFrom time.Time // the first of them
+	cleared  time.Time // when the latest outage cleared
 	cur      wordRun   // the open run (Start zero: none)
 }
 
@@ -562,7 +581,7 @@ func (w *word) outageSignal(sig signal, at time.Time) *wordRun {
 	case sig == failing && !w.outage:
 		w.outage, w.outSince = true, at
 	case sig == cleared && w.outage:
-		w.outage = false
+		w.outage, w.cleared = false, at
 	default:
 		return nil
 	}
@@ -591,15 +610,31 @@ func (w *word) step(at time.Time, s State) *wordRun {
 		w.level, w.lvlSince = Down, at
 	case w.level != "" && w.level != Good && w.good >= goodRun:
 		w.level = Good
-		return w.track(w.goodFrom)
-	case w.level == Down && !down:
+		return w.track(w.endAt(w.goodFrom))
+	case w.level == Down && !down && bad >= badOf:
 		w.level, w.lvlSince = Slow, first
+	case w.level == Down && !down:
+		w.level = Good
+		end := at
+		if w.good > 0 {
+			end = w.goodFrom
+		}
+		return w.track(w.endAt(end))
 	case (w.level == "" || w.level == Good) && bad >= badOf:
 		w.level, w.lvlSince = Slow, first
 	case w.level == "":
 		w.level = Good
 	}
 	return w.track(at)
+}
+
+// endAt is the end of a run that ends on good minutes from t on: no
+// earlier than the latest outage in it cleared.
+func (w *word) endAt(t time.Time) time.Time {
+	if w.cleared.After(t) {
+		return w.cleared
+	}
+	return t
 }
 
 // bad counts the bad minutes of the last badWindow judged ones, returns the
