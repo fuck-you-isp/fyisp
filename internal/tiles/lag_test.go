@@ -656,3 +656,39 @@ func TestISPPeakYoung(t *testing.T) {
 		}
 	}
 }
+
+// TestLossyRun: a 5 s total-loss run of the edge inside 40% loss is the
+// loss's (the strip says losing data); one after clean checks is a drop.
+func TestLossyRun(t *testing.T) {
+	p, err := profile.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := at(10 * time.Minute)
+	v := model.Verdict{Kind: model.VerdictISP, Since: now.Add(-time.Minute), Evidence: map[string]float64{"loss": 0.4}}
+	d := &Drop{Start: now.Add(-6 * time.Second), Dur: 6 * time.Second}
+	for _, c := range []struct {
+		p    string
+		want bool
+	}{
+		{"x..x.x..x." + rep("x", 6), true},
+		{rep(".", 10) + rep("x", 6), false},
+	} {
+		e := newEngine(p, nil, Sources{}, Options{})
+		for _, i := range e.paths[layerEdge] {
+			e.ss[i].raw = pattern(time.Second, now.Add(-16*time.Second), c.p, ms10)
+		}
+		if got := e.lossyRun(layerEdge, d, v); got != c.want {
+			t.Errorf("%q: %v, want %v", c.p, got, c.want)
+		}
+	}
+	long := *d
+	long.Dur = dropMin
+	e := newEngine(p, nil, Sources{}, Options{})
+	for _, i := range e.paths[layerEdge] {
+		e.ss[i].raw = pattern(time.Second, now.Add(-16*time.Second), "x..x.x..x."+rep("x", 6), ms10)
+	}
+	if e.lossyRun(layerEdge, &long, v) {
+		t.Error("a drop of dropMin: lossy")
+	}
+}
