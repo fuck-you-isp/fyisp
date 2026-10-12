@@ -129,7 +129,7 @@
       "note": "",
       "aria": "GitHub: not checked on this setup",
       "reason": "fyisp isn’t checking GitHub on this setup.",
-      "enable_hint": "To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.",
+      "enable_hint": "To check GitHub, add the tag tile:github to a target in your --config file, or base the file on extends: [default].",
       "bars_summary": "",
       "bars": []
     },
@@ -143,7 +143,7 @@
       "note": "",
       "aria": "Dropbox: not checked on this setup",
       "reason": "fyisp isn’t checking Dropbox on this setup.",
-      "enable_hint": "To check Dropbox, tag a target in your --config file tile:dropbox, or add extends: default to it.",
+      "enable_hint": "To check Dropbox, add the tag tile:dropbox to a target in your --config file, or base the file on extends: [default].",
       "bars_summary": "",
       "bars": []
     },
@@ -170,7 +170,7 @@
       "note": "",
       "aria": "YouTube: not checked on this setup",
       "reason": "fyisp isn’t checking YouTube on this setup.",
-      "enable_hint": "To check YouTube, tag a target in your --config file tile:youtube, or add extends: default to it.",
+      "enable_hint": "To check YouTube, add the tag tile:youtube to a target in your --config file, or base the file on extends: [default].",
       "bars_summary": "",
       "bars": []
     },
@@ -184,7 +184,7 @@
       "note": "",
       "aria": "Netflix: not checked on this setup",
       "reason": "fyisp isn’t checking Netflix on this setup.",
-      "enable_hint": "To check Netflix, tag a target in your --config file tile:netflix, or add extends: default to it.",
+      "enable_hint": "To check Netflix, add the tag tile:netflix to a target in your --config file, or base the file on extends: [default].",
       "bars_summary": "",
       "bars": []
     }

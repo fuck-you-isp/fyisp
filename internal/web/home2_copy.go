@@ -316,7 +316,7 @@ func (c h2copy) barsSummary(bs []tiles.Bar, first time.Time) string {
 // adds its targets, or, with a --config file, its tile: tag.
 func (c h2copy) enableHint(d profile.TileDef, custom bool) string {
 	if custom {
-		return "To check " + d.Name + ", tag a target in your --config file tile:" + d.ID + ", or add extends: default to it."
+		return "To check " + d.Name + ", add the tag tile:" + d.ID + " to a target in your --config file, or base the file on extends: [default]."
 	}
 	return "To check " + d.Name + ", add " + d.Enable + " to fyisp’s --profile setting (FYISP_PROFILE in Docker)."
 }
@@ -453,21 +453,39 @@ func (c h2copy) started(t time.Time) string {
 
 // healthy is the good card's sub line. measured are the tiles with data:
 // right after the start some may have none yet.
-func (c h2copy) healthy(monitored, measured int, calls bool, learning bool, first time.Time) string {
-	who := "Your router, your internet provider"
+// provider: fyisp sees the provider's edge (else it isn't called healthy).
+func (c h2copy) healthy(monitored, measured int, calls, learning, provider bool, first time.Time) string {
+	names := []string{"Your router"}
 	if c.wifi {
-		who = "Your Wi-Fi and router, your internet provider"
+		names[0] = "Your Wi-Fi and router"
+	}
+	if provider {
+		names = append(names, "your internet provider")
+	}
+	var apps, rest string
+	switch {
+	case monitored == 0:
+	case measured < monitored && monitored-measured == 1:
+		apps, rest = fmt.Sprintf("%d of %d apps", measured, monitored), "; the other has no data yet"
+	case measured < monitored:
+		apps, rest = fmt.Sprintf("%d of %d apps", measured, monitored), "; the others have no data yet"
+	case monitored == 1:
+		apps = "the app fyisp checks"
+	default:
+		apps = fmt.Sprintf("all %d apps", monitored)
 	}
 	var s string
 	switch {
-	case monitored == 0:
-		s = strings.Replace(who, ", your", " and your", 1) + " look healthy."
-	case measured < monitored:
-		s = fmt.Sprintf("%s and %d of %d apps look healthy; the others have no data yet.", who, measured, monitored)
-	case monitored == 1:
-		s = who + " and the app fyisp checks look healthy."
+	case apps == "":
+		s = andJoin(names)
+	case len(names) == 1 && c.wifi:
+		s = names[0] + ", and " + apps // not "router and all 11 apps" run together
 	default:
-		s = fmt.Sprintf("%s and all %d apps look healthy.", who, monitored)
+		s = andJoin(append(names, apps))
+	}
+	s += " look healthy" + rest + "."
+	if !provider {
+		s += " fyisp can’t see your internet provider from here."
 	}
 	switch {
 	case learning && !first.IsZero():

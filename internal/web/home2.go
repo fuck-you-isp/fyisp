@@ -283,7 +283,7 @@ func (s *server) home2Now(r *http.Request, p home2Params, now time.Time) *Home2N
 	c := h2copy{loc: p.zone.loc, now: now, wifi: s.wifiWording(r)}
 	learning := snap.Learning && !checking
 	out := &Home2Now{V: 2, At: now.UnixMilli(), Stale: stale, Monitored: snap.Monitored}
-	if !snap.LastMeasured.IsZero() {
+	if !snap.LastMeasured.IsZero() && !checking { // a (re)start's last stored check isn't news
 		out.LastCheck = snap.LastMeasured.UnixMilli()
 	}
 	if w := s.watchingSince(r.Context(), snap.FirstData, now); !w.IsZero() {
@@ -346,6 +346,19 @@ type appRow struct {
 // appState works out row 9 of the card.
 func (c h2copy) appState(snap *tiles.Snapshot, eps []tiles.Episode, skip bool) appRow {
 	r := appRow{hop: -1}
+	if !skip && snap.Conn.Kind == string(model.VerdictUDPDegraded) {
+		// Choppy calls with no path verdict: their problems' common cause
+		// (e.g. the provider's loss) is the strip's too.
+		r.allCalls = true
+		for _, e := range eps {
+			if e.Ongoing() && !e.Connection && e.Cause.Who != "" {
+				r.causes = append(r.causes, e.Cause)
+			}
+		}
+		r.hop = hopOf(r.causes)
+		r.causes = nil
+		return r
+	}
 	if skip || snap.Conn.Kind != tiles.ConnApp {
 		return r
 	}
@@ -358,17 +371,24 @@ func (c h2copy) appState(snap *tiles.Snapshot, eps []tiles.Episode, skip bool) a
 			r.allCalls = r.allCalls && tileDef(id).Kind == profile.TileCall
 		}
 	}
-	if len(r.causes) > 0 && !slices.ContainsFunc(r.causes, func(y tiles.Cause) bool { return y.Who != r.causes[0].Who }) {
-		switch r.causes[0].Who {
-		case tiles.WhoRouter, tiles.WhoOffline:
-			r.hop = 0
-		case tiles.WhoProvider:
-			r.hop = 1
-		case tiles.WhoInternet:
-			r.hop = 2
-		}
-	}
+	r.hop = hopOf(r.causes)
 	return r
+}
+
+// hopOf is the strip's hop of causes' common connection cause (-1: none).
+func hopOf(causes []tiles.Cause) int {
+	if len(causes) == 0 || slices.ContainsFunc(causes, func(y tiles.Cause) bool { return y.Who != causes[0].Who }) {
+		return -1
+	}
+	switch causes[0].Who {
+	case tiles.WhoRouter, tiles.WhoOffline:
+		return 0
+	case tiles.WhoProvider:
+		return 1
+	case tiles.WhoInternet:
+		return 2
+	}
+	return -1
 }
 
 // watching is the footer's date: "Mar 3", "today 9:50 am".
@@ -491,7 +511,7 @@ func (c h2copy) card(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, chec
 			measured++
 		}
 	}
-	a.Sub = c.healthy(snap.Monitored, measured, calls, learning, snap.FirstData)
+	a.Sub = c.healthy(snap.Monitored, measured, calls, learning, snap.Layers[1].State != tiles.None, snap.FirstData)
 	return a
 }
 
@@ -606,8 +626,9 @@ func (c h2copy) tile(t tiles.TileSnap, eps map[string]tiles.Episode, v view2) Ho
 		st = tiles.None
 	}
 	// A blocked fast path is choppier calls over a slower route, not calls
-	// that can't connect (their web group would say so).
-	blocked := v.blocked && d.Kind == profile.TileCall && st == tiles.Down
+	// that can't connect: only when the block is the tile's only problem
+	// (an app's own outage on such a network stays Down).
+	blocked := v.blocked && d.Kind == profile.TileCall && st == tiles.Down && onlyBlocked(t, eps)
 	if blocked {
 		st = tiles.Slow
 		for i := range t.Bars {
@@ -659,6 +680,25 @@ func (c h2copy) tile(t tiles.TileSnap, eps map[string]tiles.Episode, v view2) Ho
 		out.BarsSummary = c.barsSummary(t.Bars[:], v.first)
 	}
 	return out
+}
+
+// onlyBlocked reports a tile whose ongoing problems are all a blocked
+// fast path (EpBlocked), with no app-side cause of its own.
+func onlyBlocked(t tiles.TileSnap, eps map[string]tiles.Episode) bool {
+	if t.Cause.Who == tiles.WhoApp || t.Cause.Who == tiles.WhoCallsPath {
+		return false
+	}
+	n := 0
+	for _, e := range eps {
+		if !e.Ongoing() || !slices.Contains(e.Tiles, t.ID) {
+			continue
+		}
+		if e.Kind != tiles.EpBlocked {
+			return false
+		}
+		n++
+	}
+	return n > 0
 }
 
 // barNote is a bar's note: "Dropped 40 s", "Down since 10:05 am",
@@ -820,7 +860,11 @@ func (s *server) home2Tile(p home2Params, now time.Time) (*Home2TileDetail, int,
 	c := h2copy{loc: p.zone.loc, now: now}
 	d := tileDef(p.id)
 	v := view2{checking: checking, blocked: !checking && !stale && snap.Conn.Kind == string(model.VerdictUDPBlocked), first: snap.FirstData}
-	h := c.tile(t, nil, v)
+	byID := map[string]tiles.Episode{}
+	for _, e := range snap.Problems(now.Add(-home2Week)) {
+		byID[e.ID] = e
+	}
+	h := c.tile(t, byID, v)
 	out := &Home2TileDetail{V: 2, At: now.UnixMilli(), ID: d.ID, State: h.State, Word: h.Word, Reason: h.Reason, Metrics: []Home2Metric{}}
 	if rs := s.h2.resolved(s.d.Profile()); i < len(rs) {
 		src := ""

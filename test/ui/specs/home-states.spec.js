@@ -63,6 +63,17 @@ test('checking: grey card, grey no-data bars', async ({ page }) => {
   await expect(page.locator('.hp-tile .hp-bars i.b-none')).toHaveCount(264);
 });
 
+test('a (re)start is checking, not stale, whatever its last check', async ({ page }) => {
+  const d = fx('now-checking');
+  // An old last check from before a restart, or none at all (the server omits it while checking).
+  d.last_check = d.at - 3 * 3600e3;
+  await serveHome(page, d);
+  await openHome(page);
+  await expect(page.locator('.hp-answer')).toHaveClass(/checking/);
+  await expect(page.locator('.hp-headline')).toHaveText('Checking your connection…');
+  await expect(page).toHaveTitle('Checking – fyisp');
+});
+
 test('off tiles: not checked, no bars, the counts come from the server', async ({ page }) => {
   const d = fx('now-calls-profile');
   await serveHome(page, d);

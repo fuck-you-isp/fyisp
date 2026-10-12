@@ -222,6 +222,8 @@ export class Home {
     const d = this.data;
     if (!d) return this.fails >= FAILS;
     if (d.stale || this.fails >= FAILS) return true;
+    // A fresh start (or restart) is checking: its last stored check can be old.
+    if (d.answer && d.answer.tone === 'checking') return false;
     const asked = this.nowAt > this.recvAt;
     return Math.max(0, d.at - d.last_check) + (asked ? Date.now() - this.recvAt : 0) >= STALE_MS && !!d.last_check;
   }

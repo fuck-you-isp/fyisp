@@ -188,6 +188,12 @@ func (b *sb) add(e tiles.Episode) {
 				if e.Ongoing() {
 					x.Drop = b.now.Sub(e.Start)
 				}
+			case e.Connection:
+				// A connection problem colours no bar: the tiles' own minutes
+				// do (set, paint); it only explains a bad bar.
+				if x.Episode == "" && x.State.Bad() {
+					x.Episode = e.ID
+				}
 			case rank(e.Sev) >= rank(x.State):
 				x.State, x.Episode = e.Sev, e.ID
 			case x.Episode == "":
@@ -199,6 +205,18 @@ func (b *sb) add(e tiles.Episode) {
 
 // overlaps reports [a0, a1) and [b0, b1) overlapping; an ongoing b (b1
 // zero) reaches into the current bar.
+// paint colours tiles' bars over [from, to) (minutes judged then).
+func (b *sb) paint(st tiles.State, from, to time.Time, ids ...string) {
+	for _, id := range ids {
+		t := b.tile(id)
+		for i := range t.Bars {
+			if overlaps(t.Bars[i].From, t.Bars[i].From.Add(bar), from, to, b.now) {
+				t.Bars[i].State = st
+			}
+		}
+	}
+}
+
 func rank(s tiles.State) int {
 	return map[tiles.State]int{tiles.Good: 1, tiles.Slow: 2, tiles.Down: 3}[s]
 }
@@ -533,6 +551,7 @@ func BuildV2(name string, now time.Time) (*V2, error) {
 		b.layerDrop(1, 2)
 	case "trouble-recovered":
 		from, to := b.ago(28*time.Minute), b.ago(12*time.Minute)
+		b.paint(tiles.Slow, from, to, callTiles()...) // the calls were choppy then
 		b.add(tiles.Episode{Start: from, End: to, Sev: tiles.Slow, Kind: tiles.EpSlow, Tiles: callTiles(), Connection: true, Verdict: model.VerdictISP,
 			Cause: tiles.Cause{Who: tiles.WhoProvider, Evidence: tiles.EvProviderLossy}})
 		b.again(tiles.AgainTrouble)

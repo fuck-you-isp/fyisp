@@ -8,12 +8,12 @@
   "learning": null,
   "monitored": 11,
   "answer": {
-    "key": "good:13f605q",
+    "key": "good:16y4m78",
     "tone": "ok",
     "icon": "good",
     "tab": "✓ All good",
     "headline": "Everything you use is working normally.",
-    "sub": "Your router, your internet provider and 10 of 11 apps look healthy; the others have no data yet. Calls and video should be smooth.",
+    "sub": "Your router and 10 of 11 apps look healthy; the other has no data yet. fyisp can’t see your internet provider from here. Calls and video should be smooth.",
     "day": {"text": "Last 24 hours: 4 short problems, 1 likely from your internet provider.", "link": "4 short problems"}
   },
   "path": [

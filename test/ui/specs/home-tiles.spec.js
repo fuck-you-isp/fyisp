@@ -126,7 +126,7 @@ test('an off tile: the reason and how to turn it on, no chart, no fetch', async 
   const panel = page.locator('#hp-detail');
   await expect(panel).toBeVisible();
   await expect(panel.locator('.hp-reason')).toHaveText('fyisp isn’t checking GitHub on this setup.');
-  await expect(panel.locator('.hp-enable')).toHaveText('To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.');
+  await expect(panel.locator('.hp-enable')).toHaveText('To check GitHub, add the tag tile:github to a target in your --config file, or base the file on extends: [default].');
   await expect(panel.locator('canvas')).toHaveCount(0);
   await expect(panel.locator('.hp-chartpart')).toBeHidden();
   await expect(panel.locator('.hp-metrics')).toBeHidden();

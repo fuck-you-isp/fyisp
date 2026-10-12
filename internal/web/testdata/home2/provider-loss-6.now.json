@@ -18,7 +18,7 @@
   },
   "path": [
     {"id": "router", "label": "Your home router", "state": "good", "sub": "Working normally"},
-    {"id": "provider", "label": "Your internet provider", "state": "good", "sub": "Working normally"},
+    {"id": "provider", "label": "Your internet provider", "state": "slow", "sub": "Losing some call data since 10:24 am"},
     {"id": "internet", "label": "The internet", "state": "good", "sub": "Working normally"}
   ],
   "path_hint": "fyisp checks from the box it runs on, up to your router. It can’t see the Wi-Fi on the device you’re using now — if calls are choppy here, try moving closer to your router or plugging in.",

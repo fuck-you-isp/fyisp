@@ -185,7 +185,7 @@
       "note": "since 10:20 am",
       "aria": "Microsoft 365: Slow, since 10:20 am",
       "reason": "Slower than usual since 10:20 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 3 of 24 five-minute periods.",
+      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -208,9 +208,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791555900000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791556200000, "state": "down", "note": "Down since 10:20 am"}
+        {"from": 1791555600000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791555900000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Slow since 10:20 am"}
       ]
     },
     {
@@ -223,7 +223,7 @@
       "note": "since 10:20 am",
       "aria": "Google Workspace: Slow, since 10:20 am",
       "reason": "Slower than usual since 10:20 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 3 of 24 five-minute periods.",
+      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -246,9 +246,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791555900000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791556200000, "state": "down", "note": "Down since 10:20 am"}
+        {"from": 1791555600000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791555900000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Slow since 10:20 am"}
       ]
     },
     {
@@ -299,7 +299,7 @@
       "note": "since 10:20 am",
       "aria": "Dropbox: Slow, since 10:20 am",
       "reason": "Slower than usual since 10:20 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 3 of 24 five-minute periods.",
+      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -322,9 +322,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791555900000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791556200000, "state": "down", "note": "Down since 10:20 am"}
+        {"from": 1791555600000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791555900000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Slow since 10:20 am"}
       ]
     },
     {
@@ -337,7 +337,7 @@
       "note": "since 10:20 am",
       "aria": "OneDrive: Slow, since 10:20 am",
       "reason": "Slower than usual since 10:20 am.",
-      "bars_summary": "Last 2 hours: down or dropped in 3 of 24 five-minute periods.",
+      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -360,9 +360,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791555900000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791556200000, "state": "down", "note": "Down since 10:20 am"}
+        {"from": 1791555600000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791555900000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Slow since 10:20 am"}
       ]
     },
     {
@@ -375,7 +375,7 @@
       "note": "since 10:20 am",
       "aria": "YouTube: Slow, since 10:20 am",
       "reason": "Slower than usual since 10:20 am. YouTube is reachable. If it’s buffering, test your speed below.",
-      "bars_summary": "Last 2 hours: down or dropped in 3 of 24 five-minute periods.",
+      "bars_summary": "Last 2 hours: slow in 3 of 24 five-minute periods.",
       "bars": [
         {"from": 1791549300000, "state": "good", "note": ""},
         {"from": 1791549600000, "state": "good", "note": ""},
@@ -398,9 +398,9 @@
         {"from": 1791554700000, "state": "good", "note": ""},
         {"from": 1791555000000, "state": "good", "note": ""},
         {"from": 1791555300000, "state": "good", "note": ""},
-        {"from": 1791555600000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791555900000, "state": "down", "note": "Down since 10:20 am"},
-        {"from": 1791556200000, "state": "down", "note": "Down since 10:20 am"}
+        {"from": 1791555600000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791555900000, "state": "slow", "note": "Slow since 10:20 am"},
+        {"from": 1791556200000, "state": "slow", "note": "Slow since 10:20 am"}
       ]
     },
     {

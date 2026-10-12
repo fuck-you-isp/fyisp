@@ -29,8 +29,8 @@
     {
       "id": "provider",
       "label": "Your internet provider",
-      "state": "good",
-      "sub": "Working normally"
+      "state": "slow",
+      "sub": "Losing some call data since 10:24 am"
     },
     {
       "id": "internet",

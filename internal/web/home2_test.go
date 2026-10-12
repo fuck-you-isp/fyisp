@@ -434,7 +434,7 @@ func TestHome2CopyPins(t *testing.T) {
 	s3.LastMeasured, s3.Conn = time.Time{}, tiles.ConnState{Kind: tiles.ConnStale}
 	a := c.answer(&s3, nil, appRow{hop: -1}, false, true, false)
 	check("stale, never checked", a.Headline+" "+a.Sub, "fyisp hasn’t checked anything yet. Is the computer it runs on asleep or turned off?")
-	check("custom config", c.enableHint(def("github"), true), "To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.")
+	check("custom config", c.enableHint(def("github"), true), "To check GitHub, add the tag tile:github to a target in your --config file, or base the file on extends: [default].")
 }
 
 // A process that just started is checking, not stale, whatever its last
@@ -452,11 +452,37 @@ func TestHome2RestartNotStale(t *testing.T) {
 		}
 		return decode[Home2Now](t, b)
 	}
-	if a := get(); a.Stale || a.Answer.Tone != "checking" {
-		t.Errorf("30 s after the start: stale %v, tone %s", a.Stale, a.Answer.Tone)
+	if a := get(); a.Stale || a.Answer.Tone != "checking" || a.LastCheck != 0 {
+		// last_check 0: the page's own stale rule (an old last check) can't fire either
+		t.Errorf("30 s after the start: stale %v, tone %s, last_check %d", a.Stale, a.Answer.Tone, a.LastCheck)
 	}
 	started = home2Now.Add(-3 * time.Minute)
 	if a := get(); !a.Stale || a.Answer.Tone != "stale" {
 		t.Errorf("3 min after the start: stale %v, tone %s", a.Stale, a.Answer.Tone)
+	}
+}
+
+// On a network that blocks call traffic, a call tile whose own servers are
+// down stays Down (only the block is softened to Choppy).
+func TestHome2BlockedKeepsAppOutage(t *testing.T) {
+	sc := scenario(t, "udp-blocked")
+	snap := *sc.Snap
+	since := home2Now.Add(-10 * time.Minute)
+	snap.Tiles[0].Cause = tiles.Cause{Who: tiles.WhoApp, Vendor: "zoom", Evidence: tiles.EvAppOnly}
+	snap.Eps = append([]tiles.Episode{{ID: "t-1-zoom", Start: since, Sev: tiles.Down, Kind: tiles.EpOutage, Tiles: []string{"zoom"},
+		Cause: snap.Tiles[0].Cause}}, snap.Eps...)
+	sc.Snap = &snap
+	h := home2Server(t, sc, home2Now)
+	code, b := home2Get(t, h, sc.Viewer, "part=now&tz=America/New_York")
+	if code != 200 {
+		t.Fatalf("%d %s", code, b)
+	}
+	d := decode[Home2Now](t, b)
+	if z, tm := d.Tiles[0], d.Tiles[1]; z.State != "down" || !strings.HasPrefix(z.Reason, "Not connecting since") || tm.State != "slow" {
+		t.Errorf("zoom %s %q; teams %s", z.State, z.Reason, tm.State)
+	}
+	code, b = home2Get(t, h, sc.Viewer, "part=tile&id=zoom&tz=America/New_York")
+	if p := decode[Home2TileDetail](t, b); code != 200 || p.State != "down" {
+		t.Errorf("panel: %d %s", code, p.State)
 	}
 }
