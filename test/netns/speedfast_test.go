@@ -214,7 +214,10 @@ var fastFar = map[string]bool{"asia-east": true, "asia-southeast": true, "oceani
 // built-in catalog's default regions, ending an hour ago: near regions at
 // fastRate with fastCut from 19 to 22 h UTC, far ones a lower bound
 // reading 0.6 two hours in three (else 1.05 of a 400 Mbit/s normal). Every
-// download is capped and measured from its plateau, as v0.7.1 stores them.
+// test ran under the 10 s time cap with its download measured from its
+// plateau, as v0.7.2 and later store them: a server's v0.7.1 rows
+// (100 MB byte cap, DownShort) have their scores left out (Censored), and
+// the finding would have no tests.
 func seedFastHistory(t *testing.T, dir string, days int) {
 	cat, err := speedtest.Builtin()
 	if err != nil {
@@ -248,14 +251,14 @@ func seedFastHistory(t *testing.T, dir string, days int) {
 				sc = 1 - fastCut
 			}
 			down, up := sc*base, math.Min(base, 1e9)
-			x := speedtest.Extra{RateMethod: [2]string{speedtest.MethodPeak90, ""}, LowerBound: [2]bool{lower, false}}
+			x := speedtest.Extra{RateMethod: [2]string{speedtest.MethodPeak90, ""}, LowerBound: [2]bool{lower, false}, Cap: "time"}
 			b, err := json.Marshal(x)
 			if err != nil {
 				t.Fatal(err)
 			}
 			test := model.SpeedTest{Start: ts, End: ts.Add(12 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK, Region: r.ID,
 				Server: chain[0].Server.ID, FallbackLevel: speedtest.FallbackNone, DownBps: &down, UpBps: &up, ScoreDown: &sc,
-				Conn: model.ConnWired, DownShort: true, DownSecs: 0.4, UpSecs: 4, Bytes: 100e6 + int64(4*up/8), Extra: string(b)}
+				Conn: model.ConnWired, DownSecs: 4, UpSecs: 4, Bytes: int64(4 * (down + up) / 8), Extra: string(b)}
 			if err := st.SaveSpeedTest(context.Background(), &test); err != nil {
 				t.Fatal(err)
 			}
