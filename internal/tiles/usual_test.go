@@ -2,6 +2,7 @@ package tiles
 
 import (
 	"math/rand/v2"
+	"slices"
 	"testing"
 	"time"
 )
@@ -10,8 +11,8 @@ func webMin(medMs float64, lost int) minute {
 	return minute{ok: 4, lost: uint16(lost), medUs: uint32(medMs * 1000)}
 }
 
-// feed adds n minutes from start, one a minute.
-func feed(u *usual, start time.Time, n int, medMs float64, lost int, s State) time.Time {
+// addMins adds n minutes from start, one a minute.
+func addMins(u *usual, start time.Time, n int, medMs float64, lost int, s State) time.Time {
 	for i := range n {
 		u.add(start.Add(time.Duration(i)*time.Minute), webMin(medMs, lost), s)
 	}
@@ -20,15 +21,15 @@ func feed(u *usual, start time.Time, n int, medMs float64, lost int, s State) ti
 
 func TestUsualGoodMinutesOnly(t *testing.T) {
 	var u usual
-	next := feed(&u, t0, minGood-1, 10, 0, Good)
+	next := addMins(&u, t0, minGood-1, 10, 0, Good)
 	if _, ok := u.value(next); ok {
 		t.Error("59 good minutes: the usual should be unknown")
 	}
-	next = feed(&u, next, 1, 10, 0, Good)
-	next = feed(&u, next, 100, 80, 0, Slow) // slow minutes are left out
-	next = feed(&u, next, 100, 1, 1, Good)  // lossy minutes are left out
-	next = feed(&u, next, 100, 1, 0, None)  // none
-	u.add(next, minute{lost: 4}, Down)      // nothing answered
+	next = addMins(&u, next, 1, 10, 0, Good)
+	next = addMins(&u, next, 100, 80, 0, Slow) // slow minutes are left out
+	next = addMins(&u, next, 100, 1, 1, Good)  // lossy minutes are left out
+	next = addMins(&u, next, 100, 1, 0, None)  // none
+	u.add(next, minute{lost: 4}, Down)         // nothing answered
 	if ms, ok := u.value(next.Add(time.Minute)); !ok || ms != 10 {
 		t.Errorf("got %v %v, want 10", ms, ok)
 	}
@@ -36,8 +37,8 @@ func TestUsualGoodMinutesOnly(t *testing.T) {
 
 func TestUsualWindowSlides(t *testing.T) {
 	var u usual
-	feed(&u, t0, 100, 10, 0, Good)
-	feed(&u, at(10*time.Hour), 100, 30, 0, Good)
+	addMins(&u, t0, 100, 10, 0, Good)
+	addMins(&u, at(10*time.Hour), 100, 30, 0, Good)
 	if ms, _ := u.value(at(12 * time.Hour)); ms != 20 {
 		t.Errorf("both: got %v, want 20", ms)
 	}
@@ -52,7 +53,8 @@ func TestUsualWindowSlides(t *testing.T) {
 }
 
 // TestUsualRecompute: the usual changes only every usualEvery, and then
-// equals the median of a full sort of the good minutes in the window.
+// equals the median of a full sort of the good minutes in the window; the
+// incrementally sorted window always equals a sort of the good minutes.
 func TestUsualRecompute(t *testing.T) {
 	r := rand.New(rand.NewPCG(1, 2))
 	var u usual
@@ -65,14 +67,14 @@ func TestUsualRecompute(t *testing.T) {
 	var lastAt time.Time
 	for i := range 30 * 60 {
 		now := at(time.Duration(i) * time.Minute)
-		ms := 10 + r.Float64()*20
+		m := webMin(10+r.Float64()*20, 0)
 		s := Good
 		if r.IntN(5) == 0 {
 			s = Slow
 		}
-		u.add(now, webMin(ms, 0), s)
+		u.add(now, m, s)
 		if s == Good {
-			all = append(all, gm{now, float64(webMin(ms, 0).medUs) / 1000})
+			all = append(all, gm{now, m.medMs()})
 		}
 		got, _ := u.value(now)
 		if lastAt.IsZero() || now.Sub(lastAt) >= usualEvery {
@@ -89,6 +91,10 @@ func TestUsualRecompute(t *testing.T) {
 			if got != want {
 				t.Fatalf("minute %d: got %v, want %v", i, got, want)
 			}
+			slices.Sort(v)
+			if !slices.Equal(u.sorted, v) {
+				t.Fatalf("minute %d: the sorted window differs from a sort", i)
+			}
 			last, lastAt = got, now
 		} else if got != last {
 			t.Fatalf("minute %d: changed between recomputes: %v -> %v", i, last, got)
@@ -99,7 +105,7 @@ func TestUsualRecompute(t *testing.T) {
 func TestUsualRebase(t *testing.T) {
 	seed := func() (*usual, time.Time) {
 		u := &usual{}
-		next := feed(u, t0, 24*60, 10, 0, Good)
+		next := addMins(u, t0, 24*60, 10, 0, Good)
 		u.value(next)
 		return u, next
 	}
@@ -113,16 +119,26 @@ func TestUsualRebase(t *testing.T) {
 
 	u, next := seed()
 	next = shift(u, next, 60)
-	others := []*usual{u}
+	all := []*usual{u}
 	for range 3 {
 		o, _ := seed()
-		others = append(others, o)
+		all = append(all, o)
 	}
-	if n := relearn(others, next); n != 1 {
+	if n := relearn(all, next); n != 1 {
 		t.Fatalf("rebased %d, want 1", n)
 	}
 	if ms, ok := u.value(next); !ok || ms != 41.5 {
 		t.Errorf("rebased usual: got %v, want 41.5", ms)
+	}
+	// the minutes judged under the old usual are forgotten: no second
+	// rebase from them, and the next minutes are judged afresh
+	if len(u.recent) != 0 || u.shifted(next) {
+		t.Errorf("after a rebase: recent %d", len(u.recent))
+	}
+	// the rebased usual lasts past later recomputes
+	next = addMins(u, next, 30, 42, 0, Good)
+	if ms, ok := u.value(next); !ok || ms < 41 || ms > 42 {
+		t.Errorf("after a rebase and 30 minutes: got %v %v", ms, ok)
 	}
 
 	// a shift shorter than relearnAfter is not a route change
@@ -134,7 +150,7 @@ func TestUsualRebase(t *testing.T) {
 
 	// downward: below usual/1.5 for 60 minutes
 	u, next = seed()
-	next = feed(u, next, 60, 5, 0, Good)
+	next = addMins(u, next, 60, 5, 0, Good)
 	if !u.shifted(next) {
 		t.Error("down: not shifted")
 	}
@@ -159,7 +175,7 @@ func TestUsualRebase(t *testing.T) {
 	// some good minutes in between: not a shift
 	u, next = seed()
 	next = shift(u, next, 30)
-	next = feed(u, next, 1, 10, 0, Good)
+	next = addMins(u, next, 1, 10, 0, Good)
 	next = shift(u, next, 29)
 	if u.shifted(next) {
 		t.Error("interrupted: shifted")
@@ -185,11 +201,19 @@ func TestUsualRebase(t *testing.T) {
 	if ms, _ := us[0].value(end); ms != 10 {
 		t.Errorf("shared shift: usual %v, want 10", ms)
 	}
+
+	// a rebase without minutes keeps the usual
+	u, next = seed()
+	u.recent = nil
+	u.rebase(next)
+	if ms, _ := u.value(next); ms != 10 {
+		t.Errorf("empty rebase: got %v", ms)
+	}
 }
 
 func TestUsualReset(t *testing.T) {
 	var u usual
-	next := feed(&u, t0, 24*60, 10, 0, Good)
+	next := addMins(&u, t0, 24*60, 10, 0, Good)
 	if _, ok := u.value(next); !ok {
 		t.Fatal("no usual")
 	}
@@ -199,7 +223,7 @@ func TestUsualReset(t *testing.T) {
 	if ok || limitsFor(ms, ok, false) != (limits{learnSlowMs, learnDownMs}) {
 		t.Errorf("after reset: got %v %v", ms, ok)
 	}
-	next = feed(&u, next, minGood, 50, 0, Good)
+	next = addMins(&u, next, minGood, 50, 0, Good)
 	if ms, ok := u.value(next); !ok || ms != 50 {
 		t.Errorf("after %d good minutes: got %v %v", minGood, ms, ok)
 	}
@@ -211,5 +235,30 @@ func TestLearningAndStale(t *testing.T) {
 	}
 	if stale(at(119*time.Second), t0) || !stale(at(120*time.Second), t0) || !stale(t0, time.Time{}) {
 		t.Error("stale")
+	}
+}
+
+// BenchmarkUsualReplay8d is one series' usual over an 8-day replay: a
+// minute added and the value read every minute, a relearn check every
+// usualEvery. The replay budget (2 s for ~45 series) wants well under
+// 10 ms per series.
+func BenchmarkUsualReplay8d(b *testing.B) {
+	r := rand.New(rand.NewPCG(1, 2))
+	mins := make([]minute, 8*24*60)
+	for i := range mins {
+		mins[i] = webMin(10+r.Float64()*20, 0)
+	}
+	b.ReportAllocs()
+	for range b.N {
+		var u usual
+		us := []*usual{&u}
+		for i, m := range mins {
+			now := at(time.Duration(i) * time.Minute)
+			ms, ok := u.value(now)
+			u.add(now, m, judgeWeb(m, limitsFor(ms, ok, false), false))
+			if i%10 == 0 {
+				relearn(us, now)
+			}
+		}
 	}
 }

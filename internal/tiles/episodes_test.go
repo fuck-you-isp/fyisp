@@ -31,10 +31,14 @@ func TestIncidentEpisode(t *testing.T) {
 		{model.VerdictService, 1, false, "", ""},
 	}
 	for _, c := range cases {
-		e, ok := incidentEpisode(model.Incident{Kind: c.kind, Start: t0, PeakLoss: c.peak})
+		e, ok := incidentEpisode(model.Incident{Kind: c.kind, Start: t0, PeakLoss: c.peak}, false)
 		if ok != c.ok || ok && (e.Sev != c.sev || e.Kind != c.epKind || !e.Connection || e.Verdict != c.kind) {
 			t.Errorf("%s %.2f: got %+v %v", c.kind, c.peak, e, ok)
 		}
+	}
+	// a layer that dropped makes it a full loss whatever the peak loss
+	if e, _ := incidentEpisode(model.Incident{Kind: model.VerdictLAN, Start: t0, PeakLoss: 0.3}, true); e.Sev != Down || e.Kind != EpOutage {
+		t.Errorf("lan, gateway dropped: got %+v", e)
 	}
 	if e := runEpisode("zoom", profile.TileCall, wordRun{Start: t0, Sev: Slow}); e.Kind != EpChoppy {
 		t.Errorf("call slow: got %s", e.Kind)
@@ -78,7 +82,7 @@ func TestGroupEpisodes(t *testing.T) {
 	ms := func(d time.Duration) string { return strconv.FormatInt(at(d).UnixMilli(), 10) }
 	now := at(time.Hour)
 	drop := dropEpisode(Drop{Start: at(10 * m), End: at(10*m + 40*time.Second), Dur: 40 * time.Second}, "")
-	isp, _ := incidentEpisode(model.Incident{Kind: model.VerdictISP, Start: at(10*m + 15*time.Second), End: at(11*m + 30*time.Second), PeakLoss: 0.7})
+	isp, _ := incidentEpisode(model.Incident{Kind: model.VerdictISP, Start: at(10*m + 15*time.Second), End: at(11*m + 30*time.Second), PeakLoss: 0.7}, false)
 	cases := []struct {
 		name        string
 		conn, tiles []Episode
@@ -113,6 +117,19 @@ func TestGroupEpisodes(t *testing.T) {
 		{"a drop absorbs the incident", []Episode{isp, drop}, nil, []string{"c-" + ms(10*m) + " []"}},
 		{"an incident later is its own problem", []Episode{drop, func() Episode { e := isp; e.Start, e.End = at(30*m), at(31*m); return e }()}, nil,
 			[]string{"c-" + ms(30*m) + " []", "c-" + ms(10*m) + " []"}},
+		{"a drop doesn't absorb a long UDP block",
+			[]Episode{drop, func() Episode {
+				e, _ := incidentEpisode(model.Incident{Kind: model.VerdictUDPBlocked, Start: at(10*m + 10*time.Second), End: at(5*time.Hour + 10*m)}, false)
+				return e
+			}()}, nil,
+			[]string{"c-" + ms(10*m+10*time.Second) + " []", "c-" + ms(10*m) + " []"}},
+		{"a drop doesn't absorb dns", []Episode{drop, func() Episode {
+			e, _ := incidentEpisode(model.Incident{Kind: model.VerdictDNS, Start: at(10*m + 10*time.Second), End: at(11 * m)}, false)
+			return e
+		}()}, nil,
+			[]string{"c-" + ms(10*m+10*time.Second) + " []", "c-" + ms(10*m) + " []"}},
+		{"a drop doesn't absorb an incident that outlasts it", []Episode{drop, func() Episode { e := isp; e.End = time.Time{}; return e }()}, nil,
+			[]string{"c-" + ms(10*m+15*time.Second) + " []", "c-" + ms(10*m) + " []"}},
 		{"a slowdown is not absorbed", []Episode{drop, broadEpisode(at(10*m), at(15*m))}, nil,
 			[]string{"c-" + ms(10*m) + " []", "c-" + ms(10*m) + "-2 []"}},
 		{"an ongoing tile run is not covered by an ended drop",
@@ -134,6 +151,12 @@ func TestGroupEpisodes(t *testing.T) {
 	got := groupEpisodes([]Episode{isp, drop}, nil, byVendor, now)
 	if e := got[0]; e.Kind != EpDrop || e.Verdict != model.VerdictISP || !e.End.Equal(at(11*m+30*time.Second)) || e.DropDur != 40*time.Second || e.Sev != Down || e.Cause.Who != WhoProvider {
 		t.Errorf("drop + incident: got %+v", e)
+	}
+	// the drop keeps its own end next to a long UDP block
+	blocked, _ := incidentEpisode(model.Incident{Kind: model.VerdictUDPBlocked, Start: at(10*m + 10*time.Second), End: at(5 * time.Hour)}, false)
+	got = groupEpisodes([]Episode{drop, blocked}, nil, byVendor, now)
+	if i := slices.IndexFunc(got, func(e Episode) bool { return e.Kind == EpDrop }); i < 0 || !got[i].End.Equal(drop.End) {
+		t.Errorf("drop + block: got %+v", got)
 	}
 	// severity is the worst, ongoing wins
 	got = groupEpisodes(nil, []Episode{tileRun("zoom", Slow, 0, 5*m), tileRun("zoom", Down, 7*m, 0)}, byVendor, now)

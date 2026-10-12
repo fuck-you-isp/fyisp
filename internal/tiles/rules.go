@@ -39,15 +39,14 @@ const (
 	callWindow         = 3 * time.Minute
 	callChoppyDelayMs  = 150.0 // median delay above this: Choppy
 	callChoppyJitterMs = 30.0  // median burst jitter above this: Choppy
-	callChoppyLoss     = 0.02  // mean burst loss at or above this: Choppy
+	callChoppyLossPct  = 2     // mean burst loss (%) at or above this: Choppy
 	callDownDelayMs    = 400.0 // median delay above this: Down
-	callDownLoss       = 0.10  // mean burst loss at or above this ...
+	callDownLossPct    = 10    // mean burst loss (%) at or above this ...
 	callDownLossMins   = 2     // ... in each of the last this many minutes: Down
 	// callMinBursts bursts are needed in the window, and at least half the
 	// bursts the cadence should give (36 at 5 s, 12 for UDP 53 at 15 s);
 	// fewer is "not enough data".
 	callMinBursts = 6
-	lossEps       = 1e-9 // a mean of burst losses at a limit counts as reaching it
 )
 
 // Web (app and stream) endpoints, per minute, against the usual latency.
@@ -82,8 +81,9 @@ const (
 	recoveredFor   = 30 * time.Minute // "Working again" this long after a connection problem
 	dropEndedOK    = 10 * time.Second // 1 s path probes OK this long: a connection drop ended
 	connDropNow    = 5 * time.Second  // gateway or edge fully lost this long: a drop in progress
-	sleepFactor    = 2                // the last success before a run must be within 2× the interval
-	durRound       = 10 * time.Second // drop durations are rounded to this
+	sleepFactor    = 2                // checks further apart than 2× the interval: a sleep or restart between them
+	durRound       = 10 * time.Second // drop durations are rounded to this (half down)
+	reorderFor     = 4 * time.Second  // a late result (probe timeout 3 s, probe/runner.go) is put in order this long
 	againDropped   = time.Minute      // full loss shorter than this "dropped"; longer "was down"
 )
 
@@ -109,16 +109,17 @@ const (
 // Connection state, grouping and attribution.
 const (
 	staleAfter    = 2 * time.Minute
-	absorbBefore  = time.Minute     // a connection episode absorbs what starts this long before it ...
-	absorbAfter   = 2 * time.Minute // ... and ends this long after it
-	causeSlack    = time.Minute     // incidents this close to an episode explain it (web/home.go homePathLead)
-	vendorMerge   = 2 * time.Minute // tile episodes with one cause starting this close are one problem
-	sameTileMerge = 5 * time.Minute // episodes of one tile closer than this are one problem
-	broadShare    = 0.6             // broad slowdown: this share of the covered tiles bad ...
-	broadVendors  = 3               // ... across this many vendors
-	fullLoss      = 0.9             // an incident with this peak loss lost everything
-	layerLossy    = 0.02            // a layer losing this much is lossy
-	layerClean    = 0.01            // a layer losing less is clean
+	verdictLag    = 65 * time.Second // the verdict's 60 s window (and a tick) outlasts a drop by this much
+	absorbBefore  = time.Minute      // a connection episode absorbs what starts this long before it ...
+	absorbAfter   = 2 * time.Minute  // ... and ends this long after it
+	causeSlack    = time.Minute      // incidents this close to an episode explain it (web/home.go homePathLead)
+	vendorMerge   = 2 * time.Minute  // tile episodes with one cause starting this close are one problem
+	sameTileMerge = 5 * time.Minute  // episodes of one tile closer than this are one problem
+	broadShare    = 0.6              // broad slowdown: this share of the covered tiles bad ...
+	broadVendors  = 3                // ... across this many vendors
+	fullLoss      = 0.9              // an incident with this peak loss lost everything
+	layerLossy    = 0.02             // a layer losing this much is lossy
+	layerClean    = 0.01             // a layer losing less is clean
 )
 
 // State is a tile's word, a minute's judgement or a bar's colour.
@@ -156,100 +157,98 @@ func worse(a, b State) State {
 }
 
 // check is one result of a tracked series: a TCP/HTTPS/ICMP check or a
-// STUN burst (the engine merges a burst's three kinds by slot). Samples
-// that were not measured (model.ReasonGap) are not checks.
+// STUN burst (the engine merges a burst's three kinds by slot), or a slot
+// that was not measured (model.ReasonGap: fyisp stopped, a speed test's
+// mask), which only counts in minute.gap.
 type check struct {
-	at     time.Time
-	lost   bool          // failed; a burst without any answer
-	rtt    time.Duration // when !lost
-	jitter time.Duration // UDP, when !lost; negative when not measured
-	loss   float64       // UDP: share of the burst's requests lost (1 when lost)
-}
-
-// tail is the recent checks of one series, oldest first, and its interval.
-type tail struct {
-	every  time.Duration
-	checks []check
-}
-
-// sorted returns the checks in time order: a late timeout can arrive after
-// a later slot's success.
-func (t tail) sorted() []check {
-	if slices.IsSortedFunc(t.checks, cmpCheck) {
-		return t.checks
-	}
-	c := slices.Clone(t.checks)
-	slices.SortStableFunc(c, cmpCheck)
-	return c
-}
-
-func cmpCheck(a, b check) int { return a.at.Compare(b.at) }
-
-// minute is one series' closed minute. Checks inside a drop run are left
-// out: a drop counts only as the drop, so a 40 s drop does not leave calls
-// Choppy afterwards.
-type minute struct {
-	ok, lost uint16
-	medUs    uint32  // median RTT of the successes; UDP the burst RTTs
-	jitUs    uint32  // UDP: median jitter of the bursts that measured one; noJitter when none did
-	loss     float64 // UDP: mean burst loss, a lost burst counting 1
+	ms      int64  // the slot, Unix ms
+	rttUs   uint32 // when !lost; UDP the burst's median RTT
+	jitUs   uint32 // UDP, when !lost: the burst's jitter; noJitter when not measured
+	lossPct uint8  // UDP: % of the burst's requests lost (100 when lost)
+	lost    bool   // failed; a burst without any answer
+	gap     bool
 }
 
 const noJitter = math.MaxUint32
+
+func (c check) at() time.Time { return time.UnixMilli(c.ms).UTC() }
+
+// minute is one series' closed minute. Lost checks that belong to a drop
+// (see failRun.dropLike), or to a run still open when the minute closes,
+// are left out: a drop counts only as the drop, so a 40 s drop does not
+// leave calls Choppy afterwards. Other lost checks are loss.
+type minute struct {
+	ok, lost, gap uint16
+	medUs         uint32 // median RTT of the successes; UDP the burst RTTs
+	// jitUs is the median jitter of the bursts that measured one (UDP), or
+	// noJitter. A call window takes the median of these minute medians.
+	jitUs      uint32
+	lossPctSum uint32 // UDP: the bursts' loss (%), summed; a lost burst counts 100
+}
 
 func (m minute) n() int            { return int(m.ok) + int(m.lost) }
 func (m minute) medMs() float64    { return float64(m.medUs) / 1000 }
 func (m minute) hasJitter() bool   { return m.jitUs != noJitter && m.ok > 0 }
 func (m minute) jitterMs() float64 { return float64(m.jitUs) / 1000 }
 
-// summarize builds the minute starting at from from a series' tail. Checks
-// in failure runs of dropMin or more are left out, and so are those of a run
-// still open at the tail's end (it may yet become a drop).
-func summarize(t tail, from time.Time) minute {
-	cs := t.sorted()
-	skip := make([]bool, len(cs))
-	for _, r := range runs(t) {
-		if r.open() || r.est() >= dropMin {
-			for i := r.i; i < r.i+r.lost; i++ {
-				skip[i] = true
+// lossPct is the mean burst loss in %.
+func (m minute) lossPct() float64 {
+	if m.n() == 0 {
+		return 0
+	}
+	return float64(m.lossPctSum) / float64(m.n())
+}
+
+// summarize builds the minute starting at from from a series' recent
+// checks (any order) and its failure runs as the tracker saw them, as of
+// closeAt (minute end + 20 s): checks and run ends after closeAt are
+// ignored, so live and replay judge a minute alike. rule says which runs
+// are drops.
+func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) minute {
+	lo, hi, cl := from.UnixMilli(), from.Add(time.Minute).UnixMilli(), closeAt.UnixMilli()
+	skip := func(c check) bool {
+		for _, r := range rs {
+			if c.ms < r.first.UnixMilli() || c.ms > r.last.UnixMilli() {
+				continue
+			}
+			open := r.to.IsZero() || r.to.UnixMilli() > cl
+			return open || r.dropLike(rule)
+		}
+		return false
+	}
+	m := minute{jitUs: noJitter}
+	var rtts, jits []uint32
+	for _, c := range cs {
+		switch {
+		case c.ms < lo || c.ms >= hi || c.ms > cl:
+		case c.gap:
+			m.gap++
+		case c.lost:
+			if !skip(c) {
+				m.lost++
+				m.lossPctSum += 100
+			}
+		default:
+			m.ok++
+			rtts = append(rtts, c.rttUs)
+			m.lossPctSum += uint32(c.lossPct)
+			if c.jitUs != noJitter {
+				jits = append(jits, c.jitUs)
 			}
 		}
 	}
-	to := from.Add(time.Minute)
-	m := minute{jitUs: noJitter}
-	var rtts, jits []time.Duration
-	var loss float64
-	for i, c := range cs {
-		if skip[i] || c.at.Before(from) || !c.at.Before(to) {
-			continue
-		}
-		if c.lost {
-			m.lost++
-			loss++
-			continue
-		}
-		m.ok++
-		rtts = append(rtts, c.rtt)
-		loss += c.loss
-		if c.jitter >= 0 {
-			jits = append(jits, c.jitter)
-		}
-	}
 	if len(rtts) > 0 {
-		m.medUs = uint32(median(rtts).Microseconds())
+		m.medUs = median(rtts)
 	}
 	if len(jits) > 0 {
-		m.jitUs = uint32(median(jits).Microseconds())
-	}
-	if n := m.n(); n > 0 {
-		m.loss = loss / float64(n)
+		m.jitUs = median(jits)
 	}
 	return m
 }
 
 // median of a non-empty slice (the mean of the middle two for an even
 // count); it sorts a copy.
-func median[T ~int64 | ~float64](v []T) T {
+func median[T ~uint32 | ~float64](v []T) T {
 	s := slices.Clone(v)
 	slices.Sort(s)
 	n := len(s)
@@ -274,53 +273,43 @@ func limitsFor(usualMs float64, ok, learning bool) limits {
 	}
 }
 
-// judged is an endpoint's, a member's or a tile's minute: its state and
-// whether every measured check failed.
-type judged struct {
-	s       State
-	allLost bool
-}
-
 // judgeWeb judges one app or stream endpoint-minute. Streams are Down only
 // when their checks fail, never on latency.
-func judgeWeb(m minute, l limits, stream bool) judged {
+func judgeWeb(m minute, l limits, stream bool) State {
 	n := m.n()
 	switch {
 	case n < minChecks:
-		return judged{s: None}
+		return None
 	case float64(m.lost) > downShare*float64(n):
-		return judged{s: Down, allLost: m.ok == 0}
+		return Down
 	case m.medMs() > l.downMs && !stream:
-		return judged{s: Down}
+		return Down
 	case m.medMs() > l.slowMs:
-		return judged{s: Slow}
+		return Slow
 	}
-	return judged{s: Good}
+	return Good
 }
 
 // callStats are the numbers a UDP endpoint is judged on over callWindow.
 type callStats struct {
 	bursts    int
 	delayMs   float64 // median of the minute medians; 0 when nothing answered
-	jitterMs  float64 // median of the minute jitters
+	jitterMs  float64 // median of the minute jitters (each a median of its bursts)
 	hasJitter bool
-	loss      float64 // mean burst loss
+	lossPct   float64 // mean burst loss (%)
 }
 
 // judgeCall judges one UDP endpoint over callWindow from its minutes,
 // oldest first (the last is the minute being judged; missing minutes are
 // zero). every is the endpoint's burst interval.
-func judgeCall(ms []minute, every time.Duration) (judged, callStats) {
+func judgeCall(ms []minute, every time.Duration) (State, callStats) {
 	var st callStats
 	var meds, jits []float64
-	var loss float64
-	all := true
+	var loss uint32
 	for _, m := range ms {
-		n := m.n()
-		st.bursts += n
-		loss += m.loss * float64(n)
+		st.bursts += m.n()
+		loss += m.lossPctSum
 		if m.ok > 0 {
-			all = false
 			meds = append(meds, m.medMs())
 		}
 		if m.hasJitter() {
@@ -332,9 +321,9 @@ func judgeCall(ms []minute, every time.Duration) (judged, callStats) {
 		need = max(need, int((callWindow/every+1)/2))
 	}
 	if st.bursts < need {
-		return judged{s: None}, st
+		return None, st
 	}
-	st.loss = loss / float64(st.bursts)
+	st.lossPct = float64(loss) / float64(st.bursts)
 	if len(meds) > 0 {
 		st.delayMs = median(meds)
 	}
@@ -343,31 +332,24 @@ func judgeCall(ms []minute, every time.Duration) (judged, callStats) {
 	}
 	lossDown := len(ms) >= callDownLossMins
 	for _, m := range ms[max(0, len(ms)-callDownLossMins):] {
-		lossDown = lossDown && m.n() > 0 && m.loss >= callDownLoss-lossEps
+		lossDown = lossDown && m.n() > 0 && m.lossPctSum >= callDownLossPct*uint32(m.n())
 	}
 	switch {
 	case st.delayMs > callDownDelayMs || lossDown:
-		return judged{s: Down, allLost: all}, st
-	case st.delayMs > callChoppyDelayMs || st.jitterMs > callChoppyJitterMs || st.loss >= callChoppyLoss-lossEps:
-		return judged{s: Slow}, st
+		return Down, st
+	case st.delayMs > callChoppyDelayMs || st.jitterMs > callChoppyJitterMs || loss >= callChoppyLossPct*uint32(st.bursts):
+		return Slow, st
 	}
-	return judged{s: Good}, st
+	return Good, st
 }
 
 // vote combines the endpoints of one member of a group: a provider of the
 // shared call path (Cloudflare-STUN and Cloudflare-UDP53 are one vote) is
 // as bad as its worst endpoint with data.
-func vote(js ...judged) judged {
-	out := judged{s: None, allLost: true}
-	for _, j := range js {
-		if j.s == None {
-			continue
-		}
-		out.s = worse(out.s, j.s)
-		out.allLost = out.allLost && j.allLost
-	}
-	if out.s == None {
-		out.allLost = false
+func vote(ss ...State) State {
+	out := None
+	for _, s := range ss {
+		out = worse(out, s)
 	}
 	return out
 }
@@ -375,31 +357,29 @@ func vote(js ...judged) judged {
 // majority combines the members of a group, or the groups' members of a
 // tile: only members with data count; Down when more than half are Down,
 // Slow when more than half are Slow or Down. A tie is not a majority.
-func majority(js []judged) judged {
+func majority(ss []State) State {
 	var n, down, bad int
-	all := true
-	for _, j := range js {
-		if j.s == None {
+	for _, s := range ss {
+		if s == None {
 			continue
 		}
 		n++
-		if j.s == Down {
+		if s == Down {
 			down++
 		}
-		if j.s.Bad() {
+		if s.Bad() {
 			bad++
 		}
-		all = all && j.allLost
 	}
 	switch {
 	case n == 0:
-		return judged{s: None}
+		return None
 	case 2*down > n:
-		return judged{s: Down, allLost: all}
+		return Down
 	case 2*bad > n:
-		return judged{s: Slow}
+		return Slow
 	}
-	return judged{s: Good}
+	return Good
 }
 
 // tileMinute judges a tile-minute from its web endpoints and, for call
@@ -407,139 +387,116 @@ func majority(js []judged) judged {
 // takes its quality from UDP and is also Down when its web group is
 // ("not connecting"); without UDP data it is judged on TCP alone, where
 // Choppy is impossible.
-func tileMinute(kind profile.TileKind, web, udp []judged) judged {
+func tileMinute(kind profile.TileKind, web, udp []State) State {
 	w := majority(web)
 	if kind != profile.TileCall {
 		return w
 	}
-	u := majority(udp)
-	switch {
-	case u.s == None:
-		if w.s == Slow {
-			w.s = Good
-		}
+	switch u := majority(udp); {
+	case u == None && w == Slow:
+		return Good
+	case u == None, w == Down:
 		return w
-	case w.s == Down:
-		return judged{s: Down, allLost: w.allLost && u.allLost}
+	default:
+		return u
 	}
-	if w.s != None {
-		u.allLost = u.allLost && w.allLost
-	}
-	return u
 }
 
 // signal is a group's or a tile's immediate outage signal.
 type signal int8
 
 const (
-	hold    signal = iota // neither: the word keeps its outage state
+	noData  signal = iota // no member has checks: the group takes no part
+	hold                  // neither: the word keeps its outage state
 	failing               // Down now
 	cleared               // the latest checks are OK: any outage is over
 )
 
 // immediate is the "Down now" signal of one group (a tile's web endpoints,
-// or its UDP members) from the members' raw tails: failing when more than
-// half of the members with checks have their latest k checks lost (k is
-// immFailSingle for a single-member group, immFailMulti otherwise),
-// cleared when more than half have their latest immClearOK checks OK. A
-// member with several series (a provider) fails when any of them does and
-// is OK when all are. since is when the majority started failing.
-func immediate(members [][]tail) (signal, time.Time) {
+// or its UDP members) from the members' run trackers:
+//
+//   - failing when more than half of the members with checks have their
+//     latest k checks lost (k is immFailSingle for a single-member group,
+//     immFailMulti otherwise); at is when that majority started failing;
+//   - cleared when it is not failing and at least half have their latest
+//     immClearOK checks OK (a tie clears, as it is no majority for Down);
+//     at is the slot of the check that made it so.
+//
+// A member with several series (a provider) fails when any of them does and
+// is OK when all are.
+func immediate(members [][]*tracker) (signal, time.Time) {
 	k := immFailMulti
 	if len(members) == 1 {
 		k = immFailSingle
 	}
-	var n, ok int
-	var starts []time.Time
+	var n int
+	var fails, oks []int64
 	for _, m := range members {
-		var has, fail, good bool
-		good = true
-		var start time.Time
+		var has, fail bool
+		good := true
+		var start, okAt int64
 		for _, t := range m {
-			cs := t.sorted()
-			if len(cs) == 0 {
+			if t.last == 0 {
 				continue
 			}
 			has = true
-			if s, f := lostRun(cs, k); f {
+			if t.cur.lost >= k {
 				fail = true
-				if start.IsZero() || s.Before(start) {
+				if s := t.cur.first.UnixMilli(); start == 0 || s < start {
 					start = s
 				}
 			}
-			good = good && okRun(cs, immClearOK)
+			good = good && t.okN >= immClearOK
+			okAt = max(okAt, t.okAt)
 		}
 		if !has {
 			continue
 		}
 		n++
-		if fail {
-			starts = append(starts, start)
-		} else if good {
-			ok++
+		switch {
+		case fail:
+			fails = append(fails, start)
+		case good:
+			oks = append(oks, okAt)
 		}
 	}
 	switch {
-	case n > 0 && 2*len(starts) > n:
-		slices.SortFunc(starts, func(a, b time.Time) int { return a.Compare(b) })
-		return failing, starts[n/2]
-	case n > 0 && 2*ok > n:
-		return cleared, time.Time{}
+	case n == 0:
+		return noData, time.Time{}
+	case 2*len(fails) > n:
+		slices.Sort(fails)
+		return failing, time.UnixMilli(fails[n/2]).UTC()
+	case 2*len(oks) >= n:
+		slices.Sort(oks)
+		return cleared, time.UnixMilli(oks[(n+1)/2-1]).UTC()
 	}
 	return hold, time.Time{}
-}
-
-// lostRun reports whether the latest k checks are lost, and the first lost
-// check of that run.
-func lostRun(cs []check, k int) (time.Time, bool) {
-	if len(cs) < k {
-		return time.Time{}, false
-	}
-	i := len(cs)
-	for i > 0 && cs[i-1].lost {
-		i--
-	}
-	if len(cs)-i < k {
-		return time.Time{}, false
-	}
-	return cs[i].at, true
-}
-
-func okRun(cs []check, k int) bool {
-	if len(cs) < k {
-		return false
-	}
-	for _, c := range cs[len(cs)-k:] {
-		if c.lost {
-			return false
-		}
-	}
-	return true
 }
 
 // tileSignal combines a tile's group signals: failing when any group is
-// (since the earliest), cleared when every group with checks is cleared.
-func tileSignal(sigs []signal, sinces []time.Time) (signal, time.Time) {
-	var since time.Time
-	fail, clear := false, len(sigs) > 0
+// (at the earliest), cleared when every group with checks is (at the
+// latest). Groups without checks take no part.
+func tileSignal(sigs []signal, ats []time.Time) (signal, time.Time) {
+	out, at := noData, time.Time{}
 	for i, s := range sigs {
-		switch s {
-		case failing:
-			fail = true
-			if since.IsZero() || sinces[i].Before(since) {
-				since = sinces[i]
+		switch {
+		case s == noData:
+		case s == failing:
+			if out != failing || ats[i].Before(at) {
+				at = ats[i]
 			}
-		case hold:
-			clear = false
+			out = failing
+		case out == failing:
+		case s == hold || out == hold:
+			out, at = hold, time.Time{}
+		default: // cleared, and so far cleared or no data
+			out = cleared
+			if ats[i].After(at) {
+				at = ats[i]
+			}
 		}
 	}
-	switch {
-	case fail:
-		return failing, since
-	case clear:
-		return cleared, time.Time{}
-	}
-	return hold, time.Time{}
+	return out, at
 }
 
 // wordRun is a period in which a tile's word was not Good. End is zero while
@@ -552,13 +509,15 @@ type wordRun struct {
 // word is a tile's word with its hysteresis. The zero value has seen no
 // data (None).
 //
-//   - Down from an outage (an immediate Down, or a minute in which every
-//     measured check failed) shows at once and clears as soon as the
-//     immediate signal is cleared.
+//   - Down from an outage (the immediate signal failing) shows at once, since
+//     the first failed slot, and ends at the slot of the check that cleared
+//     it: no 5-minute wait.
 //   - Slow (Choppy) is entered when badOf of the last badWindow judged
 //     minutes are bad, and left after goodRun good minutes in a row.
-//   - Down from latency or partial loss shows at once and is left after
-//     goodRun good minutes in a row.
+//   - Down from latency or partial loss shows at once (since that minute)
+//     and is left after goodRun good minutes in a row; once the last
+//     badWindow judged minutes hold no Down minute it steps back to Slow
+//     (since the first bad minute among them).
 //   - None minutes hold the word and do not count.
 type word struct {
 	outage   bool
@@ -566,8 +525,8 @@ type word struct {
 	level    State // "" before the first judged minute
 	lvlSince time.Time
 	recent   [badWindow]struct { // the last judged minutes, newest first
-		at  time.Time
-		bad bool
+		at time.Time
+		s  State
 	}
 	nRecent  int
 	good     int       // good minutes in a row
@@ -591,12 +550,12 @@ func (w *word) state() (State, time.Time) {
 // open returns the run in progress, if any.
 func (w *word) open() (wordRun, bool) { return w.cur, !w.cur.Start.IsZero() }
 
-// outageSignal applies the immediate signal at time at. It returns the run
-// that ended, if the word went back to Good.
-func (w *word) outageSignal(sig signal, since, at time.Time) *wordRun {
+// outageSignal applies the tile's immediate signal (tileSignal) with its
+// time. It returns the run that ended, if the word went back to Good.
+func (w *word) outageSignal(sig signal, at time.Time) *wordRun {
 	switch {
 	case sig == failing && !w.outage:
-		w.outage, w.outSince = true, since
+		w.outage, w.outSince = true, at
 	case sig == cleared && w.outage:
 		w.outage = false
 	default:
@@ -606,14 +565,14 @@ func (w *word) outageSignal(sig signal, since, at time.Time) *wordRun {
 }
 
 // step applies the tile-minute that starts at at.
-func (w *word) step(at time.Time, m judged) *wordRun {
-	if m.s == None {
+func (w *word) step(at time.Time, s State) *wordRun {
+	if s == None {
 		return nil
 	}
 	copy(w.recent[1:], w.recent[:badWindow-1])
-	w.recent[0].at, w.recent[0].bad = at, m.s.Bad()
+	w.recent[0].at, w.recent[0].s = at, s
 	w.nRecent = min(w.nRecent+1, badWindow)
-	if m.s == Good {
+	if s == Good {
 		if w.good == 0 {
 			w.goodFrom = at
 		}
@@ -621,36 +580,36 @@ func (w *word) step(at time.Time, m judged) *wordRun {
 	} else {
 		w.good = 0
 	}
-	if m.allLost && !w.outage {
-		w.outage, w.outSince = true, at
-	}
+	bad, first, down := w.bad()
 	switch {
-	case m.s == Down && w.level != Down:
+	case s == Down && w.level != Down:
 		w.level, w.lvlSince = Down, at
-	case w.level == "" || w.level == Good:
-		w.level = Good
-		if bad, first := w.bad(); bad >= badOf {
-			w.level, w.lvlSince = Slow, first
-		}
-	case w.good >= goodRun:
+	case w.level != "" && w.level != Good && w.good >= goodRun:
 		w.level = Good
 		return w.track(w.goodFrom)
+	case w.level == Down && !down:
+		w.level, w.lvlSince = Slow, first
+	case (w.level == "" || w.level == Good) && bad >= badOf:
+		w.level, w.lvlSince = Slow, first
+	case w.level == "":
+		w.level = Good
 	}
 	return w.track(at)
 }
 
-// bad counts the bad minutes of the last badWindow judged ones and returns
-// the first of them.
-func (w *word) bad() (int, time.Time) {
-	n := 0
+// bad counts the bad minutes of the last badWindow judged ones, returns the
+// first of them and whether one was Down.
+func (w *word) bad() (int, time.Time, bool) {
+	n, down := 0, false
 	var first time.Time
 	for i := range w.nRecent {
-		if w.recent[i].bad {
+		if r := w.recent[i]; r.s.Bad() {
 			n++
-			first = w.recent[i].at
+			first = r.at
+			down = down || r.s == Down
 		}
 	}
-	return n, first
+	return n, first, down
 }
 
 // track opens, extends or closes the run after a change at time at (the

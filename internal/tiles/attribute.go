@@ -71,19 +71,33 @@ func (c Cause) Kind() string {
 	return KindOther
 }
 
+// overlapper is the speed-test windows: *speedtest.Windows live,
+// speedWindows in replay.
+type overlapper interface {
+	Overlaps(from, to time.Time) bool
+}
+
+// speedWindows are stored speed tests' windows (store.SpeedTests). Like
+// speedtest.Windows they are extended by speedtest.MaskTail, as the live
+// mask is; a window without an end is running.
+type speedWindows []speedtest.Window
+
+func (ws speedWindows) Overlaps(from, to time.Time) bool {
+	return slices.ContainsFunc(ws, func(w speedtest.Window) bool {
+		return !w.Start.After(to) && (w.End.IsZero() || !w.End.Add(speedtest.MaskTail).Before(from))
+	})
+}
+
 // speedOverlap reports whether [from, to] (to zero: now) overlaps a fyisp
-// speed test window, extended by speedtest.MaskTail as the live mask is.
-func speedOverlap(from, to time.Time, wins []speedtest.Window, now time.Time) bool {
+// speed test; o may be nil (speed tests off).
+func speedOverlap(from, to, now time.Time, o overlapper) bool {
+	if o == nil {
+		return false
+	}
 	if to.IsZero() {
 		to = now
 	}
-	return slices.ContainsFunc(wins, func(w speedtest.Window) bool {
-		end := w.End
-		if end.IsZero() {
-			end = now // running
-		}
-		return !w.Start.After(to) && !end.Add(speedtest.MaskTail).Before(from)
-	})
+	return o.Overlaps(from, to)
 }
 
 // layerEv is one path layer over an episode.
@@ -93,40 +107,24 @@ type layerEv struct {
 	loss    float64 // share of its checks lost
 }
 
-// layerEvidence sums a layer's series (gateway; edge; the anycast
-// resolvers) over [from, to] (to zero: now). The layer dropped when every
-// series with checks had a run of total loss of connDropNow or more in it.
-func layerEvidence(ts []tail, from, to, now time.Time) layerEv {
-	ep := window{from, to}
+// layerEvidence sums a layer over [from, to] (to zero: now) from its
+// minutes there (the layer's series summed per minute; rulePath, so every
+// lost check counts) and its runs of total loss (layerDrops: the ended
+// windows kept for the week, and the one in progress). It needs no raw
+// checks, so it works for a week-old episode as well.
+func layerEvidence(mins []minute, drops []window, from, to, now time.Time) layerEv {
+	var ev layerEv
 	var n, lost int
-	ev := layerEv{dropped: true}
-	for _, t := range ts {
-		has, dropped := false, false
-		for _, c := range t.sorted() {
-			if c.at.Before(from) || c.at.After(ep.end(now)) {
-				continue
-			}
-			has = true
-			n++
-			if c.lost {
-				lost++
-			}
-		}
-		if !has {
-			continue
-		}
-		for _, r := range runs(t) {
-			if r.est() >= connDropNow && r.window().overlaps(ep, now) {
-				dropped = true
-			}
-		}
-		ev.known = true
-		ev.dropped = ev.dropped && dropped
+	for _, m := range mins {
+		n += m.n()
+		lost += int(m.lost)
 	}
-	if !ev.known {
-		return layerEv{}
+	if n == 0 {
+		return ev
 	}
-	ev.loss = float64(lost) / float64(n)
+	ep := window{from, to}
+	ev.known, ev.loss = true, float64(lost)/float64(n)
+	ev.dropped = slices.ContainsFunc(drops, func(w window) bool { return w.dur(now) >= connDropNow && w.overlaps(ep, now) })
 	return ev
 }
 
@@ -144,8 +142,8 @@ type attrIn struct {
 	now       time.Time
 	incidents []model.Incident
 	layers    [nLayers]layerEv
-	tiles     []tileEv // covered tiles only
-	speed     []speedtest.Window
+	tiles     []tileEv   // covered tiles only
+	speed     overlapper // nil: speed tests off
 }
 
 // attribute finds an episode's likely cause, first match:
@@ -154,9 +152,10 @@ type attrIn struct {
 //  1. a verdict incident overlapping [from − causeSlack, to + causeSlack]:
 //     lan → router, no_network → offline, isp → provider, upstream →
 //     internet, dns → names (the earliest such incident);
-//  2. the path layers: gateway lost everything → router; else the edge →
-//     provider; else the anycast resolvers → internet; gateway loss ≥
-//     layerLossy → router; gateway under layerClean and edge loss ≥
+//  2. the path layers: gateway lost everything → router; else the edge,
+//     with the gateway measured → provider; else the anycast resolvers,
+//     with the edge measured → internet; gateway loss ≥ layerLossy →
+//     router; a measured gateway under layerClean and edge loss ≥
 //     layerLossy → provider;
 //  3. only one vendor's tiles were bad, and a tile of another vendor was
 //     good: that app (app_only for one tile, vendor_only for several);
@@ -164,7 +163,7 @@ type attrIn struct {
 //     call path;
 //  5. unknown.
 func attribute(in attrIn) Cause {
-	if speedOverlap(in.from, in.to, in.speed, in.now) {
+	if speedOverlap(in.from, in.to, in.now, in.speed) {
 		return Cause{Who: WhoSpeedtest, Evidence: EvSpeedtest}
 	}
 	ep := window{in.from.Add(-causeSlack), in.to}
@@ -204,16 +203,18 @@ func attribute(in attrIn) Cause {
 			return Cause{Who: WhoNames, Evidence: EvDNS}
 		}
 	}
+	// a layer inside the blamed one must have been measured: an unknown
+	// gateway is not a clean one
 	switch {
 	case gw.dropped:
 		return Cause{Who: WhoRouter, Evidence: EvRouterDown}
-	case edge.dropped:
+	case edge.dropped && gw.known:
 		return Cause{Who: WhoProvider, Evidence: EvProviderDrop}
-	case ac.dropped:
+	case ac.dropped && edge.known:
 		return Cause{Who: WhoInternet, Evidence: EvBeyond}
 	case gw.loss >= layerLossy:
 		return Cause{Who: WhoRouter, Evidence: EvRouterLossy}
-	case gw.loss < layerClean && edge.loss >= layerLossy:
+	case gw.known && gw.loss < layerClean && edge.loss >= layerLossy:
 		return Cause{Who: WhoProvider, Evidence: EvProviderLossy}
 	}
 	var bad []tileEv

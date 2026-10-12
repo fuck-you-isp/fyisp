@@ -3,8 +3,6 @@ package tiles
 import (
 	"testing"
 	"time"
-
-	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
 // states parses one State per character: g good, s slow, d down, n none.
@@ -73,7 +71,7 @@ func TestBars(t *testing.T) {
 		{ID: "t-b", Start: at(21 * time.Minute), End: at(22 * time.Minute), Sev: Down, DropDur: 40 * time.Second},
 	}
 	drops := []Drop{{Start: at(21 * time.Minute), End: at(21*time.Minute + 40*time.Second), Dur: 40 * time.Second}}
-	wins := []speedtest.Window{{Start: at(21 * time.Minute), End: at(21*time.Minute + 30*time.Second)}}
+	wins := speedWindows{{Start: at(21 * time.Minute), End: at(21*time.Minute + 30*time.Second)}}
 	b := bars(now, from, states(good), drops, eps, wins)[3]
 	if b.State != Down || b.Episode != "t-b" || b.Drop != 40*time.Second || !b.Speedtest {
 		t.Errorf("drop bar: got %+v", b)
@@ -86,7 +84,7 @@ func TestBars(t *testing.T) {
 		t.Errorf("good bar in a speed test: got %+v", b)
 	}
 	// MaskTail: a test that ended 1 s before the bar still marks it
-	wins = []speedtest.Window{{Start: at(14 * time.Minute), End: at(15*time.Minute - time.Second)}}
+	wins = speedWindows{{Start: at(14 * time.Minute), End: at(15*time.Minute - time.Second)}}
 	if b := bars(now, from, states(good), nil, nil, wins)[2]; !b.Speedtest {
 		t.Errorf("mask tail: got %+v", b)
 	}

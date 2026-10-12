@@ -6,15 +6,20 @@ import (
 )
 
 // usual is one series' usual latency: the median of its good minute
-// medians over the last usualWindow, recomputed every usualEvery from a
-// sorted copy. Loss is never "usual". Until it has minGood good minutes
-// (a new series, or after a reset) the series is judged on the fixed
-// limits; once known, it lasts while the window holds any good minute.
+// medians over the last usualWindow, recomputed every usualEvery. The good
+// minutes are also kept sorted (a binary-search insert per minute, a
+// delete per expired one), so a recompute costs O(expired) and not a sort:
+// an 8-day replay of 45 series stays within its budget. Loss is never
+// "usual". Until it has minGood good minutes (a new series, or after a
+// reset) the series is judged on the fixed limits; once known, it lasts
+// while the window holds any good minute.
 type usual struct {
 	good   []usualMin // good minutes of the last usualWindow, oldest first
+	sorted []float64  // their medians, sorted
 	recent []usualMin // every minute with data of the last relearnAfter, oldest first
 	ms     float64    // the usual; 0 when unknown
 	at     time.Time  // last recompute; zero: due
+	buf    []float64  // shifted's scratch
 }
 
 type usualMin struct {
@@ -31,14 +36,15 @@ func (u *usual) add(at time.Time, m minute, s State) {
 		return
 	}
 	x := usualMin{at: at, ms: m.medMs(), lossy: m.lost > 0, s: s}
-	u.recent = append(u.recent, x)
 	i := 0
-	for i < len(u.recent) && !u.recent[i].at.After(at.Add(-relearnAfter)) {
+	for i < len(u.recent) && u.recent[i].at.Before(at.Add(-relearnAfter+time.Minute)) {
 		i++
 	}
-	u.recent = u.recent[i:]
+	u.recent = append(slices.Delete(u.recent, 0, i), x)
 	if s == Good && !x.lossy {
 		u.good = append(u.good, x)
+		j, _ := slices.BinarySearch(u.sorted, x.ms)
+		u.sorted = slices.Insert(u.sorted, j, x.ms)
 	}
 }
 
@@ -55,16 +61,23 @@ func (u *usual) recompute(now time.Time) {
 	u.at = now
 	i := 0
 	for i < len(u.good) && !u.good[i].at.After(now.Add(-usualWindow)) {
+		j, _ := slices.BinarySearch(u.sorted, u.good[i].ms)
+		u.sorted = slices.Delete(u.sorted, j, j+1)
 		i++
 	}
 	u.good = slices.Delete(u.good, 0, i)
 	// minGood good minutes establish a usual; once known it follows
 	// whatever good minutes the window still holds
-	if len(u.good) == 0 || (u.ms == 0 && len(u.good) < minGood) {
+	n := len(u.sorted)
+	if n == 0 || (u.ms == 0 && n < minGood) {
 		u.ms = 0
 		return
 	}
-	u.ms = median(msOf(u.good))
+	if n%2 == 1 {
+		u.ms = u.sorted[n/2]
+	} else {
+		u.ms = (u.sorted[n/2-1] + u.sorted[n/2]) / 2
+	}
 }
 
 // shifted reports a route change: the last relearnAfter are a stable
@@ -75,7 +88,7 @@ func (u *usual) shifted(now time.Time) bool {
 	if u.ms <= 0 {
 		return false
 	}
-	var v []float64
+	v := u.buf[:0]
 	up, down := true, true
 	for _, x := range u.recent {
 		if x.at.Before(now.Add(-relearnAfter)) {
@@ -88,6 +101,7 @@ func (u *usual) shifted(now time.Time) bool {
 		down = down && x.ms < u.ms/shiftDown
 		v = append(v, x.ms)
 	}
+	u.buf = v
 	if len(v) < shiftData || !(up || down) {
 		return false
 	}
@@ -96,24 +110,27 @@ func (u *usual) shifted(now time.Time) bool {
 	return p10 > 0 && p90/p10 < shiftStable
 }
 
-// rebase makes the last relearnAfter the usual.
+// rebase makes the last relearnAfter the usual. The minutes judged under
+// the old usual are forgotten.
 func (u *usual) rebase(now time.Time) {
-	u.good = u.good[:0]
+	var good []usualMin
 	for _, x := range u.recent {
 		if !x.at.Before(now.Add(-relearnAfter)) {
-			u.good = append(u.good, x)
+			x.s = Good
+			good = append(good, x)
 		}
 	}
-	u.ms = median(msOf(u.good))
-	u.at = now
-}
-
-func msOf(xs []usualMin) []float64 {
-	v := make([]float64, len(xs))
-	for i, x := range xs {
-		v[i] = x.ms
+	if len(good) == 0 {
+		return
 	}
-	return v
+	u.good, u.recent = good, nil
+	u.sorted = u.sorted[:0]
+	for _, x := range good {
+		u.sorted = append(u.sorted, x.ms)
+	}
+	slices.Sort(u.sorted)
+	u.ms = median(u.sorted)
+	u.at = now
 }
 
 // reset forgets the usual (the gateway or ISP edge changed: a laptop that
@@ -122,21 +139,25 @@ func (u *usual) reset() { *u = usual{} }
 
 // relearn rebases the series that shifted, unless half or more of all
 // tracked series shifted at once: a shared shift is congestion on the
-// access link, not a route change. It returns how many were rebased.
+// access link, not a route change. (So with a single tracked series a
+// rebase never happens.) Call it every usualEvery, after value. It returns
+// how many were rebased.
 func relearn(us []*usual, now time.Time) int {
-	var s []*usual
+	n := 0
 	for _, u := range us {
 		if u.shifted(now) {
-			s = append(s, u)
+			n++
 		}
 	}
-	if 2*len(s) >= len(us) {
+	if n == 0 || 2*n >= len(us) {
 		return 0
 	}
-	for _, u := range s {
-		u.rebase(now)
+	for _, u := range us {
+		if u.shifted(now) {
+			u.rebase(now)
+		}
 	}
-	return len(s)
+	return n
 }
 
 // learning reports the first day after the first stored sample, when the

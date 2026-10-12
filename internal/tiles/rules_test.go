@@ -35,33 +35,31 @@ func TestJudgeWeb(t *testing.T) {
 		return minute{ok: uint16(ok), lost: uint16(lost), medUs: uint32(medMs * 1000)}
 	}
 	cases := []struct {
-		name    string
-		m       minute
-		l       limits
-		stream  bool
-		want    State
-		allLost bool
+		name   string
+		m      minute
+		l      limits
+		stream bool
+		want   State
 	}{
-		{"usual 5: 35 ms is not slow", m(4, 0, 35), u5, false, Good, false},
-		{"usual 5: needs more than 35", m(4, 0, 35.001), u5, false, Slow, false},
-		{"usual 5: 105 is slow, not down", m(4, 0, 105), u5, false, Slow, false},
-		{"usual 5: down above 105", m(4, 0, 105.001), u5, false, Down, false},
-		{"stream: never down on latency", m(4, 0, 900), u5, true, Slow, false},
-		{"stream: down when checks fail", m(1, 3, 5), u5, true, Down, false},
-		{"3 of 4 lost: down", m(1, 3, 5), u5, false, Down, false},
-		{"all lost: down, all lost", m(0, 4, 0), u5, false, Down, true},
-		{"half lost is not most", m(2, 2, 5), u5, false, Good, false},
-		{"1 of 4 lost: judged on latency", m(3, 1, 50), u5, false, Slow, false},
-		{"one check: not enough data", m(1, 0, 5), u5, false, None, false},
-		{"no checks", m(0, 0, 0), u5, false, None, false},
-		{"learning: 300 ms is fine", m(4, 0, 300), learn, false, Good, false},
-		{"learning: slow above 300", m(4, 0, 301), learn, false, Slow, false},
-		{"learning: down above 1000", m(4, 0, 1001), learn, false, Down, false},
+		{"usual 5: 35 ms is not slow", m(4, 0, 35), u5, false, Good},
+		{"usual 5: needs more than 35", m(4, 0, 35.001), u5, false, Slow},
+		{"usual 5: 105 is slow, not down", m(4, 0, 105), u5, false, Slow},
+		{"usual 5: down above 105", m(4, 0, 105.001), u5, false, Down},
+		{"stream: never down on latency", m(4, 0, 900), u5, true, Slow},
+		{"stream: down when checks fail", m(1, 3, 5), u5, true, Down},
+		{"3 of 4 lost: down", m(1, 3, 5), u5, false, Down},
+		{"all lost: down", m(0, 4, 0), u5, false, Down},
+		{"half lost is not most", m(2, 2, 5), u5, false, Good},
+		{"1 of 4 lost: judged on latency", m(3, 1, 50), u5, false, Slow},
+		{"one check: not enough data", m(1, 0, 5), u5, false, None},
+		{"no checks", m(0, 0, 0), u5, false, None},
+		{"learning: 300 ms is fine", m(4, 0, 300), learn, false, Good},
+		{"learning: slow above 300", m(4, 0, 301), learn, false, Slow},
+		{"learning: down above 1000", m(4, 0, 1001), learn, false, Down},
 	}
 	for _, c := range cases {
-		got := judgeWeb(c.m, c.l, c.stream)
-		if got.s != c.want || got.allLost != c.allLost {
-			t.Errorf("%s: got %+v, want %s allLost=%v", c.name, got, c.want, c.allLost)
+		if got := judgeWeb(c.m, c.l, c.stream); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
 	}
 }
@@ -80,16 +78,18 @@ func TestJudgeCall(t *testing.T) {
 		{"151 ms: choppy", three(callMin(12, 151, 5, 0)), every, Slow},
 		{"jitter 29.9", three(callMin(12, 20, 29.9, 0)), every, Good},
 		{"jitter 30.1: choppy", three(callMin(12, 20, 30.1, 0)), every, Slow},
-		{"loss 1.9%", three(callMin(12, 20, 5, 0.019)), every, Good},
-		{"loss 2%: choppy", three(callMin(12, 20, 5, 0.02)), every, Slow},
+		{"loss 1.9%", []minute{callMin(12, 20, 5, 23), callMin(12, 20, 5, 23), callMin(12, 20, 5, 22)}, every, Good},
+		{"loss 2%: choppy", three(callMin(12, 20, 5, 24)), every, Slow},
 		{"400 ms is choppy, not down", three(callMin(12, 400, 5, 0)), every, Slow},
 		{"401 ms: down", three(callMin(12, 401, 5, 0)), every, Down},
 		{"10% loss in the last minute only: choppy",
-			[]minute{callMin(12, 20, 5, 0), callMin(12, 20, 5, 0), callMin(12, 20, 5, 0.10)}, every, Slow},
+			[]minute{callMin(12, 20, 5, 0), callMin(12, 20, 5, 0), callMin(12, 20, 5, 120)}, every, Slow},
 		{"10% loss in the last 2 minutes: down",
-			[]minute{callMin(12, 20, 5, 0), callMin(12, 20, 5, 0.10), callMin(12, 20, 5, 0.10)}, every, Down},
+			[]minute{callMin(12, 20, 5, 0), callMin(12, 20, 5, 120), callMin(12, 20, 5, 120)}, every, Down},
+		{"9.9% in one of them: choppy",
+			[]minute{callMin(12, 20, 5, 0), callMin(12, 20, 5, 119), callMin(12, 20, 5, 120)}, every, Slow},
 		{"10% loss two minutes apart: choppy",
-			[]minute{callMin(12, 20, 5, 0.10), callMin(12, 20, 5, 0), callMin(12, 20, 5, 0.10)}, every, Slow},
+			[]minute{callMin(12, 20, 5, 120), callMin(12, 20, 5, 0), callMin(12, 20, 5, 120)}, every, Slow},
 		{"median of the minutes: one slow minute is not enough",
 			[]minute{callMin(12, 20, 5, 0), callMin(12, 300, 5, 0), callMin(12, 20, 5, 0)}, every, Good},
 		{"17 of 36 bursts: not enough data", []minute{callMin(6, 20, 5, 0), callMin(6, 20, 5, 0), callMin(5, 20, 5, 0)}, every, None},
@@ -99,17 +99,16 @@ func TestJudgeCall(t *testing.T) {
 		{"no minutes", nil, every, None},
 	}
 	for _, c := range cases {
-		got, _ := judgeCall(c.ms, c.every)
-		if got.s != c.want {
-			t.Errorf("%s: got %s, want %s", c.name, got.s, c.want)
+		if got, _ := judgeCall(c.ms, c.every); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
 	}
 
-	// every burst timed out: down, all lost; the stats say so
-	lost := minute{lost: 12, loss: 1, jitUs: noJitter}
+	// every burst timed out: down; the stats say so
+	lost := minute{lost: 12, lossPctSum: 1200, jitUs: noJitter}
 	got, st := judgeCall([]minute{lost, lost, lost}, every)
-	if got.s != Down || !got.allLost || st.loss != 1 || st.hasJitter {
-		t.Errorf("all lost: got %+v %+v", got, st)
+	if got != Down || st.lossPct != 100 || st.hasJitter {
+		t.Errorf("all lost: got %s %+v", got, st)
 	}
 }
 
@@ -133,29 +132,28 @@ func TestMajority(t *testing.T) {
 		{"empty", nil, None},
 	}
 	for _, c := range cases {
-		if got := majority(js(c.in...)); got.s != c.want {
-			t.Errorf("%s: got %s, want %s", c.name, got.s, c.want)
+		if got := majority(c.in); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
 	}
 }
 
 func TestCallVotes(t *testing.T) {
 	// the shared path: Cloudflare (STUN + UDP 53, one vote) and Twilio
-	cloudflare := vote(j(Good), j(Good))
-	if got := majority([]judged{cloudflare, j(Down)}); got.s != Good {
-		t.Errorf("one provider dead: got %s, want good", got.s)
+	if got := majority([]State{vote(Good, Good), Down}); got != Good {
+		t.Errorf("one provider dead: got %s, want good", got)
 	}
-	if got := vote(j(Good), j(Slow)); got.s != Slow {
-		t.Errorf("a provider is as bad as its worst endpoint: got %s", got.s)
+	if got := vote(Good, Slow); got != Slow {
+		t.Errorf("a provider is as bad as its worst endpoint: got %s", got)
 	}
-	if got := vote(j(None), j(Good)); got.s != Good {
-		t.Errorf("endpoints without data are left out: got %s", got.s)
+	if got := vote(None, Good); got != Good {
+		t.Errorf("endpoints without data are left out: got %s", got)
 	}
-	if got := vote(judged{Down, true}, judged{Down, true}); !got.allLost {
-		t.Errorf("all lost: got %+v", got)
+	if got := vote(None, None); got != None {
+		t.Errorf("no data: got %s", got)
 	}
-	if got := majority([]judged{vote(j(Slow)), vote(j(Slow), j(Good))}); got.s != Slow {
-		t.Errorf("both providers choppy: got %s", got.s)
+	if got := majority([]State{vote(Slow), vote(Slow, Good)}); got != Slow {
+		t.Errorf("both providers choppy: got %s", got)
 	}
 }
 
@@ -180,81 +178,88 @@ func TestTileMinute(t *testing.T) {
 		{"app: single endpoint", app, []State{Slow}, nil, Slow},
 	}
 	for _, c := range cases {
-		if got := tileMinute(c.kind, js(c.web...), js(c.udp...)); got.s != c.want {
-			t.Errorf("%s: got %s, want %s", c.name, got.s, c.want)
+		if got := tileMinute(c.kind, c.web, c.udp); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
-	}
-	got := tileMinute(call, []judged{{Down, true}}, []judged{{Down, true}})
-	if got.s != Down || !got.allLost {
-		t.Errorf("call, everything lost: got %+v", got)
-	}
-	got = tileMinute(call, []judged{{Down, true}}, js(Good))
-	if got.s != Down || got.allLost {
-		t.Errorf("call, web lost but UDP answers: got %+v (not every check failed)", got)
 	}
 }
 
 func TestImmediate(t *testing.T) {
 	const every = 15 * time.Second
-	one := func(p string) [][]tail { return [][]tail{{pattern(every, t0, p, 10*time.Millisecond)}} }
-	many := func(ps ...string) [][]tail {
-		var out [][]tail
+	tr := func(p string) *tracker { x, _ := series(every, t0, p); return x }
+	one := func(p string) [][]*tracker { return [][]*tracker{{tr(p)}} }
+	many := func(ps ...string) [][]*tracker {
+		var out [][]*tracker
 		for _, p := range ps {
-			out = append(out, []tail{pattern(every, t0, p, 10*time.Millisecond)})
+			out = append(out, []*tracker{tr(p)})
 		}
 		return out
 	}
+	none := time.Time{}
 	cases := []struct {
 		name    string
-		members [][]tail
+		members [][]*tracker
 		want    signal
-		since   time.Time
+		at      time.Time
 	}{
-		{"single endpoint: 2 failures are not enough", one("....xx"), hold, time.Time{}},
+		{"single endpoint: 2 failures are not enough", one("....xx"), hold, none},
 		{"single endpoint: 3 failures", one("...xxx"), failing, at(3 * every)},
-		{"single endpoint: clears after 2 OK", one("..xxx.."), cleared, time.Time{}},
-		{"single endpoint: 1 OK holds", one("..xxx."), hold, time.Time{}},
+		{"single endpoint: clears after 2 OK, at the second", one("..xxx.."), cleared, at(6 * every)},
+		{"single endpoint: 1 OK holds", one("..xxx."), hold, none},
 		{"multi: 2 failures on most members", many("....xx", "...xxx", "......"), failing, at(4 * every)},
 		{"multi: since is when most were failing", many("..xxxx", "....xx", "......"), failing, at(4 * every)},
-		{"multi: 1 of 3 failing", many("....xx", "......", "......"), cleared, time.Time{}},
-		{"multi: 1 failure each is not enough", many(".....x", ".....x", "......"), hold, time.Time{}},
-		{"multi: a tie is not a majority", many("....xx", "......"), hold, time.Time{}},
+		{"multi: 1 of 3 failing", many("....xx", "......", "......"), cleared, at(1 * every)},
+		{"multi: 1 failure each is not enough", many(".....x", ".....x", "......"), hold, none},
+		// a tie is no majority for Down, so it clears (the Twilio-dead case)
+		{"multi: a tie clears", many("....xx", "......"), cleared, at(1 * every)},
+		{"multi: a dead member and a recovered one clear", many(rep("x", 6), "..xx.."), cleared, at(5 * every)},
 		{"multi: members without checks don't count", many("....xx", "....xx", ""), failing, at(4 * every)},
-		{"no checks", many("", ""), hold, time.Time{}},
+		{"no checks", many("", ""), noData, none},
 	}
 	for _, c := range cases {
-		s, since := immediate(c.members)
-		if s != c.want || !since.Equal(c.since) {
-			t.Errorf("%s: got %v %v, want %v %v", c.name, s, since, c.want, c.since)
+		s, a := immediate(c.members)
+		if s != c.want || !a.Equal(c.at) {
+			t.Errorf("%s: got %v %v, want %v %v", c.name, s, a, c.want, c.at)
 		}
 	}
 
 	// a provider with two series fails when either does (k = 2: two members)
-	cf := []tail{pattern(5*time.Second, t0, "......", 0), pattern(15*time.Second, t0, "..xx", 0)}
-	tw := []tail{pattern(5*time.Second, t0, "....xx", 0)}
-	if s, _ := immediate([][]tail{cf, tw}); s != failing {
+	cf := []*tracker{tr("......"), tr("..xx")}
+	if s, _ := immediate([][]*tracker{cf, {tr("....xx")}}); s != failing {
 		t.Errorf("providers: got %v, want failing", s)
 	}
+}
 
-	// the tile: any group failing; cleared only when every group is
-	if s, since := tileSignal([]signal{cleared, failing}, []time.Time{{}, at(time.Minute)}); s != failing || !since.Equal(at(time.Minute)) {
-		t.Errorf("tile: got %v %v", s, since)
+func TestTileSignal(t *testing.T) {
+	a, b := at(time.Minute), at(2*time.Minute)
+	cases := []struct {
+		name string
+		sigs []signal
+		ats  []time.Time
+		want signal
+		at   time.Time
+	}{
+		{"any group failing", []signal{cleared, failing}, []time.Time{a, b}, failing, b},
+		{"the earliest failing", []signal{failing, failing}, []time.Time{b, a}, failing, a},
+		{"one group holding", []signal{cleared, hold}, []time.Time{a, {}}, hold, time.Time{}},
+		{"all cleared: at the latest", []signal{cleared, cleared}, []time.Time{b, a}, cleared, b},
+		{"web cleared, UDP without checks", []signal{cleared, noData}, []time.Time{a, {}}, cleared, a},
+		{"nothing", []signal{noData, noData}, []time.Time{{}, {}}, noData, time.Time{}},
 	}
-	if s, _ := tileSignal([]signal{cleared, hold}, []time.Time{{}, {}}); s != hold {
-		t.Errorf("tile: got %v, want hold", s)
-	}
-	if s, _ := tileSignal([]signal{cleared, cleared}, []time.Time{{}, {}}); s != cleared {
-		t.Errorf("tile: got %v, want cleared", s)
+	for _, c := range cases {
+		if s, got := tileSignal(c.sigs, c.ats); s != c.want || !got.Equal(c.at) {
+			t.Errorf("%s: got %v %v, want %v %v", c.name, s, got, c.want, c.at)
+		}
 	}
 }
 
 // steps feeds a word one minute per character from start: g good, s slow,
-// d down, o all lost (down), n none. It returns the runs that ended.
+// d down, n none. It returns the runs that ended.
 func steps(w *word, start time.Time, p string) []wordRun {
 	var out []wordRun
 	for i, c := range p {
-		m := map[rune]judged{'g': j(Good), 's': j(Slow), 'd': j(Down), 'o': {Down, true}, 'n': j(None)}[c]
-		if r := w.step(start.Add(time.Duration(i)*time.Minute), m); r != nil {
+		s := map[rune]State{'g': Good, 's': Slow, 'd': Down, 'n': None}[c]
+		if r := w.step(start.Add(time.Duration(i)*time.Minute), s); r != nil {
 			out = append(out, *r)
 		}
 	}
@@ -281,11 +286,12 @@ func TestWordHysteresis(t *testing.T) {
 		{"latency down shows at once", "gggd", Down, 3 * time.Minute},
 		{"latency down needs 5 good minutes", "gggdgggg", Down, 3 * time.Minute},
 		{"latency down: 5 good minutes", "gggdggggg", Good, -1},
-		{"slow escalates to down", "sssd", Down, 3 * time.Minute},
-		{"a slow minute doesn't leave down", "dgggsgggg", Down, 0},
+		{"slow escalates to down, since resets", "sssd", Down, 3 * time.Minute},
+		{"down steps back to slow without a down minute in 5", "gggd" + rep("s", 30), Slow, 4 * time.Minute},
+		{"down with slow minutes: still down within 5", "gggdssss", Down, 3 * time.Minute},
+		{"down, mixed minutes: slow", "dgggsgggg", Slow, 4 * time.Minute},
+		{"down, mixed minutes, then 5 good", "dgggsggggg", Good, -1},
 		{"down, then slow minutes count toward 3 of 5", "dgggggsss", Slow, 6 * time.Minute},
-		{"a minute where every check failed: down at once", "ggo", Down, 2 * time.Minute},
-		{"all-lost down waits for the immediate signal", "ggoggggggg", Down, 2 * time.Minute},
 	}
 	for _, c := range cases {
 		var w word
@@ -324,32 +330,33 @@ func TestWordOutage(t *testing.T) {
 	var w word
 	steps(&w, t0, "ggg")
 	// Down now: at once, since the first failed slot
-	if r := w.outageSignal(failing, at(3*time.Minute+10*time.Second), at(3*time.Minute+45*time.Second)); r != nil {
+	if r := w.outageSignal(failing, at(3*time.Minute+10*time.Second)); r != nil {
 		t.Errorf("run ended on failing: %+v", r)
 	}
 	if s, since := w.state(); s != Down || !since.Equal(at(3*time.Minute+10*time.Second)) {
 		t.Errorf("outage: got %s %v", s, since)
 	}
-	// hold keeps it, a minute without data keeps it
-	w.outageSignal(hold, time.Time{}, at(4*time.Minute))
+	// hold, no data and a minute without data keep it
+	w.outageSignal(hold, time.Time{})
+	w.outageSignal(noData, time.Time{})
 	steps(&w, at(4*time.Minute), "n")
 	if s, _ := w.state(); s != Down {
 		t.Errorf("hold: got %s", s)
 	}
-	// cleared: back to Good at once, no 5-minute wait
-	r := w.outageSignal(cleared, time.Time{}, at(4*time.Minute+30*time.Second))
+	// cleared: back to Good at once; the run ends at the clearing slot
+	r := w.outageSignal(cleared, at(4*time.Minute+15*time.Second))
 	if s, _ := w.state(); s != Good {
 		t.Errorf("cleared: got %s", s)
 	}
-	if r == nil || !r.Start.Equal(at(3*time.Minute+10*time.Second)) || !r.End.Equal(at(4*time.Minute+30*time.Second)) || r.Sev != Down {
+	if r == nil || !r.Start.Equal(at(3*time.Minute+10*time.Second)) || !r.End.Equal(at(4*time.Minute+15*time.Second)) || r.Sev != Down {
 		t.Errorf("outage run: got %+v", r)
 	}
 
 	// an outage over a slow word goes back to slow
 	var v word
 	steps(&v, t0, "sss")
-	v.outageSignal(failing, at(3*time.Minute), at(3*time.Minute))
-	v.outageSignal(cleared, time.Time{}, at(4*time.Minute))
+	v.outageSignal(failing, at(3*time.Minute))
+	v.outageSignal(cleared, at(4*time.Minute))
 	if s, since := v.state(); s != Slow || !since.Equal(t0) {
 		t.Errorf("outage over slow: got %s %v", s, since)
 	}
@@ -358,48 +365,124 @@ func TestWordOutage(t *testing.T) {
 	}
 }
 
+// TestTieClears: Twilio's STUN is dead and Cloudflare's drops for a minute
+// and recovers. Zoom (shared path, two provider votes) is Down during the
+// drop and Good again once Cloudflare answers: the tie must not hold it
+// Down forever.
+func TestTieClears(t *testing.T) {
+	const every = 5 * time.Second
+	var w word
+	steps(&w, at(-5*time.Minute), "ggggg")
+	tw, _ := series(every, t0, rep("x", 20))
+	cf, _ := series(every, t0, rep(".", 10)+rep("x", 10))
+	sig, a := immediate([][]*tracker{{tw}, {cf}})
+	w.outageSignal(tileSignal([]signal{sig}, []time.Time{a}))
+	if s, since := w.state(); s != Down || !since.Equal(at(50*time.Second)) {
+		t.Fatalf("during the drop: got %s %v", s, since)
+	}
+	tw, _ = series(every, t0, rep("x", 60))
+	cf, _ = series(every, t0, rep(".", 10)+rep("x", 12)+rep(".", 38))
+	sig, a = immediate([][]*tracker{{tw}, {cf}})
+	r := w.outageSignal(tileSignal([]signal{sig}, []time.Time{a}))
+	if s, _ := w.state(); s != Good || r == nil || !r.End.Equal(at(115*time.Second)) {
+		t.Errorf("after the drop: got %s %+v, want good at 1:55", s, r)
+	}
+}
+
 func TestSummarize(t *testing.T) {
 	const every = 5 * time.Second
-	ms := 20 * time.Millisecond
+	closeOf := func(from time.Time) time.Time { return from.Add(80 * time.Second) }
+	sum := func(p string, rule runRule, from time.Time) minute {
+		cs := pattern(every, t0, p, 20*time.Millisecond)
+		_, s := feed(every, cs)
+		return summarize(cs, s.runs, rule, from, closeOf(from))
+	}
 	// minute 0 clean, a 40 s drop from 1:10 to 1:50, then clean
-	tl := pattern(every, t0, rep(".", 14)+rep("x", 8)+rep(".", 14), ms)
-	m := summarize(tl, at(time.Minute))
-	if m.lost != 0 || m.ok != 4 || m.loss != 0 || m.medMs() != 20 {
+	drop := rep(".", 14) + rep("x", 8) + rep(".", 14)
+	m := sum(drop, ruleUDP, at(time.Minute))
+	if m.lost != 0 || m.ok != 4 || m.lossPctSum != 0 || m.medMs() != 20 {
 		t.Errorf("drop slots should be left out: got %+v", m)
 	}
 	// so the calls are not Choppy after the drop
-	m0 := summarize(tl, t0)
-	m2 := summarize(tl, at(2*time.Minute))
-	if got, _ := judgeCall([]minute{m0, m, m2}, every); got.s != Good {
-		t.Errorf("after a drop: got %s, want good", got.s)
+	if got, _ := judgeCall([]minute{sum(drop, ruleUDP, t0), m, sum(drop, ruleUDP, at(2*time.Minute))}, every); got != Good {
+		t.Errorf("after a drop: got %s, want good", got)
+	}
+	// the path layers count every lost check
+	if m := sum(drop, rulePath, at(time.Minute)); m.lost != 8 {
+		t.Errorf("path: got %+v", m)
 	}
 
 	// a 10 s failure is loss, not a drop
-	tl = pattern(every, t0, rep(".", 14)+"xx"+rep(".", 20), ms)
-	m = summarize(tl, at(time.Minute))
-	if m.lost != 2 || m.ok != 10 {
+	short := rep(".", 14) + "xx" + rep(".", 20)
+	if m := sum(short, ruleUDP, at(time.Minute)); m.lost != 2 || m.ok != 10 {
 		t.Errorf("short failure: got %+v", m)
 	}
-	if got, _ := judgeCall([]minute{summarize(tl, t0), m, summarize(tl, at(2*time.Minute))}, every); got.s != Slow {
-		t.Errorf("short failure: got %s, want choppy (2 of 36 lost)", got.s)
+	if got, _ := judgeCall([]minute{sum(short, ruleUDP, t0), sum(short, ruleUDP, at(time.Minute)), sum(short, ruleUDP, at(2*time.Minute))}, every); got != Slow {
+		t.Errorf("short failure: got %s, want choppy (2 of 36 lost)", got)
 	}
 
-	// a run still open at the tail's end is left out: it may become a drop
-	tl = pattern(every, t0, rep(".", 22)+"xx", ms)
-	if m := summarize(tl, at(time.Minute)); m.lost != 0 || m.ok != 10 {
-		t.Errorf("open run: got %+v", m)
+	// a run still open when the minute closes is left out (it may become a
+	// drop), and judged later (replay) the same minute is the same
+	cs := pattern(every, t0, rep(".", 22)+"xx"+rep(".", 20), 20*time.Millisecond)
+	_, s := feed(every, cs)
+	from := at(time.Minute)
+	if m := summarize(cs, s.runs, ruleUDP, from, at(115*time.Second)); m.lost != 0 || m.ok != 10 {
+		t.Errorf("open at close: got %+v", m)
+	}
+	if m := summarize(cs, s.runs, ruleUDP, from, closeOf(from)); m.lost != 2 {
+		t.Errorf("closed short run: got %+v", m)
+	}
+
+	// gaps are counted apart from data
+	if m := sum(rep(".", 12)+rep("_", 6)+rep(".", 6), ruleUDP, at(time.Minute)); m.gap != 6 || m.ok != 6 {
+		t.Errorf("gaps: got %+v", m)
 	}
 
 	// jitter: the median of the bursts that measured one
-	tl = tail{every: every}
-	for i, jit := range []time.Duration{-1, 2, 4, 30} {
-		tl.checks = append(tl.checks, check{at: at(time.Duration(i) * every), rtt: ms, jitter: jit * time.Millisecond})
+	cs = nil
+	for i, jit := range []uint32{noJitter, 2000, 4000, 30000} {
+		cs = append(cs, check{ms: at(time.Duration(i) * every).UnixMilli(), rttUs: 20000, jitUs: jit})
 	}
-	if m := summarize(tl, t0); !m.hasJitter() || m.jitterMs() != 4 {
+	if m := summarize(cs, nil, ruleUDP, t0, closeOf(t0)); !m.hasJitter() || m.jitterMs() != 4 {
 		t.Errorf("jitter: got %+v", m)
 	}
-	tl.checks = tl.checks[:1]
-	if m := summarize(tl, t0); m.hasJitter() {
+	if m := summarize(cs[:1], nil, ruleUDP, t0, closeOf(t0)); m.hasJitter() {
 		t.Errorf("jitter not measured: got %+v", m)
+	}
+}
+
+// TestLossIsCounted: runs too short for a drop are loss. Two lost checks
+// at 15 s (a 30 s estimate) are no tile drop (that needs 3), so they count
+// in their minutes.
+func TestLossIsCounted(t *testing.T) {
+	const every = 15 * time.Second
+	// the review's pattern: half lost, counted (half is not "most")
+	cs := pattern(every, t0, "."+rep("xx..", 30), ms10)
+	_, s := feed(every, cs)
+	if m := summarize(cs, s.runs, ruleWeb, at(time.Minute), at(time.Minute+80*time.Second)); m.lost != 2 || m.ok != 2 {
+		t.Errorf("xx..: got %+v, want 2 lost of 4", m)
+	}
+	// 60% lost, never 3 in a row: Down minutes, and no drop
+	p := rep("xx.x.", 24)
+	cs = pattern(every, t0, p, ms10)
+	_, s = feed(every, cs)
+	var w word
+	downs := 0
+	for i := range 25 {
+		from := at(time.Duration(i) * time.Minute)
+		st := judgeWeb(summarize(cs, s.runs, ruleWeb, from, from.Add(80*time.Second)), limitsFor(10, true, false), false)
+		if st == Down {
+			downs++
+		}
+		w.step(from, st)
+	}
+	if downs < 5 {
+		t.Errorf("60%% loss: %d down minutes of 25", downs)
+	}
+	if st, _ := w.state(); st == Good {
+		t.Error("60% loss: the word stayed good")
+	}
+	if ds := tileDrops([]runSet{s}, nil, at(time.Hour)); ds != nil {
+		t.Errorf("60%% loss: drops %+v", ds)
 	}
 }

@@ -43,15 +43,16 @@ func (e Episode) Ongoing() bool { return e.End.IsZero() }
 func (e Episode) window() window { return window{e.Start, e.End} }
 
 // incidentEpisode is the connection episode of a verdict incident: lan,
-// isp, upstream and no_network (Down when the incident lost everything,
-// otherwise a Slow lossy or slow period), dns (Down), udp_blocked and
-// stun_blocked. Other kinds make no episode: udp_degraded shows as Choppy
-// call tiles, service as the tiles themselves.
-func incidentEpisode(in model.Incident) (Episode, bool) {
+// isp, upstream and no_network (Down when the incident lost everything: a
+// peak loss of fullLoss, or its layer dropped (layerEv.dropped); otherwise
+// a Slow lossy or slow period), dns (Down), udp_blocked and stun_blocked.
+// Other kinds make no episode: udp_degraded shows as Choppy call tiles,
+// service as the tiles themselves.
+func incidentEpisode(in model.Incident, dropped bool) (Episode, bool) {
 	e := Episode{Start: in.Start, End: in.End, Connection: true, Verdict: in.Kind, Sev: Down, Kind: EpOutage}
 	switch in.Kind {
 	case model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
-		if in.PeakLoss < fullLoss {
+		if in.PeakLoss < fullLoss && !dropped {
 			e.Sev, e.Kind = Slow, EpSlow
 		}
 	case model.VerdictNoNetwork, model.VerdictDNS:
@@ -61,6 +62,17 @@ func incidentEpisode(in model.Incident) (Episode, bool) {
 		return Episode{}, false
 	}
 	return e, true
+}
+
+// pathKind reports the verdict kinds of a broken path: lan, isp, upstream
+// and no_network. A connection drop absorbs only these, and only they lead
+// to "Working again".
+func pathKind(k model.VerdictKind) bool {
+	switch k {
+	case model.VerdictLAN, model.VerdictISP, model.VerdictUpstream, model.VerdictNoNetwork:
+		return true
+	}
+	return false
 }
 
 // dropEpisode is a drop's episode: of the connection when tile is "".
@@ -104,15 +116,6 @@ func (e Episode) absorbs(o Episode) bool {
 	return !o.End.After(e.End.Add(absorbAfter))
 }
 
-// near reports whether o overlaps e widened by absorbBefore and absorbAfter.
-func (e Episode) near(o Episode, now time.Time) bool {
-	w := window{e.Start.Add(-absorbBefore), e.End}
-	if !e.Ongoing() {
-		w.to = e.End.Add(absorbAfter)
-	}
-	return w.overlaps(o.window(), now)
-}
-
 // merge adds o to e: the union of their spans and tiles, the worse
 // severity (and that part's kind), the longer drop.
 func (e *Episode) merge(o Episode) {
@@ -147,8 +150,10 @@ func tileOrder(id string) int {
 // first:
 //
 //  1. Connection parts (connection drops, incidentEpisode, broadEpisode)
-//     are episodes; a connection drop absorbs the incidents near it
-//     ([drop − absorbBefore, end + absorbAfter]): one problem, not two.
+//     are episodes; a connection drop absorbs the lan, isp, upstream and
+//     no_network incidents within [drop − absorbBefore, end +
+//     absorbAfter]: one problem, not two. Other incidents (dns, blocked
+//     UDP) and longer ones stay their own problems.
 //  2. Tile parts (runEpisode, dropEpisode of a tile) fully covered by a
 //     connection episode fold into it and add their tiles.
 //  3. The other tile parts of one tile less than sameTileMerge apart are
@@ -171,7 +176,7 @@ func groupEpisodes(conn, tiles []Episode, cause func(Episode) Cause, now time.Ti
 		if e.Kind == EpDrop {
 			continue
 		}
-		if i := slices.IndexFunc(cs, func(d Episode) bool { return d.Kind == EpDrop && e.Verdict != "" && d.near(e, now) }); i >= 0 {
+		if i := slices.IndexFunc(cs, func(d Episode) bool { return d.Kind == EpDrop && pathKind(e.Verdict) && d.absorbs(e) }); i >= 0 {
 			k := cs[i].Kind
 			cs[i].merge(e)
 			cs[i].Kind = k // still a drop

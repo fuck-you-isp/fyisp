@@ -38,7 +38,7 @@ func TestAttribute(t *testing.T) {
 		incidents []model.Incident
 		layers    [nLayers]layerEv
 		tiles     map[string]State
-		speed     []speedtest.Window
+		speed     speedWindows
 		want      Cause
 	}{
 		{"lan, lost everything", inc(model.VerdictLAN, 10*time.Minute, 12*time.Minute, 1), lay(clean, clean, clean), nil, nil,
@@ -64,7 +64,7 @@ func TestAttribute(t *testing.T) {
 		{"an incident beats layer evidence", inc(model.VerdictISP, 10*time.Minute, 12*time.Minute, 1), lay(dropped, dropped, dropped), nil, nil,
 			Cause{Who: WhoProvider, Evidence: EvProviderDrop}},
 		{"speed test beats the provider", inc(model.VerdictISP, 10*time.Minute, 12*time.Minute, 1), lay(clean, dropped, clean), nil,
-			[]speedtest.Window{{Start: at(11 * time.Minute), End: at(11*time.Minute + 20*time.Second)}},
+			speedWindows{{Start: at(11 * time.Minute), End: at(11*time.Minute + 20*time.Second)}},
 			Cause{Who: WhoSpeedtest, Evidence: EvSpeedtest}},
 		{"layers: gateway lost too", nil, lay(dropped, dropped, dropped), nil, nil, Cause{Who: WhoRouter, Evidence: EvRouterDown}},
 		{"layers: gateway fine, edge lost", nil, lay(clean, dropped, dropped), nil, nil, Cause{Who: WhoProvider, Evidence: EvProviderDrop}},
@@ -73,7 +73,9 @@ func TestAttribute(t *testing.T) {
 			Cause{Who: WhoProvider, Evidence: EvProviderLossy}},
 		{"layers: gateway loss", nil, lay(lossy(0.03), lossy(0.03), lossy(0.03)), calls, nil, Cause{Who: WhoRouter, Evidence: EvRouterLossy}},
 		{"layers: 1.5% gateway loss is neither", nil, lay(lossy(0.015), lossy(0.06), clean), calls, nil, Cause{Who: WhoCallsPath, Evidence: EvCallsPath}},
-		{"layers: unknown gateway, lossy edge", nil, lay(layerEv{}, lossy(0.06), clean), nil, nil, Cause{Who: WhoProvider, Evidence: EvProviderLossy}},
+		{"layers: unknown gateway is not a clean one", nil, lay(layerEv{}, lossy(0.05), clean), nil, nil, Cause{Who: WhoUnknown}},
+		{"layers: unknown gateway, edge lost", nil, lay(layerEv{}, dropped, clean), nil, nil, Cause{Who: WhoUnknown}},
+		{"layers: unknown edge, anycast lost", nil, lay(clean, layerEv{}, dropped), nil, nil, Cause{Who: WhoUnknown}},
 		{"one app", nil, lay(clean, clean, clean), map[string]State{"zoom": Down}, nil, Cause{Who: WhoApp, Vendor: "zoom", Evidence: EvAppOnly}},
 		{"one vendor", nil, lay(clean, clean, clean), map[string]State{"meet": Slow, "gws": Down, "youtube": Slow}, nil,
 			Cause{Who: WhoApp, Vendor: "google", Evidence: EvVendorOnly}},
@@ -86,7 +88,11 @@ func TestAttribute(t *testing.T) {
 		{"nothing bad", nil, lay(clean, clean, clean), nil, nil, Cause{Who: WhoUnknown}},
 	}
 	for _, c := range cases {
-		got := attribute(attrIn{from: from, to: to, now: now, incidents: c.incidents, layers: c.layers, tiles: allTiles(c.tiles), speed: c.speed})
+		in := attrIn{from: from, to: to, now: now, incidents: c.incidents, layers: c.layers, tiles: allTiles(c.tiles)}
+		if c.speed != nil {
+			in.speed = c.speed
+		}
+		got := attribute(in)
 		if got != c.want {
 			t.Errorf("%s: got %+v, want %+v", c.name, got, c.want)
 		}
@@ -106,26 +112,37 @@ func TestAttribute(t *testing.T) {
 
 func TestLayerEvidence(t *testing.T) {
 	sec := time.Second
-	gw := pattern(sec, t0, rep(".", 200), ms10)
+	now := at(time.Hour)
+	mins := func(ok, lost int, n int) []minute {
+		out := make([]minute, n)
+		for i := range out {
+			out[i] = minute{ok: uint16(ok), lost: uint16(lost)}
+		}
+		return out
+	}
 	// 6% loss, scattered: lossy, not dropped
-	edge := pattern(sec, t0, rep(rep(".", 15)+"x", 13)+rep(".", 12), ms10)
-	if ev := layerEvidence([]tail{gw}, t0, at(200*sec), at(300*sec)); !ev.known || ev.dropped || ev.loss != 0 {
-		t.Errorf("gateway: got %+v", ev)
+	if ev := layerEvidence(mins(56, 4, 3), nil, t0, at(3*time.Minute), now); !ev.known || ev.dropped || ev.loss < 0.066 || ev.loss > 0.067 {
+		t.Errorf("lossy: got %+v", ev)
 	}
-	if ev := layerEvidence([]tail{edge}, t0, at(200*sec), at(300*sec)); ev.dropped || ev.loss < 0.055 || ev.loss > 0.07 {
-		t.Errorf("edge: got %+v", ev)
+	// a 40 s drop, kept as a window (from layerDrops), a week later
+	_, s := series(sec, t0, rep(".", 50)+rep("x", 40)+rep(".", 50))
+	ws, _ := layerDrops([]runSet{s}, now)
+	if len(ws) != 1 {
+		t.Fatalf("windows: %+v", ws)
 	}
-	// a 40 s drop
-	drop := pattern(sec, t0, rep(".", 50)+rep("x", 40)+rep(".", 50), ms10)
-	if ev := layerEvidence([]tail{drop}, at(60*sec), at(70*sec), at(300*sec)); !ev.dropped || ev.loss != 1 {
+	if ev := layerEvidence(mins(20, 40, 1), ws, at(60*sec), at(70*sec), at(7*24*time.Hour)); !ev.dropped {
 		t.Errorf("drop: got %+v", ev)
 	}
+	if ev := layerEvidence(mins(60, 0, 1), ws, at(5*time.Minute), at(6*time.Minute), now); ev.dropped {
+		t.Errorf("another minute: got %+v", ev)
+	}
 	// every series of the layer must have dropped
-	if ev := layerEvidence([]tail{drop, gw}, at(40*sec), at(100*sec), at(300*sec)); ev.dropped {
-		t.Errorf("one of two: got %+v", ev)
+	_, ok := series(sec, t0, rep(".", 140))
+	if ws, _ := layerDrops([]runSet{s, ok}, now); ws != nil {
+		t.Errorf("one of two series: %+v", ws)
 	}
 	// not measured
-	if ev := layerEvidence([]tail{gw}, at(time.Hour), at(2*time.Hour), at(3*time.Hour)); ev.known {
+	if ev := layerEvidence(mins(0, 0, 3), nil, t0, at(time.Hour), now); ev.known {
 		t.Errorf("no checks: got %+v", ev)
 	}
 }
@@ -144,7 +161,7 @@ func TestCauseKind(t *testing.T) {
 
 func TestSpeedOverlap(t *testing.T) {
 	now := at(time.Hour)
-	wins := []speedtest.Window{{Start: at(10 * time.Minute), End: at(11 * time.Minute)}}
+	wins := speedWindows{{Start: at(10 * time.Minute), End: at(11 * time.Minute)}}
 	cases := []struct {
 		name     string
 		from, to time.Time
@@ -157,12 +174,22 @@ func TestSpeedOverlap(t *testing.T) {
 		{"ongoing episode", at(9 * time.Minute), time.Time{}, true},
 	}
 	for _, c := range cases {
-		if got := speedOverlap(c.from, c.to, wins, now); got != c.want {
+		if got := speedOverlap(c.from, c.to, now, wins); got != c.want {
 			t.Errorf("%s: got %v", c.name, got)
 		}
 	}
-	running := []speedtest.Window{{Start: at(50 * time.Minute)}}
-	if !speedOverlap(at(55*time.Minute), at(56*time.Minute), running, now) {
+	if !speedOverlap(at(55*time.Minute), at(56*time.Minute), now, speedWindows{{Start: at(50 * time.Minute)}}) {
 		t.Error("running test")
+	}
+	if speedOverlap(t0, now, now, nil) {
+		t.Error("speed tests off")
+	}
+	// the live windows answer the same
+	var live speedtest.Windows
+	live.Add(speedtest.Window{Start: at(10 * time.Minute), End: at(11 * time.Minute)})
+	for _, c := range cases[:4] {
+		if got := speedOverlap(c.from, c.to, now, &live); got != c.want {
+			t.Errorf("live %s: got %v", c.name, got)
+		}
 	}
 }

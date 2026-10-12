@@ -64,9 +64,18 @@ func TestConnState(t *testing.T) {
 		{"3 isp", connIn{ready: true, verdict: v(model.VerdictISP, 5*m)}, "isp", "isp:" + ms(5*m), ToneBad, Down},
 		{"3 upstream", connIn{ready: true, verdict: v(model.VerdictUpstream, 5*m)}, "upstream", "upstream:" + ms(5*m), ToneBad, Down},
 		{"3 beats a drop in progress", connIn{ready: true, verdict: v(model.VerdictISP, 5*m), dropNow: &Drop{Start: at(5 * m)}}, "isp", "isp:" + ms(5*m), ToneBad, Down},
-		{"3 an incident inside an ended drop: Working again",
-			connIn{ready: true, now: now, verdict: v(model.VerdictISP, 40*m+15*time.Second), drops: []Drop{ended}, eps: []Episode{dropEp}},
+		{"3 an incident inside a drop that just ended: Working again",
+			connIn{ready: true, now: at(41 * m), verdict: v(model.VerdictISP, 40*m+15*time.Second), drops: []Drop{ended}, eps: []Episode{dropEp}},
 			ConnWorkingAgain, "working_again:" + ms(40*m+40*time.Second), ToneWarn, Slow},
+		{"3 the incident outlasts the verdict's window: shown",
+			connIn{ready: true, now: at(40*m + 40*time.Second + verdictLag), verdict: v(model.VerdictISP, 40*m+15*time.Second), drops: []Drop{ended}, eps: []Episode{dropEp}},
+			"isp", "isp:" + ms(40*m+15*time.Second), ToneBad, Down},
+		{"3 still ongoing 29 minutes after the drop: shown",
+			connIn{ready: true, now: at(69*m + 40*time.Second), verdict: v(model.VerdictISP, 40*m+15*time.Second), drops: []Drop{ended}, eps: []Episode{dropEp}},
+			"isp", "isp:" + ms(40*m+15*time.Second), ToneBad, Down},
+		{"3 a new outage right after a drop: shown",
+			connIn{ready: true, now: at(41 * m), verdict: v(model.VerdictISP, 40*m+50*time.Second), drops: []Drop{ended}, eps: []Episode{dropEp}},
+			"isp", "isp:" + ms(40*m+50*time.Second), ToneBad, Down},
 		{"3 an incident after a much older drop", connIn{ready: true, verdict: v(model.VerdictISP, 50*m), drops: []Drop{ended}}, "isp", "isp:" + ms(50*m), ToneBad, Down},
 		{"4 drop in progress", connIn{ready: true, verdict: ok, dropNow: &Drop{Start: at(59 * m)}}, ConnDrop, "drop:" + ms(59*m), ToneBad, Down},
 		{"4 beats dns", connIn{ready: true, verdict: v(model.VerdictDNS, 0), dropNow: &Drop{Start: at(59 * m)}}, ConnDrop, "drop:" + ms(59*m), ToneBad, Down},
@@ -105,6 +114,9 @@ func TestConnState(t *testing.T) {
 	got := connState(connIn{ready: true, now: now, verdict: ok, tiles: tilesNow(map[string]State{"zoom": Down}), eps: []Episode{dropEp}})
 	if got.Kind != ConnApp || got.Again == nil || got.Again.Variant != AgainDropped || got.Again.Episode != dropEp.ID {
 		t.Errorf("app + working again: got %+v %+v", got, got.Again)
+	}
+	if got.Key != "app:zoom:"+ms(20*m)+":"+ms(40*m+40*time.Second) {
+		t.Errorf("app + working again: key %q", got.Key)
 	}
 	if got.Tiles == nil || got.Tiles[0] != "zoom" || !got.Since.Equal(at(20*m)) {
 		t.Errorf("app tiles: got %+v", got)

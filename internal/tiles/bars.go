@@ -1,10 +1,6 @@
 package tiles
 
-import (
-	"time"
-
-	"github.com/fuck-you-isp/fyisp/internal/speedtest"
-)
+import "time"
 
 // Bar is one of a tile's 5-minute bars.
 type Bar struct {
@@ -30,7 +26,7 @@ type Bar struct {
 //   - else None with barNoneMins or more closed minutes without data
 //     (fyisp was not running);
 //   - else Good.
-func bars(now, from time.Time, mins []State, drops []Drop, eps []Episode, wins []speedtest.Window) [nBars]Bar {
+func bars(now, from time.Time, mins []State, drops []Drop, eps []Episode, speed overlapper) [nBars]Bar {
 	var out [nBars]Bar
 	first := now.Truncate(barStep).Add(-(nBars - 1) * barStep)
 	for i := range out {
@@ -81,7 +77,7 @@ func bars(now, from time.Time, mins []State, drops []Drop, eps []Episode, wins [
 				}
 			}
 		}
-		b.Speedtest = speedOverlap(w.from, w.to.Add(-time.Nanosecond), wins, now)
+		b.Speedtest = speedOverlap(w.from, w.to.Add(-time.Nanosecond), now, speed)
 	}
 	return out
 }

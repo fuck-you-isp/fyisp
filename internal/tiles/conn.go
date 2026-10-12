@@ -34,7 +34,8 @@ const (
 //
 //  1. stale; 2. checking (not ready, or the verdict is warming up);
 //  3. verdict no_network / lan / isp / upstream, unless its incident
-//     started inside a connection drop that has ended (then skip it);
+//     started inside a connection drop that ended less than verdictLag
+//     ago (then skip it: the verdict's window still holds the drop);
 //  4. a connection drop in progress; 5. verdict dns;
 //  6. udp_blocked / stun_blocked (Quiet: info); 7. udp_degraded;
 //  8. broad slowdown; 9. app-only problems (with Working again appended
@@ -43,7 +44,7 @@ const (
 // Off tiles never take part.
 type ConnState struct {
 	Kind  string // a Conn* constant or a model.VerdictKind
-	Key   string // stable while the card's text is: the client announces changes of it
+	Key   string // stable while the card's text is: the client announces changes of it (ConnApp: plus Again's end)
 	Tone  string
 	Icon  State // Good, Slow, Down or None
 	Since time.Time
@@ -79,11 +80,7 @@ func workingAgain(eps []Episode, now time.Time) *Recovered {
 		if !x.Connection || x.Ongoing() || now.Sub(x.End) >= recoveredFor {
 			continue
 		}
-		switch {
-		case x.Kind == EpDrop:
-		case x.Verdict == model.VerdictLAN, x.Verdict == model.VerdictISP,
-			x.Verdict == model.VerdictUpstream, x.Verdict == model.VerdictNoNetwork:
-		default:
+		if x.Kind != EpDrop && !pathKind(x.Verdict) {
 			continue
 		}
 		if e == nil || x.End.After(e.End) {
@@ -155,10 +152,12 @@ func connState(in connIn) ConnState {
 	}
 	switch v.Kind {
 	case model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
-		// the verdict's 60 s window outlasts a drop: an incident that
-		// started inside one that has ended is that drop, already over
+		// the verdict's 60 s window outlasts a drop: for verdictLag after
+		// a drop ends, an incident that started in it is that drop,
+		// already over
 		if !slices.ContainsFunc(in.drops, func(d Drop) bool {
-			return d.Ended() && !v.Since.Before(d.Start.Add(-absorbBefore)) && !v.Since.After(d.End.Add(absorbAfter))
+			return d.Ended() && in.now.Before(d.End.Add(verdictLag)) &&
+				!v.Since.Before(d.Start.Add(-absorbBefore)) && !v.Since.After(d.End)
 		}) {
 			return vk(string(v.Kind), ToneBad, Down)
 		}
@@ -209,8 +208,11 @@ func connState(in connIn) ConnState {
 	again := workingAgain(in.eps, in.now)
 	if len(bad) > 0 {
 		s := since()
-		return ConnState{Kind: ConnApp, Key: ConnApp + ":" + strings.Join(ids(), ",") + ":" + ms(s),
-			Tone: ToneOK, Icon: Good, Since: s, Tiles: ids(), Again: again}
+		key := ConnApp + ":" + strings.Join(ids(), ",") + ":" + ms(s)
+		if again != nil { // the sub line gains the Working again sentence
+			key += ":" + ms(again.End)
+		}
+		return ConnState{Kind: ConnApp, Key: key, Tone: ToneOK, Icon: Good, Since: s, Tiles: ids(), Again: again}
 	}
 	if again != nil {
 		return ConnState{Kind: ConnWorkingAgain, Key: ConnWorkingAgain + ":" + ms(again.End),
