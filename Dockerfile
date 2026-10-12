@@ -162,7 +162,7 @@ EXPOSE 3000
 STOPSIGNAL SIGTERM
 # Defaults as environment variables (flags win), so subcommands work too:
 # docker run IMG version | profiles | report | export | paths.
-# container=oci tells fyisp it runs in a container (the Wi-Fi check then
-# reports unknown), also where the runtime creates no /.dockerenv.
+# container=oci tells fyisp it runs in a container (netinfo.InContainer),
+# also where the runtime creates no /.dockerenv.
 ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000 container=oci
 ENTRYPOINT ["/fyisp"]

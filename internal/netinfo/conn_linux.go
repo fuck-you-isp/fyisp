@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
@@ -16,32 +15,9 @@ import (
 // phy80211, and DEVTYPE=wlan in uevent), model.ConnWired for any other
 // Ethernet-type interface backed by a device, model.ConnUnknown otherwise
 // (veth and bridges inside containers, VM and VPN interfaces, an unknown
-// interface). Inside a container it is always unknown: even with the
-// host's network, the container may not see how the host is connected.
-func ConnType(iface string) string {
-	if inContainer() {
-		return model.ConnUnknown
-	}
-	return connType("/sys", iface)
-}
-
-// inContainer is containerized for this process, checked once.
-var inContainer = sync.OnceValue(func() bool { return containerized("/", os.Getenv) })
-
-// containerized reports whether the filesystem at root belongs to a
-// container: Docker creates /.dockerenv, Podman /run/.containerenv, and
-// systemd-nspawn, LXC, Podman and the fyisp image set $container.
-func containerized(root string, getenv func(string) string) bool {
-	if getenv("container") != "" {
-		return true
-	}
-	for _, f := range []string{".dockerenv", "run/.containerenv"} {
-		if _, err := os.Stat(filepath.Join(root, f)); err == nil {
-			return true
-		}
-	}
-	return false
-}
+// interface). In a container with the host's network it sees the host's
+// interfaces; see InContainer.
+func ConnType(iface string) string { return connType("/sys", iface) }
 
 // connType is ConnType with sysfs mounted at sysRoot.
 func connType(sysRoot, iface string) string {

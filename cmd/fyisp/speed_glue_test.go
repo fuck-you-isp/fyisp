@@ -69,6 +69,28 @@ func TestSpeedFlags(t *testing.T) {
 	}
 }
 
+// TestSpeedConn: the speed test's connection type is the network path's
+// (netinfo.Path.Conn), unknown before the path has one.
+func TestSpeedConn(t *testing.T) {
+	cfg, _ := parseFlags(nil)
+	p := netinfo.Path{Iface: "wlan0", Conn: model.ConnWiFi}
+	o, err := speedOptions(cfg, nil, nil, func() netinfo.Path { return p }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := o.Conn(); c != model.ConnWiFi {
+		t.Errorf("conn %q, want wifi", c)
+	}
+	p = netinfo.Path{Iface: "eth0", Conn: model.ConnWired}
+	if c := o.Conn(); c != model.ConnWired {
+		t.Errorf("conn %q after the path changed, want wired", c)
+	}
+	p = netinfo.Path{}
+	if c := o.Conn(); c != model.ConnUnknown {
+		t.Errorf("conn %q for an empty path, want unknown", c)
+	}
+}
+
 func newTestCollector() *metrics.Collector {
 	return metrics.New(func() *model.Profile { return nil })
 }
