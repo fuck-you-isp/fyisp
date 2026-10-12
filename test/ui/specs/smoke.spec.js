@@ -18,7 +18,7 @@ test('Home, then Details', async ({ page }) => {
   await page.waitForLoadState('networkidle');
   await page.screenshot({ path: 'out/shots/details.png', fullPage: true });
 
-  // The charts (hatch fills) and Speed, redrawn after a theme switch.
+  // Charts and Speed after a theme switch (redraws with the other palette).
   await page.getByRole('button', { name: 'Charts', exact: true }).click();
   await expect(page.locator('#panels canvas:visible').first()).toBeVisible();
   await page.locator('#theme').click();

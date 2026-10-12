@@ -5,7 +5,7 @@
 #   docker buildx build --target modfiles --output type=local,dest=. .  # go mod tidy -> go.mod/go.sum
 #   docker buildx build --target fmt --output type=local,dest=. .       # gofmt -w all Go files
 #   docker buildx build --target asndb --output type=local,dest=. .     # refresh internal/asn/data/ip2asn-v4.bin
-#   docker buildx build --target uitest-out --output type=local,dest=out .  # UI tests (Playwright) -> out/shots, out/report
+#   docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
 
 ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
@@ -146,6 +146,7 @@ RUN out=$(systemd-analyze verify /etc/systemd/system/fyisp.service 2>&1); echo "
 #   docker buildx build --target uitest-out --output type=local,dest=out .     # + out/shots, out/report
 #   docker buildx build --target uitest-report --output type=local,dest=out .  # report even when tests fail
 #   docker buildx build --target uilock --output type=local,dest=. .           # regenerate test/ui/package-lock.json
+# Unchanged inputs reuse the cached run; add --no-cache-filter uitest-run to run the tests again.
 
 FROM source AS webdev
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -177,7 +178,7 @@ for i in $(seq 1 100); do
 done
 if [ $ok = 1 ]; then npx playwright test; echo $? > out/status; else echo "webdev did not start"; echo 1 > out/status; fi
 cat out/webdev.log | tail -20
-kill %1 2>/dev/null
+kill $! 2>/dev/null
 exit 0
 SH
 FROM uitest-run AS uitest
