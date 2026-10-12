@@ -629,8 +629,9 @@ func TestCallsLossBlamesProvider(t *testing.T) {
 }
 
 // TestISPPeakYoung: in an isp incident's first edgeRecent, the edge's own
-// checks count with their upper bound: 40% loss that reads 27% over 30
-// checks is red, 6% amber.
+// checks since the loss began count, with one σ on top: 40% loss after
+// clean checks is red, also when it reads 24%; 6% (two lost in a row made
+// the verdict fire: netns S3) is amber.
 func TestISPPeakYoung(t *testing.T) {
 	p, err := profile.Default()
 	if err != nil {
@@ -642,8 +643,9 @@ func TestISPPeakYoung(t *testing.T) {
 		p    string
 		want bool // red
 	}{
-		{rep("x..x.", 2) + rep(".x...x..x.", 2), true},   // 8 of 30: 27%
-		{rep(".", 14) + "x" + rep(".", 14) + "x", false}, // 2 of 30: 7%
+		{rep(".", 8) + "x" + rep(".x..x.x..x", 2) + ".", true},         // 8 of 21 after the first: 38%
+		{"x" + rep(".x...x..x...", 2) + "....x", true},                 // 7 of 29 after the first: 24%
+		{rep(".", 5) + "xx" + rep(".", 14) + "x" + rep(".", 8), false}, // 2 of 24 after the first: 8%
 	} {
 		e := newEngine(p, nil, Sources{}, Options{})
 		for _, i := range e.paths[layerEdge] {

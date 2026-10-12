@@ -300,11 +300,12 @@ func (e *engine) ispPeak(v model.Verdict, now time.Time) float64 {
 	}
 	e.peak.loss = max(e.peak.loss, v.Evidence["loss"])
 	if now.Sub(v.Since) < edgeRecent {
-		// a handful of checks is a noisy estimate: with 40% loss, 30 of
-		// them read under 30% one time in eight. Their upper bound (2σ)
-		// keeps 40% red and 6% amber.
-		if l, n := e.recentLoss(layerEdge, now.Add(-edgeRecent)); n >= 10 {
-			e.peak.loss = max(e.peak.loss, l+2*math.Sqrt(l*(1-l)/float64(n)))
+		// the edge's checks since the loss began (after the first lost
+		// one: the clean ones before would dilute it, the first lost one
+		// would inflate 6%), with one σ on top: a few dozen checks are a
+		// noisy estimate, and 40% must not read under 30%
+		if l, n := e.onsetLoss(layerEdge, now.Add(-edgeRecent)); n >= 10 {
+			e.peak.loss = max(e.peak.loss, l+math.Sqrt(l*(1-l)/float64(n)))
 		}
 	}
 	return e.peak.loss
@@ -316,13 +317,18 @@ type lossPeak struct {
 	loss  float64
 }
 
-// recentLoss is the share of a layer's checks since from that were lost,
-// and how many there were.
-func (e *engine) recentLoss(l int, from time.Time) (float64, int) {
+// onsetLoss is the share of a layer's checks since from that were lost,
+// counted after each series' first lost one, and how many there were.
+func (e *engine) onsetLoss(l int, from time.Time) (float64, int) {
 	n, lost := 0, 0
 	for _, i := range e.paths[l] {
+		began := false
 		for _, c := range e.ss[i].raw {
 			if c.gap || c.ms <= from.UnixMilli() {
+				continue
+			}
+			if !began {
+				began = c.lost
 				continue
 			}
 			n++
