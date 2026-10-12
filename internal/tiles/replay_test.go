@@ -111,6 +111,7 @@ func hGen(specs []hSpec, start time.Time, dur time.Duration, seed uint64) []hChe
 				c = check{ms: c.ms, lost: true, lossPct: 100, jitUs: noJitter}
 				arrive = c.ms + sp.tmo.Milliseconds()
 			}
+			c.ms -= sp.off.Milliseconds() // Sample.Slot is the aligned slot; the probe fired off later (probe/sched.go)
 			out = append(out, hCheck{s: i, c: c, arrive: arrive})
 		}
 	}
@@ -595,6 +596,7 @@ func hUDPCase() ([]hSpec, []hCheck, time.Time, time.Time) {
 				c = check{ms: c.ms, lost: true, lossPct: 100, jitUs: noJitter}
 				arrive = c.ms + 3000
 			}
+			c.ms -= sp.off.Milliseconds() // the aligned slot, as probe/sched.go stores it
 			cs = append(cs, hCheck{s: i, c: c, arrive: arrive})
 		}
 	}

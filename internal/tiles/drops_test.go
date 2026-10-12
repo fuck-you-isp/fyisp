@@ -83,8 +83,8 @@ func TestTracker(t *testing.T) {
 	tr.add(check{ms: at(2 * time.Second).UnixMilli(), lost: true})
 	tr.add(check{ms: at(9 * time.Second).UnixMilli(), lost: true})
 	tr.flush(at(time.Minute))
-	if _, open := tr.open(); open || tr.okAt != at(time.Second).UnixMilli() {
-		t.Errorf("too late: got %+v", tr)
+	if _, open := tr.open(); open || tr.okAt != at(time.Second).UnixMilli() || tr.lateChecks() != 1 {
+		t.Errorf("too late: got %+v, late %d", tr, tr.lateChecks())
 	}
 	// gaps are not checks
 	tr.add(check{ms: at(10 * time.Second).UnixMilli(), gap: true})

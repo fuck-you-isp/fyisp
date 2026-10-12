@@ -143,7 +143,12 @@ type tracker struct {
 	cur    failRun // the open run (lost 0: none)
 	recent uint8   // the latest results, newest in bit 0 (1: answered)
 	okAt   int64   // the slot from which immClearOK of the latest immClearWin answered; 0: not now
+	late   int     // checks ignored because a newer slot was already applied
 }
+
+// lateChecks counts the checks ignored because they arrived after a newer
+// slot was applied (more than holdFor late): the engine logs or exports it.
+func (t *tracker) lateChecks() int { return t.late }
 
 // add queues one check (gaps are not checks).
 func (t *tracker) add(c check) {
@@ -151,9 +156,10 @@ func (t *tracker) add(c check) {
 		return
 	}
 	if t.last != 0 && c.ms < t.last-clockBack.Milliseconds() {
-		*t = tracker{every: t.every} // the clock was set back
+		*t = tracker{every: t.every, late: t.late} // the clock was set back
 	}
 	if c.ms <= t.last {
+		t.late++
 		return
 	}
 	q := t.pend[t.head:]
