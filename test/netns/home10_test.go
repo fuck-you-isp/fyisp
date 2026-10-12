@@ -59,9 +59,12 @@ func TestHome10(t *testing.T) {
 	// S1: a 40 s drop past the router. While it lasts the card is red and
 	// every tile Down; afterwards "Working again … dropped for about 40
 	// seconds", every tile Good with a drop note, a red bar, the provider
-	// hop noting the drop, and one problem from the provider. Then Zoom
-	// stops connecting: the app problem takes the headline and the drop
-	// moves to its sub line (B5's precedence).
+	// hop noting the drop, and one problem from the provider; the strip is
+	// good while Working again shows. Then, 90 s after the drop, Zoom stops
+	// connecting: an app outage that starts more than 30 s after a drop
+	// ended is the app's own (not absorbed into the drop, not blamed on the
+	// provider), and it takes the headline while the drop moves to its sub
+	// line (B5's precedence).
 	t.Run("S1-drop-40s", func(t *testing.T) {
 		parallel(t)
 		lab := startHome10(t, home10Opts{})
@@ -71,13 +74,9 @@ func TestHome10(t *testing.T) {
 		time.Sleep(90 * time.Second)
 		lab.checkDrop(t, t0, t1, 40*time.Second, 10*time.Second, true, t1.Add(60*time.Second), t1.Add(90*time.Second))
 
-		// Precedence: an app problem while the drop is recent. It starts
-		// once the verdict is back to ok and past the 2 minutes in which a
-		// connection problem absorbs what starts after it.
-		time.Sleep(time.Until(t1.Add(3*time.Minute + 30*time.Second)))
 		z0 := time.Now()
 		lab.nft(t, fmt.Sprintf("add rule inet fyt fault ip daddr %s tcp dport 443 reject with tcp reset", home10Addr("zoom")))
-		time.Sleep(90 * time.Second)
+		time.Sleep(150 * time.Second)
 		lab.flush(t)
 		zs := lab.polls(z0.Add(lab.downBy()), time.Now())
 		if len(zs) == 0 {
@@ -90,17 +89,28 @@ func TestHome10(t *testing.T) {
 				lab.errorf(t, p, "Zoom down after the drop: want the Zoom card with the drop in its sub line")
 				break
 			}
+			// the tile's own cause comes with its first judged minute
+			if z := p.n.tile("zoom"); z.State != "down" || p.t.After(z0.Add(lab.downBy()+time.Minute)) && !strings.Contains(z.Reason, "Likely cause: Zoom’s side") {
+				lab.errorf(t, p, "Zoom down after the drop: zoom %s %q, want down on Zoom’s side", z.State, z.Reason)
+				break
+			}
+		}
+		p := lab.last(t)
+		if !slices.ContainsFunc(p.n.Problems.Items, func(it h10Problem) bool { return it.CauseKind == "app" && strings.Contains(it.What, "Zoom") }) {
+			lab.errorf(t, p, "Zoom down after the drop: want a Zoom problem from the app's side")
 		}
 	})
 
-	// S1b: a 20 s drop is no drop: nothing remains a minute after it.
+	// S1b: a 20 s drop is no drop: from a minute after it the card is good,
+	// every tile Good, and nothing remains (no Working again, no problem,
+	// no drop note, no red bar).
 	t.Run("S1b-drop-20s", func(t *testing.T) {
 		parallel(t)
 		lab := startHome10(t, home10Opts{})
 		t0 := lab.ispDown(t)
 		time.Sleep(20 * time.Second)
 		t1 := lab.ispUp(t)
-		time.Sleep(120 * time.Second)
+		time.Sleep(3 * time.Minute)
 		after := lab.polls(t1.Add(60*time.Second), time.Now())
 		if len(after) == 0 {
 			t.Fatal("no polls after the drop")
@@ -108,8 +118,8 @@ func TestHome10(t *testing.T) {
 		for _, p := range after {
 			n := p.n
 			switch {
-			case strings.HasPrefix(n.Answer.Key, "working_again"):
-				lab.errorf(t, p, "a 20 s drop: want no Working again")
+			case !home10Good(n):
+				lab.errorf(t, p, "a 20 s drop: want the good card, every tile and the strip good")
 			case len(n.Problems.Items) != 0:
 				lab.errorf(t, p, "a 20 s drop: want no problems, got %d", len(n.Problems.Items))
 			case slices.ContainsFunc(n.Tiles, func(x h10Tile) bool { return strings.HasPrefix(x.Note, "Dropped") }):
@@ -180,9 +190,10 @@ func TestHome10(t *testing.T) {
 		}
 	})
 
-	// S2b: 40% loss inside the provider for 2.5 minutes: a lossy provider
-	// incident, then "had trouble for about N minutes" (the third Working
-	// again variant).
+	// S2b: 40% loss inside the provider for 2.5 minutes: the amber "losing
+	// some data" provider card (partial loss is never red), the call tiles
+	// out of Down within 3 minutes of the end, then "had trouble for about
+	// N minutes" (the third Working again variant).
 	t.Run("S2b-provider-lossy", func(t *testing.T) {
 		parallel(t)
 		lab := startHome10(t, home10Opts{})
@@ -191,14 +202,25 @@ func TestHome10(t *testing.T) {
 		time.Sleep(150 * time.Second)
 		lab.nsRun(t, lab.isp, "tc", "qdisc", "del", "dev", "i0", "root")
 		t1 := time.Now()
-		// Calls lost 40% in two minutes in a row: Down until their 3-minute
-		// window is clean and 5 good minutes follow; until then their card
-		// (row 9) carries the Working again sentence.
+		// Calls may stay Choppy a while after Down; until they are Good,
+		// their card (row 9) carries the Working again sentence.
 		time.Sleep(10 * time.Minute)
-		if p := lab.first(t0, t1, func(n *h10Now) bool { return strings.HasPrefix(n.Answer.Key, "isp:") }); p == nil {
-			t.Errorf("40%% loss in the provider's network: the card never named the provider")
-		} else if p.n.Answer.Tab != "✕ Provider problem" || p.n.Path[1].State != "slow" {
-			lab.errorf(t, *p, "want ✕ Provider problem and the provider hop slow (losing data)")
+		if p := lab.first(t0, t1, func(n *h10Now) bool { return strings.HasPrefix(n.Answer.Key, "isp_lossy:") }); p == nil {
+			t.Errorf("40%% loss in the provider's network: the card never said the provider is losing data")
+		} else if p.n.Answer.Tone != "warn" || p.n.Answer.Tab != "! Provider losing data" || p.n.Path[1].State != "slow" {
+			lab.errorf(t, *p, "want the amber ! Provider losing data card and the provider hop slow")
+		}
+		for _, p := range lab.polls(t0, time.Now()) {
+			if p.n.Answer.Tone == "bad" {
+				lab.errorf(t, p, "partial loss in the provider's network: want no red card")
+				break
+			}
+		}
+		for _, p := range lab.polls(t1.Add(3*time.Minute), time.Now()) {
+			if slices.ContainsFunc(p.n.Tiles, func(x h10Tile) bool { return x.State == "down" }) {
+				lab.errorf(t, p, "a tile still down 3 minutes after the loss ended")
+				break
+			}
 		}
 		if p := lab.first(t1, time.Now(), func(n *h10Now) bool {
 			return strings.Contains(n.Answer.Sub, "Separately, your internet had trouble for about ")
@@ -289,6 +311,11 @@ func TestHome10(t *testing.T) {
 			if a.Tone != "ok" || a.Headline != "Your internet is fine. Zoom isn’t connecting." ||
 				!strings.Contains(a.Sub, "Teams and Google Meet are working if you need to switch") {
 				lab.errorf(t, p, "Zoom down: want the green Zoom card naming Teams and Google Meet")
+				break
+			}
+			// the tile's own cause comes with its first judged minute
+			if z := n.tile("zoom"); z.State != "down" || p.t.After(t0.Add(lab.downBy()+time.Minute)) && !strings.Contains(z.Reason, "Likely cause: Zoom’s side") {
+				lab.errorf(t, p, "Zoom down: zoom %s %q, want down on Zoom’s side", z.State, z.Reason)
 				break
 			}
 			if x := n.notTile(func(x h10Tile) bool { return x.ID == "zoom" || x.State == "good" }); x != nil {
@@ -547,14 +574,19 @@ func TestHome10(t *testing.T) {
 
 	// S8b: fyisp not running for 6 minutes: on restart the page says
 	// checking (not stale, though its last stored check is 6 minutes old);
-	// afterwards the 5-minute bars mostly inside the gap (3 minutes or
-	// more, barNoneMins) are grey, the gap is no
+	// afterwards the 5-minute bar inside the gap is grey, the gap is no
 	// problem, the footer is unchanged, and the bars from before the stop
-	// are rebuilt by the replay.
+	// are rebuilt by the replay. The stop is 30 s before a 5-minute
+	// boundary, so that a whole bar falls inside the 6 minutes.
 	t.Run("S8b-not-running", func(t *testing.T) {
 		parallel(t)
 		lab := startHome10(t, home10Opts{})
 		time.Sleep(time.Minute) // a few closed minutes of its own before the stop
+		b := time.Now().Truncate(5 * time.Minute).Add(5 * time.Minute)
+		if time.Until(b) < 45*time.Second {
+			b = b.Add(5 * time.Minute)
+		}
+		time.Sleep(time.Until(b.Add(-30 * time.Second)))
 		before := lab.last(t)
 		ts := time.Now()
 		lab.stopFyisp(t, lab.fy, 0)
@@ -583,17 +615,15 @@ func TestHome10(t *testing.T) {
 			gap := false
 			for _, b := range x.Bars {
 				from := time.UnixMilli(b.From)
-				// with a margin for the last checks before the stop and
-				// the first after the start
-				if overlap(from, from.Add(5*time.Minute), ts, tr) >= 3*time.Minute+30*time.Second {
+				if !from.Before(ts) && !from.Add(5*time.Minute).After(tr) {
 					gap = true
 					if b.State != "none" {
-						lab.errorf(t, after, "%s: the bar at %s, mostly in the gap, is %s, want none", x.ID, from.Format(time.TimeOnly), b.State)
+						lab.errorf(t, after, "%s: the bar at %s inside the gap is %s, want none", x.ID, from.Format(time.TimeOnly), b.State)
 					}
 				}
 			}
 			if !gap {
-				t.Errorf("%s: no bar mostly inside the gap %s-%s", x.ID, ts.Format(time.TimeOnly), tr.Format(time.TimeOnly))
+				t.Errorf("%s: no bar inside the gap %s-%s", x.ID, ts.Format(time.TimeOnly), tr.Format(time.TimeOnly))
 			}
 			old := before.n.tile(x.ID)
 			for _, b := range x.Bars {
@@ -694,7 +724,9 @@ func TestHome10(t *testing.T) {
 		lab.checkBlocked(t, p.t, t1, "zoom", "teams", "meet", "slack")
 		lab.checkWebGood(t, t0, t1)
 		q := lab.last(t)
-		if !slices.ContainsFunc(q.n.Problems.Items, func(it h10Problem) bool { return strings.Contains(it.What, "fast path") }) {
+		if !slices.ContainsFunc(q.n.Problems.Items, func(it h10Problem) bool {
+			return strings.Contains(it.What, "fast path") && strings.HasPrefix(it.Cause, "a firewall or VPN")
+		}) {
 			lab.errorf(t, q, "want a problem for the blocked fast path")
 		}
 	})
@@ -1278,6 +1310,10 @@ func (lab *home10) checkDrop(t *testing.T, t0, t1 time.Time, want, tol time.Dura
 			lab.errorf(t, q, "Working again ended early")
 			return
 		}
+		if n.Path[1].State != "good" || n.Path[2].State != "good" {
+			lab.errorf(t, q, "Working again: want the provider and the internet hops good")
+			return
+		}
 		if q.t.Before(by) {
 			continue // the rest holds from by on
 		}
@@ -1372,18 +1408,6 @@ func (lab *home10) tileDetail(t *testing.T, id string) h10TileDetail {
 		t.Fatalf("part=tile %s: %v: %s", id, err, b)
 	}
 	return d
-}
-
-// overlap is how much [a0, a1) and [b0, b1) overlap.
-func overlap(a0, a1, b0, b1 time.Time) time.Duration {
-	from, to := a0, a1
-	if b0.After(from) {
-		from = b0
-	}
-	if b1.Before(to) {
-		to = b1
-	}
-	return max(to.Sub(from), 0)
 }
 
 // within reports |a − b| ≤ tol.
