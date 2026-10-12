@@ -505,8 +505,8 @@ add:
 	}
 }
 
-// TestShippedUDP pins the STUN targets: default has four (no Teams relay:
-// it is opt-in), calls has every STUN target plus the call apps over TCP.
+// TestShippedUDP pins the STUN targets: default has five (the Teams relay
+// included), calls has every STUN target plus the call apps over TCP.
 func TestShippedUDP(t *testing.T) {
 	r, err := Builtin()
 	if err != nil {

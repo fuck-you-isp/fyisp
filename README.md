@@ -12,7 +12,7 @@ fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It
 
 Technical users get every number under **Details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
 
-> **New in v1.0: the default changed.** Plain `fyisp` now checks the 28 targets above (calls, work apps, websites) instead of the 91 targets of v0.x (mostly cloud regions and developer services), and opens on the plain-words **Home** view. The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
+> **The default is for homes and remote workers.** Since v0.6.0, plain `fyisp` checks calls, work apps and websites instead of the 91 targets of v0.5 (mostly cloud regions and developer services), and opens on the plain-words **Home** view. v0.9.0 extends it to the 28 targets above, one or more for each Home tile, adding GitHub, Dropbox, OneDrive, YouTube, Netflix and the Teams relay (see [Privacy](#privacy) to leave any out). The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
 
 ## Quick start
 
@@ -444,8 +444,8 @@ The Overview's window is at most 30 days (it reads every target at once). Filter
 
 fyisp has no account and no telemetry, and its data stays on your machine. What others can see:
 
-- **The services it checks** see a TCP connection from your public IP address every 15 seconds (STUN servers: a few tiny packets every 5 seconds). No data is sent, nobody logs in, no cookies.
-- **Your DNS resolver** sees fyisp look up each service's name about once a minute, all day. That resolver is usually your provider's, a Pi-hole, or **on a work laptop, your employer's**, whose security tools may log every lookup. Since v0.9.0 the default has one target for each of Home's app tiles, including **GitHub, Dropbox, OneDrive, YouTube and Netflix**: lookups for `youtube.com` or `netflix.com` every minute from a work laptop can look like you stream all day. Social sites (part of `--profile common`) and the rest of streaming (`--profile streaming`) stay opt-in.
+- **The services it checks** see a TCP connection from your public IP address every 15 seconds (STUN servers: a few tiny packets every 5 seconds). No data is sent, nobody logs in, no cookies. Since v0.9.0 the STUN servers include **Microsoft's Teams relay** (`worldaz.tr.teams.microsoft.com`, UDP 3478): a burst of 5 tiny STUN requests every 5 seconds, so Microsoft sees your address around the clock, as Google, Cloudflare and Twilio already did.
+- **Your DNS resolver** sees fyisp look up each service's name about once a minute, all day. That resolver is usually your provider's, a Pi-hole, or **on a work laptop, your employer's**, whose security tools may log every lookup. Since v0.9.0 the default has one target for each of Home's app tiles, including **GitHub, Dropbox, OneDrive, YouTube and Netflix**: lookups for `youtube.com` or `netflix.com` every minute from a work laptop can look like you stream all day, and the Teams relay's name is looked up every minute too. Social sites (part of `--profile common`) and the rest of streaming (`--profile streaming`) stay opt-in.
 - **To leave targets out**, start fyisp with `--config mine.yml`, a file that extends the default and removes them by name; fyisp then neither checks nor looks them up. In Docker, mount the file and pass `--config` after the image name (e.g. `-v "$PWD/mine.yml:/mine.yml:ro" ghcr.io/fuck-you-isp/fyisp --config /mine.yml`).
 
   ```yaml

@@ -138,6 +138,18 @@ func TestDefaultWithoutStreaming(t *testing.T) {
 	}
 }
 
+// TestDefaultWithoutRelay checks the other opt-out: without the Teams
+// relay, Teams is judged on the shared call path again.
+func TestDefaultWithoutRelay(t *testing.T) {
+	p, err := Load(write(t, "extends: [default]\nremove: [Teams-Relay]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tileSummary(ResolveTiles(p))[1]; got != "teams web=Microsoft-Teams udp=Cloudflare-STUN,Cloudflare-UDP53,Twilio-STUN-global shared missing=Teams-Relay-Global,Teams-Relay-EU,Teams-Relay-US,Teams-Relay" {
+		t.Errorf("teams: %s", got)
+	}
+}
+
 // TestResolveTilesNamed checks the tiles of named profiles: which are off,
 // which judge calls on the shared path, and that every tile they cover has
 // all of its targets.

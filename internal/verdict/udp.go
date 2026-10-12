@@ -26,7 +26,12 @@ import (
 //     Targets tagged udp-53 (STUN on UDP port 53) are left out of the count:
 //     when one of them answered in the last 2 minutes and its latest 2
 //     bursts did not both time out, the verdict is stun_blocked (the STUN
-//     ports are blocked, UDP itself is not), otherwise udp_blocked. After 6 hours blocked without a break the
+//     ports are blocked, UDP itself is not), otherwise udp_blocked. Neither
+//     fires while another STUN target (not udp-53) still answers by the
+//     same test: an answering STUN port proves STUN is not blocked, so dead
+//     servers next to it are those servers' problem (with the default's 4
+//     providers, a filtered Teams relay and a Twilio outage at once must
+//     not read as a block). After 6 hours blocked without a break the
 //     verdict is marked Quiet (hotel and office networks block UDP for
 //     good); it stays Quiet until the verdict ends.
 //  2. udp_degraded: ≥ 2 providers of udp-path targets are poor, and have
@@ -41,7 +46,11 @@ import (
 //     call-quality score: 5% loss is where audio codecs' concealment starts
 //     to be heard, 30 ms of jitter is where jitter buffers grow enough to
 //     add noticeable delay. A target that answers nothing is dead, not
-//     degraded (a STUN server outage is not this network's fault).
+//     degraded (a STUN server outage is not this network's fault). The 2
+//     is absolute, not a share of the providers: a poor provider still
+//     answers, so loss or jitter on two independent paths at once is this
+//     network's evidence however many others are fine (with the default's
+//     4 providers it is also half of them).
 //
 // Providers. Independence is judged by the registrable part of the host's
 // domain (udpProvider), not by the catalog's provider ID: calls-stun.yml
@@ -60,7 +69,7 @@ const (
 	udpMinProviders = 2                  // independent providers that must agree
 	udpWarmUp       = 2 * time.Minute    // blocked verdicts wait this long after start without any answer
 	udpAnsweredIn   = keepRaw            // udp-53 answering this recently means UDP itself works ...
-	udp53Failing    = 2                  // ... unless its latest bursts timed out this many times in a row
+	udp53Failing    = 2                  // ... unless its latest bursts timed out this many times in a row (the same test tells any STUN target is alive)
 	udpQuietAfter   = 6 * time.Hour      // a blocked verdict this old is Quiet
 	udpLossPoor     = 0.05               // mean burst loss that makes a target poor
 	udpJitterPoorMs = callq.JitterFairMs // median burst jitter (ms) that makes a target poor (the Calls Fair cap)
@@ -157,7 +166,7 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 	blockedProv := map[string]bool{}
 	poorProv := map[string]*prov{}
 	var blocked, poorT []*ustat
-	anyOK, has53, ok53 := false, false, false
+	anyOK, has53, ok53, alive := false, false, false, false
 	for _, u := range us {
 		anyOK = anyOK || u.everOK
 		if hasTag(u.t, tagUDPPath) && u.bursts >= udpMinBursts {
@@ -178,6 +187,7 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 			continue
 		}
 		provs[u.provider] = true
+		alive = alive || (u.answered && u.timeouts < udp53Failing)
 		if u.timeouts >= udpBlockedRun {
 			blockedProv[u.provider] = true
 			blocked = append(blocked, u)
@@ -217,7 +227,7 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 		ev["loss"] = round3(loss)
 	}
 	warm := anyOK || (!e.start.IsZero() && now.Sub(e.start) >= udpWarmUp)
-	if warm && len(blockedProv) >= udpMinProviders {
+	if warm && !alive && len(blockedProv) >= udpMinProviders {
 		ev["udp_providers"] = float64(len(provs))
 		ev["udp_blocked_providers"] = float64(len(blockedProv))
 		if has53 {

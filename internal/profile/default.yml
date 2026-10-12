@@ -19,8 +19,9 @@
 #
 # The trade-off: fyisp looks up every target's name about once a minute
 # (probe.ResolveEvery), so the DNS resolver, on a work laptop often the
-# employer's, sees github.com, dropbox.com, youtube.com and netflix.com all
-# day, as if they were in use. Opt out with a --config file that
+# employer's, sees github.com, dropbox.com, onedrive.live.com, youtube.com,
+# netflix.com and the Teams relay all day, as if they were in use; the relay
+# also gets a STUN burst every 5s. Opt out with a --config file that
 # `extends: [default]` and has `remove: [YouTube, Netflix]` (any target
 # here can be removed that way; see README, Privacy). Clouds, gaming, social
 # sites, the rest of streaming and the Teams relay pools over TCP stay a

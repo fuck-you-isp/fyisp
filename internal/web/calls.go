@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"time"
 
@@ -395,6 +396,12 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 			regions[st.Target] = st.Region
 		}
 	}
+	// ownAlive: not all of an app's own STUN targets are down while others
+	// answer (callq.NotAnswering; when nothing answers, e.g. UDP blocked,
+	// they count as alive and show the block).
+	ownAlive := func(ts []model.Target) bool {
+		return slices.ContainsFunc(ts, func(t model.Target) bool { return !dead[idx[t.Name]] })
+	}
 	for _, a := range callq.Apps {
 		var ut, wt []model.Target
 		for _, t := range udp {
@@ -409,7 +416,7 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		}
 		app := callsApp{App: a.ID, UDP: "not_measurable"}
 		switch {
-		case a.Measurable && len(ut) > 0:
+		case a.Measurable && len(ut) > 0 && (len(wt) == 0 || ownAlive(ut)):
 			app.UDP = "measured"
 			app.callsGroup = group(ut)
 			for _, t := range ut {
@@ -420,7 +427,9 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		case len(wt) == 0:
 			continue // an app not in the profile
 		case a.Measurable:
-			app.UDP = "shared" // Teams without its opt-in relay: its calls take the shared call path
+			// Teams without its relay, or with the relay not answering while
+			// other STUN servers do: its calls take the shared call path.
+			app.UDP = "shared"
 		}
 		var sum float64
 		var ok, lost int

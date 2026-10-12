@@ -9,9 +9,9 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// stunHarness is newHarness plus default.yml's STUN targets: three
-// providers on STUN ports (Google, Cloudflare, Twilio) and Cloudflare's
-// STUN on UDP 53.
+// stunHarness is newHarness plus default.yml's STUN targets: four
+// providers on STUN ports (Google, Cloudflare, Twilio, Microsoft's Teams
+// relay) and Cloudflare's STUN on UDP 53.
 func stunHarness(t *testing.T) *harness {
 	h := newHarness(t)
 	h.p.Groups = append(h.p.Groups, model.Group{ID: "calls", Title: "Call path (UDP)"})
@@ -25,6 +25,7 @@ func stunHarness(t *testing.T) *harness {
 		{"Cloudflare-STUN", "stun.cloudflare.com", 3478, 5 * time.Second, []string{tagUDPPath}},
 		{"Cloudflare-UDP53", "stun.cloudflare.com", 53, 15 * time.Second, []string{tagUDPPath, tagUDP53}},
 		{"Twilio-STUN-global", "global.stun.twilio.com", 3478, 5 * time.Second, []string{tagUDPPath}},
+		{"Teams-Relay", "worldaz.tr.teams.microsoft.com", 3478, 5 * time.Second, []string{tagUDPPath, "app:teams"}},
 	} {
 		h.p.Targets = append(h.p.Targets, model.Target{Name: s.name, Host: s.host, Port: s.port, Group: "calls",
 			Kinds: []model.ProbeKind{model.KindUDP}, Interval: s.iv, Tags: s.tags})
@@ -32,7 +33,7 @@ func stunHarness(t *testing.T) *harness {
 	return h
 }
 
-var stunPorts = []string{"Meet-STUN", "Cloudflare-STUN", "Twilio-STUN-global"}
+var stunPorts = []string{"Meet-STUN", "Cloudflare-STUN", "Twilio-STUN-global", "Teams-Relay"}
 
 func allUDP() []string { return append(slices.Clone(stunPorts), "Cloudflare-UDP53") }
 
@@ -111,6 +112,39 @@ func TestUDPBlockedNeedsTwoProviders(t *testing.T) {
 	}
 }
 
+// Two dead providers next to answering STUN ports are those servers'
+// problem, not a block: e.g. Microsoft filtering the Teams relay during a
+// Twilio outage, while Google and Cloudflare answer. Only when the last
+// answering STUN port goes quiet too is it a block.
+func TestUDPBlockedNotWhileSTUNAnswers(t *testing.T) {
+	for name, dead := range map[string][]string{
+		"relay and twilio":                 {"Teams-Relay", "Twilio-STUN-global"},
+		"relay and google":                 {"Teams-Relay", "Meet-STUN"},
+		"three providers":                  {"Teams-Relay", "Twilio-STUN-global", "Meet-STUN"},
+		"three providers and cloudflare53": {"Teams-Relay", "Twilio-STUN-global", "Meet-STUN", "Cloudflare-UDP53"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := stunHarness(t)
+			h.with(targets(timedOut, dead...))
+			h.run(10 * time.Minute)
+			checkNoUDP(t, h)
+			checkTCPOK(t, h)
+		})
+	}
+	// Cloudflare's STUN port, the last one answering, stops too: blocked.
+	h := stunHarness(t)
+	h.with(targets(timedOut, "Teams-Relay", "Twilio-STUN-global", "Meet-STUN"))
+	h.with(targets(between(5*time.Minute, 0, timedOut), "Cloudflare-STUN"))
+	first := map[model.VerdictKind]time.Duration{}
+	h.track(8*time.Minute, first)
+	if at, ok := first[model.VerdictSTUNBlocked]; !ok || at < 5*time.Minute || at > 6*time.Minute {
+		t.Errorf("stun_blocked first at %v (%v), want within a minute of 5m; seen %v", at, ok, first)
+	}
+	if first[model.VerdictUDPBlocked] != 0 || first[model.VerdictUDPDegraded] != 0 {
+		t.Errorf("first verdicts %v", first)
+	}
+}
+
 // A network that blocks UDP from the start: nothing during the UDP warm-up
 // (2 minutes, no answer yet), udp_blocked right after.
 func TestUDPBlockedWarmUp(t *testing.T) {
@@ -127,10 +161,10 @@ func TestUDPBlockedWarmUp(t *testing.T) {
 	}
 	v := h.e.Current()
 	if v.Kind != model.VerdictUDPBlocked || v.Summary != udpBlockedSummary || v.Quiet ||
-		!slices.Equal(v.Targets, []string{"Cloudflare-STUN", "Meet-STUN", "Twilio-STUN-global"}) {
+		!slices.Equal(v.Targets, []string{"Cloudflare-STUN", "Meet-STUN", "Teams-Relay", "Twilio-STUN-global"}) {
 		t.Fatalf("verdict %+v", v)
 	}
-	if v.Evidence["udp_blocked_providers"] != 3 || v.Evidence["udp_providers"] != 3 || v.Evidence["udp53_ok"] != 0 ||
+	if v.Evidence["udp_blocked_providers"] != 4 || v.Evidence["udp_providers"] != 4 || v.Evidence["udp53_ok"] != 0 ||
 		v.Evidence["services_loss"] != 0 || v.Evidence["loss"] != 0 {
 		t.Errorf("evidence %v", v.Evidence)
 	}

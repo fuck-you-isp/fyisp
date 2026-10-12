@@ -100,7 +100,7 @@ Unknown parameters return 400, like the other routes.
 
 Tiles come in a fixed order: `calls`, `work`, `web`, `other`. A tile with no targets is left out. Categories come from `profile.HomeCategory(target)` (`internal/profile/home.go`):
 - `calls`: `udp-path` STUN targets and call apps' TCP targets (`app:*`);
-- `work`, `web`: the `home:work` and `home:web` tags, else the productivity or developer-services provider (work) or a CDN or the streaming provider (web);
+- `work`, `web`: the `home:work` and `home:web` tags, else the productivity provider (work) or a CDN or the streaming provider (web);
 - otherwise `other`.
 
 The path group (gateway, ISP edge, anycast resolvers) is never in a tile.
@@ -383,7 +383,7 @@ None of these may appear in any copy field: STUN, UDP, TCP, ICMP, anycast, MOS, 
 
 ## Development: scenarios and golden files
 
-`internal/web/homescen` builds the Home scenarios: the default profile (`--profile aws` for `clouds-other`), a week of stored samples, and a verdict with its outage log. It covers good, warming, wifi, isp, upstream, one-app-down, calls-choppy, udp-blocked, no-network, week-with-gaps and clouds-other.
+`internal/web/homescen` builds the Home scenarios: the default profile (`--profile aws` for `clouds-other`), a week of stored samples, and a verdict with its outage log. It covers good, warming, wifi, isp, upstream, one-app-down, calls-choppy, udp-blocked, no-network, week-with-gaps, clouds-other and teams-relay-down.
 
 - **`cmd/fyisp-webdev -home <scenario>`** serves the **real** `/api/home` (and the rest of the dashboard) over that data, and keeps adding samples as time passes.
 - **`internal/web/testdata/home/<scenario>.json`** pins every scenario: live, today, the week, and `part=at` 5 minutes ago, on Friday 2026-10-09 at 14:30 (UTC+2). This is where the copy is reviewed.

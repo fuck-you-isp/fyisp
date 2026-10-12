@@ -56,7 +56,7 @@ type fakeUDPState []probe.UDPState
 
 func (f fakeUDPState) UDPState() []probe.UDPState { return f }
 
-// callsProfile: four call-path STUN targets (Meet and the opt-in Teams relay
+// callsProfile: four call-path STUN targets (Meet and the Teams relay
 // among them), a far Twilio region that is not part of the path, and the
 // call apps' websites over TCP.
 func callsProfile(teams bool) *model.Profile {
@@ -245,7 +245,7 @@ func TestCallsGood(t *testing.T) {
 		t.Errorf("zoom %+v", z)
 	}
 
-	// Without the opt-in Teams relay, Teams is a "shared" row: its calls
+	// Without the Teams relay, Teams is a "shared" row: its calls
 	// take the call path, its website is measured, and it never changes
 	// the top state.
 	_, d, _ = callsFixture(t, now, false, nil)
@@ -308,8 +308,15 @@ func TestCallsStates(t *testing.T) {
 				}
 				return ok
 			},
-			top: "good", path: "good", apps: map[string]string{"meet": "server_not_answering", "teams": "server_not_answering"},
+			// The apps whose own servers are down fall back to the shared
+			// call path, like an app without servers of its own.
+			top: "good", path: "good",
 			check: func(t *testing.T, c callsResp) {
+				for _, app := range []string{"meet", "teams"} {
+					if i := c.app(app); i < 0 || c.Apps[i].UDP != "shared" || c.Apps[i].State != "" {
+						t.Errorf("app %s: %+v, want shared", app, c.Apps)
+					}
+				}
 				p := c.Path
 				if *p.Loss != 0 || p.Unknown != 0 {
 					t.Errorf("path loss %v unknown %d: dead servers are left out", *p.Loss, p.Unknown)

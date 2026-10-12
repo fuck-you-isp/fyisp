@@ -3243,7 +3243,7 @@ class Calls {
       det.addEventListener('toggle', () => { if (det.open) this.open.add(app.app); else this.open.delete(app.app); });
       items.push(h('li', {}, det));
     }
-    // Apps whose own call server is not measured (Teams without its opt-in relay): their calls take the call path.
+    // Apps whose own call server is not measured (Teams with its relay removed or not answering): their calls take the call path.
     for (const app of d.apps.filter((x) => x.udp === 'shared')) {
       const st = d.path ? d.path.state : 'not_enough_data';
       const web = (app.web_samples || 0) === 0 ? '' : app.web_ms == null ? ' Its website is not answering right now.' : ` Website reachable, ${fmtMs(app.web_ms)} ms.`;
