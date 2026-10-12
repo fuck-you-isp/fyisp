@@ -99,7 +99,8 @@ func (e *engine) lagged(v *view, start, to time.Time) *Drop {
 
 // pathClean reports that the gateway and the edge lost nothing of note
 // after from, up to to (zero: now): no run of total loss of theirs started
-// then, and their closed minutes wholly inside lost under layerLossy.
+// then, and their closed minutes wholly inside, and their checks not
+// summarized yet, lost under layerLossy.
 func (e *engine) pathClean(v *view, from, to time.Time) bool {
 	return e.layersClean(v, from, to, layerGateway, layerEdge)
 }
@@ -120,6 +121,23 @@ func (e *engine) layersClean(v *view, from, to time.Time, layers ...int) bool {
 				return false
 			}
 		}
+		// the minutes not summarized yet, from their raw checks: loss
+		// right after a drop must not wait for its minute to close
+		n, lost := 0, 0
+		for _, i := range e.paths[l] {
+			for _, c := range e.ss[i].raw {
+				if c.gap || c.ms <= from.UnixMilli() || !to.IsZero() && c.ms > to.UnixMilli() {
+					continue
+				}
+				n++
+				if c.lost {
+					lost++
+				}
+			}
+		}
+		if lost >= 2 && float64(lost) >= layerLossy*float64(n) {
+			return false
+		}
 	}
 	return true
 }
@@ -139,10 +157,19 @@ func (e *engine) episodes(v *view) []Episode {
 		x.Kind = epBlip
 		conn = append(conn, x)
 	}
-	// an incident that is a drop's (or a blip's) lag ends with it: it is
-	// absorbed, is no second ongoing problem, and explains nothing after
+	// the incidents are re-read every incEvery: the verdict's own may not
+	// be among them yet (the card already shows it)
 	incs := e.incidents
 	cloned := false
+	if vk := e.verdict; !vk.Since.IsZero() && !slices.ContainsFunc(incs, func(in model.Incident) bool {
+		return in.Kind == vk.Kind && in.End.IsZero() && in.Start.Sub(vk.Since).Abs() < time.Second
+	}) {
+		if _, ok := incidentEpisode(model.Incident{Kind: vk.Kind}, false); ok {
+			incs, cloned = append(slices.Clip(incs), model.Incident{Kind: vk.Kind, Start: vk.Since, PeakLoss: vk.Evidence["loss"]}), true
+		}
+	}
+	// an incident that is a drop's (or a blip's) lag ends with it: it is
+	// absorbed, is no second ongoing problem, and explains nothing after
 	for i, in := range incs {
 		if !pathKind(in.Kind) {
 			continue

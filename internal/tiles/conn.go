@@ -34,10 +34,10 @@ const (
 //
 //  1. stale; 2. checking (not ready, or the verdict is warming up);
 //  3. verdict no_network / lan / isp / upstream, unless its incident
-//     started inside a connection drop or a path blip that ended less
-//     than verdictLag ago, or inside one (or lagSlack after it) since
-//     which the gateway and the edge have been clean (then skip it: the
-//     verdict's window still holds the drop). An isp verdict from partial
+//     started inside a connection drop or a path blip (or lagSlack after
+//     it) since which the gateway and the edge have been clean, or, when
+//     that is not known, inside one that ended less than verdictLag ago
+//     (then skip it: the verdict's window still holds the drop). An isp verdict from partial
 //     loss, with no drop in progress, is amber (Lossy);
 //  4. a connection drop in progress; 5. verdict dns;
 //  6. udp_blocked / stun_blocked (Quiet: info); 7. udp_degraded;
@@ -165,8 +165,10 @@ func connState(in connIn) ConnState {
 			if !d.Ended() || v.Since.Before(d.Start.Add(-absorbBefore)) || v.Since.After(d.End.Add(lagSlack)) {
 				return false
 			}
-			clean := in.clean != nil && in.clean(d.End)
-			return clean || !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
+			if in.clean != nil {
+				return in.clean(d.End)
+			}
+			return !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
 		}) {
 			if loss, ok := v.Evidence["loss"]; ok && v.Kind == model.VerdictISP && in.dropNow == nil && loss > 0 && loss < fullLoss {
 				c := vk("isp_lossy", ToneWarn, Slow)

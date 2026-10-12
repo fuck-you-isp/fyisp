@@ -122,6 +122,7 @@ func (e *engine) inputs(ctx context.Context, now time.Time) inputs {
 
 // use takes in's re-read sources. The caller holds mu.
 func (e *engine) use(in inputs) {
+	e.verdict = in.verdict
 	if in.incOK {
 		e.incidents = in.incidents
 	}

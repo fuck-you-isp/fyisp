@@ -402,3 +402,80 @@ func TestLaggedNeedsCleanPath(t *testing.T) {
 		t.Errorf("want the incident ongoing on its own:\n%s", epsText(last.Eps))
 	}
 }
+
+// TestBlockedBeforeIncidentRead is netns S10: every STUN target stops
+// answering, the call tiles go Down, and a minute later the verdict says
+// udp_blocked. Its incident is read only every incEvery: from the first
+// tick of the verdict the call tiles' problem is the block's, so the card
+// and the tiles agree at once (B3).
+func TestBlockedBeforeIncidentRead(t *testing.T) {
+	s := newLagScene(t)
+	var stun []string
+	for _, tg := range s.p.Targets {
+		if slices.Contains(tg.ProbeKinds(), model.KindUDP) {
+			stun = append(stun, tg.Name)
+		}
+	}
+	b := s.start.Add(20 * time.Minute)
+	v := b.Add(62 * time.Second)
+	src := s.sources()
+	src.Incidents = func(context.Context, time.Time, time.Time) ([]model.Incident, error) { return nil, nil }
+	src.Verdict = func() model.Verdict {
+		if s.now.Before(v) {
+			return model.Verdict{Kind: model.VerdictOK}
+		}
+		return model.Verdict{Kind: model.VerdictUDPBlocked, Since: v}
+	}
+	ctx := context.Background()
+	e := newEngine(s.p, profile.ResolveTiles(s.p), src, Options{Replay: time.Hour})
+	if err := e.replay(ctx, s.start); err != nil {
+		t.Fatal(err)
+	}
+	e.goLive(ctx, s.start)
+	end := v.Add(tickEvery)
+	arr := eGen(eSeries(e), s.start, end, []eEvent{{b, end, eNames(stun...), 0}}, 3)
+	i := 0
+	for tk := s.start.Add(tickEvery); !tk.After(end); tk = tk.Add(tickEvery) {
+		s.now = tk
+		for ; i < len(arr) && !arr[i].arrive.After(tk); i++ {
+			e.Observe(arr[i].s)
+		}
+		e.advance(ctx, tk)
+	}
+	snap := e.Snapshot()
+	var blocked []Episode
+	for _, x := range snap.Eps {
+		if x.Ongoing() && slices.Contains(x.Tiles, "zoom") {
+			blocked = append(blocked, x)
+		}
+	}
+	if len(blocked) != 1 || blocked[0].Kind != EpBlocked || !blocked[0].Connection {
+		t.Fatalf("the verdict's first tick: zoom's problems\n%s, want the block's", epsText(blocked))
+	}
+	if z := snap.Tiles[0]; z.State != Down || z.Cause != (Cause{}) {
+		t.Errorf("zoom %s, cause %+v, want Down with the connection's cause (none)", z.State, z.Cause)
+	}
+}
+
+// TestLaggedNeedsCleanPathNow: loss right after the drop (20% of the
+// edge's checks, no run long enough for a drop) is seen at once, before
+// its minute closes: the incident is no lag (netns S2b, 40% loss whose
+// runs made a drop).
+func TestLaggedNeedsCleanPathNow(t *testing.T) {
+	s := newLagScene(t)
+	d := s.start.Add(20 * time.Minute)
+	end := d.Add(40 * time.Second)
+	s.inc = []model.Incident{{ID: 1, Kind: model.VerdictISP, Start: d.Add(-30 * time.Second), End: end.Add(5 * time.Minute), PeakLoss: 0.4}}
+	s.loss = 0.4
+	evs := []eEvent{{d, end, notGateway, 0}}
+	for k := range 6 {
+		from := end.Add(time.Duration(5+10*k) * time.Second)
+		evs = append(evs, eEvent{from, from.Add(2 * time.Second), eNames("ISP edge"), 0})
+	}
+	var last *Snapshot
+	at := end.Add(30 * time.Second)
+	s.run(t, evs, at, at, func(e *engine, now time.Time) { last = e.Snapshot() })
+	if c := last.Conn; c.Kind != string(model.VerdictISP) || !c.Lossy {
+		t.Errorf("card %s %s, want the lossy isp card", c.Kind, c.Key)
+	}
+}

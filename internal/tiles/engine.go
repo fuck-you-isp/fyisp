@@ -171,6 +171,7 @@ type engine struct {
 	gateway      netip.Addr
 	edge         netip.Addr
 	incidents    []model.Incident
+	verdict      model.Verdict // the latest tick's
 	incAt        time.Time
 	stored       speedWindows
 	storedAt     time.Time
