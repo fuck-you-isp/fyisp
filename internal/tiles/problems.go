@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
@@ -241,9 +242,25 @@ func (e *engine) episodes(v *view) []Episode {
 	var buf []minute
 	eps := groupEpisodes(conn, parts, func(x Episode) Cause {
 		in := attrIn{from: x.Start, to: x.End, now: now, incidents: incs, speed: sp}
+		// a call tile's minute judges the call window that ends with it:
+		// the loss behind a calls-only Choppy problem lies that much
+		// earlier (its last minutes are the window emptying)
+		lf, lt := x.Start, x.End
+		if !x.Connection && x.Sev == Slow && len(x.Tiles) > 0 && !slices.ContainsFunc(x.Tiles, func(id string) bool {
+			i := tileOrder(id)
+			return i < 0 || profile.Tiles[i].Kind != profile.TileCall
+		}) {
+			lf = lf.Add(-(callWindow - time.Minute))
+			if !lt.IsZero() {
+				lt = lt.Add(-(callWindow - time.Minute))
+				if lt.Before(x.Start) {
+					lt = x.Start
+				}
+			}
+		}
 		for l := range in.layers {
-			buf = e.layerMinutes(buf[:0], l, x.Start, x.End)
-			in.layers[l] = layerEvidence(buf, e.layerWindows(v, l), x.Start, x.End, now)
+			buf = e.layerMinutes(buf[:0], l, lf, lt)
+			in.layers[l] = layerEvidence(buf, e.layerWindows(v, l), lf, lt, now)
 		}
 		in.tiles = e.tileEvs(x, v)
 		return attribute(in)

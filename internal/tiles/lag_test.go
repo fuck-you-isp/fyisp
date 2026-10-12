@@ -602,3 +602,40 @@ func TestISPPeak(t *testing.T) {
 		t.Errorf("no incident: %v", got)
 	}
 }
+
+// TestCallsLossBlamesProvider is netns S3 without a verdict incident: the
+// provider loses some of the edge's 1 s probes and of the calls' bursts
+// for 7 minutes; calls go Choppy and stay so while their 3-minute window
+// empties.
+// The problem is the provider's: its layer evidence is read where the
+// loss was, not diluted by that tail.
+func TestCallsLossBlamesProvider(t *testing.T) {
+	s := newLagScene(t)
+	t0 := s.start.Add(20 * time.Minute)
+	var stun []string
+	for _, tg := range s.p.Targets {
+		if slices.Contains(tg.ProbeKinds(), model.KindUDP) {
+			stun = append(stun, tg.Name)
+		}
+	}
+	var evs []eEvent
+	for k := range 28 { // about 10% of the bursts
+		f := t0.Add(time.Duration(k)*15*time.Second + time.Duration(k%5)*time.Second)
+		evs = append(evs, eEvent{f, f.Add(1500 * time.Millisecond), eNames(stun...), 0})
+	}
+	for k := range 10 { // 2.5% of the edge's checks: diluted by the tail, under layerLossy
+		f := t0.Add(time.Duration(k)*40*time.Second + 7*time.Second)
+		evs = append(evs, eEvent{f, f.Add(time.Second), eNames("ISP edge"), 0})
+	}
+	var last *Snapshot
+	s.run(t, evs, t0.Add(16*time.Minute), t0.Add(16*time.Minute), func(e *engine, now time.Time) { last = e.Snapshot() })
+	var calls []Episode
+	for _, x := range last.Eps {
+		if slices.Contains(x.Tiles, "zoom") {
+			calls = append(calls, x)
+		}
+	}
+	if len(calls) == 0 || slices.ContainsFunc(calls, func(x Episode) bool { return x.Cause.Who != WhoProvider }) {
+		t.Errorf("got\n%s, want the calls' problem blamed on the provider", epsText(last.Eps))
+	}
+}
