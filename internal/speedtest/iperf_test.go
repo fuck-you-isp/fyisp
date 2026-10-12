@@ -86,8 +86,9 @@ func newFakeServer(t *testing.T, mode string) *fakeServer {
 }
 
 const (
-	// maxCatchUp bounds the ticks one download write makes up.
-	maxCatchUp = 4
+	// maxCatchUp bounds the ticks one download write makes up (100 ms:
+	// one tick of the client's).
+	maxCatchUp = 10
 	// upRate is the bytes per second the fake reads per upload stream
 	// (~80 MB/s for 3 streams).
 	upRate = 256 << 10 * 100
@@ -240,10 +241,9 @@ func (f *fakeServer) session(c net.Conn) {
 						if f.mode == "slowramp" { // a far path's slow start: full rate after 2.5 s
 							n = int(float64(n) * min(1, float64(time.Since(t0))/float64(2500*time.Millisecond)))
 						}
-						if f.mode == "climb" { // still speeding up, faster and faster, for 4 s: past
-							// a 2 s run however late the client's clock starts after ours
-							x := float64(time.Since(t0)) / float64(4*time.Second)
-							n = int(float64(n) * min(1, x*x*x*x))
+						if f.mode == "climb" { // still speeding up, 1.5× per 100 ms until 3 s: past a
+							// 2 s run, and steep enough that a tick's noise never looks level
+							n = int(float64(n) * math.Pow(1.5, min(0, float64(time.Since(t0)-3*time.Second)/float64(100*time.Millisecond))))
 						}
 						k, err := s.Write(buf[:max(n, 1)])
 						sent[i] += int64(k)
