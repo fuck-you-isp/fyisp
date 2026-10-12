@@ -34,6 +34,8 @@ const NOW_MS = 15000;
 const HIDDEN_MS = 60000;
 // The startup probe gives up after this long (the old Home then shows).
 const PROBE_MS = 4000;
+// A poll that hasn't answered by then counts as failed, so the next one can start.
+const POLL_TIMEOUT_MS = 10000;
 // Home calls itself stale after this long without a fresh check, or this many failed polls in a row.
 const STALE_MS = 120e3;
 const FAILS = 2;
@@ -147,7 +149,7 @@ export class Home {
     this.el = h('main', { id: 'home', class: 'hp', hidden: true },
       this.card, this.learnEl, this.pathSec, this.tiles.el, this.speedSec, this.probSec, this.foot);
 
-    // Polls pause in a background tab; coming back fetches at once (app.js's handler skips Home).
+    // Coming back to the tab fetches at once (app.js's handler skips Home); in the background polls are every 60 s.
     document.addEventListener('visibilitychange', () => { if (!document.hidden && this.shown()) this.loadNow(); });
 
     if (first) { this.data = first; this.recvAt = Date.now(); this.nowAt = this.recvAt; }
@@ -192,7 +194,7 @@ export class Home {
   async fetchNow() {
     this.nowAt = Date.now();
     try {
-      const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }));
+      const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }), { signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
       if (!d || d.v !== 2) throw new Error('not a v2 answer');
       this.data = /** @type {HomeNow} */ (d);
       this.recvAt = Date.now();

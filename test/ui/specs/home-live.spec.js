@@ -134,3 +134,24 @@ test('a background tab keeps polling and stays truthful', async ({ page }) => {
   await expect(page.locator('.hp-answer')).toHaveClass(/\bok\b/);
   expect(await spoken(page)).toBe(0);
 });
+
+test('a poll that hangs is given up, and the next one recovers', async ({ page, failOk }) => {
+  failOk.push(/\/api\/home2\?part=now/);
+  await page.clock.install();
+  const ctl = await serveHome(page, 'now-good');
+  await openHome(page);
+  // The next part=now never answers; the ones after it do.
+  let hung = 0;
+  await page.route('**/api/home2?part=now*', (route) => { if (hung++ === 0) return; /* never answers */ route.fallback(); });
+  const n = ctl.nowCalls;
+  await page.clock.runFor(15e3);
+  await expect.poll(() => hung).toBe(1);
+  // Within the 10 s timeout nothing else is asked.
+  await page.clock.runFor(5e3);
+  expect(hung).toBe(1);
+  // AbortSignal.timeout runs on the real clock: wait for it, then the next tick polls again.
+  await expect.poll(async () => { await page.clock.runFor(1000); return ctl.nowCalls; }, { timeout: 20e3 }).toBeGreaterThan(n);
+  await settle(page);
+  await expect(page.locator('.hp-answer')).toHaveClass(/\bok\b/);
+  await expect(page).toHaveTitle('✓ All good – fyisp');
+});
