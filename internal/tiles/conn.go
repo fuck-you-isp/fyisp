@@ -34,8 +34,11 @@ const (
 //
 //  1. stale; 2. checking (not ready, or the verdict is warming up);
 //  3. verdict no_network / lan / isp / upstream, unless its incident
-//     started inside a connection drop that ended less than verdictLag
-//     ago (then skip it: the verdict's window still holds the drop);
+//     started inside a connection drop or a path blip that ended less
+//     than verdictLag ago, or inside one (or lagSlack after it) since
+//     which the gateway and the edge have been clean (then skip it: the
+//     verdict's window still holds the drop). An isp verdict from partial
+//     loss, with no drop in progress, is amber (Lossy);
 //  4. a connection drop in progress; 5. verdict dns;
 //  6. udp_blocked / stun_blocked (Quiet: info); 7. udp_degraded;
 //  8. broad slowdown; 9. app-only problems (with Working again appended
@@ -49,6 +52,7 @@ type ConnState struct {
 	Icon  State // Good, Slow, Down or None
 	Since time.Time
 	Quiet bool     // a long-standing udp_blocked/stun_blocked
+	Lossy bool     // isp: the provider loses some data, it has not dropped
 	Tiles []string // ConnApp and ConnBroad: the tiles not Good, in tile order
 	// Again is the recent connection problem behind ConnWorkingAgain, also
 	// set with ConnApp when it applies.
@@ -126,13 +130,15 @@ func monitored(ts []tileNow) int {
 
 // connIn is what the card is decided from.
 type connIn struct {
-	now      time.Time
-	stale    bool
-	ready    bool
-	verdict  model.Verdict
-	dropNow  *Drop  // a connection drop in progress
-	drops    []Drop // the connection drops (ended ones matter)
-	layersOK bool   // no path layer is unhealthy
+	now     time.Time
+	stale   bool
+	ready   bool
+	verdict model.Verdict
+	dropNow *Drop  // a connection drop in progress
+	drops   []Drop // the connection drops and the path blips (ended ones matter)
+	// clean reports the gateway and the edge clean since from (nil: unknown)
+	clean    func(from time.Time) bool
+	layersOK bool // no path layer is unhealthy
 	tiles    []tileNow
 	eps      []Episode // for Working again
 }
@@ -153,12 +159,20 @@ func connState(in connIn) ConnState {
 	switch v.Kind {
 	case model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
 		// the verdict's 60 s window outlasts a drop: for verdictLag after
-		// a drop ends, an incident that started in it is that drop,
-		// already over
+		// a drop ends, or while the path has been clean since, an
+		// incident that started in it is that drop, already over
 		if !slices.ContainsFunc(in.drops, func(d Drop) bool {
-			return d.Ended() && in.now.Before(d.End.Add(verdictLag)) &&
-				!v.Since.Before(d.Start.Add(-absorbBefore)) && !v.Since.After(d.End)
+			if !d.Ended() || v.Since.Before(d.Start.Add(-absorbBefore)) || v.Since.After(d.End.Add(lagSlack)) {
+				return false
+			}
+			clean := in.clean != nil && in.clean(d.End)
+			return clean || !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
 		}) {
+			if loss, ok := v.Evidence["loss"]; ok && v.Kind == model.VerdictISP && in.dropNow == nil && loss > 0 && loss < fullLoss {
+				c := vk("isp_lossy", ToneWarn, Slow)
+				c.Lossy = true
+				return c
+			}
 			return vk(string(v.Kind), ToneBad, Down)
 		}
 	}

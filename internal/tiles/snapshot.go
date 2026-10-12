@@ -255,7 +255,25 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		layersOK = layersOK && (h == nil || *h)
 	}
 	s.Conn = connState(connIn{now: now, stale: stale(now, e.lastMeasured), ready: ready, verdict: in.verdict,
-		dropNow: v.connCur, drops: v.connDrops, layersOK: layersOK, tiles: tn, eps: v.eps})
+		dropNow: v.connCur, drops: slices.Concat(v.connDrops, v.blips), layersOK: layersOK, tiles: tn, eps: v.eps,
+		clean: func(from time.Time) bool { return e.pathClean(v, from, time.Time{}) }})
+	// After a drop or a blip the verdict's layer health lags by its 60 s
+	// window: while the card no longer blames the path, a layer that has
+	// been clean since is Good.
+	switch s.Conn.Kind {
+	case ConnWorkingAgain, ConnApp, ConnGood:
+		var end time.Time
+		for _, d := range slices.Concat(v.connDrops, v.blips) {
+			if d.End.After(end) && now.Sub(d.End) < recoveredFor {
+				end = d.End
+			}
+		}
+		for l := range s.Layers {
+			if ls := &s.Layers[l]; !end.IsZero() && ls.State == Slow && e.layersClean(v, end, time.Time{}, l) {
+				ls.State = Good
+			}
+		}
+	}
 	s.Monitored = monitored(tn)
 	s.Day = dayCounts(v.eps, now)
 	s.Rev = epsHash(v.eps)
@@ -340,6 +358,9 @@ func tileCause(eps []Episode, id string, st State) Cause {
 	for _, e := range eps { // newest first
 		if !slices.Contains(e.Tiles, id) {
 			continue
+		}
+		if e.Kind == EpBlocked {
+			return Cause{} // the network blocks the calls' fast path: the card says so
 		}
 		switch e.Cause.Who {
 		case WhoApp, WhoCallsPath, WhoSpeedtest, WhoUnknown:

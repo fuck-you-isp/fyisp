@@ -122,6 +122,9 @@ const (
 	verdictLag    = 65 * time.Second // the verdict's 60 s window (and a tick) outlasts a drop by this much
 	absorbBefore  = time.Minute      // a connection episode absorbs what starts this long before it ...
 	absorbAfter   = 2 * time.Minute  // ... and ends this long after it
+	dropLate      = 30 * time.Second // a drop absorbs only the tile parts that start before its end + this
+	lagSlack      = 10 * time.Second // a verdict incident starting this soon after a drop ended can still be its lag
+	blockedLead   = 3 * time.Minute  // a blocked-UDP episode takes call-tile problems that started this long before it
 	causeSlack    = time.Minute      // incidents this close to an episode explain it (web/home.go homePathLead)
 	vendorMerge   = 2 * time.Minute  // tile episodes with one cause starting this close are one problem
 	sameTileMerge = 5 * time.Minute  // episodes of one tile closer than this are one problem
@@ -546,7 +549,9 @@ type wordRun struct {
 //     (since that minute) and is left after goodRun good minutes in a
 //     row, or as soon as the last badWindow judged minutes hold no Down
 //     minute: to Slow when badOf of them are bad (since the first of
-//     those), else to Good.
+//     those), else to Good. A call tile's Down from loss alone (lossDown)
+//     is left sooner: once the latest callDownLossMins judged minutes are
+//     not Down, the same way.
 //   - None minutes hold the word and do not count.
 //
 // A run that ends on good minutes ends at the first of them, or at the
@@ -558,15 +563,19 @@ type word struct {
 	outSince time.Time
 	level    State // "" before the first judged minute
 	lvlSince time.Time
-	recent   [badWindow]struct { // the last judged minutes, newest first
-		at time.Time
-		s  State
-	}
+	recent   [badWindow]judged // the last judged minutes, newest first
 	nRecent  int
 	good     int       // good minutes in a row
 	goodFrom time.Time // the first of them
 	cleared  time.Time // when the latest outage cleared
 	cur      wordRun   // the open run (Start zero: none)
+	lossDown bool      // the Down level comes from call loss alone
+}
+
+// judged is a judged tile-minute.
+type judged struct {
+	at time.Time
+	s  State
 }
 
 // state returns the word and since when it holds (zero for Good and None).
@@ -600,7 +609,11 @@ func (w *word) outageSignal(sig signal, at time.Time) *wordRun {
 }
 
 // step applies the tile-minute that starts at at.
-func (w *word) step(at time.Time, s State) *wordRun {
+func (w *word) step(at time.Time, s State) *wordRun { return w.stepLoss(at, s, false) }
+
+// stepLoss is step for a call tile-minute; lossDown: a Down minute that
+// comes from UDP loss alone (callDownLossPct), which lifts sooner.
+func (w *word) stepLoss(at time.Time, s State, lossDown bool) *wordRun {
 	if s == None {
 		return nil
 	}
@@ -616,6 +629,13 @@ func (w *word) step(at time.Time, s State) *wordRun {
 		w.good = 0
 	}
 	bad, first, down := w.bad()
+	if s == Down {
+		w.lossDown = lossDown && (w.level != Down || w.lossDown)
+	}
+	if w.level == Down && w.lossDown && w.nRecent >= callDownLossMins {
+		// loss Down lifts once its last minutes are below the Down loss
+		down = slices.ContainsFunc(w.recent[:callDownLossMins], func(r judged) bool { return r.s == Down })
+	}
 	switch {
 	case s == Down && w.level != Down:
 		w.level, w.lvlSince = Down, at

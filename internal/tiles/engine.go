@@ -643,16 +643,19 @@ func (e *engine) closeMinute(from time.Time) {
 			continue
 		}
 		cov++
-		st := e.tileMinute(t)
+		st, lossDown := e.tileMinute(t)
 		t.mins[k] = st
 		t.plot[k] = e.plotMs(t)
-		if r := t.w.step(from, st); r != nil {
+		if r := t.w.stepLoss(from, st, lossDown); r != nil {
 			t.runs = append(t.runs, *r)
 		}
 		if n := len(t.runs); n > 0 && t.runs[0].End.Before(msTime(cut)) {
 			t.runs = slices.DeleteFunc(t.runs, func(r wordRun) bool { return r.End.Before(msTime(cut)) })
 		}
-		if s, _ := t.w.state(); s.Bad() {
+		// the minutes' word, not an outage seen since (an immediate Down
+		// is the tick's, newer than this minute: a drop starting now would
+		// make this minute's healthy layers look like a slowdown)
+		if t.w.level.Bad() {
 			bad = append(bad, t)
 		}
 	}
@@ -690,8 +693,10 @@ func (s *ser) set() runSet {
 }
 
 // tileMinute judges a tile's latest minute from its series' judgements,
-// and notes its measured endpoints and call numbers.
-func (e *engine) tileMinute(t *tile) State {
+// and notes its measured endpoints and call numbers. lossDown: a call
+// tile-minute Down from its UDP members' loss alone (not delay, not its web
+// group).
+func (e *engine) tileMinute(t *tile) (st State, lossDown bool) {
 	var wb, ub [8]State
 	web, udp := wb[:0], ub[:0]
 	t.measured = 0
@@ -703,6 +708,7 @@ func (e *engine) tileMinute(t *tile) State {
 		}
 	}
 	var calls []callStats
+	lossDown = true
 	for _, m := range t.udp {
 		var vb [4]State
 		vs := vb[:0]
@@ -715,13 +721,16 @@ func (e *engine) tileMinute(t *tile) State {
 			if s.call.bursts > 0 {
 				calls = append(calls, s.call)
 			}
+			lossDown = lossDown && (s.state != Down || s.call.delayMs <= callDownDelayMs)
 		}
 		udp = append(udp, vote(vs...))
 	}
-	if t.def.Kind == profile.TileCall {
-		t.callM = callMetrics(t.source, calls)
+	if t.def.Kind != profile.TileCall {
+		return tileMinute(t.def.Kind, web, udp), false
 	}
-	return tileMinute(t.def.Kind, web, udp)
+	t.callM = callMetrics(t.source, calls)
+	st = tileMinute(t.def.Kind, web, udp)
+	return st, st == Down && majority(web) != Down && majority(udp) == Down && lossDown
 }
 
 // callMetrics are a call tile's numbers: the medians over its UDP

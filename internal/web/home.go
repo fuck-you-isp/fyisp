@@ -450,7 +450,15 @@ func (c homeCopy) card(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, ch
 		return a
 	}
 	switch cs.Kind {
-	case string(model.VerdictLAN), string(model.VerdictISP), string(model.VerdictUpstream), string(model.VerdictNoNetwork), tiles.ConnDrop:
+	case string(model.VerdictISP):
+		if cs.Lossy {
+			a.Headline = "Your internet provider is losing some data."
+			a.Sub = "Your router is answering normally, but some data is lost in your provider’s network past it. Calls may be choppy and some pages slow to load." + started()
+			a.Tab = "! Provider losing data"
+			break
+		}
+		a.Headline, a.Sub, a.Tab = c.pathCard(cs.Kind, cs.Since)
+	case string(model.VerdictLAN), string(model.VerdictUpstream), string(model.VerdictNoNetwork), tiles.ConnDrop:
 		a.Headline, a.Sub, a.Tab = c.pathCard(cs.Kind, cs.Since)
 	case string(model.VerdictDNS):
 		a.Headline = "Websites can’t be found right now."
@@ -458,13 +466,17 @@ func (c homeCopy) card(snap *tiles.Snapshot, eps []tiles.Episode, app appRow, ch
 		a.Tab = "! Websites not found"
 	case string(model.VerdictUDPBlocked), string(model.VerdictSTUNBlocked):
 		a.Headline = "Calls can’t use their fast path on this network."
+		what := "the kind of traffic calls prefer. Most call apps fall back to a slower route"
+		if cs.Kind == string(model.VerdictSTUNBlocked) {
+			what = "the ports calls prefer. Most call apps fall back to another port or a slower route"
+		}
 		if cs.Quiet {
 			a.Icon = "info" // known for a long time: information, not a warning
-			a.Sub = "This network blocks the kind of traffic calls prefer. Most call apps fall back to a slower route, so calls usually still work but may be choppier. Websites and apps are fine."
+			a.Sub = "This network blocks " + what + ", so calls usually still work but may be choppier. Websites and apps are fine."
 			a.Tab = "ⓘ Calls limited"
 			break
 		}
-		a.Sub = "This network is blocking the kind of traffic calls prefer. Most call apps fall back to a slower route, so calls usually still work but may be choppier. Websites and apps are fine." + started()
+		a.Sub = "This network is blocking " + what + ", so calls usually still work but may be choppier. Websites and apps are fine." + started()
 		a.Tab = "! Calls limited"
 	case string(model.VerdictUDPDegraded):
 		a.Headline = "Calls may be choppy right now."

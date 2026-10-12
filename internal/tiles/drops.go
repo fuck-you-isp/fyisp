@@ -82,14 +82,17 @@ const (
 
 // dropLike reports a run that counts as a drop (open or not): after a
 // recent success, tileDropChecks or more lost checks on a web endpoint,
-// dropMin or more on a UDP one. Its checks count only as the drop, never as
-// loss; any other run's checks are loss. Path runs are never left out.
+// dropMin or more, or tileDropChecks bursts or more, on a UDP one. Its
+// checks count only as the drop, never as loss; any other run's checks are
+// loss. So a 20 s blip of the whole connection, too short for a drop,
+// leaves no Choppy calls behind; a burst or two lost is loss. Path runs
+// are never left out.
 func (r failRun) dropLike(rule runRule) bool {
 	switch rule {
 	case ruleWeb:
 		return r.prior && r.lost >= tileDropChecks
 	case ruleUDP:
-		return r.prior && r.est() >= dropMin
+		return r.prior && (r.est() >= dropMin || r.lost >= tileDropChecks)
 	}
 	return false
 }

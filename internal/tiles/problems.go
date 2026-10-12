@@ -16,7 +16,11 @@ type view struct {
 	layerCur   [nLayers]*Drop
 	connDrops  []Drop // ended
 	connCur    *Drop  // in progress
-	eps        []Episode
+	// blips are the path layers' ended runs of total loss too short for a
+	// drop (connDropNow to dropMin) outside any connection drop: they
+	// leave nothing behind, but the verdict reacts to them
+	blips []Drop
+	eps   []Episode
 }
 
 // view computes the drops and the problems at now. The caller holds mu.
@@ -58,8 +62,66 @@ func (e *engine) view(now time.Time) *view {
 		v.layerEnded[l], v.layerCur[l] = layerDrops(layers[l], now)
 	}
 	v.connDrops, v.connCur = connDrops(layers, tds, len(tds), now)
+	var short []window
+	for _, ws := range v.layerEnded {
+		for _, w := range ws {
+			if w.dur(now) < dropMin {
+				short = append(short, w)
+			}
+		}
+	}
+	for _, b := range toDrops(union(short, now), now) {
+		in := func(d Drop) bool { return (window{d.Start, d.End}).overlaps(window{b.Start, b.End}, now) }
+		if b.Dur < dropMin && !slices.ContainsFunc(v.connDrops, in) && (v.connCur == nil || !in(*v.connCur)) {
+			v.blips = append(v.blips, b)
+		}
+	}
 	v.eps = e.episodes(v)
 	return v
+}
+
+// lagged returns the drop or blip that ended at most lagSlack before a
+// lan, isp, upstream or no_network verdict incident starting at start
+// began (and at most absorbBefore after it), when the gateway and the edge
+// have been clean from its end to to (zero: now): the incident is the
+// verdict's 60 s window still holding it (nil: none).
+func (e *engine) lagged(v *view, start, to time.Time) *Drop {
+	for _, ds := range [][]Drop{v.connDrops, v.blips} {
+		for i, d := range ds {
+			if d.Ended() && !start.Before(d.Start.Add(-absorbBefore)) && !start.After(d.End.Add(lagSlack)) &&
+				e.pathClean(v, d.End, to) {
+				return &ds[i]
+			}
+		}
+	}
+	return nil
+}
+
+// pathClean reports that the gateway and the edge lost nothing of note
+// after from, up to to (zero: now): no run of total loss of theirs started
+// then, and their closed minutes wholly inside lost under layerLossy.
+func (e *engine) pathClean(v *view, from, to time.Time) bool {
+	return e.layersClean(v, from, to, layerGateway, layerEdge)
+}
+
+// layersClean is pathClean for the given layers.
+func (e *engine) layersClean(v *view, from, to time.Time, layers ...int) bool {
+	ep := window{from, to}
+	hi := e.nextMin // exclusive
+	if !to.IsZero() && to.Before(hi) {
+		hi = to.Truncate(time.Minute)
+	}
+	for _, l := range layers {
+		if slices.ContainsFunc(e.layerWindows(v, l), func(w window) bool { return w.from.After(from) && w.overlaps(ep, v.now) }) {
+			return false
+		}
+		for t := from.Truncate(time.Minute).Add(time.Minute); t.Before(hi); t = t.Add(time.Minute) {
+			if m := e.layerMins[l][minIdx(t)]; m.n() > 0 && float64(m.lost) >= layerLossy*float64(m.n()) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // episodes groups the problem parts of the last week (groupEpisodes).
@@ -72,7 +134,32 @@ func (e *engine) episodes(v *view) []Episode {
 	if c := v.connCur; c != nil && c.Dur >= dropMin {
 		conn = append(conn, dropEpisode(*c, ""))
 	}
-	for _, in := range e.incidents {
+	for _, d := range v.blips {
+		x := dropEpisode(d, "")
+		x.Kind = epBlip
+		conn = append(conn, x)
+	}
+	// an incident that is a drop's (or a blip's) lag ends with it: it is
+	// absorbed, is no second ongoing problem, and explains nothing after
+	incs := e.incidents
+	cloned := false
+	for i, in := range incs {
+		if !pathKind(in.Kind) {
+			continue
+		}
+		d := e.lagged(v, in.Start, in.End)
+		if d == nil || !in.End.IsZero() && !in.End.After(d.End) {
+			continue
+		}
+		if !cloned {
+			incs, cloned = slices.Clone(incs), true
+		}
+		incs[i].End = d.End
+		if !d.End.After(in.Start) { // it began in the lagSlack after the drop
+			incs[i].End = in.Start.Add(time.Second)
+		}
+	}
+	for _, in := range incs {
 		if x, ok := incidentEpisode(in, e.incidentDropped(in, v)); ok {
 			conn = append(conn, x)
 		}
@@ -98,7 +185,7 @@ func (e *engine) episodes(v *view) []Episode {
 	sp := e.speed()
 	var buf []minute
 	eps := groupEpisodes(conn, parts, func(x Episode) Cause {
-		in := attrIn{from: x.Start, to: x.End, now: now, incidents: e.incidents, speed: sp}
+		in := attrIn{from: x.Start, to: x.End, now: now, incidents: incs, speed: sp}
 		for l := range in.layers {
 			buf = e.layerMinutes(buf[:0], l, x.Start, x.End)
 			in.layers[l] = layerEvidence(buf, e.layerWindows(v, l), x.Start, x.End, now)

@@ -147,9 +147,10 @@ func TestGroupEpisodes(t *testing.T) {
 		}
 	}
 
-	// the merged drop keeps the drop and gains the incident
+	// the merged drop keeps the drop, its span included, and gains the
+	// incident (the verdict's window catching up)
 	got := groupEpisodes([]Episode{isp, drop}, nil, byVendor, now)
-	if e := got[0]; e.Kind != EpDrop || e.Verdict != model.VerdictISP || !e.End.Equal(at(11*m+30*time.Second)) || e.DropDur != 40*time.Second || e.Sev != Down || e.Cause.Who != WhoProvider {
+	if e := got[0]; e.Kind != EpDrop || e.Verdict != model.VerdictISP || !e.Start.Equal(drop.Start) || !e.End.Equal(drop.End) || e.DropDur != 40*time.Second || e.Sev != Down || e.Cause.Who != WhoProvider {
 		t.Errorf("drop + incident: got %+v", e)
 	}
 	// the drop keeps its own end next to a long UDP block

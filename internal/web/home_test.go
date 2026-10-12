@@ -464,7 +464,8 @@ func TestHomeRestartNotStale(t *testing.T) {
 
 // stun_blocked (STUN ports blocked, other UDP works) reads as udp_blocked:
 // the engine keeps the verdict's kind, the card's key says udp_blocked
-// (found by the netns i2 scenario, where Home said "All good").
+// (found by the netns i2 scenario, where Home said "All good"). Its sub
+// line names the ports rather than the kind of traffic.
 func TestHomeSTUNBlocked(t *testing.T) {
 	answer := func(kind string) (HomeAnswer, []HomeTile) {
 		sc := scenario(t, "udp-blocked")
@@ -480,8 +481,12 @@ func TestHomeSTUNBlocked(t *testing.T) {
 	}
 	ua, ut := answer(string(model.VerdictUDPBlocked))
 	sa, st := answer(string(model.VerdictSTUNBlocked))
-	if sa.Key != ua.Key || sa.Tone != ua.Tone || sa.Headline != ua.Headline || sa.Sub != ua.Sub || !strings.HasPrefix(sa.Key, "udp_blocked:") {
+	prefix := func(k string) string { return k[:strings.LastIndex(k, ":")] } // the text's hash differs
+	if prefix(sa.Key) != prefix(ua.Key) || sa.Tone != ua.Tone || sa.Headline != ua.Headline || sa.Tab != ua.Tab || !strings.HasPrefix(sa.Key, "udp_blocked:") {
 		t.Errorf("stun_blocked %+v, want udp_blocked's %+v", sa, ua)
+	}
+	if !strings.Contains(sa.Sub, "blocking the ports calls prefer") || !strings.Contains(ua.Sub, "blocking the kind of traffic calls prefer") {
+		t.Errorf("subs: stun_blocked %q, udp_blocked %q", sa.Sub, ua.Sub)
 	}
 	for i := range ut {
 		if st[i].State != ut[i].State {

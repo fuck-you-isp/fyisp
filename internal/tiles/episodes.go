@@ -35,6 +35,9 @@ const (
 	EpSlow    = "slow"    // Slow, or a lossy connection
 	EpChoppy  = "choppy"  // a call tile's Slow
 	EpBlocked = "blocked" // UDP or STUN blocked
+	// epBlip is a path blip (view.blips): an episode only while grouping,
+	// so that what it absorbs goes with it
+	epBlip = "blip"
 )
 
 // Ongoing reports an episode that has not ended.
@@ -134,12 +137,32 @@ func (e *Episode) merge(o Episode) {
 	if e.Verdict == "" {
 		e.Verdict = o.Verdict
 	}
-	for _, t := range o.Tiles {
+	e.addTiles(o.Tiles)
+}
+
+// addTiles adds tiles to e's, in tile order.
+func (e *Episode) addTiles(tiles []string) {
+	for _, t := range tiles {
 		if !slices.Contains(e.Tiles, t) {
 			e.Tiles = append(e.Tiles, t)
 		}
 	}
 	slices.SortFunc(e.Tiles, func(a, b string) int { return tileOrder(a) - tileOrder(b) })
+}
+
+// fold adds a tile part to a connection episode: its tiles, and its span
+// (o ongoing: e goes on), not its severity, kind or drop.
+func (e *Episode) fold(o Episode) {
+	if o.Start.Before(e.Start) {
+		e.Start = o.Start
+	}
+	switch {
+	case o.Ongoing():
+		e.End = time.Time{}
+	case !e.Ongoing() && o.End.After(e.End):
+		e.End = o.End
+	}
+	e.addTiles(o.Tiles)
 }
 
 func tileOrder(id string) int {
@@ -149,41 +172,52 @@ func tileOrder(id string) int {
 // groupEpisodes turns the problem parts into the problems list, newest
 // first:
 //
-//  1. Connection parts (connection drops, incidentEpisode, broadEpisode)
-//     are episodes; a connection drop absorbs the lan, isp, upstream and
-//     no_network incidents within [drop − absorbBefore, end +
-//     absorbAfter]: one problem, not two. Other incidents (dns, blocked
-//     UDP) and longer ones stay their own problems.
+//  1. Connection parts (connection drops, path blips, incidentEpisode,
+//     broadEpisode) are episodes; a connection drop or a blip absorbs the
+//     lan, isp, upstream and no_network incidents and the slowdowns
+//     within [drop − absorbBefore, end + absorbAfter]: one problem, not
+//     two. They keep the drop's span: the incident is mostly the
+//     verdict's window catching up. Other incidents (dns, blocked UDP)
+//     and longer ones stay their own problems.
 //  2. Tile parts (runEpisode, dropEpisode of a tile) fully covered by a
-//     connection episode fold into it: they add their tiles and widen its
-//     span (a 90 s app drop around a 1 min upstream incident is one
-//     problem of 90 s), but its severity, kind and drop stay the
+//     connection episode fold into it (into a drop or a blip only when
+//     they start before its end + dropLate): they add their tiles and
+//     widen its span (a 90 s app drop around a 1 min upstream incident is
+//     one problem of 90 s; a drop keeps its measured span, so "Working
+//     again" keeps its end), but its severity, kind and drop stay the
 //     connection's own: the card's "Working again" reads them, and the
 //     apps' drops must not make it say the connection was down.
 //  3. The other tile parts of one tile less than sameTileMerge apart are
-//     one episode. Then each gets its cause, and tile episodes with the
-//     same cause (who and vendor) that overlap or start within vendorMerge
-//     are one problem ("Google Meet, Google Workspace and YouTube…").
+//     one episode. Then each gets its cause. Those of call tiles only, not
+//     the app's side, that overlap a blocked-UDP episode and started at
+//     most blockedLead before it fold into it (the verdict needs a minute
+//     or two to call the block). Tile episodes with the same cause (who
+//     and vendor) that overlap or start within vendorMerge are one
+//     problem ("Google Meet, Google Workspace and YouTube…").
+//  4. Blips are left out, with all they absorbed.
 //
 // cause attributes an episode (see attribute); now ends ongoing spans.
 func groupEpisodes(conn, tiles []Episode, cause func(Episode) Cause, now time.Time) []Episode {
 	byStart := func(a, b Episode) int { return a.Start.Compare(b.Start) }
 	conn = slices.Clone(conn)
 	slices.SortStableFunc(conn, byStart)
+	dropLike := func(e Episode) bool { return e.Kind == EpDrop || e.Kind == epBlip }
 	var cs []Episode
 	for _, e := range conn {
-		if e.Kind == EpDrop {
+		if dropLike(e) {
 			cs = append(cs, e)
 		}
 	}
 	for _, e := range conn {
-		if e.Kind == EpDrop {
+		if dropLike(e) {
 			continue
 		}
-		if i := slices.IndexFunc(cs, func(d Episode) bool { return d.Kind == EpDrop && pathKind(e.Verdict) && d.absorbs(e) }); i >= 0 {
-			k := cs[i].Kind
-			cs[i].merge(e)
-			cs[i].Kind = k // still a drop
+		slowdown := e.Verdict == "" && e.Kind == EpSlow
+		if i := slices.IndexFunc(cs, func(d Episode) bool { return dropLike(d) && (pathKind(e.Verdict) || slowdown) && d.absorbs(e) }); i >= 0 {
+			cs[i].addTiles(e.Tiles)
+			if cs[i].Verdict == "" {
+				cs[i].Verdict = e.Verdict
+			}
 			continue
 		}
 		cs = append(cs, e)
@@ -194,20 +228,14 @@ func groupEpisodes(conn, tiles []Episode, cause func(Episode) Cause, now time.Ti
 	slices.SortStableFunc(tiles, byStart)
 	var ts []Episode
 	for _, e := range tiles {
-		if i := slices.IndexFunc(cs, func(c Episode) bool { return c.absorbs(e) }); i >= 0 {
-			c := &cs[i]
-			if e.Start.Before(c.Start) {
-				c.Start = e.Start
+		if i := slices.IndexFunc(cs, func(c Episode) bool {
+			return c.absorbs(e) && (!dropLike(c) || c.Ongoing() || !e.Start.After(c.End.Add(dropLate)))
+		}); i >= 0 {
+			if dropLike(cs[i]) {
+				cs[i].addTiles(e.Tiles) // the drop's span is measured: it stays
+			} else {
+				cs[i].fold(e)
 			}
-			if !c.Ongoing() && e.End.After(c.End) { // absorbs: e is not ongoing
-				c.End = e.End
-			}
-			for _, t := range e.Tiles {
-				if !slices.Contains(cs[i].Tiles, t) {
-					cs[i].Tiles = append(cs[i].Tiles, t)
-				}
-			}
-			slices.SortFunc(cs[i].Tiles, func(a, b string) int { return tileOrder(a) - tileOrder(b) })
 			continue
 		}
 		if i := slices.IndexFunc(ts, func(o Episode) bool {
@@ -221,6 +249,21 @@ func groupEpisodes(conn, tiles []Episode, cause func(Episode) Cause, now time.Ti
 	for i := range ts {
 		ts[i].Cause = cause(ts[i])
 	}
+	ts = slices.DeleteFunc(ts, func(e Episode) bool {
+		if e.Cause.Who != WhoCallsPath && e.Cause.Who != WhoUnknown ||
+			slices.ContainsFunc(e.Tiles, func(id string) bool { i := tileOrder(id); return i < 0 || profile.Tiles[i].Kind != profile.TileCall }) {
+			return false
+		}
+		i := slices.IndexFunc(cs, func(c Episode) bool {
+			return c.Kind == EpBlocked && c.window().overlaps(e.window(), now) && !e.Start.Before(c.Start.Add(-blockedLead)) &&
+				(c.Ongoing() || !e.Ongoing())
+		})
+		if i < 0 {
+			return false
+		}
+		cs[i].fold(e)
+		return true
+	})
 	var out []Episode
 	for _, e := range ts {
 		if i := slices.IndexFunc(out, func(o Episode) bool {
@@ -233,6 +276,9 @@ func groupEpisodes(conn, tiles []Episode, cause func(Episode) Cause, now time.Ti
 		out = append(out, e)
 	}
 	for _, e := range cs {
+		if e.Kind == epBlip {
+			continue
+		}
 		e.Cause = cause(e)
 		out = append(out, e)
 	}

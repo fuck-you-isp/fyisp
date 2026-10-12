@@ -203,7 +203,8 @@ func (c homeCopy) dropNote(d *tiles.Drop) string {
 
 // tileReason is a tile's plain-language state, with its likely cause when
 // it is on the app's side (a router or provider cause is the card's).
-// blocked: the network blocks the traffic calls prefer (udp_blocked).
+// blocked: the network blocks the traffic calls prefer (udp_blocked or
+// stun_blocked).
 func (c homeCopy) tileReason(d profile.TileDef, t tiles.TileSnap, checking, blocked bool) string {
 	if checking {
 		return "fyisp is still checking."
