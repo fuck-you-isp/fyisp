@@ -628,17 +628,20 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 `test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) builds throwaway network namespaces (client ↔ gateway ↔ ISP router ↔ internet), runs fyisp in the client namespace as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It also checks the path discovery (gateway and ISP edge) and, with the Network path group enabled, the verdict and outage log for each layer: loss between client and gateway (`lan`), between gateway and ISP (`isp`), anycast and most targets dropped (`upstream`), an unreachable resolver, both while running and at startup (`dns`), and one dropped target (`service`); the faulty layer must be the first problem shown.
 
-Every scenario gets its own topology (namespaces `fyt-<run>-<n>-{cli,gw,isp,net}`, responders, resolver, certificates, fyisp process and data directory), so the scenarios run in parallel and a full run takes about as long as the slowest one, about 5 minutes (almost all of it fyisp's own timings: the 60 s verdict warm-up, fault windows, the 60 s return to ok). The namespaces are deleted when each scenario ends, and `run.sh` checks that none of its run are left and prints the wall time.
+**TestHome10** runs the new Home against the same kind of faults in 17 scenarios, on a lab profile that feeds all 11 tiles through `tile:` tags with 25 hours of seeded history, and checks the recorded `/api/home` answers: drops of 40 s (the card, the tile notes, the red bar and one problem; also at fyisp's real 15 s check interval) and of 20 s (nothing left behind), a 2-minute outage, 40% loss at the provider (the red card), 6% loss at the provider (calls Choppy, other apps Good), one app's outage (green card, *Zoom isn't connecting*), one of 3 Microsoft 365 targets down (still Good), the router down, high jitter, a latency ladder (streams never Down), fyisp paused and stopped, the first day's learning, UDP or only the STUN port blocked, one STUN server dead, and who is looking (the router wording). It runs nightly and on demand in CI (`.github/workflows/netns.yml`, with TestVerdict and TestUDP; the API recordings and the log are kept as an artifact), not per pull request.
+
+Every scenario gets its own topology (namespaces `fyt-<run>-<n>-{cli,gw,isp,net}`, responders, resolver, certificates, fyisp process and data directory), so the scenarios run in parallel and a full run takes about as long as the slowest one, about 20 minutes (the slowest is TestHome10's 6% provider loss, about 18 minutes; almost all of it fyisp's own timings: the 60 s verdict warm-up, fault windows, the 5 good minutes a tile needs to be Good again). The namespaces are deleted when each scenario ends, and `run.sh` checks that none of its run are left and prints the wall time.
 
 ```sh
-test/netns/run.sh                              # everything, in parallel (~5 min)
+test/netns/run.sh                              # everything, in parallel (~20 min)
 test/netns/run.sh -test.run TestVerdict        # only the verdict scenarios
+test/netns/run.sh -test.run TestHome10         # only the Home scenarios
 test/netns/run.sh -test.run 'Faults/b-nft-drop'
-FYISP_NETNS_PARALLEL=0 test/netns/run.sh       # one scenario at a time, for debugging (~35 min)
-FYISP_NETNS_OUT=out test/netns/run.sh          # keep API responses and logs, one directory per scenario
+FYISP_NETNS_PARALLEL=0 test/netns/run.sh       # one scenario at a time, for debugging (~3 h)
+FYISP_NETNS_OUT=out test/netns/run.sh          # keep API responses and logs, one directory per scenario (TestHome10: timeline.jsonl)
 ```
 
-With a Go toolchain: `sudo -E go test -tags netns -v -timeout 20m ./test/netns` (`-parallel 1` and a longer timeout, e.g. `-timeout 90m`, run it serially).
+With a Go toolchain: `sudo -E go test -tags netns -v -timeout 30m ./test/netns` (`-parallel 1` and a longer timeout, e.g. `-timeout 240m`, run it serially).
 
 ## License
 
