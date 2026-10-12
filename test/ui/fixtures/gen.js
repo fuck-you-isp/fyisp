@@ -1,6 +1,6 @@
-// Writes the /api/home2 fixtures the Home specs serve through page.route,
-// from the server's golden files (internal/web/testdata/home2, written by
-// go test ./internal/web -run TestHome2Golden -update): every scenario's
+// Writes the /api/home fixtures the Home specs serve through page.route,
+// from the server's golden files (internal/web/testdata/home, written by
+// go test ./internal/web -run TestHomeGolden -update): every scenario's
 // part=now as now-<scenario>.json, and the panels the specs open as
 // tile-<name>.json. So the client is tested against what the server really
 // says. The clock is 2026-10-09 10:30 am in America/New_York (the specs run
@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const gold = process.argv[2] || path.join(__dirname, '..', '..', '..', 'internal', 'web', 'testdata', 'home2');
+const gold = process.argv[2] || path.join(__dirname, '..', '..', '..', 'internal', 'web', 'testdata', 'home');
 const dir = process.argv[3] || __dirname;
 
 // tile-<name>.json: the golden it comes from.

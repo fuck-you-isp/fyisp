@@ -453,18 +453,7 @@ POST api/speed/config
 
 ## `api/home`
 
-`HomeLive.speed` (omitempty) is the speed line:
-
-```json
-"speed": {"text": "Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). That's still plenty for video calls.", "kind": "pattern", "impact": "ok"}
-```
-
-- `kind`: `warmup` (the first days: "Speed: checking at different times of day. We need about 3 days to see a pattern."), `pattern`, or `steady` (no time of day stands out).
-- `impact`: `ok`, or `video_risk` when the dip hours' download may be too slow for video calls.
-- It is absent when speed tests are off, while the answer card shows a problem (warn or bad), when the dip is narrow (fewer than half the regions or fewer than 2 providers), and when the last day's tests mostly failed.
-- Send `tz` on `live` too: the wording depends on local hours.
-
-`HomeAt` ("What happened at") gains `speed_test_overlap_s` and `speed_note` (both omitempty) when a speed test ran in the window. At 10 s or more of overlap, the note names the test as the most likely cause.
+`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes masked by a test are "not measured" there too: a test is never a drop, and slowness during one names it ("Slow during a speed test"). The line by time of day (`kind`, `impact`) and `HomeAt`'s `speed_note` were removed in v0.9.0 with the old Home.
 
 ## Metrics (`/metrics`)
 

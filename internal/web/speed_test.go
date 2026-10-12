@@ -568,21 +568,28 @@ func TestSpeedConfig(t *testing.T) {
 	}
 }
 
-// TestHomeSpeedLine: Home's line from the finding; none while off.
+// TestHomeSpeedLine: Home's speed block reads the stored speed tests
+// (s.d.Speed): the latest, the usual of the ones before it, and whether
+// tests are scheduled.
 func TestHomeSpeedLine(t *testing.T) {
-	loc, _ := speedHandlers(t, newSpeedRig(t, 15*time.Minute), LocalOptions{})
-	var l HomeLive
-	json.Unmarshal(do(loc, "GET", "/api/home?part=live", speedHost).Body.Bytes(), &l)
-	if l.Speed == nil || l.Speed.Kind != "pattern" || l.Speed.Impact != "ok" || !strings.HasPrefix(l.Speed.Text, "Speed: evenings are about 40% slower than daytime") {
-		t.Errorf("speed line %+v", l.Speed)
+	home := func(g *speedRig) HomeSpeed {
+		_, d := speedHandlers(t, g, LocalOptions{})
+		d.Tiles = scenario(t, "good")
+		loc := Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
+		loc.now = func() time.Time { return speedNow }
+		var n HomeNow
+		json.Unmarshal(do(loc, "GET", "/api/home?part=now", speedHost).Body.Bytes(), &n)
+		return n.Speed
+	}
+	sp := home(newSpeedRig(t, 15*time.Minute))
+	if !sp.Available || sp.Latest == nil || sp.Usual == nil || !strings.HasPrefix(sp.Latest.Text, "Your speed: about ") ||
+		!strings.Contains(sp.EmptyText, "within the hour") {
+		t.Errorf("speed %+v %+v", sp, sp.Latest)
 	}
 	g := newSpeedRig(t, 15*time.Minute)
 	g.s.SetMode(context.Background(), speedtest.ModeOff, nil)
-	loc, _ = speedHandlers(t, g, LocalOptions{})
-	l = HomeLive{}
-	json.Unmarshal(do(loc, "GET", "/api/home?part=live", speedHost).Body.Bytes(), &l)
-	if l.Speed != nil {
-		t.Errorf("speed line while off: %+v", l.Speed)
+	if sp := home(g); !sp.Available || strings.Contains(sp.EmptyText, "within the hour") {
+		t.Errorf("speed while off: %+v", sp)
 	}
 }
 
@@ -652,40 +659,16 @@ func TestUnderLoadWords(t *testing.T) {
 }
 
 // TestCancelledWindow: a cancelled test's stored row (no speeds) keeps its
-// masked minutes explained: its window is in part=windows, and Home's
-// history shows no "fyisp wasn't running" there.
+// masked minutes explained: its window is in part=windows.
 func TestCancelledWindow(t *testing.T) {
-	offAt := func(withRow bool) (off bool, windows []speedWindow) {
-		g := newSpeedRigWith(t, 5*time.Hour, rigOpts{noRun: true})
-		if withRow {
-			// The fixture's probes are "not measured" 30-35 minutes ago.
-			g.st.SaveSpeedTest(context.Background(), &model.SpeedTest{Start: speedNow.Add(-36 * time.Minute), End: speedNow.Add(-29 * time.Minute),
-				Trigger: "manual", Outcome: model.SpeedCancelled, Server: "Leaseweb-London"})
-		}
-		loc, _ := speedHandlers(t, g, LocalOptions{})
-		var h HomeHistory
-		json.Unmarshal(do(loc, "GET", "/api/home?part=history&span=d", speedHost).Body.Bytes(), &h)
-		from, to := speedNow.Add(-35*time.Minute).UnixMilli(), speedNow.Add(-30*time.Minute).UnixMilli()
-		for _, d := range h.Days {
-			for _, sp := range d.Off {
-				if sp.From < to && sp.To > from {
-					off = true
-				}
-			}
-		}
-		var w struct{ Windows []speedWindow }
-		json.Unmarshal(do(loc, "GET", "/api/speed?part=windows&from=now-1h&to=now", speedHost).Body.Bytes(), &w)
-		return off, w.Windows
-	}
-	if off, _ := offAt(false); !off {
-		t.Fatal("the fixture's unmeasured minutes don't show as not running: the test proves nothing")
-	}
-	off, ws := offAt(true)
-	if off {
-		t.Error("a cancelled test's window shows as \"fyisp wasn't running\"")
-	}
-	if !slices.ContainsFunc(ws, func(w speedWindow) bool { return w.Start == speedNow.Add(-36*time.Minute).UnixMilli() }) {
-		t.Errorf("windows %+v lack the cancelled test's", ws)
+	g := newSpeedRigWith(t, 5*time.Hour, rigOpts{noRun: true})
+	g.st.SaveSpeedTest(context.Background(), &model.SpeedTest{Start: speedNow.Add(-36 * time.Minute), End: speedNow.Add(-29 * time.Minute),
+		Trigger: "manual", Outcome: model.SpeedCancelled, Server: "Leaseweb-London"})
+	loc, _ := speedHandlers(t, g, LocalOptions{})
+	var w struct{ Windows []speedWindow }
+	json.Unmarshal(do(loc, "GET", "/api/speed?part=windows&from=now-1h&to=now", speedHost).Body.Bytes(), &w)
+	if !slices.ContainsFunc(w.Windows, func(w speedWindow) bool { return w.Start == speedNow.Add(-36*time.Minute).UnixMilli() }) {
+		t.Errorf("windows %+v lack the cancelled test's", w.Windows)
 	}
 }
 

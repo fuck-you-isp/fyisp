@@ -180,7 +180,7 @@ func TestVerdict(t *testing.T) {
 		if list, raw := h.incidents(t, start.Add(-time.Hour)); len(list) != 0 {
 			t.Errorf("incidents after a healthy start: %s", raw)
 		}
-		h.checkHome(t, "a-baseline", "ok", nil)
+		h.checkHome(t, "a-baseline", "ok")
 	})
 
 	// A fault: apply and revert run on the scenario's own topology.
@@ -222,13 +222,13 @@ func TestVerdict(t *testing.T) {
 			} else if open.End != nil {
 				t.Errorf("%s incident already closed while the fault is on: %s", kind, open)
 			}
-			h.checkHome(t, name, kind, targets)
+			h.checkHome(t, name, kind)
 
 			revert(h, t)
 			reverted := time.Now()
 			_, raw = h.waitVerdict(t, "ok", recoverTimeout)
 			t.Logf("back to ok %s after the fault was removed", time.Since(reverted).Round(time.Second))
-			h.checkHome(t, name+"-recovered", "ok", nil)
+			h.checkHome(t, name+"-recovered", "ok")
 
 			list, rawList := h.incidents(t, applied.Add(-time.Minute))
 			h.save(t, "incidents-"+name+".json", rawList)

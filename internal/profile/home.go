@@ -9,9 +9,9 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// Home categories: the tiles of the Home view. A target names its category
-// with a tag "home:<category>" (the default's targets all do); targets
-// without one get a derived category (see HomeCategory).
+// Home categories: the Overview's filter (the v0.6 Home's tiles). A target
+// names its category with a tag "home:<category>" (the default's targets
+// all do); targets without one get a derived category (see HomeCategory).
 const (
 	TagHome   = "home:"
 	HomeCalls = "calls" // the call path and the call and chat apps

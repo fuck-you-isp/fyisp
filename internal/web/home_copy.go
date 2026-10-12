@@ -2,884 +2,856 @@ package web
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/fuck-you-isp/fyisp/internal/callq"
-	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/tiles"
 )
 
-// Home's words (docs/HOME-API.md; wording from the v0.6 content review).
-// Every string speaks to the owner ("you"). No string holds a time, a number of milliseconds or a technical term
-// (TestHomeCopyWords keeps it that way).
-
-// homeCopy holds Home's wording (its methods).
-type homeCopy struct{}
-
-func (c homeCopy) tileTitle(id string) string {
-	return map[string]string{tileCalls: "Calls", tileWork: "Work apps", tileWeb: "Websites", tileOther: "Other services"}[id]
+// homeCopy writes the Home's words (docs/HOME-API.md) in en-US, with
+// times of day in the viewer's zone ("10:14 am"). The rules, pinned by the
+// home golden files: "internet provider", never "ISP"; no ms, jitter or
+// loss outside a tile panel's figures; always "Likely cause"; no plan or
+// fiber; US spelling; no relative times in the headline or the sub line
+// (they never change under one answer key).
+type homeCopy struct {
+	loc *time.Location
+	now time.Time
+	// wifi: the Wi-Fi wording ("Your Wi-Fi & router"): fyisp's own uplink
+	// is Wi-Fi and the page is viewed on the same machine.
+	wifi bool
 }
 
-// callHead is a call state as a headline.
-func (c homeCopy) callHead(st string, quiet bool) string {
-	switch st {
-	case string(callq.Good):
-		return "Good for calls"
-	case string(callq.Fair):
-		return "Mostly fine for calls"
-	case string(callq.Poor):
-		return "Calls may be choppy"
-	case string(callq.Unusable):
-		return "Calls will break up"
-	case callBlocked:
-		if quiet {
-			return "Some call connections blocked"
-		}
-		return "This network blocks call traffic"
-	case callNotAnswering:
-		return "Can't test calls right now"
-	case "reachable":
-		return "Call apps are reachable"
-	case "not_answering":
-		return "Some call apps aren't answering"
+// ---------- times ----------
+
+func (c homeCopy) in(t time.Time) time.Time { return t.In(c.loc) }
+
+// clock is "10:14 am".
+func (c homeCopy) clock(t time.Time) string { return c.in(t).Format("3:04 pm") }
+
+// span is "9:41–9:45 am", or "11:50 am–12:10 pm" across noon or midnight;
+// across a change of the clocks it names the zones: "1:50 am EDT–1:10 am
+// EST".
+func (c homeCopy) span(a, b time.Time) string {
+	pa, pb := c.clock(a), c.clock(b)
+	if za, zb := c.in(a).Format("MST"), c.in(b).Format("MST"); za != zb {
+		return pa + " " + za + "–" + pb + " " + zb
 	}
-	return "Checking…"
+	if pa[len(pa)-2:] == pb[len(pb)-2:] {
+		return c.in(a).Format("3:04") + "–" + pb
+	}
+	return pa + "–" + pb
 }
 
-// callLabel is a call state in a word or two (badges, app rows).
-func (c homeCopy) callLabel(st string) string {
-	switch st {
-	case string(callq.Good):
-		return "Good"
-	case string(callq.Fair):
-		return "Some glitches"
-	case string(callq.Poor):
-		return "Choppy"
-	case string(callq.Unusable):
-		return "Breaking up"
-	case callBlocked:
-		return "Blocked"
-	case callNotAnswering:
-		return "Test servers down"
-	case "reachable":
-		return "Reachable"
-	case "not_answering":
-		return "Not answering"
-	case "cant_tell":
-		return "Can't tell right now"
-	}
-	return "Not checked yet"
+// daysAgo counts the local midnights between t and now.
+func (c homeCopy) daysAgo(t time.Time) int {
+	y1, m1, d1 := c.in(t).Date()
+	y2, m2, d2 := c.in(c.now).Date()
+	a := time.Date(y1, m1, d1, 12, 0, 0, 0, time.UTC)
+	b := time.Date(y2, m2, d2, 12, 0, 0, 0, time.UTC)
+	return int(math.Round(b.Sub(a).Hours() / 24))
 }
 
-func (c homeCopy) cantTell() string {
-	return "We can't check this app while your connection has a problem."
+// day is "Today", "Yesterday", "Thu" (this week) or "Oct 3".
+func (c homeCopy) day(t time.Time) string {
+	switch n := c.daysAgo(t); {
+	case n == 0:
+		return "Today"
+	case n == 1:
+		return "Yesterday"
+	case n > 1 && n < 7:
+		return c.in(t).Format("Mon")
+	}
+	return c.in(t).Format("Jan 2")
 }
 
-func (c homeCopy) serversDown() string {
-	return "Our call test servers aren't answering. That isn't a problem with your connection."
+// dayIn is day in a sentence: "today", "yesterday", "Thu", "Oct 3".
+func (c homeCopy) dayIn(t time.Time) string {
+	d := c.day(t)
+	if d == "Today" || d == "Yesterday" {
+		return strings.ToLower(d)
+	}
+	return d
 }
 
-// tileLabel: dead says most of the tile's targets get nothing through
-// (rather than losing some of it).
-func (c homeCopy) tileLabel(state string, other, dead, failing bool) string {
-	switch state {
-	case tileWorking:
-		return "Working"
-	case tileMostly:
-		return "Mostly working"
-	case tileSlow:
-		switch {
-		case failing && other:
-			return "Some aren't answering"
-		case failing:
-			return "Some aren't working"
-		}
-		return "Slow"
-	case tileDown:
-		switch {
-		case other && dead:
-			return "Many aren't answering"
-		case other:
-			return "Many are unreliable"
-		case dead:
-			return "Not working"
-		}
-		return "Unreliable"
+// when is a time in a sentence: "10:12 am" today, else "yesterday 11:50 pm".
+func (c homeCopy) when(t time.Time) string {
+	if c.daysAgo(t) == 0 {
+		return c.clock(t)
 	}
-	return "Checking…"
+	return c.dayIn(t) + " " + c.clock(t)
 }
 
-// displayNames are Home's names for targets, by target name: what a home
-// user calls the service, never a host. A CDN stands for the websites that
-// use it (see subject). Targets not listed fall back to their call app's
-// title, then their name with spaces (homeName).
-var displayNames = map[string]string{
-	"M365-Outlook":    "Outlook",
-	"M365-Portal":     "Microsoft 365",
-	"M365-Login":      "Microsoft sign-in",
-	"Google-Gmail":    "Gmail",
-	"Google-Docs":     "Google Docs",
-	"Google-Drive":    "Google Drive",
-	"dev-GitHub":      "GitHub",
-	"Dropbox":         "Dropbox",
-	"OneDrive":        "OneDrive",
-	"YouTube":         "YouTube",
-	"Netflix":         "Netflix",
-	"Microsoft-Teams": "Teams",
-	"Google-Meet":     "Google Meet",
-	"Zoom":            "Zoom",
-	"Slack":           "Slack",
-	"Webex":           "Webex",
-	"Discord":         "Discord",
-	"WhatsApp-Chat":   "WhatsApp",
-	"CDN-Cloudflare":  cdnPrefix + "Cloudflare",
-	"CDN-Akamai":      cdnPrefix + "Akamai",
-	"CDN-Fastly":      cdnPrefix + "Fastly",
-	"CDN-CloudFront":  cdnPrefix + "Amazon CloudFront",
-	"CDN-Google":      cdnPrefix + "Google",
-}
+// since is a tile's note: "since 10:05 am" (another day: "since yesterday
+// 11:50 pm").
+func (c homeCopy) since(t time.Time) string { return "since " + c.when(t) }
 
-// cdnPrefix marks a display name that stands for the websites behind a CDN.
-const cdnPrefix = "websites using "
-
-// subject makes display names the subject of a sentence, capitalized:
-// "Outlook", "Outlook and Gmail", "Some websites (those using Akamai and
-// Fastly)". plural says which verb form follows.
-func subject(ns []string) (s string, plural bool) {
-	var cdn, parts []string
-	for _, n := range ns {
-		if c, ok := strings.CutPrefix(n, cdnPrefix); ok {
-			cdn = append(cdn, c)
-		} else {
-			parts = append(parts, n)
-		}
-	}
-	if len(cdn) > 0 {
-		parts = append(parts, "some websites (those using "+joinNames(cdn)+")")
-	}
-	s = joinNames(parts)
-	if s != "" {
-		s = strings.ToUpper(s[:1]) + s[1:]
-	}
-	return s, len(ns) > 1 || len(cdn) > 0
-}
-
-// says is subject plus a verb in the right form: says(ns, " isn't", " aren't").
-func says(ns []string, one, many string) string {
-	s, plural := subject(ns)
-	if plural {
-		return s + many
-	}
-	return s + one
-}
-
-// joinNames joins display names: "A", "A and B", "A, B and 2 more".
-func joinNames(ns []string) string {
-	switch len(ns) {
-	case 0:
-		return ""
-	case 1:
-		return ns[0]
-	case 2:
-		return ns[0] + " and " + ns[1]
-	}
-	return ns[0] + ", " + ns[1] + " and " + strconv.Itoa(len(ns)-2) + " more"
-}
-
-func (c homeCopy) tileNote(id, state string, affected []string, failing, dead, measured int) string {
-	// Failing targets that get nothing through "aren't answering"; the
-	// others lose some of it: websites "aren't loading reliably", the
-	// rest "aren't answering reliably".
-	failWords := func() (string, string) {
-		switch {
-		case dead >= failing:
-			return " isn't answering", " aren't answering"
-		case id == tileWeb:
-			return " isn't loading reliably", " aren't loading reliably"
-		}
-		return " isn't answering reliably", " aren't answering reliably"
-	}
-	switch state {
-	case tileMostly:
-		if failing > 0 {
-			one, many := failWords()
-			return says(affected[:1], one, many) + " from here. That's most likely a problem on their side."
-		}
-		return says(affected[:1], " is", " are") + " slower than usual."
-	case tileSlow:
-		if failing == 0 {
-			return says(affected, " is", " are") + " slower than usual."
-		}
-		one, many := failWords()
-		return says(affected, one, many) + " from here."
-	case tileDown:
-		one, many := failWords()
-		if len(affected) > 3 {
-			return fmt.Sprintf("%d of %d%s from here.", len(affected), measured, many)
-		}
-		return says(affected, one, many) + " from here."
-	}
-	return ""
-}
-
-func verb(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
-}
-
-// otherNote is the Other services tile's note: counts only.
-func (c homeCopy) otherNote(state string, affected, failing, dead, total int) string {
-	if affected == 0 {
-		return ""
-	}
-	what := " aren't working well from here."
+// about is a duration in words: "about 40 seconds", "about 4 minutes",
+// "about 2 hours".
+func about(d time.Duration) string {
 	switch {
-	case failing > 0 && dead >= failing:
-		what = " aren't answering from here."
-	case failing > 0:
-		what = " aren't answering reliably from here."
-	case failing == 0:
-		what = " are slower than usual."
-	}
-	if affected == 1 {
-		what = strings.NewReplacer("aren't", "isn't", " are ", " is ").Replace(what)
-	}
-	return thousands(affected) + " of " + thousands(total) + what
-}
-
-// thousands writes n with thousands separators: 1,330.
-func thousands(n int) string {
-	s := strconv.Itoa(n)
-	for i := len(s) - 3; i > 0; i -= 3 {
-		s = s[:i] + "," + s[i:]
-	}
-	return s
-}
-
-// someServices names incidents about services outside the Home tiles.
-func (c homeCopy) someServices() string { return "Some online services" }
-
-// callPatch is a calls-only rough patch (no incident explains it).
-func (c homeCopy) callPatch(level string) string {
-	no := " We didn't see a cause on your side."
-	if level == levelBad {
-		return "Calls were choppy." + no
-	}
-	return "Calls had some glitches." + no
-}
-
-func (c homeCopy) otherLine(n int) string {
-	if n == 1 {
-		return "1 other service isn't working well from here."
-	}
-	return strconv.Itoa(n) + " other services aren't working well from here."
-}
-
-// sharedPath is the note of a call app judged on the shared call path;
-// ownDown: its own call server is not answering while others do.
-func (c homeCopy) sharedPath(label string, ownDown bool) string {
-	if ownDown {
-		return "Its own call server isn't answering; your other call servers: " + label + "."
-	}
-	if label == c.callLabel(callBlocked) {
-		return "Some call connections blocked, as for your other apps."
-	}
-	return "Same call quality as your other apps: " + label + "."
-}
-
-// picksServer is one line for the apps that choose a server per call.
-func (c homeCopy) picksServer(apps []string) string {
-	s := apps[len(apps)-1]
-	if len(apps) > 1 {
-		s = strings.Join(apps[:len(apps)-1], ", ") + " and " + s
-	}
-	if len(apps) == 1 {
-		return s + " chooses a server when each call starts, so we can't test it ahead of time."
-	}
-	return s + " choose a server when each call starts, so we can't test them ahead of time."
-}
-
-var (
-	delayWords      = map[string]string{"very_short": "very short", "short": "short", "noticeable": "noticeable", "long": "long"}
-	dropoutWords    = map[string]string{"none": "none", "rare": "rare", "some": "some", "frequent": "frequent"}
-	smoothnessWords = map[string]string{"steady": "steady", "bit_uneven": "a bit uneven", "uneven": "uneven"}
-)
-
-func (c homeCopy) callWords(delay, drop, smooth string) string {
-	var out []string
-	if delay != "" {
-		out = append(out, "Delay "+delayWords[delay])
-	}
-	if drop != "" {
-		out = append(out, "Dropouts "+dropoutWords[drop])
-	}
-	if smooth != "" {
-		out = append(out, "Smoothness "+smoothnessWords[smooth])
-	}
-	return strings.Join(out, " · ")
-}
-
-// ---------- path strip ----------
-
-func (c homeCopy) nodeLabel(id string) string {
-	switch id {
-	case "device":
-		return "This device"
-	case "router":
-		return "Your router"
-	case "provider":
-		return "Your provider"
-	case "internet":
-		return "The internet"
-	}
-	return "Apps & websites"
-}
-
-func (c homeCopy) nodeTip(id string) string {
-	switch id {
-	case "router":
-		return "The box that connects your home to the internet."
-	case "provider":
-		return "The first piece of your internet provider's equipment, just outside your home."
-	case "internet":
-		return "Big services that are close to almost every provider. If they answer normally, the wider internet is working."
-	case "apps":
-		return "The apps and websites we check for you."
-	}
-	return ""
-}
-
-func (c homeCopy) nodeWords(id, state string, loss float64, slow bool) string {
-	switch state {
-	case "ok":
-		return "OK"
-	case "unknown":
-		if id == "provider" {
-			return "Can't see it from here"
+	case d < time.Minute:
+		s := max(10, int(math.Round(d.Seconds()/10))*10)
+		if s >= 60 {
+			return "about 1 minute"
 		}
-		return "No recent checks"
-	case levelWarn:
-		if loss >= 0.05 || !slow {
-			return "Dropping some data"
-		}
-		return "Slow"
-	case nodeAffected:
-		return "Affected"
-	case levelBad:
-		if id == "device" {
-			return "Offline"
-		}
-		if loss >= 0.99 {
-			return "Not answering"
-		}
-		return "Dropping data"
+		return fmt.Sprintf("about %d seconds", s)
+	case d < 90*time.Minute:
+		return "about " + count(int(math.Round(d.Minutes())), "minute")
+	case d < 48*time.Hour:
+		return "about " + count(int(math.Round(d.Hours())), "hour")
 	}
-	return ""
+	return "about " + count(int(math.Round(d.Hours()/24)), "day")
 }
 
-// appsWords sums up the tiles: "OK", or which of them have trouble
-// ("Work apps and websites affected").
-func (c homeCopy) appsWords(state string, hurt []string) string {
+// short is a duration for a note: "40 s", "2 min", "1 h 20 min".
+func short(d time.Duration) string {
 	switch {
-	case state == "unknown":
-		return "Checking…"
-	case len(hurt) == 0:
-		return "OK"
+	case d < time.Minute:
+		return strconv.Itoa(int(d.Round(time.Second).Seconds())) + " s"
+	case d < time.Hour:
+		return strconv.Itoa(int(math.Round(d.Minutes()))) + " min"
 	}
-	s := hurt[len(hurt)-1]
-	if len(hurt) > 1 {
-		s = strings.Join(hurt[:len(hurt)-1], ", ") + " and " + s
+	h, m := int(d.Hours()), int(math.Round(d.Minutes()))%60
+	if m == 0 {
+		return strconv.Itoa(h) + " h"
 	}
-	return strings.ToUpper(s[:1]) + s[1:] + " affected"
+	return fmt.Sprintf("%d h %d min", h, m)
 }
 
-// ---------- the answer ----------
-
-func (c homeCopy) checking() (headline, cause string) {
-	return "Checking your connection…", "First results in about 2 minutes."
-}
-
-func (c homeCopy) fine(home bool) string {
-	return "Your internet is fine"
-}
-
-// everything is the cause line when nothing is wrong enough to name a
-// place. It follows the tiles: "all working" only when every tile says
-// Working; otherwise which work and which are slower than usual, so the
-// card never contradicts a tile.
-func (c homeCopy) everything(home bool, tiles []HomeTile) string {
-	names := map[string]string{tileCalls: "calls", tileWork: "work apps", tileWeb: "websites"}
-	var ok, slow []string
-	present := 0
-	for _, t := range tiles {
-		name, known := names[t.ID]
-		if !known {
-			continue
-		}
-		present++
-		switch {
-		case t.State == tileWorking || (t.ID == tileCalls && t.State == "good"):
-			ok = append(ok, name)
-		case t.ID != tileCalls && (t.State == tileMostly || t.State == tileSlow || t.State == tileDown):
-			slow = append(slow, name)
-		}
-	}
-	if !home {
-		if len(slow) == 0 {
-			return "Everything we check is working."
-		}
-		return "Some " + joinWords(slow) + " are slower than usual."
-	}
-	switch {
-	case len(slow) == 0 && len(ok) == present:
-		return "Calls, work apps and websites are all working."
-	case len(slow) == 0 && len(ok) > 0:
-		return upperFirst(joinWords(ok)) + " are working."
-	case len(slow) == 0:
-		return "Calls, work apps and websites are being checked."
-	case len(ok) == 0:
-		return "Some " + joinWords(slow) + " are slower than usual."
-	}
-	return upperFirst(joinWords(ok)) + " are working. Some " + joinWords(slow) + " are slower than usual."
-}
-
-// joinWords is "a", "a and b", "a, b and c".
-func joinWords(xs []string) string {
-	if len(xs) < 2 {
-		return strings.Join(xs, "")
-	}
-	return strings.Join(xs[:len(xs)-1], ", ") + " and " + xs[len(xs)-1]
-}
-
-func upperFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-func (c homeCopy) verdictHead(k model.VerdictKind, conf string, quiet bool, affected []string, onlyOther bool) string {
-	switch k {
-	case model.VerdictLAN:
-		return "There's a problem in your home network"
-	case model.VerdictISP:
-		if conf == confLikely {
-			return "Your internet provider may be having trouble"
-		}
-		return "Your internet provider is having trouble"
-	case model.VerdictUpstream:
-		return "Many websites and apps are hard to reach"
-	case model.VerdictDNS:
-		return "Websites and apps may not open"
-	case model.VerdictNoNetwork:
-		return "No internet connection"
-	case model.VerdictService:
-		if onlyOther || len(affected) > 2 {
-			return "Some services aren't answering"
-		}
-		return says(affected, " isn't", " aren't") + " answering"
-	case model.VerdictUDPBlocked:
-		if quiet {
-			return "This network always blocks the fast connection calls use"
-		}
-		return "This network blocks the fast connection calls use"
-	case model.VerdictSTUNBlocked:
-		if quiet {
-			return "This network always blocks some of the connections calls use"
-		}
-		return "This network blocks some of the connections calls use"
-	case model.VerdictUDPDegraded:
-		return "Calls may sound choppy"
-	}
-	return c.fine(true)
-}
-
-// oneApp is the answer's cause when one app of an otherwise working tile
-// isn't answering: what works, then the tile's own sentence about it.
-func (c homeCopy) oneApp(tiles []HomeTile, affected []string) string {
-	var ok []string
-	note := ""
-	for _, t := range tiles {
-		switch {
-		case t.ID == tileOther:
-		case t.Level == levelGood:
-			ok = append(ok, strings.ToLower(t.Title))
-		case note == "" && slices.ContainsFunc(t.Affected, func(n string) bool { return slices.Contains(affected, n) }):
-			note = t.Note
-		}
-	}
-	if note == "" {
-		note = c.serviceNote(affected)
-	}
-	if len(ok) == 0 {
-		return note
-	}
-	w := ok[len(ok)-1]
-	if len(ok) > 1 {
-		w = strings.Join(ok[:len(ok)-1], ", ") + " and " + w
-	}
-	return strings.ToUpper(w[:1]) + w[1:] + " are working. " + note // tile titles are plural
-}
-
-// affectedBy is a tile's label while a path problem explains its trouble.
-func (c homeCopy) affectedBy(who string) string {
-	if who == whoOffline {
-		return c.cantCheckOffline()
-	}
-	return "Affected by the problem above"
-}
-
-func (c homeCopy) cantCheckOffline() string { return "Can't check while offline" }
-
-// culprit is the blamed path node's sub-label.
-func (c homeCopy) culprit(sure bool) string {
-	if sure {
-		return "Problem is here"
-	}
-	return "Problem is probably here"
-}
-
-// knownBlock introduces the time a long-standing call block started.
-func (c homeCopy) knownBlock() string { return "Some call connections have been blocked since" }
-
-func (c homeCopy) serviceNote(affected []string) string {
-	return says(affected, " isn't", " aren't") + " answering from here. That's most likely a problem on their side."
-}
-
-func (c homeCopy) verdictCause(k model.VerdictKind, conf string, quiet bool, affected []string, onlyOther bool) string {
-	switch k {
-	case model.VerdictLAN:
-		switch conf {
-		case confSure:
-			return "Your Wi-Fi or router is losing data. Your internet provider looks fine from here."
-		case confWeak:
-			return "Your router is slow to answer our checks. Your calls and apps aren't affected right now."
-		}
-		return "It's most likely your Wi-Fi or router. Your internet provider looks fine from here."
-	case model.VerdictISP:
-		switch conf {
-		case confSure:
-			return "Your Wi-Fi and router look fine. The trouble starts just past them."
-		case confWeak:
-			return "Your internet provider's equipment is slow to answer our checks. Your calls and apps aren't affected right now."
-		}
-		return "Your Wi-Fi and router look fine. The trouble most likely starts just past them."
-	case model.VerdictUpstream:
-		return "Your Wi-Fi and your provider's nearest equipment look fine. The problem is further out: either your provider's links to the rest of the internet, or a wider outage."
-	case model.VerdictDNS:
-		return "Your connection works, but looking up apps and websites by name is failing. That lookup service is usually run by your router or your provider."
-	case model.VerdictNoNetwork:
-		return "The device running this monitor is offline."
-	case model.VerdictService:
-		// The headline names them; this says whose problem it is.
-		return "Your connection looks fine, so this is most likely a problem on their side."
-	case model.VerdictUDPBlocked:
-		return "Calls may still connect, but sound and video can lag or drop. This is common on hotel, office and school Wi-Fi, or with some security software."
-	case model.VerdictSTUNBlocked:
-		return "Most call apps will still work, but may be slower to connect or lower quality."
-	case model.VerdictUDPDegraded:
-		return c.pathCause("")
-	}
-	return ""
-}
-
-// pathCause explains a bad call path with no layer verdict.
-func (c homeCopy) pathCause(factor string) string {
-	what := "the connection calls use"
-	switch factor {
-	case "loss":
-		what += " is losing bits of sound and video."
-	case "jitter":
-		what += " is delivering sound and video unevenly."
-	case "latency":
-		what += " has a long delay."
-	default:
-		what += " is losing bits of sound and video, or delivering them unevenly."
-	}
-	return "Browsing looks fine, but " + what + " We didn't see a cause on your side."
-}
-
-func (c homeCopy) appWorse(app string) string {
-	return app + " is worse than your other call apps right now."
-}
-
-// tileWhat names a tile's things in a sentence.
-var tileWhat = map[string]string{tileWork: "work apps", tileWeb: "websites", tileOther: "services"}
-
-func (c homeCopy) tileHead(t HomeTile) string {
-	if t.State == tileDown {
-		return "Some " + tileWhat[t.ID] + " aren't loading"
-	}
-	return "Some " + tileWhat[t.ID] + " are slow"
-}
-
-func (c homeCopy) tileCause(t HomeTile) string {
-	return "Your connection looks fine, so this is most likely a problem on their side."
-}
-
-func (c homeCopy) quietHint() string {
-	return "It's been this way for a while. We'll keep checking, but there's nothing new."
-}
-
-// try lists what the owner can do.
-func (c homeCopy) try(who string, k model.VerdictKind, conf string) []string {
-	switch who {
-	case whoHome:
-		if conf == confWeak {
-			return []string{}
-		}
-		return []string{"Move closer to your router, or plug in a cable.", "Restart the router.",
-			"If other people are streaming or downloading, try again when they stop."}
-	case whoProvider:
-		if conf == confWeak {
-			return []string{}
-		}
-		return []string{"Restarting your router sometimes helps.", "If it keeps happening, make a report and send it to your provider."}
-	case whoBeyond:
-		return []string{"There's usually nothing to fix at home.", "If it lasts, check your provider's status page, or make a report."}
-	case whoDNS:
-		return []string{"Restart your router.", "If you changed your DNS settings, change them back."}
-	case whoOffline:
-		return []string{"Check that Wi-Fi is on or the cable is plugged in.", "Restart your router."}
-	case whoCallTraffic:
-		if k == model.VerdictUDPBlocked || k == model.VerdictSTUNBlocked {
-			return []string{"Try another network (for example, your phone's hotspot) to compare.",
-				"If it's your home network, check your router's firewall or security app settings."}
-		}
-		return []string{"Use a cable instead of Wi-Fi if you can.", "Pause big downloads or video streams during calls.", "If it lasts, make a report."}
-	}
-	return []string{}
-}
-
-// fact is the worst minute in words. loss is a fraction.
-func (c homeCopy) fact(factor string, loss float64) string {
-	switch factor {
-	case "jitter":
-		return "In the worst minute, sound arrived unevenly."
-	case "latency":
-		return "In the worst minute, there was a long delay."
-	}
-	switch {
-	case loss >= 0.9:
-		return "In the worst minute, almost all of the sound was lost."
-	case loss >= 0.4:
-		return "In the worst minute, about half of the sound was lost."
-	case loss >= 0.01:
-		return "In the worst minute, about 1 in " + strconv.Itoa(int(1/loss+0.5)) + " bits of sound were lost."
-	case loss > 0:
-		return "In the worst minute, a few bits of sound were lost."
-	}
-	return "In the worst minute, calls would have sounded worse than usual."
-}
-
-// ---------- history ----------
-
-func (c homeCopy) runLabel(who, name string) string {
-	switch who {
-	case whoHome:
-		return "Most likely your home network"
-	case whoProvider:
-		return "Most likely your provider"
-	case whoBeyond:
-		return "Further out"
-	case whoDNS:
-		return "Name lookups"
-	case whoApp:
-		if name != "" {
-			n, _ := subject([]string{name})
-			return n
-		}
-		return "Some apps"
-	case whoCallTraffic:
-		return "Call traffic"
-	case whoOffline:
-		return "Offline"
-	}
-	return ""
-}
-
-func (c homeCopy) where(who, name string) string {
-	switch who {
-	case whoHome:
-		return "Most likely your home network (Wi-Fi or router)"
-	case whoProvider:
-		return "Most likely your provider's network (past your router)"
-	case whoBeyond:
-		return "Further out on the internet"
-	case whoDNS:
-		return "Looking up names"
-	case whoApp:
-		if name != "" {
-			n, _ := subject([]string{name})
-			return n
-		}
-		return "Some apps and websites"
-	case whoCallTraffic:
-		return "The connection calls use"
-	case whoOffline:
-		return "No internet connection"
-	}
-	return ""
-}
-
-// summary is the one sentence under the timeline (no times: the client
-// lists them).
-// summary: app names the one app every app problem was about (""
-// otherwise); known says a known issue (a long-standing block) was going
-// on, so "no problems" becomes "no new problems".
-func (c homeCopy) summary(n HomeCounts, span string, fresh bool, app string, known bool) string {
-	period := "today"
-	if span == "w" {
-		period = "this week"
-	}
-	patches := ""
-	if n.CallPatches > 0 {
-		patches = "Calls had " + strings.Replace(plural(n.CallPatches, "rough patch"), "patchs", "patches", 1) + " today"
-	}
-	switch {
-	case fresh && n.Problems == 0 && patches == "":
-		return "We just started, so the history begins now."
-	case n.Problems == 0 && patches != "" && span == "w":
-		return "No other problems in the last 7 days. " + patches + "."
-	case n.Problems == 0 && patches != "":
-		return patches + "." + " We didn't see a cause on your side."
-	case n.Problems == 0 && span == "w" && known:
-		return "No new problems in the last 7 days."
-	case n.Problems == 0 && span == "w":
-		return "No problems in the last 7 days."
-	case n.Problems == 0 && known:
-		return "No new problems today."
-	case n.Problems == 0:
-		return "No problems today."
-	}
-	also := ""
-	if n.CallPatches > 0 {
-		also = " Calls also had " + strings.Replace(plural(n.CallPatches, "other rough patch"), "patchs", "patches", 1) + " today."
-	}
-	type part struct {
-		n      int
-		phrase string
-	}
-	parts := []part{
-		// Incidents keep no confidence tier: "most likely" for the places.
-		{n.Provider, "most likely from your internet provider"},
-		{n.Home, "most likely in your home network"},
-		{n.Beyond, "further out on the internet"},
-		{n.CallTraffic, "with the connection calls use"},
-		{n.DNS, "with name lookups"},
-		{n.App, appPhrase(app)},
-		{n.Services, "with online services"},
-		{n.Offline, "with no connection"},
-	}
-	var used []part
-	for _, p := range parts {
-		if p.n > 0 {
-			used = append(used, p)
-		}
-	}
-	head := plural(n.Problems, "problem") + " " + period
-	if len(used) == 1 {
-		switch n.Problems {
-		case 1:
-			return head + ", " + used[0].phrase + "." + also
-		case 2:
-			return head + ", both " + used[0].phrase + "." + also
-		}
-		return head + ", all " + used[0].phrase + "." + also
-	}
-	slices.SortStableFunc(used, func(a, b part) int { return b.n - a.n })
-	var bits []string
-	rest := 0
-	for i, p := range used {
-		if i >= 2 && len(used) > 3 {
-			rest += p.n
-			continue
-		}
-		bits = append(bits, strconv.Itoa(p.n)+" "+p.phrase)
-	}
-	if rest > 0 {
-		bits = append(bits, strconv.Itoa(rest)+verb(rest, " other", " others"))
-	}
-	return head + ": " + strings.Join(bits[:len(bits)-1], ", ") + " and " + bits[len(bits)-1] + "." + also
-}
-
-func appPhrase(app string) string {
-	if app != "" {
-		n, _ := subject([]string{app})
-		return "with " + n
-	}
-	return "with apps or websites"
-}
-
-func plural(n int, word string) string {
+// count is "1 minute", "4 minutes".
+func count(n int, word string) string {
 	if n == 1 {
 		return "1 " + word
 	}
 	return strconv.Itoa(n) + " " + word + "s"
 }
 
-// atWords is "what happened then": the call state in the past tense, and
-// where the problem was (past observation: "looked fine", never "was").
-func (c homeCopy) atWords(measured bool, calls string, incident bool, who, kind string) (headline, cause string) {
-	switch {
-	case !measured && !incident:
-		return "We weren't checking at that time",
-			"The monitor wasn't running, so there's no record. Leave it running to catch the next one."
-	case !measured:
-		headline = "We weren't checking calls then, but we did see a problem"
-	case calls == "" && incident:
-		headline = "There was a problem then"
-	case calls == "":
-		return "Everything we check was working then", ""
-	default:
-		headline = map[string]string{
-			string(callq.Good):     "Your connection was good for calls then",
-			string(callq.Fair):     "Mostly fine for calls, with a few glitches",
-			string(callq.Poor):     "Calls would have been choppy",
-			string(callq.Unusable): "Calls would have broken up",
-			callBlocked:            "This network was blocking call traffic",
-			callNotAnswering:       "Our call test servers weren't answering then",
-		}[calls]
-		if headline == "" {
-			headline = "We weren't checking calls then"
+// ---------- names ----------
+
+func tileDef(id string) profile.TileDef {
+	for _, d := range profile.Tiles {
+		if d.ID == id {
+			return d
 		}
 	}
-	switch {
-	case incident && calls == callBlocked:
-		cause = "Calls may still have connected, through a slower backup route."
-	case incident:
-		cause = c.wasWhere(who, model.VerdictKind(kind))
-	case calls == string(callq.Good) || calls == callNotAnswering:
-		cause = "If the call was bad, the problem was probably the app or the other person's connection."
-	default:
-		cause = "We didn't see a cause on your side: your Wi-Fi, router and provider looked fine."
-	}
-	return headline, cause
+	return profile.TileDef{ID: id, Name: id}
 }
 
-// wasWhere is a past incident's place, in a sentence.
-func (c homeCopy) wasWhere(who string, k model.VerdictKind) string {
-	switch who {
-	case whoHome:
-		return "The problem was most likely your Wi-Fi or router."
-	case whoProvider:
-		return "The problem was most likely with your internet provider. Your Wi-Fi and router looked fine."
-	case whoBeyond:
-		return "Your Wi-Fi, router and provider's nearest equipment looked fine. The problem was further out on the internet."
-	case whoDNS:
-		return "At the same time, apps and websites couldn't be found by name."
-	case whoOffline:
-		return "The device running this monitor was offline."
-	case whoApp:
-		return "Some online services had trouble at the time. That was on their side."
-	case whoCallTraffic:
-		if k == model.VerdictUDPBlocked || k == model.VerdictSTUNBlocked {
-			return "The network was blocking call traffic."
+var vendorNames = map[string]string{"zoom": "Zoom", "microsoft": "Microsoft", "google": "Google", "slack": "Slack",
+	"github": "GitHub", "dropbox": "Dropbox", "netflix": "Netflix"}
+
+func vendorName(v string) string {
+	if n, ok := vendorNames[v]; ok {
+		return n
+	}
+	return capFirst(v)
+}
+
+// vendorSide is "Zoom’s side".
+func vendorSide(v string) string { return vendorName(v) + "’s side" }
+
+// andJoin is "A", "A and B", "A, B and C".
+func andJoin(xs []string) string {
+	switch len(xs) {
+	case 0:
+		return ""
+	case 1:
+		return xs[0]
+	}
+	return strings.Join(xs[:len(xs)-1], ", ") + " and " + xs[len(xs)-1]
+}
+
+func capFirst(s string) string {
+	if s == "" || strings.HasPrefix(s, "fyisp") {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// switchNames are the meeting apps a stuck call can move to.
+var switchNames = map[string]string{"zoom": "Zoom", "teams": "Teams", "meet": "Google Meet"}
+
+// ---------- tiles ----------
+
+// word is a tile's (or bar's) word.
+func (c homeCopy) word(st tiles.State, kind profile.TileKind) string {
+	switch st {
+	case tiles.Good:
+		return "Good"
+	case tiles.Slow:
+		if kind == profile.TileCall {
+			return "Choppy"
 		}
-		return "Your Wi-Fi, router and provider looked fine. The problem was on the way to the call servers."
+		return "Slow"
+	case tiles.Down:
+		return "Down"
+	case tiles.Off:
+		return "Not checked"
+	}
+	return "No data"
+}
+
+// dropNote is a Good tile's note after a drop: "Dropped 40 s at 10:14 am".
+func (c homeCopy) dropNote(d *tiles.Drop) string {
+	return "Dropped " + short(d.Dur) + " at " + c.when(d.Start)
+}
+
+// tileReason is a tile's plain-language state, with its likely cause when
+// it is on the app's side (a router or provider cause is the card's).
+// blocked: the network blocks the traffic calls prefer (udp_blocked).
+func (c homeCopy) tileReason(d profile.TileDef, t tiles.TileSnap, checking, blocked bool) string {
+	if checking {
+		return "fyisp is still checking."
+	}
+	if blocked && d.Kind == profile.TileCall && t.State.Bad() {
+		return "Can’t use its fast path on this network " + c.since(t.Since) + ". Calls may still connect over a slower route."
+	}
+	var r string
+	switch t.State {
+	case tiles.Off:
+		return "fyisp isn’t checking " + d.Name + " on this setup."
+	case tiles.Good:
+		r = "Working normally."
+		if d.Kind == profile.TileCall {
+			r = "Calls should be smooth."
+		}
+	case tiles.Slow:
+		r = "Slower than usual " + c.since(t.Since) + "."
+		if d.Kind == profile.TileCall {
+			r = "Calls may be choppy " + c.since(t.Since) + "."
+		}
+	case tiles.Down:
+		r = "Not loading " + c.since(t.Since) + "."
+		if d.Kind == profile.TileCall {
+			r = "Not connecting " + c.since(t.Since) + "."
+		}
+	default:
+		return "No data yet."
+	}
+	if t.State.Bad() && t.Cause.Who != "" && t.Cause.Who != tiles.WhoUnknown {
+		ev := c.tileEvidence(t.Cause)
+		if t.Cause.Evidence == tiles.EvAppOnly && t.Call != nil && t.Call.Source == tiles.CallShared {
+			// its call figures are the general path's, and fine
+			ev = "the general call path and everything else are normal"
+		}
+		r += " Likely cause: " + c.cause(t.Cause) + " — " + ev + "."
+	}
+	if t.State == tiles.Good && t.LastDrop != nil {
+		r += " It dropped for " + about(t.LastDrop.Dur) + " at " + c.when(t.LastDrop.Start) + "."
+	}
+	if d.Kind == profile.TileStream && t.State != tiles.Down {
+		r += " " + d.Name + " is reachable. If it’s buffering, test your speed below."
+	}
+	return r
+}
+
+// tileEvidence backs an app-side cause in a tile's reason.
+func (c homeCopy) tileEvidence(x tiles.Cause) string {
+	switch x.Evidence {
+	case tiles.EvAppOnly:
+		return "everything else is normal"
+	case tiles.EvVendorOnly:
+		return "the non-" + vendorName(x.Vendor) + " apps are normal"
+	case tiles.EvCallsPath:
+		return "websites and other apps are fine"
+	case tiles.EvSpeedtest:
+		return "it uses most of your connection while it runs"
+	}
+	return c.evidence(x, true)
+}
+
+// barsSummary sums up a tile's bars for screen readers. Bars before
+// fyisp's first data (first) are its start, not a gap.
+func (c homeCopy) barsSummary(bs []tiles.Bar, first time.Time) string {
+	var down, slow, none int
+	started := false
+	for _, b := range bs {
+		if !first.IsZero() && b.From.Add(5*time.Minute).Before(first.Add(3*time.Minute)) {
+			started = true
+			continue
+		}
+		switch b.State {
+		case tiles.Down:
+			down++
+		case tiles.Slow:
+			slow++
+		case tiles.Good:
+		default:
+			none++
+		}
+	}
+	if none == len(bs) {
+		return ""
+	}
+	var parts []string
+	if started {
+		parts = append(parts, "fyisp started at "+c.clock(first))
+	}
+	of := fmt.Sprintf(" of %d five-minute periods", len(bs))
+	if down > 0 {
+		parts = append(parts, fmt.Sprintf("down or dropped in %d%s", down, of))
+		of = ""
+	}
+	if slow > 0 {
+		parts = append(parts, fmt.Sprintf("slow in %d%s", slow, of))
+	}
+	if none > 0 {
+		parts = append(parts, fmt.Sprintf("not watched for %d minutes", none*5))
+	}
+	switch {
+	case len(parts) == 0:
+		return "Last 2 hours: no problems."
+	case started && len(parts) == 1:
+		parts = append(parts, "no problems since")
+	}
+	return "Last 2 hours: " + strings.Join(parts, ", ") + "."
+}
+
+// enableHint says how to check an off tile: the catalog profile that
+// adds its targets, or, with a --config file, its tile: tag.
+func (c homeCopy) enableHint(d profile.TileDef, custom bool) string {
+	if custom {
+		return "To check " + d.Name + ", add the tag tile:" + d.ID + " to a target in your --config file, or base the file on extends: [default]."
+	}
+	return "To check " + d.Name + ", add " + d.Enable + " to fyisp’s --profile setting (FYISP_PROFILE in Docker)."
+}
+
+// coverage is what a tile's figures are judged on, when that is not
+// simply its own servers ("" otherwise).
+func (c homeCopy) coverage(r profile.ResolvedTile, src string) string {
+	switch {
+	case r.Kind == profile.TileCall && (src == tiles.CallTCPOnly || len(r.UDP) == 0):
+		return "Can connect; call quality isn’t checked on this setup."
+	case r.Kind == profile.TileCall && len(r.TileDef.UDP) == 0:
+		before := "a meeting"
+		if r.ID == "slack" {
+			before = "a call"
+		}
+		return "Call quality is judged from the general call path; fyisp can’t test " + r.Name + "’s own servers before " + before + "."
+	case r.Kind == profile.TileCall && r.SharedUDP:
+		return "Call quality is judged from the general call path, because this setup doesn’t check " + vendorName(r.Vendors[0]) + "’s own call servers."
+	case r.ID == "onedrive":
+		return "Checks that Microsoft’s OneDrive front door answers. Work OneDrive on your company’s SharePoint isn’t checked."
 	}
 	return ""
+}
+
+// ---------- causes ----------
+
+// cause names a likely cause; it follows "Likely cause: ".
+func (c homeCopy) cause(x tiles.Cause) string {
+	switch x.Who {
+	case tiles.WhoRouter:
+		return "your home router"
+	case tiles.WhoOffline:
+		return "no network connection"
+	case tiles.WhoProvider:
+		return "your internet provider"
+	case tiles.WhoInternet:
+		return "the internet past your provider"
+	case tiles.WhoNames:
+		return "name lookups (DNS)"
+	case tiles.WhoApp:
+		return vendorSide(x.Vendor)
+	case tiles.WhoCallsPath:
+		return "the route calls take across the internet"
+	case tiles.WhoSpeedtest:
+		return "the speed test fyisp was running"
+	}
+	return "not clear yet"
+}
+
+// evidence backs a cause, lower case: over (the problem ended) or now.
+func (c homeCopy) evidence(x tiles.Cause, now bool) string {
+	pick := func(past, present string) string {
+		if now {
+			return present
+		}
+		return past
+	}
+	switch x.Evidence {
+	case tiles.EvRouterDown:
+		return pick("your router stopped responding, so fyisp couldn’t reach anything past it",
+			"your router isn’t responding, so fyisp can’t reach anything past it")
+	case tiles.EvRouterLossy:
+		return pick("your router was dropping some data", "your router is dropping some data")
+	case tiles.EvNoNetwork:
+		return pick("the computer fyisp runs on had no network connection", "the computer fyisp runs on has no network connection")
+	case tiles.EvProviderDrop:
+		return pick("your router kept answering, but nothing past it did", "your router is answering, but nothing past it is")
+	case tiles.EvProviderLossy:
+		return pick("your router was fine, but your provider’s connection was dropping some data",
+			"your router is fine; the problem starts just past it, inside your provider’s network")
+	case tiles.EvBeyond:
+		return pick("your router and your provider answered, but sites past them didn’t",
+			"your router and your provider answer, but sites past them don’t")
+	case tiles.EvDNS:
+		return pick("your connection worked, but name lookups failed", "your connection works, but name lookups fail")
+	case tiles.EvVendorOnly:
+		return pick("your internet and the non-"+vendorName(x.Vendor)+" apps were normal",
+			"your internet and the non-"+vendorName(x.Vendor)+" apps are normal")
+	case tiles.EvAppOnly:
+		return pick("your internet and every other app were normal", "your internet and all other apps are normal")
+	case tiles.EvCallsPath:
+		return pick("websites and other apps were fine; only calls were affected", "websites and other apps are fine; only calls are affected")
+	case tiles.EvSpeedtest:
+		return pick("fyisp was running a speed test then, which uses most of your connection for a short while",
+			"fyisp is running a speed test, which uses most of your connection for a short while")
+	}
+	return pick("your router and your internet provider looked fine", "your router and your internet provider look fine")
+}
+
+// ---------- the answer card ----------
+
+// routerName is the first node: the Wi-Fi wording only on the same
+// machine over Wi-Fi.
+func (c homeCopy) routerName() string {
+	if c.wifi {
+		return "Your Wi-Fi and router"
+	}
+	return "Your home router"
+}
+
+// againSentence is "Working again. Your internet dropped for about 40
+// seconds at 10:14 am." and its variants.
+func (c homeCopy) againSentence(a *tiles.Recovered) string {
+	switch a.Variant {
+	case tiles.AgainDropped:
+		return "Working again. Your internet dropped for " + about(a.Dur) + " at " + c.clock(a.Start) + "."
+	case tiles.AgainDown:
+		return "Working again. Your internet was down for " + about(a.Dur) + " (" + c.span(a.Start, a.End) + ")."
+	}
+	return "Working again. Your internet had trouble for " + about(a.Dur) + " (" + c.span(a.Start, a.End) + ")."
+}
+
+// againAside is the same news after an app problem's sub line:
+// "Separately, your internet dropped for about 40 seconds at 10:14 am and
+// is back now."
+func (c homeCopy) againAside(a *tiles.Recovered) string {
+	switch a.Variant {
+	case tiles.AgainDropped:
+		return "Separately, your internet dropped for " + about(a.Dur) + " at " + c.clock(a.Start) + " and is back now."
+	case tiles.AgainDown:
+		return "Separately, your internet was down for " + about(a.Dur) + " (" + c.span(a.Start, a.End) + ") and is back now."
+	}
+	return "Separately, your internet had trouble for " + about(a.Dur) + " (" + c.span(a.Start, a.End) + ") and is fine now."
+}
+
+// started is " Started at 10:12 am." (another day: " Started yesterday at
+// 11:41 pm.").
+func (c homeCopy) started(t time.Time) string {
+	if c.daysAgo(t) == 0 {
+		return " Started at " + c.clock(t) + "."
+	}
+	return " Started " + c.dayIn(t) + " at " + c.clock(t) + "."
+}
+
+// healthy is the good card's sub line. measured are the tiles with data:
+// right after the start some may have none yet.
+// provider: fyisp sees the provider's edge (else it isn't called healthy).
+func (c homeCopy) healthy(monitored, measured int, calls, learning, provider bool, first time.Time) string {
+	names := []string{"Your router"}
+	if c.wifi {
+		names[0] = "Your Wi-Fi and router"
+	}
+	if provider {
+		names = append(names, "your internet provider")
+	}
+	var apps, rest string
+	switch {
+	case monitored == 0:
+	case measured < monitored && monitored-measured == 1:
+		apps, rest = fmt.Sprintf("%d of %d apps", measured, monitored), "; the other has no data yet"
+	case measured < monitored:
+		apps, rest = fmt.Sprintf("%d of %d apps", measured, monitored), "; the others have no data yet"
+	case monitored == 1:
+		apps = "the app fyisp checks"
+	default:
+		apps = fmt.Sprintf("all %d apps", monitored)
+	}
+	var s string
+	switch {
+	case apps == "":
+		s = andJoin(names)
+	case len(names) == 1 && c.wifi:
+		s = names[0] + ", and " + apps // not "router and all 11 apps" run together
+	default:
+		s = andJoin(append(names, apps))
+	}
+	s += " look healthy" + rest + "."
+	if !provider {
+		s += " fyisp can’t see your internet provider from here."
+	}
+	switch {
+	case learning && !first.IsZero():
+		s += " fyisp started watching at " + c.when(first) + "."
+	case calls:
+		s += " Calls and video should be smooth."
+	}
+	return s
+}
+
+// appCard is the card of problems with some apps while no path verdict
+// holds. causes are the bad tiles' likely causes: their own, or, when the
+// connection is to blame (3% loss past the router makes calls choppy
+// without a path verdict), their problem's. warn: the connection or the
+// route calls take is to blame (an amber card), not the apps.
+func (c homeCopy) appCard(bad []tiles.TileSnap, causes []tiles.Cause, all []tiles.TileSnap) (headline, sub, tab string, warn bool) {
+	var names []string
+	calls, down := 0, 0
+	for _, t := range bad {
+		d := tileDef(t.ID)
+		names = append(names, d.Name)
+		if d.Kind == profile.TileCall {
+			calls++
+		}
+		if t.State == tiles.Down {
+			down++
+		}
+	}
+	allCalls := calls == len(bad)
+	switch d, t := tileDef(bad[0].ID), bad[0]; {
+	case len(bad) == 1:
+		switch {
+		case t.State == tiles.Down && d.Kind == profile.TileCall:
+			headline = d.Name + " isn’t connecting."
+		case t.State == tiles.Down:
+			headline = d.Name + " isn’t loading."
+		case d.Kind == profile.TileCall:
+			headline = d.Name + " calls may be choppy."
+		default:
+			headline = d.Name + " is slower than usual."
+		}
+		tab = "! " + d.Name + " " + strings.ToLower(c.word(t.State, d.Kind))
+	case allCalls && down == 0:
+		headline, tab = "Calls may be choppy.", "! Calls choppy"
+	case allCalls && down == len(bad):
+		headline, tab = "Calls aren’t connecting.", "! Calls down"
+	case len(bad) <= 3:
+		headline, tab = andJoin(names)+" have problems.", fmt.Sprintf("! %d apps with problems", len(bad))
+	default:
+		headline, tab = fmt.Sprintf("%d apps have problems.", len(bad)), fmt.Sprintf("! %d apps with problems", len(bad))
+	}
+	x := causes[0]
+	same := !slices.ContainsFunc(causes, func(y tiles.Cause) bool { return y != x })
+	if !same {
+		x = tiles.Cause{}
+		if !slices.ContainsFunc(causes, func(y tiles.Cause) bool { return y.Who != tiles.WhoApp }) {
+			x.Who = tiles.WhoApp
+		}
+	}
+	what := "some data"
+	rest := ""
+	if allCalls {
+		what, rest = "some call data", " Websites and other apps are working normally."
+	}
+	switch x.Who {
+	case tiles.WhoProvider, tiles.WhoRouter, tiles.WhoOffline, tiles.WhoInternet:
+		warn = true
+	case tiles.WhoCallsPath:
+		warn = true
+		headline = "Your internet is fine. " + headline
+	default:
+		headline = "Your internet is fine. " + headline
+	}
+	switch {
+	case !same && x.Who == tiles.WhoApp:
+		sub = "Likely cause: the apps’ own side — your router and your internet provider look fine."
+	case x.Who == "", x.Who == tiles.WhoUnknown:
+		sub = "Likely cause: not clear yet — your router and your internet provider look fine."
+	case x.Who == tiles.WhoProvider:
+		sub = "Likely cause: your internet provider — your router is fine, but " + what + " is being lost just past it." + rest
+	case x.Who == tiles.WhoRouter, x.Who == tiles.WhoOffline:
+		sub = "Likely cause: your home router — " + what + " is being lost on the way to it." + rest
+	case x.Who == tiles.WhoInternet:
+		sub = "Likely cause: the internet past your provider — your router and your provider are fine, but " + what + " is being lost beyond them." + rest
+	case x.Evidence == tiles.EvAppOnly:
+		sub = "Likely cause: " + c.cause(x) + " — every other app is working normally."
+	case x.Evidence == tiles.EvVendorOnly:
+		sub = "Likely cause: " + c.cause(x) + " — the non-" + vendorName(x.Vendor) + " apps are working normally."
+	case x.Evidence == tiles.EvCallsPath:
+		sub = "Likely cause: " + c.cause(x) + " — websites and other apps are working normally."
+	default:
+		sub = "Likely cause: " + c.cause(x) + " — " + c.tileEvidence(x) + "."
+	}
+	// A meeting app that isn't connecting: name the ones that work.
+	stuck := slices.ContainsFunc(bad, func(t tiles.TileSnap) bool {
+		_, meeting := switchNames[t.ID]
+		return meeting && t.State == tiles.Down
+	})
+	var alt []string
+	for _, t := range all {
+		if n, ok := switchNames[t.ID]; ok && stuck && t.State == tiles.Good {
+			alt = append(alt, n)
+		}
+	}
+	switch len(alt) {
+	case 0:
+	case 1:
+		sub += " " + alt[0] + " is working if you need to switch."
+	default:
+		sub += " " + andJoin(alt) + " are working if you need to switch."
+	}
+	return headline, sub, tab, warn
+}
+
+// pathCard is a broken path's card (rows 3 and 4 of the connection state).
+func (c homeCopy) pathCard(kind string, since time.Time) (headline, sub, tab string) {
+	started := c.started(since)
+	switch kind {
+	case "lan":
+		if c.wifi {
+			return "Your Wi-Fi and router are likely having trouble.",
+				"fyisp can’t reliably reach your router, so every app is affected at once." + started, "✕ Wi-Fi and router problem"
+		}
+		return "Your home router is likely having trouble.",
+			"fyisp can’t reliably reach your router, so every app is affected at once." + started, "✕ Router problem"
+	case "isp":
+		return "Your internet provider is likely having trouble.",
+			"Your router is answering normally, but your provider’s network past it isn’t, so every app is affected at once. Calls may be choppy and some sites won’t load." + started,
+			"✕ Provider problem"
+	case "upstream":
+		return "The internet past your provider is likely having trouble.",
+			"Your router and your internet provider are answering normally, but sites past them are hard to reach, so many apps are affected at once." + started,
+			"✕ Internet problem"
+	case "no_network":
+		return "fyisp has no network connection.",
+			"The computer fyisp runs on isn’t connected to any network, so nothing can be checked." + started, "✕ Offline"
+	}
+	return "Your internet just dropped.", "Nothing is getting through right now." + started, "✕ Internet down"
+}
+
+// ---------- problems ----------
+
+// problemWhen is "Today 9:41–9:45 am", "Today since 10:05 am (still
+// happening)", "Since yesterday 8:30 am (still happening)" or "Today
+// 10:14 am (about 40 seconds)".
+func (c homeCopy) problemWhen(e tiles.Episode) string {
+	if e.Ongoing() {
+		if c.daysAgo(e.Start) == 0 {
+			return "Today since " + c.clock(e.Start) + " (still happening)"
+		}
+		return "Since " + c.dayIn(e.Start) + " " + c.clock(e.Start) + " (still happening)"
+	}
+	d := e.End.Sub(e.Start)
+	if e.DropDur > 0 {
+		d = e.DropDur
+	}
+	if d < time.Minute {
+		return c.day(e.Start) + " " + c.clock(e.Start) + " (" + about(d) + ")"
+	}
+	if c.daysAgo(e.Start) != c.daysAgo(e.End) {
+		return c.day(e.Start) + " " + c.clock(e.Start) + " – " + c.dayIn(e.End) + " " + c.clock(e.End)
+	}
+	return c.day(e.Start) + " " + c.span(e.Start, e.End)
+}
+
+// problemWhat says what the user noticed.
+func (c homeCopy) problemWhat(e tiles.Episode) string {
+	on := e.Ongoing()
+	pick := func(past, present string) string {
+		if on {
+			return present
+		}
+		return past
+	}
+	if e.Connection {
+		switch {
+		case e.Kind == tiles.EpDrop:
+			if on {
+				return "Everything is dropping."
+			}
+			return "Everything dropped for " + about(e.DropDur) + "."
+		case e.Kind == tiles.EpBlocked:
+			return pick("Calls couldn’t use their fast path.", "Calls can’t use their fast path.")
+		case e.Verdict == "dns":
+			return pick("Websites couldn’t be found.", "Websites can’t be found.")
+		case e.Verdict == "":
+			return pick("Most apps were slow.", "Most apps are slow.")
+		case e.Verdict == "upstream" && e.Sev == tiles.Down:
+			return pick("Many sites didn’t load.", "Many sites aren’t loading.")
+		case e.Verdict == "upstream":
+			return pick("Many sites were slow.", "Many sites are slow.")
+		case e.Sev == tiles.Down:
+			return pick("Nothing could get through.", "Nothing is getting through.")
+		}
+		return pick("Calls may have been choppy and some sites slow.", "Calls choppy, some sites slow or not loading.")
+	}
+	var names, callNames, appNames []string
+	for _, id := range e.Tiles {
+		d := tileDef(id)
+		names = append(names, d.Name)
+		if d.Kind == profile.TileCall {
+			callNames = append(callNames, d.Name)
+		} else {
+			appNames = append(appNames, d.Name)
+		}
+	}
+	who := andJoin(names)
+	calls, apps := len(callNames), len(appNames)
+	switch {
+	case e.Kind == tiles.EpDrop && !on:
+		return who + " dropped for " + about(e.DropDur) + "."
+	case e.Sev == tiles.Down && apps == 0:
+		return pick(who+" couldn’t connect.", who+" not connecting.")
+	case e.Sev == tiles.Down && calls == 0:
+		return pick(who+" didn’t load.", who+" not loading.")
+	case e.Sev == tiles.Down:
+		cw, aw := andJoin(callNames), andJoin(appNames)
+		return pick(cw+" couldn’t connect; "+aw+" didn’t load.", cw+" not connecting; "+aw+" not loading.")
+	case apps == 0:
+		return pick(who+" calls may have been choppy.", who+" calls may be choppy.")
+	case calls == 0 && len(names) == 1:
+		return pick(who+" was slow to load.", who+" is slow to load.")
+	case calls == 0:
+		return pick(who+" were slow to load.", who+" are slow to load.")
+	}
+	return pick(who+" were slow or choppy.", who+" are slow or choppy.")
+}
+
+// buckets counts problems by cause kind; network: a home problem was the
+// computer's own network (offline), not only the router.
+type buckets struct {
+	total, prov, home, app, other int
+	network                       bool
+}
+
+func bucketsOf(eps []tiles.Episode) buckets {
+	var b buckets
+	for _, e := range eps {
+		b.total++
+		switch e.Cause.Kind() {
+		case tiles.KindProvider:
+			b.prov++
+		case tiles.KindHome:
+			b.home++
+			b.network = b.network || e.Cause.Who == tiles.WhoOffline
+		case tiles.KindApp:
+			b.app++
+		default:
+			b.other++
+		}
+	}
+	return b
+}
+
+func (b buckets) homeLabel() string {
+	if b.network {
+		return "from your home network"
+	}
+	return "from your home router"
+}
+
+// problemsSummary is "5 problems: 2 likely from your internet provider,
+// 1 from your home router, 2 from the apps themselves." The rest (speed
+// tests, unclear causes) are "with other causes", so the counts add up.
+func (c homeCopy) problemsSummary(eps []tiles.Episode, learning bool, first time.Time) string {
+	if len(eps) == 0 {
+		if learning && !first.IsZero() {
+			return "No problems since fyisp started at " + c.when(first) + "."
+		}
+		return "No problems in the last 7 days."
+	}
+	b := bucketsOf(eps)
+	var parts []string
+	if b.prov > 0 {
+		parts = append(parts, fmt.Sprintf("%d from your internet provider", b.prov))
+	}
+	if b.home > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s", b.home, b.homeLabel()))
+	}
+	if b.app > 0 {
+		parts = append(parts, fmt.Sprintf("%d from the apps themselves", b.app))
+	}
+	if len(parts) > 0 {
+		n, rest, _ := strings.Cut(parts[0], " ")
+		parts[0] = n + " likely " + rest
+	}
+	if b.other > 0 {
+		parts = append(parts, fmt.Sprintf("%d with other causes", b.other))
+	}
+	return count(b.total, "problem") + ": " + strings.Join(parts, ", ") + "."
+}
+
+// dayLine is the card's "Last 24 hours: …" line over the problems that
+// ended in the last 24 hours or go on: "short" while none goes on or
+// lasted over 30 minutes.
+func (c homeCopy) dayLine(eps []tiles.Episode) *HomeDay {
+	var day []tiles.Episode
+	short := true
+	for _, e := range eps {
+		if !e.Ongoing() && e.End.Before(c.now.Add(-24*time.Hour)) {
+			continue
+		}
+		day = append(day, e)
+		short = short && !e.Ongoing() && e.End.Sub(e.Start) <= 30*time.Minute
+	}
+	if len(day) == 0 {
+		return &HomeDay{Text: "Last 24 hours: no problems.", Link: ""}
+	}
+	b := bucketsOf(day)
+	link := count(b.total, "problem")
+	if short {
+		link = count(b.total, "short problem")
+	}
+	var parts []string
+	if b.prov > 0 {
+		parts = append(parts, fmt.Sprintf("%d likely from your internet provider", b.prov))
+	}
+	if b.home > 0 {
+		w := "likely "
+		if len(parts) > 0 {
+			w = ""
+		}
+		parts = append(parts, fmt.Sprintf("%d %s%s", b.home, w, b.homeLabel()))
+	}
+	text := "Last 24 hours: " + link
+	if len(parts) > 0 {
+		text += ", " + strings.Join(parts, ", ")
+	}
+	return &HomeDay{Text: text + ".", Link: link}
+}
+
+// ---------- the speed line ----------
+
+// mbps is "930", "4.2".
+func mbps(v float64) string {
+	if v < 10 {
+		return strconv.FormatFloat(math.Round(v*10)/10, 'f', -1, 64)
+	}
+	return strconv.FormatFloat(math.Round(v), 'f', 0, 64)
+}
+
+// speedText is "Your speed: about 930 Mbps down / 940 Mbps up — about
+// your usual speed." (no comparison without a usual).
+func (c homeCopy) speedText(down, up float64, usual *HomeSpeedUsual) string {
+	s := "Your speed: about " + mbps(down) + " Mbps down / " + mbps(up) + " Mbps up"
+	if usual == nil {
+		return s + "."
+	}
+	r := min(down/usual.DownMbps, up/usual.UpMbps)
+	was := " (usually about " + mbps(usual.DownMbps) + " / " + mbps(usual.UpMbps) + " Mbps)"
+	switch {
+	case r < 0.6:
+		return s + " — much slower than usual" + was + "."
+	case r < 0.85:
+		return s + " — a bit slower than usual" + was + "."
+	case down > 1.25*usual.DownMbps && up > 1.25*usual.UpMbps:
+		return s + " — faster than usual."
+	}
+	return s + " — about your usual speed."
+}
+
+// speedNote is when the test ran: "Today 8:00 am".
+func (c homeCopy) speedNote(t time.Time, during bool) string {
+	s := c.day(t) + " " + c.clock(t)
+	if during {
+		s += ", during the problem"
+	}
+	return s
 }

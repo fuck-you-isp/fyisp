@@ -5,9 +5,8 @@ const base = require('@playwright/test');
 
 const test = base.test.extend({
   // Failed requests a test expects (it checks how the page handles them), matched
-  // against "<console text> <url>". Always expected: the Home probe's 404 (part=now
-  // on a server without /api/home2). Specs add their own (unreachable, 404 tiles).
-  failOk: async ({}, use) => { await use([/status of 404\b.* \S*\/api\/home2\?part=now\b/]); },
+  // against "<console text> <url>". Specs add their own (unreachable, 404 tiles).
+  failOk: async ({}, use) => { await use([]); },
   page: async ({ page, failOk }, use) => {
     /** @type {string[]} */
     const problems = [];

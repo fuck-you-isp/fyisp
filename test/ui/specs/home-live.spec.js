@@ -70,7 +70,7 @@ test('announces once per answer change, never on load', async ({ page }) => {
 });
 
 test('goes stale on its own when fyisp stops answering, and back', async ({ page, failOk }) => {
-  failOk.push(/\/api\/home2\?part=now/);
+  failOk.push(/\/api\/home\?part=now/);
   await page.clock.install();
   await page.addInitScript(recordLive);
   const ctl = await serveHome(page, 'now-good');
@@ -136,13 +136,13 @@ test('a background tab keeps polling and stays truthful', async ({ page }) => {
 });
 
 test('a poll that hangs is given up, and the next one recovers', async ({ page, failOk }) => {
-  failOk.push(/\/api\/home2\?part=now/);
+  failOk.push(/\/api\/home\?part=now/);
   await page.clock.install();
   const ctl = await serveHome(page, 'now-good');
   await openHome(page);
   // The next part=now never answers; the ones after it do.
   let hung = 0;
-  await page.route('**/api/home2?part=now*', (route) => { if (hung++ === 0) return; /* never answers */ route.fallback(); });
+  await page.route('**/api/home?part=now*', (route) => { if (hung++ === 0) return; /* never answers */ route.fallback(); });
   const n = ctl.nowCalls;
   await page.clock.runFor(15e3);
   await expect.poll(() => hung).toBe(1);

@@ -1,6 +1,6 @@
 // Smoke test: the current app loads, Home and Details render, and nothing
-// logs an error or trips the CSP on the way. Home is the new one: webdev's
-// /api/home2 is the real tiles engine over the fake probes.
+// logs an error or trips the CSP on the way. webdev's /api/home is the real
+// tiles engine over the fake probes.
 // @ts-check
 const { test, expect } = require('./fixtures');
 

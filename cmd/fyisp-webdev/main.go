@@ -5,8 +5,7 @@
 //	fyisp-webdev -listen 0.0.0.0:3000 -backfill 6h
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 //	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
-//	fyisp-webdev -home isp                    # a Home scenario (internal/web/homescen)
-//	fyisp-webdev -home2 blip                  # a new Home scenario (/api/home2; homescen.V2Names)
+//	fyisp-webdev -home blip                   # a Home scenario (/api/home; homescen.Names)
 package main
 
 import (
@@ -162,8 +161,7 @@ func main() {
 	noSpeed := flag.Bool("no-speed", false, "run without speed tests (Speed hidden)")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
-	home := flag.String("home", "", "a Home scenario instead of the fake probes and verdict (the real /api/home over its data): "+strings.Join(homescen.Names, ", "))
-	home2 := flag.String("home2", "", "a new Home scenario served by /api/home2 (the rest stays fake probes): "+strings.Join(homescen.V2Names, ", "))
+	home := flag.String("home", "", "a Home scenario served by /api/home (the rest stays fake probes): "+strings.Join(homescen.Names, ", "))
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -211,26 +209,18 @@ func main() {
 		}
 	}
 	now := time.Now()
-	var sc *homescen.Scenario
+	// -home: the Home's scenario, going on as time passes; the rest of the
+	// dashboard runs on the fake probes over its profile. Speed tests are
+	// the fake scheduler's (Test now works), not the scenario's.
+	var live *homescen.Live
 	if *home != "" {
-		if sc, err = homescen.Build(*home, now, time.Local); err != nil {
+		sc, err := homescen.Build(*home, now)
+		if err != nil {
 			log.Error("-home", "err", err)
 			os.Exit(2)
 		}
 		p = sc.Profile
-	}
-	// -home2: the new Home's scenario, going on as time passes; the rest of
-	// the dashboard runs on the fake probes over its profile. Speed tests
-	// are the fake scheduler's (Test now works), not the scenario's.
-	var live *homescen.LiveV2
-	if *home2 != "" {
-		sc2, err := homescen.BuildV2(*home2, now)
-		if err != nil {
-			log.Error("-home2", "err", err)
-			os.Exit(2)
-		}
-		p = sc2.Profile
-		live = &homescen.LiveV2{Name: *home2, Now: time.Now}
+		live = &homescen.Live{Name: *home, Now: time.Now}
 	}
 	// sink adds the evening slowdown and drops ISP edge samples with
 	// -edge-undiscovered.
@@ -247,44 +237,27 @@ func main() {
 	}
 	st := store.NewFake()
 	var warm web.Warmup
-	var tl tiles.Engine
 	var vs web.VerdictSource // read by tl once it runs
 	pr := &probe.Fake{Seed: 42, LossRate: *loss}
-	switch {
-	case sc != nil:
-		// The scenario's own samples, going on as they were.
-		st, *bf = sc.Store, 7*24*time.Hour
-		for _, t := range p.Targets { // reporting, except while warming up
-			if *home != "warming" || t.Layer != "" {
-				warm.Observe(model.Sample{Key: model.SeriesKey{Target: t.Name}, Slot: now})
-			}
-		}
-		go func() {
-			for t := time.NewTicker(5 * time.Second); ctx.Err() == nil; <-t.C {
-				sc.Fill(time.Now())
-			}
-		}()
-	default:
-		if *bf > 0 {
-			log.Info("backfilling", "range", *bf)
-			backfill(sink(st), p, *bf, now)
-		}
-		// The Home tiles: the real engine over the fake store and probes.
-		tl = tiles.New(p, profile.ResolveTiles(p), tiles.Sources{Store: st,
-			Verdict: func() model.Verdict {
-				if vs == nil {
-					return model.Verdict{Kind: model.VerdictOK}
-				}
-				return vs.Current()
-			},
-			Incidents: func(ctx context.Context, from, to time.Time) ([]model.Incident, error) {
-				if vs == nil {
-					return nil, nil
-				}
-				return vs.Incidents(ctx, from, to)
-			}}, tiles.Options{Log: log})
-		go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm, tl})) }()
+	if *bf > 0 {
+		log.Info("backfilling", "range", *bf)
+		backfill(sink(st), p, *bf, now)
 	}
+	// The Home tiles: the real engine over the fake store and probes.
+	tl := tiles.New(p, profile.ResolveTiles(p), tiles.Sources{Store: st,
+		Verdict: func() model.Verdict {
+			if vs == nil {
+				return model.Verdict{Kind: model.VerdictOK}
+			}
+			return vs.Current()
+		},
+		Incidents: func(ctx context.Context, from, to time.Time) ([]model.Incident, error) {
+			if vs == nil {
+				return nil, nil
+			}
+			return vs.Incidents(ctx, from, to)
+		}}, tiles.Options{Log: log})
+	go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm, tl})) }()
 
 	caps := pr.Caps()
 	if *noICMP {
@@ -312,17 +285,12 @@ func main() {
 		go ft.run(ctx)
 		d.Trace = ft
 	}
-	switch {
-	case sc != nil:
-		d.Verdict = sc.Verdict
-	case !*noVerdict:
+	if !*noVerdict {
 		d.Verdict = callsVerdict{newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge), *callsMode, now}
 	}
-	if tl != nil {
-		vs = d.Verdict
-		d.Tiles = tl
-		go func() { _ = tl.Run(ctx) }()
-	}
+	vs = d.Verdict
+	d.Tiles = tl
+	go func() { _ = tl.Run(ctx) }()
 	if live != nil {
 		d.Tiles = live
 		d.Path = func() netinfo.Path { return live.Current().Path }

@@ -134,7 +134,7 @@ test('an off tile: the reason and how to turn it on, no chart, no fetch', async 
 });
 
 test('a 404 for the tile shows the off panel, not an error', async ({ page, failOk }) => {
-  failOk.push(/\/api\/home2\?part=tile/);
+  failOk.push(/\/api\/home\?part=tile/);
   const ctl = await serveHome(page, 'now-good');
   ctl.tile = () => null;
   await openHome(page);
