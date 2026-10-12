@@ -540,10 +540,13 @@ type wordRun struct {
 //     it: no 5-minute wait.
 //   - Slow (Choppy) is entered when badOf of the last badWindow judged
 //     minutes are bad, and left after goodRun good minutes in a row.
-//   - Down from latency or partial loss shows at once (since that minute)
-//     and is left after goodRun good minutes in a row, or as soon as the
-//     last badWindow judged minutes hold no Down minute: to Slow when
-//     badOf of them are bad (since the first of those), else to Good.
+//   - Down from a Down minute without an outage (most of a web minute's
+//     checks lost; on call tiles also delay over 400 ms or 10% loss in 2
+//     minutes; never latency on app and stream tiles) shows at once
+//     (since that minute) and is left after goodRun good minutes in a
+//     row, or as soon as the last badWindow judged minutes hold no Down
+//     minute: to Slow when badOf of them are bad (since the first of
+//     those), else to Good.
 //   - None minutes hold the word and do not count.
 //
 // A run that ends on good minutes ends at the first of them, or at the

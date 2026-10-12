@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -869,5 +870,57 @@ func TestRawLookups(t *testing.T) {
 	defer empty.Close()
 	if got := rawAll(t, empty, keys, time.Time{}, end); len(got) != 0 {
 		t.Errorf("an empty store: %d points", len(got))
+	}
+}
+
+// TestHourBoundsPlan: Raw's clamp reads the first and the last hour with
+// one key seek each, never a scan of the samples table (Raw runs once per
+// series when the Home first loads).
+func TestHourBoundsPlan(t *testing.T) {
+	s := openT(t, t.TempDir(), Options{})
+	defer s.Close()
+	rows, err := s.db.r.QueryContext(ctx, `EXPLAIN QUERY PLAN `+hourBoundsQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	searches := 0
+	for _, d := range plan {
+		if strings.HasPrefix(d, "SCAN") && strings.Contains(d, "samples") {
+			t.Errorf("plan scans the table: %q", plan)
+		}
+		if strings.HasPrefix(d, "SEARCH") && strings.Contains(d, "samples") {
+			searches++
+		}
+	}
+	if searches != 2 {
+		t.Errorf("plan %q: want a SEARCH of samples for each bound", plan)
+	}
+	t.Logf("plan %q", plan)
+	// the one-query form this replaced scans
+	rows2, err := s.db.r.QueryContext(ctx, `EXPLAIN QUERY PLAN SELECT min(hour), max(hour) FROM samples`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows2.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("one query: %q", detail)
 	}
 }

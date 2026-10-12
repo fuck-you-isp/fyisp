@@ -382,6 +382,12 @@ func sortedMem(mem map[hourKey]*memBlock, k *model.SeriesKey) []*memBlock {
 // rawHours is how many hours one Raw query looks up.
 const rawHours = 256
 
+// hourBoundsQuery reads the table's first and last hour: two subqueries,
+// each one seek on the primary key. (`SELECT min(hour), max(hour)` in one
+// query defeats SQLite's min/max optimization and scans the whole key:
+// 620 ms at 8 M rows, on every Raw call.)
+const hourBoundsQuery = `SELECT (SELECT min(hour) FROM samples), (SELECT max(hour) FROM samples)`
+
 // Raw calls fn for every stored slot of keys in [from, to], key by key in
 // the given order, in time order: measured values, losses, and not-measured
 // slots (Lost true, Reason ReasonGap). It includes hours still in memory.
@@ -410,7 +416,7 @@ func (s *SQLite) Raw(ctx context.Context, keys []model.SeriesKey, from, to time.
 	// has (min and max of its key), so a far-past from (an export from
 	// 2000, a zero time) costs nothing. Hours in memory come from mem.
 	var dbMin, dbMax sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT min(hour), max(hour) FROM samples`).Scan(&dbMin, &dbMax); err != nil {
+	if err := tx.QueryRowContext(ctx, hourBoundsQuery).Scan(&dbMin, &dbMax); err != nil {
 		return err
 	}
 	qFrom, qTo := hFrom, hTo
