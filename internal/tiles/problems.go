@@ -21,7 +21,10 @@ type view struct {
 	// drop (connDropNow to dropMin) outside any connection drop: they
 	// leave nothing behind, but the verdict reacts to them
 	blips []Drop
-	eps   []Episode
+	// lagBlips are the blips the path was clean after: the ones that
+	// leave nothing behind (the others are part of a lossy spell)
+	lagBlips []Drop
+	eps      []Episode
 }
 
 // view computes the drops and the problems at now. The caller holds mu.
@@ -181,6 +184,7 @@ func (e *engine) episodes(v *view) []Episode {
 		if !e.layersClean(v, d.End, d.End.Add(lagMax), layerGateway, layerEdge, layerAnycast) {
 			continue
 		}
+		v.lagBlips = append(v.lagBlips, d)
 		x := dropEpisode(d, "")
 		x.Kind = epBlip
 		conn = append(conn, x)

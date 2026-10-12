@@ -259,7 +259,7 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		layersOK = layersOK && (h == nil || *h)
 	}
 	s.Conn = connState(connIn{now: now, stale: stale(now, e.lastMeasured), ready: ready, verdict: in.verdict,
-		dropNow: v.connCur, drops: slices.Concat(v.connDrops, v.blips), layersOK: layersOK, tiles: tn, eps: v.eps,
+		dropNow: v.connCur, drops: slices.Concat(v.connDrops, v.lagBlips), layersOK: layersOK, tiles: tn, eps: v.eps,
 		clean: func(k model.VerdictKind, from time.Time) bool {
 			return e.layersClean(v, from, time.Time{}, blamed(k)...)
 		},
@@ -270,7 +270,7 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 	switch s.Conn.Kind {
 	case ConnWorkingAgain, ConnApp, ConnGood:
 		var end time.Time
-		for _, d := range slices.Concat(v.connDrops, v.blips) {
+		for _, d := range slices.Concat(v.connDrops, v.lagBlips) {
 			if d.End.After(end) && now.Sub(d.End) < lagMax {
 				end = d.End
 			}
