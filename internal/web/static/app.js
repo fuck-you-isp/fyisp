@@ -2120,10 +2120,10 @@ function bySeverity(/** @type {OvRow} */ a, /** @type {OvRow} */ b) {
   return (OV_STATES[a.state]?.rank ?? 9) - (OV_STATES[b.state]?.rank ?? 9) || b.loss - a.loss || (b.ratio ?? 0) - (a.ratio ?? 0) || a.target.localeCompare(b.target);
 }
 function geoOf(/** @type {TargetInfo} */ t) { return t.geo || ''; }
-/** Home's tile names, for the Overview's ot= filter (a Home tile's "See details"). */
+/** Category names for the Overview's ot= filter (the v0.6–v0.8 Home's tiles; a #ot= link still opens one). */
 /** @type {Object<string,string>} */
 const HOME_TILE = { calls: 'Calls', work: 'Work apps', web: 'Websites', other: 'Other services' };
-/** A target's Home tile, as the server assigns it (profile.HomeCategory via /api/profile). */
+/** A target's category, as the server assigns it (profile.HomeCategory via /api/profile). */
 function homeCategory(/** @type {TargetInfo} */ t) { return t.home || ''; }
 function locationOf(/** @type {TargetInfo} */ t) { return [t.city, t.country].filter(Boolean).join(', '); }
 function windowWords(/** @type {OvData} */ d) {

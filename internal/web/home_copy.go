@@ -21,7 +21,7 @@ import (
 type homeCopy struct {
 	loc *time.Location
 	now time.Time
-	// wifi: the Wi-Fi wording ("Your Wi-Fi & router"): fyisp's own uplink
+	// wifi: the Wi-Fi wording ("Your Wi-Fi and router"): fyisp's own uplink
 	// is Wi-Fi and the page is viewed on the same machine.
 	wifi bool
 	// stun: the network blocks only the STUN ports (stun_blocked), so

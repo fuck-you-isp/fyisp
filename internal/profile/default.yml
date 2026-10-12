@@ -1,7 +1,8 @@
 # fyisp default profile: what a home and a remote worker rely on. 28 targets
 # in 4 groups (one dashboard panel each); the Home view sorts them into its
-# tiles by their home: and tile: tags (see package profile, HomeCategory and
-# Tiles): every one of Home's 11 app tiles has a target here.
+# tiles by their tile: tags (see package profile, Tiles), and every one of
+# Home's 11 app tiles has a target here. Their home: tags (HomeCategory) are
+# the Overview's category filter.
 #
 # Every target is a catalog target (catalog/*.yml), named here with its
 # group and, optionally, `trace: true`: everything else (host, port, kinds,
