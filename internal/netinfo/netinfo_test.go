@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
 func TestIsPublic(t *testing.T) {
@@ -122,6 +124,18 @@ type fakeNet struct {
 	rtErr  error
 	hops   []string
 	traces int
+	conns  map[string]string // interface -> connection type
+	reads  int               // connection type reads
+}
+
+func (n *fakeNet) connType(iface string) string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.reads++
+	if c, ok := n.conns[iface]; ok {
+		return c
+	}
+	return model.ConnUnknown
 }
 
 func (n *fakeNet) route() (route, error) {
@@ -168,6 +182,7 @@ func TestWatcher(t *testing.T) {
 	edge1, edge2 := netip.MustParseAddr("81.2.69.1"), netip.MustParseAddr("62.1.1.1")
 	n := &fakeNet{rt: route{Gateway: gw1, Iface: "wlan0"}, hops: []string{"192.168.1.1", "81.2.69.1"}}
 	w := newWatcher(Options{PollGateway: 10 * time.Millisecond, Recheck: time.Hour, Log: quietLog()}, n.route, n.tracer)
+	w.conn = n.connType
 	if w.o.Probe != DefaultProbe {
 		t.Errorf("default probe %v", w.o.Probe)
 	}
@@ -230,6 +245,62 @@ func TestWatcher(t *testing.T) {
 	}
 	unsub()
 	unsub() // idempotent
+}
+
+// TestWatcherConn: the connection type is read when the interface changes
+// and on every edge recheck, kept while there is no route, and published.
+func TestWatcherConn(t *testing.T) {
+	gw := netip.MustParseAddr("192.168.1.1")
+	n := &fakeNet{rt: route{Gateway: gw, Iface: "wlan0"}, hops: []string{"192.168.1.1", "81.2.69.1"},
+		conns: map[string]string{"wlan0": model.ConnWiFi, "eth0": model.ConnWired}}
+	w := newWatcher(Options{PollGateway: time.Hour, Recheck: time.Hour, Log: quietLog()}, n.route, n.tracer)
+	w.conn = n.connType
+	if c := w.Current().Conn; c != model.ConnUnknown {
+		t.Errorf("before Run: conn %q", c)
+	}
+	ch, unsub := w.Subscribe()
+	defer unsub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.Run(ctx)
+
+	p := waitFor(t, ch, "Wi-Fi", func(p Path) bool { return p.Edge.IsValid() })
+	if p.Conn != model.ConnWiFi || p.Iface != "wlan0" {
+		t.Errorf("initial path %+v", p)
+	}
+
+	// The same interface on the next poll is not read again.
+	n.set(func(n *fakeNet) { n.reads = 0 })
+	w.pollGateway()
+	n.set(func(n *fakeNet) {
+		if n.reads != 0 {
+			t.Errorf("%d reads for an unchanged interface", n.reads)
+		}
+	})
+
+	// The Wi-Fi link drops: no route, the connection type is kept.
+	n.set(func(n *fakeNet) { n.rtErr = errNoRoute })
+	w.pollGateway()
+	if p := w.Current(); !p.NoRoute() || p.Conn != model.ConnWiFi {
+		t.Errorf("no route: %+v", p)
+	}
+
+	// Plugged into Ethernet: wired, published with the new interface.
+	n.set(func(n *fakeNet) { n.rtErr, n.rt = nil, route{Gateway: gw, Iface: "eth0"} })
+	w.pollGateway()
+	p = waitFor(t, ch, "wired", func(p Path) bool { return p.Iface == "eth0" })
+	if p.Conn != model.ConnWired {
+		t.Errorf("after the switch: %+v", p)
+	}
+
+	// The edge recheck rereads it: a change on the same interface (here
+	// eth0 turns out to be unknown) is published too.
+	n.set(func(n *fakeNet) { n.conns["eth0"] = model.ConnUnknown })
+	w.trigger()
+	p = waitFor(t, ch, "recheck", func(p Path) bool { return p.Conn == model.ConnUnknown })
+	if p.Iface != "eth0" || p.Gateway != gw {
+		t.Errorf("after the recheck: %+v", p)
+	}
 }
 
 func TestWatcherGatewayUnsupported(t *testing.T) {

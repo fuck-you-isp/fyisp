@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -142,7 +143,7 @@ func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Col
 	// the handoff network, from the network path.
 	o.Path = func() (netip.Addr, netip.Addr) { p := path(); return p.Gateway, p.Edge }
 	o.OpenPinger = func() (speedtest.LoadPinger, error) { return probe.OpenPinger() }
-	o.Conn = func() string { return netinfo.ConnType(path().Iface) }
+	o.Conn = func() string { return cmp.Or(path().Conn, model.ConnUnknown) }
 	hf := &speedtest.HandoffFinder{Edge: func() netip.Addr { return path().Edge }}
 	o.Handoff, o.HandoffCached = hf.Handoff, hf.Cached
 	sm := metrics.NewSpeed()

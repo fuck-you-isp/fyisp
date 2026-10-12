@@ -13,6 +13,9 @@ import (
 type Path struct {
 	Gateway netip.Addr // default IPv4 gateway
 	Iface   string     // interface of the default route
+	// Conn is how Iface connects: model.ConnWiFi, ConnWired or ConnUnknown
+	// (see ConnType). It is kept while there is no route.
+	Conn    string
 	Edge    netip.Addr // first non-private hop towards the internet
 	EdgeHop int        // TTL of Edge (1 = gateway)
 	Updated time.Time
@@ -35,6 +38,6 @@ type Options struct {
 type Watcher interface {
 	Run(ctx context.Context) error
 	Current() Path
-	// Subscribe delivers every change of Gateway or Edge.
+	// Subscribe delivers every change of Gateway, Iface, Edge or Conn.
 	Subscribe() (<-chan Path, func())
 }

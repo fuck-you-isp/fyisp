@@ -408,6 +408,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			return out
 		},
 		Trace: newWebTrace(st, tr, prof),
+		Path:  ni.Current,
 		Log:   log,
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)

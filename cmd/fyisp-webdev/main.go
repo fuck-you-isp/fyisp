@@ -16,12 +16,14 @@ import (
 	"math"
 	mrand "math/rand/v2"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
@@ -150,6 +152,7 @@ func main() {
 	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, udp_blocked, stun_blocked (quiet), udp_degraded, warming_up)")
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
 	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP edge samples (shows \"discovering…\")")
+	conn := flag.String("conn", model.ConnWiFi, "how this machine connects (the network path's Conn): wifi, wired or unknown")
 	noTrace := flag.Bool("no-trace", false, "run without a trace source (Investigate view hidden)")
 	noNotes := flag.Bool("no-notes", false, "run without an annotation store (notes hidden)")
 	noReports := flag.Bool("no-reports", false, "run without reports")
@@ -161,6 +164,10 @@ func main() {
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if *conn != model.ConnWiFi && *conn != model.ConnWired && *conn != model.ConnUnknown {
+		log.Error("-conn: want wifi, wired or unknown", "got", *conn)
+		os.Exit(2)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -260,8 +267,9 @@ func main() {
 		Metrics: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, "# fyisp-webdev: no real metrics")
 		}),
-		UDP: pr,
-		Log: log,
+		UDP:  pr,
+		Path: func() netinfo.Path { return fakePath(now, *conn, *noEdge) },
+		Log:  log,
 	}
 	if !*noTrace {
 		ft := newFakeTrace(st, now, *bf)
@@ -316,4 +324,17 @@ func main() {
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = ls.Shutdown(sctx)
+}
+
+// fakePath is the network path the fake data describes (see the Network
+// details page): conn says how this machine connects.
+func fakePath(now time.Time, conn string, noEdge bool) netinfo.Path {
+	p := netinfo.Path{Gateway: netip.MustParseAddr("192.168.1.1"), Iface: "eth0", Conn: conn, Updated: now}
+	if conn == model.ConnWiFi {
+		p.Iface = "wlan0"
+	}
+	if !noEdge {
+		p.Edge, p.EdgeHop = netip.MustParseAddr("198.51.100.1"), 2
+	}
+	return p
 }
