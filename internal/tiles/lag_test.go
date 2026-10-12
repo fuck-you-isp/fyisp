@@ -570,18 +570,6 @@ func TestBlipLiveVsReplay(t *testing.T) {
 	})
 }
 
-// TestRecentFrom: the card's edge window starts at the incident (less
-// lagSlack) when that is within edgeRecent.
-func TestRecentFrom(t *testing.T) {
-	now := at(10 * time.Minute)
-	if got := recentFrom(now, now.Add(-2*time.Second)); !got.Equal(now.Add(-12 * time.Second)) {
-		t.Errorf("young incident: %v", got)
-	}
-	if got := recentFrom(now, now.Add(-5*time.Minute)); !got.Equal(now.Add(-edgeRecent)) {
-		t.Errorf("old incident: %v", got)
-	}
-}
-
 // TestISPPeak: the card's loss for an isp incident is its peak: the
 // young incident's edge checks count, and a later dip does not lower it.
 func TestISPPeak(t *testing.T) {
@@ -637,5 +625,32 @@ func TestCallsLossBlamesProvider(t *testing.T) {
 	}
 	if len(calls) == 0 || slices.ContainsFunc(calls, func(x Episode) bool { return x.Cause.Who != WhoProvider }) {
 		t.Errorf("got\n%s, want the calls' problem blamed on the provider", epsText(last.Eps))
+	}
+}
+
+// TestISPPeakYoung: in an isp incident's first edgeRecent, the edge's own
+// checks count with their upper bound: 40% loss that reads 27% over 30
+// checks is red, 6% amber.
+func TestISPPeakYoung(t *testing.T) {
+	p, err := profile.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := at(10 * time.Minute)
+	v := model.Verdict{Kind: model.VerdictISP, Since: now.Add(-2 * time.Second), Evidence: map[string]float64{"loss": 0.2}}
+	for _, c := range []struct {
+		p    string
+		want bool // red
+	}{
+		{rep("x..x.", 2) + rep(".x...x..x.", 2), true},   // 8 of 30: 27%
+		{rep(".", 14) + "x" + rep(".", 14) + "x", false}, // 2 of 30: 7%
+	} {
+		e := newEngine(p, nil, Sources{}, Options{})
+		for _, i := range e.paths[layerEdge] {
+			e.ss[i].raw = pattern(time.Second, now.Add(-29*time.Second), c.p, ms10)
+		}
+		if got := e.ispPeak(v, now) >= lossyBelow; got != c.want {
+			t.Errorf("%q: red %v, want %v", c.p, got, c.want)
+		}
 	}
 }

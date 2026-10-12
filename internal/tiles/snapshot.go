@@ -3,6 +3,7 @@ package tiles
 import (
 	"context"
 	"hash/fnv"
+	"math"
 	"slices"
 	"strconv"
 	"time"
@@ -284,21 +285,10 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 	return s
 }
 
-// recentFrom is where the edge's latest checks start for the card: the
-// last edgeRecent, but no earlier than lagSlack before the verdict's
-// incident began (the clean checks before loss began would dilute it).
-func recentFrom(now, since time.Time) time.Time {
-	from := now.Add(-edgeRecent)
-	if s := since.Add(-lagSlack); s.After(from) {
-		from = s
-	}
-	return from
-}
-
 // ispPeak is the highest loss seen of the current isp incident: the
 // verdict's 60 s window, and while the incident is young (its window still
-// holds the clean checks from before) the edge's own checks since it
-// began. Kept per incident, so a dip of the noisy estimate does not turn a
+// holds the clean checks from before) the edge's own last edgeRecent of
+// checks. Kept per incident, so a dip of the noisy estimate does not turn a
 // red card amber for a poll.
 func (e *engine) ispPeak(v model.Verdict, now time.Time) float64 {
 	if v.Kind != model.VerdictISP {
@@ -310,8 +300,11 @@ func (e *engine) ispPeak(v model.Verdict, now time.Time) float64 {
 	}
 	e.peak.loss = max(e.peak.loss, v.Evidence["loss"])
 	if now.Sub(v.Since) < edgeRecent {
-		if l, n := e.recentLoss(layerEdge, recentFrom(now, v.Since)); n >= 15 {
-			e.peak.loss = max(e.peak.loss, l)
+		// a handful of checks is a noisy estimate: with 40% loss, 30 of
+		// them read under 30% one time in eight. Their upper bound (2σ)
+		// keeps 40% red and 6% amber.
+		if l, n := e.recentLoss(layerEdge, now.Add(-edgeRecent)); n >= 10 {
+			e.peak.loss = max(e.peak.loss, l+2*math.Sqrt(l*(1-l)/float64(n)))
 		}
 	}
 	return e.peak.loss
