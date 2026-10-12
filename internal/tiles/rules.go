@@ -12,8 +12,8 @@
 // describe apps over minutes, so their thresholds differ:
 //
 //   - verdict lossBad 20% with ≥ 2 lost (verdict/rules.go): a target is
-//     unhealthy. A web tile is Down only when more than half of a minute's
-//     checks fail (downShare); scattered loss below that is not a word.
+//     unhealthy. A web tile-minute is Down when more than half of its
+//     checks fail (downShare) and Slow from a quarter (webSlowLoss).
 //   - verdict spike 3× / +50 ms and normal 2.5× / p95+30 ms (7-day
 //     baseline): the tiles compare with a 24 h usual of good minutes only,
 //     Slow at 2× AND +30 ms, Down at 3× AND +100 ms (slowFactor/ downFactor).
@@ -53,8 +53,12 @@ const (
 const (
 	slowFactor, slowExtraMs = 2.0, 30.0  // Slow: median > 2× usual AND > usual + 30 ms
 	downFactor, downExtraMs = 3.0, 100.0 // Down: median > 3× usual AND > usual + 100 ms
-	downShare               = 0.5        // Down: more than this share of the checks lost
-	minChecks               = 2          // measured checks per endpoint-minute (15 s cadence gives 4)
+	downShare               = 0.5        // Down: more than this share of the checks lost (streams too: they stop loading)
+	// webSlowLoss of a minute's checks lost (1 of 4 at 15 s) is Slow, on
+	// app and stream tiles alike: partial loss is never Good. The verdict
+	// calls a target unhealthy only at lossBad 20% with ≥ 2 lost.
+	webSlowLoss = 0.25
+	minChecks   = 2 // measured checks per endpoint-minute (15 s cadence gives 4)
 )
 
 // Learning: fixed limits while the usual is unknown.
@@ -273,8 +277,9 @@ func limitsFor(usualMs float64, ok, learning bool) limits {
 	}
 }
 
-// judgeWeb judges one app or stream endpoint-minute. Streams are Down only
-// when their checks fail, never on latency.
+// judgeWeb judges one app or stream endpoint-minute: Down when most checks
+// failed, Slow when a quarter did. Streams are Down only when their checks
+// fail, never on latency.
 func judgeWeb(m minute, l limits, stream bool) State {
 	n := m.n()
 	switch {
@@ -284,7 +289,7 @@ func judgeWeb(m minute, l limits, stream bool) State {
 		return Down
 	case m.medMs() > l.downMs && !stream:
 		return Down
-	case m.medMs() > l.slowMs:
+	case float64(m.lost) >= webSlowLoss*float64(n), m.medMs() > l.slowMs:
 		return Slow
 	}
 	return Good

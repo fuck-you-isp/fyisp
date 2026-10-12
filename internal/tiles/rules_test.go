@@ -49,8 +49,12 @@ func TestJudgeWeb(t *testing.T) {
 		{"stream: down when checks fail", m(1, 3, 5), u5, true, Down},
 		{"3 of 4 lost: down", m(1, 3, 5), u5, false, Down},
 		{"all lost: down", m(0, 4, 0), u5, false, Down},
-		{"half lost is not most", m(2, 2, 5), u5, false, Good},
-		{"1 of 4 lost: judged on latency", m(3, 1, 50), u5, false, Slow},
+		{"half lost is not most: slow", m(2, 2, 5), u5, false, Slow},
+		{"1 of 4 lost: slow", m(3, 1, 5), u5, false, Slow},
+		{"1 of 5 lost: good", m(4, 1, 5), u5, false, Good},
+		{"stream: 1 of 4 lost: slow", m(3, 1, 5), u5, true, Slow},
+		{"stream: 2 of 4 lost: slow", m(2, 2, 5), u5, true, Slow},
+		{"stream: 3 of 4 lost: down", m(1, 3, 5), u5, true, Down},
 		{"one check: not enough data", m(1, 0, 5), u5, false, None},
 		{"no checks", m(0, 0, 0), u5, false, None},
 		{"learning: 300 ms is fine", m(4, 0, 300), learn, false, Good},
@@ -456,11 +460,23 @@ func TestSummarize(t *testing.T) {
 // in their minutes.
 func TestLossIsCounted(t *testing.T) {
 	const every = 15 * time.Second
-	// the review's pattern: half lost, counted (half is not "most")
+	// the review's pattern: half lost, counted, Slow (half is not "most")
 	cs := pattern(every, t0, "."+rep("xx..", 30), ms10)
 	_, s := feed(every, cs)
-	if m := summarize(cs, s.runs, ruleWeb, at(time.Minute), at(time.Minute+80*time.Second)); m.lost != 2 || m.ok != 2 {
+	m := summarize(cs, s.runs, ruleWeb, at(time.Minute), at(time.Minute+80*time.Second))
+	if m.lost != 2 || m.ok != 2 {
 		t.Errorf("xx..: got %+v, want 2 lost of 4", m)
+	}
+	if st := judgeWeb(m, limitsFor(10, true, false), false); st != Slow {
+		t.Errorf("xx..: got %s, want slow", st)
+	}
+	// one lost check of four: Slow; three (never in a drop-like run): Down
+	for p, want := range map[string]State{"....x...": Slow, "....xx.x": Down} {
+		cs := pattern(every, t0, p, ms10)
+		_, s := feed(every, cs)
+		if st := judgeWeb(summarize(cs, s.runs, ruleWeb, at(time.Minute), at(time.Minute+80*time.Second)), limitsFor(10, true, false), false); st != want {
+			t.Errorf("%s: got %s, want %s", p, st, want)
+		}
 	}
 	// 60% lost, never 3 in a row: Down minutes, and no drop
 	p := rep("xx.x.", 24)
