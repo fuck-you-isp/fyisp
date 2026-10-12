@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 )
 
 //go:embed static
@@ -92,13 +94,20 @@ type server struct {
 	// canControl reports whether r may use the write routes (local only;
 	// api/speed's "configurable").
 	canControl func(r *http.Request) bool
+	// sameMachine reports whether r comes from the machine fyisp runs on
+	// (viewer.go; the Home's Wi-Fi wording). nil: never.
+	sameMachine func(r *http.Request) bool
+	inContainer func() bool      // netinfo.InContainer
+	h2          *home2Cache      // /api/home2
+	h2speed     home2SpeedSource // nil: s.d.Speed
 }
 
 func newServer(d Deps, token string) *server {
 	d.firsts = &firstCache{}
 	html := strings.ReplaceAll(indexTmpl, "{{token}}", token)
 	hc := newRespCache(HomeHistoryTTL, 64, 4<<20, 1<<20)
-	return &server{d: d, index: []byte(html), now: time.Now, hcache: hc, inv: NewInvestigations()}
+	return &server{d: d, index: []byte(html), now: time.Now, hcache: hc, inv: NewInvestigations(),
+		inContainer: netinfo.InContainer, h2: newHome2Cache()}
 }
 
 // route is one GET route under the handler's base path.
@@ -122,6 +131,7 @@ const (
 	routeOverview
 	routeCalls
 	routeHome
+	routeHome2
 	routeSpeed
 )
 
@@ -157,6 +167,8 @@ func lookup(rel string) route {
 		return routeCalls
 	case "api/home":
 		return routeHome
+	case "api/home2":
+		return routeHome2
 	case "api/speed":
 		return routeSpeed
 	}
@@ -218,6 +230,8 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveCalls(w, r)
 	case routeHome:
 		s.serveHome(w, r)
+	case routeHome2:
+		s.serveHome2(w, r)
 	case routeSpeed:
 		s.serveSpeed(w, r)
 	case routeTrace, routeTracePanel, routeRouteChanges:
@@ -277,6 +291,10 @@ func (s *server) rawStatus(ctx context.Context) Status {
 			s.d.log().Warn("store stats", "err", err)
 			st.Store.LastFlushErr = err.Error()
 		}
+	}
+	if s.d.Tiles != nil {
+		n := s.d.Tiles.LateSamples()
+		st.TilesLate = &n
 	}
 	if st.Targets == 0 {
 		if p := s.d.Profile(); p != nil {

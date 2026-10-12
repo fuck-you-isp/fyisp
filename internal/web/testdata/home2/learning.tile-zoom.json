@@ -1,0 +1,22 @@
+{
+  "v": 2,
+  "at": 1791556200000,
+  "id": "zoom",
+  "state": "good",
+  "word": "Good",
+  "reason": "Calls should be smooth.",
+  "coverage": "Call quality is judged from the general call path; fyisp can’t test Zoom’s own servers before a meeting.",
+  "metrics": [
+    {"label": "Delay", "value": "21 ms", "limit": "choppy over 150 ms", "bad": false},
+    {"label": "Jitter", "value": "2 ms", "limit": "over 30 ms", "bad": false},
+    {"label": "Packet loss", "value": "0%", "limit": "2% or more", "bad": false}
+  ],
+  "from": 1791470100000,
+  "step": 300000,
+  "ms": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 18.9, 18.9, 19.2, 17.1, 19.4, 18.6, 17.1, 18.3, null],
+  "usual_ms": null,
+  "bands": [
+    {"from": 1791470100000, "to": 1791553800000, "kind": "off", "text": "Not watched before 9:50 am"}
+  ],
+  "text": "Still learning what’s usual. Not watched before 9:50 am."
+}

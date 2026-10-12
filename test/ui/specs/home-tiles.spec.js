@@ -71,7 +71,8 @@ test('open, close and focus', async ({ page }) => {
   await expect(panel.locator('h3')).toBeFocused();
   await expect(panel.locator('h3')).toHaveText('Zoom — last 24 hours');
   await expect(panel.locator('.hp-reason')).toHaveText('Not connecting since 10:05 am. Likely cause: Zoom’s side — everything else is normal.');
-  await expect(panel.locator('.hp-metrics > span')).toHaveText(['Delay — (choppy over 150 ms)', 'Jitter — (over 30 ms)', 'Packet loss 100% (2% or more), over the limit']);
+  // Zoom's own servers aren't tested: its call figures are the general call path's, which is fine.
+  await expect(panel.locator('.hp-metrics > span')).toHaveText(['Delay 21 ms (choppy over 150 ms)', 'Jitter 2 ms (over 30 ms)', 'Packet loss 0% (2% or more)']);
   await expect(panel.locator('.hp-coverage')).toHaveText('Call quality is judged from the general call path; fyisp can’t test Zoom’s own servers before a meeting.');
   await expect(panel.locator('.hp-chartwrap')).toHaveAccessibleName('Zoom, how quickly it answered over the last 24 hours');
   await expect(panel.locator('.hp-chartwrap')).toHaveAccessibleDescription(/^Usually about 18 ms\./);
@@ -117,7 +118,7 @@ test('a stream tile and a learning tile', async ({ page }) => {
 });
 
 test('an off tile: the reason and how to turn it on, no chart, no fetch', async ({ page }) => {
-  const ctl = await serveHome(page, 'now-off4');
+  const ctl = await serveHome(page, 'now-custom-config');
   await openHome(page);
   const gh = page.locator('.hp-tile[data-id="github"]');
   await gh.click();

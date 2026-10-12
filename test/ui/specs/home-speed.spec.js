@@ -45,9 +45,9 @@ test('Test speed now: waiting, testing, then the new result', async ({ page }) =
   await expect(say).toHaveText('Testing your speed…');
   home.now = fx('now-speed-done');
   await page.clock.runFor(3000);
-  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 925 Mbps down / 938 Mbps up, about your usual.');
-  await expect(page.locator('.hp-speed-note')).toHaveText('Today 10:30 am');
-  await expect(say).toHaveText('Your speed: about 925 Mbps down / 938 Mbps up, about your usual.');
+  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 925 Mbps down / 938 Mbps up — about your usual speed.');
+  await expect(page.locator('.hp-speed-note')).toHaveText('Today 10:29 am');
+  await expect(say).toHaveText('Your speed: about 925 Mbps down / 938 Mbps up — about your usual speed.');
   await expect(btn).toBeEnabled();
   expect(q.entry).toBe(1);
 });
@@ -68,7 +68,7 @@ test('an admin-token dashboard asks for the token; Cancel sends nothing', async 
   await expect(dlg).toHaveCount(0);
   expect(q.runs).toBe(0);
   await expect(btn).toBeEnabled();
-  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up, about your usual.');
+  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.');
 
   // With the token: the request carries it.
   await btn.click();
@@ -96,7 +96,7 @@ test('hidden when controls are disabled', async ({ page }) => {
   d.speed.can_control = false;
   await serveHome(page, d);
   await openHome(page);
-  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up, about your usual.');
+  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.');
   await expect(page.getByRole('button', { name: 'Test speed now' })).toBeHidden();
 });
 

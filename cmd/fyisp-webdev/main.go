@@ -6,6 +6,7 @@
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 //	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
 //	fyisp-webdev -home isp                    # a Home scenario (internal/web/homescen)
+//	fyisp-webdev -home2 blip                  # a new Home scenario (/api/home2; homescen.V2Names)
 package main
 
 import (
@@ -162,6 +163,7 @@ func main() {
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
 	home := flag.String("home", "", "a Home scenario instead of the fake probes and verdict (the real /api/home over its data): "+strings.Join(homescen.Names, ", "))
+	home2 := flag.String("home2", "", "a new Home scenario served by /api/home2 (the rest stays fake probes): "+strings.Join(homescen.V2Names, ", "))
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -216,6 +218,19 @@ func main() {
 			os.Exit(2)
 		}
 		p = sc.Profile
+	}
+	// -home2: the new Home's scenario, going on as time passes; the rest of
+	// the dashboard runs on the fake probes over its profile. Speed tests
+	// are the fake scheduler's (Test now works), not the scenario's.
+	var live *homescen.LiveV2
+	if *home2 != "" {
+		sc2, err := homescen.BuildV2(*home2, now)
+		if err != nil {
+			log.Error("-home2", "err", err)
+			os.Exit(2)
+		}
+		p = sc2.Profile
+		live = &homescen.LiveV2{Name: *home2, Now: time.Now}
 	}
 	// sink adds the evening slowdown and drops ISP edge samples with
 	// -edge-undiscovered.
@@ -303,6 +318,10 @@ func main() {
 		vs = d.Verdict
 		d.Tiles = tl
 		go func() { _ = tl.Run(ctx) }()
+	}
+	if live != nil {
+		d.Tiles = live
+		d.Path = func() netinfo.Path { return live.Current().Path }
 	}
 	var notes *fakeNotes
 	if !*noNotes {

@@ -39,7 +39,10 @@ test('the problems link focuses the list without changing the hash', async ({ pa
   await expect(page.locator('#home')).toBeVisible();
 });
 
-test('without /api/home2 the old Home stays', async ({ page }) => {
+test('without /api/home2 the old Home stays', async ({ page, failOk }) => {
+  // A server before v0.9.0 has no /api/home2.
+  failOk.push(/\/api\/home2/);
+  await page.route('**/api/home2?*', (route) => route.fulfill({ status: 404, json: { error: 'not found', code: 'not_found' } }));
   await page.goto('/');
   await expect(page.locator('#home')).toBeVisible();
   await expect(page.locator('#home')).toHaveClass(/\bhome\b/);

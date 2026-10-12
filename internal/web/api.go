@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
@@ -679,6 +680,9 @@ type targetSummary struct {
 	// Home is the target's Home tile (profile.HomeCategory: calls, work,
 	// web or other); omitted for path targets.
 	Home string `json:"home,omitempty"`
+	// Tile is the new Home's tile the target feeds (its tile: tag, e.g.
+	// "zoom"); omitted when none.
+	Tile string `json:"tile,omitempty"`
 }
 
 func buildProfile(p *model.Profile) profileJSON {
@@ -714,6 +718,7 @@ func buildProfile(p *model.Profile) profileJSON {
 			ts.Kinds = append(ts.Kinds, k.String())
 		}
 		ts.Tags = t.Tags
+		ts.Tile = profile.TileOf(t)
 		out.Targets = append(out.Targets, ts)
 	}
 	return out

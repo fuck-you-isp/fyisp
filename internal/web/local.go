@@ -54,6 +54,7 @@ type localHandler struct {
 	extra    map[string]bool
 	csrf     string
 	controls string
+	own      *ownAddrs // this host's addresses (sameMachine)
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
@@ -70,7 +71,8 @@ func Local(d Deps, o LocalOptions) http.Handler {
 		_, _ = rand.Read(b[:])
 		tok = hex.EncodeToString(b[:])
 	}
-	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, extra: map[string]bool{}}
+	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, extra: map[string]bool{}, own: newOwnAddrs()}
+	h.server.sameMachine = h.sameMachine
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
 		ip := net.ParseIP(host)
