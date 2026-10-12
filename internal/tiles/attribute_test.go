@@ -81,9 +81,23 @@ func TestAttribute(t *testing.T) {
 			Cause{Who: WhoApp, Vendor: "google", Evidence: EvVendorOnly}},
 		{"OneDrive groups with Microsoft 365 and Teams", nil, lay(clean, clean, clean), map[string]State{"teams": Down, "m365": Down, "onedrive": Down}, nil,
 			Cause{Who: WhoApp, Vendor: "microsoft", Evidence: EvVendorOnly}},
-		{"two vendors", nil, lay(clean, clean, clean), map[string]State{"zoom": Down, "gws": Down}, nil, Cause{Who: WhoUnknown}},
+		{"two vendors, path clean: beyond the provider", nil, lay(clean, clean, clean), map[string]State{"zoom": Down, "gws": Down}, nil,
+			Cause{Who: WhoInternet, Evidence: EvBeyond}},
+		// 2026-10-09 10:27–10:29 UTC: Google's and Slack's front doors
+		// failed for 90 s, Microsoft, GitHub, Dropbox and Netflix answered,
+		// the gateway and the edge were clean, and no incident under the
+		// v0.8 verdict rules
+		{"10-09: Google and Slack, the rest fine", nil, lay(clean, clean, lossy(0.3)),
+			map[string]State{"meet": Down, "slack": Down, "gws": Down, "youtube": Down}, nil, Cause{Who: WhoInternet, Evidence: EvBeyond}},
+		{"two vendors, unknown edge", nil, lay(clean, layerEv{}, clean), map[string]State{"zoom": Down, "gws": Down}, nil, Cause{Who: WhoUnknown}},
+		{"two vendors, lossy gateway (1.5%)", nil, lay(lossy(0.015), clean, clean), map[string]State{"zoom": Down, "gws": Down}, nil, Cause{Who: WhoUnknown}},
+		{"two vendors, nothing else covered fine", nil, lay(clean, clean, clean),
+			map[string]State{"zoom": Down, "teams": Down, "meet": Down, "slack": Down, "m365": Down, "gws": Down, "github": Down, "dropbox": Down, "onedrive": Down, "youtube": Down, "netflix": Down}, nil,
+			Cause{Who: WhoUnknown}},
 		{"every call tile choppy", nil, lay(clean, clean, clean), calls, nil, Cause{Who: WhoCallsPath, Evidence: EvCallsPath}},
-		{"call tiles and an app", nil, lay(clean, clean, clean), map[string]State{"zoom": Slow, "teams": Slow, "meet": Slow, "slack": Slow, "github": Slow}, nil,
+		{"call tiles and an app: beyond the provider", nil, lay(clean, clean, clean), map[string]State{"zoom": Slow, "teams": Slow, "meet": Slow, "slack": Slow, "github": Slow}, nil,
+			Cause{Who: WhoInternet, Evidence: EvBeyond}},
+		{"only call tiles of several vendors: not beyond", nil, lay(clean, clean, clean), map[string]State{"zoom": Slow, "teams": Slow}, nil,
 			Cause{Who: WhoUnknown}},
 		{"nothing bad", nil, lay(clean, clean, clean), nil, nil, Cause{Who: WhoUnknown}},
 	}

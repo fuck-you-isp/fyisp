@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -816,4 +817,110 @@ func FuzzDecodeDay(f *testing.F) {
 			t.Fatalf("re-encode: %v", err)
 		}
 	})
+}
+
+// TestRawLookups: Raw looks a series' hours up rawHours at a time. Two
+// series over 300 hours (more than one chunk, an hour still in memory)
+// read the same as the fake, also from a far-past or zero time, which
+// must cost nothing (the range is clamped to the table's hours).
+func TestRawLookups(t *testing.T) {
+	const iv = 10 * time.Minute
+	keys := []model.SeriesKey{{Target: "a", Kind: model.KindTCP}, {Target: "b", Kind: model.KindICMP}}
+	end := t0.Add(300*time.Hour + 30*time.Minute) // the last hour is not flushed
+	now := t0
+	s := openT(t, t.TempDir(), Options{Interval: func(model.SeriesKey) time.Duration { return iv }, Now: func() time.Time { return now }})
+	defer s.Close()
+	f := NewFake()
+	for h := t0; h.Before(end); h = h.Add(time.Hour) {
+		for tt := h; tt.Before(h.Add(time.Hour)) && tt.Before(end); tt = tt.Add(iv) {
+			for i, k := range keys {
+				x := model.Sample{Key: k, Slot: tt, RTT: time.Duration(10+i) * time.Millisecond}
+				if tt.Hour() == 3 && i == 1 {
+					x = model.Sample{Key: k, Slot: tt, Lost: true, Reason: model.ReasonTimeout}
+				}
+				s.Observe(x)
+				f.Observe(x)
+			}
+		}
+		if h.Add(time.Hour).Before(end) {
+			now = h.Add(time.Hour + 3*time.Minute)
+			if err := s.Flush(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(s.cur) == 0 {
+		t.Fatal("no hour left in memory")
+	}
+	want := rawAll(t, f, keys, t0, end)
+	if n := 2 * int(end.Sub(t0)/iv); len(want) != n {
+		t.Fatalf("fake: %d points, want %d", len(want), n)
+	}
+	equalRaw(t, "300 h", rawAll(t, s, keys, t0, end), want)
+	b0, b1 := t0.Add(250*time.Hour+5*time.Minute), t0.Add(262*time.Hour) // across the 256-hour chunk
+	equalRaw(t, "across a chunk", rawAll(t, s, keys, b0, b1), rawAll(t, f, keys, b0, b1))
+	for _, from := range []time.Time{{}, time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)} {
+		a := time.Now()
+		equalRaw(t, "from "+from.String(), rawAll(t, s, keys, from, end), want)
+		if d := time.Since(a); d > 3*time.Second {
+			t.Errorf("from %v: %v", from, d)
+		}
+	}
+	empty := openT(t, t.TempDir(), Options{})
+	defer empty.Close()
+	if got := rawAll(t, empty, keys, time.Time{}, end); len(got) != 0 {
+		t.Errorf("an empty store: %d points", len(got))
+	}
+}
+
+// TestHourBoundsPlan: Raw's clamp reads the first and the last hour with
+// one key seek each, never a scan of the samples table (Raw runs once per
+// series when the Home first loads).
+func TestHourBoundsPlan(t *testing.T) {
+	s := openT(t, t.TempDir(), Options{})
+	defer s.Close()
+	rows, err := s.db.r.QueryContext(ctx, `EXPLAIN QUERY PLAN `+hourBoundsQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	searches := 0
+	for _, d := range plan {
+		if strings.HasPrefix(d, "SCAN") && strings.Contains(d, "samples") {
+			t.Errorf("plan scans the table: %q", plan)
+		}
+		if strings.HasPrefix(d, "SEARCH") && strings.Contains(d, "samples") {
+			searches++
+		}
+	}
+	if searches != 2 {
+		t.Errorf("plan %q: want a SEARCH of samples for each bound", plan)
+	}
+	t.Logf("plan %q", plan)
+	// the one-query form this replaced scans
+	rows2, err := s.db.r.QueryContext(ctx, `EXPLAIN QUERY PLAN SELECT min(hour), max(hour) FROM samples`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows2.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("one query: %q", detail)
+	}
 }

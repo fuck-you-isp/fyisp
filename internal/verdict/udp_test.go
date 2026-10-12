@@ -407,8 +407,8 @@ func TestUDPProvider(t *testing.T) {
 		"192.0.2.7":                      "192.0.2.7",
 		"[2001:db8::1]":                  "2001:db8::1",
 	} {
-		if got := udpProvider(model.Target{Host: host}); got != want {
-			t.Errorf("udpProvider(%q) = %q, want %q", host, got, want)
+		if got := UDPProvider(model.Target{Host: host}); got != want {
+			t.Errorf("UDPProvider(%q) = %q, want %q", host, got, want)
 		}
 	}
 }

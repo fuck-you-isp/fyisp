@@ -181,7 +181,7 @@ export class Tiles {
         h('summary', { text: 'How fyisp decides Good, Slow, Choppy and Down' }),
         h('ul', {}, ...[
           [['Calls'], ' (Zoom, Teams, Meet, Slack) are ', ['Choppy'], ' when delay is over 150 ms, jitter over 30 ms, or 2% or more of packets are lost — the points where people start to notice on a call. ', ['Down'], ' means over 400 ms, 10% loss, or not connecting.'],
-          [['Everything else'], ' is ', ['Slow'], ' when it takes more than twice its usual time ', [['and']], ' at least 30 ms longer. ', ['Down'], ' means it isn’t answering, or is 3× slower and 100 ms+ worse.'],
+          [['Everything else'], ' is ', ['Slow'], ' when it takes more than twice its usual time ', [['and']], ' at least 30 ms longer. ', ['Down'], ' means it isn’t answering.'],
           [['YouTube and Netflix'], ' buffer ahead, so slowness alone never marks them Down — only failing to load does. If they buffer, test your speed.'],
           [['Drops of 30 seconds or more always show'], ', even if everything recovers: the bar turns red and the tile notes the drop for 30 minutes. A drop only counts when most of an app’s checks fail together, so one flaky server can’t set it off.'],
           ['For slowdowns, the word on a tile changes once 3 of the last 5 minutes are bad, and goes back to Good after 5 good minutes in a row.'],

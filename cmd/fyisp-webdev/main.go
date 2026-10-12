@@ -27,6 +27,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/store"
+	"github.com/fuck-you-isp/fyisp/internal/tiles"
 	"github.com/fuck-you-isp/fyisp/internal/web"
 	"github.com/fuck-you-isp/fyisp/internal/web/homescen"
 )
@@ -231,6 +232,8 @@ func main() {
 	}
 	st := store.NewFake()
 	var warm web.Warmup
+	var tl tiles.Engine
+	var vs web.VerdictSource // read by tl once it runs
 	pr := &probe.Fake{Seed: 42, LossRate: *loss}
 	switch {
 	case sc != nil:
@@ -251,7 +254,21 @@ func main() {
 			log.Info("backfilling", "range", *bf)
 			backfill(sink(st), p, *bf, now)
 		}
-		go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm})) }()
+		// The Home tiles: the real engine over the fake store and probes.
+		tl = tiles.New(p, profile.ResolveTiles(p), tiles.Sources{Store: st,
+			Verdict: func() model.Verdict {
+				if vs == nil {
+					return model.Verdict{Kind: model.VerdictOK}
+				}
+				return vs.Current()
+			},
+			Incidents: func(ctx context.Context, from, to time.Time) ([]model.Incident, error) {
+				if vs == nil {
+					return nil, nil
+				}
+				return vs.Incidents(ctx, from, to)
+			}}, tiles.Options{Log: log})
+		go func() { _ = pr.Run(ctx, p, sink(model.Fanout{st, &warm, tl})) }()
 	}
 
 	caps := pr.Caps()
@@ -281,6 +298,11 @@ func main() {
 		d.Verdict = sc.Verdict
 	case !*noVerdict:
 		d.Verdict = callsVerdict{newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge), *callsMode, now}
+	}
+	if tl != nil {
+		vs = d.Verdict
+		d.Tiles = tl
+		go func() { _ = tl.Run(ctx) }()
 	}
 	var notes *fakeNotes
 	if !*noNotes {

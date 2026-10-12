@@ -379,6 +379,15 @@ func sortedMem(mem map[hourKey]*memBlock, k *model.SeriesKey) []*memBlock {
 	return out
 }
 
+// rawHours is how many hours one Raw query looks up.
+const rawHours = 256
+
+// hourBoundsQuery reads the table's first and last hour: two subqueries,
+// each one seek on the primary key. (`SELECT min(hour), max(hour)` in one
+// query defeats SQLite's min/max optimization and scans the whole key:
+// 620 ms at 8 M rows, on every Raw call.)
+const hourBoundsQuery = `SELECT (SELECT min(hour) FROM samples), (SELECT max(hour) FROM samples)`
+
 // Raw calls fn for every stored slot of keys in [from, to], key by key in
 // the given order, in time order: measured values, losses, and not-measured
 // slots (Lost true, Reason ReasonGap). It includes hours still in memory.
@@ -402,6 +411,19 @@ func (s *SQLite) Raw(ctx context.Context, keys []model.SeriesKey, from, to time.
 	s.commitMu.RUnlock()
 	if err != nil {
 		return err
+	}
+	// The hours looked up in the table: the range clamped to the hours it
+	// has (min and max of its key), so a far-past from (an export from
+	// 2000, a zero time) costs nothing. Hours in memory come from mem.
+	var dbMin, dbMax sql.NullInt64
+	if err := tx.QueryRowContext(ctx, hourBoundsQuery).Scan(&dbMin, &dbMax); err != nil {
+		return err
+	}
+	qFrom, qTo := hFrom, hTo
+	if dbMin.Valid {
+		qFrom, qTo = max(qFrom, dbMin.Int64), min(qTo, dbMax.Int64)
+	} else {
+		qTo = qFrom - 1 // an empty table
 	}
 
 	emit := func(k model.SeriesKey, b *blob.Block) error {
@@ -442,9 +464,19 @@ func (s *SQLite) Raw(ctx context.Context, keys []model.SeriesKey, from, to time.
 			}
 			return nil
 		}
-		if id, ok := ids[k]; ok {
+		// Point lookups on the (hour, series) key, rawHours at a time: a
+		// range of hours with series = ? would scan every series' rows in
+		// it (thousands per hour with --profile all).
+		id, stored := ids[k]
+		for h := qFrom; stored && h <= qTo; h += rawHours {
+			n := min(rawHours, qTo-h+1)
+			args := make([]any, 0, n+1)
+			args = append(args, id)
+			for i := range n {
+				args = append(args, h+i)
+			}
 			if err := func() error {
-				rows, err := tx.QueryContext(ctx, `SELECT hour, data FROM samples WHERE hour BETWEEN ? AND ? AND series = ? ORDER BY hour`, hFrom, hTo, id)
+				rows, err := tx.QueryContext(ctx, `SELECT hour, data FROM samples WHERE series = ? AND hour IN (`+inList(int(n))+`) ORDER BY hour`, args...)
 				if err != nil {
 					return err
 				}

@@ -220,7 +220,7 @@ func TestUsualReset(t *testing.T) {
 	// the gateway changed: fixed limits until minGood good minutes
 	u.reset()
 	ms, ok := u.value(next)
-	if ok || limitsFor(ms, ok, false) != (limits{learnSlowMs, learnDownMs}) {
+	if ok || limitsFor(ms, ok, false) != (limits{learnSlowMs}) {
 		t.Errorf("after reset: got %v %v", ms, ok)
 	}
 	next = addMins(&u, next, minGood, 50, 0, Good)
@@ -255,7 +255,7 @@ func BenchmarkUsualReplay8d(b *testing.B) {
 		for i, m := range mins {
 			now := at(time.Duration(i) * time.Minute)
 			ms, ok := u.value(now)
-			u.add(now, m, judgeWeb(m, limitsFor(ms, ok, false), false))
+			u.add(now, m, judgeWeb(m, limitsFor(ms, ok, false)))
 			if i%10 == 0 {
 				relearn(us, now)
 			}

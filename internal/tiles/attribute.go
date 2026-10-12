@@ -158,9 +158,15 @@ type attrIn struct {
 //     layerLossy → provider;
 //  3. only one vendor's tiles were bad, and a tile of another vendor was
 //     good: that app (app_only for one tile, vendor_only for several);
-//  4. every covered call tile (two or more) was bad and nothing else: the
+//  4. the tiles of two or more vendors were bad, not only call tiles, a
+//     tile of yet another vendor was good, and the gateway and the edge
+//     were measured and clean (lost under layerClean, no drop): the
+//     internet beyond the provider (a transit or peering problem, as on
+//     2026-10-09, when Google's and Slack's front doors failed together
+//     for 90 s while Microsoft's, GitHub and Netflix answered);
+//  5. every covered call tile (two or more) was bad and nothing else: the
 //     call path;
-//  5. unknown.
+//  6. unknown.
 func attribute(in attrIn) Cause {
 	if speedOverlap(in.from, in.to, in.now, in.speed) {
 		return Cause{Who: WhoSpeedtest, Evidence: EvSpeedtest}
@@ -233,6 +239,12 @@ func attribute(in attrIn) Cause {
 			ev = EvAppOnly
 		}
 		return Cause{Who: WhoApp, Vendor: bad[0].vendor, Evidence: ev}
+	}
+	clean := func(l layerEv) bool { return l.known && !l.dropped && l.loss < layerClean }
+	if len(vendors) >= 2 && clean(gw) && clean(edge) &&
+		slices.ContainsFunc(bad, func(t tileEv) bool { return t.kind != profile.TileCall }) &&
+		slices.ContainsFunc(in.tiles, func(t tileEv) bool { return !vendors[t.vendor] && t.worst == Good }) {
+		return Cause{Who: WhoInternet, Evidence: EvBeyond}
 	}
 	calls := 0
 	for _, t := range in.tiles {
