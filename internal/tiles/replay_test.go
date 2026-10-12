@@ -345,8 +345,6 @@ func (e *hEng) result(now time.Time) hOut {
 
 // ---- feeding modes ----
 
-const tickEvery = 5 * time.Second
-
 func hRunLive(specs []hSpec, cs []hCheck, start, end time.Time, phase time.Duration) hOut {
 	cs = slices.Clone(cs)
 	slices.SortStableFunc(cs, func(a, b hCheck) int { return int(a.arrive - b.arrive) })

@@ -37,8 +37,10 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/report"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
+	"github.com/fuck-you-isp/fyisp/internal/tiles"
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
 	"github.com/fuck-you-isp/fyisp/internal/web"
@@ -373,13 +375,21 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	runner := probe.New(probe.Options{Log: log, UserAgent: "fyisp/" + version, Path: ni.Current})
 	// Speed tests: the load tap keeps loaded ICMP samples for latency
 	// under load; the windows are recorded for the charts.
-	speed, tap, _, err := newSpeed(c, prof, st, mc, ni.Current, log)
+	speed, tap, wins, err := newSpeed(c, prof, st, mc, ni.Current, log)
 	if err != nil {
 		return err
 	}
+	// The Home tiles: judged per minute from their targets' samples, the
+	// last 8 days replayed from the store at start.
+	vsrc := verdict.MetricsSource(eng)
+	tl := tiles.New(prof, profile.ResolveTiles(prof), tiles.Sources{
+		Store: st, SpeedTests: st.SpeedTests, Incidents: eng.Incidents, Verdict: eng.Current,
+		Layers:    func() map[string]*bool { _, l := vsrc(); return l },
+		SpeedWins: wins, PathChanges: ni.Subscribe,
+	}, tiles.Options{Log: log})
 	// Samples taken during a speed test are kept as measured: the chart
 	// shades the test windows, so a spike can be matched to a test.
-	probeSinks := model.Fanout{tap, st, mc, mos, eng, &warm}
+	probeSinks := model.Fanout{tap, st, mc, mos, eng, &warm, tl}
 	caps := runner.Caps()
 
 	// The dashboard (+ /metrics).
@@ -409,6 +419,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		},
 		Trace: newWebTrace(st, tr, prof),
 		Path:  ni.Current,
+		Tiles: tl,
 		Log:   log,
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
@@ -487,6 +498,11 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		ts := traceSinks{st, mc}
 		if err := tr.Run(ctx, prof, ts); err != nil && ctx.Err() == nil {
 			log.Warn("traceroutes unavailable", "err", err)
+		}
+	}()
+	go func() {
+		if err := tl.Run(ctx); err != nil {
+			log.Error("tiles engine stopped", "err", err)
 		}
 	}()
 	verdictDone := make(chan struct{})

@@ -31,6 +31,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/store"
+	"github.com/fuck-you-isp/fyisp/internal/tiles"
 )
 
 // Deps is everything the handlers need. Profile, Store and Status are
@@ -68,9 +69,20 @@ type Deps struct {
 	// Path is the current network path of this machine (netinfo.Watcher's
 	// Current), including how it connects (Path.Conn); may be nil.
 	Path func() netinfo.Path
-	Log  *slog.Logger
+	// Tiles is the Home tiles engine (tiles.Engine); may be nil.
+	Tiles TilesSource
+	Log   *slog.Logger
 
 	firsts *firstCache // set by the handlers; nil queries the store each time
+}
+
+// TilesSource is the Home tiles engine (tiles.Engine): the snapshot of the
+// latest tick, a tile's 24-hour chart and the problems of the last week.
+type TilesSource interface {
+	Ready() bool
+	Snapshot() *tiles.Snapshot
+	Chart(id string) (*tiles.Chart, bool)
+	Problems(from time.Time) []tiles.Episode
 }
 
 // Status is what /api/status reports.

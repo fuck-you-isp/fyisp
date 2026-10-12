@@ -55,7 +55,7 @@ import (
 //     4 providers it is also half of them).
 //
 // Providers. Independence is judged by the registrable part of the host's
-// domain (udpProvider), not by the catalog's provider ID: calls-stun.yml
+// domain (UDPProvider), not by the catalog's provider ID: calls-stun.yml
 // lists Google's, Cloudflare's, Twilio's and Microsoft's servers under one
 // provider, and a --config file's STUN targets carry none. One dead STUN service
 // therefore never raises a verdict.
@@ -118,7 +118,7 @@ func (e *engine) collectUDP(now time.Time, p *model.Profile) []*ustat {
 		if !t.IsUDP() {
 			continue
 		}
-		u := &ustat{t: t, provider: udpProvider(t)}
+		u := &ustat{t: t, provider: UDPProvider(t)}
 		key := func(k model.ProbeKind) *series { return e.series[model.SeriesKey{Target: t.Name, Kind: k}] }
 		if sr := key(model.KindUDP); sr != nil {
 			u.timeouts, u.everOK = sr.timeouts, sr.everOK
@@ -294,10 +294,10 @@ func isBlocked(k model.VerdictKind) bool {
 	return k == model.VerdictUDPBlocked || k == model.VerdictSTUNBlocked
 }
 
-// udpProvider is the operator behind a UDP target: the registrable part of
+// UDPProvider is the operator behind a UDP target: the registrable part of
 // its host's domain ("stun.l.google.com" -> "google.com", with a 3-label
 // guess for names such as "x.co.uk"), or the host itself for an address.
-func udpProvider(t model.Target) string {
+func UDPProvider(t model.Target) string {
 	h := strings.ToLower(strings.TrimSuffix(strings.Trim(t.Host, "[]"), "."))
 	if h == "" {
 		return t.Name
