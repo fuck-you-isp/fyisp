@@ -123,8 +123,8 @@ type Config struct {
 	// cap, a fixed second would leave nothing to measure).
 	Omit time.Duration
 	// MinDuration > 0 makes the length adaptive: the test ends once at
-	// least MinDuration is measured and the last second's bytes are within
-	// Stable (default 5%) of the second before, else after Duration. The
+	// least MinDuration is measured and the last second's rate is within
+	// Stable (default 5%) of the second before's, else after Duration. The
 	// client ends it early with TEST_END, which stock servers accept.
 	MinDuration time.Duration
 	Stable      float64
@@ -713,6 +713,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		}
 		res.LowerBound = capped
 	}
+	res.clampTotal()
 	if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
 		ms := make([]float64, len(ats))
 		for i, a := range ats {
@@ -724,6 +725,11 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	}
 	return per, nil
 }
+
+// clampTotal keeps TotalBytes at least Bytes: an upload's acked bytes can
+// run ahead of the written count (the kernel acks part of a block before
+// its Write returns), and every byte measured was moved.
+func (r *Result) clampTotal() { r.TotalBytes = max(r.TotalBytes, r.Bytes) }
 
 // steady is the plateau-aware early stop, at a 1 s boundary: the ticks so
 // far have levelled off (stillRising says no, over the idle RTT), at
@@ -763,7 +769,16 @@ func (t *test) steady(cum []int64, at []time.Duration, written bool) bool {
 	if at[k-1]-from < t.c.MinDuration {
 		return false
 	}
-	cur, prevSec := float64(cum[k-1]-cum[k-1-per]), float64(cum[k-1-per]-cum[k-1-2*per])
+	// Rates over the ticks' actual times: a tick read late on a busy
+	// machine moves bytes from one second to the next. A "second" squeezed
+	// under half a second (ticks read back to back after a stall) is too
+	// short to judge.
+	span := func(i, j int) float64 { return (at[j] - at[i]).Seconds() }
+	if span(k-1-per, k-1) < 0.5 || span(k-1-2*per, k-1-per) < 0.5 {
+		return false
+	}
+	cur := float64(cum[k-1]-cum[k-1-per]) / span(k-1-per, k-1)
+	prevSec := float64(cum[k-1-per]-cum[k-1-2*per]) / span(k-1-2*per, k-1-per)
 	return prevSec > 0 && math.Abs(cur-prevSec) <= t.c.Stable*prevSec
 }
 

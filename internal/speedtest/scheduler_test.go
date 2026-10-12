@@ -422,11 +422,13 @@ func TestScore(t *testing.T) {
 	}
 }
 
-// fakePinger answers from reply (lost: an error at once).
+// fakePinger answers from reply (lost: an error at once). pinged, when
+// set (on mu), is woken by every ping.
 type fakePinger struct {
-	mu    sync.Mutex
-	reply func(dst netip.Addr) (time.Duration, bool)
-	n     map[netip.Addr]int
+	mu     sync.Mutex
+	reply  func(dst netip.Addr) (time.Duration, bool)
+	n      map[netip.Addr]int
+	pinged *sync.Cond
 }
 
 func (f *fakePinger) Ping(_ context.Context, dst netip.Addr, _ time.Duration) (time.Duration, error) {
@@ -436,6 +438,9 @@ func (f *fakePinger) Ping(_ context.Context, dst netip.Addr, _ time.Duration) (t
 		f.n = map[netip.Addr]int{}
 	}
 	f.n[dst]++
+	if f.pinged != nil {
+		f.pinged.Broadcast()
+	}
 	rtt, ok := f.reply(dst)
 	if !ok {
 		return 0, errors.New("timeout")
@@ -458,6 +463,7 @@ func TestLatencyUnderLoad(t *testing.T) {
 	tap := NewLoadTap(p, h.clock)
 	tap.start = h.clock().Add(-time.Hour) // past the start's warm-up
 	fp := &fakePinger{}
+	fp.pinged = sync.NewCond(&fp.mu)
 	h.s.o.Load, h.s.o.loadEvery = tap, 2*time.Millisecond
 	h.s.o.Path = func() (netip.Addr, netip.Addr) { return gwA, edgeA }
 	h.s.o.OpenPinger = func() (LoadPinger, error) { return fp, nil }
@@ -495,10 +501,18 @@ func TestLatencyUnderLoad(t *testing.T) {
 	h.mu.Lock()
 	h.now = h.now.Add(30 * time.Second)
 	h.run = func(c Config, n int) (Result, error) {
+		// The direction runs while the prober pings the edge 20 times
+		// (not for a set time: a busy machine pings less often); a
+		// prober that never starts fails below rather than hanging.
+		giveUp := time.Now().Add(10 * time.Second)
+		wake := time.AfterFunc(10*time.Second, func() { fp.mu.Lock(); fp.pinged.Broadcast(); fp.mu.Unlock() })
+		defer wake.Stop()
 		fp.mu.Lock()
 		dir = c.Direction
+		for n0 := fp.n[edgeA]; fp.n[edgeA]-n0 < 20 && time.Now().Before(giveUp); {
+			fp.pinged.Wait()
+		}
 		fp.mu.Unlock()
-		time.Sleep(60 * time.Millisecond) // the direction runs; the prober pings
 		return Result{Bytes: 1e6, Elapsed: time.Second}, nil
 	}
 	h.mu.Unlock()
