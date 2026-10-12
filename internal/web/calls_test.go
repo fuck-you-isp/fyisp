@@ -177,9 +177,10 @@ type callsResp struct {
 }
 
 type callsAppResp struct {
-	App    string `json:"app"`
-	UDP    string `json:"udp"`
-	Region string `json:"region"`
+	App     string `json:"app"`
+	UDP     string `json:"udp"`
+	Region  string `json:"region"`
+	OwnDown bool   `json:"own_down"`
 	callsGroupResp
 	WebMs      *float64 `json:"web_ms"`
 	WebLoss    *float64 `json:"web_loss"`
@@ -256,7 +257,7 @@ func TestCallsGood(t *testing.T) {
 	if i < 0 || c.app("meet") < 0 || c.State != "good" {
 		t.Fatalf("without the relay: %+v", c.Apps)
 	}
-	if tm := c.Apps[i]; tm.UDP != "shared" || tm.State != "" || tm.WebSamples == 0 || tm.WebMs == nil || *tm.WebMs != 24 {
+	if tm := c.Apps[i]; tm.UDP != "shared" || tm.OwnDown || tm.State != "" || tm.WebSamples == 0 || tm.WebMs == nil || *tm.WebMs != 24 {
 		t.Errorf("teams without the relay: %+v", tm)
 	}
 	apps = nil
@@ -313,7 +314,7 @@ func TestCallsStates(t *testing.T) {
 			top: "good", path: "good",
 			check: func(t *testing.T, c callsResp) {
 				for _, app := range []string{"meet", "teams"} {
-					if i := c.app(app); i < 0 || c.Apps[i].UDP != "shared" || c.Apps[i].State != "" {
+					if i := c.app(app); i < 0 || c.Apps[i].UDP != "shared" || !c.Apps[i].OwnDown || c.Apps[i].State != "" {
 						t.Errorf("app %s: %+v, want shared", app, c.Apps)
 					}
 				}

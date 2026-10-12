@@ -642,7 +642,7 @@ func homeApps(c *callsJSON, cp homeCopy) ([]HomeApp, string) {
 		x.Label = cp.callLabel(x.State)
 		switch a.UDP {
 		case "shared":
-			x.Note = cp.sharedPath(cp.callLabel(pathState))
+			x.Note = cp.sharedPath(cp.callLabel(pathState), a.OwnDown)
 		case "not_measurable":
 			picks = append(picks, x.Title) // one line for all of them: AppsNote
 		}

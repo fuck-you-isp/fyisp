@@ -129,15 +129,18 @@ type callsGroup struct {
 }
 
 // callsApp is one app. UDP is "measured" (Group set; Region is the Teams
-// relay's cloud region, local only), "shared" (an app whose own call
-// target is not in the profile, e.g. Teams with its relay removed: its
-// calls take the call path, Path) or "not_measurable". Web* is the TCP
+// relay's cloud region, local only), "shared" (its calls take the call
+// path, Path: an app whose own call target is not in the profile, e.g.
+// Teams with its relay removed, or, with OwnDown, one whose own call
+// servers are not answering while others do, Meet or Teams) or
+// "not_measurable". Web* is the TCP
 // connect time to the app's websites over the window (omitted without TCP
 // targets): mean RTT, loss fraction and samples.
 type callsApp struct {
-	App    string `json:"app"`
-	UDP    string `json:"udp"`
-	Region string `json:"region,omitempty"`
+	App     string `json:"app"`
+	UDP     string `json:"udp"`
+	Region  string `json:"region,omitempty"`
+	OwnDown bool   `json:"own_down,omitempty"`
 	*callsGroup
 	WebMs      *num `json:"web_ms,omitempty"`
 	WebLoss    *num `json:"web_loss,omitempty"`
@@ -429,7 +432,7 @@ func (s *server) calls(ctx context.Context, p callsParams) (*callsJSON, error) {
 		case a.Measurable:
 			// Teams without its relay, or with the relay not answering while
 			// other STUN servers do: its calls take the shared call path.
-			app.UDP = "shared"
+			app.UDP, app.OwnDown = "shared", len(ut) > 0
 		}
 		var sum float64
 		var ok, lost int

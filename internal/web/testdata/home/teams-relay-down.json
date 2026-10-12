@@ -253,7 +253,7 @@
         "level": "good",
         "state": "reachable",
         "label": "Reachable",
-        "note": "Same call quality as your other apps: Good."
+        "note": "Its own call server isn't answering; your other call servers: Good."
       },
       {
         "app": "meet",

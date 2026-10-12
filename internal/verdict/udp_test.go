@@ -112,10 +112,11 @@ func TestUDPBlockedNeedsTwoProviders(t *testing.T) {
 	}
 }
 
-// Two dead providers next to answering STUN ports are those servers'
-// problem, not a block: e.g. Microsoft filtering the Teams relay during a
-// Twilio outage, while Google and Cloudflare answer. Only when the last
-// answering STUN port goes quiet too is it a block.
+// Dead servers on a port another STUN server still answers on are those
+// servers' problem, not a block: e.g. Microsoft filtering the Teams relay
+// during a Twilio outage, while Cloudflare answers on the same port 3478.
+// A network that blocks one port is still caught (3478 below, while Google
+// answers on 19302), and so is one where the last answering port goes quiet.
 func TestUDPBlockedNotWhileSTUNAnswers(t *testing.T) {
 	for name, dead := range map[string][]string{
 		"relay and twilio":                 {"Teams-Relay", "Twilio-STUN-global"},
@@ -131,8 +132,18 @@ func TestUDPBlockedNotWhileSTUNAnswers(t *testing.T) {
 			checkTCPOK(t, h)
 		})
 	}
-	// Cloudflare's STUN port, the last one answering, stops too: blocked.
+	// Only 3478 blocked (Cloudflare, Twilio and the relay), 19302 and 53
+	// answer: stun_blocked from three providers.
 	h := stunHarness(t)
+	h.with(targets(timedOut, "Cloudflare-STUN", "Twilio-STUN-global", "Teams-Relay"))
+	h.run(5 * time.Minute)
+	if v := h.e.Current(); v.Kind != model.VerdictSTUNBlocked || v.Evidence["udp_blocked_providers"] != 3 ||
+		!slices.Equal(v.Targets, []string{"Cloudflare-STUN", "Teams-Relay", "Twilio-STUN-global"}) {
+		t.Errorf("3478 blocked: %+v", v)
+	}
+	checkTCPOK(t, h)
+	// Cloudflare's STUN port, the last one answering, stops too: blocked.
+	h = stunHarness(t)
 	h.with(targets(timedOut, "Teams-Relay", "Twilio-STUN-global", "Meet-STUN"))
 	h.with(targets(between(5*time.Minute, 0, timedOut), "Cloudflare-STUN"))
 	first := map[model.VerdictKind]time.Duration{}
