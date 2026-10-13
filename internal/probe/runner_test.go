@@ -274,20 +274,6 @@ func TestTLSFailure(t *testing.T) {
 // forward: slots come from the injected clock, never repeat, and slots
 // skipped by the jump get no sample.
 func TestRunnerSlots(t *testing.T) {
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			c.Close()
-		}
-	}()
 	iv := 15 * time.Second
 	start := time.Date(2026, 9, 26, 12, 0, 3, 0, time.UTC)
 	fc := &fakeClock{t: start, jumps: map[int]time.Duration{5: 10 * time.Minute}}
@@ -296,7 +282,15 @@ func TestRunnerSlots(t *testing.T) {
 		time.Sleep(time.Millisecond)
 		return fc.sleep(ctx, d)
 	}
-	tg := model.Target{Name: "tcp", Host: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port,
+	// Every connect succeeds at once: this is about slots, and a loopback
+	// dial times out now and then on a busy CI machine (TestDefaultKindTCP
+	// dials for real).
+	r.dialTCP = func(context.Context, string, time.Duration) (net.Conn, error) {
+		c, s := net.Pipe()
+		s.Close()
+		return c, nil
+	}
+	tg := model.Target{Name: "tcp", Host: "127.0.0.1", Port: 9,
 		Kinds: []model.ProbeKind{model.KindTCP}, Interval: iv}
 	ss := collect(t, r, profileOf(tg), 10*time.Second, func(ss []model.Sample) bool { return len(ss) >= 10 })
 	if len(ss) < 10 {

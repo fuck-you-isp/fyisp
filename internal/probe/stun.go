@@ -109,8 +109,9 @@ type burstResult struct {
 // socket only receives datagrams from the target's address, so spoofed
 // sources never reach it. err is a socket error (e.g. ICMP port
 // unreachable, reported as ECONNREFUSED on Linux and macOS; Windows hides
-// it, so there it is a timeout) or ctx's error.
-func runBurst(ctx context.Context, c *net.UDPConn, n int, gap, timeout time.Duration) (burstResult, error) {
+// it, so there it is a timeout) or ctx's error. c is the connected UDP
+// socket (tests: an in-memory one).
+func runBurst(ctx context.Context, c net.Conn, n int, gap, timeout time.Duration) (burstResult, error) {
 	var res burstResult
 	if n <= 0 {
 		return res, nil

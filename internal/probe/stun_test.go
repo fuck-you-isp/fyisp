@@ -9,10 +9,12 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -283,51 +285,198 @@ func dialTo(t *testing.T, port int) *net.UDPConn {
 	return c
 }
 
+// memUDP is one end of an in-memory datagram link, for runBurst in a
+// synctest bubble: each Write is one datagram (dropped when the peer's
+// queue is full, as UDP would), and Read honours the read deadline on the
+// bubble's clock.
+type memUDP struct {
+	in     chan []byte
+	peer   *memUDP
+	closed chan struct{}
+	once   sync.Once
+	mu     sync.Mutex
+	dl     time.Time
+}
+
+func memUDPPair() (*memUDP, *memUDP) {
+	a := &memUDP{in: make(chan []byte, 64), closed: make(chan struct{})}
+	b := &memUDP{in: make(chan []byte, 64), closed: make(chan struct{})}
+	a.peer, b.peer = b, a
+	return a, b
+}
+
+func (c *memUDP) Read(b []byte) (int, error) {
+	c.mu.Lock()
+	dl := c.dl
+	c.mu.Unlock()
+	var expired <-chan time.Time
+	if !dl.IsZero() {
+		d := time.Until(dl)
+		if d <= 0 {
+			return 0, os.ErrDeadlineExceeded
+		}
+		tm := time.NewTimer(d)
+		defer tm.Stop()
+		expired = tm.C
+	}
+	select {
+	case p := <-c.in:
+		return copy(b, p), nil
+	case <-expired:
+		return 0, os.ErrDeadlineExceeded
+	case <-c.closed:
+		return 0, net.ErrClosed
+	}
+}
+
+func (c *memUDP) Write(b []byte) (int, error) {
+	select {
+	case <-c.closed:
+		return 0, net.ErrClosed
+	case c.peer.in <- slices4(b):
+	default:
+	}
+	return len(b), nil
+}
+
+func (c *memUDP) Close() error                     { c.once.Do(func() { close(c.closed) }); return nil }
+func (c *memUDP) LocalAddr() net.Addr              { return &net.UDPAddr{} }
+func (c *memUDP) RemoteAddr() net.Addr             { return &net.UDPAddr{} }
+func (c *memUDP) SetDeadline(t time.Time) error    { return c.SetReadDeadline(t) }
+func (c *memUDP) SetWriteDeadline(time.Time) error { return nil }
+func (c *memUDP) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.dl = t
+	c.mu.Unlock()
+	return nil
+}
+
+// memSTUN is stunServer over a memUDP link: it returns the client's end.
+// reply is stunServer's.
+func memSTUN(t *testing.T, reply func(i int) (bool, time.Duration, bool)) net.Conn {
+	t.Helper()
+	cl, srv := memUDPPair()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 1500)
+		for i := 0; ; i++ {
+			n, err := srv.Read(buf)
+			if err != nil {
+				return
+			}
+			tx := txOf(buf[:n])
+			answer, delay, wrong := reply(i)
+			if !answer {
+				continue
+			}
+			time.AfterFunc(delay, func() {
+				if wrong {
+					w := tx
+					w[0] ^= 0xff
+					srv.Write(stunResponse(w, netip.AddrPortFrom(mappedIP, 40000)))
+				}
+				srv.Write(stunResponse(tx, netip.AddrPortFrom(mappedIP, 40000)))
+			})
+		}
+	}()
+	t.Cleanup(func() { cl.Close(); srv.Close(); <-done })
+	return cl
+}
+
+// TestRunBurst: a burst's answers, losses and timeouts, on the bubble's
+// clock (synctest), so the RTTs are exact; the loopback subtests check
+// what needs real sockets.
 func TestRunBurst(t *testing.T) {
 	ctx := context.Background()
 	t.Run("all answered", func(t *testing.T) {
-		srv := newSTUNServer(t, "", nil)
-		t0 := time.Now()
-		res, err := runBurst(ctx, dialTo(t, srv.port()), BurstSize, BurstGap, time.Second)
-		if err != nil || res.sent != 5 || len(res.rtts) != 5 {
-			t.Fatalf("%+v %v", res, err)
-		}
-		// Done as soon as the last answer is in: ~4 gaps, not the timeout.
-		if d := time.Since(t0); d > 500*time.Millisecond || d < 4*BurstGap {
-			t.Errorf("burst took %v", d)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			t0 := time.Now()
+			res, err := runBurst(ctx, memSTUN(t, func(int) (bool, time.Duration, bool) { return true, 2 * time.Millisecond, false }), BurstSize, BurstGap, time.Second)
+			if err != nil || res.sent != 5 || len(res.rtts) != 5 {
+				t.Fatalf("%+v %v", res, err)
+			}
+			for _, d := range res.rtts {
+				if d != 2*time.Millisecond {
+					t.Errorf("rtt %v, want 2ms", d)
+				}
+			}
+			// Done as soon as the last answer is in: 4 gaps, not the timeout.
+			if d := time.Since(t0); d != 4*BurstGap+2*time.Millisecond {
+				t.Errorf("burst took %v", d)
+			}
+		})
 	})
 	t.Run("partial loss", func(t *testing.T) {
-		srv := newSTUNServer(t, "", func(i int) (bool, time.Duration, bool) { return i != 1 && i != 3, 0, false })
-		res, err := runBurst(ctx, dialTo(t, srv.port()), BurstSize, BurstGap, 300*time.Millisecond)
-		if err != nil || res.sent != 5 || len(res.rtts) != 3 {
-			t.Fatalf("%+v %v", res, err)
-		}
-		ss := burstSamples("x", res, err)
-		if ss[2].RTT != 40*time.Millisecond {
-			t.Errorf("loss %v", ss[2].RTT)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			c := memSTUN(t, func(i int) (bool, time.Duration, bool) { return i != 1 && i != 3, 0, false })
+			res, err := runBurst(ctx, c, BurstSize, BurstGap, 300*time.Millisecond)
+			if err != nil || res.sent != 5 || len(res.rtts) != 3 {
+				t.Fatalf("%+v %v", res, err)
+			}
+			ss := burstSamples("x", res, err)
+			if ss[2].RTT != 40*time.Millisecond {
+				t.Errorf("loss %v", ss[2].RTT)
+			}
+		})
 	})
 	t.Run("late answers are lost", func(t *testing.T) {
-		srv := newSTUNServer(t, "", func(i int) (bool, time.Duration, bool) { return true, 250 * time.Millisecond, false })
-		res, err := runBurst(ctx, dialTo(t, srv.port()), 3, BurstGap, 100*time.Millisecond)
-		if err != nil || res.sent != 3 || len(res.rtts) != 0 {
-			t.Fatalf("%+v %v", res, err)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			// Just past the timeout: a late answer is lost, not counted.
+			c := memSTUN(t, func(i int) (bool, time.Duration, bool) { return true, 100*time.Millisecond + time.Microsecond, false })
+			res, err := runBurst(ctx, c, 3, BurstGap, 100*time.Millisecond)
+			if err != nil || res.sent != 3 || len(res.rtts) != 0 {
+				t.Fatalf("%+v %v", res, err)
+			}
+		})
 	})
 	t.Run("transaction id mismatch", func(t *testing.T) {
-		srv := newSTUNServer(t, "", func(i int) (bool, time.Duration, bool) { return true, 5 * time.Millisecond, true })
-		res, err := runBurst(ctx, dialTo(t, srv.port()), BurstSize, BurstGap, 300*time.Millisecond)
-		if err != nil || len(res.rtts) != 5 {
-			t.Fatalf("%+v %v", res, err)
-		}
-		// The wrong answer came first and was skipped: each RTT includes
-		// the 5 ms delay of the right one.
-		for _, d := range res.rtts {
-			if d < 5*time.Millisecond {
-				t.Errorf("rtt %v: the mismatched answer was taken", d)
+		synctest.Test(t, func(t *testing.T) {
+			c := memSTUN(t, func(i int) (bool, time.Duration, bool) { return true, 5 * time.Millisecond, true })
+			res, err := runBurst(ctx, c, BurstSize, BurstGap, 300*time.Millisecond)
+			if err != nil || len(res.rtts) != 5 {
+				t.Fatalf("%+v %v", res, err)
+			}
+			// The wrong answer came first and was skipped: each RTT is the
+			// 5 ms delay of the right one.
+			for _, d := range res.rtts {
+				if d != 5*time.Millisecond {
+					t.Errorf("rtt %v: the mismatched answer was taken", d)
+				}
+			}
+		})
+	})
+	t.Run("context", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			c := memSTUN(t, func(int) (bool, time.Duration, bool) { return false, 0, false })
+			ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+			defer cancel()
+			_, err := runBurst(ctx, c, BurstSize, BurstGap, time.Second)
+			if err == nil {
+				t.Fatal("no error after cancel")
+			}
+		})
+	})
+	t.Run("loopback", func(t *testing.T) {
+		// A real socket answered. Loopback drops datagrams on a busy CI
+		// machine, so one answer of a few bursts will do.
+		srv := newSTUNServer(t, "", nil)
+		c := dialTo(t, srv.port())
+		for range 3 {
+			res, err := runBurst(ctx, c, BurstSize, BurstGap, time.Second)
+			if err != nil || res.sent != BurstSize {
+				t.Fatalf("%+v %v", res, err)
+			}
+			for _, d := range res.rtts {
+				if d <= 0 || d > time.Second {
+					t.Errorf("rtt %v", d)
+				}
+			}
+			if len(res.rtts) > 0 {
+				return
 			}
 		}
+		t.Error("no answer in 3 bursts")
 	})
 	t.Run("spoofed source", func(t *testing.T) {
 		srv := newSTUNServer(t, "", nil)
@@ -340,15 +489,6 @@ func TestRunBurst(t *testing.T) {
 		res, err := runBurst(ctx, dialTo(t, srv.port()), 2, BurstGap, 200*time.Millisecond)
 		if err != nil || res.sent != 2 || len(res.rtts) != 0 {
 			t.Fatalf("answers from another port accepted: %+v %v", res, err)
-		}
-	})
-	t.Run("context", func(t *testing.T) {
-		srv := newSTUNServer(t, "", func(int) (bool, time.Duration, bool) { return false, 0, false })
-		ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
-		defer cancel()
-		_, err := runBurst(ctx, dialTo(t, srv.port()), BurstSize, BurstGap, time.Second)
-		if err == nil {
-			t.Fatal("no error after cancel")
 		}
 	})
 }
