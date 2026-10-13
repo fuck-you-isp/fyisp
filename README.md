@@ -530,7 +530,9 @@ fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 
 ## Upgrading
 
-v0.10.0 starts with a fresh database; earlier versions' history isn't carried over.
+Download the new release (or `docker pull` and recreate the container) and start it with the same data directory.
+
+fyisp has no database migrations. When a release changes the database format, its first start replaces the old database with an empty one and logs `store: database from an older fyisp (schema vN) replaced with a new empty one`: the history from before the upgrade isn't kept. The release notes say when that happens (v0.10.0 and v0.11.0 both start fresh). Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched.
 
 ## Prometheus metrics
 
