@@ -1,7 +1,6 @@
 // Package store persists probe results in SQLite (modernc.org/sqlite).
 //
-// This file holds the connection setup and the schema. The open
-// sequence was proven by spike S3 (see docs/PLAN.md "Storage").
+// This file holds the connection setup and the schema.
 package store
 
 import (

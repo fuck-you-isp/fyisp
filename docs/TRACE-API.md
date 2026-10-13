@@ -8,7 +8,7 @@ An on-demand trace follows one profile target's path hop by hop every 2.5 s, for
 POST api/investigate?target=<profile target name>
 ```
 
-There is no body. Anyone who can open the dashboard may start a trace: there is no admin token check (since v0.10.0). The checks are:
+There is no body. Anyone who can open the dashboard may start a trace: there is no admin token check. The checks are:
 
 | Check | |
 |---|---|
@@ -58,12 +58,3 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 The dashboard posts by itself when Investigate opens only for the owner: when `/api/status` has `"can_control": true` (this request may use the speed-test controls, per request: false through a proxy on a token-less dashboard) or the browser holds an admin token pasted earlier, which it then sends as `X-FYISP-Admin`. Everyone else clicks *Trace*.
 
 `GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
-
-## Changed in v0.10.0
-
-- No admin token: `403 forbidden` no longer means *admin token required*, and a loopback dashboard without a token no longer refuses requests carrying proxy headers. The `--allow-host` with `--admin-token=off` case, which turned traces off, is gone too.
-- New: the hourly start budget and its `429 rate_limited` code (a code v0.8.0 retired, now with this meaning).
-
-## Removed in v0.8.0
-
-With the share link: `POST /s/<secret>/api/investigate`, the per-client start limit, the 5-minute restart cooldown (codes `rate_limited` and `cooldown`), the owner's reserved slot, and the redacted hop view (the `masked` field; hops always carry their address, private ones with `"private": true`).

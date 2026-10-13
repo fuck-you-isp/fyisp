@@ -1,6 +1,6 @@
 # STUN endpoints: terms-of-service check
 
-Checked on 2026-10-10 before the call-quality release (v0.5.0), as the plan's "Before release" step asks ([CALL-QUALITY-PLAN.md](CALL-QUALITY-PLAN.md)). This is a reading of the providers' public docs and terms, not legal advice. The owner decides what ships.
+Checked on 2026-10-10 before the call-quality release (v0.5.0). This is a reading of the providers' public docs and terms, not legal advice. The owner decides what ships.
 
 **What fyisp sends.** RFC 5389 STUN Binding Requests only: 20 bytes, no attributes, no credentials, never TURN, never an allocation. Each sample is a burst of 5 requests 20 ms apart: every 5 s per target (15 s for Cloudflare port 53, 30 s for the Twilio regions), around the clock, from the user's own machine. That is about 1 request per second per target per install, or roughly 8 KB/s per provider for every 1,000 installs. A WebRTC client sends a similar burst at the start of every call.
 

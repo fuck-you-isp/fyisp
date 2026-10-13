@@ -2,9 +2,7 @@
 
 Home answers "is my internet OK, and which apps work": an answer card, the connection strip (router → internet provider → the internet), 11 fixed app tiles with their last 2 hours, the speed, and the problems of the last 7 days. It is built from the tiles engine (`internal/tiles`), not from the store, and every sentence is written on the server (`internal/web/home_copy.go`) and pinned by golden files. The Go types are in `internal/web/home_types.go`; keep the two in sync.
 
-This is version 2 of the API (`"v": 2` in every answer). Version 1 (`part=live`, `part=history`, `part=at`) was removed in v0.9.0: see [Removed in v0.9.0](#removed-in-v090).
-
-`/api/annotations` and `/api/reports` were removed in v0.10.0.
+This is version 2 of the API (`"v": 2` in every answer).
 
 ## Request
 
@@ -146,18 +144,3 @@ Pinned by `TestHomeGolden` (`checkHomeCopy`) over every scenario:
 - **`internal/web/testdata/home/<scenario>.now.json`** and **`<scenario>.tile-<id>.json`** pin them on Friday 2026-10-09 at 10:30 am in New York (dst: Sunday 2026-11-01), as the scenario's viewer gets them through the real handler. Rewrite them with `go test ./internal/web -run TestHomeGolden -update` and review the diff.
 - **`test/ui/fixtures`** are made from those files (`docker buildx build --target uifixtures --output type=local,dest=. .`), so the Playwright specs test the page against what the server says.
 - **`cmd/fyisp-webdev -home <scenario>`** serves a scenario through the real `/api/home`, moving with the clock; the rest of the dashboard runs on the fake probes, and speed tests are the fake scheduler's. `test/ui/specs/home-webdev.spec.js` opens every scenario that way.
-
-## Removed in v0.9.0
-
-v0.9.0 replaced the old Home and its API. `/api/home2`, which served this API during the v0.9.0 development, is gone too (no alias); the page reads `api/home`. Removed:
-- **Parts:** `part=live`, `part=history` and `part=at` (each is now a 400, like any unknown `part`), and their parameters `span` and `at`.
-- **`answer` fields:** `level`, `who`, `confidence`, `kind`, `calls`, `app`, `since`, `cause`, `hint`, `try`, `fact`, `fact_at`, `announce` and `recovered`. The answer is now `key`, `tone`, `icon`, `tab`, `headline`, `sub` and `day`.
-- **The 5-node path** (`words`, `blamed`, `culprit`, `tooltip`), replaced by the 3-node `path` and `path_hint`.
-- **The 4 category tiles** (`calls`, `work`, `web`, `other`, with `title`, `level`, `label`, `names`, `more`, `affected`, `ok`, `total` and `details`), replaced by the 11 app tiles; and **`part`, `apps`, `apps_note`, `calls`, `other` and `steps`**.
-- **`part=history`:** the timeline (`days` with their `runs`, `off`, `work_from`/`work_to` and `no_record`), `first_data`, `summary`, `counts`, `problems`, `work` and `known`. The problems of the week are `problems` in `part=now`.
-- **`speed`** as a line by time of day (`text`, `kind`, `impact`: "Speed: evenings are about 40% slower…"), replaced by the latest test against the usual. There is no plan setting.
-- **In the page:** "Mark a bad call", "What happened at…?", the Today/Week timeline (and its `#hw=w` hash, which now opens Home) and the Home report button. Notes and reports stayed under Technical details until v0.10.0 removed them.
-
-## Removed in v0.8.0
-
-The share link's third-person voice is gone: the `voice` parameter (now a 400, like any unknown parameter) and the `voice` field of every part, the share link's weekly report (the same `part=history&span=w` read in that voice), and the `sides` and `coverage` fields of `part=history`, which only that report read. `answer.try` and every copy field speak to the owner. For something to send to others, use a screenshot of Home.

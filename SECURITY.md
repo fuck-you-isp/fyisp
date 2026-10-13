@@ -17,8 +17,8 @@ Only the latest release receives security fixes.
 
 ## What leaves your machine
 
-fyisp has no telemetry and, since v0.8.0, no share link: it talks to its
-probe targets and your DNS resolver. Every probe target, TCP or UDP, sees
+fyisp has no telemetry and no share link: it talks to its probe
+targets and your DNS resolver. Every probe target, TCP or UDP, sees
 your public IP address, as any website you visit does.
 
 The STUN servers fyisp measures calls with (listed in the README under
@@ -96,8 +96,8 @@ above. A loopback dashboard without an admin token refuses speed-test
 controls from requests that carry proxy headers (`Forwarded`,
 `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`,
 `Tailscale-User-Login`), so a proxy that rewrites `Host` to 127.0.0.1 can't
-hand its visitors the owner's speed tests. The README's "Sharing" section has
-the details.
+hand its visitors the owner's speed tests. The README's "Remote access" section
+has the details.
 
 In scope, for example:
 

@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-// TestInvestigateOpen: since v0.10.0 any viewer may start an on-demand
-// trace, while the admin token keeps guarding the speed-test controls.
+// TestInvestigateOpen: any viewer may start an on-demand trace, while the
+// admin token keeps guarding the speed-test controls.
 // First with --allow-host and --admin-token=off (speed-test controls off for
-// everyone): a trace starts through the tunnel's name and through
+// everyone): a trace starts through the allowed host name and through
 // 127.0.0.1, and its rounds run. Then on a loopback dashboard without a
 // token: a request through a proxy (X-Forwarded-For) starts a trace, but
 // the same proxy is refused the speed-test controls.
@@ -88,10 +88,10 @@ func TestInvestigateOpen(t *testing.T) {
 	if c := controls(); c != "disabled" {
 		t.Errorf("controls = %q, want disabled", c)
 	}
-	started(post(tok, "fyisp.example.com", "/api/investigate?target=alpha", "", xff), "through the tunnel's name")
+	started(post(tok, "fyisp.example.com", "/api/investigate?target=alpha", "", xff), "through the allowed host name")
 	started(post(tok, listenAddr, "/api/investigate?target=bravo", "", nil), "through 127.0.0.1")
 	if r := post(tok, "fyisp.example.com", "/api/speed/config", `{"skip": []}`, xff); r.code != http.StatusForbidden || !strings.Contains(r.body, "--admin-token=off") {
-		t.Errorf("speed control through the tunnel: %d %s, want 403", r.code, r.body)
+		t.Errorf("speed control through the proxy: %d %s, want 403", r.code, r.body)
 	}
 	// The trace runs: rounds every 2.5 s.
 	deadline := time.Now().Add(30 * time.Second)
