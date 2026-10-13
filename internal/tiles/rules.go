@@ -146,7 +146,8 @@ const (
 	// card. 6% is a degraded line (calls choppy, sites fine); 40% breaks
 	// most things and keeps the red "having trouble" card.
 	lossyBelow = 0.3
-	edgeRecent = 30 * time.Second // the edge's latest checks the card reads besides the verdict's window
+	edgeRecent = 30 * time.Second // an isp incident this young: the card reads the edge's own checks too ...
+	edgeOnset  = time.Minute      // ... of this long (from the loss's onset), 15 or more
 	layerLossy = 0.02             // a layer losing this much is lossy
 	layerClean = 0.01             // a layer losing less is clean
 )

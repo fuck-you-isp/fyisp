@@ -331,9 +331,9 @@ func (e *engine) lossyRun(l int, d *Drop, v model.Verdict, now time.Time) bool {
 
 // ispPeak is the highest loss seen of the current isp incident: the
 // verdict's 60 s window, and while the incident is young (its window still
-// holds the clean checks from before) the edge's own last edgeRecent of
-// checks. Kept per incident, so a dip of the noisy estimate does not turn a
-// red card amber for a poll.
+// holds the clean checks from before) the edge's own checks of the last
+// edgeOnset, from the loss's onset. Kept per incident, so a dip of the
+// noisy estimate does not turn a red card amber for a poll.
 func (e *engine) ispPeak(v model.Verdict, now time.Time) float64 {
 	if v.Kind != model.VerdictISP {
 		e.peak = lossPeak{}
@@ -348,7 +348,7 @@ func (e *engine) ispPeak(v model.Verdict, now time.Time) float64 {
 		// one: the clean ones before would dilute it, the first lost one
 		// would inflate 6%), with one σ on top: a few dozen checks are a
 		// noisy estimate, and 40% must not read under 30%
-		if l, n := e.onsetLoss(layerEdge, now.Add(-edgeRecent)); n >= 10 {
+		if l, n := e.onsetLoss(layerEdge, now.Add(-edgeOnset)); n >= 15 {
 			e.peak.loss = max(e.peak.loss, l+math.Sqrt(l*(1-l)/float64(n)))
 		}
 	}
