@@ -25,6 +25,16 @@ curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/rele
 
 Then open <http://127.0.0.1:3000>. Pass options after `sh -s --`, e.g. `... | sh -s -- --profile streaming`.
 
+Everything on: every target in the catalog (1,421, calls and the Home tiles included) and scheduled speed tests, on port 8080:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile all --speedtest --listen 127.0.0.1:8080
+```
+
+Leave out `--listen` for the default port 3000. Keep `127.0.0.1:` to stay local-only, where every control works without a token; `0.0.0.0:<port>` opens it to your network and turns the [admin token](#controls-under-docker) on. With `--profile all`, consider `--retention 30d`: 90 days of 1,421 targets takes a lot of disk.
+
+To update, stop fyisp (Ctrl-C) and run the same command again: `releases/latest` always fetches the newest release, and your data stays in the data directory (see [Upgrading](#upgrading)).
+
 The launcher (`run.sh`) is pinned to the release it came from. It downloads the matching binary into a temporary directory, **refuses to run it unless its SHA-256 matches the release's `SHA256SUMS`**, also checks the GitHub build provenance attestation if the [GitHub CLI](https://cli.github.com/) is installed and logged in, runs it, and deletes it when fyisp exits. Nothing is installed, so fyisp stops when you close the terminal: see [Keep it running](#keep-it-running).
 
 ### Windows (PowerShell)
@@ -33,7 +43,7 @@ The launcher (`run.sh`) is pinned to the release it came from. It downloads the 
 & ([scriptblock]::Create((irm https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.ps1)))
 ```
 
-Add fyisp options at the end, e.g. `... ))) --profile streaming`. `run.ps1` does the same checks as `run.sh`.
+Add fyisp options at the end, e.g. `... ))) --profile all --speedtest --listen 127.0.0.1:8080`. `run.ps1` does the same checks as `run.sh`, and rerunning it updates fyisp the same way.
 
 ### What you see: Home and Details
 
@@ -530,7 +540,17 @@ fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 
 ## Upgrading
 
-Download the new release (or `docker pull` and recreate the container) and start it with the same data directory.
+- **Launcher (`run.sh`, `run.ps1`):** stop fyisp and run the same command again. It always fetches the latest release.
+- **Docker:** pull the image and recreate the container; the volume keeps your data:
+
+  ```sh
+  docker pull ghcr.io/fuck-you-isp/fyisp
+  docker rm -f fyisp
+  docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
+  ```
+
+  (Repeat the options you started it with.)
+- **Installed binary** ([Keep it running](#keep-it-running)): download the new `fyisp-<os>-<arch>`, verify it, replace the old file and restart the service.
 
 fyisp has no database migrations. When a release changes the database format, its first start replaces the old database with an empty one and logs `store: database from an older fyisp (schema vN) replaced with a new empty one`: the history from before the upgrade isn't kept. The release notes say when that happens (v0.10.0 and v0.11.0 both start fresh). Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched.
 
