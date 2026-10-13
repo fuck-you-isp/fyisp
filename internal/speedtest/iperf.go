@@ -166,9 +166,9 @@ type Result struct {
 	Ramp        time.Duration // the ramp-up left out
 	IP          netip.Addr    // the address the test ran against
 	TotalBytes  int64         // every byte moved, ramp-up included (data use)
-	// RateMethod is how a capped direction's rate was taken (MethodPeak90
-	// or MethodWhole; "" when not capped). LowerBound: it was still
-	// speeding up at the cap, so the speed was at least this.
+	// RateMethod is how the rate was taken: MethodPeak90 or MethodWhole.
+	// LowerBound: it was still speeding up at the time cap, so the speed
+	// was at least this.
 	RateMethod string
 	LowerBound bool
 	// Overrun: the server kept sending past the time cap and the run was

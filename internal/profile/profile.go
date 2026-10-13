@@ -522,9 +522,6 @@ func Validate(p *model.Profile, allowPrivate bool) error {
 		if err := checkHost(t.Host, allowPrivate); err != nil {
 			bad("target %q: host: %v", t.Name, err)
 		}
-		if err := checkHomeTags(t.Tags); err != nil {
-			bad("target %q: %v", t.Name, err)
-		}
 		if err := checkTileTags(t.Tags, t.IsUDP()); err != nil {
 			bad("target %q: %v", t.Name, err)
 		}

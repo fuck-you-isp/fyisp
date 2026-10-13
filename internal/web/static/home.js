@@ -27,7 +27,7 @@ import { Tiles, ico, setText } from './hometiles.js';
  * @typedef {{openDetails: (hash: string) => void, detailsHash: () => string, status: () => any, speedOn: () => boolean}} HomeHost
  */
 
-export const HOME_API = 'api/home';
+const HOME_API = 'api/home';
 const NOW_MS = 15000;
 // In a background tab Home keeps polling, slower, so its title stays true.
 const HIDDEN_MS = 60000;
@@ -86,8 +86,6 @@ export class Home {
     this.wasStale = false;
     /** A speed test this page started: its queue entry, its state and what to say. @type {{id:number,state:string,text:string,fails:number}|null} */
     this.mine = null;
-    /** @type {number|undefined} */
-    this.qTimer = undefined;
     this.spErr = '';
 
     // Answer card: the headline and sub line are the only live region.
@@ -365,7 +363,7 @@ export class Home {
       this.follow(r.entry);
       setText(this.spSay, this.mine.text);
       this.render();
-      this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS);
+      window.setTimeout(() => this.pollQueue(), QUEUE_MS);
     } catch (e) {
       this.mine = null;
       this.spErr = queueError(e);
@@ -395,7 +393,7 @@ export class Home {
         this.follow(e);
         if (mine.text !== before) setText(this.spSay, mine.text);
         this.render();
-        this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS);
+        window.setTimeout(() => this.pollQueue(), QUEUE_MS);
         return;
       }
       // It left the queue: how did it end? Then the fresh result.
@@ -408,7 +406,7 @@ export class Home {
       this.render();
       if (document.activeElement === document.body) this.spBtn.focus();
     } catch {
-      if (++mine.fails < QUEUE_FAILS) { this.qTimer = window.setTimeout(() => this.pollQueue(), QUEUE_MS); return; }
+      if (++mine.fails < QUEUE_FAILS) { window.setTimeout(() => this.pollQueue(), QUEUE_MS); return; }
       this.mine = null;
       this.spErr = SPEED_LOST;
       setText(this.spSay, SPEED_LOST);

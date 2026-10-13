@@ -255,7 +255,7 @@ func TestValidateTileTags(t *testing.T) {
 		return &model.Profile{Groups: []model.Group{{ID: "g"}},
 			Targets: []model.Target{{Name: "a", Host: "a.example", Group: "g", Tags: tags}}}
 	}
-	for _, ok := range [][]string{nil, {"tile:zoom"}, {"tile:onedrive", "home:work"}, {"tilezoom"}} {
+	for _, ok := range [][]string{nil, {"tile:zoom"}, {"tile:onedrive", "storage"}, {"tilezoom"}} {
 		if err := Validate(prof(ok...), false); err != nil {
 			t.Errorf("%v: %v", ok, err)
 		}
@@ -266,7 +266,7 @@ func TestValidateTileTags(t *testing.T) {
 		"tile:Zoom":              `tag "tile:Zoom"`,
 		"tile:zoom,tile:slack":   "more than one tile: tag",
 		"tile:zoom,tile:zoom":    "more than one tile: tag",
-		"home:calls,tile:bogus":  `tag "tile:bogus"`,
+		"voice,tile:bogus":       `tag "tile:bogus"`,
 		"tile:netflix,tile:nope": `tag "tile:nope"`,
 	} {
 		if err := Validate(prof(strings.Split(tags, ",")...), false); err == nil || !strings.Contains(err.Error(), want) {

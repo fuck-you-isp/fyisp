@@ -160,8 +160,6 @@ func TestCatalogErrors(t *testing.T) {
 		"field regoin not found":       {"a.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: eu, regoin: x", 1))}},
 		"field website not found":      {"a.yml": {Data: []byte("website: x\n" + good)}},
 		"empty file":                   {"a.yml": {Data: nil}},
-		"tag \"home:tv\"":              {"a.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: eu, tags: [home:tv]", 1))}},
-		"more than one home: tag":      {"a.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: eu, tags: [home:web, home:work]", 1))}},
 	}
 	for want, fsys := range cases {
 		_, err := LoadCatalog(fsys)

@@ -42,7 +42,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video, app:zoom, home:calls, tile:zoom]
+    tags: [voice, video, app:zoom, tile:zoom]
     verified:
       date: 2026-09-27
       icmp: true
@@ -62,7 +62,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [voice, video, media, app:meet, home:calls, tile:meet]
+    tags: [voice, video, media, app:meet, tile:meet]
     verified:
       date: 2026-09-27
       icmp: true
@@ -112,7 +112,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, video, signaling, app:teams, home:calls, tile:teams]
+    tags: [voice, video, signaling, app:teams, tile:teams]
     verified:
       date: 2026-09-27
       icmp: true
@@ -165,7 +165,7 @@ targets:
     path: /u2c/api/v1/ping
     region: global
     anycast: true
-    tags: [voice, video, signaling, app:webex, home:calls]
+    tags: [voice, video, signaling, app:webex]
     verified:
       date: 2026-09-27
       icmp: false
@@ -179,7 +179,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat, app:slack, home:calls, tile:slack]
+    tags: [chat, app:slack, tile:slack]
     verified:
       date: 2026-09-27
       icmp: false
@@ -207,7 +207,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [voice, chat, app:discord, home:calls]
+    tags: [voice, chat, app:discord]
     verified:
       date: 2026-09-27
       icmp: true
@@ -250,7 +250,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [chat, voice, app:whatsapp, home:calls]
+    tags: [chat, voice, app:whatsapp]
     verified:
       date: 2026-09-27
       icmp: true

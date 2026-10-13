@@ -571,7 +571,7 @@ func TestShippedUDP(t *testing.T) {
 	}
 	// Catalog tags reach the default's targets.
 	for _, tg := range def.Targets {
-		if tg.Name == "Microsoft-Teams" && !slices.Equal(tg.Tags, []string{"voice", "video", "signaling", "app:teams", "home:calls", "tile:teams"}) {
+		if tg.Name == "Microsoft-Teams" && !slices.Equal(tg.Tags, []string{"voice", "video", "signaling", "app:teams", "tile:teams"}) {
 			t.Errorf("default Microsoft-Teams tags %v", tg.Tags)
 		}
 	}

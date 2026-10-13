@@ -3,7 +3,7 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[],home?:string}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[]}} TargetInfo */
 /** @typedef {{target:string,kind:string,ratio:number,now_ms:number,normal_ms:number}} SlowItem */
 /** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[],quiet?:boolean}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
@@ -69,16 +69,16 @@ const LAYERS = [
 const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'services', service: 'services' };
 
 /**
- * Page state; everything but band lives in the URL hash. view: 'h' (Home),
- * 'calls' (Calls), 'o' (Overview), 'c' (charts) or 'speed' (Speed), null for Home; focus: a target shown alone
+ * Page state; everything but band lives in the URL hash. view: null (Home),
+ * 'calls' (Calls), 'o' (Overview), 'c' (charts) or 'speed' (Speed); focus: a target shown alone
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
- * problems-only, heatmap cell and heatmap mode; ot: the Overview's Home-tile filter;
+ * problems-only, heatmap cell and heatmap mode;
  * sr/sd/snf/ssw: Speed's selected row, span in days, "leave out backup servers" and the full test (sweep=1).
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, ot:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, inv: null, band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', ot: '', sr: '', sd: 7, snf: false, ssw: false };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', sr: '', sd: 7, snf: false, ssw: false };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -193,9 +193,7 @@ function readHash() {
   }
   fixKinds();
   const v = p.get('v');
-  state.view = v === 'h' || v === 'o' || v === 'c' || v === 'calls' || v === 'speed' ? v : null;
-  const ot = p.get('ot');
-  state.ot = ot && /^[a-z]+$/.test(ot) ? ot : '';
+  state.view = v === 'o' || v === 'c' || v === 'calls' || v === 'speed' ? v : null;
   state.focus = p.get('f') || null;
   state.os = p.get('os') || '';
   state.oq = p.get('oq') || '';
@@ -216,7 +214,7 @@ function readHash() {
 let lastHash = '';
 function hashString() {
   // Home's hash is empty: no Details range or kinds.
-  if (!state.view || state.view === 'h') {
+  if (!state.view) {
     if (!state.inv && !(state.focus && focusPanel())) return '';
   }
   const p = new URLSearchParams();
@@ -226,7 +224,6 @@ function hashString() {
   if (state.log) p.set('o', '1');
   if (state.inv) p.set('t', state.inv);
   if (state.view) p.set('v', state.view);
-  if (state.ot) p.set('ot', state.ot);
   if (state.focus) p.set('f', state.focus);
   if (state.os) p.set('os', state.os);
   if (state.oq) p.set('oq', state.oq);
@@ -1028,8 +1025,8 @@ function invError(e) {
  * (status.can_control: this machine on a loopback dashboard without a
  * token, or the admin cookie), or a browser holding a pasted admin token.
  * Other viewers click Trace, so browsing targets doesn't spend the hourly
- * budget every viewer shares (a tunnel visitor on a token-less dashboard
- * included: the server sees its proxy headers).
+ * budget every viewer shares (a visitor through a reverse proxy on a
+ * token-less dashboard included: the server sees its proxy headers).
  */
 function autoTrace() { return !!status && (!!status.can_control || (status.controls === 'admin' && !!storedAdmin())); }
 
@@ -1667,16 +1664,6 @@ let speedOn = true;
 /** Details → Speed, when this fyisp has speed tests. @type {Speed|null} */
 let speed = null;
 
-/** Whether this fyisp has speed tests: the light part=running answers 404 when not. */
-async function speedAvailable() {
-  try {
-    await fetchJSON('api/speed?part=running');
-    return true;
-  } catch (e) {
-    if (/** @type {any} */ (e).status === 404) { speedOn = false; return false; }
-    return true; // another error: show the tab, which says it can't load
-  }
-}
 /** @type {SpeedWindow[]} */
 let speedWins = [];
 // Whether charts mark speed-test windows: off by default (a test every few
@@ -1872,11 +1859,6 @@ function bySeverity(/** @type {OvRow} */ a, /** @type {OvRow} */ b) {
   return (OV_STATES[a.state]?.rank ?? 9) - (OV_STATES[b.state]?.rank ?? 9) || b.loss - a.loss || (b.ratio ?? 0) - (a.ratio ?? 0) || a.target.localeCompare(b.target);
 }
 function geoOf(/** @type {TargetInfo} */ t) { return t.geo || ''; }
-/** Category names for the Overview's ot= filter (the v0.6–v0.8 Home's tiles; a #ot= link still opens one). */
-/** @type {Object<string,string>} */
-const HOME_TILE = { calls: 'Calls', work: 'Work apps', web: 'Websites', other: 'Other services' };
-/** A target's category, as the server assigns it (profile.HomeCategory via /api/profile). */
-function homeCategory(/** @type {TargetInfo} */ t) { return t.home || ''; }
 function locationOf(/** @type {TargetInfo} */ t) { return [t.city, t.country].filter(Boolean).join(', '); }
 function windowWords(/** @type {OvData} */ d) {
   return isRelative() ? `last ${fmtDur(Number(rangeSecs()) * 1000)}` : `${fmtWhen(d.from)} – ${fmtWhen(d.to)}`;
@@ -2203,12 +2185,6 @@ class Overview {
         text: `${p ? p.title : pid}${g != null ? ' · ' + GEO_TITLE[g] : ''} ×`, onclick: () => this.setCell(''),
       }));
     } else this.cellChip.replaceChildren();
-    if (state.ot) {
-      this.cellChip.append(h('button', {
-        class: 'btn sm on', type: 'button', title: 'Show every target',
-        text: `${HOME_TILE[state.ot] || state.ot} ×`, onclick: () => { state.ot = ''; writeHash(); this.renderControls(); this.applyRows(); },
-      }));
-    }
     const m = this.mode();
     const noNormal = !this.data || this.data.summary.with_normal === 0;
     this.modeSeg.replaceChildren(
@@ -2254,7 +2230,6 @@ class Overview {
       let ok = true;
       if (q) ok = [t.name, t.provider_title, t.city, t.country].some((x) => x && x.toLowerCase().includes(q));
       if (ok && state.og) ok = geoOf(t) === state.og;
-      if (ok && state.ot) ok = homeCategory(t) === state.ot;
       if (ok && state.op) ok = PROBLEMS.has(st);
       if (ok && pid) ok = (t.provider || t.group) === pid && (pg === undefined || geoOf(t) === pg);
       e.tr.hidden = !ok;
@@ -3572,8 +3547,7 @@ async function main() {
   callsOn = targets.some((t) => (t.tags || []).some((x) => x === 'udp-path' || x.startsWith('app:')));
   ov = new Overview();
   calls = callsOn ? new Calls() : null;
-  // features.speed says it at once; older builds without it are probed.
-  const hasSpeed = prof.features && typeof prof.features.speed === 'boolean' ? prof.features.speed : await speedAvailable();
+  const hasSpeed = !!(prof.features && prof.features.speed);
   if (!hasSpeed) speedOn = false;
   speed = hasSpeed ? new Speed({
     sel: () => state.sr,
