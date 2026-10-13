@@ -118,6 +118,20 @@ export function fmtPct(/** @type {number} */ f) {
   return (f * 100).toFixed(f < 0.1 ? 1 : 0) + '%';
 }
 
+/**
+ * "248 Mbit/s", one decimal under 10, "1.2 Gbit/s" from 1000; "—" when not
+ * measured (busy is never 0). bare gives the number in Mbit/s alone ("1234"),
+ * for a column headed Mbit/s.
+ * @param {number|null|undefined} bps @param {boolean} [bare]
+ */
+export function fmtMbps(bps, bare = false) {
+  if (bps == null) return '—';
+  const m = bps / 1e6;
+  const n = m < 10 ? m.toFixed(1) : String(Math.round(m));
+  if (bare) return n;
+  return m < 999.5 ? `${n} Mbit/s` : `${(m / 1000).toFixed(1)} Gbit/s`;
+}
+
 export function fmtTime(/** @type {number} */ ms, /** @type {number} */ spanMs) {
   const d = new Date(ms);
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: spanMs <= 6 * 3600e3 ? '2-digit' : undefined });
@@ -282,7 +296,7 @@ export function storedAdmin() {
 }
 
 /** The admin token for speed-test controls: remembered for this tab, else asked for in a password field. @param {string} [why] */
-export async function adminHeader(why = '') {
+async function adminHeader(why = '') {
   let t = storedAdmin();
   if (!t) {
     const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
@@ -305,7 +319,7 @@ export async function adminHeader(why = '') {
  * given (the dialog was cancelled): the caller must not send the request.
  * @param {Record<string,string>} headers @param {string} [why] the dialog's first line, for this action
  */
-export async function addAdmin(headers, why = '') {
+async function addAdmin(headers, why = '') {
   const status = statusOf();
   if (!(status && status.controls === 'admin' && !status.admin)) return true;
   const t = await adminHeader(why);

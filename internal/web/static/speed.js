@@ -8,7 +8,7 @@
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, fetchShared, apiWrite, canWrite, speedRefusal, dialog, tzParam, clock } from './core.js';
+import { h, fetchShared, fmtMbps, apiWrite, canWrite, speedRefusal, dialog, tzParam, clock } from './core.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
 
@@ -33,13 +33,6 @@ const MODES = {
   custom: { name: 'My own servers' },
 };
 
-/** "248 Mbit/s"; one decimal under 10; Gbit/s from 1000. */
-export function mbps(/** @type {number|null|undefined} */ bps) {
-  if (bps == null) return '—';
-  const m = bps / 1e6;
-  if (m >= 1000) return `${(m / 1000).toFixed(1)} Gbit/s`;
-  return `${m < 10 ? m.toFixed(1) : Math.round(m)} Mbit/s`;
-}
 /** "105 MB", "680 GB", "2.1 TB". */
 function bytes(/** @type {number} */ b) {
   if (b >= 1e12) return `${(b / 1e12).toFixed(1)} TB`;
@@ -139,10 +132,10 @@ export class Speed {
       this.perTest = t.bytes || testBytes(t);
       const pct = t.score != null ? ` (${Math.round(t.score * 100)}% of normal)` : '';
       const fb = t.fallback && t.region ? fallbackLine(d, t) : '';
-      const up = t.up_bps != null ? `, ${mbps(t.up_bps).replace(' Mbit/s', '')} up` : '';
+      const up = t.up_bps != null ? `, ${fmtMbps(t.up_bps)} up` : '';
       this.result = tag === 'estimate'
         ? `Your test used about ${bytes(this.perTest)}.`
-        : `Done: ${t.label}, ${mbps(t.down_bps)} down${up}${pct}.${t.up_bps == null ? ' The upload didn’t finish.' : ''}${fb ? ' ' + fb : ''}`;
+        : `Done: ${t.label}, ${fmtMbps(t.down_bps)} down${up}${pct}.${t.up_bps == null ? ' The upload didn’t finish.' : ''}${fb ? ' ' + fb : ''}`;
     } else {
       this.result = t.outcome === 'cancelled' ? 'The test was cancelled.' : t.outcome === 'busy' ? 'That server is busy with someone else’s test. We tried 3 times.'
         : t.outcome === 'unreachable' ? 'That server didn’t answer.' : 'The test didn’t finish.';
@@ -382,7 +375,7 @@ export class Speed {
     const lines = [];
     if (t) {
       const region = t.region ? d.regions.find((r) => r.id === t.region)?.title : '';
-      const res = t.outcome === 'ok' ? `${mbps(t.down_bps)} down, ${mbps(t.up_bps)} up`
+      const res = t.outcome === 'ok' ? `${fmtMbps(t.down_bps)} down, ${fmtMbps(t.up_bps)} up`
         : t.outcome === 'busy' ? 'server busy' : t.outcome === 'unreachable' ? 'didn’t answer' : t.outcome === 'cancelled' ? 'cancelled' : 'didn’t finish';
       lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
     }
@@ -394,7 +387,7 @@ export class Speed {
 }
 
 /** When the first test after turning on runs, in whole minutes (never "½ minute"). @param {number|null|undefined} at @param {boolean} running */
-export function firstTest(at, running) {
+function firstTest(at, running) {
   if (running) return 'The first test is running now.';
   if (!at) return 'The first test starts within the hour.';
   const m = Math.round((at - Date.now()) / 60e3);
@@ -445,7 +438,7 @@ function fallbackLine(d, t) {
 /** @param {SpeedServer} s @param {SpeedRow|undefined} row @param {string} group */
 function serverItem(s, row, group) {
   const bits = [];
-  if (row && row.down_median_bps != null) bits.push(`usually ${mbps(row.down_median_bps)}`);
+  if (row && row.down_median_bps != null) bits.push(`usually ${fmtMbps(row.down_median_bps)}`);
   if (row && row.latest_at) bits.push(`last ${clock(row.latest_at)}`);
   if (s.skipped) bits.push('skipped');
   else if (s.rest_until && s.rest_until > Date.now()) bits.push(`resting until ${clock(s.rest_until)} (busy several times)`);
