@@ -649,7 +649,10 @@ func TestHome10(t *testing.T) {
 			t.Errorf("after a restart: the first answer is not checking")
 		}
 		after := lab.last(t)
-		if after.n.Footer != before.n.Footer || after.n.WatchingSince != before.n.WatchingSince {
+		// The text names the day relative to today ("yesterday 10:00 pm",
+		// then "Oct 11"): compare it only within one local day.
+		sameDay := time.UnixMilli(before.n.At).Format(time.DateOnly) == time.UnixMilli(after.n.At).Format(time.DateOnly)
+		if after.n.WatchingSince != before.n.WatchingSince || sameDay && after.n.Footer != before.n.Footer {
 			t.Errorf("footer %q (since %d) after the restart, want %q (since %d)", after.n.Footer, after.n.WatchingSince, before.n.Footer, before.n.WatchingSince)
 		}
 		if items := after.n.Problems.Items; len(items) != 0 {
