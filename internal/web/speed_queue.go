@@ -318,7 +318,7 @@ func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, req speedt
 }
 
 // serveSpeedRun answers POST api/speed/run?kind=single[&id=]|sweep on the
-// local listener: the write routes' protections (controlAllowed).
+// local listener: the speed-test control checks (speedControlAllowed).
 func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r, "kind", "id") {
 		return

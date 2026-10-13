@@ -161,7 +161,7 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", "", "token required for speed-test controls and on-demand traces when --listen is not loopback or --allow-host is set; by default one is generated, kept in the data directory and shown as a link in the log; off turns the speed-test controls off")
+	fs.StringVar(&c.adminToken, "admin-token", "", "token required for speed-test controls (Test speed now, cancel, the schedule, skipped servers) when --listen is not loopback or --allow-host is set; by default one is generated, kept in the data directory and shown as a link in the log; off turns the speed-test controls off (traces stay open to any viewer)")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
@@ -220,7 +220,7 @@ const shareRemoved = `fyisp no longer publishes a public link.
   For live access, run your own named tunnel or reverse proxy to the
   dashboard (a cloudflared named tunnel, tailscale serve 3000, nginx) and
   start fyisp with --allow-host=<its host name>: the dashboard then
-  requires the admin token for its controls. See the README's "Sharing"`
+  requires the admin token for its speed-test controls. See the README's "Sharing"`
 
 // removedFlagErr turns the flag package's "flag provided but not defined"
 // for a removed flag into an explanation.
@@ -416,7 +416,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		return err
 	}
 	if c.adminToken == adminTokenOff && len(c.allowHosts) > 0 && isLoopbackAddr(localAddr) {
-		log.Warn("--admin-token=off with --allow-host: dashboard controls and on-demand traces are disabled for every browser, this one included")
+		log.Warn("--admin-token=off with --allow-host: speed-test controls are disabled for every browser, this one included")
 	}
 	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}))
 	serve := func(name string, s *http.Server, ln net.Listener) {
@@ -446,8 +446,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		// container on the same volume can still show it. Reading the log
 		// already takes as much access as reading the data directory.
 		link := adminLink(localURL, adminTok)
-		log.Info("open this link once in your browser to use speed tests and traces", "url", link)
-		fmt.Fprintf(os.Stderr, "  To use speed tests and traces, open this link once:\n  %s\n\n", link)
+		log.Info("open this link once in your browser to use Test speed now and the other speed-test controls", "url", link)
+		fmt.Fprintf(os.Stderr, "  To use Test speed now and the other speed-test controls, open this link once:\n  %s\n\n", link)
 		openURL = link
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {

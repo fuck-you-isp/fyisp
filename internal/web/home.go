@@ -780,7 +780,7 @@ func (s *server) homeSpeed(r *http.Request, c homeCopy, cs tiles.ConnState, now 
 		return out
 	}
 	out.Available = true
-	out.CanControl = s.canControl != nil && s.canControl(r)
+	out.CanControl = s.canControlSpeed != nil && s.canControlSpeed(r)
 	if src.On() {
 		out.EmptyText = "No speed test yet. The first one runs within the hour."
 	}

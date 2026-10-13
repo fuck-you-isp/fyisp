@@ -18,19 +18,20 @@ type LocalOptions struct {
 	// ExtraHosts are additional allowed Host header values, e.g.
 	// "fyisp.lan:3000" or "fyisp.lan" (any port). Compared case-insensitively.
 	// They mean the dashboard is reached from elsewhere (a proxy, a
-	// tunnel), whatever Addr is: without AdminToken the POST routes and
-	// on-demand traces are then disabled.
+	// tunnel), whatever Addr is: without AdminToken the speed-test
+	// controls are then disabled.
 	ExtraHosts []string
 	// PublicBind reports that the listener accepts non-loopback clients
 	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an Addr whose
 	// host is unspecified or a non-loopback IP (--listen 192.168.1.10:3000).
 	// Then any IP-literal Host is allowed (DNS rebinding needs a hostname),
-	// and the POST routes are disabled unless AdminToken is set (fyisp
-	// generates one unless --admin-token=off).
+	// and the speed-test controls are disabled unless AdminToken is set
+	// (fyisp generates one unless --admin-token=off).
 	PublicBind bool
-	// AdminToken, if set, must be sent as X-FYISP-Admin on POST routes, or
-	// as the session cookie that POST /api/admin/session sets in exchange
-	// for it (the "open this link" URL in the logs).
+	// AdminToken, if set, must be sent as X-FYISP-Admin on the speed-test
+	// controls, or as the session cookie that POST /api/admin/session sets
+	// in exchange for it (the "open this link" URL in the logs). With it,
+	// on-demand traces skip the hourly start budget.
 	AdminToken string
 	// CSRFToken overrides the random per-process token (tests only).
 	CSRFToken string
@@ -58,11 +59,11 @@ type localHandler struct {
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
-// /metrics, and the write routes (POST /api/speed/run|config|cancel),
-// behind controlAllowed; POST /api/investigate, behind the same-origin and
-// CSRF checks and, when one is set, the admin token; and
-// POST/DELETE /api/admin/session, which exchanges the admin token for a
-// cookie.
+// /metrics, and the write routes: the speed-test controls
+// (POST /api/speed/run|config|cancel), behind speedControlAllowed;
+// POST /api/investigate, open to any viewer behind the same-origin and
+// CSRF checks and the trace limits; and POST/DELETE /api/admin/session,
+// which exchanges the admin token for a cookie.
 func Local(d Deps, o LocalOptions) http.Handler {
 	tok := o.CSRFToken
 	if tok == "" {
@@ -98,7 +99,7 @@ func Local(d Deps, o LocalOptions) http.Handler {
 	default:
 		h.controls = "enabled"
 	}
-	h.canControl = func(r *http.Request) bool {
+	h.canControlSpeed = func(r *http.Request) bool {
 		return h.controls != "disabled" && (h.opts.AdminToken == "" || h.adminOK(r)) && !(h.controls == "enabled" && proxied(r))
 	}
 	return h
@@ -239,9 +240,10 @@ func sameOrigin(r *http.Request) bool {
 
 // proxyHeaders are set by reverse proxies and tunnels (nginx, Caddy,
 // cloudflared, Tailscale Serve/Funnel). A loopback listener without an
-// admin token trusts every client, which is only right when the client is
-// on this machine: a proxy that rewrites Host to 127.0.0.1 would pass the
-// Host check and hand everyone behind it the owner's controls.
+// admin token trusts every client with the speed-test controls, which is
+// only right when the client is on this machine: a proxy that rewrites
+// Host to 127.0.0.1 would pass the Host check and hand everyone behind it
+// the owner's speed tests.
 var proxyHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip", "Tailscale-User-Login"}
 
 // proxied reports whether r came through a reverse proxy or a tunnel.
@@ -254,19 +256,21 @@ func proxied(r *http.Request) bool {
 	return false
 }
 
-// errProxied refuses a write through a proxy to a token-less dashboard.
-const errProxied = "this dashboard has no admin token, so its controls work only from this machine, not through a proxy or tunnel: start fyisp with --allow-host=<the proxy's host name> (which turns the admin token on) or --admin-token"
+// errProxied refuses a speed-test control through a proxy to a token-less
+// dashboard.
+const errProxied = "this dashboard has no admin token, so speed-test controls work only from this machine, not through a proxy or tunnel: start fyisp with --allow-host=<the proxy's host name> (which turns the admin token on) or --admin-token"
 
 func tokenEqual(got, want string) bool {
 	return want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
-// controlAllowed applies the POST routes' protections: controls enabled,
-// same origin, CSRF token and (when set) the admin token. It writes the
-// refusal and returns false.
-func (h *localHandler) controlAllowed(w http.ResponseWriter, r *http.Request, what string) bool {
+// speedControlAllowed applies the speed-test controls' protections:
+// controls enabled, no proxy headers on a token-less dashboard, same
+// origin, CSRF token and (when set) the admin token. It writes the refusal
+// and returns false.
+func (h *localHandler) speedControlAllowed(w http.ResponseWriter, r *http.Request) bool {
 	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, what+" are disabled: the dashboard is reachable from elsewhere (--listen or --allow-host) and fyisp was started with --admin-token=off")
+		writeErr(w, r, http.StatusForbidden, "speed-test controls are disabled: the dashboard is reachable from elsewhere (--listen or --allow-host) and fyisp was started with --admin-token=off")
 		return false
 	}
 	if h.controls == "enabled" && proxied(r) {

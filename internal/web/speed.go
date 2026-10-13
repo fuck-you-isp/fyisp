@@ -529,7 +529,7 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	configurable := s.canControl != nil && s.canControl(r)
+	configurable := s.canControlSpeed != nil && s.canControlSpeed(r)
 	s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
 		if p.part == "windows" {
 			ts, err := s.d.Speed.SpeedTests(ctx, p.from.Add(-speedtest.SlotCap), p.to)
@@ -1062,7 +1062,7 @@ func (h *localHandler) storeErr(w http.ResponseWriter, r *http.Request, what str
 }
 
 // speedPOST checks a speed-test write: a source, POST, only the allowed
-// parameters, and the write routes' protections (controlAllowed).
+// parameters, and the speed-test control checks (speedControlAllowed).
 func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params ...string) bool {
 	if h.d.Speed == nil {
 		notFound(w, r)
@@ -1077,7 +1077,7 @@ func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params 
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return false
 	}
-	return h.controlAllowed(w, r, "speed tests")
+	return h.speedControlAllowed(w, r)
 }
 
 // serveSpeedConfig answers POST api/speed/config {"mode", "extra",

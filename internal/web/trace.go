@@ -67,6 +67,11 @@ const (
 	// MaxInvestigations bounds concurrent on-demand traces (distinct
 	// targets).
 	MaxInvestigations = 4
+	// InvestigateStartsPerHour bounds new on-demand traces in a rolling
+	// hour, across all targets and viewers (client addresses behind a
+	// tunnel can't be trusted, and are never logged). Requests carrying
+	// the admin token skip it, not MaxInvestigations.
+	InvestigateStartsPerHour = 12
 	// InvestigationKeep is how long a finished trace's state is shown.
 	InvestigationKeep = time.Hour
 	// MaxTraceHops bounds hop numbers accepted by /api/trace/panel.
@@ -609,9 +614,10 @@ func (se *invSession) running() bool { _, ended := se.inv.Progress(); return end
 
 // Investigations tracks on-demand traces.
 type Investigations struct {
-	mu  sync.Mutex
-	m   map[string]*invSession
-	now func() time.Time
+	mu     sync.Mutex
+	m      map[string]*invSession
+	starts []time.Time // budgeted starts in the last hour, oldest first
+	now    func() time.Time
 }
 
 // NewInvestigations returns an empty set.
@@ -633,25 +639,39 @@ func (e *invError) Error() string { return e.msg }
 // errNoSlot: every slot is taken.
 var errNoSlot = &invError{http.StatusTooManyRequests, "busy", "too many on-demand traces running", 30 * time.Second}
 
-// pruneLocked drops finished traces older than InvestigationKeep. mu is held.
+// budgetWindow is the start budget's rolling window.
+const budgetWindow = time.Hour
+
+// pruneLocked drops finished traces older than InvestigationKeep, and
+// starts that left the budget's window. mu is held.
 func (iv *Investigations) pruneLocked(now time.Time) {
 	for k, se := range iv.m {
 		if _, ended := se.inv.Progress(); !ended.IsZero() && now.Sub(ended) >= InvestigationKeep {
 			delete(iv.m, k)
 		}
 	}
+	n := 0
+	for n < len(iv.starts) && now.Sub(iv.starts[n]) >= budgetWindow {
+		n++
+	}
+	iv.starts = iv.starts[n:]
 }
 
 // start starts target's trace for InvestigateRounds rounds. A running one
 // is returned as is (its count is not reset); a finished one starts
-// afresh.
-func (iv *Investigations) start(src TraceSource, target string) (st *investigationJSON, created bool, err error) {
+// afresh. Unless unbudgeted (the admin token), a new trace needs room in
+// the hourly start budget; only starts that succeed use it.
+func (iv *Investigations) start(src TraceSource, target string, unbudgeted bool) (st *investigationJSON, created bool, err error) {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
 	now := iv.now()
 	iv.pruneLocked(now)
 	if se := iv.m[target]; se != nil && se.running() {
 		return se.json(target), false, nil
+	}
+	if !unbudgeted && len(iv.starts) >= InvestigateStartsPerHour {
+		return nil, false, &invError{http.StatusTooManyRequests, "rate_limited",
+			"too many on-demand traces started in the last hour", iv.starts[0].Add(budgetWindow).Sub(now)}
 	}
 	all := 0
 	for _, se := range iv.m {
@@ -668,6 +688,9 @@ func (iv *Investigations) start(src TraceSource, target string) (st *investigati
 	}
 	se := &invSession{inv: inv, started: now}
 	iv.m[target] = se
+	if !unbudgeted {
+		iv.starts = append(iv.starts, now)
+	}
 	return se.json(target), true, nil
 }
 
@@ -730,17 +753,19 @@ func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) stri
 	return q.Get("target")
 }
 
-// investigate starts the trace once the handler's checks passed. Logs name
-// the target and the error, never the client.
-func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string) {
+// investigate starts the trace once the handler's checks passed;
+// unbudgeted skips the hourly start budget. Logs name the target and the
+// error, never the client.
+func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string, unbudgeted bool) {
 	if !s.knownTarget(target) { // profile target names only, never a host or an address
 		writeInvErr(w, r, http.StatusNotFound, "unknown_target", "unknown target", 0)
 		return
 	}
-	st, _, err := s.inv.start(s.d.Trace, target)
+	st, _, err := s.inv.start(s.d.Trace, target, unbudgeted)
 	var ie *invError
 	switch {
 	case errors.As(err, &ie):
+		s.d.log().Debug("investigate refused", "target", target, "code", ie.code)
 		writeInvErr(w, r, ie.status, ie.code, ie.msg, ie.retry)
 		return
 	case err != nil:
@@ -751,8 +776,13 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, target stri
 	writeJSON(w, r, http.StatusOK, st)
 }
 
-// serveInvestigate answers POST /api/investigate?target=: same origin, the
-// CSRF token and, when the dashboard has one, the admin token.
+// serveInvestigate answers POST /api/investigate?target= for any viewer:
+// same origin and the CSRF token, then the trace limits (profile targets
+// only, InvestigateRounds, MaxInvestigations, InvestigateStartsPerHour and
+// the tracer's per-router cap). No admin token: a trace re-runs the
+// always-available traceroute against a target the viewer already sees,
+// and reveals nothing the dashboard doesn't. A request carrying the token
+// skips the start budget.
 func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) {
 	target := h.investigateRequest(w, r)
 	if target == "" {
@@ -766,20 +796,5 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 		writeInvErr(w, r, http.StatusForbidden, "forbidden", "missing or bad "+HeaderCSRF, 0)
 		return
 	}
-	// Traces need no admin token on a LAN listener without one, but where
-	// there is one (a network listener, a tunnel via --allow-host) they
-	// do: they cost the line and the routers on the path. Through
-	// --allow-host without a token (--admin-token=off) they are off.
-	switch {
-	case h.controls == "disabled" && len(h.opts.ExtraHosts) > 0:
-		writeInvErr(w, r, http.StatusForbidden, "forbidden", "on-demand traces are disabled: the dashboard is reachable through --allow-host and fyisp was started with --admin-token=off", 0)
-		return
-	case h.controls == "enabled" && proxied(r):
-		writeInvErr(w, r, http.StatusForbidden, "forbidden", errProxied, 0)
-		return
-	case h.controls == "admin" && !h.adminOK(r):
-		writeInvErr(w, r, http.StatusForbidden, "forbidden", "admin token required", 0)
-		return
-	}
-	h.investigate(w, r, target)
+	h.investigate(w, r, target, h.adminOK(r))
 }
