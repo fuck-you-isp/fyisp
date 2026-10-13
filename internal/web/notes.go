@@ -34,7 +34,6 @@ const (
 	MaxAnnotationText = 500  // characters
 	MaxAnnotations    = 1000 // per response, oldest first
 	maxJSONBody       = 8 << 10
-	notesTimeout      = 10 * time.Second
 )
 
 // ErrNotFound is what Deps' stores return (wrapped or not) for a missing
@@ -199,7 +198,7 @@ func (s *server) listNotes(w http.ResponseWriter, r *http.Request) {
 		}
 		return jsonCached(out)
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 	defer cancel()
 	c, err := render(ctx)
 	if err != nil {
@@ -247,7 +246,7 @@ func (h *localHandler) serveNotes(w http.ResponseWriter, r *http.Request, rest s
 		if !h.controlAllowed(w, r, "notes") {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 		defer cancel()
 		if err := h.d.Annotations.DeleteAnnotation(ctx, id); err != nil {
 			h.storeErr(w, r, "delete annotation", err)
@@ -278,7 +277,7 @@ func (h *localHandler) writeNote(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	a := model.Annotation{ID: id, At: in.At, End: in.End, Text: in.Text, Public: in.Public}
-	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 	defer cancel()
 	var err error
 	code := http.StatusOK
@@ -295,14 +294,4 @@ func (h *localHandler) writeNote(w http.ResponseWriter, r *http.Request, id int6
 		a.Updated = h.now()
 	}
 	writeJSON(w, r, code, toNoteJSON(a))
-}
-
-// storeErr writes a store failure: 404 for a missing item, else 500.
-func (h *localHandler) storeErr(w http.ResponseWriter, r *http.Request, what string, err error) {
-	if isNotFound(err) {
-		writeErr(w, r, http.StatusNotFound, "not found")
-		return
-	}
-	h.d.log().Warn(what, "err", err)
-	writeErr(w, r, http.StatusInternalServerError, what+" failed: "+err.Error())
 }

@@ -164,7 +164,7 @@ func (h *localHandler) serveReports(w http.ResponseWriter, r *http.Request, rest
 			writeErr(w, r, http.StatusBadRequest, "download must be 1")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 		defer cancel()
 		meta, body, err := h.d.Reports.Report(ctx, rest)
 		if err != nil {
@@ -180,7 +180,7 @@ func (h *localHandler) serveReports(w http.ResponseWriter, r *http.Request, rest
 		if !h.controlAllowed(w, r, "reports") {
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 		defer cancel()
 		if err := h.d.Reports.DeleteReport(ctx, rest); err != nil {
 			h.storeErr(w, r, "delete report", err)
@@ -198,7 +198,7 @@ func (h *localHandler) listReports(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 	defer cancel()
 	list, err := h.d.Reports.Reports(ctx)
 	if err != nil {

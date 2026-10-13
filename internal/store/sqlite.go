@@ -413,6 +413,9 @@ func checkpoint(ctx context.Context, w *sql.DB) (busy bool, err error) {
 	return b != 0, nil
 }
 
+// msTime is unix milliseconds as a UTC time.
+func msTime(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
+
 // inList returns "?,?,?" for n placeholders.
 func inList(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }
 

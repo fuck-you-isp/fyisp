@@ -1081,6 +1081,19 @@ func withVia(ts []model.SpeedTest, st speedtest.State) []model.SpeedTest {
 	return out
 }
 
+// storeTimeout bounds a write route's store call.
+const storeTimeout = 10 * time.Second
+
+// storeErr writes a store failure: 404 for a missing item, else 500.
+func (h *localHandler) storeErr(w http.ResponseWriter, r *http.Request, what string, err error) {
+	if isNotFound(err) {
+		writeErr(w, r, http.StatusNotFound, "not found")
+		return
+	}
+	h.d.log().Warn(what, "err", err)
+	writeErr(w, r, http.StatusInternalServerError, what+" failed: "+err.Error())
+}
+
 // speedPOST checks a speed-test write: a source, POST, only the allowed
 // parameters, and the same protections as notes.
 func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params ...string) bool {
@@ -1117,7 +1130,7 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]} and/or {"skip": [server ids]}`)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 	defer cancel()
 	out := map[string]any{}
 	if body.Mode != nil {

@@ -58,8 +58,6 @@ func normAnnotation(a *model.Annotation) error {
 	return nil
 }
 
-func msTime(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
-
 // nullMs is t in unix ms, or NULL for the zero time.
 func nullMs(t time.Time) any {
 	if t.IsZero() {
