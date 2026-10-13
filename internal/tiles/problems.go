@@ -283,8 +283,9 @@ func (e *engine) episodes(v *view) []Episode {
 			// a call tile's minute judges the call window that ends with
 			// it: the loss behind a calls-only Choppy problem may lie that
 			// much earlier (once over, its last minutes are the window
-			// emptying). The lossier of the two spans at the edge counts:
-			// an ongoing problem's own span holds its loss.
+			// emptying): an ended problem reads the shifted span. An
+			// ongoing one reads the lossier of the two at the edge: its own
+			// span holds its loss.
 			lf, lt := x.Start.Add(-(callWindow - time.Minute)), x.End
 			if !lt.IsZero() {
 				lt = lt.Add(-(callWindow - time.Minute))
@@ -292,7 +293,7 @@ func (e *engine) episodes(v *view) []Episode {
 					lt = x.Start
 				}
 			}
-			if sh := evidence(lf, lt); sh[layerEdge].loss > in.layers[layerEdge].loss {
+			if sh := evidence(lf, lt); !x.End.IsZero() || sh[layerEdge].loss > in.layers[layerEdge].loss {
 				in.layers = sh
 			}
 		}
