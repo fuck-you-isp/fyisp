@@ -19,7 +19,7 @@ func TestResolveAdminToken(t *testing.T) {
 		{"off", "0.0.0.0:3000", nil, ""},
 		{"off", "127.0.0.1:3000", nil, ""},
 		// off with --allow-host: no token, and web.Local then disables the
-		// controls and traces (TestAllowHostWithoutToken), never enables them.
+		// speed-test controls (TestAllowHostWithoutToken), never enables them.
 		{"off", "127.0.0.1:3000", []string{"fyisp.example.com"}, ""},
 		{"mine", "0.0.0.0:3000", nil, "mine"},
 		{"mine", "127.0.0.1:3000", nil, "mine"},

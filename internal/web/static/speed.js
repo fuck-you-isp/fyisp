@@ -8,7 +8,7 @@
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, fetchShared, apiWrite, canWrite, dialog, tzParam, clock } from './core.js';
+import { h, fetchJSON, fetchShared, apiWrite, canWrite, speedRefusal, dialog, tzParam, clock } from './core.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
 
@@ -57,7 +57,7 @@ function every(/** @type {number} */ s) {
 /** Why a speed-test write failed, from the API's stable code (never its wording). @param {any} e */
 function speedError(e) {
   switch (e.body?.code) {
-    case 'forbidden': return 'Speed tests can only be changed from the device running fyisp.';
+    case 'forbidden': return speedRefusal();
     case 'not_found': return 'That server isn’t in the list any more.';
     case 'skipped': return 'You skipped that server. Turn it back on under Every server to test it.';
     case 'bad_request': return 'fyisp didn’t accept that setting.';
@@ -188,7 +188,7 @@ export class Speed {
             h('button', { class: 'btn primary sp-more', type: 'button', 'aria-label': 'Choose a server to test', title: 'Choose a server', 'aria-haspopup': 'dialog', disabled: !can, text: '▾', onclick: () => this.pick() })),
           h('button', { class: 'btn', type: 'button', text: 'Change…', disabled: !can || !!d.set_by_flag, onclick: () => { this.panel = 'setup'; this.pickMode = d.mode; this.note = this.result = ''; this.renderAll(); /** @type {HTMLElement|null} */ (this.headEl.querySelector('h2'))?.focus(); } }),
           h('button', { class: 'btn ghost', type: 'button', text: 'Turn off', disabled: !can, onclick: () => this.setMode('off') }))),
-      can ? null : h('p', { class: 'muted small', text: 'Speed tests can only be changed from the device running fyisp.' }),
+      can ? null : h('p', { class: 'muted small', text: speedRefusal() }),
       flag,
       d.warning ? h('p', { class: 'notice warn', text: d.warning }) : null,
       this.note ? h('p', { class: 'sp-note', text: this.note }) : null]);
@@ -241,7 +241,7 @@ export class Speed {
       h('div', { class: 'sp-go-row' }, go,
         on ? h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => this.closeSetup() })
           : h('span', { class: 'muted small', text: 'Nothing is tested until you turn this on.' })),
-      can ? null : h('p', { class: 'muted small', text: 'Speed tests can only be changed from the device running fyisp.' }),
+      can ? null : h('p', { class: 'muted small', text: speedRefusal() }),
       this.note ? h('p', { class: 'sp-note', text: this.note }) : null,
       this.result ? h('p', { class: 'sp-result', text: this.result }) : null,
     ];

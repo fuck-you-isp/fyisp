@@ -90,9 +90,9 @@ type server struct {
 	index []byte
 	now   func() time.Time
 	inv   *Investigations // on-demand traces
-	// canControl reports whether r may use the write routes (local only;
-	// api/speed's "configurable").
-	canControl func(r *http.Request) bool
+	// canControlSpeed reports whether r may use the speed-test controls
+	// (local only; api/speed's "configurable", api/home's "can_control").
+	canControlSpeed func(r *http.Request) bool
 	// sameMachine reports whether r comes from the machine fyisp runs on
 	// (viewer.go; the Home's Wi-Fi wording). nil: never.
 	sameMachine  func(r *http.Request) bool
@@ -257,8 +257,12 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a *asset) {
 // localStatus is /api/status.
 type localStatus struct {
 	Status
-	Controls string `json:"controls"` // "enabled", "admin" (needs admin token) or "disabled"
+	Controls string `json:"controls"` // speed-test controls: "enabled", "admin" (need the admin token) or "disabled"
 	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
+	// CanControl: this request may use the speed-test controls as it is
+	// (api/speed's "configurable"): the owner, so the UI may start a trace
+	// by itself when Investigate opens.
+	CanControl bool `json:"can_control"`
 }
 
 func (s *server) rawStatus(ctx context.Context) Status {

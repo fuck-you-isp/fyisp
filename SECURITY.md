@@ -40,25 +40,45 @@ runs at most about 11 seconds each way, ramp-up included, with
 no byte cap, and each direction is hard-stopped 2 seconds later even against
 a server that ignores the end of the test. Once a day per server, fyisp traceroutes the path to
 it to name the first network past your ISP (shown in the dashboard only).
-"Test now", sweeps, cancelling and the mode choice are write actions behind
-the dashboard's control checks (same origin, CSRF token, admin token). Every
+"Test now", sweeps, cancelling, the mode choice and skipped servers are
+the speed-test controls: write actions behind the same origin, the CSRF
+token and, where the dashboard has one, the admin token. Every
 test waits in one queue and exactly one runs at a time: the owner's tests
 first, then scheduled ones.
 
-On-demand traces (*Investigate*) need the same origin and the CSRF token
-and, where the dashboard has an admin token (a network listener, or any
-`--allow-host`), the admin token. On a loopback dashboard without one,
-anyone who can open it may start them. The safeguards are:
+On-demand traces (*Investigate*) are open to anyone who can open the
+dashboard, behind the same origin and the CSRF token: no admin token, on
+any dashboard, through a proxy or not. A trace re-runs fyisp's own
+traceroute against a target the viewer can already see, so it reveals
+nothing new. The safeguards are:
 
 - only the profile's target names are accepted, never a host or address;
 - each trace stops by itself after 250 rounds (about 10 minutes); re-posting
   doesn't extend it;
 - at most 4 run at once;
+- at most 12 new traces start in a rolling hour, across all targets and
+  viewers (429 `rate_limited`); a request carrying the admin token skips
+  this budget, not the 4-at-once cap. So viewers can hold all 4 slots for
+  about 31 minutes an hour (12 traces of about 10 minutes, 4 at a time),
+  and meanwhile even the token holder gets `busy`;
 - the per-router probe cap is unchanged;
 - the route takes exactly one `target` parameter and no body (a declared
   length, chunking or anything read is refused), is never cached, and its
   responses carry only the trace's state (target name, rounds, times);
 - client addresses are never logged.
+
+Behind a tunnel, client addresses can't be trusted, so these limits (the
+hourly budget, the 4 slots, 250 rounds and the per-router cap) are the
+only bounds on a visitor or a script that starts traces.
+
+The dashboard's controls after v0.10.0:
+
+| Route | Host allowlist | Same origin + CSRF | Admin token | Proxy-header refusal | Other limits |
+|---|---|---|---|---|---|
+| GET UI, `/api/*`, `/metrics` | yes | - | no | no | read-only |
+| POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes, where the dashboard has one | yes, on a dashboard without a token | off for everyone when reachable from elsewhere with `--admin-token=off`; one queue, one test at a time |
+| POST `/api/investigate` | yes | yes | not needed (with it, a request skips the hourly budget) | no | the safeguards above |
+| POST/DELETE `/api/admin/session` | yes | yes | POST needs it | - | 404 when no token is set |
 
 ## Exposing the dashboard
 
@@ -70,20 +90,24 @@ addresses, or review a `fyisp export` first (traceroute rows contain hop
 addresses). If you put a tunnel or reverse proxy in front of
 the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
 `--allow-host`: any `--allow-host` turns the admin token on, even on a
-loopback listener. A loopback dashboard without an admin token refuses
-write routes and traces from requests that carry proxy headers
-(`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`,
+loopback listener, and the token then guards the speed-test controls.
+Anyone who can open the dashboard can start traces, within the limits
+above. A loopback dashboard without an admin token refuses speed-test
+controls from requests that carry proxy headers (`Forwarded`,
+`X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`,
 `Tailscale-User-Login`), so a proxy that rewrites `Host` to 127.0.0.1 can't
-hand its visitors the owner's controls. The README's "Sharing" section has
+hand its visitors the owner's speed tests. The README's "Sharing" section has
 the details.
 
 In scope, for example:
 
 - an address (yours, your router's or your provider's) on Home or in
   *What happened at …?*;
-- bypasses of the dashboard's protections (Host allowlist, CSRF,
-  `--admin-token`, the proxy-header refusal above), or of the on-demand trace safeguards above (tracing
-  anything but a profile target, more than 4 at once, past 250 rounds);
+- bypasses of the dashboard's protections (Host allowlist, CSRF, the
+  admin token on speed-test controls, the proxy-header refusal for them),
+  or of the on-demand trace safeguards above (tracing anything but a
+  profile target, more than 4 at once, past 250 rounds, more than 12 new
+  traces an hour without the admin token);
 - ways for a remote party to make fyisp run commands, read or write files, or
   exhaust memory or disk;
 - supply-chain issues in the release process (launchers, checksums, images).

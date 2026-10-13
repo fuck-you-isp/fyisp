@@ -418,7 +418,9 @@ One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
 The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the owner already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
 
-It has the speed-test control checks:
+It has the speed-test control checks (since v0.10.0 the only routes the admin token guards):
+- the controls are not disabled (`--admin-token=off` on a dashboard reachable from elsewhere);
+- on a loopback dashboard without an admin token, no proxy headers (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`);
 - same origin;
 - `X-FYISP-Token`;
 - the admin token or session cookie when one is set.
