@@ -1,6 +1,6 @@
 # Speed tests: API contract
 
-iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs download, then upload: 8 TCP streams, a ramp-up that is left out (decided afterwards, where the rate levels off), then at least 3 s and up to 10 s: a direction stops early only once its rate has levelled off, at least 3 s have passed since it first came near its peak, and a second is within 5% of the one before. So a direction runs at most about 11 s, ramp-up included; a hard stop (an RST) 2 s after that ends it whatever the server does. There is no byte cap, for any test (rows from before v0.7.2 stopped at 100 MB each way).
+iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs download, then upload: 8 TCP streams, a ramp-up that is left out (decided afterwards, where the rate levels off), then at least 3 s and up to 10 s: a direction stops early only once its rate has levelled off, at least 3 s have passed since it first came near its peak, and a second is within 5% of the one before. So a direction runs at most about 11 s, ramp-up included; a hard stop (an RST) 2 s after that ends it whatever the server does. There is no byte cap.
 
 Modes:
 - **`off`**, the default.
@@ -69,7 +69,6 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "modes": ["off", "regions", "nearby"],   // offered here; "custom" only with --speedtest-server
   "enabled": true,                // mode != "off"
   "set_by_flag": false,           // a --speedtest flag chose the mode at start (the Details choice is overridden until restart)
-  "extra": ["canada"],            // the opt-in (regions) or extra far (nearby) regions
   "configurable": true,           // may use config and cancel (controls allowed, with the admin token where one is set)
   "interval_s": 3600,             // each region or server is tested once per interval
   "spacing_s": 400,               // between scheduled tests
@@ -78,12 +77,11 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "plans": [                      // every offered mode except off, for the mode picker
     {"mode": "regions", "tests_per_hour": 9, "share": 0.038, "est_gb_month": 907.2}
   ],                              // est_gb_month: tests per hour × 720 × the median data of recent tests (150 MB before any)
-  "masked_share_24h": 0.037,      // share of the last 24 h actually under test (each test plus 2 s)
+  "test_share_24h": 0.037,        // share of the last 24 h actually under test (each test plus 2 s)
   "bytes_month": 86580579678,
   "bytes_24h": 3120000000,        // the last 24 hours (bytes_month: data used by speed tests since the 1st of this month, UTC)
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
-  "zone_label": "EDT (UTC−4)",    // the zone the summary's hours are in, printable
   "sweep_bytes": 9200000000, "sweep_servers": 45, // "Test every server": its estimated data (each server's recent median, else this line's median rate both ways for 10 s) and the servers it tests
   "next_row": "uk",               // |null: its row id
   "running": { ...Running },      // |null
@@ -96,10 +94,7 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "pattern": { ...Pattern },      // |null: a clear time-of-day dip of all scheduled tests' scores pooled (fallback tests left out)
   "finding": { ...Finding },      // what a dip points to
   "coverage": [ {"hour": 0, "n": 4, "providers": 2} ],   // 24 entries: scheduled ok tests and providers per local hour, in the span
-  "under_load": { ...UnderLoad },
-  "edge_hours": [                 // |null without an ISP edge target: the access network's control
-    {"hour": 21, "n": 28, "rtt_ms": 30.2, "loss": 0.01}   // 24 local hours: idle RTT to the ISP edge (median over days of the hour's mean; samples taken during tests count too) and loss over 30 days; rtt_ms and loss |null when n is 0
-  ]
+  "under_load": { ...UnderLoad }
 }
 ```
 
@@ -112,7 +107,6 @@ The queue's running entry in short (the full entry is in `part=queue`):
   "entry": 17,                    // the queue entry
   "kind": "single",               // "single" | "sweep" | "scheduled"
   "started": 1760104790000,
-  "expected_end": 1760104810000,  // the queue's estimate; a test can run up to 45 s
   "direction": "download",        // "picking" (nearby: RTT checks) | "download" | "upload"
   "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null while picking
   "step": 1, "steps": 1           // a sweep: the server under test, 1-based, of steps
@@ -127,11 +121,9 @@ The queue's running entry in short (the full entry is in `part=queue`):
   "provider": "Leaseweb", "city": "New York", "country": "US",
   "geo": "na", "area": "North America",   // the continent and its title
   "region": "us-east",            // |null: the first test region it belongs to
-  "metro": "new-york",            // "" for own servers
   "rtt_ms": 82.4,                 // |null: the last RTT check (mode nearby, Test now of the nearest); null when never checked
   "picked": false,                // one of the nearby picks
   "custom": false,                // the user's own server
-  "single_port": false,           // one port only (HE Fremont): busy moves on, no port retries
   "capacity_mbps": 10000,         // |null: the server's published link capacity, where known
   "skipped": false,               // the user skipped it: never tested (config {"skip": [...]})
   "skip_locked": false,           // skipped by --speedtest-skip: the toggle can't undo it
@@ -234,7 +226,7 @@ What the slowdown points to. It is computed in Go and reused by Details and Home
 ```
 
 The cases:
-- `isp`: every region dips at the same hours with every provider (a provider that stays flat rules it out). The cross-destination comparison is the main signal; the ISP edge's idle RTT by hour (`edge_hours`) only supports it when it rises at those hours. A flat edge proves nothing: lines with active queue management keep it flat while congested.
+- `isp`: every region dips at the same hours with every provider (a provider that stays flat rules it out). The cross-destination comparison is the main signal; the ISP edge's idle RTT by local hour over 30 days (samples taken during tests count too) only supports it when it rises at those hours. A flat edge proves nothing: lines with active queue management keep it flat while congested.
 - `provider`: only one provider's servers dip, in more than one region; or (`network` set, `providers` several) only the servers reached through one network past the ISP (the tests' `handoff`) dip, the others stay flat.
 - `route`: only one region dips, whichever provider.
 - `server`: only one server.
@@ -247,14 +239,10 @@ Tiers: `points_to` needs 7 days, full coverage, a wired connection not behind an
 
 ### UnderLoad
 
-The latency under load over the span: per layer, the median over tests.
+The latency under load over the span, one sentence per layer, from the median over tests of each phase's p50.
 
 ```jsonc
 {
-  "layers": [
-    {"layer": "edge", "idle_ms": 8.2, "down_ms": 21, "up_ms": 48, "loss_down": 0.033, "loss_up": 0},   // ms |null
-    {"layer": "gateway", "idle_ms": 1.1, "down_ms": 1.4, "up_ms": 1.5, "loss_down": 0, "loss_up": 0}
-  ],
   "text": ["Delay through your provider rises from 8 ms to 48 ms while uploading (+40 ms): noticeable on calls.", "…"]
 }
 ```
@@ -278,20 +266,14 @@ The latency under load over the span: per layer, the median over tests.
   "port": 5203,
   "attempts": 2,                  // connection attempts over every server tried
   "down_bps": 182345678, "up_bps": 38123456,   // |null when not measured
-  "down_short": false, "up_short": false,      // the direction hit the 100 MB cap (rows from before v0.7.2): measured for less time
-  "cap": "time",                  // the limit the test ran under: "time" (10 s each way, v0.7.2) | "bytes" (100 MB each way, earlier rows)
-  "capped_by_budget": false,      // down_short || up_short: show the speed as "≥ X"
-  "down_lower_bound": true, "up_lower_bound": true, // omitted when false: still speeding up at the cap, or a v0.7.0 result capped in its ramp-up (below)
-  "down_ramp_capped": true, "up_ramp_capped": true, // the same flags
+  "down_lower_bound": true, "up_lower_bound": true, // omitted when false: still speeding up at the 10 s cap (below)
   "cancelled_by": "owner",        // a cancelled test the owner stopped; omitted otherwise (a shutdown)
   "down_lb_counted": true, "up_lb_counted": false, // a lower bound that reached normal (counts as normal: "at least normal"); false: left out ("not counted")
-  "rate_method": "peak90", "win_ms": 640, // omitted when not capped: how the capped direction (the download if capped, else the upload) was measured ("peak90" | "whole"; v0.7.0 rows have none)
   "down_s": 4.0, "up_s": 3.2,                  // seconds measured (0 when not measured)
   "capped_by_server": false,      // a direction within 10% of the server's published capacity
   "score": 0.94, "up_score": 0.97,             // |null: against the server's baseline
   "bytes": 146800640,             // data used, both directions, ramp-up included
   "down_retrans": 112, "up_retrans": null,     // |null when unknown
-  "idle_gateway_ms": 1.1, "loaded_gateway_ms": 1.5,   // |null: latency.gateway in short (idle p50; the worse of down/up p50)
   "latency": {                    // |null: latency under load, see below
     "edge":    {"idle": Stats, "down": Stats, "up": Stats},   // the ISP edge: behind the line's queue
     "gateway": {"idle": Stats, "down": Stats, "up": Stats}    // the router: the home network
@@ -303,9 +285,9 @@ The latency under load over the span: per layer, the median over tests.
 
 **Latency under load.** Bufferbloat sits in the queue at the line's bottleneck (the modem's upload buffer, the ISP's CMTS, OLT or BNG), past the router: the ISP edge (the first hop past the router) is behind it, the router's LAN address is not. During each direction fyisp pings both every 150 ms (1 s timeout). `idle` is the 2 minutes before the test, from the continuous probes; it is `null` with fewer than 20 probes then, and in fyisp's first 2 minutes after starting (path discovery runs then). Each `Stats` is `{"n": 60, "lost": 3, "loss": 0.05, "p50_ms": 140, "p95_ms": 1000}`, or `null` with fewer than 3 probes. **A lost probe counts as loss and, in `p50_ms`/`p95_ms`, as 1000 ms**: under heavy bloat most probes time out, so a p95 of 1000 means "at least 1 s". On lines with active queue management (fq_codel, CAKE) the edge stays flat even when the line is congested.
 
-**One estimator for every direction.** Whatever ended a direction (its 10 s, an early stop, or the 100 MB cap of rows from before v0.7.2), its rate is measured from where its rate levels off: the 100 ms ticks (each rate over its actual length), smoothed over 3 ticks, from the first one at 90% of the peak to the last byte (uploads count what the server acknowledged, on Linux). When it was still speeding up at the limit, the result is a **lower bound**: leaving out the first tick (connection start, a shaper's burst) and smoothing over at least one RTT on long paths, no two near-peak ticks at least an RTT apart, nor a peak an RTT before the end: the speed was at least this. v0.7.0 results capped in their ramp-up (`ramp_ms` 0) are lower bounds too. A lower bound never enters the server's normal (`Baseline`). Per server and direction over 14 days, a **coverage guard** decides the rest: when the server has lower bounds and its other results cover fewer than 12 local hours, or more than half of them fall within any 6 hours, they are no sample of its normal (on a fast line the daytime reads as lower bounds, leaving the slow evenings), so the server is **too fast to measure from here**: left out of the time-of-day patterns, the rows' score medians and the finding (its tests are still listed and exported). Otherwise a lower bound that already reaches the server's normal counts as normal (score 1), and one below it is left out (`*_lb_counted` says which); a lower bound never reads as slow. When every server is too fast, the finding's case is `too_fast` ("Your line is too fast for these tests to compare times of day: …"), never "nothing"; when some are, the evidence ends "k of n servers were too fast to measure from here and are left out."
+**One estimator for every direction.** Whatever ended a direction (its 10 s or an early stop), its rate is measured from where its rate levels off: the 100 ms ticks (each rate over its actual length), smoothed over 3 ticks, from the first one at 90% of the peak to the last byte (uploads count what the server acknowledged, on Linux). When it was still speeding up at the limit, the result is a **lower bound**: leaving out the first tick (connection start, a shaper's burst) and smoothing over at least one RTT on long paths, no two near-peak ticks at least an RTT apart, nor a peak an RTT before the end: the speed was at least this. A lower bound never enters the server's normal (`Baseline`). Per server and direction over 14 days, a **coverage guard** decides the rest: when the server has lower bounds and its other results cover fewer than 12 local hours, or more than half of them fall within any 6 hours, they are no sample of its normal (on a fast line the daytime reads as lower bounds, leaving the slow evenings), so the server is **too fast to measure from here**: left out of the time-of-day patterns, the rows' score medians and the finding (its tests are still listed and exported). Otherwise a lower bound that already reaches the server's normal counts as normal (score 1), and one below it is left out (`*_lb_counted` says which); a lower bound never reads as slow. When every server is too fast, the finding's case is `too_fast` ("Your line is too fast for these tests to compare times of day: …"), never "nothing"; when some are, the evidence ends "k of n servers were too fast to measure from here and are left out."
 
-With the environment variable `FYISP_TICKS` set, fyisp logs each capped direction's ticks (`at_ms`, `bytes`, `rtt_ms`) and the verdict, for checking the estimator on a real line.
+With the environment variable `FYISP_TICKS` set, fyisp logs each direction's ticks (`at_ms`, `bytes`, `rtt_ms`) and the verdict, for checking the estimator on a real line.
 
 **Bytes.** `bytes` is what the test moved on the wire, every attempt included, also when it failed or was cancelled (then it's what moved until the cancel, and a cancel during setup still counts the few hundred bytes of the handshake). On Linux each stream counts what the kernel saw (received, read or still buffered, for downloads; acknowledged for uploads) when that's more than what fyisp read or wrote; other systems count what fyisp read or wrote. `bytes_24h` and `bytes_month` add up these numbers.
 
@@ -444,10 +426,6 @@ POST api/speed/config
 
 `extra` is the opt-in regions (mode `regions`) or extra far regions (mode `nearby`). The choices are saved and survive restarts. A `--speedtest…` flag on the command line overrides them at start (`set_by_flag`). Switching to a mode schedules the first test about 2 minutes later.
 
-## `GET api/status`
-
-`speed_masked_share_24h` (omitempty) is the share of the last 24 hours under test (each test plus 2 s). Probes in that time are stored as measured, like any others.
-
 ## `GET api/profile`
 
 `features.speed` is true when speed tests are available (any mode).
@@ -469,4 +447,4 @@ These give the latest result per region and server, set after every test:
 
 ## Export
 
-`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,idle_gateway_ms,loaded_gateway_ms,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.
+`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,capped_by_server,bytes,score_down,score_up,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.
