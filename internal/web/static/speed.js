@@ -3,8 +3,8 @@
 // busy line, calls that may stutter, who sees the address), then how to
 // test. Once on, a header with the mode, the next test, Test now (with a
 // server picker) and Turn off; tests wait their turn in one queue
-// (speedqueue.js). Every write goes through the same gate as notes and
-// reports.
+// (speedqueue.js). Every write goes through the dashboard's control
+// checks (the admin token where there is one).
 // Plain ES module, no build step.
 // @ts-check
 

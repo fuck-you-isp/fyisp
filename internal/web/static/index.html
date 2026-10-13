@@ -34,14 +34,6 @@
   <summary><span class="o-title">Outage log</span> <span id="outages-count" class="muted"></span></summary>
   <div id="outages-list" class="o-list"></div>
 </details>
-<details id="notes" class="outages notes" hidden>
-  <summary><span class="o-title">Notes</span> <span id="notes-count" class="muted"></span></summary>
-  <div id="notes-list" class="o-list"></div>
-</details>
-<details id="reports" class="outages reports" hidden>
-  <summary><span class="o-title">Reports</span> <span id="reports-count" class="muted"></span></summary>
-  <div id="reports-list" class="o-list"></div>
-</details>
 <main id="panels" class="grid"></main>
 <div id="tip" class="tip" role="tooltip" hidden></div>
 <footer class="foot small">
@@ -52,7 +44,6 @@
       <li>Drag on a chart to zoom, double-click to reset. Click a legend entry to isolate it, Ctrl/Cmd-click to toggle.</li>
       <li>Faint coloured bands on the charts mark incidents from the outage log; click an incident to zoom to it.</li>
       <li>Grey marks along the top of a chart are speed tests (zoom in to see each one as a band). Samples taken during a test aren’t counted, so a test never shows up as a problem.</li>
-      <li>Flags mark notes. On your own dashboard, right-click a chart (long-press on a phone) to add a note at that time, or Shift-drag to add one over a range; click a flag to edit it. Blue flags are notes included in redacted reports.</li>
       <li><b>×2.3 normal</b>: 2.3 times slower than usual for this target (its typical time over the past week). The “Normal band” shades each target’s usual range (median to p95).</li>
     </ul>
   </details>
