@@ -408,7 +408,7 @@ func TestSpeedWrites(t *testing.T) {
 	if c, _ := run("/api/speed/run?id=Nope"); c != 404 {
 		t.Errorf("unknown id: %d", c)
 	}
-	// Cancel (admin-gated like notes).
+	// Cancel (admin-gated like the other speed controls).
 	if w := do(loc, "POST", "/api/speed/cancel?id=2", good); w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"cancelled"`) {
 		t.Errorf("cancel: %d %s", w.Code, w.Body.String())
 	}

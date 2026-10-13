@@ -80,7 +80,7 @@ func TestAdminSession(t *testing.T) {
 	if statusAdmin(good) || !statusAdmin(with(map[string]string{"Cookie": cookie})) {
 		t.Error("status admin flag wrong")
 	}
-	if w := do(h, "DELETE", "/api/annotations/1", good); w.Code != 403 || sh.n != 0 {
+	if w := doControl(h, good); w.Code != 403 || sh.n != 0 {
 		t.Errorf("no cookie = %d", w.Code)
 	}
 	for name, hdr := range map[string]map[string]string{
@@ -91,17 +91,17 @@ func TestAdminSession(t *testing.T) {
 		"wrong origin":  with(map[string]string{"Cookie": cookie, "Origin": "http://evil.com"}, "Sec-Fetch-Site"),
 		"no origin set": with(map[string]string{"Cookie": cookie}, "Origin", "Sec-Fetch-Site"),
 	} {
-		if w := do(h, "DELETE", "/api/annotations/1", hdr); w.Code != 403 {
+		if w := doControl(h, hdr); w.Code != 403 {
 			t.Errorf("%s = %d, want 403", name, w.Code)
 		}
 	}
-	if w := do(h, "DELETE", "/api/annotations/1", with(map[string]string{"Cookie": cookie})); w.Code != 200 || sh.n != 1 {
+	if w := doControl(h, with(map[string]string{"Cookie": cookie})); w.Code != 200 || sh.n != 1 {
 		t.Errorf("cookie = %d (controls %d)", w.Code, sh.n)
 	}
 
 	// A new token (rotation) revokes the cookie.
 	h2, sh2 := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000", AdminToken: strings.Repeat("f", 32)})
-	if w := do(h2, "DELETE", "/api/annotations/1", with(map[string]string{"Cookie": cookie})); w.Code != 403 || sh2.n != 0 {
+	if w := doControl(h2, with(map[string]string{"Cookie": cookie})); w.Code != 403 || sh2.n != 0 {
 		t.Errorf("old cookie after rotation = %d", w.Code)
 	}
 
@@ -124,7 +124,7 @@ func TestAdminSession(t *testing.T) {
 	}
 	// A loopback dashboard ignores cookies and stays enabled.
 	hl, shl := localHandlerFor(t, LocalOptions{})
-	if w := do(hl, "DELETE", "/api/annotations/1", with(map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000"})); w.Code != 200 || shl.n != 1 {
+	if w := doControl(hl, with(map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000"})); w.Code != 200 || shl.n != 1 {
 		t.Errorf("loopback = %d", w.Code)
 	}
 }
@@ -142,7 +142,7 @@ func TestAllowHostWithoutToken(t *testing.T) {
 		if st.Controls != "disabled" {
 			t.Errorf("%s: controls = %q, want disabled", host, st.Controls)
 		}
-		if w := do(h, "DELETE", "/api/annotations/1", hdr); w.Code != 403 || !strings.Contains(w.Body.String(), "--allow-host") {
+		if w := doControl(h, hdr); w.Code != 403 || !strings.Contains(w.Body.String(), "--allow-host") {
 			t.Errorf("%s: control = %d %s, want 403", host, w.Code, w.Body.String())
 		}
 	}

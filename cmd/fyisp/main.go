@@ -38,8 +38,6 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
-	"github.com/fuck-you-isp/fyisp/internal/report"
-	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/tiles"
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
@@ -359,14 +357,6 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	mc.SetVerdictSource(verdict.MetricsSource(eng))
 	mc.SetVsNormalSource(metrics.VsNormalSource(verdict.VsNormalSource(eng)))
 	slow := verdict.SlowSource(eng)
-	reports := webReports{
-		b: report.New(report.Deps{
-			Profile: func() *model.Profile { return prof }, Store: st, Trace: st,
-			Incidents: eng.Incidents, Annotations: st, Baselines: bs.Get, SpeedTests: st.SpeedTests, Version: version,
-			Zone: func(ctx context.Context) *time.Location { return speedtest.StoredZone(ctx, st) },
-		}),
-		ReportStore: st,
-	}
 	go func() {
 		if err := ni.Run(ctx); err != nil {
 			log.Warn("network path discovery stopped", "err", err)
@@ -406,11 +396,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			ms := speed.MaskedShare(24 * time.Hour)
 			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready(), SpeedMasked: &ms}
 		},
-		Metrics:     mc.Handler(),
-		Verdict:     eng,
-		Annotations: st,
-		Reports:     reports,
-		Baselines:   bs,
+		Metrics:   mc.Handler(),
+		Verdict:   eng,
+		Baselines: bs,
 		Slow: func() []web.SlowTarget {
 			var out []web.SlowTarget
 			for _, t := range slow() {

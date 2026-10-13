@@ -318,7 +318,7 @@ func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, req speedt
 }
 
 // serveSpeedRun answers POST api/speed/run?kind=single[&id=]|sweep on the
-// local listener: the same protections as notes.
+// local listener: the write routes' protections (controlAllowed).
 func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r, "kind", "id") {
 		return
@@ -332,7 +332,7 @@ func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveSpeedCancel answers POST api/speed/cancel?id=<entry> (waiting or
-// running): admin-gated like notes.
+// running): admin-gated like the other speed controls.
 func (h *localHandler) serveSpeedCancel(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r, "id") {
 		return
