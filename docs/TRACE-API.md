@@ -8,16 +8,15 @@ An on-demand trace follows one profile target's path hop by hop every 2.5 s, for
 POST api/investigate?target=<profile target name>
 ```
 
-There is no body. The checks are:
+There is no body. Anyone who can open the dashboard may start a trace: there is no admin token check (since v0.10.0). The checks are:
 
 | Check | |
 |---|---|
 | Host allowlist | yes |
 | Same origin (`Origin` / `Sec-Fetch-Site`) | yes |
 | `X-FYISP-Token` (CSRF, page meta) | yes |
-| Admin token (`X-FYISP-Admin` or the session cookie) | where the dashboard has one: `--listen` beyond loopback (unless `--admin-token=off`) or any `--allow-host` |
-| Proxy headers | a loopback dashboard without an admin token refuses a request carrying `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`: its controls work only from the same machine |
 | Slots | at most 4 traces at once |
+| Start budget | at most 12 new traces in a rolling hour, across all targets and viewers. A request carrying the admin token (`X-FYISP-Admin` or the session cookie) skips the budget, not the slots |
 
 **Request rules:**
 - Exactly one `target` parameter and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
@@ -26,8 +25,11 @@ There is no body. The checks are:
 - Logs name the target and the error, never the client.
 
 **What a POST does:**
-- **Trace running:** returns its state. It doesn't extend the trace or reset the count.
+- **Trace running:** returns its state. It doesn't extend the trace or reset the count, and it uses no budget.
 - **Trace finished:** starts a fresh 250 rounds.
+- Only starts that succeed use the budget; refused ones (no slot, unknown target, a tracer error) don't.
+
+Client addresses behind a tunnel can't be trusted, so the budget, the slots, the 250 rounds and the tracer's per-router probe cap are the only bounds on a script that starts traces.
 
 **Response 200:**
 
@@ -43,16 +45,22 @@ There is no body. The checks are:
 | Status | `code` | When |
 |---|---|---|
 | 400 | `bad_request` | a parameter other than one `target`, or a body |
-| 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token`; admin token required; proxy headers on a loopback dashboard without a token |
+| 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token` |
 | 404 | `unknown_target` | not a profile target name |
 | 404 | `unavailable` | tracing is not available |
 | 405 | `method_not_allowed` | not POST |
 | 429 | `busy` | no free slot (4 in all; `retry_after`) |
+| 429 | `rate_limited` | 12 traces started in the last hour (`retry_after`: until the oldest leaves the hour) |
 | 500 | `failed` | the tracer failed (with the reason) |
 
 ## Progress
 
 `GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
+
+## Changed in v0.10.0
+
+- No admin token: `403 forbidden` no longer means *admin token required*, and a loopback dashboard without a token no longer refuses requests carrying proxy headers. The `--allow-host` with `--admin-token=off` case, which turned traces off, is gone too.
+- New: the hourly start budget and its `429 rate_limited` code (a code v0.8.0 retired, now with this meaning).
 
 ## Removed in v0.8.0
 
