@@ -50,9 +50,6 @@ import (
 // timeline.txt), and the pass criteria are checked on that recording: a
 // failure logs the whole sequence. T0 is when a fault is applied, T1 when
 // it is removed, I the probe interval (6 s; 15 s TCP in S1c).
-//
-// The API path is FYISP_NETNS_HOME, else /api/home when it answers v2,
-// else /api/home2 (the name before the switch-over).
 func TestHome10(t *testing.T) {
 	parallel(t)
 
@@ -702,8 +699,8 @@ func TestHome10(t *testing.T) {
 		if f := ps[0].n; !strings.HasPrefix(f.Answer.Key, "checking") || f.Problems.Summary != "Checking…" || f.Answer.Day != nil {
 			lab.errorf(t, ps[0], "a fresh start: want checking first, with Checking… and no 24-hour line")
 		}
-		if l := p.n.Learning; !strings.Contains(l.Text, "still learning") || l.Until <= p.n.At {
-			lab.errorf(t, p, "learning %+v: want the learning note until a future time", l)
+		if l := p.n.Learning; !strings.Contains(l.Text, "still learning") {
+			lab.errorf(t, p, "learning %+v: want the learning note", l)
 		}
 		if p.n.Answer.Day != nil {
 			lab.errorf(t, p, "learning: want no 24-hour line")
@@ -717,13 +714,13 @@ func TestHome10(t *testing.T) {
 			name string
 			get  func() (*http.Response, error)
 		}{
-			{"same machine", func() (*http.Response, error) { return lab.client.Get("http://" + listenAddr + lab.api + "?part=now") }},
+			{"same machine", func() (*http.Response, error) { return lab.client.Get("http://" + listenAddr + homeAPI + "?part=now") }},
 			{"another machine", func() (*http.Response, error) {
 				c := &http.Client{Timeout: httpTimeout, Transport: &http.Transport{DialContext: dialIn(lab.gw), DisableKeepAlives: true}}
-				return c.Get("http://10.99.1.2:3000" + lab.api + "?part=now")
+				return c.Get("http://10.99.1.2:3000" + homeAPI + "?part=now")
 			}},
 			{"through a proxy", func() (*http.Response, error) {
-				r, _ := http.NewRequest(http.MethodGet, "http://"+listenAddr+lab.api+"?part=now", nil)
+				r, _ := http.NewRequest(http.MethodGet, "http://"+listenAddr+homeAPI+"?part=now", nil)
 				r.Header.Set("X-Forwarded-For", "192.0.2.10")
 				return lab.client.Do(r)
 			}},
@@ -837,7 +834,7 @@ func TestHome10(t *testing.T) {
 const (
 	home10Poll = 5 * time.Second
 	home10Seed = 25 * time.Hour
-	homeEnv    = "FYISP_NETNS_HOME"
+	homeAPI    = "/api/home"
 )
 
 // home10Web are the lab's TCP targets and their tiles, on home10Addrs in
@@ -896,7 +893,6 @@ type home10 struct {
 	iv   time.Duration
 	data string
 	fy   *fyisp
-	api  string // /api/home or /api/home2
 
 	mu    sync.Mutex
 	tl    []poll
@@ -936,16 +932,14 @@ func startHome10(t *testing.T, o home10Opts) *home10 {
 		lab.seed(t, prof, lab.labRTT(t))
 	}
 	lab.start(t)
-	lab.api = lab.detectAPI(t)
-	t.Logf("Home API: %s", lab.api)
 	lab.startPoller(t)
 	p := lab.waitPoll(t, "the good card", 4*time.Minute, func(n *h10Now) bool {
 		return home10Good(n) && (o.fresh || n.Learning == nil)
 	})
 	t.Logf("good %s after the start", p.t.Sub(lab.t0).Round(time.Second))
 	switch n := p.n; {
-	case n.Monitored != 11 || len(n.Tiles) != 11:
-		lab.errorf(t, p, "monitored %d of %d tiles, want all 11", n.Monitored, len(n.Tiles))
+	case len(n.Tiles) != 11 || slices.ContainsFunc(n.Tiles, func(x h10Tile) bool { return x.State == "off" }):
+		lab.errorf(t, p, "tiles %+v, want all 11 monitored", n.Tiles)
 	case n.Footer == "" || n.WatchingSince == 0:
 		lab.errorf(t, p, "no footer")
 	case !o.fresh && time.Since(time.UnixMilli(n.WatchingSince)) < 24*time.Hour:
@@ -1067,26 +1061,9 @@ func cmpOr(d, def time.Duration) time.Duration {
 	return def
 }
 
-// detectAPI picks the Home API path: FYISP_NETNS_HOME, else /api/home if
-// it answers v2, else /api/home2.
-func (lab *home10) detectAPI(t *testing.T) string {
-	t.Helper()
-	if p := os.Getenv(homeEnv); p != "" {
-		return p
-	}
-	for _, p := range []string{"/api/home", "/api/home2"} {
-		lab.api = p
-		if q := lab.fetchNow(lab.client); q.err == nil && q.n.V == 2 {
-			return p
-		}
-	}
-	t.Fatalf("neither /api/home nor /api/home2 answers part=now with v 2")
-	return ""
-}
-
 // fetchNow GETs part=now with c.
 func (lab *home10) fetchNow(c *http.Client) poll {
-	resp, err := c.Get("http://" + listenAddr + lab.api + "?part=now")
+	resp, err := c.Get("http://" + listenAddr + homeAPI + "?part=now")
 	if err != nil {
 		return poll{t: time.Now(), err: err}
 	}
@@ -1268,7 +1245,7 @@ func (lab *home10) logPolls(t *testing.T, what string) {
 	for _, p := range lab.polls(time.Time{}, time.Now().Add(time.Hour)) {
 		sb.WriteString("\n    " + lab.line(p))
 	}
-	t.Logf("%s (%s, tiles %s):%s", what, lab.api, strings.Join(home10TileIDs, " "), sb.String())
+	t.Logf("%s (%s, tiles %s):%s", what, homeAPI, strings.Join(home10TileIDs, " "), sb.String())
 }
 
 var home10TileIDs = func() []string {
@@ -1448,7 +1425,7 @@ func (lab *home10) checkWebGood(t *testing.T, from, to time.Time) {
 // tileDetail GETs part=tile for id.
 func (lab *home10) tileDetail(t *testing.T, id string) h10TileDetail {
 	t.Helper()
-	b := lab.get(t, lab.api+"?part=tile&id="+id)
+	b := lab.get(t, homeAPI+"?part=tile&id="+id)
 	lab.save(t, "tile-"+id+"-"+strconv.FormatInt(time.Now().Unix(), 10)+".json", b)
 	var d h10TileDetail
 	if err := json.Unmarshal(b, &d); err != nil {
@@ -1498,21 +1475,18 @@ func noteDur(s, prefix string) (time.Duration, bool) {
 }
 
 // ---------------------------------------------------------------------------
-// The parts of the v2 answer the harness reads (docs/HOME-API.md).
+// The parts of the answer the harness reads (docs/HOME-API.md).
 
 type h10Now struct {
-	V             int    `json:"v"`
 	At            int64  `json:"at"`
 	LastCheck     int64  `json:"last_check"`
 	Stale         bool   `json:"stale"`
 	WatchingSince int64  `json:"watching_since"`
 	Footer        string `json:"footer"`
 	Learning      *struct {
-		Until int64  `json:"until"`
-		Text  string `json:"text"`
+		Text string `json:"text"`
 	} `json:"learning"`
-	Monitored int `json:"monitored"`
-	Answer    struct {
+	Answer struct {
 		Key      string `json:"key"`
 		Tone     string `json:"tone"`
 		Icon     string `json:"icon"`

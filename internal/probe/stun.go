@@ -301,17 +301,11 @@ func (r *runner) probeUDP(ctx context.Context, s *series) (smps []model.Sample, 
 
 // UDPState is the live state of one UDP (STUN) target.
 type UDPState struct {
-	Target string `json:"target"`
+	Target string
 	// Region is the cloud region of the server the target's name resolves to
 	// now, from the name's CNAME: "swedencentral" for a Teams relay at
 	// ...swedencentral.cloudapp.azure.com. Empty when the CNAME names none.
-	Region string `json:"region,omitempty"`
-	// Epoch counts the address changes of the target's name since start
-	// (GeoDNS moving it to another relay); ChangedAt is the last one (zero
-	// if none). Bursts never span a change, so stats compared across bursts
-	// should stay within one epoch.
-	Epoch     uint64    `json:"epoch"`
-	ChangedAt time.Time `json:"changed_at,omitempty"`
+	Region string
 }
 
 // UDPStateSource reports the live state of the UDP targets of a running

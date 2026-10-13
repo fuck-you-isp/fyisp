@@ -57,8 +57,7 @@ const (
 	MaxAttempts    = 3              // per server: busy or refused tries another port (not on a single-port server)
 	AttemptGap     = 2 * time.Second
 	// MinMeasure..MaxMeasure is the adaptive measured time per direction,
-	// after an adaptive ramp-up of at most MaxOmit: the time cap (the
-	// owner's tests and the schedule have no byte cap).
+	// after an adaptive ramp-up of at most MaxOmit: the time cap.
 	MinMeasure = 3 * time.Second
 	MaxMeasure = 10 * time.Second
 	MaxOmit    = time.Second
@@ -660,27 +659,6 @@ func (s *Scheduler) SetMode(ctx context.Context, m Mode, extra []string) (time.T
 	return next, nil
 }
 
-// ZoneLabel names loc at t: "EDT (UTC−4)", "UTC+5:30" when it has no
-// abbreviation, "UTC".
-func ZoneLabel(loc *time.Location, t time.Time) string {
-	name, off := t.In(loc).Zone()
-	if off == 0 && (name == "UTC" || name == "GMT" || name == "") {
-		return "UTC"
-	}
-	sign := "+"
-	if off < 0 {
-		sign, off = "−", -off
-	}
-	utc := fmt.Sprintf("UTC%s%d", sign, off/3600)
-	if m := off % 3600 / 60; m != 0 {
-		utc += fmt.Sprintf(":%02d", m)
-	}
-	if name == "" || name[0] == '+' || name[0] == '-' {
-		return utc
-	}
-	return name + " (" + utc + ")"
-}
-
 // State reports the schedule, the rows and the servers.
 func (s *Scheduler) State() State {
 	s.mu.Lock()
@@ -763,9 +741,9 @@ func (s *Scheduler) rowOfLocked(t target) Row {
 	return Row{}
 }
 
-// MaskedShare is the share of the last d spent under test (each window plus
+// TestShare is the share of the last d spent under test (each window plus
 // MaskTail).
-func (s *Scheduler) MaskedShare(d time.Duration) float64 { return s.o.Windows.Share(s.o.Now(), d) }
+func (s *Scheduler) TestShare(d time.Duration) float64 { return s.o.Windows.Share(s.o.Now(), d) }
 
 // SpeedTests reads stored tests (oldest first).
 func (s *Scheduler) SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {

@@ -212,12 +212,18 @@ func checkHomeCopy(t *testing.T, name string, d *HomeNow) {
 			t.Errorf("%s: %s %q says %q", name, k, s, m)
 		}
 	}
+	monitored := 0
+	for _, x := range d.Tiles {
+		if x.State != "off" {
+			monitored++
+		}
+	}
 	for _, s := range []string{d.Answer.Headline, d.Answer.Sub} {
 		if m := relative.FindString(s); m != "" {
 			t.Errorf("%s: the card %q has a relative time %q", name, s, m)
 		}
-		if m := allN.FindStringSubmatch(s); m != nil && m[1] != fmt.Sprint(d.Monitored) {
-			t.Errorf("%s: %q, but %d apps are monitored", name, s, d.Monitored)
+		if m := allN.FindStringSubmatch(s); m != nil && m[1] != fmt.Sprint(monitored) {
+			t.Errorf("%s: %q, but %d apps are monitored", name, s, monitored)
 		}
 	}
 	if len(d.Tiles) != 11 || len(d.Path) != 3 {

@@ -9,18 +9,15 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// A direction that hits the byte cap is measured from where its rate
-// levels off, the same way whether or not the cap came before the end of
-// the ramp-up (v0.7.0 measured a cap in the ramp-up from the connections'
-// start, slow start included, which made fast lines' results bimodal).
+// A direction is measured from where its rate levels off.
 //
-// Rate methods (Extra.RateMethod; "" for a direction that wasn't capped).
+// Rate methods (Extra.RateMethod).
 const (
 	// MethodPeak90: from the first tick whose smoothed rate reaches 90% of
 	// the peak to the last byte.
 	MethodPeak90 = "peak90"
 	// MethodWhole: no tick qualified (or no per-tick counts: uploads
-	// outside Linux), so the v0.7.0 window.
+	// outside Linux), so the whole run.
 	MethodWhole = "whole"
 )
 
@@ -192,10 +189,9 @@ func rising(sm []float64, w int) bool {
 }
 
 // How patterns use a capped direction (read side; nothing stored is
-// rewritten). A lower bound (still speeding up at the cap, so the speed
-// was at least this) is a new result flagged so, or a v0.7.0 capped
-// direction capped in its ramp-up (RampMs 0: its rate included slow
-// start). It never enters Baseline. Per server and direction over
+// rewritten). A lower bound (still speeding up at the time cap, so the
+// speed was at least this) is a result flagged so. It never enters
+// Baseline. Per server and direction over
 // GuardSpan, the coverage guard (tooFast) decides how the rest go:
 //   - covered: a lower bound that already reaches normal counts as normal
 //     (score 1) in the patterns and the finding; one below normal is left
@@ -204,20 +200,10 @@ func rising(sm []float64, w int) bool {
 //     patterns and the finding (its rows are still shown and exported).
 
 // rateUse reports whether a direction (0 down, 1 up) is a lower bound.
-func rateUse(short bool, x *Extra, i int) bool {
-	switch {
-	case x.RateMethod[i] != "":
-		return x.LowerBound[i]
-	case short: // v0.7.0
-		return x.RampMs[i] == 0
-	}
-	return false
-}
+func rateUse(x *Extra, i int) bool { return x.RateMethod[i] != "" && x.LowerBound[i] }
 
-// mayBound reports whether t may have a lower bound (capped, or flagged).
-func mayBound(t *model.SpeedTest) bool {
-	return t.DownShort || t.UpShort || strings.Contains(t.Extra, "lower_bound")
-}
+// mayBound reports whether t may have a lower bound (flagged).
+func mayBound(t *model.SpeedTest) bool { return strings.Contains(t.Extra, "lower_bound") }
 
 // LowerBounds reports which of t's directions are lower bounds.
 func LowerBounds(t *model.SpeedTest) (down, up bool) {
@@ -225,11 +211,8 @@ func LowerBounds(t *model.SpeedTest) (down, up bool) {
 		return false, false
 	}
 	x := ParseExtra(t.Extra)
-	return rateUse(t.DownShort, &x, 0), rateUse(t.UpShort, &x, 1)
+	return rateUse(&x, 0), rateUse(&x, 1)
 }
-
-// baselineRate reports whether a direction's rate may enter Baseline.
-func baselineRate(short bool, x *Extra, i int) bool { return !rateUse(short, x, i) }
 
 // The coverage guard: over GuardSpan, a server's direction is "too fast to
 // measure from here" when it has lower bounds and its other (baseline)
@@ -325,21 +308,8 @@ func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
 	}
 	out := slices.Clone(ts)
 	fast := tooFast(ts, loc)
-	// A server with 100 MB rows (before v0.7.2) has no normal until
-	// BaselineMin time-capped rows exist (Baseline): its older rows'
-	// stored scores are left out too, so it doesn't look normal and then
-	// go quiet.
-	byteCapped := map[string]bool{}
-	for i := range ts {
-		if (ts[i].DownShort || ts[i].UpShort) && !timeCapped(&ts[i]) {
-			byteCapped[ts[i].Server] = true
-		}
-	}
 	for i := range out {
 		t := &out[i]
-		if byteCapped[t.Server] && !timeCapped(t) {
-			t.ScoreDown, t.ScoreUp = nil, nil
-		}
 		if fast[0][t.Server] {
 			t.ScoreDown = nil
 		}
@@ -352,9 +322,6 @@ func Censored(ts []model.SpeedTest, loc *time.Location) []model.SpeedTest {
 	}
 	return out
 }
-
-// timeCapped reports a test run under the time cap (v0.7.2 and later).
-func timeCapped(t *model.SpeedTest) bool { return strings.Contains(t.Extra, `"cap":"time"`) }
 
 // atLeastNormal is a lower bound's score: 1 (normal) when it reaches
 // normal, else none (left out).

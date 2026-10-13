@@ -82,7 +82,6 @@ type TilesSource interface {
 	Ready() bool
 	Snapshot() *tiles.Snapshot
 	Chart(id string) (*tiles.Chart, bool)
-	LateSamples() int // samples that arrived too late to count
 }
 
 // Status is what /api/status reports.
@@ -93,12 +92,6 @@ type Status struct {
 	Targets int         `json:"targets"` // targets in the profile
 	Ready   int         `json:"ready"`   // targets that have reported at least one sample (see Warmup)
 	Store   store.Stats `json:"store"`
-	// SpeedMasked is the share of the last 24 hours under speed test; nil
-	// without speed tests.
-	SpeedMasked *float64 `json:"speed_masked_share_24h,omitempty"`
-	// TilesLate counts the samples the Home tiles engine ignored because
-	// they arrived too late (TilesSource.LateSamples); nil without it.
-	TilesLate *int `json:"tiles_late_samples,omitempty"`
 }
 
 // Warmup counts distinct targets that have reported a sample (lost or not).

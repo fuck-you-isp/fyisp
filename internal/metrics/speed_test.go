@@ -15,7 +15,7 @@ func TestSpeedGolden(t *testing.T) {
 	c.Register(s)
 	f := func(v float64) *float64 { return &v }
 	s.Observe(model.SpeedTest{Region: "uk", Server: "Clouvider-London", Outcome: model.SpeedOK, DownBps: f(4.12e8), UpBps: f(4.1e7),
-		IdleGatewayMs: f(1.2), LoadedGatewayMs: f(1.4), Latency: &model.SpeedLatency{
+		Latency: &model.SpeedLatency{
 			Edge:    model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8.2, P95Ms: 9.9}, Down: &model.LoadStats{N: 60, P50Ms: 24, P95Ms: 61.5}, Up: &model.LoadStats{N: 58, Lost: 3, Loss: 0.052, P50Ms: 140, P95Ms: 1000}},
 			Gateway: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 1.2, P95Ms: 1.9}, Down: &model.LoadStats{N: 60, P50Ms: 1.4, P95Ms: 3}}}})
 	s.Observe(model.SpeedTest{Region: "uk", Server: "Clouvider-London", Outcome: model.SpeedBusy})

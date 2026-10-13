@@ -306,8 +306,8 @@ func TestHomeSpeed(t *testing.T) {
 		return decode[HomeNow](t, b).Speed
 	}
 	sp := speed()
-	if sp.Usual == nil || *sp.Usual != (HomeSpeedUsual{925, 938}) || sp.Latest.DownMbps != 930 || sp.Running != nil || !sp.CanControl {
-		t.Fatalf("%+v %+v", sp.Usual, sp.Latest)
+	if !strings.HasPrefix(sp.Latest.Text, "Your speed: about 930 Mbps down") || !strings.HasSuffix(sp.Latest.Text, "about your usual speed.") || sp.Running != nil || !sp.CanControl {
+		t.Fatalf("%+v %+v", sp, sp.Latest)
 	}
 	slow := func(at time.Time, down float64) model.SpeedTest {
 		d, u := down*1e6, 400e6
@@ -315,12 +315,12 @@ func TestHomeSpeed(t *testing.T) {
 	}
 	sc.Speed.List = append(sc.Speed.List, slow(now.Add(-time.Minute), 300))
 	now = now.Add(30 * time.Second)
-	if sp := speed(); sp.Latest.DownMbps != 930 {
+	if sp := speed(); !strings.HasPrefix(sp.Latest.Text, "Your speed: about 930 Mbps down") {
 		t.Errorf("re-read within a minute: %+v", sp.Latest)
 	}
 	sc.Speed.Run = &speedtest.Entry{ID: 7, EstFinish: now.Add(20 * time.Second)}
 	sp = speed()
-	if sp.Latest.DownMbps != 300 || sp.Running == nil || sp.Running.Entry != 7 {
+	if sp.Running == nil || sp.Running.Entry != 7 {
 		t.Errorf("a test started: %+v %+v", sp.Latest, sp.Running)
 	}
 	if want := "Your speed: about 300 Mbps down / 400 Mbps up — much slower than usual (usually about 925 / 938 Mbps)."; sp.Latest.Text != want {
@@ -329,8 +329,8 @@ func TestHomeSpeed(t *testing.T) {
 	sc.Speed.Run = nil
 	sc.Speed.List = sc.Speed.List[len(sc.Speed.List)-3:]
 	now = now.Add(time.Minute)
-	if sp := speed(); sp.Usual != nil || sp.Latest.Text != "Your speed: about 300 Mbps down / 400 Mbps up." {
-		t.Errorf("2 tests besides the latest: %+v %q", sp.Usual, sp.Latest.Text)
+	if sp := speed(); sp.Latest.Text != "Your speed: about 300 Mbps down / 400 Mbps up." {
+		t.Errorf("2 tests besides the latest: %q", sp.Latest.Text)
 	}
 	h.homeSpeedSrc = nil
 	if sp := speed(); sp.Available || sp.Latest != nil {

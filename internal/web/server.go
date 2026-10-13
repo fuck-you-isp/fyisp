@@ -260,10 +260,6 @@ func (s *server) rawStatus(ctx context.Context) Status {
 			st.Store.LastFlushErr = err.Error()
 		}
 	}
-	if s.d.Tiles != nil {
-		n := s.d.Tiles.LateSamples()
-		st.TilesLate = &n
-	}
 	if st.Targets == 0 {
 		if p := s.d.Profile(); p != nil {
 			st.Targets = len(p.Targets)

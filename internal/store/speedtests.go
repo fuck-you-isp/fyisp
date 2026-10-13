@@ -43,13 +43,13 @@ func (s *SQLite) SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error {
 		hName = sql.NullString{String: h.Name, Valid: true}
 	}
 	err := s.db.w.QueryRowContext(ctx, `INSERT INTO speedtests(start_ms, end_ms, trigger, outcome, region, server, fallback, port, attempts,
-		down_bps, up_bps, down_retrans, up_retrans, idle_gw_ms, loaded_gw_ms, latency_json, conn, handoff_asn, handoff_name, isp_asn, handoff_ms,
-		fallback_level, capped_server, down_short, up_short, down_s, up_s, bytes, score_down, score_up, extra)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		down_bps, up_bps, down_retrans, up_retrans, latency_json, conn, handoff_asn, handoff_name, isp_asn, handoff_ms,
+		fallback_level, capped_server, down_s, up_s, bytes, score_down, score_up, extra)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		t.Start.UnixMilli(), t.End.UnixMilli(), t.Trigger, t.Outcome, t.Region, t.Server, t.Fallback, t.Port, t.Attempts,
 		nullF(t.DownBps), nullF(t.UpBps), nullI(t.DownRetrans), nullI(t.UpRetrans),
-		nullF(t.IdleGatewayMs), nullF(t.LoadedGatewayMs), lat, t.Conn, hASN, hName, ispASN, hMs,
-		level, t.CappedByServer, t.DownShort, t.UpShort, t.DownSecs, t.UpSecs, t.Bytes, nullF(t.ScoreDown), nullF(t.ScoreUp), extra).Scan(&t.ID)
+		lat, t.Conn, hASN, hName, ispASN, hMs,
+		level, t.CappedByServer, t.DownSecs, t.UpSecs, t.Bytes, nullF(t.ScoreDown), nullF(t.ScoreUp), extra).Scan(&t.ID)
 	if err != nil {
 		return fmt.Errorf("store: save speed test: %w", err)
 	}
@@ -59,8 +59,8 @@ func (s *SQLite) SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error {
 // SpeedTests returns the tests that started in [from, to], oldest first.
 func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 	rows, err := s.db.r.QueryContext(ctx, `SELECT id, start_ms, end_ms, trigger, outcome, region, server, fallback, port, attempts,
-		down_bps, up_bps, down_retrans, up_retrans, idle_gw_ms, loaded_gw_ms, latency_json, conn, handoff_asn, handoff_name, isp_asn, handoff_ms,
-		fallback_level, capped_server, down_short, up_short, down_s, up_s, bytes, score_down, score_up, coalesce(extra, '')
+		down_bps, up_bps, down_retrans, up_retrans, latency_json, conn, handoff_asn, handoff_name, isp_asn, handoff_ms,
+		fallback_level, capped_server, down_s, up_s, bytes, score_down, score_up, coalesce(extra, '')
 		FROM speedtests WHERE start_ms >= ? AND start_ms <= ? ORDER BY start_ms, id`, from.UnixMilli(), to.UnixMilli())
 	if err != nil {
 		return nil, err
@@ -70,12 +70,12 @@ func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.Sp
 	for rows.Next() {
 		var t model.SpeedTest
 		var start, end int64
-		var down, up, igw, lgw, sd, su sql.NullFloat64
+		var down, up, sd, su sql.NullFloat64
 		var dr, ur, hASN, ispASN, hMs sql.NullInt64
 		var lat, hName sql.NullString
 		if err := rows.Scan(&t.ID, &start, &end, &t.Trigger, &t.Outcome, &t.Region, &t.Server, &t.Fallback, &t.Port, &t.Attempts,
-			&down, &up, &dr, &ur, &igw, &lgw, &lat, &t.Conn, &hASN, &hName, &ispASN, &hMs,
-			&t.FallbackLevel, &t.CappedByServer, &t.DownShort, &t.UpShort, &t.DownSecs, &t.UpSecs, &t.Bytes, &sd, &su, &t.Extra); err != nil {
+			&down, &up, &dr, &ur, &lat, &t.Conn, &hASN, &hName, &ispASN, &hMs,
+			&t.FallbackLevel, &t.CappedByServer, &t.DownSecs, &t.UpSecs, &t.Bytes, &sd, &su, &t.Extra); err != nil {
 			return nil, err
 		}
 		if lat.Valid {
@@ -90,7 +90,6 @@ func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.Sp
 		t.Start, t.End = msTime(start), msTime(end)
 		t.DownBps, t.UpBps = ptrF(down), ptrF(up)
 		t.DownRetrans, t.UpRetrans = ptrI(dr), ptrI(ur)
-		t.IdleGatewayMs, t.LoadedGatewayMs = ptrF(igw), ptrF(lgw)
 		t.ScoreDown, t.ScoreUp = ptrF(sd), ptrF(su)
 		out = append(out, t)
 	}

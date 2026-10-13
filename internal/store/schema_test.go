@@ -76,7 +76,7 @@ func countRows(t *testing.T, path, table string) int {
 	return n
 }
 
-// wantSchema is every table and index of schema v7: only what the code
+// wantSchema is every table and index of schema v8: only what the code
 // reads and writes.
 var wantSchema = []string{
 	"index incidents_start", "index route_changes_at", "index speedtests_start",
@@ -84,7 +84,7 @@ var wantSchema = []string{
 	"table samples", "table series", "table speedtests", "table summary_1h",
 }
 
-// TestFreshSchema: a new file gets schema v7 in one go: exactly the
+// TestFreshSchema: a new file gets schema v8 in one go: exactly the
 // objects in wantSchema, no free pages, the creation stamp.
 func TestFreshSchema(t *testing.T) {
 	dir := t.TempDir()
@@ -93,7 +93,7 @@ func TestFreshSchema(t *testing.T) {
 	if got := schemaObjects(t, s.db.r); !slices.Equal(got, wantSchema) {
 		t.Errorf("schema objects\n%q\nwant\n%q", got, wantSchema)
 	}
-	if v := pragmaInt(t, s.db.w, "user_version"); v != 7 || SchemaVersion() != 7 {
+	if v := pragmaInt(t, s.db.w, "user_version"); v != 8 || SchemaVersion() != 8 {
 		t.Errorf("user_version %d, SchemaVersion %d", v, SchemaVersion())
 	}
 	if free := pragmaInt(t, s.db.w, "freelist_count"); free != 0 {

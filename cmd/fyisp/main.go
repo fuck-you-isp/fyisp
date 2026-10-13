@@ -346,8 +346,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		CustomProfile: c.configPath != "",
 		Store:         st,
 		Status: func() web.Status {
-			ms := speed.MaskedShare(24 * time.Hour)
-			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready(), SpeedMasked: &ms}
+			return web.Status{Version: version, Started: started, Caps: caps, Targets: len(warm.Only), Ready: warm.Ready()}
 		},
 		Metrics:   mc.Handler(),
 		Verdict:   eng,
@@ -385,7 +384,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	localURL := "http://" + displayAddr(localAddr) + "/"
 	setLockURL(st, localURL)
 	log.Info("fyisp started", "version", version, "data_dir", dir, "targets", len(prof.Targets),
-		"icmp", caps.ICMP, "tcp", caps.TCP, "https", caps.HTTPS, "retention", c.retention.String(), "url", localURL)
+		"icmp", caps.ICMP, "retention", c.retention.String(), "url", localURL)
 	if caps.ICMP == "unavailable" && caps.ICMPHint != "" {
 		log.Warn("ICMP probes disabled", "hint", caps.ICMPHint)
 	}

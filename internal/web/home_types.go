@@ -1,20 +1,18 @@
 package web
 
-// The JSON of /api/home (docs/HOME-API.md, v2): the Home's answer
+// The JSON of /api/home (docs/HOME-API.md): the Home's answer
 // (part=now) and a tile's panel (part=tile). Every sentence is written by
 // home_copy.go; the client lays them out and formats only bar times,
 // scale ticks and "Checked N ago". Times are Unix milliseconds.
 
 // HomeNow is part=now.
 type HomeNow struct {
-	V             int           `json:"v"` // 2
 	At            int64         `json:"at"`
 	LastCheck     int64         `json:"last_check"` // the newest measured sample; 0: none yet
 	Stale         bool          `json:"stale"`      // last_check is staleAfter (2 min) or more old
 	WatchingSince int64         `json:"watching_since"`
 	Footer        string        `json:"footer"`
 	Learning      *HomeLearning `json:"learning"`
-	Monitored     int           `json:"monitored"` // tiles not off
 	Answer        HomeAnswer    `json:"answer"`
 	Path          []HomeHop     `json:"path"`      // always 3: router, provider, internet
 	PathHint      string        `json:"path_hint"` // "" with the Wi-Fi wording
@@ -25,8 +23,7 @@ type HomeNow struct {
 
 // HomeLearning is the first day's note.
 type HomeLearning struct {
-	Until int64  `json:"until"`
-	Text  string `json:"text"`
+	Text string `json:"text"`
 }
 
 // HomeAnswer is the answer card. Key changes when the card's meaning
@@ -85,7 +82,6 @@ type HomeSpeed struct {
 	Available bool              `json:"available"`
 	Latest    *HomeSpeedResult  `json:"latest"`
 	EmptyText string            `json:"empty_text"`
-	Usual     *HomeSpeedUsual   `json:"usual"` // the median of the OK tests of 7 days (3 or more), the latest left out
 	Running   *HomeSpeedRunning `json:"running"`
 	// CanControl: this request may start a test (no admin token needed).
 	CanControl bool `json:"can_control"`
@@ -93,23 +89,20 @@ type HomeSpeed struct {
 
 // HomeSpeedResult is the latest speed test.
 type HomeSpeedResult struct {
-	At       int64   `json:"at"`
-	DownMbps float64 `json:"down_mbps"`
-	UpMbps   float64 `json:"up_mbps"`
-	Text     string  `json:"text"`
-	Note     string  `json:"note"`
+	At   int64  `json:"at"`
+	Text string `json:"text"`
+	Note string `json:"note"`
 }
 
-// HomeSpeedUsual is the usual speed.
+// HomeSpeedUsual is the usual speed: the median of the OK tests of 7 days
+// (3 or more), the latest left out.
 type HomeSpeedUsual struct {
-	DownMbps float64 `json:"down_mbps"`
-	UpMbps   float64 `json:"up_mbps"`
+	DownMbps, UpMbps float64
 }
 
 // HomeSpeedRunning is a test running now (from any source).
 type HomeSpeedRunning struct {
-	Entry       uint64 `json:"entry"`
-	ExpectedEnd int64  `json:"expected_end"`
+	Entry uint64 `json:"entry"`
 }
 
 // HomeProblems are the problems of the last 7 days.
@@ -135,7 +128,6 @@ type HomeProblem struct {
 // HomeTileDetail is part=tile: the header, rendered live, and the chart
 // of the last 24 hours (cached per 5-minute bucket).
 type HomeTileDetail struct {
-	V        int          `json:"v"`
 	At       int64        `json:"at"`
 	ID       string       `json:"id"`
 	State    string       `json:"state"`

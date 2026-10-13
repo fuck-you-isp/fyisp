@@ -74,7 +74,7 @@ func byKey(ss []model.Sample) map[model.SeriesKey][]model.Sample {
 }
 
 func icmpAvailable(t *testing.T) bool {
-	c := Detect(context.Background())
+	c := Detect()
 	t.Logf("caps: %+v", c)
 	return c.ICMP != ICMPUnavailable
 }

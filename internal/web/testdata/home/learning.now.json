@@ -1,12 +1,10 @@
 {
-  "v": 2,
   "at": 1791556200000,
   "last_check": 1791556196000,
   "stale": false,
   "watching_since": 1791553800000,
   "footer": "Watching your connection since today 9:50 am",
-  "learning": {"until": 1791640200000, "text": "fyisp is still learning what’s usual for your connection. This takes about a day. Until then it only flags big problems, so small slowdowns won’t show yet."},
-  "monitored": 11,
+  "learning": {"text": "fyisp is still learning what’s usual for your connection. This takes about a day. Until then it only flags big problems, so small slowdowns won’t show yet."},
   "answer": {
     "key": "good:ryvwbm",
     "tone": "ok",
@@ -446,7 +444,6 @@
     "available": true,
     "latest": null,
     "empty_text": "No speed test yet. The first one runs within the hour.",
-    "usual": null,
     "running": null,
     "can_control": true
   },

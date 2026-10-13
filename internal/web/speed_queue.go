@@ -52,13 +52,9 @@ type speedJobJSON struct {
 	Provider string   `json:"provider"` //
 	Status   string   `json:"status"`   // waiting | testing | ok | busy | unreachable | failed | cancelled | skipped
 	Test     *int64   `json:"test"`     // the stored test's id
-	// DownBps and UpBps: the result (ok only); DownShort and UpShort: the
-	// direction hit the byte cap (show "≥ X").
-	DownBps        *float64 `json:"down_bps"`
-	UpBps          *float64 `json:"up_bps"`
-	DownShort      bool     `json:"down_short"`
-	UpShort        bool     `json:"up_short"`
-	CappedByBudget bool     `json:"capped_by_budget"`
+	// DownBps and UpBps: the result (ok only).
+	DownBps *float64 `json:"down_bps"`
+	UpBps   *float64 `json:"up_bps"`
 }
 
 // jobStatus is a sweep's job i before its stored test is looked up:
@@ -107,7 +103,7 @@ func (s *server) speedResults(ctx context.Context, j *speedEntryJSON, e speedtes
 			t := ts[k]
 			r.Status, r.Test = t.Outcome, &t.ID
 			if t.Outcome == model.SpeedOK {
-				r.DownBps, r.UpBps, r.DownShort, r.UpShort, r.CappedByBudget = t.DownBps, t.UpBps, t.DownShort, t.UpShort, t.DownShort || t.UpShort
+				r.DownBps, r.UpBps = t.DownBps, t.UpBps
 			}
 		}
 		j.Results[i] = r

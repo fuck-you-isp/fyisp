@@ -120,7 +120,6 @@ func (n *fakeNet) result(at time.Time, reg speedtest.Region, chain []speedtest.S
 	t.DownSecs, t.UpSecs = 3+n.float()*2, 3+n.float()*2
 	t.Bytes = int64((down*t.DownSecs + up*t.UpSecs) / 8 * 1.2)
 	t.CappedByServer = sv.CapacityMbps > 0 && down >= 0.9*sv.CapacityMbps*1e6
-	t.IdleGatewayMs, t.LoadedGatewayMs = pf(1+n.float()), pf(1.5+n.float())
 	ls := func(p50, spread, loss float64) *model.LoadStats {
 		return &model.LoadStats{N: 60, Lost: int(loss * 60), Loss: math.Round(loss*1000) / 1000, P50Ms: math.Round(p50*10) / 10, P95Ms: math.Round((p50+spread)*10) / 10}
 	}

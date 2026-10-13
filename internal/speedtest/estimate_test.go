@@ -216,31 +216,26 @@ func TestStillRising(t *testing.T) {
 }
 
 // TestEstimateRun: one coarse timing check against the fake server. A
-// download with a slow start capped after it levels off is measured from
-// the plateau (faster than the whole run's average); a capped upload is
-// measured from what the server acknowledged, never past the cap (on
-// loopback the send buffers take it all in the first tick).
+// download with a slow start is measured from the plateau (faster than
+// the whole run's average); an upload is measured too (on loopback the
+// send buffers take much of it in the first tick).
 func TestEstimateRun(t *testing.T) {
 	f := newFakeServer(t, "ramp") // full rate after 500 ms
-	cfg := quick(f.addr(), Download)
-	cfg.Duration, cfg.MaxBytes = 5*time.Second, 24<<20
 	t0 := time.Now()
-	r, err := Run(context.Background(), cfg)
+	r, err := Run(context.Background(), quick(f.addr(), Download))
 	if err != nil {
 		t.Fatal(err)
 	}
 	whole := float64(r.TotalBytes) * 8 / time.Since(t0).Seconds()
-	if !r.CappedByBytes || r.RateMethod != MethodPeak90 || r.BitsPerSecond() < 1.1*whole || r.Ramp < 200*time.Millisecond {
+	if r.RateMethod != MethodPeak90 || r.BitsPerSecond() < 1.1*whole || r.Ramp < 200*time.Millisecond {
 		t.Errorf("download: %+v: %.0f vs the whole run's %.0f", r, r.BitsPerSecond(), whole)
 	}
 	f2 := newFakeServer(t, "")
-	cfg = quick(f2.addr(), Upload)
-	cfg.Duration, cfg.MaxBytes = 5*time.Second, 16<<20
-	r, err = Run(context.Background(), cfg)
+	r, err = Run(context.Background(), quick(f2.addr(), Upload))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !r.CappedByBytes || r.RateMethod == "" || r.Bytes > cfg.MaxBytes {
+	if r.RateMethod == "" || r.Bytes <= 0 {
 		t.Errorf("upload: %+v", r)
 	}
 }
@@ -272,9 +267,9 @@ func capFixtureEve(c *Catalog, days int, lb func(h int, r *rand.Rand) bool, lbX,
 				case lb(h, r):
 					rate, isLB = rate*lbX, true
 				}
-				x := `{"cap":"time","rate_method":["peak90",""]}`
+				x := `{"rate_method":["peak90",""]}`
 				if isLB {
-					x = `{"cap":"time","rate_method":["peak90",""],"lower_bound":[true,false]}`
+					x = `{"rate_method":["peak90",""],"lower_bound":[true,false]}`
 				}
 				down, up := rate, 40e6
 				ts = append(ts, model.SpeedTest{Start: at, Trigger: "schedule", Outcome: model.SpeedOK, Region: reg.ID, Server: reg.Chain(c, at, 0)[0].Server.ID,
@@ -372,7 +367,7 @@ func TestFastLineGuard(t *testing.T) {
 	ts = capFixture(c, 14, func(int, *rand.Rand) bool { return false }, 0.85, 0.6)
 	for i := range ts {
 		if ts[i].Region == "r3" && !evening(ts[i].Start.Hour()) {
-			ts[i].Extra = `{"cap":"time","rate_method":["peak90",""],"lower_bound":[true,false]}`
+			ts[i].Extra = `{"rate_method":["peak90",""],"lower_bound":[true,false]}`
 		}
 	}
 	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseISP || !strings.Contains(f.Evidence, "2 of 8 servers were too fast to measure from here and are left out.") {
@@ -405,110 +400,5 @@ func TestGuardBoundaries(t *testing.T) {
 	}
 	if !covered(within(50)) || covered(within(51)) {
 		t.Error("50% vs 51% within 6 hours")
-	}
-}
-
-// TestOldCappedRows: v0.7.0's directions capped in the ramp-up (short,
-// no rate method, ramp_ms 0) are lower bounds: out of the baseline, at
-// least normal in the medians and the finding. The other old rows count
-// as they are, capped after the ramp-up too.
-func TestOldCappedRows(t *testing.T) {
-	c := findingCatalog(t)
-	ts := synth(c, 9, func(string, int) float64 { return 1 }, "wired") // new, uncapped, flat
-	for i := range ts {
-		ts[i].Extra = `{"cap":"time"}`
-	}
-	old := synth(c, 9, func(_ string, h int) float64 {
-		if evening(h) {
-			return 0.5 // slow start in the window, not the line
-		}
-		return 1
-	}, "wired")
-	for i := range old {
-		old[i].Start = old[i].Start.Add(-10 * time.Minute)
-		old[i].DownShort = true
-		old[i].Extra = `{"ramp_ms":[0,0]}`
-	}
-	mixed := append(append([]model.SpeedTest{}, old...), ts...)
-	if f := FindFinding(FindingInput{Tests: mixed, Catalog: c}); f.Case != CaseNothing {
-		t.Errorf("old capped rows count: %s: %s", f.Case, f.Text)
-	}
-	for h, m := range hourMedians(Censored(mixed, nil), nil, false) {
-		if m != 1 {
-			t.Errorf("hour %d: %.2f", h, m)
-		}
-	}
-	end := ts[len(ts)-1].Start.Add(time.Hour)
-	if _, _, ok := Baseline(old, "A1", end); ok {
-		t.Error("a baseline from v0.7.0 capped rows")
-	}
-	for i := range old {
-		old[i].Extra = `{"ramp_ms":[700,500]}` // capped after the ramp-up: valid, but 100 MB
-	}
-	if _, _, ok := Baseline(old, "A1", end); ok {
-		t.Error("a normal from 100 MB rows alone (v0.7.2 waits for time-capped ones)")
-	}
-	if d, _ := LowerBounds(&old[0]); d {
-		t.Error("an old row capped after the ramp-up is a lower bound")
-	}
-}
-
-// TestBaselineAfterTimeCap: a server with v0.7.x rows that stopped at
-// 100 MB waits for BaselineMin time-capped rows before it has a normal,
-// and leaves the old capped ones out; a server without any keeps using its
-// old rows.
-func TestBaselineAfterTimeCap(t *testing.T) {
-	at := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
-	row := func(i int, bps float64, short bool, x string) model.SpeedTest {
-		return model.SpeedTest{Server: "S", Trigger: "schedule", Outcome: model.SpeedOK, FallbackLevel: FallbackNone,
-			Start: at.Add(-time.Duration(i+1) * time.Hour), DownBps: &bps, DownShort: short, Extra: x}
-	}
-	var ts []model.SpeedTest
-	for i := range 30 {
-		ts = append(ts, row(i, 300e6, true, `{"ramp_ms":[500,500],"rate_method":["peak90",""]}`)) // old, capped, valid
-	}
-	for i := range BaselineMin - 1 {
-		ts = append(ts, row(40+i, 900e6, false, `{"cap":"time","rate_method":["peak90","peak90"]}`))
-	}
-	if _, _, ok := Baseline(ts, "S", at); ok {
-		t.Error("a normal before BaselineMin time-capped rows")
-	}
-	ts = append(ts, row(70, 900e6, false, `{"cap":"time","rate_method":["peak90","peak90"]}`))
-	if d, _, ok := Baseline(ts, "S", at); !ok || d != 900e6 {
-		t.Errorf("normal %v %v: the old capped rows count", d, ok)
-	}
-	var old []model.SpeedTest // uncapped old rows: a slow line keeps its normal
-	for i := range BaselineMin {
-		old = append(old, row(i, 50e6, false, `{"ramp_ms":[500,500]}`))
-	}
-	if d, _, ok := Baseline(old, "S", at); !ok || d != 50e6 {
-		t.Errorf("old uncapped: %v %v", d, ok)
-	}
-}
-
-// TestOldScoresAfterUpgrade: on a server with 100 MB rows, the stored
-// scores of its rows from before v0.7.2 are left out of the patterns and
-// the rows' stats, as Baseline leaves the rows out; a server without
-// such rows keeps them.
-func TestOldScoresAfterUpgrade(t *testing.T) {
-	at := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
-	sc := 0.999
-	row := func(sv string, i int, short bool, x string) model.SpeedTest {
-		d := 900e6
-		return model.SpeedTest{Server: sv, Region: "r", Trigger: "schedule", Outcome: model.SpeedOK, FallbackLevel: FallbackNone,
-			Start: at.Add(-time.Duration(i) * time.Hour), DownBps: &d, DownShort: short, ScoreDown: &sc, Extra: x}
-	}
-	var fast, slow []model.SpeedTest
-	for i := range 48 {
-		fast = append(fast, row("F", i, i%2 == 0, `{"ramp_ms":[500,500],"rate_method":["peak90",""]}`))
-		slow = append(slow, row("S", i, false, `{"ramp_ms":[500,500]}`))
-	}
-	fast = append(fast, row("F", 0, false, `{"cap":"time","rate_method":["peak90","peak90"]}`)) // unscored yet
-	fast[len(fast)-1].ScoreDown = nil
-	if st := Summarize(fast, nil); st.Score != nil {
-		t.Errorf("old scores on a byte-capped server: %v", *st.Score)
-	}
-	if st := Summarize(slow, nil); st.Score == nil {
-		t.Error("an uncapped server's old scores left out")
 	}
 }

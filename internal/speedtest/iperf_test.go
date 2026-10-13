@@ -10,7 +10,6 @@ import (
 	"math"
 	"net"
 	"net/netip"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -111,7 +110,7 @@ func startFake(t *testing.T, f *fakeServer) *fakeServer {
 const (
 	// maxCatchUp bounds the ticks one download write makes up (100 ms:
 	// one tick of the client's), and maxCatchUpBytes its bytes (at a high
-	// rate, a large catch-up burst overshoots a byte cap).
+	// rate, a large catch-up burst distorts the ticks).
 	maxCatchUp      = 10
 	maxCatchUpBytes = 640 << 10
 	// upRate is the bytes per second the fake reads per upload stream
@@ -352,9 +351,6 @@ func (f *fakeServer) session(c net.Conn) {
 		wg.Wait()
 		return
 	}
-	if f.mode == "slowend" { // a far server: TEST_END takes a while to act on
-		time.Sleep(40 * time.Millisecond)
-	}
 	if err != nil || st[0] != stateTestEnd {
 		if f.mode != "stall" {
 			f.fail(errors.New("no TEST_END"))
@@ -398,10 +394,6 @@ func (f *fakeServer) session(c net.Conn) {
 		f.fail(errors.New("no IPERF_DONE"))
 	}
 }
-
-// setupOverhead bounds a run's bytes besides its data: the control
-// connection's and the stream cookies (counted in WireBytes).
-const setupOverhead = 4096
 
 func quick(addr string, d Direction) Config {
 	return Config{Addr: addr, Direction: d, Streams: 3, Duration: 1500 * time.Millisecond, Omit: 500 * time.Millisecond}
@@ -537,7 +529,7 @@ func TestCookie(t *testing.T) {
 	var a, b [cookieSize]byte
 	newCookie(&a)
 	newCookie(&b)
-	if a == b || a[cookieSize-1] != 0 {
+	if a == b || a[cookieSize-1] != 0 || !bytes.HasPrefix(a[:], []byte(cookiePrefix)) {
 		t.Fatalf("%q %q", a, b)
 	}
 	for _, ch := range a[:cookieSize-1] {
@@ -575,35 +567,6 @@ func TestAdaptive(t *testing.T) {
 	if _, err := Run(context.Background(), quick(addr, Download)); !errors.Is(err, ErrRefused) || errors.Is(err, ErrUnreachable) {
 		t.Errorf("closed port: %v", err)
 	}
-}
-
-// TestByteCap: a direction stops at MaxBytes, ramp-up included, and says
-// so; the cookie carries the fyisp prefix.
-func TestByteCap(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		f := newPipeServer(t, "")
-		cfg := f.quick(Download)
-		cfg.MaxBytes = 2 << 20 // 3 streams at ~6.5 MB/s each: ~100 ms
-		t0 := time.Now()
-		r, err := Run(context.Background(), cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// It stops early enough that what keeps arriving stays within the cap.
-		if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes/2 || r.WireBytes > cfg.MaxBytes+setupOverhead || time.Since(t0) > 200*time.Millisecond || r.Elapsed <= 0 {
-			t.Errorf("capped %v, %d bytes in all, %d measured over %v, run %v", r.CappedByBytes, r.TotalBytes, r.Bytes, r.Elapsed, time.Since(t0))
-		}
-		f.mu.Lock()
-		if !strings.HasPrefix(f.cookies[0], cookiePrefix) {
-			t.Errorf("cookie %q", f.cookies[0])
-		}
-		f.mu.Unlock()
-		// A cap above what the test moves changes nothing.
-		cfg.MaxBytes = 1 << 40
-		if r, _ := Run(context.Background(), cfg); r.CappedByBytes {
-			t.Error("capped without reaching the cap")
-		}
-	})
 }
 
 // TestAdaptiveRamp: the ramp-up's end is decided after the fact, where
@@ -735,33 +698,6 @@ func TestAddressChecks(t *testing.T) {
 	}
 }
 
-// TestByteCapInFlight: at a high rate with a server that keeps sending for
-// a while after TEST_END (a far one), a download stops early enough that
-// everything that arrives, read or still buffered, stays within the cap.
-func TestByteCapInFlight(t *testing.T) {
-	f := newFakeServer(t, "slowend")
-	f.rate = 512 << 10 // 3 streams × 512 KiB per 10 ms: ~150 MB/s
-	cfg := quick(f.addr(), Download)
-	cfg.MaxBytes = 40 << 20
-	r, err := Run(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Within the cap as a rule; a starved CPU (the race detector on a busy
-	// machine) can misjudge what's in flight, so the hard bound is the
-	// backstop's.
-	if !r.CappedByBytes || r.WireBytes > Backstop(cfg.MaxBytes)+setupOverhead || r.WireBytes < cfg.MaxBytes/3 {
-		t.Errorf("capped %v: %d bytes arrived (cap %d), %d measured", r.CappedByBytes, r.WireBytes, cfg.MaxBytes, r.Bytes)
-	}
-	// Uploads never write past the cap, whatever the streams' interleaving.
-	f2 := newFakeServer(t, "")
-	cfg = quick(f2.addr(), Upload)
-	cfg.MaxBytes = 3 << 20
-	if r, err := Run(context.Background(), cfg); err != nil || !r.CappedByBytes || r.WireBytes > cfg.MaxBytes+setupOverhead {
-		t.Errorf("upload: %v capped %v, %d written (cap %d)", err, r.CappedByBytes, r.WireBytes, cfg.MaxBytes)
-	}
-}
-
 // TestUploadUnacked: without TCP_INFO acked bytes (not Linux), an upload
 // counts what the server received, never more than we wrote.
 func TestUploadUnacked(t *testing.T) {
@@ -866,25 +802,7 @@ func TestBytesHonest(t *testing.T) {
 	})
 }
 
-// TestBackstop: a server that ignores TEST_END and keeps sending is cut
-// with an RST once the bytes received reach Backstop, at once rather than
-// after the control connection's timeout; a complete window still counts.
-func TestBackstop(t *testing.T) {
-	f := newFakeServer(t, "deaf")
-	f.rate = 256 << 10
-	cfg := quick(f.addr(), Download)
-	cfg.MaxBytes = 1 << 20 // small, so the receive buffers alone pass the backstop
-	t0 := time.Now()
-	r, err := Run(context.Background(), cfg)
-	if err != nil || !r.Overrun || !r.CappedByBytes || r.Bytes <= 0 || time.Since(t0) > stepTimeout/2 {
-		t.Fatalf("%v after %v: %+v", err, time.Since(t0), r)
-	}
-	if lim := Backstop(cfg.MaxBytes); r.WireBytes < lim || r.WireBytes > lim+2<<20 {
-		t.Errorf("wire %d, backstop %d", r.WireBytes, lim)
-	}
-}
-
-// TestTimeBackstop: without a byte cap, a server that ignores TEST_END is
+// TestTimeBackstop: a server that ignores TEST_END is
 // cut with an RST at the time backstop, not left to the control
 // connection's timeout; the complete window still counts.
 func TestTimeBackstop(t *testing.T) {
@@ -893,14 +811,13 @@ func TestTimeBackstop(t *testing.T) {
 	cfg.Backstop = 2500 * time.Millisecond // the window ends at 2 s
 	t0 := time.Now()
 	r, err := Run(context.Background(), cfg)
-	if el := time.Since(t0); err != nil || !r.Overrun || r.CappedByBytes || r.Elapsed <= 0 || el > stepTimeout || el < cfg.Backstop {
+	if el := time.Since(t0); err != nil || !r.Overrun || r.Elapsed <= 0 || el > stepTimeout || el < cfg.Backstop {
 		t.Fatalf("%v after %v: %+v", err, el, r)
 	}
 }
 
-// TestTimeCapped: an uncapped direction measured for its whole Duration
-// is a lower bound when still rising (the same rule as a byte-capped
-// one), a valid rate when level.
+// TestTimeCapped: a direction measured for its whole Duration is a lower
+// bound when still rising, a valid rate when level.
 func TestTimeCapped(t *testing.T) {
 	for _, c := range []struct {
 		mode string
@@ -909,7 +826,7 @@ func TestTimeCapped(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			f := newPipeServer(t, c.mode)
 			r, err := Run(context.Background(), f.quick(Download))
-			if err != nil || r.CappedByBytes || r.RateMethod != MethodPeak90 || r.LowerBound != c.lb {
+			if err != nil || r.RateMethod != MethodPeak90 || r.LowerBound != c.lb {
 				t.Errorf("%q: %v %+v", c.mode, err, r)
 			}
 		})

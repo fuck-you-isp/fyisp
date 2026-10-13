@@ -110,11 +110,10 @@ func (s *Speed) Tests(_ context.Context, from, to time.Time) ([]model.SpeedTest,
 }
 func (s *Speed) Running() *speedtest.Entry { return s.Run }
 
-// Ready, Snapshot, Chart, Problems and LateSamples make Scenario a
+// Ready, Snapshot and Chart make Scenario a
 // web.TilesSource.
 func (v *Scenario) Ready() bool               { return !v.NotReady }
 func (v *Scenario) Snapshot() *tiles.Snapshot { return v.Snap }
-func (v *Scenario) LateSamples() int          { return 0 }
 func (v *Scenario) Chart(id string) (*tiles.Chart, bool) {
 	c, ok := v.Charts[id]
 	return c, ok
@@ -914,4 +913,3 @@ func (l *Live) Current() *Scenario {
 func (l *Live) Ready() bool                          { return l.Current().Ready() }
 func (l *Live) Snapshot() *tiles.Snapshot            { return l.Current().Snap }
 func (l *Live) Chart(id string) (*tiles.Chart, bool) { return l.Current().Chart(id) }
-func (l *Live) LateSamples() int                     { return 0 }

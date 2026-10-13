@@ -64,7 +64,7 @@ func New(o Options) Runner {
 		o.UserAgent = defaultUserAgent
 	}
 	silenceHTTP2Noise()
-	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep, dialTCP: dialTCP, lookups: make(chan struct{}, maxLookups), udpTimeout: udpTimeout}
+	return &runner{o: o, caps: Detect(), sleep: realSleep, dialTCP: dialTCP, lookups: make(chan struct{}, maxLookups), udpTimeout: udpTimeout}
 }
 
 type runner struct {
@@ -94,12 +94,9 @@ func (r *runner) UDPState() []UDPState {
 	}
 	out := make([]UDPState, 0, len(*ts))
 	for _, t := range *ts {
-		st := UDPState{Target: t.name, Epoch: t.host.epoch.Load()}
+		st := UDPState{Target: t.name}
 		if reg := t.host.region.Load(); reg != nil {
 			st.Region = *reg
-		}
-		if ns := t.host.changedAt.Load(); ns != 0 {
-			st.ChangedAt = time.Unix(0, ns).UTC()
 		}
 		out = append(out, st)
 	}
@@ -520,9 +517,6 @@ type hostState struct {
 	special  string // model.HostGateway or model.HostEdge: resolved per probe from Options.Path
 	cur      atomic.Pointer[resolution]
 	onChange []func() // called when the address changes
-	// epoch counts address changes, changedAt is the last one (unix ns).
-	epoch     atomic.Uint64
-	changedAt atomic.Int64
 	// wantCNAME: a UDP target probes this host; region is the relay region
 	// from its CNAME (see cnameRegion), refreshed with every lookup.
 	wantCNAME bool
@@ -631,8 +625,6 @@ func (r *runner) resolve(ctx context.Context, hs *hostState) {
 	hs.cur.Store(next)
 	if prev != nil && prev.ip.IsValid() && next.ip != prev.ip {
 		r.o.Log.Debug("address changed", "host", hs.name, "from", prev.ip, "to", next.ip)
-		hs.epoch.Add(1)
-		hs.changedAt.Store(time.Now().UnixNano())
 		for _, f := range hs.onChange {
 			f()
 		}

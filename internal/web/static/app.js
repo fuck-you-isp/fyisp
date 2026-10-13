@@ -3,11 +3,11 @@
 // @ts-check
 
 /** @typedef {{id:string,title:string}} Group */
-/** @typedef {{name:string,group:string,kinds:string[],interval_ms:number,layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[],home?:string}} TargetInfo */
+/** @typedef {{name:string,group:string,kinds:string[],layer?:string,trace?:boolean,provider?:string,provider_title?:string,provider_kind?:string,city?:string,country?:string,geo?:string,tags?:string[],home?:string}} TargetInfo */
 /** @typedef {{target:string,kind:string,ratio:number,now_ms:number,normal_ms:number}} SlowItem */
 /** @typedef {{kind:string,since?:string,summary?:string,targets?:string[],evidence?:Object<string,number>,slow?:SlowItem[],quiet?:boolean}} Verdict */
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
-/** @typedef {{target:string,kind:string,interval:number,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
+/** @typedef {{target:string,kind:string,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
 
 import {
@@ -3486,12 +3486,8 @@ function renderNotices() {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));
   }
   const caps = status.caps || {};
-  const missing = [];
-  if (caps.icmp === 'unavailable') missing.push('ICMP');
-  if (caps.tcp === false) missing.push('TCP');
-  if (caps.https === false) missing.push('HTTPS');
-  if (missing.length) {
-    out.push(h('div', { class: 'notice' }, h('b', { text: `${missing.join(', ')} unavailable` }),
+  if (caps.icmp === 'unavailable') {
+    out.push(h('div', { class: 'notice' }, h('b', { text: 'ICMP unavailable' }),
       ` on this machine; those probes are not running.${caps.icmp_hint ? ' ' + caps.icmp_hint : ''}`));
   }
   const st = status.store || {};

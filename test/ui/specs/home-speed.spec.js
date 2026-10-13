@@ -121,7 +121,7 @@ test('a test started elsewhere shows and disables the button', async ({ page }) 
 
 test('no speed section when speed tests are off', async ({ page }) => {
   const d = fx('now-good');
-  d.speed = { available: false, latest: null, empty_text: '', usual: null, running: null, can_control: true };
+  d.speed = { available: false, latest: null, empty_text: '', running: null, can_control: true };
   await serveHome(page, d);
   await openHome(page);
   await expect(page.locator('.hp-speed')).toBeHidden();

@@ -12,19 +12,17 @@ import (
 )
 
 // TestQueuedDeafServer: a queued test through the scheduler against a
-// server that ignores TEST_END and keeps sending has no byte cap: the time
-// backstop cuts each direction and the window still counts.
+// server that ignores TEST_END and keeps sending: the time backstop cuts
+// each direction and the window still counts.
 func TestQueuedDeafServer(t *testing.T) {
 	f := newFakeServer(t, "deaf")
 	host, port, _ := net.SplitHostPort(f.addr())
 	p, _ := strconv.Atoi(port)
 	sv := Server{ID: "Local", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: true}
 	st := &MemStore{}
-	var caps []int64
 	s := New(Options{Catalog: &Catalog{Servers: []Server{sv}, byID: map[string]int{"Local": 0}}, Store: st, Log: slog.New(slog.DiscardHandler),
 		Fake: &Fake{
 			Run: func(ctx context.Context, c Config) (Result, error) {
-				caps = append(caps, c.MaxBytes)
 				c.Duration, c.MinDuration, c.Omit, c.Backstop = time.Second, 0, 300*time.Millisecond, 2*time.Second // short, for the test
 				return Run(ctx, c)
 			},
@@ -47,8 +45,8 @@ func TestQueuedDeafServer(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	ts, _ := st.SpeedTests(context.Background(), time.Time{}, time.Now().Add(time.Hour))
-	if len(ts) != 1 || ts[0].Outcome != model.SpeedOK || ts[0].DownBps == nil || ts[0].DownShort || len(caps) == 0 || caps[0] != 0 {
-		t.Errorf("rows %+v, caps %v", ts, caps)
+	if len(ts) != 1 || ts[0].Outcome != model.SpeedOK || ts[0].DownBps == nil {
+		t.Errorf("rows %+v", ts)
 	}
 }
 

@@ -334,7 +334,7 @@ func TestRefused(t *testing.T) {
 
 // TestSlotBudget: no new attempt or fallback once the slot has used its
 // budget; a measured download is kept when the upload fails; every
-// attempt is adaptive and byte-capped.
+// attempt is adaptive, under the time cap.
 func TestSlotBudget(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.step = 9 * time.Second
@@ -348,16 +348,16 @@ func TestSlotBudget(t *testing.T) {
 		if c.Direction == Upload {
 			return Result{}, errors.New("protocol error")
 		}
-		return Result{Bytes: 1e6, Elapsed: time.Second, CappedByBytes: true, Ramp: 300 * time.Millisecond}, nil
+		return Result{Bytes: 1e6, Elapsed: time.Second, Ramp: 300 * time.Millisecond}, nil
 	})
 	r = h.slot(t, target{region: "home"})
-	if r.Outcome != model.SpeedFailed || r.DownBps == nil || r.Fallback || len(h.calls) != 2 || !r.DownShort || r.DownSecs != 1 {
+	if r.Outcome != model.SpeedFailed || r.DownBps == nil || r.Fallback || len(h.calls) != 2 || r.DownSecs != 1 {
 		t.Errorf("upload failed: %+v, %d calls", r, len(h.calls))
 	}
 	if x := ParseExtra(r.Extra); x.RampMs[0] != 300 {
 		t.Errorf("extra %q", r.Extra)
 	}
-	if c := h.calls[0]; c.Duration != MaxMeasure || c.MinDuration != MinMeasure || c.Timeout != DirTimeout || c.MaxBytes != 0 || c.Backstop != TimeBackstop {
+	if c := h.calls[0]; c.Duration != MaxMeasure || c.MinDuration != MinMeasure || c.Timeout != DirTimeout || c.Backstop != TimeBackstop {
 		t.Errorf("config %+v", c)
 	}
 }
@@ -533,8 +533,8 @@ func TestLatencyUnderLoad(t *testing.T) {
 	if g := l.Gateway; g.Idle.P50Ms != 2 || g.Down.P50Ms != 3 || g.Up.P50Ms != 3 || g.Up.Lost != 0 {
 		t.Errorf("gateway %+v %+v %+v", *g.Idle, *g.Down, *g.Up)
 	}
-	if r.IdleGatewayMs == nil || *r.IdleGatewayMs != 2 || r.LoadedGatewayMs == nil || *r.LoadedGatewayMs != 3 || r.Conn != model.ConnWired {
-		t.Errorf("idle/loaded gateway %v %v conn %q", r.IdleGatewayMs, r.LoadedGatewayMs, r.Conn)
+	if r.Conn != model.ConnWired {
+		t.Errorf("conn %q", r.Conn)
 	}
 }
 

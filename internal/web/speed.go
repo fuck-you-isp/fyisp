@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/callq"
@@ -31,7 +30,7 @@ type SpeedSource interface {
 	// Queue is the speed-test queue (Test now, sweeps, schedule slots).
 	Queue() *speedtest.Queue
 	SetSkip(ctx context.Context, ids []string) error
-	MaskedShare(d time.Duration) float64
+	TestShare(d time.Duration) float64
 	Catalog() *speedtest.Catalog
 	BytesSince(ctx context.Context, t time.Time) (int64, error)
 }
@@ -62,11 +61,9 @@ type speedServerJSON struct {
 	Geo      string   `json:"geo"`
 	Area     string   `json:"area"`   // the geo's title, e.g. "Europe"
 	Region   *string  `json:"region"` // the test region it belongs to, if any
-	Metro    string   `json:"metro"`
 	RTTms    *float64 `json:"rtt_ms"`
 	Picked   bool     `json:"picked"`
 	Custom   bool     `json:"custom"`
-	Single   bool     `json:"single_port"`
 	Capacity *float64 `json:"capacity_mbps"`
 	// Skipped: never tested (SkipLocked: by --speedtest-skip, the toggle
 	// can't undo it); RestUntil: resting after being busy several times.
@@ -111,53 +108,40 @@ type speedWindow struct {
 
 // speedTestJSON is one test.
 type speedTestJSON struct {
-	ID             int64    `json:"id"`
-	Start          int64    `json:"start"`
-	End            int64    `json:"end"`
-	Trigger        string   `json:"trigger"`   // schedule, manual or sweep
-	OnDemand       bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
-	Outcome        string   `json:"outcome"`
-	Region         *string  `json:"region"`
-	Server         string   `json:"server"`
-	Label          string   `json:"label"`
-	Display        string   `json:"display"`
-	Provider       string   `json:"provider"`
-	City           string   `json:"city"`
-	Fallback       bool     `json:"fallback"`
-	FallbackLevel  string   `json:"fallback_level"`
-	Port           int      `json:"port,omitempty"`
-	Attempts       int      `json:"attempts"`
-	DownBps        *float64 `json:"down_bps"`
-	UpBps          *float64 `json:"up_bps"`
-	DownShort      bool     `json:"down_short"`
-	UpShort        bool     `json:"up_short"`
-	CappedByBudget bool     `json:"capped_by_budget"` // either direction hit the 100 MB cap: show "≥ X"
-	// DownLowerBound and UpLowerBound: still speeding up at the cap (or a
-	// v0.7.0 result capped in its ramp-up), so the speed was at least
-	// this. It counts as at least normal in the patterns, never slow.
-	// DownRampCapped and UpRampCapped are the same flags (the acceptance
-	// script's names). RateMethod and WinMs: how the capped direction (the
-	// download if capped, else the upload) was measured.
-	DownLowerBound  bool     `json:"down_lower_bound,omitempty"`
-	UpLowerBound    bool     `json:"up_lower_bound,omitempty"`
-	CancelledBy     string   `json:"cancelled_by,omitempty"`    // a cancelled test: "owner" when the owner stopped it
-	DownLBCounted   bool     `json:"down_lb_counted,omitempty"` // a lower bound that reached normal: counted as normal
-	UpLBCounted     bool     `json:"up_lb_counted,omitempty"`
-	Cap             string   `json:"cap"` // the limit the test ran under: "time" (10 s each way, v0.7.2) or "bytes" (100 MB each way, earlier rows)
-	DownRampCapped  bool     `json:"down_ramp_capped,omitempty"`
-	UpRampCapped    bool     `json:"up_ramp_capped,omitempty"`
-	RateMethod      string   `json:"rate_method,omitempty"`
-	WinMs           float64  `json:"win_ms,omitempty"`
-	DownSecs        float64  `json:"down_s"`
-	UpSecs          float64  `json:"up_s"`
-	CappedByServer  bool     `json:"capped_by_server"`
-	ScoreDown       *float64 `json:"score"`
-	ScoreUp         *float64 `json:"up_score"`
-	Bytes           int64    `json:"bytes"`
-	DownRetrans     *int64   `json:"down_retrans"`
-	UpRetrans       *int64   `json:"up_retrans"`
-	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
-	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
+	ID            int64    `json:"id"`
+	Start         int64    `json:"start"`
+	End           int64    `json:"end"`
+	Trigger       string   `json:"trigger"`   // schedule, manual or sweep
+	OnDemand      bool     `json:"on_demand"` // Test now or a sweep: left out of patterns and rows
+	Outcome       string   `json:"outcome"`
+	Region        *string  `json:"region"`
+	Server        string   `json:"server"`
+	Label         string   `json:"label"`
+	Display       string   `json:"display"`
+	Provider      string   `json:"provider"`
+	City          string   `json:"city"`
+	Fallback      bool     `json:"fallback"`
+	FallbackLevel string   `json:"fallback_level"`
+	Port          int      `json:"port,omitempty"`
+	Attempts      int      `json:"attempts"`
+	DownBps       *float64 `json:"down_bps"`
+	UpBps         *float64 `json:"up_bps"`
+	// DownLowerBound and UpLowerBound: still speeding up at the time cap,
+	// so the speed was at least this. It counts as at least normal in the
+	// patterns, never slow.
+	DownLowerBound bool     `json:"down_lower_bound,omitempty"`
+	UpLowerBound   bool     `json:"up_lower_bound,omitempty"`
+	CancelledBy    string   `json:"cancelled_by,omitempty"`    // a cancelled test: "owner" when the owner stopped it
+	DownLBCounted  bool     `json:"down_lb_counted,omitempty"` // a lower bound that reached normal: counted as normal
+	UpLBCounted    bool     `json:"up_lb_counted,omitempty"`
+	DownSecs       float64  `json:"down_s"`
+	UpSecs         float64  `json:"up_s"`
+	CappedByServer bool     `json:"capped_by_server"`
+	ScoreDown      *float64 `json:"score"`
+	ScoreUp        *float64 `json:"up_score"`
+	Bytes          int64    `json:"bytes"`
+	DownRetrans    *int64   `json:"down_retrans"`
+	UpRetrans      *int64   `json:"up_retrans"`
 	// Latency under load at the ISP edge and the gateway; Conn the
 	// connection type; Handoff (local only) the first network past the ISP.
 	Latency *model.SpeedLatency `json:"latency"`
@@ -168,14 +152,13 @@ type speedTestJSON struct {
 // speedRunning is the test running now (summary and part=running): the
 // queue's running entry in short.
 type speedRunning struct {
-	Entry       uint64    `json:"entry"`
-	Kind        string    `json:"kind"` // single | sweep | scheduled
-	Started     int64     `json:"started"`
-	ExpectedEnd int64     `json:"expected_end"`
-	Direction   string    `json:"direction"` // picking, download, upload
-	Server      *speedRef `json:"server"`
-	Step        int       `json:"step"` // a sweep: the server under test, 1-based, of steps
-	Steps       int       `json:"steps"`
+	Entry     uint64    `json:"entry"`
+	Kind      string    `json:"kind"` // single | sweep | scheduled
+	Started   int64     `json:"started"`
+	Direction string    `json:"direction"` // picking, download, upload
+	Server    *speedRef `json:"server"`
+	Step      int       `json:"step"` // a sweep: the server under test, 1-based, of steps
+	Steps     int       `json:"steps"`
 }
 
 type speedPlan struct {
@@ -191,18 +174,13 @@ type speedHour struct {
 	Providers int `json:"providers"`
 }
 
+// speedLoad is one layer's medians of the tests' p50s.
 type speedLoad struct {
-	Layer    string   `json:"layer"` // edge, gateway
-	IdleMs   *float64 `json:"idle_ms"`
-	DownMs   *float64 `json:"down_ms"` // median p50 while downloading
-	UpMs     *float64 `json:"up_ms"`
-	LossDown float64  `json:"loss_down"` // share of probes lost while downloading
-	LossUp   float64  `json:"loss_up"`
+	IdleMs, DownMs, UpMs *float64
 }
 
 type speedUnderLoad struct {
-	Layers []speedLoad `json:"layers"`
-	Text   []string    `json:"text"`
+	Text []string `json:"text"`
 }
 
 // speedJSON is api/speed?part=summary.
@@ -210,7 +188,6 @@ type speedJSON struct {
 	At              int64              `json:"at"`
 	TZ              int                `json:"tz"`            // minutes east of UTC now
 	TZName          string             `json:"tz_name"`       // the IANA zone used ("" for a fixed offset; the server's when tz is not sent)
-	ZoneLabel       string             `json:"zone_label"`    // the zone used, printable: "EDT (UTC−4)", "UTC"
 	SweepBytes      int64              `json:"sweep_bytes"`   // "Test every server": its estimated data (see sweepBytes)
 	SweepServers    int                `json:"sweep_servers"` // the servers it tests (skipped ones left out)
 	Days            int                `json:"days"`
@@ -219,14 +196,13 @@ type speedJSON struct {
 	Modes           []speedtest.Mode   `json:"modes"`
 	Enabled         bool               `json:"enabled"`
 	SetByFlag       bool               `json:"set_by_flag"`
-	Extra           []string           `json:"extra"`
 	Configurable    bool               `json:"configurable"`
 	IntervalS       int64              `json:"interval_s"`
 	SpacingS        int64              `json:"spacing_s"`
 	PlannedShare    float64            `json:"planned_share"`
 	Warning         *string            `json:"warning"`
 	Plans           []speedPlan        `json:"plans"`
-	MaskedShare24h  float64            `json:"masked_share_24h"`
+	TestShare24h    float64            `json:"test_share_24h"`
 	BytesMonth      int64              `json:"bytes_month"`
 	Bytes24h        int64              `json:"bytes_24h"`
 	Connection      speedConnection    `json:"connection"`
@@ -243,20 +219,15 @@ type speedJSON struct {
 	Finding         speedtest.Finding  `json:"finding"`
 	Coverage        []speedHour        `json:"coverage"`
 	UnderLoad       speedUnderLoad     `json:"under_load"`
-	// EdgeHours is the access network's control: the idle RTT and loss to
-	// the ISP edge by local hour of day over the pattern's 30 days (tests
-	// are masked out of the series, so it is idle by construction); null
-	// without an ISP edge target.
-	EdgeHours []speedEdgeHour `json:"edge_hours"`
 }
 
 // speedEdgeHour is one local hour of day of the ISP edge's idle RTT: the
 // median over days of that hour's mean RTT, and the loss over them.
 type speedEdgeHour struct {
-	Hour  int  `json:"hour"`
-	N     int  `json:"n"`      // days with samples in that hour
-	RTTms *num `json:"rtt_ms"` // |null when n is 0
-	Loss  *num `json:"loss"`   // |null when n is 0
+	Hour  int
+	N     int  // days with samples in that hour
+	RTTms *num // nil when N is 0
+	Loss  *num // nil when N is 0
 }
 
 type speedConnection struct {
@@ -336,29 +307,15 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, OnDemand: t.OnDemand(),
 		Outcome: t.Outcome, Server: ref.ID, Label: ref.Label, Display: display, Provider: provider, City: city,
 		Fallback: t.Fallback, FallbackLevel: t.FallbackLevel, Attempts: t.Attempts,
-		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownShort: t.DownShort, UpShort: t.UpShort, CappedByBudget: t.DownShort || t.UpShort,
+		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1),
 		DownSecs: t.DownSecs, UpSecs: t.UpSecs, CappedByServer: t.CappedByServer, ScoreDown: t.ScoreDown, ScoreUp: t.ScoreUp,
-		Bytes: t.Bytes, DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans,
-		IdleGatewayMs: roundP(t.IdleGatewayMs, 10), LoadedGatewayMs: roundP(t.LoadedGatewayMs, 10)}
+		Bytes: t.Bytes, DownRetrans: t.DownRetrans, UpRetrans: t.UpRetrans}
 	j.DownLowerBound, j.UpLowerBound = speedtest.LowerBounds(&t)
-	j.DownRampCapped, j.UpRampCapped = j.DownLowerBound, j.UpLowerBound
-	j.Cap = "bytes"
-	if strings.Contains(t.Extra, `"cap":"time"`) {
-		j.Cap = "time"
-	}
 	if t.Outcome == model.SpeedCancelled {
 		j.CancelledBy = speedtest.ParseExtra(t.Extra).CancelledBy
 	}
 	j.DownLBCounted = speedtest.LowerBoundCounted(t.ScoreDown, j.DownLowerBound)
 	j.UpLBCounted = speedtest.LowerBoundCounted(t.ScoreUp, j.UpLowerBound)
-	if t.DownShort || t.UpShort || strings.Contains(t.Extra, "rate_method") {
-		x := speedtest.ParseExtra(t.Extra)
-		i := 0
-		if x.RateMethod[0] == "" && x.RateMethod[1] != "" {
-			i = 1
-		}
-		j.RateMethod, j.WinMs = x.RateMethod[i], x.WinMs[i]
-	}
 	if j.FallbackLevel == "" {
 		j.FallbackLevel = speedtest.FallbackNone
 	}
@@ -559,7 +516,7 @@ func (s *server) speedRunning(names speedNames) *speedRunning {
 	if e == nil {
 		return nil
 	}
-	r := &speedRunning{Entry: e.ID, Kind: string(e.Kind), Started: e.Started.UnixMilli(), ExpectedEnd: e.EstFinish.UnixMilli(),
+	r := &speedRunning{Entry: e.ID, Kind: string(e.Kind), Started: e.Started.UnixMilli(),
 		Direction: cmp.Or(e.Direction, "picking"), Step: e.Step, Steps: e.Steps}
 	if e.Server != "" {
 		ref := names.ref(e.Server)
@@ -577,12 +534,12 @@ func strPtr(s string) *string {
 
 func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.State, names speedNames, now time.Time) (*speedJSON, error) {
 	cat := s.d.Speed.Catalog()
-	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), ZoneLabel: speedtest.ZoneLabel(p.zone.loc, now), Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
-		Enabled: st.Mode != speedtest.ModeOff, SetByFlag: st.SetByFlag, Extra: append([]string{}, st.Extra...),
+	out := &speedJSON{At: now.UnixMilli(), TZ: p.tz, TZName: zoneLabel(p.zone), Days: p.days, ExcludeFallback: p.excludeFallback, Mode: st.Mode, Modes: st.Modes,
+		Enabled: st.Mode != speedtest.ModeOff, SetByFlag: st.SetByFlag,
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
-		MaskedShare24h: math.Round(s.d.Speed.MaskedShare(24*time.Hour)*1000) / 1000,
-		NextAt:         ms(st.Next), NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
+		TestShare24h: math.Round(s.d.Speed.TestShare(24*time.Hour)*1000) / 1000,
+		NextAt:       ms(st.Next), NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
 		Rows: []speedRow{}, PerRegion: []speedRow{}, PerServer: []speedRow{}, Servers: []speedServerJSON{}, Regions: []speedRegionJSON{},
 		Connection: speedConnection{Type: "unknown", Source: "detected"}}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
@@ -591,8 +548,8 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	for _, sv := range st.Servers {
 		ref, display, _, _ := names.server(sv.ID)
 		j := speedServerJSON{ID: ref.ID, Label: ref.Label, Display: display, Provider: sv.Provider, City: sv.City, Country: sv.Country,
-			Geo: sv.Geo, Area: profile.GeoTitles[sv.Geo], Metro: sv.Metro, RTTms: roundP(sv.RTTms, 10), Picked: sv.Picked, Custom: sv.Custom,
-			Single: sv.SinglePort(), Skipped: sv.Skipped, SkipLocked: sv.SkipLocked, RestUntil: ms(sv.RestUntil)}
+			Geo: sv.Geo, Area: profile.GeoTitles[sv.Geo], RTTms: roundP(sv.RTTms, 10), Picked: sv.Picked, Custom: sv.Custom,
+			Skipped: sv.Skipped, SkipLocked: sv.SkipLocked, RestUntil: ms(sv.RestUntil)}
 		if reg := names.inReg[sv.ID]; reg != "" {
 			j.Region = &reg
 		}
@@ -601,7 +558,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 			j.Capacity = &c
 		}
 		if sv.Custom {
-			j.Provider, j.Metro = "Your server", ""
+			j.Provider = "Your server"
 		}
 		j.Host = sv.Host
 		j.Ports = strconv.Itoa(sv.PortMin)
@@ -734,10 +691,11 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		}
 	}
 	out.Pattern = speedtest.PooledPattern(all, tz)
-	if out.EdgeHours, err = s.edgeHours(ctx, now, tz); err != nil {
+	eh, err := s.edgeHours(ctx, now, tz)
+	if err != nil {
 		return nil, err
 	}
-	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, Loc: tz, Catalog: cat, EdgeIdle: edgeIdle(out.EdgeHours), From: from, To: now})
+	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, Loc: tz, Catalog: cat, EdgeIdle: edgeIdle(eh), From: from, To: now})
 	for i, x := range out.Finding.Slowest {
 		var ref speedRef
 		ref, out.Finding.Slowest[i].Display, _, _ = names.server(x.Server)
@@ -763,9 +721,9 @@ func edgeIdle(eh []speedEdgeHour) [24]float64 {
 	return out
 }
 
-// edgeHours reads the ISP edge's hourly RTT over speedtest.PatternSpan and
-// folds it into 24 local hours of day (see speedEdgeHour); nil without an
-// ISP edge target.
+// edgeHours is the access network's control: it reads the ISP edge's
+// hourly RTT over speedtest.PatternSpan and folds it into 24 local hours of
+// day (see speedEdgeHour); nil without an ISP edge target.
 func (s *server) edgeHours(ctx context.Context, now time.Time, tz *time.Location) ([]speedEdgeHour, error) {
 	var key model.SeriesKey
 	if p := s.d.Profile(); p != nil {
@@ -851,12 +809,11 @@ func speedCoverage(ts []model.SpeedTest, tz *time.Location, cat *speedtest.Catal
 }
 
 // speedUnderLoadOf summarizes latency under load over the span: per layer
-// the median of the tests' idle and per-direction p50, and the loss; with
-// one sentence per layer.
+// the median of the tests' idle and per-direction p50, in one sentence per
+// layer.
 func speedUnderLoadOf(ts []model.SpeedTest) speedUnderLoad {
 	type acc struct {
-		idle, down, up             []float64
-		sentD, lostD, sentU, lostU int
+		idle, down, up []float64
 	}
 	by := map[string]*acc{}
 	for _, t := range ts {
@@ -877,15 +834,13 @@ func speedUnderLoadOf(ts []model.SpeedTest) speedUnderLoad {
 			}
 			if l.Down != nil {
 				a.down = append(a.down, l.Down.P50Ms)
-				a.sentD, a.lostD = a.sentD+l.Down.N, a.lostD+l.Down.Lost
 			}
 			if l.Up != nil {
 				a.up = append(a.up, l.Up.P50Ms)
-				a.sentU, a.lostU = a.sentU+l.Up.N, a.lostU+l.Up.Lost
 			}
 		}
 	}
-	out := speedUnderLoad{Layers: []speedLoad{}, Text: []string{}}
+	out := speedUnderLoad{Text: []string{}}
 	med := func(v []float64) *float64 {
 		if len(v) == 0 {
 			return nil
@@ -893,24 +848,17 @@ func speedUnderLoadOf(ts []model.SpeedTest) speedUnderLoad {
 		x := math.Round(callq.Median(v)*10) / 10
 		return &x
 	}
-	share := func(lost, sent int) float64 {
-		if sent == 0 {
-			return 0
-		}
-		return math.Round(float64(lost)/float64(sent)*1000) / 1000
-	}
 	var edge, gw *speedLoad
 	for _, layer := range []string{speedtest.LayerEdge, speedtest.LayerGateway} {
 		a := by[layer]
 		if a == nil {
 			continue
 		}
-		l := speedLoad{Layer: layer, IdleMs: med(a.idle), DownMs: med(a.down), UpMs: med(a.up), LossDown: share(a.lostD, a.sentD), LossUp: share(a.lostU, a.sentU)}
-		out.Layers = append(out.Layers, l)
+		l := &speedLoad{IdleMs: med(a.idle), DownMs: med(a.down), UpMs: med(a.up)}
 		if layer == speedtest.LayerEdge {
-			edge = &out.Layers[len(out.Layers)-1]
+			edge = l
 		} else {
-			gw = &out.Layers[len(out.Layers)-1]
+			gw = l
 		}
 	}
 	effect := func(rise float64) string {

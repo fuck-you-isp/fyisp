@@ -357,11 +357,6 @@ type SpeedTest struct {
 	// Retransmits of the sending side, nil when unknown.
 	DownRetrans *int64 `json:"down_retrans"`
 	UpRetrans   *int64 `json:"up_retrans"`
-	// Median RTT to the gateway in the 2 minutes before the test (idle) and
-	// the worse of its download and upload medians (loaded): Latency.Gateway
-	// in short, kept for the v0.7 API.
-	IdleGatewayMs   *float64 `json:"idle_gateway_ms"`
-	LoadedGatewayMs *float64 `json:"loaded_gateway_ms"`
 	// Latency under load at the ISP edge (the WAN queue) and the gateway
 	// (the home network): nil when neither was probed.
 	Latency *SpeedLatency `json:"latency"`
@@ -375,14 +370,10 @@ type SpeedTest struct {
 	FallbackLevel string `json:"fallback_level"`
 	// CappedByServer: a direction measured within 10% of the server's
 	// published link capacity (the server, not the line, set the limit).
-	CappedByServer bool `json:"capped_by_server"`
-	// DownShort/UpShort: the direction hit the per-test byte cap, so its
-	// measured time (DownSecs/UpSecs) may be short.
-	DownShort bool    `json:"down_short"`
-	UpShort   bool    `json:"up_short"`
-	DownSecs  float64 `json:"down_s"`
-	UpSecs    float64 `json:"up_s"`
-	Bytes     int64   `json:"bytes"` // data used, both directions
+	CappedByServer bool    `json:"capped_by_server"`
+	DownSecs       float64 `json:"down_s"`
+	UpSecs         float64 `json:"up_s"`
+	Bytes          int64   `json:"bytes"` // data used, both directions
 	// ScoreDown/ScoreUp: the result relative to the server's baseline (the
 	// p90 of its first-choice scheduled tests over 14 days); nil while the
 	// server has fewer than 20 such tests.

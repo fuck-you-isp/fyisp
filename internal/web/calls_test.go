@@ -116,7 +116,7 @@ func callsFixture(t *testing.T, now time.Time, teams bool, fill func(target stri
 		Store:   cs,
 		Status:  func() Status { return Status{Version: "v9.9.9", Targets: len(p.Targets)} },
 		Verdict: fv,
-		UDP:     fakeUDPState{{Target: "Teams-Relay", Region: "swedencentral", Epoch: 2}, {Target: "Meet-STUN"}},
+		UDP:     fakeUDPState{{Target: "Teams-Relay", Region: "swedencentral"}, {Target: "Meet-STUN"}},
 	}
 	return cs, d, fv
 }

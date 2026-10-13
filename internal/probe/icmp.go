@@ -48,8 +48,8 @@ func putPayload(b []byte, magic [8]byte, idx, ctr uint32) {
 
 // Detect reports which probe kinds work without elevated privileges. It
 // opens (and closes) the ICMP socket or handle that Run would use.
-func Detect(ctx context.Context) Caps {
-	c := Caps{TCP: true, HTTPS: true}
+func Detect() Caps {
+	var c Caps
 	p, mode, err := openPinger()
 	if err != nil {
 		c.ICMP = ICMPUnavailable

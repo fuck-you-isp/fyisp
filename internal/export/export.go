@@ -20,7 +20,7 @@
 // each direction (lost: probes without an answer):
 //
 //	id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,
-//	down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,idle_gateway_ms,loaded_gateway_ms,
+//	down_s,up_s,capped_by_server,bytes,score_down,score_up,
 //	conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,
 //	gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms
 //
@@ -71,8 +71,7 @@ var (
 	// SpeedTestHeader: start and end in TimeFormat; outcome ok, busy (the
 	// server ran another test: not a slow result), unreachable or failed.
 	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "fallback_level", "port", "attempts", "down_bps", "up_bps",
-		"down_retrans", "up_retrans", "down_s", "up_s", "down_capped_by_bytes", "up_capped_by_bytes", "capped_by_server", "bytes", "score_down", "score_up",
-		"idle_gateway_ms", "loaded_gateway_ms",
+		"down_retrans", "up_retrans", "down_s", "up_s", "capped_by_server", "bytes", "score_down", "score_up",
 		"conn", "handoff_asn", "isp_asn", "edge_idle_p50_ms", "edge_idle_loss", "edge_down_p50_ms", "edge_down_p95_ms", "edge_down_loss",
 		"edge_up_p50_ms", "edge_up_p95_ms", "edge_up_loss", "gw_down_p50_ms", "gw_down_p95_ms", "gw_up_p50_ms", "gw_up_p95_ms"}
 )
@@ -167,8 +166,8 @@ func WriteSpeedTests(ctx context.Context, sr SpeedTestReader, w io.Writer, from,
 	for _, t := range ts {
 		row := []string{strconv.FormatInt(t.ID, 10), t.Start.UTC().Format(TimeFormat), t.End.UTC().Format(TimeFormat),
 			t.Trigger, t.Outcome, t.Region, t.Server, fb(t.Fallback), t.FallbackLevel, strconv.Itoa(t.Port), strconv.Itoa(t.Attempts), f(t.DownBps), f(t.UpBps),
-			i(t.DownRetrans), i(t.UpRetrans), secs(t.DownSecs), secs(t.UpSecs), fb(t.DownShort), fb(t.UpShort), fb(t.CappedByServer),
-			strconv.FormatInt(t.Bytes, 10), f(t.ScoreDown), f(t.ScoreUp), f(t.IdleGatewayMs), f(t.LoadedGatewayMs)}
+			i(t.DownRetrans), i(t.UpRetrans), secs(t.DownSecs), secs(t.UpSecs), fb(t.CappedByServer),
+			strconv.FormatInt(t.Bytes, 10), f(t.ScoreDown), f(t.ScoreUp)}
 		var lat model.SpeedLatency
 		if t.Latency != nil {
 			lat = *t.Latency

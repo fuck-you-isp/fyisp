@@ -130,10 +130,8 @@
   }
  ],
  "days": 7,
- "edge_hours": null,
  "enabled": true,
  "exclude_fallback": false,
- "extra": [],
  "finding": {
   "case": "isp",
   "caveat": "Wi-Fi, or other people at home using the internet heavily at those hours, can look the same.",
@@ -194,8 +192,6 @@
  "latest": {
   "attempts": 1,
   "bytes": 146800640,
-  "cap": "bytes",
-  "capped_by_budget": false,
   "capped_by_server": false,
   "city": "New York",
   "conn": "wired",
@@ -203,7 +199,6 @@
   "down_bps": 141000000,
   "down_retrans": 8,
   "down_s": 4,
-  "down_short": false,
   "end": 1791639018000,
   "fallback": false,
   "fallback_level": "none",
@@ -214,7 +209,6 @@
    "name": "LEVEL3"
   },
   "id": 302,
-  "idle_gateway_ms": 1.1,
   "label": "Leaseweb New York",
   "latency": {
    "edge": {
@@ -264,7 +258,6 @@
     }
    }
   },
-  "loaded_gateway_ms": 1.5,
   "on_demand": false,
   "outcome": "ok",
   "port": 5209,
@@ -277,10 +270,8 @@
   "up_bps": 14100000,
   "up_retrans": null,
   "up_s": 3.2,
-  "up_score": 0.94,
-  "up_short": false
+  "up_score": 0.94
  },
- "masked_share_24h": 0.002,
  "mode": "regions",
  "modes": [
   "off",
@@ -3286,14 +3277,12 @@
    "host": "lon.speedtest.clouvider.net",
    "id": "Clouvider-London",
    "label": "Clouvider London",
-   "metro": "london",
    "picked": false,
    "ports": "5200-5209",
    "provider": "Clouvider",
    "region": "uk",
    "rest_until": null,
    "rtt_ms": null,
-   "single_port": false,
    "skip_locked": false,
    "skipped": false
   },
@@ -3308,14 +3297,12 @@
    "host": "nyc.speedtest.clouvider.net",
    "id": "Clouvider-NewYork",
    "label": "Clouvider New York",
-   "metro": "new-york",
    "picked": false,
    "ports": "5200-5209",
    "provider": "Clouvider",
    "region": "us-east",
    "rest_until": null,
    "rtt_ms": null,
-   "single_port": false,
    "skip_locked": false,
    "skipped": false
   },
@@ -3330,14 +3317,12 @@
    "host": "speedtest.lon12.uk.leaseweb.net",
    "id": "Leaseweb-London",
    "label": "Leaseweb London",
-   "metro": "london",
    "picked": false,
    "ports": "5201-5210",
    "provider": "Leaseweb",
    "region": "uk",
    "rest_until": null,
    "rtt_ms": null,
-   "single_port": false,
    "skip_locked": false,
    "skipped": false
   },
@@ -3352,14 +3337,12 @@
    "host": "speedtest.nyc1.us.leaseweb.net",
    "id": "Leaseweb-NewYork",
    "label": "Leaseweb New York",
-   "metro": "new-york",
    "picked": false,
    "ports": "5201-5210",
    "provider": "Leaseweb",
    "region": "us-east",
    "rest_until": null,
    "rtt_ms": null,
-   "single_port": false,
    "skip_locked": false,
    "skipped": false
   },
@@ -3374,14 +3357,12 @@
    "host": "speedtest.wdc2.us.leaseweb.net",
    "id": "Leaseweb-Washington",
    "label": "Leaseweb Washington",
-   "metro": "washington",
    "picked": false,
    "ports": "5201-5210",
    "provider": "Leaseweb",
    "region": "us-east",
    "rest_until": null,
    "rtt_ms": null,
-   "single_port": false,
    "skip_locked": false,
    "skipped": false
   },
@@ -3396,14 +3377,12 @@
    "host": "192.168.1.20",
    "id": "192.168.1.20:5201",
    "label": "Your server",
-   "metro": "",
    "picked": false,
    "ports": "5201",
    "provider": "Your server",
    "region": null,
    "rest_until": null,
    "rtt_ms": null,
-   "single_port": true,
    "skip_locked": false,
    "skipped": false
   }
@@ -3412,33 +3391,15 @@
  "spacing_s": 1800,
  "sweep_bytes": 1207602558,
  "sweep_servers": 6,
+ "test_share_24h": 0.002,
  "tz": 120,
  "tz_name": "",
  "under_load": {
-  "layers": [
-   {
-    "down_ms": 21,
-    "idle_ms": 8.2,
-    "layer": "edge",
-    "loss_down": 0.033,
-    "loss_up": 0,
-    "up_ms": 48
-   },
-   {
-    "down_ms": 1.4,
-    "idle_ms": 1.1,
-    "layer": "gateway",
-    "loss_down": 0,
-    "loss_up": 0,
-    "up_ms": 1.5
-   }
-  ],
   "text": [
    "Delay to your provider's first router rises from 8 to 21 ms while downloading (+13 ms): a small rise, fine for calls.",
    "Delay to your provider's first router rises from 8 to 48 ms while uploading (+40 ms): a small rise, fine for calls.",
    "Your router's delay rises from 1 to 2 ms: your home network keeps up."
   ]
  },
- "warning": null,
- "zone_label": "UTC+2"
+ "warning": null
 }

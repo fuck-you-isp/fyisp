@@ -896,9 +896,7 @@ func (h *harness) get(t *testing.T, path string) []byte {
 type statusJSON struct {
 	Version string `json:"version"`
 	Caps    struct {
-		ICMP  string `json:"icmp"`
-		TCP   bool   `json:"tcp"`
-		HTTPS bool   `json:"https"`
+		ICMP string `json:"icmp"`
 	} `json:"caps"`
 	Targets int `json:"targets"`
 	Ready   int `json:"ready"`
@@ -950,8 +948,8 @@ func (h *harness) checkStatus(t *testing.T, fy *fyisp) {
 	}
 	t.Logf("/api/status: %s", strings.TrimSpace(string(raw)))
 	h.save(t, "status.json", raw)
-	if s.Caps.ICMP != "udp" || !s.Caps.TCP || !s.Caps.HTTPS {
-		t.Errorf("caps = %+v, want icmp=udp (unprivileged ping socket), tcp, https", s.Caps)
+	if s.Caps.ICMP != "udp" {
+		t.Errorf("caps = %+v, want icmp=udp (unprivileged ping socket)", s.Caps)
 	}
 	if s.Targets != 7 {
 		t.Errorf("targets = %d, want 7", s.Targets)

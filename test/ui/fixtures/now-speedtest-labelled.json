@@ -1,12 +1,10 @@
 {
-  "v": 2,
   "at": 1791556200000,
   "last_check": 1791556196000,
   "stale": false,
   "watching_since": 1772548200000,
   "footer": "Watching your connection since Mar 3",
   "learning": null,
-  "monitored": 11,
   "answer": {
     "key": "good:3vnahz",
     "tone": "ok",
@@ -189,16 +187,10 @@
     "available": true,
     "latest": {
       "at": 1791550800000,
-      "down_mbps": 910,
-      "up_mbps": 930,
       "text": "Your speed: about 910 Mbps down / 930 Mbps up — about your usual speed.",
       "note": "Today 9:00 am"
     },
     "empty_text": "No speed test yet. The first one runs within the hour.",
-    "usual": {
-      "down_mbps": 925,
-      "up_mbps": 938
-    },
     "running": null,
     "can_control": true
   },
