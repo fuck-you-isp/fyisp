@@ -2,6 +2,14 @@
 
 Is your internet good enough for calls and work right now, and when it isn't, is it your Wi-Fi or your internet provider? fyisp answers that in plain words and keeps 90 days of evidence: when it went wrong, for how long, and whose fault it likely was.
 
+Run it now, with everything on (every target, calls and the Home tiles, and scheduled speed tests), on Linux or macOS:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile all --speedtest
+```
+
+Then open <http://127.0.0.1:3000>. Run the same command again to update. Windows, Docker, other ports and options: [Quick start](#quick-start).
+
 fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It runs on your computer (or a NAS or Raspberry Pi), checks your connection every few seconds, and shows the answer at <http://127.0.0.1:3000>:
 
 - **Calls, work apps and websites.** It checks the path that call audio and video take, the call and chat apps (Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp), Microsoft 365, Google Workspace, GitHub, Dropbox and OneDrive, the networks most websites are served from, and YouTube and Netflix.
@@ -25,7 +33,7 @@ curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/rele
 
 Then open <http://127.0.0.1:3000>. Pass options after `sh -s --`, e.g. `... | sh -s -- --profile streaming`.
 
-Everything on: every target in the catalog (1,421, calls and the Home tiles included) and scheduled speed tests, on port 8080:
+Everything on, on port 8080 instead of 3000:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile all --speedtest --listen 127.0.0.1:8080
