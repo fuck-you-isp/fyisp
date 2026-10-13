@@ -25,8 +25,7 @@ func (e *lockedError) Error() string { return "already running: " + e.Holder }
 
 const defaultProbeInterval = 15 * time.Second
 
-// seriesInterval is every series' slot interval (the store's, and the
-// speed-test mask's): the target's interval (default 15s), a third of it for
+// seriesInterval is every series' slot interval (the store's): the target's interval (default 15s), a third of it for
 // ICMP, the target's interval for all three UDP siblings (one burst per
 // slot), and the tracer's round interval for trace hops.
 func seriesInterval(prof *model.Profile, traceInterval func(target string) time.Duration) func(model.SeriesKey) time.Duration {

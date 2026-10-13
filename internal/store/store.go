@@ -101,7 +101,6 @@ type SeriesInfo struct {
 
 // Stats summarizes the store for the status page.
 type Stats struct {
-	Dir          string    `json:"-"` // never exposed publicly
 	FileBytes    int64     `json:"file_bytes"`
 	Oldest       time.Time `json:"oldest"`
 	LastFlush    time.Time `json:"last_flush"`

@@ -150,7 +150,7 @@ var verdictKinds = []model.VerdictKind{
 }
 
 // VerdictSource returns the current verdict and the health of each path
-// layer (nil: unknown). See verdict.MetricsSource.
+// layer (nil: unknown). See verdict.Engine.Layers.
 type VerdictSource func() (model.Verdict, map[string]*bool)
 
 // rttTypes are the ping_rtt_seconds "type" label values, in upstream order.

@@ -10,18 +10,17 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/store/blob"
 )
 
-// TestSummaryDecode: a day row in the format version 2, with an unknown
-// median (0) and with one; version 1 rows (fyisp v0.1/v0.2) are refused.
+// TestSummaryDecode: a day row in the format version 2 round-trips; a row
+// without a median and version 1 rows (fyisp v0.1/v0.2) are refused.
 func TestSummaryDecode(t *testing.T) {
-	// hour 5, n=3, lost=0, min 100, max-min 50, p95-min 40, sum 390, p50 unknown.
-	unknown := []byte{summaryV2, 5, 3, 0, 100, 50, 40, 0x86, 0x03, 0}
-	hs, err := decodeDay(nil, 10, unknown)
+	// hour 5, n=3, lost=0, min 100, max-min 50, p95-min 40, sum 390, p50 120.
+	enc := []byte{summaryV2, 5, 3, 0, 100, 50, 40, 0x86, 0x03, 21}
+	hs, err := decodeDay(nil, 10, enc)
 	if err != nil || len(hs) != 1 {
 		t.Fatalf("%v %+v", err, hs)
 	}
-	u := hs[0].s
-	if u.p50 != -1 || u.median() != 130 || u.min != 100 || u.max != 150 || u.p95 != 140 || u.sum != 390 {
-		t.Fatalf("%+v median %d", u, u.median())
+	if u := hs[0].s; u.p50 != 120 || u.min != 100 || u.max != 150 || u.p95 != 140 || u.sum != 390 {
+		t.Fatalf("%+v", u)
 	}
 	again, err := decodeDay(nil, 10, appendDay(nil, 10, hs))
 	if err != nil || !slices.Equal(again, hs) {
@@ -30,15 +29,9 @@ func TestSummaryDecode(t *testing.T) {
 	if _, err := decodeDay(nil, 10, []byte{1, 5, 3, 0, 100, 50, 40, 0x86, 0x03}); err == nil {
 		t.Fatal("a version 1 row was read")
 	}
-	// v2 with a median.
-	hs[0].s.p50 = 120
-	enc := appendDay(nil, 10, hs)
-	if enc[0] != summaryV2 {
-		t.Fatal("not v2")
-	}
-	again, err = decodeDay(nil, 10, enc)
-	if err != nil || again[0].s.p50 != 120 || again[0].s.median() != 120 {
-		t.Fatalf("v2: %v %+v", err, again)
+	// No median (0) is corrupt.
+	if _, err := decodeDay(nil, 10, []byte{summaryV2, 5, 3, 0, 100, 50, 40, 0x86, 0x03, 0}); err == nil {
+		t.Fatal("a row without a median was read")
 	}
 	// A median above max is corrupt.
 	bad := slices.Clone(enc)
@@ -63,7 +56,6 @@ type synthHour struct {
 	off      int
 	n, lost  int64
 	p50, p95 float64
-	noP50    bool // stored without a median (p50 unknown); mean = p50+1
 }
 
 func (h synthHour) summary() summary {
@@ -73,11 +65,7 @@ func (h synthHour) summary() summary {
 		p50, p95 := int64(h.p50*100), int64(h.p95*100) // ms -> 10 µs
 		u.min, u.max, u.p95 = p50/2, p95*2, p95
 		mean := p50
-		if h.noP50 {
-			mean = p50 + 100
-		} else {
-			u.p50 = p50
-		}
+		u.p50 = p50
 		u.sum = mean * h.n
 	}
 	return u
@@ -159,10 +147,6 @@ func TestBaselines(t *testing.T) {
 			{off: -2}, // no samples at all (not measured): no data
 		}, want: &model.Baseline{Loss: 1}, span: [2]int{-1, -1}},
 		{name: "only unmeasured hours", hours: []synthHour{{off: -1}, {off: -2}}},
-		{name: "old summaries use the mean", hours: []synthHour{
-			{off: -1, n: 100, p50: 10, p95: 20, noP50: true},
-			{off: -2, n: 101, p50: 30, p95: 40, noP50: true},
-		}, want: &model.Baseline{MedianMs: 31, P95Ms: 40, Samples: 201}, span: [2]int{-2, -1}},
 		{name: "same hour", hourOfDay: true, hours: sameHour(1, 2, 3, 4, 5, 6, 7),
 			want: &model.Baseline{MedianMs: 40, P95Ms: 140, Samples: 700}, span: [2]int{-168, -24}},
 		{name: "same hour, 6 days", hourOfDay: true, hours: sameHour(1, 2, 3, 4, 5, 6),

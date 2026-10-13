@@ -82,8 +82,8 @@ func tileSummary(rs []ResolvedTile) []string {
 		if r.SharedUDP {
 			line += " shared"
 		}
-		if len(r.Missing) > 0 {
-			line += " missing=" + strings.Join(r.Missing, ",")
+		if len(missing(r)) > 0 {
+			line += " missing=" + strings.Join(missing(r), ",")
 		}
 		out = append(out, line)
 	}
@@ -188,8 +188,8 @@ func TestResolveTilesNamed(t *testing.T) {
 			if rt.SharedUDP {
 				shared = append(shared, rt.ID)
 			}
-			if !rt.Off() && c.names != "default,streaming" && len(rt.Missing) > 0 {
-				t.Errorf("%s: %s missing %v", c.names, rt.ID, rt.Missing)
+			if !rt.Off() && c.names != "default,streaming" && len(missing(rt)) > 0 {
+				t.Errorf("%s: %s missing %v", c.names, rt.ID, missing(rt))
 			}
 		}
 		if strings.Join(off, " ") != c.off || strings.Join(shared, " ") != c.shared {
@@ -207,8 +207,8 @@ func TestResolveTilesNamed(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rt := ResolveTiles(p)[i]; rt.Off() || len(rt.Missing) > 0 {
-			t.Errorf("%s: --profile %s: off %v, missing %v", d.ID, d.Enable, rt.Off(), rt.Missing)
+		if rt := ResolveTiles(p)[i]; rt.Off() || len(missing(rt)) > 0 {
+			t.Errorf("%s: --profile %s: off %v, missing %v", d.ID, d.Enable, rt.Off(), missing(rt))
 		}
 	}
 }
@@ -256,7 +256,7 @@ func TestValidateTileTags(t *testing.T) {
 			Targets: []model.Target{{Name: "a", Host: "a.example", Group: "g", Tags: tags}}}
 	}
 	for _, ok := range [][]string{nil, {"tile:zoom"}, {"tile:onedrive", "home:work"}, {"tilezoom"}} {
-		if err := Validate(prof(ok...), Limits{}); err != nil {
+		if err := Validate(prof(ok...), false); err != nil {
 			t.Errorf("%v: %v", ok, err)
 		}
 	}
@@ -269,7 +269,7 @@ func TestValidateTileTags(t *testing.T) {
 		"home:calls,tile:bogus":  `tag "tile:bogus"`,
 		"tile:netflix,tile:nope": `tag "tile:nope"`,
 	} {
-		if err := Validate(prof(strings.Split(tags, ",")...), Limits{}); err == nil || !strings.Contains(err.Error(), want) {
+		if err := Validate(prof(strings.Split(tags, ",")...), false); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v", tags, err)
 		}
 	}
@@ -308,8 +308,7 @@ func TestOneDriveTarget(t *testing.T) {
 }
 
 // TestResolveTilesOverride checks a --config override that replaces a
-// catalog target's tags: the target no longer feeds its tile and is
-// reported as untagged, not just missing.
+// catalog target's tags: the target no longer feeds its tile.
 func TestResolveTilesOverride(t *testing.T) {
 	p, err := Load(write(t, `extends: [default]
 override:
@@ -320,13 +319,24 @@ override:
 		t.Fatal(err)
 	}
 	rs := ResolveTiles(p)
-	if z := rs[0]; !z.Off() || !slices.Equal(z.Missing, []string{"Zoom"}) || !slices.Equal(z.Untagged, []string{"Zoom"}) {
-		t.Errorf("zoom: off %v missing %v untagged %v", z.Off(), z.Missing, z.Untagged)
+	if z := rs[0]; !z.Off() || !slices.Equal(missing(z), []string{"Zoom"}) {
+		t.Errorf("zoom: off %v missing %v", z.Off(), missing(z))
 	}
-	// Meet keeps its tag; its absent catalog targets are missing, not untagged.
-	if m := rs[2]; m.Off() || len(m.Missing) != 4 || len(m.Untagged) != 0 {
-		t.Errorf("meet: missing %v untagged %v", m.Missing, m.Untagged)
+	// Meet keeps its tag.
+	if m := rs[2]; m.Off() || len(missing(m)) != 4 {
+		t.Errorf("meet: missing %v", missing(m))
 	}
+}
+
+// missing lists the tile's catalog targets that do not feed it.
+func missing(r ResolvedTile) []string {
+	var out []string
+	for _, n := range slices.Concat(r.Targets, r.TileDef.UDP) {
+		if !slices.ContainsFunc(slices.Concat(r.Web, r.UDP), func(t model.Target) bool { return t.Name == n }) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // TestResolveTilesNoAliasing checks that resolved tiles share no slices

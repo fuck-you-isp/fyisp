@@ -107,7 +107,6 @@ func (s *server) verdict() verdictJSON {
 // incidentParams parses /api/incidents with /api/panel's time rules.
 type incidentParams struct {
 	from, to time.Time
-	key      string
 }
 
 func parseIncidentParams(q url.Values, now time.Time) (incidentParams, error) {
@@ -128,24 +127,22 @@ func parseRange(q url.Values, now time.Time) (incidentParams, error) {
 	if ts == "" {
 		ts = "now"
 	}
-	var fk, tk string
 	var err error
-	if p.from, fk, err = parseTime(fs, now); err != nil {
+	if p.from, err = parseTime(fs, now); err != nil {
 		return p, err
 	}
-	if p.to, tk, err = parseTime(ts, now); err != nil {
+	if p.to, err = parseTime(ts, now); err != nil {
 		return p, err
 	}
 	if p.to.After(now) {
-		p.to, tk = now, "now"
+		p.to = now
 	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
 	if p.to.Sub(p.from) > MaxRange {
-		p.from, fk = p.to.Add(-MaxRange), tk+"-90d"
+		p.from = p.to.Add(-MaxRange)
 	}
-	p.key = fk + "\x00" + tk
 	return p, nil
 }
 

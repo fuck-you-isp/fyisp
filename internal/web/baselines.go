@@ -19,17 +19,6 @@ type BaselineSource interface {
 	Get(key model.SeriesKey, at time.Time) (model.Baseline, bool)
 }
 
-// SlowTarget is one target slower than its normal (Deps.Slow). It mirrors
-// the verdict engine's baseline comparison; wire an adapter that copies
-// the fields.
-type SlowTarget struct {
-	Target   string          `json:"target"`
-	Kind     model.ProbeKind `json:"-"`
-	Ratio    float64         `json:"ratio"`     // now / normal median
-	NowMs    float64         `json:"now_ms"`    // current RTT
-	NormalMs float64         `json:"normal_ms"` // baseline median
-}
-
 // Baseline limits.
 const (
 	// BaselineNowWindow is the span before `at` whose mean RTT is compared
@@ -123,15 +112,15 @@ func (s *server) serveBaselines(w http.ResponseWriter, r *http.Request) {
 	if as == "" {
 		as = "now"
 	}
-	at, ak, err := parseTime(as, now)
+	at, err := parseTime(as, now)
 	if err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if at.After(now) {
-		at, ak = now, "now"
+		at = now
 	}
-	s.runCached(w, r, "base\x00"+group+"\x00"+ak, func(ctx context.Context) (*cached, error) {
+	s.runCached(w, r, "baselines", func(ctx context.Context) (*cached, error) {
 		b, err := s.baselines(ctx, group, at)
 		if err != nil {
 			return nil, err

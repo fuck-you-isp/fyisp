@@ -78,7 +78,7 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "plans": [                      // every offered mode except off, for the mode picker
     {"mode": "regions", "tests_per_hour": 9, "share": 0.038, "est_gb_month": 907.2}
   ],                              // est_gb_month: tests per hour × 720 × the median data of recent tests (150 MB before any)
-  "masked_share_24h": 0.037,      // share of the last 24 h actually under test (masked)
+  "masked_share_24h": 0.037,      // share of the last 24 h actually under test (each test plus 2 s)
   "bytes_month": 86580579678,
   "bytes_24h": 3120000000,        // the last 24 hours (bytes_month: data used by speed tests since the 1st of this month, UTC)
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
@@ -98,7 +98,7 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "coverage": [ {"hour": 0, "n": 4, "providers": 2} ],   // 24 entries: scheduled ok tests and providers per local hour, in the span
   "under_load": { ...UnderLoad },
   "edge_hours": [                 // |null without an ISP edge target: the access network's control
-    {"hour": 21, "n": 28, "rtt_ms": 30.2, "loss": 0.01}   // 24 local hours: idle RTT to the ISP edge (median over days of the hour's mean; tests are masked out) and loss over 30 days; rtt_ms and loss |null when n is 0
+    {"hour": 21, "n": 28, "rtt_ms": 30.2, "loss": 0.01}   // 24 local hours: idle RTT to the ISP edge (median over days of the hour's mean; samples taken during tests count too) and loss over 30 days; rtt_ms and loss |null when n is 0
   ]
 }
 ```
@@ -446,7 +446,7 @@ POST api/speed/config
 
 ## `GET api/status`
 
-`speed_masked_share_24h` (omitempty) is the share of the last 24 hours under test. Probes in that time are stored as measured.
+`speed_masked_share_24h` (omitempty) is the share of the last 24 hours under test (each test plus 2 s). Probes in that time are stored as measured, like any others.
 
 ## `GET api/profile`
 
@@ -454,7 +454,7 @@ POST api/speed/config
 
 ## `api/home`
 
-`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes masked by a test are "not measured" there too: a test is never a drop, and slowness during one names it ("Slow during a speed test").
+`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it) is put down to the test (`cause_kind` `speedtest`, bar note "Slow during a speed test") rather than to the provider.
 
 ## Metrics (`/metrics`)
 

@@ -34,6 +34,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/tiles"
+	"github.com/fuck-you-isp/fyisp/internal/verdict"
 )
 
 // Deps is everything the handlers need. Profile, Store and Status are
@@ -54,7 +55,7 @@ type Deps struct {
 	Baselines BaselineSource
 	// Slow lists targets currently slower than their normal (the verdict
 	// engine's baseline comparison), worst first.
-	Slow func() []SlowTarget
+	Slow func() []verdict.SlowTarget
 	// UDP reports the live state of the UDP (STUN) targets: the relay
 	// region from the name's CNAME and address-change epochs (the probe
 	// runner: probe.Runner implements probe.UDPStateSource).
@@ -76,12 +77,11 @@ type Deps struct {
 }
 
 // TilesSource is the Home tiles engine (tiles.Engine): the snapshot of the
-// latest tick, a tile's 24-hour chart and the problems of the last week.
+// latest tick and a tile's 24-hour chart.
 type TilesSource interface {
 	Ready() bool
 	Snapshot() *tiles.Snapshot
 	Chart(id string) (*tiles.Chart, bool)
-	Problems(from time.Time) []tiles.Episode
 	LateSamples() int // samples that arrived too late to count
 }
 
@@ -93,8 +93,8 @@ type Status struct {
 	Targets int         `json:"targets"` // targets in the profile
 	Ready   int         `json:"ready"`   // targets that have reported at least one sample (see Warmup)
 	Store   store.Stats `json:"store"`
-	// SpeedMasked is the share of the last 24 hours under speed test
-	// (probes then are stored as not measured); nil without speed tests.
+	// SpeedMasked is the share of the last 24 hours under speed test; nil
+	// without speed tests.
 	SpeedMasked *float64 `json:"speed_masked_share_24h,omitempty"`
 	// TilesLate counts the samples the Home tiles engine ignored because
 	// they arrived too late (TilesSource.LateSamples); nil without it.

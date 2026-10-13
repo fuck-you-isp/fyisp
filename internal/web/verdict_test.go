@@ -186,7 +186,7 @@ func TestIncidentsShapeAndClamps(t *testing.T) {
 		t.Errorf("capped: %d items, first %+v", len(r), r[0])
 	}
 
-	// Engine errors: detail locally, nothing publicly.
+	// Engine errors: the detail reaches the local page.
 	fv.err = errors.New("sqlite: /home/venkat/.local/state/fyisp/fyisp.db locked")
 	if w := do(h, "GET", "/api/incidents?from=now-1h", host); w.Code != 500 || !strings.Contains(w.Body.String(), "locked") {
 		t.Errorf("local error = %d %s", w.Code, w.Body.String())

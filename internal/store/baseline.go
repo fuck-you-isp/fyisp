@@ -19,8 +19,7 @@ import (
 //   - MedianMs: the n-weighted median of the hourly medians. Each hour is
 //     one value (its median RTT) weighted by its number of successful
 //     samples; the result is the value where the cumulative weight reaches
-//     half of all samples. Hours written before fyisp v0.3 (summary day
-//     format v1) have no median; their mean stands in for it.
+//     half of all samples.
 //   - P95Ms: the same over the hourly p95s (as the Investigate view).
 //   - Loss: lost / (successful + lost) samples; not-measured slots are
 //     neither.
@@ -101,7 +100,7 @@ func (a *baselineAcc) add(hour int64, u *summary) {
 		return
 	}
 	a.n += u.n
-	a.p50s = append(a.p50s, weightedValue{unitMs(u.median()), u.n})
+	a.p50s = append(a.p50s, weightedValue{unitMs(u.p50), u.n})
 	a.p95 = append(a.p95, weightedValue{unitMs(u.p95), u.n})
 }
 

@@ -391,11 +391,6 @@ func providerOf(c *Catalog, id string) string {
 	return "Your server"
 }
 
-// overlaps reports whether a dip shares an hour with hours.
-func overlaps(p *Pattern, hours []int) bool {
-	return p != nil && slices.ContainsFunc(p.Hours, func(h int) bool { return slices.Contains(hours, h) })
-}
-
 // Group states at a dip's hours (see groupState).
 const (
 	stUnknown = iota // too few tests

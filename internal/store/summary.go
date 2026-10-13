@@ -20,18 +20,7 @@ type summary struct {
 	by            [blob.MaxCode + 1]int64 // lost per reason; by[0] unused
 	min, max, p95 int64                   // valid when n > 0
 	sum           int64                   // sum of values: mean = sum/n, exact
-	// p50 is the hour's median (valid when n > 0), or -1 when unknown (the
-	// format's 0, see appendDay). Use median().
-	p50 int64
-}
-
-// median returns the hour's median RTT, falling back to the mean (rounded)
-// for an hour stored without one. Only valid when n > 0.
-func (s *summary) median() int64 {
-	if s.p50 >= 0 {
-		return s.p50
-	}
-	return (s.sum + s.n/2) / s.n
+	p50           int64                   // the hour's median; valid when n > 0, else -1
 }
 
 func summarize(slots []blob.Slot) *summary {
@@ -79,7 +68,7 @@ type hourSummary struct {
 //	  byte     hour of day (0..23)
 //	  uvarint  n, lost
 //	  if lost > 0: 15 uvarints, lost per reason 1..15 (they sum to lost)
-//	  if n > 0:    uvarint min, max-min, p95-min, sum, p50-min+1 (0: unknown)
+//	  if n > 0:    uvarint min, max-min, p95-min, sum, p50-min+1
 const summaryV2 = 2
 
 var errSummary = errors.New("store: corrupt summary")
@@ -100,11 +89,7 @@ func appendDay(dst []byte, day int64, hs []hourSummary) []byte {
 			dst = binary.AppendUvarint(dst, uint64(h.s.max-h.s.min))
 			dst = binary.AppendUvarint(dst, uint64(h.s.p95-h.s.min))
 			dst = binary.AppendUvarint(dst, uint64(h.s.sum))
-			var p50 uint64 // unknown
-			if h.s.p50 >= h.s.min && h.s.p50 <= h.s.max {
-				p50 = uint64(h.s.p50-h.s.min) + 1
-			}
-			dst = binary.AppendUvarint(dst, p50)
+			dst = binary.AppendUvarint(dst, uint64(h.s.p50-h.s.min)+1)
 		}
 	}
 	return dst
@@ -163,12 +148,10 @@ func decodeDay(dst []hourSummary, day int64, data []byte) ([]hourSummary, error)
 			}
 			h.s.min, h.s.max, h.s.p95, h.s.sum = mn, mn+dmax, mn+dp95, sum
 			dp50, ok := next()
-			if !ok || dp50 > dmax+1 {
+			if !ok || dp50 == 0 || dp50 > dmax+1 {
 				return dst, fmt.Errorf("%w: p50", errSummary)
 			}
-			if dp50 > 0 {
-				h.s.p50 = mn + dp50 - 1
-			}
+			h.s.p50 = mn + dp50 - 1
 		}
 		dst = append(dst, h)
 	}

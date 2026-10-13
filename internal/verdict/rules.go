@@ -568,8 +568,8 @@ func slower(nowMs, normalMs float64) string {
 	return fmt.Sprintf("%s× slower than your normal (%s vs %s)", fmtRatio(nowMs/normalMs), ms(nowMs), ms(normalMs))
 }
 
-// fmtRatio formats a ratio like baseline.FormatRatio: one decimal below 10
-// without a trailing ".0" ("2.3", "3"), whole numbers from 10.
+// fmtRatio formats a ratio for people: one decimal below 10 without a
+// trailing ".0" ("2.3", "3"), whole numbers from 10 ("14").
 func fmtRatio(r float64) string {
 	if r >= 9.95 {
 		return strconv.Itoa(int(math.Round(r)))

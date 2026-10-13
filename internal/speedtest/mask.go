@@ -11,14 +11,12 @@ import (
 
 // Self-interference: a speed test fills the link, so every probe that runs
 // during it measures the test, not the connection. Windows records when
-// tests run; Mask turns the samples of probes that ran during one (or
-// within MaskTail after it) into "not measured" before they reach the
-// store, the verdict engine, metrics and warm-up. Charts then show a gap
-// (shade it with the windows), the verdict and call minutes never count it,
-// and no incident can start from it. LoadTap sits before Mask: it keeps the
-// raw RTTs for latency under load.
+// tests run (plus MaskTail after each): the charts shade them, and the Home
+// tiles attribute a problem in one to the test (Overlaps). The samples are
+// stored as measured. LoadTap keeps the gateway's and the edge's raw RTTs
+// for latency under load.
 
-// MaskTail is masked after every test: queues take a moment to drain.
+// MaskTail extends every test's window: queues take a moment to drain.
 const MaskTail = 2 * time.Second
 
 // AbortTail extends a test's window when it was cut short (cancelled, timed
@@ -150,45 +148,6 @@ func (w *Windows) Share(now time.Time, d time.Duration) float64 {
 	return float64(sum) / float64(d)
 }
 
-// maskMargin covers, for a sample without At, a probe's timeout after its
-// fire time (at most 5s, HTTPS) plus scheduling slack.
-const maskMargin = 6 * time.Second
-
-// Mask is a model.Sink that blanks samples of probes that ran during a
-// speed test: exactly, from the probe's start (Sample.At) to its arrival,
-// against the windows plus MaskTail. Samples without At fall back to their
-// slot: a probe with slot s fires within [s, s+Interval) and ends within
-// maskMargin.
-type Mask struct {
-	Inner    model.Sink
-	Windows  *Windows
-	Interval func(model.SeriesKey) time.Duration
-	Now      func() time.Time // default time.Now
-}
-
-// Observe implements model.Sink.
-func (m Mask) Observe(s model.Sample) {
-	if !(s.Lost && s.Reason == model.ReasonGap) {
-		var from, to time.Time
-		if !s.At.IsZero() {
-			from, to = s.At, time.Now()
-			if m.Now != nil {
-				to = m.Now()
-			}
-		} else {
-			iv := 15 * time.Second
-			if m.Interval != nil {
-				iv = m.Interval(s.Key)
-			}
-			from, to = s.Slot, s.Slot.Add(iv+maskMargin)
-		}
-		if m.Windows.Overlaps(from, to) {
-			s.Lost, s.Reason, s.RTT, s.Err, s.Reused = true, model.ReasonGap, 0, "", false
-		}
-	}
-	m.Inner.Observe(s)
-}
-
 // Layers of latency under load.
 const (
 	LayerGateway = "gateway" // the home router (ICMP): queues in the home network
@@ -198,8 +157,8 @@ const (
 // LoadTap keeps the recent ICMP samples of the gateway and the ISP edge,
 // lost ones included, by the probe's start (Sample.At; its arrival when
 // unset): the idle side of latency under load
-// (the loaded side comes from the test's own prober, see load.go). Put it
-// in the fan-out before Mask. Safe for concurrent use.
+// (the loaded side comes from the test's own prober, see load.go). Safe for
+// concurrent use.
 type LoadTap struct {
 	now    func() time.Time
 	layers map[model.SeriesKey]string

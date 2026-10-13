@@ -198,6 +198,17 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.serveGET(w, r, rt, rel)
 }
 
+// localStatus is /api/status.
+type localStatus struct {
+	Status
+	Controls string `json:"controls"` // speed-test controls: "enabled", "admin" (need the admin token) or "disabled"
+	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
+	// CanControl: this request may use the speed-test controls as it is
+	// (api/speed's "configurable"): the owner, so the UI may start a trace
+	// by itself when Investigate opens.
+	CanControl bool `json:"can_control"`
+}
+
 // localURL is the address to suggest when the Host is refused.
 func (h *localHandler) localURL() string {
 	host := "127.0.0.1"

@@ -18,8 +18,7 @@ type Path struct {
 	Conn    string
 	Edge    netip.Addr // first non-private hop towards the internet
 	EdgeHop int        // TTL of Edge (1 = gateway)
-	Updated time.Time
-	Err     string // last discovery problem, for local logs only
+	Err     string     // last discovery problem, for local logs only
 }
 
 // Options configures a Watcher.

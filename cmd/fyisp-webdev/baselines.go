@@ -9,7 +9,7 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/store"
-	"github.com/fuck-you-isp/fyisp/internal/web"
+	"github.com/fuck-you-isp/fyisp/internal/verdict"
 )
 
 // slowdown is the synthetic "evening slowdown": these targets run slower
@@ -76,11 +76,11 @@ func (f *fakeBaselines) Get(key model.SeriesKey, _ time.Time) (model.Baseline, b
 }
 
 // slow lists TCP series whose last 5 minutes are ≥1.5× their median.
-func (f *fakeBaselines) slow(st store.Reader, p *model.Profile) func() []web.SlowTarget {
+func (f *fakeBaselines) slow(st store.Reader, p *model.Profile) func() []verdict.SlowTarget {
 	var mu sync.Mutex
 	var at time.Time
-	var last []web.SlowTarget
-	return func() []web.SlowTarget {
+	var last []verdict.SlowTarget
+	return func() []verdict.SlowTarget {
 		mu.Lock()
 		defer mu.Unlock()
 		now := time.Now()
@@ -98,7 +98,7 @@ func (f *fakeBaselines) slow(st store.Reader, p *model.Profile) func() []web.Slo
 		if err != nil {
 			return last
 		}
-		var out []web.SlowTarget
+		var out []verdict.SlowTarget
 		for _, c := range res.Series {
 			var sum float64
 			var n float64
@@ -114,7 +114,7 @@ func (f *fakeBaselines) slow(st store.Reader, p *model.Profile) func() []web.Slo
 			}
 			cur := sum / n
 			if r := cur / b.MedianMs; r >= 1.5 {
-				out = append(out, web.SlowTarget{Target: c.Key.Target, Kind: c.Key.Kind, Ratio: r, NowMs: cur, NormalMs: b.MedianMs})
+				out = append(out, verdict.SlowTarget{Target: c.Key.Target, Kind: c.Key.Kind, Ratio: r, NowMs: cur, NormalMs: b.MedianMs})
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].Ratio > out[j].Ratio })

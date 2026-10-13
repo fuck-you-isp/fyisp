@@ -36,15 +36,6 @@ var std = newDB(embedded, func(err error) {
 // Safe for concurrent use.
 func Lookup(ip netip.Addr) Info { return std.lookup(ip) }
 
-// Version is the build date of the built-in table, e.g. "2026-09-26", or ""
-// if the table cannot be decoded.
-func Version() string {
-	if t := std.get(); t != nil {
-		return t.version
-	}
-	return ""
-}
-
 // db decodes a table on first use and remembers the result (or the failure,
 // which is reported once).
 type db struct {

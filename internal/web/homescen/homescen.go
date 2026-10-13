@@ -119,15 +119,6 @@ func (v *Scenario) Chart(id string) (*tiles.Chart, bool) {
 	c, ok := v.Charts[id]
 	return c, ok
 }
-func (v *Scenario) Problems(from time.Time) []tiles.Episode {
-	var out []tiles.Episode
-	for _, e := range v.Eps {
-		if e.Ongoing() || !e.End.Before(from) {
-			out = append(out, e)
-		}
-	}
-	return out
-}
 
 // usualMs are the tiles' usual latencies, in profile.Tiles' order.
 var usualMs = []float64{18, 14, 9, 22, 12, 8, 24, 15, 13, 7, 6}
@@ -334,7 +325,7 @@ func Build(name string, now time.Time) (*Scenario, error) {
 		return nil, err
 	}
 	v := &Scenario{Name: name, Profile: p, Charts: map[string]*tiles.Chart{},
-		Path:   netinfo.Path{Gateway: netip.MustParseAddr("192.168.1.1"), Iface: "eth0", Conn: model.ConnWired, Edge: netip.MustParseAddr("198.51.100.1"), EdgeHop: 2, Updated: now},
+		Path:   netinfo.Path{Gateway: netip.MustParseAddr("192.168.1.1"), Iface: "eth0", Conn: model.ConnWired, Edge: netip.MustParseAddr("198.51.100.1"), EdgeHop: 2},
 		Viewer: Viewer{Listen: "127.0.0.1:3000", RemoteAddr: "127.0.0.1:50000", Host: "127.0.0.1:3000"},
 		Speed:  &Speed{Scheduled: true}}
 	s := &tiles.Snapshot{At: now, LastMeasured: now.Add(-4 * time.Second), FirstData: now.Add(-220 * 24 * time.Hour),
@@ -920,8 +911,7 @@ func (l *Live) Current() *Scenario {
 	return &v
 }
 
-func (l *Live) Ready() bool                             { return l.Current().Ready() }
-func (l *Live) Snapshot() *tiles.Snapshot               { return l.Current().Snap }
-func (l *Live) Chart(id string) (*tiles.Chart, bool)    { return l.Current().Chart(id) }
-func (l *Live) Problems(from time.Time) []tiles.Episode { return l.Current().Problems(from) }
-func (l *Live) LateSamples() int                        { return 0 }
+func (l *Live) Ready() bool                          { return l.Current().Ready() }
+func (l *Live) Snapshot() *tiles.Snapshot            { return l.Current().Snap }
+func (l *Live) Chart(id string) (*tiles.Chart, bool) { return l.Current().Chart(id) }
+func (l *Live) LateSamples() int                     { return 0 }

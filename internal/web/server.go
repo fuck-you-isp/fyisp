@@ -123,7 +123,6 @@ const (
 	routeIncidents
 	routeTrace
 	routeTracePanel
-	routeRouteChanges
 	routeBaselines
 	routeOverview
 	routeCalls
@@ -151,8 +150,6 @@ func lookup(rel string) route {
 		return routeTrace
 	case "api/trace/panel":
 		return routeTracePanel
-	case "api/routes/changes":
-		return routeRouteChanges
 	case "api/baselines":
 		return routeBaselines
 	case "api/overview":
@@ -174,7 +171,7 @@ func lookup(rel string) route {
 func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel string) {
 	q := r.URL.Query()
 	switch rt {
-	case routeStatic, routeStatus, routeProfile: // the index ignores params (e.g. ?fbclid=)
+	case routeStatic, routeProfile: // the index ignores params (e.g. ?fbclid=)
 		if err := checkParams(q); err != nil {
 			writeErr(w, r, http.StatusBadRequest, err.Error())
 			return
@@ -186,8 +183,6 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		writeBody(w, r, http.StatusOK, "text/html; charset=utf-8", s.index)
 	case routeStatic:
 		serveAsset(w, r, assets[rel])
-	case routeStatus:
-		writeJSON(w, r, http.StatusOK, s.rawStatus(r.Context()))
 	case routeProfile:
 		pj := buildProfile(s.d.Profile())
 		pj.Features.Baselines = s.d.Baselines != nil
@@ -216,16 +211,14 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveHome(w, r)
 	case routeSpeed:
 		s.serveSpeed(w, r)
-	case routeTrace, routeTracePanel, routeRouteChanges:
+	case routeTrace, routeTracePanel:
 		switch {
 		case s.d.Trace == nil:
 			writeErr(w, r, http.StatusNotFound, "not found")
 		case rt == routeTrace:
 			s.serveTrace(w, r)
-		case rt == routeTracePanel:
-			s.serveTracePanel(w, r)
 		default:
-			s.serveRouteChanges(w, r)
+			s.serveTracePanel(w, r)
 		}
 	default:
 		http.NotFound(w, r)
@@ -252,17 +245,6 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a *asset) {
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(b)
 	}
-}
-
-// localStatus is /api/status.
-type localStatus struct {
-	Status
-	Controls string `json:"controls"` // speed-test controls: "enabled", "admin" (need the admin token) or "disabled"
-	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
-	// CanControl: this request may use the speed-test controls as it is
-	// (api/speed's "configurable"): the owner, so the UI may start a trace
-	// by itself when Investigate opens.
-	CanControl bool `json:"can_control"`
 }
 
 func (s *server) rawStatus(ctx context.Context) Status {
@@ -317,12 +299,10 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 	case errors.Is(err, errUnknownGroup):
 		writeErr(w, r, http.StatusNotFound, "unknown group")
 		return
-	case errors.Is(err, errBusy), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		switch {
 		case r.Context().Err() != nil:
 			s.d.log().Debug("panel query: client went away", "group", p.group)
-		case errors.Is(err, errBusy):
-			s.d.log().Debug("panel query: busy", "group", p.group)
 		default:
 			s.d.log().Warn("panel query timed out", "group", p.group, "err", err)
 		}
@@ -340,8 +320,6 @@ func (s *server) servePanel(w http.ResponseWriter, r *http.Request, asCSV bool) 
 	w.Header().Set("Cache-Control", "no-store")
 	writeBody(w, r, c.code, c.ctype, c.body)
 }
-
-var errBusy = errors.New("busy")
 
 // panelTimeout bounds one panel query.
 const panelTimeout = 20 * time.Second

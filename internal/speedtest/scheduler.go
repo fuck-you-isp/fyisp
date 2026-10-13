@@ -183,13 +183,6 @@ type target struct {
 	at time.Time
 }
 
-func (t target) row() string {
-	if t.region != "" {
-		return t.region
-	}
-	return t.server
-}
-
 // Scheduler runs speed tests on a schedule and on demand.
 type Scheduler struct {
 	o    Options
@@ -770,7 +763,8 @@ func (s *Scheduler) rowOfLocked(t target) Row {
 	return Row{}
 }
 
-// MaskedShare is the share of the last d spent under test (masked).
+// MaskedShare is the share of the last d spent under test (each window plus
+// MaskTail).
 func (s *Scheduler) MaskedShare(d time.Duration) float64 { return s.o.Windows.Share(s.o.Now(), d) }
 
 // SpeedTests reads stored tests (oldest first).

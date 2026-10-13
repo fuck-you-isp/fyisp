@@ -171,7 +171,7 @@ func TestTraceNil(t *testing.T) {
 	_, d := fixture(t, time.Now())
 	lh := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
 	host := map[string]string{"Host": "127.0.0.1:3000"}
-	for _, p := range []string{"api/trace?target=Alpha", "api/trace/panel?target=Alpha", "api/routes/changes"} {
+	for _, p := range []string{"api/trace?target=Alpha", "api/trace/panel?target=Alpha"} {
 		if w := do(lh, "GET", "/"+p, host); w.Code != 404 {
 			t.Errorf("local nil %s = %d", p, w.Code)
 		}
@@ -252,15 +252,13 @@ func TestTraceShapeAndClamps(t *testing.T) {
 		"/api/trace/panel?target=Alpha&hops=41":      400,
 		"/api/trace/panel?target=Alpha&hops=a":       400,
 		"/api/trace/panel?target=Nope&hops=1":        404,
-		"/api/routes/changes?from=x":                 400,
-		"/api/routes/changes":                        200,
 		"/api/trace/panel?target=Beta":               200,
 	} {
 		if w := do(h, "GET", p, host); w.Code != code {
 			t.Errorf("GET %s = %d, want %d (%s)", p, w.Code, code, w.Body.String())
 		}
 	}
-	for _, p := range []string{"/api/trace?target=Alpha", "/api/trace/panel?target=Alpha", "/api/routes/changes"} {
+	for _, p := range []string{"/api/trace?target=Alpha", "/api/trace/panel?target=Alpha"} {
 		if w := do(h, "POST", p, host); w.Code != 405 {
 			t.Errorf("POST %s = %d", p, w.Code)
 		}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
-	"github.com/fuck-you-isp/fyisp/internal/profile"
 )
 
 // lossy returns events losing every second of [from, to) with probability p
@@ -31,18 +30,6 @@ func badTiles(s *Snapshot) int {
 		}
 	}
 	return n
-}
-
-func stunOf(p *model.Profile, id string) []string {
-	var out []string
-	for _, r := range profile.ResolveTiles(p) {
-		if r.ID == id {
-			for _, tg := range r.UDP {
-				out = append(out, tg.Name)
-			}
-		}
-	}
-	return out
 }
 
 // C1 (clean-blips-only filter): a 20 s blip of the whole connection, then

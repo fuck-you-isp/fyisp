@@ -105,7 +105,7 @@ func hasTag(t model.Target, tag string) bool { return slices.Contains(t.Tags, ta
 
 // collectUDP summarizes the UDP targets of p over the window (now-window,
 // now]. Called with e.mu held, after collect (which trims raw samples).
-func (e *engine) collectUDP(now time.Time, p *model.Profile) []*ustat {
+func (e *Engine) collectUDP(now time.Time, p *model.Profile) []*ustat {
 	if p == nil {
 		return nil
 	}
@@ -162,7 +162,7 @@ func (e *engine) collectUDP(now time.Time, p *model.Profile) []*ustat {
 
 // judgeUDP applies the UDP rules (above) to j when the TCP rules found
 // nothing. It always advances the udp_degraded timer.
-func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judgement) {
+func (e *Engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judgement) {
 	type prov struct{ judged, poor int }
 	provs := map[string]bool{}
 	blockedProv := map[string]bool{}
@@ -271,13 +271,9 @@ func (e *engine) judgeUDP(now time.Time, p *model.Profile, us []*ustat, j *judge
 	}
 }
 
-// UDPQuietAfter is how long a blocked verdict lasts before it is Quiet
-// (the dashboard treats older blocks as information, not as problems).
-const UDPQuietAfter = udpQuietAfter
-
 // markQuiet sets Quiet on a blocked verdict that has lasted udpQuietAfter
 // without a break (udp_blocked and stun_blocked count as one).
-func (e *engine) markQuiet(now time.Time) {
+func (e *Engine) markQuiet(now time.Time) {
 	e.vmu.Lock()
 	defer e.vmu.Unlock()
 	if !isBlocked(e.cur.Kind) {

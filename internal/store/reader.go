@@ -698,7 +698,7 @@ func mapValues[K comparable, V any](m map[K]V) []V {
 // Stats reports file sizes (database + WAL), the oldest stored hour and the
 // flush state.
 func (s *SQLite) Stats(ctx context.Context) (Stats, error) {
-	st := Stats{Dir: s.dir}
+	var st Stats
 	for _, suf := range []string{"", "-wal"} {
 		if fi, err := os.Stat(s.db.path + suf); err == nil {
 			st.FileBytes += fi.Size()

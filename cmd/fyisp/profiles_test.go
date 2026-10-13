@@ -145,7 +145,7 @@ func TestCmdProfiles(t *testing.T) {
 	}
 
 	r, _ := profile.Builtin()
-	if r.Definition("aws") != nil {
+	if slices.ContainsFunc(r.Definitions(), func(d *profile.Definition) bool { return d.Name == "aws" }) {
 		out.Reset()
 		if code := cmdProfiles([]string{"aws"}, &out, &errb); code != 0 {
 			t.Fatal(code)

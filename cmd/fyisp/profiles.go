@@ -62,10 +62,9 @@ func loadProfile(c config) (*model.Profile, error) {
 }
 
 func loadProfileTargets(c config) (*model.Profile, error) {
-	l := profile.Limits{}
 	switch {
 	case c.configPath != "":
-		p, err := profile.LoadLimits(c.configPath, l)
+		p, err := profile.Load(c.configPath)
 		if err != nil {
 			return nil, fmt.Errorf("loading --config: %w", err)
 		}
@@ -95,7 +94,7 @@ func loadProfileTargets(c config) (*model.Profile, error) {
 		if n == 0 {
 			return nil, fmt.Errorf("--profile %s selects no targets (see `fyisp profiles`)", p.Name)
 		}
-		if err := profile.Validate(p, l); err != nil {
+		if err := profile.Validate(p, false); err != nil {
 			return nil, fmt.Errorf("--profile %s: %w", p.Name, err)
 		}
 		return p, nil

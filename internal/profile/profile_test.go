@@ -20,7 +20,7 @@ func TestDefaultMatchesCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Validate(p, Limits{}); err != nil {
+	if err := Validate(p, false); err != nil {
 		t.Fatalf("default profile invalid: %v", err)
 	}
 	r, err := Builtin()
@@ -290,7 +290,7 @@ func TestPathGroup(t *testing.T) {
 		}
 	}
 	// Public (shared) limits accept the special hosts and the 3s interval.
-	if err := Validate(p, Limits{}); err != nil {
+	if err := Validate(p, false); err != nil {
 		t.Error(err)
 	}
 
@@ -369,7 +369,7 @@ func TestValidate(t *testing.T) {
 			Targets: []model.Target{{Name: "a", Host: "a.example", Group: "g", Interval: 15 * time.Second}},
 		}
 	}
-	if err := Validate(base(), Limits{}); err != nil {
+	if err := Validate(base(), false); err != nil {
 		t.Fatal(err)
 	}
 	// No target limit by default.
@@ -379,47 +379,42 @@ func TestValidate(t *testing.T) {
 		tg.Name = fmt.Sprintf("t%d", i)
 		big.Targets = append(big.Targets, tg)
 	}
-	if err := Validate(big, Limits{}); err != nil {
+	if err := Validate(big, false); err != nil {
 		t.Errorf("2001 targets: %v", err)
 	}
 	cases := []struct {
 		want string
 		mod  func(p *model.Profile)
-		l    Limits
 	}{
-		{"duplicate target name", func(p *model.Profile) { p.Targets = append(p.Targets, p.Targets[0]) }, Limits{}},
-		{"at most 1 allowed", func(p *model.Profile) {
-			p.Targets = append(p.Targets, model.Target{Name: "b", Host: "b.example", Group: "g"})
-		}, Limits{MaxTargets: 1}},
-		{"below the minimum 5s", func(p *model.Profile) { p.Targets[0].Interval = 4 * time.Second }, Limits{}},
-		{"below the minimum 10s", func(p *model.Profile) { p.Targets[0].Interval = 9 * time.Second }, Limits{MinIntervalSecs: 10}},
-		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 10 * time.Second }, Limits{}},
-		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 7500 * time.Millisecond }, Limits{}},
-		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 21 * time.Second }, Limits{}},
-		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 2 * time.Hour }, Limits{}},
-		{"unknown group", func(p *model.Profile) { p.Targets[0].Group = "x" }, Limits{}},
-		{"duplicate group id", func(p *model.Profile) { p.Groups = append(p.Groups, p.Groups[0]) }, Limits{}},
-		{"private address", func(p *model.Profile) { p.Targets[0].Host = "192.168.0.1" }, Limits{}},
-		{"private address", func(p *model.Profile) { p.Targets[0].Host = "127.0.0.1" }, Limits{}},
+		{"duplicate target name", func(p *model.Profile) { p.Targets = append(p.Targets, p.Targets[0]) }},
+		{"below the minimum 5s", func(p *model.Profile) { p.Targets[0].Interval = 4 * time.Second }},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 10 * time.Second }},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 7500 * time.Millisecond }},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 21 * time.Second }},
+		{"must be whole seconds", func(p *model.Profile) { p.Targets[0].Interval = 2 * time.Hour }},
+		{"unknown group", func(p *model.Profile) { p.Targets[0].Group = "x" }},
+		{"duplicate group id", func(p *model.Profile) { p.Groups = append(p.Groups, p.Groups[0]) }},
+		{"private address", func(p *model.Profile) { p.Targets[0].Host = "192.168.0.1" }},
+		{"private address", func(p *model.Profile) { p.Targets[0].Host = "127.0.0.1" }},
 		{"private address", func(p *model.Profile) {
 			p.Targets[0].HostOverrides = map[model.ProbeKind]string{model.KindICMP: "10.1.2.3"}
-		}, Limits{}},
-		{"empty name", func(p *model.Profile) { p.Targets[0].Name = "" }, Limits{}},
-		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a\tb" }, Limits{}},
-		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = " a" }, Limits{}},
-		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a  b" }, Limits{}},
-		{"below the minimum 5s", func(p *model.Profile) { p.Targets[0].Interval = 3 * time.Second }, Limits{}},
-		{"ICMP only", func(p *model.Profile) { p.Targets[0].Host = model.HostGateway }, Limits{}},
-		{"listed twice", func(p *model.Profile) { p.Targets[0].Kinds = []model.ProbeKind{1, 1} }, Limits{}},
-		{"unknown kind", func(p *model.Profile) { p.Targets[0].Kinds = []model.ProbeKind{9} }, Limits{}},
-		{"must start with /", func(p *model.Profile) { p.Targets[0].Path = "x" }, Limits{}},
-		{"out of range", func(p *model.Profile) { p.Targets[0].Port = 70000 }, Limits{}},
-		{"no targets", func(p *model.Profile) { p.Targets = nil }, Limits{}},
+		}},
+		{"empty name", func(p *model.Profile) { p.Targets[0].Name = "" }},
+		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a\tb" }},
+		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = " a" }},
+		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a  b" }},
+		{"below the minimum 5s", func(p *model.Profile) { p.Targets[0].Interval = 3 * time.Second }},
+		{"ICMP only", func(p *model.Profile) { p.Targets[0].Host = model.HostGateway }},
+		{"listed twice", func(p *model.Profile) { p.Targets[0].Kinds = []model.ProbeKind{1, 1} }},
+		{"unknown kind", func(p *model.Profile) { p.Targets[0].Kinds = []model.ProbeKind{9} }},
+		{"must start with /", func(p *model.Profile) { p.Targets[0].Path = "x" }},
+		{"out of range", func(p *model.Profile) { p.Targets[0].Port = 70000 }},
+		{"no targets", func(p *model.Profile) { p.Targets = nil }},
 	}
 	for _, c := range cases {
 		p := base()
 		c.mod(p)
-		err := Validate(p, c.l)
+		err := Validate(p, false)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q: got %v", c.want, err)
 		}
@@ -427,7 +422,7 @@ func TestValidate(t *testing.T) {
 	for _, iv := range []time.Duration{6 * time.Second, 9 * time.Second, 12 * time.Second, 15 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute, time.Hour} {
 		p := base()
 		p.Targets[0].Interval = iv
-		if err := Validate(p, Limits{}); err != nil {
+		if err := Validate(p, false); err != nil {
 			t.Errorf("interval %s: %v", iv, err)
 		}
 	}
@@ -436,12 +431,12 @@ func TestValidate(t *testing.T) {
 	p.Targets[0].Host = model.HostGateway
 	p.Targets[0].Kinds = []model.ProbeKind{model.KindICMP}
 	p.Targets[0].Interval = 3 * time.Second
-	if err := Validate(p, Limits{}); err != nil {
+	if err := Validate(p, false); err != nil {
 		t.Errorf("special host with 3s interval and a spaced name: %v", err)
 	}
 	p = base()
 	p.Targets[0].Host = "192.168.0.1"
-	if err := Validate(p, Limits{AllowPrivateIPs: true}); err != nil {
+	if err := Validate(p, true); err != nil {
 		t.Errorf("private IP with AllowPrivateIPs: %v", err)
 	}
 }
@@ -496,11 +491,11 @@ add:
 	for i := range MaxTraced + 1 {
 		p.Targets = append(p.Targets, model.Target{Name: fmt.Sprintf("t%d", i), Host: "a.example", Group: "g", Trace: true})
 	}
-	if err := Validate(p, Limits{}); err == nil || !strings.Contains(err.Error(), "trace: true, at most 20") {
+	if err := Validate(p, false); err == nil || !strings.Contains(err.Error(), "trace: true, at most 20") {
 		t.Errorf("21 traced targets: %v", err)
 	}
 	p.Targets[0].Trace = false
-	if err := Validate(p, Limits{}); err != nil {
+	if err := Validate(p, false); err != nil {
 		t.Errorf("20 traced targets: %v", err)
 	}
 }
@@ -529,7 +524,7 @@ func TestShippedUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Validate(calls, Limits{}); err != nil {
+	if err := Validate(calls, false); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"Meet-STUN", "Meet-STUN-3478", "Cloudflare-STUN", "Cloudflare-UDP53", "Twilio-STUN-global", "Teams-Relay",
@@ -568,7 +563,7 @@ func TestShippedUDP(t *testing.T) {
 		t.Errorf("all: %d UDP targets", n)
 	}
 	both, _ := r.Resolve([]string{"default", "calls"}, ResolveOptions{})
-	if err := Validate(both, Limits{}); err != nil {
+	if err := Validate(both, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := udpNames(both); len(got) != len(want) || indexGroup(both.Groups, "calls") != 1 || indexGroup(both.Groups, "calls-udp") < 0 {
@@ -593,22 +588,21 @@ func TestValidateUDP(t *testing.T) {
 		return p
 	}
 	ok := model.Target{Name: "mine", Host: "stun.example.com", Port: 3478, Kinds: udp, Interval: 6 * time.Second}
-	if err := Validate(prof(ok), Limits{}); err != nil {
+	if err := Validate(prof(ok), false); err != nil {
 		t.Errorf("custom 6s: %v", err)
 	}
-	// The shipped targets may probe every 5s, even with a stricter limit.
+	// The shipped targets may probe every 5s.
 	def, _ := Default()
-	if err := Validate(def, Limits{MinIntervalSecs: 15}); err != nil && strings.Contains(err.Error(), "STUN") {
+	if err := Validate(def, false); err != nil && strings.Contains(err.Error(), "STUN") {
 		t.Errorf("shipped: %v", err)
 	}
 	ship := model.Target{Name: "Meet-STUN", Host: "stun.l.google.com", Port: 19302, Kinds: udp, Interval: 5 * time.Second}
-	if err := Validate(prof(ship), Limits{MinIntervalSecs: 15}); err != nil {
+	if err := Validate(prof(ship), false); err != nil {
 		t.Errorf("shipped at 5s: %v", err)
 	}
 	with := func(f func(*model.Target)) model.Target { tg := ok; f(&tg); return tg }
 	cases := map[string]*model.Profile{
 		"below the minimum 6s":      prof(with(func(tg *model.Target) { tg.Interval = 5 * time.Second })),
-		"below the minimum 15s":     prof(with(func(tg *model.Target) { tg.Interval = 10 * time.Second })),
 		"needs a port":              prof(with(func(tg *model.Target) { tg.Port = 0 })),
 		"cannot be combined":        prof(with(func(tg *model.Target) { tg.Kinds = []model.ProbeKind{model.KindUDP, model.KindTCP} })),
 		"divide 1h evenly":          prof(with(func(tg *model.Target) { tg.Interval = 7 * time.Second })),
@@ -618,9 +612,8 @@ func TestValidateUDP(t *testing.T) {
 		"probed with ICMP only":     prof(with(func(tg *model.Target) { tg.Host = model.HostGateway })),
 		"shipped name, faster host": prof(with(func(tg *model.Target) { tg.Name, tg.Interval = "Meet-STUN", 5*time.Second })),
 	}
-	lim := map[string]Limits{"below the minimum 15s": {MinIntervalSecs: 15}}
 	for want, p := range cases {
-		err := Validate(p, lim[want])
+		err := Validate(p, false)
 		if want == "shipped name, faster host" {
 			want = "below the minimum 6s"
 		}
@@ -635,16 +628,16 @@ func TestValidateUDP(t *testing.T) {
 		tg.Name = fmt.Sprintf("u%d", i)
 		many = append(many, tg)
 	}
-	if err := Validate(prof(many...), Limits{}); err == nil || !strings.Contains(err.Error(), "33 UDP targets, at most 32") {
+	if err := Validate(prof(many...), false); err == nil || !strings.Contains(err.Error(), "33 UDP targets, at most 32") {
 		t.Errorf("33 UDP: %v", err)
 	}
-	if err := Validate(prof(append(many[:MaxCustomUDP], ship)...), Limits{}); err != nil {
+	if err := Validate(prof(append(many[:MaxCustomUDP], ship)...), false); err != nil {
 		t.Errorf("32 custom + 1 shipped: %v", err)
 	}
-	// Private hosts only with AllowPrivateIPs (local files).
+	// Private hosts only with allowPrivate (local files).
 	lan := with(func(tg *model.Target) { tg.Host = "192.168.1.1" })
-	if err := Validate(prof(lan), Limits{AllowPrivateIPs: true}); err != nil {
-		t.Errorf("private with AllowPrivateIPs: %v", err)
+	if err := Validate(prof(lan), true); err != nil {
+		t.Errorf("private with allowPrivate: %v", err)
 	}
 	// A --config file: tags, kinds [udp], and the limits.
 	p, err := Load(write(t, `

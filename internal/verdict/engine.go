@@ -96,7 +96,9 @@ type series struct {
 	gaps []int64
 }
 
-type engine struct {
+// Engine consumes samples (model.Sink) and evaluates every few seconds while
+// Run runs. Safe for concurrent use.
+type Engine struct {
 	profile func() *model.Profile
 	st      IncidentStore
 	o       Options
@@ -140,13 +142,9 @@ type recovered struct {
 	updated time.Time
 }
 
-// New returns an Engine. profile returns the current profile (it may change
-// on reload, may return nil). st may be nil (no incident log).
-func New(profile func() *model.Profile, st IncidentStore, o Options) Engine {
-	return newEngine(profile, st, o)
-}
-
-func newEngine(profile func() *model.Profile, st IncidentStore, o Options) *engine {
+// New returns an Engine. profile returns the profile (it may return nil).
+// st may be nil (no incident log).
+func New(profile func() *model.Profile, st IncidentStore, o Options) *Engine {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -156,44 +154,10 @@ func newEngine(profile func() *model.Profile, st IncidentStore, o Options) *engi
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
-	return &engine{
+	return &Engine{
 		profile: profile, st: st, o: o,
 		series: map[model.SeriesKey]*series{},
 		cur:    warmingUp(time.Time{}),
-	}
-}
-
-// MetricsSource adapts an Engine made by New for metrics.Collector.SetVerdictSource.
-func MetricsSource(e Engine) func() (model.Verdict, map[string]*bool) {
-	return func() (model.Verdict, map[string]*bool) {
-		var l map[string]*bool
-		if lr, ok := e.(interface{ Layers() map[string]*bool }); ok {
-			l = lr.Layers()
-		}
-		return e.Current(), l
-	}
-}
-
-// SlowSource adapts an Engine made by New for the UI's "slower than your
-// normal" line: it returns e's Slow (nil for other Engines).
-func SlowSource(e Engine) func() []SlowTarget {
-	return func() []SlowTarget {
-		if s, ok := e.(interface{ Slow() []SlowTarget }); ok {
-			return s.Slow()
-		}
-		return nil
-	}
-}
-
-// VsNormalSource adapts an Engine made by New for
-// metrics.Collector.SetVsNormalSource (a no-op for other Engines).
-func VsNormalSource(e Engine) func(yield func(name string, kind model.ProbeKind, ratio float64)) {
-	return func(yield func(string, model.ProbeKind, float64)) {
-		if s, ok := e.(interface {
-			EachVsNormal(func(string, model.ProbeKind, float64))
-		}); ok {
-			s.EachVsNormal(yield)
-		}
 	}
 }
 
@@ -202,7 +166,7 @@ func VsNormalSource(e Engine) func(yield func(name string, kind model.ProbeKind,
 // slowMinExtraMs above it: one entry per target (its slowest kind), slowest
 // first. It is a signal for the UI, not a verdict: no hysteresis, no
 // incident, and it does not change Current. Empty without Options.Baseline.
-func (e *engine) Slow() []SlowTarget {
+func (e *Engine) Slow() []SlowTarget {
 	e.vmu.Lock()
 	defer e.vmu.Unlock()
 	var out []SlowTarget
@@ -230,7 +194,7 @@ func (e *engine) Slow() []SlowTarget {
 // EachVsNormal calls fn for every (target, kind) with a long-term normal and
 // enough successful probes in the last minute, with the ratio of the
 // window's median RTT to the normal median (at the last evaluation).
-func (e *engine) EachVsNormal(fn func(name string, kind model.ProbeKind, ratio float64)) {
+func (e *Engine) EachVsNormal(fn func(name string, kind model.ProbeKind, ratio float64)) {
 	e.vmu.Lock()
 	n := slices.Clone(e.normals)
 	e.vmu.Unlock()
@@ -242,7 +206,7 @@ func (e *engine) EachVsNormal(fn func(name string, kind model.ProbeKind, ratio f
 // Observe records a sample. Not-measured gaps are never loss: only their
 // slot is noted (see series.gaps). It never blocks for long (one short
 // mutex).
-func (e *engine) Observe(s model.Sample) {
+func (e *Engine) Observe(s model.Sample) {
 	if s.Lost && s.Reason == model.ReasonGap {
 		if s.Key.Kind.IsUDP() || s.Key.Kind == model.KindTrace {
 			return
@@ -314,7 +278,7 @@ func (sr *series) closeMinute() {
 }
 
 // Current returns the current (hysteresis-filtered) verdict.
-func (e *engine) Current() model.Verdict {
+func (e *Engine) Current() model.Verdict {
 	e.vmu.Lock()
 	defer e.vmu.Unlock()
 	v := e.cur
@@ -332,7 +296,7 @@ func (e *engine) Current() model.Verdict {
 // Layers returns the health of each path layer (model.LayerGateway,
 // LayerEdge, LayerAnycast) at the last evaluation, without hysteresis; nil
 // means unknown (no samples in the last minute).
-func (e *engine) Layers() map[string]*bool {
+func (e *Engine) Layers() map[string]*bool {
 	e.vmu.Lock()
 	defer e.vmu.Unlock()
 	out := make(map[string]*bool, 3)
@@ -348,7 +312,7 @@ func (e *engine) Layers() map[string]*bool {
 }
 
 // Incidents returns the stored incidents overlapping [from, to], newest first.
-func (e *engine) Incidents(ctx context.Context, from, to time.Time) ([]model.Incident, error) {
+func (e *Engine) Incidents(ctx context.Context, from, to time.Time) ([]model.Incident, error) {
 	if e.st == nil {
 		return nil, nil
 	}
@@ -358,7 +322,7 @@ func (e *engine) Incidents(ctx context.Context, from, to time.Time) ([]model.Inc
 // Run recovers incidents a previous run left open, then evaluates every
 // Interval until ctx is done. On return the open incident (if any) is saved
 // but left open, so a restart within staleAfter continues it.
-func (e *engine) Run(ctx context.Context) error {
+func (e *Engine) Run(ctx context.Context) error {
 	e.recoverIncidents(ctx)
 	t := time.NewTicker(e.o.Interval)
 	defer t.Stop()
@@ -385,7 +349,7 @@ func (e *engine) Run(ctx context.Context) error {
 // kind the incident continues, otherwise it is closed at its last save.
 // Without IncidentRecovery the store's ongoing incidents are found with
 // Incidents and their Start stands in for the last save.
-func (e *engine) recoverIncidents(ctx context.Context) {
+func (e *Engine) recoverIncidents(ctx context.Context) {
 	if e.recovered || e.st == nil {
 		return
 	}
@@ -418,7 +382,7 @@ func (e *engine) recoverIncidents(ctx context.Context) {
 	}
 }
 
-func (e *engine) closeRecovered(ctx context.Context, r recovered) {
+func (e *Engine) closeRecovered(ctx context.Context, r recovered) {
 	in := r.in
 	in.End = r.updated
 	if in.End.Before(in.Start) {
@@ -429,7 +393,7 @@ func (e *engine) closeRecovered(ctx context.Context, r recovered) {
 
 // save persists in; a failed save of a closed incident is retried on later
 // evaluations (a failed open one is retried by the heartbeat).
-func (e *engine) save(ctx context.Context, in *model.Incident) bool {
+func (e *Engine) save(ctx context.Context, in *model.Incident) bool {
 	if e.st == nil {
 		return true
 	}
@@ -444,7 +408,7 @@ func (e *engine) save(ctx context.Context, in *model.Incident) bool {
 }
 
 // step is one evaluation at now.
-func (e *engine) step(ctx context.Context, now time.Time) {
+func (e *Engine) step(ctx context.Context, now time.Time) {
 	p := e.profile()
 	e.mu.Lock()
 	ts := e.collect(now, p)
@@ -463,7 +427,7 @@ func (e *engine) step(ctx context.Context, now time.Time) {
 }
 
 // apply runs warm-up, hysteresis and the incident log for one judgement.
-func (e *engine) apply(ctx context.Context, now time.Time, j judgement) {
+func (e *Engine) apply(ctx context.Context, now time.Time, j judgement) {
 	if len(e.retry) > 0 {
 		r := e.retry
 		e.retry = nil
@@ -557,7 +521,7 @@ func (e *engine) apply(ctx context.Context, now time.Time, j judgement) {
 	}
 }
 
-func (e *engine) setCurrent(v model.Verdict, loss float64) {
+func (e *Engine) setCurrent(v model.Verdict, loss float64) {
 	e.curLoss = loss
 	e.vmu.Lock()
 	e.cur = v
@@ -566,7 +530,7 @@ func (e *engine) setCurrent(v model.Verdict, loss float64) {
 
 // transition makes v (with v.Since set) current, closing the open incident
 // at v.Since and opening a new one when v is a problem.
-func (e *engine) transition(ctx context.Context, now time.Time, v model.Verdict, loss float64) {
+func (e *Engine) transition(ctx context.Context, now time.Time, v model.Verdict, loss float64) {
 	if e.open != nil {
 		e.open.End = v.Since
 		if e.open.End.Before(e.open.Start) {
@@ -588,7 +552,7 @@ func (e *engine) transition(ctx context.Context, now time.Time, v model.Verdict,
 
 // decideAdopted returns the recovered incident to continue (one of kind k,
 // if k is a problem) and closes the others at their last save.
-func (e *engine) decideAdopted(ctx context.Context, k model.VerdictKind) *model.Incident {
+func (e *Engine) decideAdopted(ctx context.Context, k model.VerdictKind) *model.Incident {
 	var cont *model.Incident
 	for _, r := range e.adopt {
 		if cont == nil && isProblem(k) && r.in.Kind == k {
@@ -605,7 +569,7 @@ func (e *engine) decideAdopted(ctx context.Context, k model.VerdictKind) *model.
 // updateOpen folds the latest judgement of the same kind into the open
 // incident: peak loss, affected targets (union) and the summary of the worst
 // moment. It is saved at most every saveEvery.
-func (e *engine) updateOpen(ctx context.Context, now time.Time, v model.Verdict, loss float64) {
+func (e *Engine) updateOpen(ctx context.Context, now time.Time, v model.Verdict, loss float64) {
 	if e.open == nil {
 		return
 	}
@@ -619,7 +583,7 @@ func (e *engine) updateOpen(ctx context.Context, now time.Time, v model.Verdict,
 
 // heartbeat saves the open incident every saveEvery (also when unchanged:
 // its last save is where a crash would end it).
-func (e *engine) heartbeat(ctx context.Context, now time.Time) {
+func (e *Engine) heartbeat(ctx context.Context, now time.Time) {
 	if e.open == nil || (e.open.ID != 0 && now.Sub(e.openSaved) < saveEvery) {
 		return
 	}
@@ -683,7 +647,7 @@ func (t *tstat) unhealthy() bool {
 
 // collect trims old samples and summarizes the window (now-window, now] for
 // every target of p. Called with e.mu held.
-func (e *engine) collect(now time.Time, p *model.Profile) []*tstat {
+func (e *Engine) collect(now time.Time, p *model.Profile) []*tstat {
 	nowMs := now.UnixMilli()
 	from := nowMs - window.Milliseconds()
 	keep := nowMs - keepRaw.Milliseconds()

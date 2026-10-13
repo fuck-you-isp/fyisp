@@ -89,7 +89,7 @@ func TestValidateHomeTags(t *testing.T) {
 			Targets: []model.Target{{Name: "a", Host: "a.example", Group: "g", Tags: tags}}}
 	}
 	for _, ok := range [][]string{nil, {"home:calls"}, {"app:zoom", "home:web"}, {"homework"}} {
-		if err := Validate(prof(ok...), Limits{}); err != nil {
+		if err := Validate(prof(ok...), false); err != nil {
 			t.Errorf("%v: %v", ok, err)
 		}
 	}
@@ -100,7 +100,7 @@ func TestValidateHomeTags(t *testing.T) {
 		"home:calls,home:work":  "more than one home: tag",
 		"home:calls,home:calls": "more than one home: tag",
 	} {
-		if err := Validate(prof(strings.Split(tags, ",")...), Limits{}); err == nil || !strings.Contains(err.Error(), want) {
+		if err := Validate(prof(strings.Split(tags, ",")...), false); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v", tags, err)
 		}
 	}

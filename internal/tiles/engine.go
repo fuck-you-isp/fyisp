@@ -43,7 +43,7 @@ import (
 // Timing.
 const (
 	tickEvery    = 5 * time.Second  // the tick grid (Unix-aligned)
-	minuteGrace  = 20 * time.Second // a minute closes this long after its end (summarize's closeAt)
+	minuteGrace  = 20 * time.Second // a minute closes this long after its end (summarizeOut's closeAt)
 	keepMins     = 8 * 24 * 60      // tile and layer minutes kept: the problems' week and some
 	keepFor      = 7*24*time.Hour + time.Hour
 	replayChunk  = 24 * time.Hour // replay reads the store a day at a time
@@ -70,7 +70,7 @@ type Sources struct {
 	// Incidents are the verdict engine's (verdict.Engine.Incidents).
 	Incidents func(ctx context.Context, from, to time.Time) ([]model.Incident, error)
 	// Verdict and Layers are the verdict engine's current verdict and path
-	// layer health (verdict.MetricsSource).
+	// layer health (verdict.Engine.Current and Layers).
 	Verdict func() model.Verdict
 	Layers  func() map[string]*bool
 	// SpeedWins are the live speed-test windows (nil: speed tests off).
@@ -100,9 +100,6 @@ type Engine interface {
 	Snapshot() *Snapshot
 	// Chart is a tile's last 24 hours; false for an unknown or off tile.
 	Chart(id string) (*Chart, bool)
-	// Problems are the problems that ended after from or go on, newest
-	// first, at most 100 of the last 7 days.
-	Problems(from time.Time) []Episode
 	// LateSamples counts the samples ignored because they arrived after a
 	// newer slot of their series was applied (more than holdFor late).
 	LateSamples() int

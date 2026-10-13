@@ -35,7 +35,7 @@ func TestQueuedDeafServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go q.Run(ctx)
-	e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "Local", Who: WhoOwner})
+	e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "Local"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestQueueOwnerCancelCause(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() { q.Run(ctx); close(done) }()
-			e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: sv.ID, Who: WhoOwner})
+			e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: sv.ID})
 			if err != nil {
 				t.Fatal(err)
 			}

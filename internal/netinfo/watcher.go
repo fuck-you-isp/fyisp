@@ -41,7 +41,7 @@ func newWatcher(o Options, rt func() (route, error), tr func() (tracer, error)) 
 		o.Log = slog.Default()
 	}
 	return &watcher{
-		o: o, route: rt, tracer: tr, conn: ConnType, now: time.Now, retry: retryUnknown,
+		o: o, route: rt, tracer: tr, conn: ConnType, retry: retryUnknown,
 		kick: make(chan struct{}, 1), subs: map[chan Path]struct{}{},
 		cur: Path{Conn: model.ConnUnknown},
 	}
@@ -52,7 +52,6 @@ type watcher struct {
 	route  func() (route, error)
 	tracer func() (tracer, error)
 	conn   func(iface string) string // ConnType
-	now    func() time.Time
 	retry  time.Duration
 	kick   chan struct{} // run edge discovery now
 
@@ -129,7 +128,6 @@ func (w *watcher) pollGateway() {
 	defer w.mu.Unlock()
 	prev := w.cur
 	next := w.cur
-	next.Updated = w.now()
 	kick := false
 	switch {
 	case errors.Is(err, errNoRoute):
@@ -238,7 +236,6 @@ func (w *watcher) discover(ctx context.Context) {
 		return // the network changed meanwhile; a new discovery is queued
 	}
 	prev, next := w.cur, w.cur
-	next.Updated = w.now()
 	if start.Iface != "" {
 		next.Conn = conn
 	}

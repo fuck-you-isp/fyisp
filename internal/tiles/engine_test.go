@@ -257,7 +257,7 @@ func sameEngines(t *testing.T, name string, a, b *engine) {
 		diffSnap(t, sa, sb)
 	}
 	from := sa.At.Add(-problemsFor)
-	if pa, pb := a.Problems(from), b.Problems(from); !reflect.DeepEqual(pa, pb) {
+	if pa, pb := a.Snapshot().Problems(from), b.Snapshot().Problems(from); !reflect.DeepEqual(pa, pb) {
 		t.Errorf("%s: problems differ: %d vs %d", name, len(pa), len(pb))
 	}
 	for _, d := range profile.Tiles {
@@ -367,7 +367,7 @@ func TestEngineScene(t *testing.T) {
 
 	e = s.replayed(t, stored(arr, s.end), s.end)
 	snap = e.Snapshot()
-	eps := e.Problems(s.start)
+	eps := e.Snapshot().Problems(s.start)
 	t.Logf("problems:\n%s", epsText(eps))
 	find := func(w window, f func(Episode) bool) []Episode {
 		var out []Episode

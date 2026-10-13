@@ -61,7 +61,6 @@ const clockSlack = time.Minute
 // Writes: Observe only touches memory. The caller runs Flush every 60s and on
 // shutdown, and Prune about hourly; SQLite starts no goroutines of its own.
 type SQLite struct {
-	dir  string
 	db   *conns
 	lock *dirLock // nil when read-only
 	o    Options
@@ -146,7 +145,7 @@ func Open(dir string, o Options) (*SQLite, error) {
 		lk.release()
 		return nil, err
 	}
-	s := newSQLite(dir, db, o)
+	s := newSQLite(db, o)
 	s.lock = lk
 	if err := s.load(ctx); err != nil {
 		db.Close()
@@ -179,7 +178,7 @@ func OpenReadOnly(dir string) (*SQLite, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := newSQLite(dir, &conns{path: path, r: r}, Options{Now: time.Now, Log: slog.New(slog.DiscardHandler)})
+	s := newSQLite(&conns{path: path, r: r}, Options{Now: time.Now, Log: slog.New(slog.DiscardHandler)})
 	if err := s.loadSeries(ctx); err != nil {
 		r.Close()
 		return nil, err
@@ -187,9 +186,9 @@ func OpenReadOnly(dir string) (*SQLite, error) {
 	return s, nil
 }
 
-func newSQLite(dir string, db *conns, o Options) *SQLite {
+func newSQLite(db *conns, o Options) *SQLite {
 	return &SQLite{
-		dir: dir, db: db, o: o,
+		db: db, o: o,
 		cur:   map[model.SeriesKey]*block{},
 		floor: map[model.SeriesKey]int64{},
 		ids:   map[model.SeriesKey]int64{},

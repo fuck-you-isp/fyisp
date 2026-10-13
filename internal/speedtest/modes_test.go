@@ -26,15 +26,15 @@ func TestSchedulerQueue(t *testing.T) {
 	go func() { h.s.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
 	q := h.s.Queue()
-	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "Nope", Who: WhoOwner}); !errors.Is(err, ErrUnknownID) {
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "Nope"}); !errors.Is(err, ErrUnknownID) {
 		t.Errorf("unknown id: %v", err)
 	}
-	e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "home", Who: WhoOwner})
+	e, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "home"})
 	if err != nil || e.Steps != 1 || len(e.Servers) != 1 || e.Servers[0] == "" {
 		t.Fatalf("%+v %v", e, err)
 	}
 	waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateDone })
-	sw, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	sw, _, err := q.Enqueue(Request{Kind: KindSweep})
 	if err != nil || sw.Steps != len(h.s.o.Catalog.Servers) {
 		t.Fatalf("sweep %+v %v", sw, err)
 	}
@@ -112,19 +112,15 @@ func TestModes(t *testing.T) {
 	}
 }
 
-// TestMask: exactly the probes that ran during a test (from Sample.At to
-// their arrival) or within MaskTail after it are blanked.
-func TestMask(t *testing.T) {
+// TestOverlaps: a span overlaps a test when it touches the test's window or
+// the MaskTail after it; Share counts the window and its tail.
+func TestOverlaps(t *testing.T) {
 	w := &Windows{}
 	t0 := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	w.Add(Window{Start: t0, End: t0.Add(20 * time.Second)})
-	now := t0
-	var got []model.Sample
-	m := Mask{Inner: model.SinkFunc(func(s model.Sample) { got = append(got, s) }), Windows: w, Now: func() time.Time { return now }}
-	gw := model.SeriesKey{Target: "Gateway", Kind: model.KindICMP}
 	for _, c := range []struct {
-		at, arrive time.Duration // from t0
-		masked     bool
+		from, to time.Duration // from t0
+		want     bool
 	}{
 		{-10 * time.Second, -9 * time.Second, false},
 		{-2 * time.Second, 100 * time.Millisecond, true},
@@ -132,11 +128,8 @@ func TestMask(t *testing.T) {
 		{21 * time.Second, 21500 * time.Millisecond, true}, // the 2 s tail
 		{22500 * time.Millisecond, 23 * time.Second, false},
 	} {
-		now = t0.Add(c.arrive)
-		m.Observe(model.Sample{Key: gw, Slot: t0.Add(c.at).Truncate(time.Second), At: t0.Add(c.at), RTT: 30 * time.Millisecond})
-		s := got[len(got)-1]
-		if masked := s.Lost && s.Reason == model.ReasonGap && s.RTT == 0; masked != c.masked {
-			t.Errorf("probe at %v: masked %v, want %v", c.at, masked, c.masked)
+		if got := w.Overlaps(t0.Add(c.from), t0.Add(c.to)); got != c.want {
+			t.Errorf("span from %v: overlaps %v, want %v", c.from, got, c.want)
 		}
 	}
 	if sh := w.Share(t0.Add(time.Minute), 5*time.Minute); sh < 21.9/300 || sh > 22.1/300 {
@@ -246,7 +239,7 @@ func TestScheduleThroughQueue(t *testing.T) {
 	h.mu.Unlock()
 	h.s.poke()
 	waitFor(t, func() bool { return h.s.Queue().State().Running != nil })
-	e, _, err := h.s.Queue().Enqueue(Request{Kind: KindSingle, Target: "away", Who: WhoOwner})
+	e, _, err := h.s.Queue().Enqueue(Request{Kind: KindSingle, Target: "away"})
 	if err != nil || e.State != StateWaiting {
 		t.Fatalf("test now: %+v %v", e, err)
 	}
@@ -420,7 +413,7 @@ func TestSweepStopsWhenUnreachable(t *testing.T) {
 	done := make(chan struct{})
 	go func() { h.s.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
-	e, _, err := h.s.Queue().Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	e, _, err := h.s.Queue().Enqueue(Request{Kind: KindSweep})
 	if err != nil {
 		t.Fatal(err)
 	}

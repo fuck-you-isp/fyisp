@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"flag"
-	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -228,110 +228,33 @@ func TestCSVRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSQLiteRoundTrip(t *testing.T) {
-	s, keys := fill(t)
-	path := filepath.Join(t.TempDir(), "out.db")
-	if err := WriteFile(ctx, s, path, Options{Format: FormatSQLite}); err != nil {
-		t.Fatal(err)
-	}
-	checkMode(t, path)
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	rows, err := db.Query(`SELECT target, kind, ts_utc, rtt_ms, lost, coalesce(reason, ''), hop FROM samples ORDER BY rowid`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var got []store.RawPoint
-	for rows.Next() {
-		var target, kind, ts, reason string
-		var rtt sql.NullFloat64
-		var lost, hop sql.NullInt64
-		if err := rows.Scan(&target, &kind, &ts, &rtt, &lost, &reason, &hop); err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, point(t, target, kind, ts, rtt, lost, reason, hop))
-	}
-	from, to := storedRange(t, s)
-	equalPoints(t, got, raw(t, s, keys, from, to))
-}
-
-func TestHourly(t *testing.T) {
-	s, keys := fill(t)
-	var buf bytes.Buffer
-	if err := Write(ctx, s, &buf, Options{Tier: TierHourly}); err != nil {
-		t.Fatal(err)
-	}
-	recs, err := csv.NewReader(&buf).ReadAll()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(recs[0], HourlyHeader) || len(recs)-1 != 5*len(keys) {
-		t.Fatalf("%d rows: %v", len(recs)-1, recs[:2])
-	}
-	// Per series and hour, n and lost match the raw points.
-	type hk struct {
-		k string
-		h string
-	}
-	want := map[hk][2]int{}
-	for _, p := range raw(t, s, keys, t0, t0.Add(6*time.Hour)) {
-		id := hk{p.Key.Target + "/" + p.Key.Kind.String() + "/" + hopText(p.Key), p.TS.Truncate(time.Hour).Format(TimeFormat)}
-		c := want[id]
-		switch {
-		case !p.Lost:
-			c[0]++
-		case p.Reason != model.ReasonGap:
-			c[1]++
-		}
-		want[id] = c
-	}
-	for _, r := range recs[1:] {
-		w := want[hk{r[0] + "/" + r[1] + "/" + r[8], r[2]}]
-		if fmt.Sprint(w[0]) != r[3] || fmt.Sprint(w[1]) != r[4] || r[5] == "" {
-			t.Fatalf("row %v, want n=%d lost=%d", r, w[0], w[1])
-		}
-	}
-	path := filepath.Join(t.TempDir(), "h.db")
-	if err := WriteFile(ctx, s, path, Options{Format: FormatSQLite, Tier: TierHourly, From: t0.Add(2 * time.Hour)}); err != nil {
-		t.Fatal(err)
-	}
-	db, _ := sql.Open("sqlite", path)
-	defer db.Close()
-	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM summary_1h`).Scan(&n); err != nil || n != 3*len(keys) {
-		t.Fatalf("sqlite hourly rows %d %v", n, err)
-	}
-}
-
 func TestFlags(t *testing.T) {
 	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	build := Flags(fs)
-	if err := fs.Parse([]string{"--format", "sqlite", "-o", "x.db", "--from", "7d", "--to", "2026-09-26", "--target", "a,b", "--target", "c", "--kind", "icmp,TCP", "--tier", "1h"}); err != nil {
+	if err := fs.Parse([]string{"-o", "x.csv", "--from", "7d", "--to", "2026-09-26", "--target", "a,b", "--target", "c", "--kind", "icmp,TCP"}); err != nil {
 		t.Fatal(err)
 	}
 	o, err := build(now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o.Format != FormatSQLite || o.Output != "x.db" || !o.From.Equal(now.Add(-7*24*time.Hour)) || !o.To.Equal(time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)) ||
-		!slices.Equal(o.Targets, []string{"a", "b", "c"}) || !slices.Equal(o.Kinds, []model.ProbeKind{model.KindICMP, model.KindTCP}) || o.Tier != TierHourly {
+	if o.Output != "x.csv" || !o.From.Equal(now.Add(-7*24*time.Hour)) || !o.To.Equal(time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)) ||
+		!slices.Equal(o.Targets, []string{"a", "b", "c"}) || !slices.Equal(o.Kinds, []model.ProbeKind{model.KindICMP, model.KindTCP}) {
 		t.Fatalf("%+v", o)
 	}
 	fs = flag.NewFlagSet("export", flag.ContinueOnError)
-	build = Flags(fs)
-	fs.Parse([]string{"--format", "sqlite"})
-	if _, err := build(now); err == nil {
-		t.Fatal("sqlite without --output accepted")
+	fs.SetOutput(io.Discard)
+	Flags(fs)
+	for _, f := range []string{"--format", "--tier"} {
+		if err := fs.Parse([]string{f, "x"}); err == nil {
+			t.Errorf("%s accepted", f)
+		}
 	}
 }
 
 // TestTraceHops: --kind trace exports only the hop series, each row with
-// its hop, in CSV and SQLite.
+// its hop.
 func TestTraceHops(t *testing.T) {
 	s, keys := fill(t)
 	from, to := storedRange(t, s)
@@ -351,21 +274,6 @@ func TestTraceHops(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte(",trace,")) {
 		t.Fatal("no trace rows")
-	}
-
-	path := filepath.Join(t.TempDir(), "h.db")
-	o.Format, o.Tier = FormatSQLite, TierHourly
-	if err := WriteFile(ctx, s, path, o); err != nil {
-		t.Fatal(err)
-	}
-	db, _ := sql.Open("sqlite", path)
-	defer db.Close()
-	var n, nullHops, distinct int
-	if err := db.QueryRow(`SELECT count(*), count(*) - count(hop), count(DISTINCT hop) FROM summary_1h WHERE kind = 'trace'`).Scan(&n, &nullHops, &distinct); err != nil {
-		t.Fatal(err)
-	}
-	if n != 10 || nullHops != 0 || distinct != 2 {
-		t.Fatalf("hourly trace rows %d, null hops %d, distinct %d", n, nullHops, distinct)
 	}
 }
 
@@ -416,11 +324,5 @@ func TestSpeedTests(t *testing.T) {
 	}, "\n") + "\n"
 	if buf.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", buf.String(), want)
-	}
-	fs = flag.NewFlagSet("x", flag.ContinueOnError)
-	parse = Flags(fs)
-	fs.Parse([]string{"--speedtests", "--format", "sqlite", "-o", "x.db"})
-	if _, err := parse(t0); err == nil {
-		t.Error("sqlite speed tests accepted")
 	}
 }

@@ -399,31 +399,3 @@ func TestConcurrentGet(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
-
-func TestRatioDescribe(t *testing.T) {
-	b := model.Baseline{MedianMs: 42}
-	if r := Ratio(98, b); r < 2.33 || r > 2.34 {
-		t.Errorf("Ratio = %v", r)
-	}
-	if Ratio(98, model.Baseline{}) != 0 || Ratio(0, b) != 0 {
-		t.Error("unknown ratio not 0")
-	}
-	cases := map[float64]string{
-		0:         "",
-		-1:        "",
-		0.5:       "faster than your normal",
-		1:         "about your normal",
-		1.2:       "about your normal",
-		1.25:      "1.3× your normal",
-		98.0 / 42: "2.3× your normal",
-		3:         "3× your normal",
-		3.04:      "3× your normal",
-		9.96:      "10× your normal",
-		14.4:      "14× your normal",
-	}
-	for r, want := range cases {
-		if got := Describe(r); got != want {
-			t.Errorf("Describe(%v) = %q, want %q", r, got, want)
-		}
-	}
-}

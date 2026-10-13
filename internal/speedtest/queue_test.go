@@ -93,7 +93,7 @@ func (f *fakeExec) log() []string {
 func ids(es []Entry) []string {
 	var out []string
 	for _, e := range es {
-		out = append(out, fmt.Sprintf("%s:%s:%s", e.Who, e.Kind, e.Target))
+		out = append(out, fmt.Sprintf("%s:%s", e.Kind, e.Target))
 	}
 	return out
 }
@@ -113,19 +113,19 @@ func TestQueueOrder(t *testing.T) {
 		return e, dup
 	}
 	q.EnqueueScheduled(Job{Region: "uk"})
-	enq(Request{Kind: KindSingle, Target: "B", Who: WhoOwner})
-	enq(Request{Kind: KindSingle, Who: WhoOwner})
-	enq(Request{Kind: KindSweep, Who: WhoOwner})
+	enq(Request{Kind: KindSingle, Target: "B"})
+	enq(Request{Kind: KindSingle})
+	enq(Request{Kind: KindSweep})
 	got := ids(q.State().Waiting)
-	want := []string{"owner:single:B", "owner:single:", "owner:sweep:", "schedule:scheduled:"}
+	want := []string{"single:B", "single:", "sweep:", "scheduled:"}
 	if !eq(got, want) {
 		t.Fatalf("order %v, want %v", got, want)
 	}
 	// Dedupe: the same requester asking again gets the queued entry.
-	if e, dup := enq(Request{Kind: KindSingle, Target: "B", Who: WhoOwner}); !dup || e.ID != 2 || e.Position != 1 {
+	if e, dup := enq(Request{Kind: KindSingle, Target: "B"}); !dup || e.ID != 2 || e.Position != 1 {
 		t.Errorf("owner duplicate: %+v %v", e, dup)
 	}
-	if e, dup := enq(Request{Kind: KindSweep, Who: WhoOwner}); !dup || e.ID != 4 {
+	if e, dup := enq(Request{Kind: KindSweep}); !dup || e.ID != 4 {
 		t.Errorf("sweep duplicate: %+v %v", e, dup)
 	}
 	// Estimates: back to back; a sweep's per test.
@@ -138,7 +138,7 @@ func TestQueueOrder(t *testing.T) {
 	if sw := ws[2]; sw.Kind != KindSweep || sw.EstFinish.Sub(sw.EstStart) != 3*EstJob || sw.Steps != 3 {
 		t.Errorf("sweep estimate %+v", sw)
 	}
-	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "nope", Who: WhoOwner}); !errors.Is(err, ErrUnknownID) {
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "nope"}); !errors.Is(err, ErrUnknownID) {
 		t.Errorf("unknown: %v", err)
 	}
 }
@@ -153,13 +153,13 @@ func TestQueueRun(t *testing.T) {
 	done := make(chan struct{})
 	go func() { q.Run(ctx); close(done) }()
 
-	a, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner})
+	a, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A"})
 	<-f.started
 	if st := q.State(); st.Running == nil || st.Running.ID != a.ID || st.Running.State != StateRunning {
 		t.Fatalf("running %+v", st.Running)
 	}
 	// The owner never pre-empts the running entry: a new one waits.
-	b, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "B", Who: WhoOwner})
+	b, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "B"})
 	if st := q.State(); st.Running.ID != a.ID || len(st.Waiting) != 1 || st.Waiting[0].ID != b.ID {
 		t.Fatalf("pre-empted: %+v", st)
 	}
@@ -183,7 +183,7 @@ func TestQueueRun(t *testing.T) {
 		t.Errorf("a: %+v", e)
 	}
 	// Cancel a running entry: its context ends, no result.
-	c, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "C", Who: WhoOwner})
+	c, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "C"})
 	<-f.started
 	if e, err := q.Cancel(c.ID); err != nil || e.State != StateCancelled {
 		t.Fatalf("cancel running: %+v %v", e, err)
@@ -193,7 +193,7 @@ func TestQueueRun(t *testing.T) {
 		t.Errorf("cancelled test kept a result: %+v", e)
 	}
 	// A sweep: one test per server, "server N of M", then the last sweep.
-	s, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	s, _, _ := q.Enqueue(Request{Kind: KindSweep})
 	for i := range 3 {
 		<-f.started
 		if st := q.State(); st.Running == nil || st.Running.Step != i+1 || st.Running.Steps != 3 {
@@ -215,7 +215,7 @@ func TestQueueRun(t *testing.T) {
 				q.EnqueueScheduled(Job{Region: "uk"})
 				return
 			}
-			_, _, _ = q.Enqueue(Request{Kind: KindSingle, Target: []string{"A", "B", "C", ""}[i%4], Who: WhoOwner})
+			_, _, _ = q.Enqueue(Request{Kind: KindSingle, Target: []string{"A", "B", "C", ""}[i%4]})
 		}()
 	}
 	wg.Wait()
@@ -259,12 +259,12 @@ func TestQueueCancelBetweenTests(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go q.Run(ctx)
-	sw, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	sw, _, err := q.Enqueue(Request{Kind: KindSweep})
 	if err != nil {
 		t.Fatal(err)
 	}
 	<-f.started
-	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "B", Who: WhoOwner}); err != nil {
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "B"}); err != nil {
 		t.Fatal(err)
 	}
 	// The cancel lands after the sweep's context check, before its next
@@ -280,7 +280,7 @@ func TestQueueCancelBetweenTests(t *testing.T) {
 	if x, _ := q.Get(sw.ID); x.State != StateCancelled {
 		t.Errorf("sweep after cancel: %s", x.State)
 	}
-	if st := q.State(); len(st.Waiting) != 0 || st.Running == nil || st.Running.Who != WhoOwner {
+	if st := q.State(); len(st.Waiting) != 0 || st.Running == nil || st.Running.Kind == KindScheduled {
 		t.Errorf("queue %+v", st)
 	}
 	f.release <- struct{}{}
@@ -315,7 +315,7 @@ func TestQueuePauseCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go q.Run(ctx)
-	e, _, err := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	e, _, err := q.Enqueue(Request{Kind: KindSweep})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,8 +341,8 @@ func TestQueuePauseCancel(t *testing.T) {
 func TestQueueEstimatesSweepPause(t *testing.T) {
 	q, _ := newQueueHarness(t, func(o *QueueOptions) { o.EstSweepPause = 6 * time.Second })
 	now := q.o.Now()
-	sw, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
-	one, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner})
+	sw, _, _ := q.Enqueue(Request{Kind: KindSweep})
+	one, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A"})
 	x, _ := q.Get(sw.ID)
 	if want := now.Add(3 * (EstJob + 6*time.Second)); !x.EstFinish.Equal(want) {
 		t.Errorf("sweep finishes %v, want %v", x.EstFinish, want)
@@ -368,7 +368,7 @@ func TestQueueStoppedReason(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go q.Run(ctx)
-	e, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	e, _, _ := q.Enqueue(Request{Kind: KindSweep})
 	<-f.started
 	f.release <- struct{}{}
 	waitFor(t, func() bool { x, _ := q.Get(e.ID); return x.State == StateDone })
@@ -376,7 +376,7 @@ func TestQueueStoppedReason(t *testing.T) {
 		t.Errorf("stopped sweep: %+v", x)
 	}
 	n.Store(-100)
-	e2, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A", Who: WhoOwner})
+	e2, _, _ := q.Enqueue(Request{Kind: KindSingle, Target: "A"})
 	<-f.started
 	f.release <- struct{}{}
 	waitFor(t, func() bool { x, _ := q.Get(e2.ID); return x.State == StateDone })
@@ -393,7 +393,7 @@ func TestQueueCancelledSweepIsLast(t *testing.T) {
 	defer cancel()
 	go q.Run(ctx)
 	// Running: cancelled during its second test.
-	sw, _, _ := q.Enqueue(Request{Kind: KindSweep, Who: WhoOwner})
+	sw, _, _ := q.Enqueue(Request{Kind: KindSweep})
 	<-f.started
 	f.release <- struct{}{}
 	<-f.started
@@ -407,22 +407,20 @@ func TestQueueCancelledSweepIsLast(t *testing.T) {
 	}
 }
 
-// TestTriggerOrigin: the stored trigger keeps who asked; rows the share
-// link stored before v0.8.0 still read as on demand.
+// TestTriggerOrigin: the stored trigger keeps who asked.
 func TestTriggerOrigin(t *testing.T) {
 	for _, c := range []struct {
 		k              Kind
-		who            Who
 		trigger, owner string
 	}{
-		{KindScheduled, WhoSchedule, "schedule", "scheduled"},
-		{KindSingle, WhoOwner, "manual", "owner"},
-		{KindSweep, WhoOwner, "sweep", "owner"},
+		{KindScheduled, "schedule", "scheduled"},
+		{KindSingle, "manual", "owner"},
+		{KindSweep, "sweep", "owner"},
 	} {
-		tr := trigger(c.k, c.who)
+		tr := trigger(c.k)
 		st := model.SpeedTest{Trigger: tr}
 		if tr != c.trigger || st.Origin() != c.owner || st.OnDemand() != (c.k != KindScheduled) {
-			t.Errorf("%s/%s: trigger %q origin %q on-demand %v", c.k, c.who, tr, st.Origin(), st.OnDemand())
+			t.Errorf("%s: trigger %q origin %q on-demand %v", c.k, tr, st.Origin(), st.OnDemand())
 		}
 	}
 }
