@@ -3,7 +3,7 @@
 #
 #   test/netns/run.sh                      # build in Docker, run all scenarios in parallel (~20 min)
 #   test/netns/run.sh -test.run 'Faults/b' # extra args go to the test binary
-#   FYISP_NETNS_PARALLEL=0 test/netns/run.sh   # one scenario at a time (~35 min)
+#   FYISP_NETNS_PARALLEL=0 test/netns/run.sh   # one scenario at a time (~3 h)
 #
 # Builds fyisp and the test with the Go image pinned in the repo Dockerfile
 # (no local Go toolchain), then runs the test as root. Every scenario gets
