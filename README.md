@@ -13,7 +13,7 @@ fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It
 
 Technical users get every number under **Technical details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, CSV and SQLite export, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
 
-> **The default is for homes and remote workers.** Since v0.6.0, plain `fyisp` checks calls, work apps and websites instead of the 91 targets of v0.5 (mostly cloud regions and developer services), and opens on the plain-words **Home** view. v0.9.0 extends it to 28 checks by default, one or more for each Home tile, adding GitHub, Dropbox, OneDrive, YouTube, Netflix and the Teams relay (see [Privacy](#privacy) to leave any out). The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Series that are no longer measured age out after 90 days.
+> **The default is for homes and remote workers.** Plain `fyisp` makes 28 checks of calls, work apps and websites, one or more for each Home tile (see [Privacy](#privacy) to leave any out), and opens on the plain-words **Home** view. Cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)).
 
 ## Quick start
 
@@ -75,7 +75,7 @@ The binaries are not code-signed yet. Windows SmartScreen and macOS Gatekeeper o
 - **Windows, browser download:** SmartScreen says "Windows protected your PC". Either choose *More info → Run anyway*, or, after verifying the checksum, remove the mark once: `Unblock-File .\fyisp-windows-amd64.exe`. Double-clicking the `.exe` opens a console window with the log and the dashboard address; closing the window stops fyisp. To pass options, run it from a terminal or put them in a shortcut's *Target*.
 - **macOS, browser download:** Gatekeeper blocks it. After verifying it, run `xattr -d com.apple.quarantine fyisp-darwin-arm64`.
 
-Code signing is planned: free Windows signing through the [SignPath Foundation](https://signpath.org/) once the repository is public (it requires a public open-source project), and Apple notarization if there is demand.
+Code signing is planned: free Windows signing through the [SignPath Foundation](https://signpath.org/) (for open-source projects), and Apple notarization if there is demand.
 
 ### Docker
 
@@ -107,7 +107,7 @@ Inside a container fyisp listens on all interfaces, so anyone on your network co
 
 *Investigate* needs no token: anyone who can open the dashboard can trace a profile target, for at most 250 rounds, 4 at once and 12 new traces an hour across all viewers. Opening the view starts one only for the owner: on this machine with a loopback dashboard without a token, or in a browser with the admin token (the link, or the token pasted for a speed test); other viewers click *Trace*. A browser with the token skips the hourly limit, not the 4 at once.
 
-If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name, a tunnel), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding. Any `--allow-host` also turns the admin token on, even with the default loopback `--listen` (see [Sharing](#sharing)).
+If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name, a tunnel), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding. Any `--allow-host` also turns the admin token on, even with the default loopback `--listen` (see [Remote access](#remote-access)).
 
 **Use host networking on Linux for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
 
@@ -211,7 +211,7 @@ Home has 11 fixed tiles, always in this order. With the default profile every on
 
 - **Several targets per tile** are judged by majority, so one target that fails alone doesn't make Microsoft 365 or Google Workspace *Down*.
 - **Zoom and Slack** (whose huddles run on Amazon Chime), like Discord, WhatsApp and Webex, hand out a media server per meeting, only after you sign in, and those servers ignore STUN without that session. They can't be tested ahead of a call, so their call quality is judged from your general call path (the panel says so); if your call path is Good, they usually are too.
-- **The Teams relay** is the Microsoft server Teams calls go through; fyisp sends it tiny call-setup (STUN) packets to judge Teams' call quality. (It is GeoDNS, Azure Traffic Manager, not anycast, and can switch region between lookups; the Calls view shows where it landed, *via Sweden Central*.) Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)); it has been in the default since v0.9.0. To leave it out, use a `--config` file with `extends: [default]` and `remove: [Teams-Relay]`: Teams is then judged on your call path plus its website.
+- **The Teams relay** is the Microsoft server Teams calls go through; fyisp sends it tiny call-setup (STUN) packets to judge Teams' call quality. (It is GeoDNS, Azure Traffic Manager, not anycast, and can switch region between lookups; the Calls view shows where it landed, *via Sweden Central*.) Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)), but it is in the default. To leave it out, use a `--config` file with `extends: [default]` and `remove: [Teams-Relay]`: Teams is then judged on your call path plus its website.
 - **Not on Home:** the networks most websites are served from (Cloudflare, Akamai, Fastly, CloudFront, Google's edge) and Webex, Discord and WhatsApp. They are still checked, count toward the [verdicts](#whose-fault-is-it-verdicts), and have their charts under Technical details, as does every target of the other [profiles](#what-to-measure-profiles).
 - **Tiles your profile doesn't cover** say *Not checked*, with how to turn them on. `--profile calls` alone covers the 4 call tiles; `services-productivity` adds Microsoft 365, Google Workspace, Dropbox and OneDrive, `services-dev` GitHub, and `streaming` YouTube and Netflix.
 - **A `--config` file** feeds a tile only through a target's `tile:<id>` tag (`tile:zoom`, `tile:teams`, `tile:meet`, `tile:slack`, `tile:m365`, `tile:gws`, `tile:github`, `tile:dropbox`, `tile:onedrive`, `tile:youtube`, `tile:netflix`), never by name. Start the file from `extends: [default]` (catalog targets keep their tags), or tag your own targets. An `override` that sets `tags:` replaces all of a target's tags, so keep its `tile:` tag. Removing a target (see [Privacy](#privacy)) turns its tile *Not checked*.
@@ -489,8 +489,8 @@ The Overview's window is at most 30 days (it reads every target at once). Filter
 
 fyisp has no account and no telemetry, and its data stays on your machine. What others can see:
 
-- **The services it checks** see a TCP connection from your public IP address every 15 seconds (STUN servers: a few tiny packets every 5 seconds). No data is sent, nobody logs in, no cookies. Since v0.9.0 the STUN servers include **Microsoft's Teams relay** (`worldaz.tr.teams.microsoft.com`, UDP 3478): a burst of 5 tiny STUN requests every 5 seconds, so Microsoft sees your address around the clock, as Google, Cloudflare and Twilio already did.
-- **Your DNS resolver** sees fyisp look up each service's name about once a minute, all day. That resolver is usually your provider's, a Pi-hole, or **on a work laptop, your employer's**, whose security tools may log every lookup. Since v0.9.0 the default has one target for each of Home's app tiles, including **GitHub, Dropbox, OneDrive, YouTube and Netflix**: lookups for `youtube.com` or `netflix.com` every minute from a work laptop can look like you stream all day, and the Teams relay's name is looked up every minute too. Social sites (part of `--profile common`) and the rest of streaming (`--profile streaming`) stay opt-in.
+- **The services it checks** see a TCP connection from your public IP address every 15 seconds (STUN servers: a few tiny packets every 5 seconds). No data is sent, nobody logs in, no cookies. The STUN servers include **Microsoft's Teams relay** (`worldaz.tr.teams.microsoft.com`, UDP 3478): a burst of 5 tiny STUN requests every 5 seconds, so Microsoft sees your address around the clock, as Google, Cloudflare and Twilio already did.
+- **Your DNS resolver** sees fyisp look up each service's name about once a minute, all day. That resolver is usually your provider's, a Pi-hole, or **on a work laptop, your employer's**, whose security tools may log every lookup. The default has one target for each of Home's app tiles, including **GitHub, Dropbox, OneDrive, YouTube and Netflix**: lookups for `youtube.com` or `netflix.com` every minute from a work laptop can look like you stream all day, and the Teams relay's name is looked up every minute too. Social sites (part of `--profile common`) and the rest of streaming (`--profile streaming`) stay opt-in.
 - **To leave targets out**, start fyisp with `--config mine.yml`, a file that extends the default and removes them by name; fyisp then neither checks nor looks them up. In Docker, mount the file and pass `--config` after the image name (e.g. `-v "$PWD/mine.yml:/mine.yml:ro" ghcr.io/fuck-you-isp/fyisp --config /mine.yml`).
 
   ```yaml
@@ -513,9 +513,9 @@ sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
 
 or carry on without ICMP: the services and the anycast resolvers are still measured over TCP, but the gateway and the ISP edge are not, so the verdict can no longer tell `lan` from `isp`. macOS and Windows need nothing.
 
-## Sharing
+## Remote access
 
-fyisp has no public link and makes no reports. To show someone what happened, send a screenshot of Home or the answer from *What happened at …?*; for raw data, `fyisp export` (review it first: traceroute rows contain hop addresses). For live access, put your own tunnel or reverse proxy in front of the dashboard.
+To show someone what happened, send a screenshot of Home; for raw data, `fyisp export` (review it first: traceroute rows contain hop addresses).
 
 **Live access** (to let your IT team watch the dashboard, say) is up to you: run a tunnel or a reverse proxy to the local dashboard, for example a [cloudflared named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel run`, with a host name you choose) or `tailscale serve 3000`, and add its host name with `--allow-host`. A quick tunnel (`cloudflared tunnel --url …`) gets a new random name on every run, so it can't be named ahead of time:
 
@@ -579,10 +579,14 @@ docker build -t fyisp .                                              # the runti
 docker build --target launchertest .                                 # run.sh against a fake release
 docker build --target launchertest-pwsh .                            # run.ps1 under PowerShell 7
 docker build --target servicetest .                                  # systemd-analyze verify on the unit
+docker build --target imagetest .                                    # runtime image smoke test
+docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright)
 docker buildx build --target fmt --output type=local,dest=. .        # gofmt -w
 docker buildx build --target modfiles --output type=local,dest=. .   # go mod tidy
 docker buildx build --target asndb --output type=local,dest=. .      # refresh the built-in IP-to-ASN table
 ```
+
+The [Dockerfile](Dockerfile) has the rest: each stage's comment gives its command.
 
 Hop owners (AS number and name) come from a table built into the binary, [`internal/asn/data/ip2asn-v4.bin`](internal/asn/data), generated from the [iptoasn.com](https://iptoasn.com/) IPv4 data; fyisp never looks them up over the network. The `asndb` target downloads the latest file and regenerates the table; releases do this automatically and fall back to the committed table if iptoasn.com is unreachable.
 
@@ -592,7 +596,7 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 `test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) builds throwaway network namespaces (client ↔ gateway ↔ ISP router ↔ internet), runs fyisp in the client namespace as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It also checks the path discovery (gateway and ISP edge) and, with the Network path group enabled, the verdict and outage log for each layer: loss between client and gateway (`lan`), between gateway and ISP (`isp`), anycast and most targets dropped (`upstream`), an unreachable resolver, both while running and at startup (`dns`), and one dropped target (`service`); the faulty layer must be the first problem shown.
 
-**TestHome10** runs the new Home against the same kind of faults in 17 scenarios, on a lab profile that feeds all 11 tiles through `tile:` tags with 25 hours of seeded history, and checks the recorded `/api/home` answers: drops of 40 s (the card, the tile notes, the red bar and one problem; also at fyisp's real 15 s check interval) and of 20 s (nothing left behind), a 2-minute outage, 40% loss at the provider (the red card), 6% loss at the provider (calls Choppy, other apps Good), one app's outage (green card, *Zoom isn't connecting*), one of 3 Microsoft 365 targets down (still Good), the router down, high jitter, a latency ladder (streams never Down), fyisp paused and stopped, the first day's learning, UDP or only the STUN port blocked, one STUN server dead, and who is looking (the router wording). It runs nightly and on demand in CI (`.github/workflows/netns.yml`, with TestVerdict and TestUDP; the API recordings and the log are kept as an artifact), not per pull request.
+**TestHome10** runs Home against the same kind of faults in 17 scenarios, on a lab profile that feeds all 11 tiles through `tile:` tags with 25 hours of seeded history, and checks the recorded `/api/home` answers: drops of 40 s (the card, the tile notes, the red bar and one problem; also at fyisp's real 15 s check interval) and of 20 s (nothing left behind), a 2-minute outage, 40% loss at the provider (the red card), 6% loss at the provider (calls Choppy, other apps Good), one app's outage (green card, *Zoom isn't connecting*), one of 3 Microsoft 365 targets down (still Good), the router down, high jitter, a latency ladder (streams never Down), fyisp paused and stopped, the first day's learning, UDP or only the STUN port blocked, one STUN server dead, and who is looking (the router wording). It runs nightly and on demand in CI (`.github/workflows/netns.yml`, with TestVerdict and TestUDP; the API recordings and the log are kept as an artifact), not per pull request.
 
 Every scenario gets its own topology (namespaces `fyt-<run>-<n>-{cli,gw,isp,net}`, responders, resolver, certificates, fyisp process and data directory), so the scenarios run in parallel and a full run takes about as long as the slowest one, about 20 minutes (the slowest is TestHome10's 6% provider loss, about 18 minutes; almost all of it fyisp's own timings: the 60 s verdict warm-up, fault windows, the 5 good minutes a tile needs to be Good again). The namespaces are deleted when each scenario ends, and `run.sh` checks that none of its run are left and prints the wall time.
 

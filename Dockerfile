@@ -27,7 +27,7 @@ COPY --from=tidy /src/go.mod /src/go.sum /
 
 FROM base AS gofmt
 COPY . .
-RUN gofmt -w $(find . -name '*.go' -not -path './dist/*') && mkdir /out && find . -name '*.go' | tar cf - -T - | tar xf - -C /out
+RUN gofmt -w $(find . -name '*.go') && mkdir /out && find . -name '*.go' | tar cf - -T - | tar xf - -C /out
 FROM scratch AS fmt
 COPY --from=gofmt /out/ /
 
@@ -39,12 +39,15 @@ FROM deps AS source
 COPY . .
 
 # The OS-specific netinfo code (and its tests) is also vetted for macOS and
-# Windows, so a change there can't break those builds unnoticed.
+# Windows, so a change there can't break those builds unnoticed. The netns
+# harness (build tag netns) is vetted too, so an API change can't break it
+# until the nightly run.
 FROM source AS test
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     test -z "$(gofmt -l . | tee /dev/stderr)" && go vet ./... \
  && GOOS=darwin go vet ./internal/netinfo/... && GOOS=windows go vet ./internal/netinfo/... \
+ && GOOS=linux go vet -tags netns ./test/netns \
  && CGO_ENABLED=1 go test -race ./...
 
 # An old (schema v6) database with its sidecars and two backups, for CI's
@@ -125,7 +128,7 @@ COPY --from=licenses /THIRD_PARTY_LICENSES.txt /
 #   docker build --target launchertest .
 #   docker build --target launchertest-pwsh .
 FROM source AS launcher-bin
-ARG TARGETOS TARGETARCH TARGETVARIANT
+ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build <<'SH'
 set -eu

@@ -1,4 +1,4 @@
-# Speed tests: API contract (fyisp v0.7)
+# Speed tests: API contract
 
 iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs download, then upload: 8 TCP streams, a ramp-up that is left out (decided afterwards, where the rate levels off), then at least 3 s and up to 10 s: a direction stops early only once its rate has levelled off, at least 3 s have passed since it first came near its peak, and a second is within 5% of the one before. So a direction runs at most about 11 s, ramp-up included; a hard stop (an RST) 2 s after that ends it whatever the server does. There is no byte cap, for any test (rows from before v0.7.2 stopped at 100 MB each way).
 
@@ -267,7 +267,7 @@ The latency under load over the span: per layer, the median over tests.
 {
   "id": 412,
   "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
-  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep" (tests the share link started before v0.8.0 read as manual or sweep)
+  "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep"
   "on_demand": false,             // not "schedule": never in rows, patterns or the finding
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed" | "cancelled"
   "region": "us-east",            // |null when the test was for no region
@@ -418,7 +418,7 @@ One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
 The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the owner already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
 
-It has the speed-test control checks (since v0.10.0 the only routes the admin token guards):
+It has the speed-test control checks (the only routes the admin token guards):
 - the controls are not disabled (`--admin-token=off` on a dashboard reachable from elsewhere);
 - on a loopback dashboard without an admin token, no proxy headers (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`);
 - same origin;
@@ -454,7 +454,7 @@ POST api/speed/config
 
 ## `api/home`
 
-`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes masked by a test are "not measured" there too: a test is never a drop, and slowness during one names it ("Slow during a speed test"). The line by time of day (`kind`, `impact`) and `HomeAt`'s `speed_note` were removed in v0.9.0 with the old Home.
+`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes masked by a test are "not measured" there too: a test is never a drop, and slowness during one names it ("Slow during a speed test").
 
 ## Metrics (`/metrics`)
 
@@ -470,9 +470,3 @@ These give the latest result per region and server, set after every test:
 ## Export
 
 `fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,idle_gateway_ms,loaded_gateway_ms,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.
-
-`owner_tz` was removed in v0.10.0.
-
-## Removed in v0.8.0
-
-With the share link: the `/s/<secret>/api/speed` routes and `POST /s/<secret>/api/speed/run`; the visitor queue and its limits (opt-in, test-time caps, sweep gap, queue caps, start limit; codes `disabled`, `speed_off`, `time_cap`, `cooldown`, `queue_full`); `custom-N` ids; `?public=1` on cancel and `public` in config (now 400); in part=queue `max_waiting`, `full`, `sweeps_full`, `public_enabled`, `public_start`, `speed_on` and `budget`; in entries `wait_reason`, `stopped_code`, `resets_at`, `who: "someone"`, origin `public` and stopped reason `limit`; in the finding `text_public`, `caveat_public`, `evidence_public` and `coverage_public`.

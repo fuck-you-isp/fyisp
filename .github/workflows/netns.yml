@@ -1,9 +1,8 @@
 name: netns
-# The network-fault harness (test/netns): the new Home (TestHome10), the
-# verdict (TestVerdict) and the call path (TestUDP) under real faults in
-# throwaway network namespaces. About 20 minutes, so nightly and on
-# demand, not per pull request; the release checklist wants a green run
-# on the release commit.
+# The network-fault harness (test/netns): Home (TestHome10), the verdict
+# (TestVerdict) and the call path (TestUDP) under real faults in throwaway
+# network namespaces. About 20 minutes, so nightly and on demand, not per
+# pull request.
 on:
   schedule:
     - cron: "17 3 * * *"

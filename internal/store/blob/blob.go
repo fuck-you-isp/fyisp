@@ -1,5 +1,5 @@
 // Package blob encodes one series' hour of probe results as a compact blob
-// (format v1, see docs/PLAN.md "Storage").
+// (format v1).
 //
 // Raw layout, before compression:
 //

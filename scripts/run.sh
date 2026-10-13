@@ -21,8 +21,6 @@ main() {
 
 	# Filled in by the release workflow; do not edit by hand.
 	FYISP_VERSION="@FYISP_VERSION@"
-	# "true" when the release has build provenance attestations (public repo).
-	FYISP_ATTESTED="@FYISP_ATTESTED@"
 	repo="fuck-you-isp/fyisp"
 
 	say() { printf 'fyisp-run: %s\n' "$*" >&2; }
@@ -108,7 +106,7 @@ main() {
 	fi
 	say "sha256 ok: $got"
 
-	if [ "$FYISP_ATTESTED" = true ] && [ -z "${FYISP_BASE_URL:-}" ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+	if [ -z "${FYISP_BASE_URL:-}" ] && command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
 		gh attestation verify "$tmp/$asset" --repo "$repo" >/dev/null ||
 			die "build provenance attestation check failed for $asset; not running it"
 		say "attestation ok (built by github.com/$repo)"

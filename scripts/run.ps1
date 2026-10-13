@@ -23,8 +23,6 @@ function Main {
 
     # Filled in by the release workflow; do not edit by hand.
     $FyispVersion = '@FYISP_VERSION@'
-    # 'true' when the release has build provenance attestations (public repo).
-    $FyispAttested = '@FYISP_ATTESTED@'
     $repo = 'fuck-you-isp/fyisp'
 
     function Say([string]$msg) { [Console]::Error.WriteLine("fyisp-run: $msg") }
@@ -98,7 +96,7 @@ function Main {
         if ($got -ne $want) { throw "checksum mismatch for ${asset}: got $got, want $want; not running it" }
         Say "sha256 ok: $got"
 
-        if ($FyispAttested -eq 'true' -and -not $env:FYISP_BASE_URL -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+        if (-not $env:FYISP_BASE_URL -and (Get-Command gh -ErrorAction SilentlyContinue)) {
             & gh auth status 2>$null | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 & gh attestation verify $bin --repo $repo | Out-Null

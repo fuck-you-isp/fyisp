@@ -4,7 +4,7 @@
 // poor, unusable). Measurements are scored per one-minute bucket; a window
 // is judged by its worst minute, because a mean hides a 30-second stall.
 //
-// The model, after docs/CALL-QUALITY-PLAN.md ("Score"):
+// The model:
 //
 //	eff = rtt/2 + 2·jitter + 10                     (one-way delay, ms)
 //	R   = 93.2 − eff/40          when eff < 160
