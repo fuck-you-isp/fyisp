@@ -85,7 +85,7 @@ var wantSchema = []string{
 }
 
 // TestFreshSchema: a new file gets schema v7 in one go: exactly the
-// objects in wantSchema, no free pages, the creation stamp, no backup.
+// objects in wantSchema, no free pages, the creation stamp.
 func TestFreshSchema(t *testing.T) {
 	dir := t.TempDir()
 	log, logs := testLog()
@@ -111,9 +111,6 @@ func TestFreshSchema(t *testing.T) {
 	if strings.Contains(logs.String(), "replaced") {
 		t.Errorf("a new database logged:\n%s", logs)
 	}
-	if m, _ := filepath.Glob(filepath.Join(dir, DBName+".bak*")); len(m) != 0 {
-		t.Errorf("backed up: %v", m)
-	}
 	ro, err := OpenReadOnly(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -122,8 +119,8 @@ func TestFreshSchema(t *testing.T) {
 }
 
 // writeOld writes a database as an older fyisp left it (schema v<ver>):
-// some of its tables with rows, a WAL, shared-memory and journal file
-// beside it, and two backups of earlier upgrades.
+// some of its tables with rows, and a WAL, shared-memory and journal file
+// beside it.
 func writeOld(t *testing.T, dir string, ver int) {
 	t.Helper()
 	path := filepath.Join(dir, DBName)
@@ -135,13 +132,9 @@ func writeOld(t *testing.T, dir string, ver int) {
 		`CREATE TABLE series(id INTEGER PRIMARY KEY, target TEXT NOT NULL, kind INTEGER NOT NULL, interval_ms INTEGER NOT NULL, UNIQUE(target, kind))`,
 		`CREATE TABLE samples(hour INTEGER NOT NULL, series INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(hour, series))`,
 		`CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY) WITHOUT ROWID`,
-		`CREATE TABLE annotations(id INTEGER PRIMARY KEY, at_ms INT NOT NULL, text TEXT NOT NULL)`,
-		`CREATE TABLE reports(id TEXT PRIMARY KEY, html BLOB NOT NULL)`,
 		`INSERT INTO series(target, kind, interval_ms) VALUES('github', 1, 15000)`,
 		`INSERT INTO samples VALUES(493000, 1, x'01')`,
 		`INSERT INTO meta VALUES('created_by_version', 'v0.9.0'), ('setting:owner_tz', 'Europe/Berlin'), ('setting:speedtest_mode', 'nearby')`,
-		`INSERT INTO annotations(at_ms, text) VALUES(1, 'call dropped')`,
-		`INSERT INTO reports VALUES('r1', x'00')`,
 		fmt.Sprintf(`PRAGMA user_version=%d`, ver),
 	} {
 		if _, err := db.Exec(q); err != nil {
@@ -149,30 +142,16 @@ func writeOld(t *testing.T, dir string, ver int) {
 		}
 	}
 	db.Close()
-	for name, size := range map[string]int{DBName + "-wal": 30, DBName + "-shm": 30, DBName + "-journal": 30, DBName + ".bak-v4": 1000, DBName + ".bak-v5": 2000} {
-		if err := os.WriteFile(filepath.Join(dir, name), make([]byte, size), 0o600); err != nil {
+	for _, name := range []string{DBName + "-wal", DBName + "-shm", DBName + "-journal"} {
+		if err := os.WriteFile(filepath.Join(dir, name), make([]byte, 30), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-// TestWriteOldFixture writes writeOld's v6 database, sidecars and backups
-// into $FYISP_WRITE_OLD, for CI's check that the runtime image replaces an
-// old database (Dockerfile target oldfixture).
-func TestWriteOldFixture(t *testing.T) {
-	dir := os.Getenv("FYISP_WRITE_OLD")
-	if dir == "" {
-		t.Skip("set FYISP_WRITE_OLD to write an old database")
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeOld(t, dir, 6)
-}
-
-// strays are files beside the database that fyisp never touches: not
-// exactly fyisp.db.bak-v<N>.
-var strays = []string{DBName + ".bak-v6.old", DBName + ".bak-vx", DBName + ".bak-v", "fyisp.db.backup", "notes.txt"}
+// strays are files beside the database that fyisp never touches, the
+// backups older versions made included.
+var strays = []string{DBName + ".bak-v5", DBName + ".bak-v6.old", "fyisp.db.backup", "notes.txt"}
 
 func writeStrays(t *testing.T, dir string) {
 	t.Helper()
@@ -201,15 +180,15 @@ func fileSum(t *testing.T, path string) [32]byte {
 	return sha256.Sum256(b)
 }
 
-// TestOldSchemaReplaced: v0.10.0 starts over. A file from an older fyisp
-// (schema v1 to v6) is refused by the read-only commands (fyisp export),
-// which leave it as it is, and is not touched while another instance holds
-// the lock. The daemon's Open replaces it, its -wal, -shm and -journal
-// files and the fyisp.db.bak-v<N> backups with a new empty v7 database,
-// logging one line with the old version and the backups removed. Nothing
-// of the old file is kept, settings included, and stray files stay.
+// TestOldSchemaReplaced: a file with a lower user_version than this build's
+// schema is refused by the read-only commands (fyisp export), which leave it
+// as it is, and is not touched while another instance holds the lock. The
+// daemon's Open replaces it and its -wal, -shm and -journal files with a new
+// empty database, logging one line with the old version. Nothing of the old
+// file is kept, settings included, and stray files stay. A higher
+// user_version is refused and left as it is.
 func TestOldSchemaReplaced(t *testing.T) {
-	for _, ver := range []int{1, 3, 6} {
+	for _, ver := range []int{1, SchemaVersion() - 1} {
 		dir := t.TempDir()
 		writeOld(t, dir, ver)
 		writeStrays(t, dir)
@@ -229,22 +208,20 @@ func TestOldSchemaReplaced(t *testing.T) {
 		if fileSum(t, path) != before {
 			t.Errorf("v%d: touched by OpenReadOnly or while locked", ver)
 		}
-		for _, n := range []string{DBName + ".bak-v4", DBName + "-journal"} {
-			if _, err := os.Stat(filepath.Join(dir, n)); err != nil {
-				t.Errorf("v%d: %s removed early: %v", ver, n, err)
-			}
+		if _, err := os.Stat(path + "-journal"); err != nil {
+			t.Errorf("v%d: journal removed early: %v", ver, err)
 		}
 
 		log, logs := testLog()
 		s := openT(t, dir, Options{Version: "v0.10.0-test", Log: log})
-		want := fmt.Sprintf("level=INFO msg=\"store: database from an older fyisp (schema v%d) replaced with a new empty one; its history isn't carried over\" backups_removed=2 backup_bytes_freed=3000\n", ver)
+		want := fmt.Sprintf("level=INFO msg=\"store: database from an older fyisp (schema v%d) replaced with a new empty one; its history isn't carried over\"\n", ver)
 		if l := logs.String(); !strings.HasSuffix(l, " "+want) || strings.Count(l, "\n") != 1 {
 			t.Errorf("v%d: log\n%s\nwant\n%s", ver, logs, want)
 		}
 		if got := schemaObjects(t, s.db.r); !slices.Equal(got, wantSchema) {
 			t.Errorf("v%d: schema objects %q", ver, got)
 		}
-		if v := pragmaInt(t, s.db.w, "user_version"); v != 7 {
+		if v := pragmaInt(t, s.db.w, "user_version"); v != int64(SchemaVersion()) {
 			t.Errorf("v%d: user_version %d", ver, v)
 		}
 		var n int
@@ -255,7 +232,7 @@ func TestOldSchemaReplaced(t *testing.T) {
 		if st, err := s.Stats(ctx); err != nil || !st.Oldest.IsZero() {
 			t.Errorf("v%d: stats %+v %v", ver, st, err)
 		}
-		for _, n := range []string{DBName + ".bak-v4", DBName + ".bak-v5", DBName + "-journal", DBName + ".new"} {
+		for _, n := range []string{DBName + "-journal", DBName + ".new"} {
 			if _, err := os.Stat(filepath.Join(dir, n)); !errors.Is(err, fs.ErrNotExist) {
 				t.Errorf("v%d: %s left: %v", ver, n, err)
 			}
@@ -272,24 +249,31 @@ func TestOldSchemaReplaced(t *testing.T) {
 			t.Errorf("v%d: second start logged:\n%s", ver, logs2)
 		}
 	}
+
+	// A newer schema: refused by both, never replaced.
+	dir := t.TempDir()
+	writeOld(t, dir, SchemaVersion()+1)
+	before := fileSum(t, filepath.Join(dir, DBName))
+	if _, err := Open(dir, Options{}); !errors.Is(err, ErrNewerSchema) {
+		t.Errorf("newer: Open: %v", err)
+	}
+	if _, err := OpenReadOnly(dir); !errors.Is(err, ErrNewerSchema) {
+		t.Errorf("newer: OpenReadOnly: %v", err)
+	}
+	if fileSum(t, filepath.Join(dir, DBName)) != before {
+		t.Error("newer: touched")
+	}
 }
 
 // TestFreshStartKeepsStrays: without a database, Open creates one and
-// leaves everything else in the directory alone, old backups included.
+// leaves everything else in the directory alone.
 func TestFreshStartKeepsStrays(t *testing.T) {
 	dir := t.TempDir()
 	writeStrays(t, dir)
-	bak := filepath.Join(dir, DBName+".bak-v5")
-	if err := os.WriteFile(bak, []byte("mine"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	log, logs := testLog()
 	s := openT(t, dir, Options{Log: log})
 	s.Close()
 	checkStrays(t, dir, "fresh")
-	if b, err := os.ReadFile(bak); err != nil || string(b) != "mine" {
-		t.Errorf("backup touched on a fresh start: %v", err)
-	}
 	if logs.String() != "" {
 		t.Errorf("fresh start logged:\n%s", logs)
 	}
@@ -348,29 +332,27 @@ func sums(t *testing.T, dir string) map[string]string {
 }
 
 // TestRefusedUntouched: what the daemon refuses, a newer schema, a file
-// that is not a fyisp database, or a v7 file without fyisp's tables, is
-// refused by `fyisp export` (OpenReadOnly) the same way, and both leave
-// it exactly as it is: the main file, its pending WAL and shared memory,
-// the backups and everything else beside it.
+// that is not a fyisp database, or a file of the current schema without
+// fyisp's tables, is refused by `fyisp export` (OpenReadOnly) the same way,
+// and both leave it exactly as it is: the main file, its pending WAL and
+// shared memory, and everything else beside it.
 func TestRefusedUntouched(t *testing.T) {
 	meta := `CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY) WITHOUT ROWID`
 	series := `CREATE TABLE series(id INTEGER PRIMARY KEY)`
+	version := func(v int) string { return fmt.Sprintf(`PRAGMA user_version=%d`, v) }
 	for name, c := range map[string]struct {
 		sqls []string
 		want error
 	}{
-		"newer schema":                {[]string{meta, series, `INSERT INTO meta VALUES('k', 1)`, `PRAGMA user_version=8`}, ErrNewerSchema},
-		"old version, foreign tables": {[]string{`CREATE TABLE other(x)`, `INSERT INTO other VALUES(1)`, `PRAGMA user_version=3`}, ErrNotDatabase},
-		"old version, no series":      {[]string{meta, `INSERT INTO meta VALUES('k', 1)`, `PRAGMA user_version=6`}, ErrNotDatabase},
-		"no version, tables":          {[]string{`CREATE TABLE other(x)`, `INSERT INTO other VALUES(1)`}, ErrNotDatabase},
-		"v7 without fyisp's tables":   {[]string{meta, series, `INSERT INTO series VALUES(1)`, `PRAGMA user_version=7`}, ErrNotDatabase},
+		"newer schema":                   {[]string{meta, series, `INSERT INTO meta VALUES('k', 1)`, version(SchemaVersion() + 1)}, ErrNewerSchema},
+		"old version, foreign tables":    {[]string{`CREATE TABLE other(x)`, `INSERT INTO other VALUES(1)`, version(SchemaVersion() - 1)}, ErrNotDatabase},
+		"old version, no series":         {[]string{meta, `INSERT INTO meta VALUES('k', 1)`, version(SchemaVersion() - 1)}, ErrNotDatabase},
+		"no version, tables":             {[]string{`CREATE TABLE other(x)`, `INSERT INTO other VALUES(1)`}, ErrNotDatabase},
+		"current without fyisp's tables": {[]string{meta, series, `INSERT INTO series VALUES(1)`, version(SchemaVersion())}, ErrNotDatabase},
 	} {
 		dir := t.TempDir()
 		writePending(t, dir, c.sqls...)
 		writeStrays(t, dir)
-		if err := os.WriteFile(filepath.Join(dir, DBName+".bak-v5"), []byte("mine"), 0o600); err != nil {
-			t.Fatal(err)
-		}
 		before := sums(t, dir)
 		if _, err := Open(dir, Options{}); !errors.Is(err, c.want) {
 			t.Errorf("%s: Open: %v, want %v", name, err, c.want)
@@ -382,9 +364,6 @@ func TestRefusedUntouched(t *testing.T) {
 			t.Errorf("%s: files changed\n%v\n%v", name, before, after)
 		}
 		checkStrays(t, dir, name)
-		if _, err := os.Stat(filepath.Join(dir, DBName+".bak-v5")); err != nil {
-			t.Errorf("%s: backup removed: %v", name, err)
-		}
 	}
 	// Not SQLite at all.
 	dir := t.TempDir()
@@ -409,7 +388,7 @@ func TestRefusedUntouched(t *testing.T) {
 func TestOldPendingWALUntouchedReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	writePending(t, dir, `CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY) WITHOUT ROWID`, `CREATE TABLE series(id INTEGER PRIMARY KEY)`,
-		`INSERT INTO series VALUES(1)`, `PRAGMA user_version=6`)
+		`INSERT INTO series VALUES(1)`, fmt.Sprintf(`PRAGMA user_version=%d`, SchemaVersion()-1))
 	before := sums(t, dir)
 	if _, err := OpenReadOnly(dir); err == nil || !strings.Contains(err.Error(), "older fyisp") {
 		t.Errorf("OpenReadOnly: %v", err)
@@ -462,24 +441,17 @@ func TestSymlinkRefused(t *testing.T) {
 	if after := sums(t, target); !maps.Equal(after, before) {
 		t.Errorf("target changed")
 	}
-	if _, err := os.Stat(filepath.Join(target, DBName+".bak-v4")); err != nil {
-		t.Errorf("target's backup removed: %v", err)
-	}
 }
 
 // TestReplaceCrash: a kill at any step of creating or replacing the
 // database (simulated with crashAt) never leaves a 0-byte or half-made
-// database that a later start accepts: before the rename fyisp.db is the
-// old file or missing, after it a complete v7, and the next start ends
-// with a complete empty v7 database and no leftover <path>.new. A kill
-// while the backups are removed (after the rename) leaves the rest.
+// database that a later start accepts: fyisp.db is still the old file or
+// missing, and the next start ends with a complete empty database of the
+// current schema and no leftover <path>.new.
 func TestReplaceCrash(t *testing.T) {
 	defer func() { crashAt = "" }()
 	for _, old := range []bool{true, false} {
-		for _, step := range []string{"build", "remove", "rename", "backups"} {
-			if !old && step == "backups" {
-				continue // a new database removes no backups
-			}
+		for _, step := range []string{"build", "remove", "rename"} {
 			what := fmt.Sprintf("old=%v crash at %s", old, step)
 			dir := t.TempDir()
 			path := filepath.Join(dir, DBName)
@@ -497,15 +469,6 @@ func TestReplaceCrash(t *testing.T) {
 			crashAt = ""
 			fi, err := os.Stat(path)
 			switch {
-			case step == "backups":
-				// After the rename: a complete v7 database, which the next
-				// start keeps; the backups not yet removed stay.
-				if st, v, err := classify(ctx, path); err != nil || st != dbCurrent || v != 7 {
-					t.Errorf("%s: fyisp.db is %v v%d (%v), want complete v7", what, st, v, err)
-				}
-				if m, _ := filepath.Glob(path + ".bak-v*"); len(m) == 0 {
-					t.Errorf("%s: no backup left", what)
-				}
 			case !old && !errors.Is(err, fs.ErrNotExist):
 				t.Errorf("%s: a database exists after the crash: %v", what, err)
 			case old && (err != nil || fi.Size() == 0):

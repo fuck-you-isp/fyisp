@@ -56,10 +56,9 @@ const (
 const readerIdleTime = time.Minute
 
 // schema is the whole database, created in one go in a new file. Its
-// version (PRAGMA user_version) is SchemaVersion. fyisp v0.10.0 started over
-// at v7: a file from an older fyisp (v1 to v6) is replaced with a new empty
-// one (see prepare), so there are no migrations. A future change appends
-// a migration and bumps SchemaVersion.
+// version (PRAGMA user_version) is SchemaVersion. There are no migrations:
+// a change bumps SchemaVersion, and a file with an older schema is replaced
+// with a new empty one (see prepare).
 const schema = `
 CREATE TABLE series(
 	id          INTEGER PRIMARY KEY,
@@ -191,8 +190,8 @@ var ErrNotDatabase = errors.New("store: not a fyisp database")
 // from an older fyisp, first (see prepare).
 //
 // Sequence:
-//  1. prepare: a complete schema v7 file at path, 0600 (SQLite gives
-//     -wal/-shm the same mode as the main file);
+//  1. prepare: a complete file of the current schema at path, 0600 (SQLite
+//     gives -wal/-shm the same mode as the main file);
 //  2. writer pool, MaxOpenConns=1, DSN: busy_timeout, synchronous=NORMAL,
 //     BEGIN IMMEDIATE;
 //  3. PRAGMA journal_mode=WAL (persistent);
@@ -262,17 +261,17 @@ func crashPoint(step string) error {
 	return nil
 }
 
-// prepare leaves a complete schema v7 database at path (see classify). No
-// database yet (no file, 0 bytes, or no tables): a new one. A database from
-// an older fyisp: replaced with a new empty one, together with its -wal,
-// -shm and -journal files and the fyisp.db.bak-v<N> backups older versions
-// made; earlier history is not carried over, and one info line says so.
-// Anything classify refuses is left exactly as it is.
+// prepare leaves a complete database of the current schema at path (see
+// classify). No database yet (no file, 0 bytes, or no tables): a new one. A
+// database with an older schema: replaced with a new empty one, together
+// with its -wal, -shm and -journal files; its history is not carried over,
+// and one info line says so. Anything classify refuses is left exactly as
+// it is.
 //
-// The new file is built as <path>.new and renamed over path, so a kill at
-// any point leaves either the old file (replaced again on the next start),
-// or a complete v7 database, never a half-made one; a stale <path>.new is
-// removed first. The backups go only after the rename.
+// The new file is built as <path>.new, synced, and renamed over path, so a
+// kill at any point leaves either the old file (replaced again on the next
+// start) or a complete new database, never a half-made one; a stale
+// <path>.new is removed first.
 func prepare(ctx context.Context, path, version string, now time.Time, log *slog.Logger) error {
 	state, ver, err := classify(ctx, path)
 	if err != nil {
@@ -287,18 +286,12 @@ func prepare(ctx context.Context, path, version string, now time.Time, log *slog
 			return fmt.Errorf("store: remove a half-made database: %w", err)
 		}
 	}
-	if state == dbNone {
-		return replace(ctx, path, tmp, version, now, nil)
-	}
-	// A database from an older fyisp: v0.10.0 starts over.
-	// The line is logged once it is all done, so it never claims backups
-	// that a kill left behind.
-	baks, bakBytes := backups(path)
-	if err := replace(ctx, path, tmp, version, now, baks); err != nil {
+	if err := replace(ctx, path, tmp, version, now); err != nil {
 		return err
 	}
-	log.Info(fmt.Sprintf("store: database from an older fyisp (schema v%d) replaced with a new empty one; its history isn't carried over", ver),
-		"backups_removed", len(baks), "backup_bytes_freed", bakBytes)
+	if state == dbOld {
+		log.Info(fmt.Sprintf("store: database from an older fyisp (schema v%d) replaced with a new empty one; its history isn't carried over", ver))
+	}
 	return nil
 }
 
@@ -307,16 +300,17 @@ type dbState int
 
 const (
 	dbNone    dbState = iota // no database yet: no file, 0 bytes, or no tables
-	dbCurrent                // a complete schema v7 database
-	dbOld                    // a database from an older fyisp (schema v1 to v6)
+	dbCurrent                // a complete database of the current schema
+	dbOld                    // a database from an older fyisp (an older schema)
 )
 
 // classify tells what is at path, for the daemon (prepare) and the
 // read-only commands (OpenReadOnly) alike, without writing to it: the
 // connection is read-only, so closing it never checkpoints a WAL into the
 // file or removes its -wal and -shm. It refuses a symbolic link, a newer
-// schema (ErrNewerSchema), and a file that is not a fyisp database, or a v7
-// file without fyisp's tables (ErrNotDatabase).
+// schema (ErrNewerSchema: a downgrade never wipes data), and a file that is
+// not a fyisp database, or one of the current schema without all of its
+// tables (ErrNotDatabase).
 func classify(ctx context.Context, path string) (dbState, int, error) {
 	fi, err := os.Lstat(path)
 	switch {
@@ -353,7 +347,7 @@ func classify(ctx context.Context, path string) (dbState, int, error) {
 	return dbOld, ver, nil
 }
 
-// tables are the schema's tables, which a v7 file must all have.
+// tables are the schema's tables, which a current file must all have.
 var tables = []string{"series", "samples", "summary_1h", "meta", "incidents", "hop_info", "route_changes", "routes", "speedtests"}
 
 // inspect reads the schema version and the table names of the database at
@@ -412,31 +406,9 @@ func readOnlyURI(slashPath string) string {
 	return "file://" + (&url.URL{Path: slashPath}).EscapedPath() + "?mode=ro"
 }
 
-// backups lists the fyisp.db.bak-v<N> files next to path (that exact
-// pattern only) and their total size.
-func backups(path string) (files []string, size int64) {
-	dir, base := filepath.Split(path)
-	ents, err := os.ReadDir(filepath.Clean(dir))
-	if err != nil {
-		return nil, 0
-	}
-	for _, e := range ents {
-		n, ok := strings.CutPrefix(e.Name(), base+".bak-v")
-		if !ok || n == "" || strings.Trim(n, "0123456789") != "" || !e.Type().IsRegular() {
-			continue
-		}
-		if fi, err := e.Info(); err == nil {
-			size += fi.Size()
-		}
-		files = append(files, filepath.Join(dir, e.Name()))
-	}
-	return files, size
-}
-
 // replace builds a new database at tmp, removes the old one's -wal, -shm
-// and -journal files, renames tmp over path (the commit point), and only
-// then removes the given backups: a failed rename keeps them.
-func replace(ctx context.Context, path, tmp, version string, now time.Time, baks []string) error {
+// and -journal files, and renames tmp over path (the commit point).
+func replace(ctx context.Context, path, tmp, version string, now time.Time) error {
 	if err := build(ctx, tmp, version, now); err != nil {
 		return fmt.Errorf("store: create the database: %w", err)
 	}
@@ -455,18 +427,10 @@ func replace(ctx context.Context, path, tmp, version string, now time.Time, baks
 		return fmt.Errorf("store: create the database: %w", err)
 	}
 	syncDir(filepath.Dir(path))
-	for _, p := range baks {
-		if err := crashPoint("backups"); err != nil {
-			return err
-		}
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("store: remove an old backup: %w", err)
-		}
-	}
 	return nil
 }
 
-// build writes a complete schema v7 database at path (0600): page size and
+// build writes a complete database of the current schema at path (0600): page size and
 // incremental auto-vacuum, then the schema, the creation stamp and the
 // version in one transaction, synced to disk (rollback journal, synchronous
 // FULL) before build returns.
