@@ -1,8 +1,7 @@
 // Command fyisp is a single-binary internet quality monitor: it probes
 // hyperscalers and popular services with TCP connects (and the network path
 // to them with ICMP), keeps every
-// sample for up to 90 days in a local SQLite file, serves a dashboard, and
-// builds evidence reports.
+// sample for up to 90 days in a local SQLite file, and serves a dashboard.
 package main
 
 import (
@@ -116,8 +115,6 @@ func main() {
 			os.Exit(cmdPaths(os.Args[2:]))
 		case "export":
 			os.Exit(cmdExport(os.Args[2:]))
-		case "report":
-			os.Exit(cmdReport(os.Args[2:]))
 		case "profiles":
 			runProfiles()
 		}
@@ -164,14 +161,14 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", "", "token required for dashboard controls (notes, reports, speed tests) when --listen is not loopback or --allow-host is set; by default one is generated, kept in the data directory and shown as a link in the log; off disables the controls")
+	fs.StringVar(&c.adminToken, "admin-token", "", "token required for speed-test controls and on-demand traces when --listen is not loopback or --allow-host is set; by default one is generated, kept in the data directory and shown as a link in the log; off turns the speed-test controls off")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
 	fs.StringVar(&c.logLevel, "log-level", "info", "log level: debug, info, warn or error")
 	fs.BoolVar(&c.force, "force", false, "start even if the data directory has less than 200 MB free")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp profiles [NAME[,NAME...]]\n       fyisp export [flags]\n       fyisp report [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
+		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp profiles [NAME[,NAME...]]\n       fyisp export [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	// Usage and parse errors go through a buffer: a removed flag gets its
@@ -218,8 +215,8 @@ var removedFlags = map[string]string{
 }
 
 const shareRemoved = `fyisp no longer publishes a public link.
-  To show someone your connection, send them a report:
-    fyisp report --redact -o report.html   (or "Create report" in the dashboard)
+  To show someone your connection, send them a screenshot of Home, or the
+  raw numbers from fyisp export.
   For live access, run your own named tunnel or reverse proxy to the
   dashboard (a cloudflared named tunnel, tailscale serve 3000, nginx) and
   start fyisp with --allow-host=<its host name>: the dashboard then
@@ -449,8 +446,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		// container on the same volume can still show it. Reading the log
 		// already takes as much access as reading the data directory.
 		link := adminLink(localURL, adminTok)
-		log.Info("open this link once in your browser to use notes, reports and speed tests", "url", link)
-		fmt.Fprintf(os.Stderr, "  To use notes, reports and speed tests, open this link once:\n  %s\n\n", link)
+		log.Info("open this link once in your browser to use speed tests and traces", "url", link)
+		fmt.Fprintf(os.Stderr, "  To use speed tests and traces, open this link once:\n  %s\n\n", link)
 		openURL = link
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {

@@ -56,7 +56,7 @@ func TestRemovedFlags(t *testing.T) {
 			t.Errorf("%q: err %v", args, err)
 			continue
 		}
-		if strings.Contains(args[len(args)-1], "share") && !strings.Contains(err.Error(), "fyisp report --redact") {
+		if strings.Contains(args[len(args)-1], "share") && !strings.Contains(err.Error(), "fyisp export") {
 			t.Errorf("%q: no pointer to the alternatives: %v", args, err)
 		}
 	}
