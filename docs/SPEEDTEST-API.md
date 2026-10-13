@@ -83,7 +83,6 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "bytes_24h": 3120000000,        // the last 24 hours (bytes_month: data used by speed tests since the 1st of this month, UTC)
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
-  "owner_tz": "America/New_York", // omitted when unknown: the owner's IANA zone (the one their browser last sent on a local page); reports use it for times of day
   "zone_label": "EDT (UTC−4)",    // the zone the summary's hours are in, printable
   "sweep_bytes": 9200000000, "sweep_servers": 45, // "Test every server": its estimated data (each server's recent median, else this line's median rate both ways for 10 s) and the servers it tests
   "next_row": "uk",               // |null: its row id
@@ -209,7 +208,7 @@ Only **scheduled** tests count in rows. Test now and sweeps are stored and liste
 
 ### Finding
 
-What the slowdown points to. It is computed in Go and reused by Details, Home and the report.
+What the slowdown points to. It is computed in Go and reused by Details and Home.
 
 ```jsonc
 {
@@ -236,7 +235,7 @@ What the slowdown points to. It is computed in Go and reused by Details, Home an
 
 The cases:
 - `isp`: every region dips at the same hours with every provider (a provider that stays flat rules it out). The cross-destination comparison is the main signal; the ISP edge's idle RTT by hour (`edge_hours`) only supports it when it rises at those hours. A flat edge proves nothing: lines with active queue management keep it flat while congested.
-- `provider`: only one provider's servers dip, in more than one region; or (`network` set, `providers` several) only the servers reached through one network past the ISP (the tests' `handoff`) dip, the others stay flat. `text_public` never names the network.
+- `provider`: only one provider's servers dip, in more than one region; or (`network` set, `providers` several) only the servers reached through one network past the ISP (the tests' `handoff`) dip, the others stay flat.
 - `route`: only one region dips, whichever provider.
 - `server`: only one server.
 
@@ -419,7 +418,7 @@ One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
 The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the owner already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
 
-It has the same protections as notes:
+It has the speed-test control checks:
 - same origin;
 - `X-FYISP-Token`;
 - the admin token or session cookie when one is set.
@@ -428,7 +427,7 @@ It works in every mode, `off` included.
 
 ### `POST api/speed/cancel?id=<id>`
 
-The same protections as notes (admin-gated). It cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
+The same speed-test control checks as `run` (admin-gated). It cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
 
 ## `POST api/speed/config`
 
@@ -470,7 +469,7 @@ These give the latest result per region and server, set after every test:
 
 `fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,down_capped_by_bytes,up_capped_by_bytes,capped_by_server,bytes,score_down,score_up,idle_gateway_ms,loaded_gateway_ms,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.
 
-Rows stored before v0.8.0 may carry the share link's triggers `public` and `public_sweep`; the export writes them as stored.
+`owner_tz` was removed in v0.10.0.
 
 ## Removed in v0.8.0
 
