@@ -105,17 +105,9 @@ function resultWord(t) {
  * @param {SpeedTest} t @param {'down'|'up'} dir
  */
 export function lowerBound(t, dir) { return /** @type {any} */ (t)[`${dir}_lower_bound`] === true; }
-/**
- * When the test stopped: every test runs up to 10 seconds each way. Older
- * rows that stopped at the old data limit (down_short / up_short) say so
- * neutrally.
- * @param {SpeedTest} t
- */
-function stopWords(t) { const x = /** @type {any} */ (t); return x.cap === 'bytes' || (!x.cap && (t.down_short || t.up_short)) ? 'when the test stopped' : 'when its 10 seconds ran out'; }
-/** @param {SpeedTest} t */
-function lbMore(t) { return `Still speeding up ${stopWords(t)}, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.`; }
-/** @param {SpeedTest} t */
-function lbOut(t) { return `This test was still speeding up ${stopWords(t)}, so it shows only a lower limit and isn’t used in the time-of-day pattern.`; }
+/** Every test runs up to 10 seconds each way. */
+const LB_MORE = 'Still speeding up when its 10 seconds ran out, so the speed was at least this. It counts as at least normal in the time-of-day pattern, but isn’t used to set this server’s normal.';
+const LB_OUT = 'This test was still speeding up when its 10 seconds ran out, so it shows only a lower limit and isn’t used in the time-of-day pattern.';
 /** A server or region left out because most tests to it end while still speeding up (A2). */
 const TOO_FAST = 'Too fast to measure from here';
 /** @param {SpeedRow} r @param {boolean} region */
@@ -133,8 +125,8 @@ function tooFastWhy(r, region) {
 /** Whether a lower bound counts as at least normal: the server's *_lb_counted (omitted when false). @param {SpeedTest} t @param {'down'|'up'} dir */
 function lbCounted(t, dir) { return /** @type {any} */ (t)[`${dir}_lb_counted`] === true; }
 /** The "% of normal" cell of a lower bound: "at least normal", or "not counted", muted either way. @param {boolean} atLeast */
-function lbCell(atLeast, /** @type {SpeedTest} */ t) {
-  const why = atLeast ? lbMore(t) : lbOut(t);
+function lbCell(atLeast) {
+  const why = atLeast ? LB_MORE : LB_OUT;
   return h('td', { class: 'num sp-nc', 'data-k': '% of normal', title: why }, atLeast ? 'at least normal' : 'not counted', h('span', { class: 'sr-only', text: `: ${why}` }));
 }
 export function readingCell(k, b, lb, mark) {
@@ -294,7 +286,7 @@ export class SpeedMap {
         type: 'button', text: l, 'aria-pressed': String(v === cur), onclick: () => { if (v !== cur) set(v); },
       })));
     const controls = h('div', { class: 'sp-ctl' },
-      seg('Rows', [['regions', d.mode === 'nearby' || d.mode === 'nearest' ? 'Nearby' : d.mode === 'custom' ? 'Your servers' : 'Regions'], ['servers', 'Every server']], this.rows, (v) => { this.rows = /** @type {'regions'} */ (v); this.cur = [0, 0]; this.renderMap(); this.renderSummary(); }),
+      seg('Rows', [['regions', d.mode === 'nearby' ? 'Nearby' : d.mode === 'custom' ? 'Your servers' : 'Regions'], ['servers', 'Every server']], this.rows, (v) => { this.rows = /** @type {'regions'} */ (v); this.cur = [0, 0]; this.renderMap(); this.renderSummary(); }),
       seg('Span', [['7', '7 days'], ['30', '30 days']], String(this.host.days()), (v) => this.host.setDays(Number(v))),
       seg('Show', [['pct', '% of normal'], ['mbps', 'Mbit/s']], this.unit, (v) => { this.unit = /** @type {'pct'} */ (v); this.renderMap(); this.renderRow(); }),
       seg('Direction', [['down', 'Download'], ['up', 'Upload']], this.dir, (v) => { this.dir = /** @type {'down'} */ (v); this.renderMap(); this.renderRow(); }),
@@ -597,20 +589,19 @@ export class SpeedMap {
       const bad = t.outcome !== 'ok';
       const lbDown = lowerBound(t, 'down'), lbUp = lowerBound(t, 'up');
       const x = /** @type {any} */ (t);
-      const shortWin = !lbDown && !lbUp && (t.down_short || t.up_short) && x.win_ms ? `short test (${(x.win_ms / 1000).toFixed(1)} s)` : '';
       const cancelled = t.outcome === 'cancelled'
         ? (x.cancelled_by === 'owner' ? `Stopped by you at ${clock(t.end)}.` : `Cancelled at ${clock(t.end)}.`) : '';
       const more = h('details', { class: 'sp-more' }, h('summary', { text: 'More', 'aria-label': `More about the ${clock(t.start)} test (${t.label})` }),
         h('dl', {},
           ...[cancelled ? ['Cancelled', cancelled] : null,
-            lbDown || lbUp ? ['Speed', lbDown && !lbCounted(t, 'down') ? lbOut(t) : lbMore(t)] : null,
+            lbDown || lbUp ? ['Speed', lbDown && !lbCounted(t, 'down') ? LB_OUT : LB_MORE] : null,
             ['Attempts', String(t.attempts)],
             /** @type {any} */ (t).port ? ['Port', String(/** @type {any} */ (t).port)] : null,
             ['Retransmits', t.down_retrans != null || t.up_retrans != null ? `${t.down_retrans ?? '—'} down, ${t.up_retrans ?? '—'} up` : 'not known'],
-            ['Test length', shortWin || (t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up` : `${Math.round((t.end - t.start) / 1000)} s`)],
+            ['Test length', t.down_s != null ? `${t.down_s} s down, ${t.up_s ?? '—'} s up` : `${Math.round((t.end - t.start) / 1000)} s`],
             t.bytes ? ['Data', `${Math.round(t.bytes / 1e6)} MB`] : null,
             ['Delay through your provider', t.latency?.edge ? `${lat(t.latency.edge.idle, t.latency.edge.down)} downloading; ${lat(t.latency.edge.idle, t.latency.edge.up)} uploading` : 'not known'],
-            ['Router delay', t.latency?.gateway ? `${lat(t.latency.gateway.idle, t.latency.gateway.down)} downloading` : t.idle_gateway_ms != null ? `${Math.round(t.idle_gateway_ms)} → ${Math.round(/** @type {number} */ (t.loaded_gateway_ms))} ms` : 'not known'],
+            ['Router delay', t.latency?.gateway ? `${lat(t.latency.gateway.idle, t.latency.gateway.down)} downloading` : 'not known'],
             t.conn && t.conn !== 'unknown' ? ['Connection', t.conn === 'wifi' ? 'Wi-Fi' : 'cable'] : null,
             t.handoff ? ['Handed off to', handoffWords(t.handoff)] : null,
             t.fallback && t.region ? ['Why a backup', fallbackWhy(d, t)] : null]
@@ -623,7 +614,7 @@ export class SpeedMap {
         readingCell(cd.all ? 'Down (at least)' : 'Down', t.down_bps, lbDown, !cd.all),
         readingCell(cu.all ? 'Up (at least)' : 'Up', t.up_bps, lbUp, !cu.all),
         // A lower bound counts as at least normal only when the server says so (down_lb_counted); otherwise it's left out: never slow.
-        lbDown && !bad ? lbCell(lbCounted(t, 'down'), t)
+        lbDown && !bad ? lbCell(lbCounted(t, 'down'))
           : h('td', { class: 'num', 'data-k': '% of normal', text: bad ? '—' : t.score != null ? pct(t.score) : best && t.down_bps != null ? pct(t.down_bps / best) : '—' }),
         h('td', { 'data-k': 'Result', text: resultWord(t) + (t.trigger !== 'schedule' ? ' · on demand' : '') }),
         h('td', { class: 'mo' }, more));

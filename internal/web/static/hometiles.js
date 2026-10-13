@@ -12,7 +12,7 @@ import { TileChart } from './homechart.js';
 /** @typedef {{id:string,name:string,kind:string,state:string,word:string,since:number|null,note:string,aria:string,reason:string,enable_hint?:string,bars_summary:string,bars:HomeBar[]}} HomeTile */
 /** @typedef {{label:string,value:string,limit?:string,bad?:boolean}} HomeMetric */
 /** @typedef {{from:number,to:number,kind:string,text:string}} HomeBand */
-/** @typedef {{v:number,at:number,id:string,state:string,word:string,reason:string,coverage?:string,legend?:string,metrics:HomeMetric[],from:number,step:number,ms:(number|null)[],usual_ms:number|null,bands:HomeBand[],text:string}} HomeTileDetail */
+/** @typedef {{at:number,id:string,state:string,word:string,reason:string,coverage?:string,legend?:string,metrics:HomeMetric[],from:number,step:number,ms:(number|null)[],usual_ms:number|null,bands:HomeBand[],text:string}} HomeTileDetail */
 /**
  * What the tiles need from Home.
  * @typedef {{loadTile: (id: string) => Promise<HomeTileDetail>, stale: () => boolean, shown: () => boolean}} TilesHost

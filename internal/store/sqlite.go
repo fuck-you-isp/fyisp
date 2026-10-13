@@ -144,8 +144,6 @@ CREATE TABLE speedtests(
 	fallback        INT  NOT NULL DEFAULT 0,
 	fallback_level  TEXT NOT NULL DEFAULT 'none',
 	capped_server   INT  NOT NULL DEFAULT 0,
-	down_short      INT  NOT NULL DEFAULT 0,
-	up_short        INT  NOT NULL DEFAULT 0,
 	down_s          REAL NOT NULL DEFAULT 0,
 	up_s            REAL NOT NULL DEFAULT 0,
 	bytes           INT  NOT NULL DEFAULT 0,
@@ -158,8 +156,6 @@ CREATE TABLE speedtests(
 	up_bps          REAL,
 	down_retrans    INT,
 	up_retrans      INT,
-	idle_gw_ms      REAL,
-	loaded_gw_ms    REAL,
 	latency_json    TEXT,
 	conn            TEXT NOT NULL DEFAULT '',
 	handoff_asn     INT,
@@ -171,7 +167,7 @@ CREATE INDEX speedtests_start ON speedtests(start_ms);
 `
 
 // SchemaVersion is the schema version this build writes.
-func SchemaVersion() int { return 7 }
+func SchemaVersion() int { return 8 }
 
 // conns is the writer/reader handle pair.
 type conns struct {

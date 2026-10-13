@@ -1,12 +1,10 @@
 {
-  "v": 2,
   "at": 1791556200000,
   "last_check": 1791556196000,
   "stale": false,
   "watching_since": 1772548200000,
   "footer": "Watching your connection since Mar 3",
   "learning": null,
-  "monitored": 11,
   "answer": {
     "key": "isp:1791555120000:27uv13",
     "tone": "bad",
@@ -189,16 +187,10 @@
     "available": true,
     "latest": {
       "at": 1791555600000,
-      "down_mbps": 140,
-      "up_mbps": 95,
       "text": "Your speed: about 140 Mbps down / 95 Mbps up — much slower than usual (usually about 925 / 938 Mbps).",
       "note": "Today 10:20 am, during the problem"
     },
     "empty_text": "No speed test yet. The first one runs within the hour.",
-    "usual": {
-      "down_mbps": 925,
-      "up_mbps": 938
-    },
     "running": null,
     "can_control": true
   },

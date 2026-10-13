@@ -54,7 +54,7 @@ func FakeBurst(r *rand.Rand, target string, slot time.Time, base, lossP float64)
 	return out
 }
 
-func (f *Fake) Caps() Caps { return Caps{ICMP: "udp", TCP: true, HTTPS: true} }
+func (f *Fake) Caps() Caps { return Caps{ICMP: "udp"} }
 
 func (f *Fake) Run(ctx context.Context, p *model.Profile, sink model.Sink) error {
 	now := f.Now

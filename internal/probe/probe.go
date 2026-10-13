@@ -13,11 +13,9 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 )
 
-// Caps reports which probe kinds work on this machine.
+// Caps reports how ICMP works on this machine (TCP and HTTPS always do).
 type Caps struct {
-	ICMP  string `json:"icmp"` // "udp", "raw", "iphlpapi" or "unavailable"
-	TCP   bool   `json:"tcp"`
-	HTTPS bool   `json:"https"`
+	ICMP string `json:"icmp"` // "udp", "raw", "iphlpapi" or "unavailable"
 	// ICMPHint explains how to enable ICMP when it is unavailable.
 	ICMPHint string `json:"icmp_hint,omitempty"`
 }

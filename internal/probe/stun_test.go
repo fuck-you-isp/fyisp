@@ -544,7 +544,7 @@ func TestRunnerUDP(t *testing.T) {
 		}
 	}
 	st := r.UDPState()
-	if len(st) != 1 || st[0].Target != "Teams-Relay" || st[0].Region != "swedencentral" || st[0].Epoch != 0 {
+	if len(st) != 1 || st[0].Target != "Teams-Relay" || st[0].Region != "swedencentral" {
 		t.Fatalf("UDPState %+v", st)
 	}
 	var _ UDPStateSource = r
@@ -553,7 +553,7 @@ func TestRunnerUDP(t *testing.T) {
 
 // TestRunnerUDPAddressChange: when GeoDNS moves the name to another relay,
 // the socket is reopened and the next burst goes entirely to the new one
-// (no jitter from mixing two relays), and the epoch counts the change.
+// (no jitter from mixing two relays).
 func TestRunnerUDPAddressChange(t *testing.T) {
 	a := newSTUNServer(t, "127.0.0.1:0", nil)
 	// The second relay is 500 ms "further" away, on the same port of
@@ -586,10 +586,6 @@ func TestRunnerUDPAddressChange(t *testing.T) {
 		if s.Key.Kind == model.KindUDPJitter && !s.Lost && s.RTT > further/(BurstSize-1)/2 {
 			t.Errorf("jitter %v across the relay change", s.RTT)
 		}
-	}
-	st := r.UDPState()
-	if len(st) != 1 || st[0].Epoch != 1 || st[0].ChangedAt.IsZero() {
-		t.Fatalf("UDPState %+v", st)
 	}
 }
 

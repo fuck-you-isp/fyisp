@@ -89,10 +89,10 @@ var (
 	// that port right now. A stock iperf3 server closes its listener for a
 	// moment after every test, so another port (or a retry) may work.
 	ErrRefused = errors.New("iperf3 connection refused")
-	// ErrOverrun: a download reached the backstop (the server kept sending
-	// past the byte cap) before its window was complete, and was cut with
-	// an RST.
-	ErrOverrun = errors.New("iperf3 server kept sending past the byte cap")
+	// ErrOverrun: the run reached the backstop (the server ignored
+	// TEST_END or kept sending) before its window was complete, and was
+	// cut with an RST.
+	ErrOverrun = errors.New("iperf3 server kept sending past the backstop")
 )
 
 // ErrCancelledByOwner is the cause (context.WithCancelCause) of the owner's
@@ -119,8 +119,7 @@ type Config struct {
 	Duration  time.Duration // measured time, default 9s; with MinDuration, the most
 	// Omit is the ramp-up excluded from the result, default 1s. With
 	// MinDuration it is the longest ramp-up: the ramp ends as soon as the
-	// throughput of a 100 ms tick stops rising (on a fast line with a byte
-	// cap, a fixed second would leave nothing to measure).
+	// throughput of a 100 ms tick stops rising.
 	Omit time.Duration
 	// MinDuration > 0 makes the length adaptive: the test ends once at
 	// least MinDuration is measured and the last second's rate is within
@@ -128,9 +127,6 @@ type Config struct {
 	// client ends it early with TEST_END, which stock servers accept.
 	MinDuration time.Duration
 	Stable      float64
-	// MaxBytes caps the bytes moved in this direction, ramp-up included
-	// (0: no cap): the test ends there, and Result.CappedByBytes is set.
-	MaxBytes int64
 	// Backstop is when, from the data phase's start, the streams are cut
 	// with an RST whatever the server does (a server that ignores TEST_END
 	// or keeps sending), default Omit+Duration+2s. A complete window
@@ -167,18 +163,16 @@ type Result struct {
 	// TCP_INFO: the server's for downloads, ours on Linux for uploads).
 	Retransmits int64
 	Streams     int
-	// CappedByBytes: the test hit Config.MaxBytes, so Elapsed may be short.
-	CappedByBytes bool
-	Ramp          time.Duration // the ramp-up left out
-	IP            netip.Addr    // the address the test ran against
-	TotalBytes    int64         // every byte moved, ramp-up included (data use)
+	Ramp        time.Duration // the ramp-up left out
+	IP          netip.Addr    // the address the test ran against
+	TotalBytes  int64         // every byte moved, ramp-up included (data use)
 	// RateMethod is how a capped direction's rate was taken (MethodPeak90
 	// or MethodWhole; "" when not capped). LowerBound: it was still
 	// speeding up at the cap, so the speed was at least this.
 	RateMethod string
 	LowerBound bool
-	// Overrun: the server kept sending past the cap and the run was cut at
-	// the backstop (after a complete window; else the run fails with
+	// Overrun: the server kept sending past the time cap and the run was
+	// cut at the backstop (after a complete window; else the run fails with
 	// ErrOverrun).
 	Overrun bool
 }
@@ -293,9 +287,6 @@ func Run(ctx context.Context, c Config) (Result, error) {
 	}
 	t := &test{c: c, dialRTT: dialRTT}
 	t.ctrl = countConn{ctrl, &t.setup}
-	if c.MaxBytes > 0 {
-		t.stopAt.Store(c.MaxBytes - inflightFloor(c.MaxBytes))
-	}
 	defer t.close()
 	stop := context.AfterFunc(ctx, t.abort) // unblocks every read and write
 	defer stop()
@@ -389,20 +380,13 @@ type test struct {
 	closed  bool
 	wg      sync.WaitGroup // the data phase's stream goroutines
 
-	counts []atomic.Int64 // per stream, the whole data phase (mu: the slice)
-	moved  atomic.Int64   // bytes of every stream, against MaxBytes (uploads: reserved before each write)
-	kern   []int64        // per stream, kernelBytes at close (mu)
-	setup  atomic.Int64   // the control connection's bytes and the stream cookies
-	acked  bool           // uploads: Result.Bytes is TCP_INFO acked bytes
-	// stopAt is where a download stops reading: MaxBytes less what is
-	// still in flight then (see inflightSlack), so the total that arrives
-	// stays within MaxBytes.
-	stopAt   atomic.Int64
-	dialRTT  time.Duration // the control connection's connect time: the RTT without TCP_INFO
-	capped   atomic.Bool
-	capAt    atomic.Int64 // when capped (UnixNano)
-	measured atomic.Bool  // the data phase ended with a complete window
-	overrun  atomic.Bool  // the backstop cut the run
+	counts   []atomic.Int64 // per stream, the whole data phase (mu: the slice)
+	kern     []int64        // per stream, kernelBytes at close (mu)
+	setup    atomic.Int64   // the control connection's bytes and the stream cookies
+	acked    bool           // uploads: Result.Bytes is TCP_INFO acked bytes
+	dialRTT  time.Duration  // the control connection's connect time: the RTT without TCP_INFO
+	measured atomic.Bool    // the data phase ended with a complete window
+	overrun  atomic.Bool    // the backstop cut the run
 }
 
 func (t *test) close() { t.shut(false) }
@@ -519,10 +503,6 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 			}
 		}()
 	}
-	if t.c.Direction == Download && t.c.MaxBytes > 0 {
-		t.wg.Add(1)
-		go t.backstop()
-	}
 	cut := time.AfterFunc(t.c.Backstop, func() { // the time backstop
 		t.overrun.Store(true)
 		t.abort()
@@ -567,7 +547,7 @@ func (t *test) run(ctx context.Context, res *Result) (Result, error) {
 // idle waits until deadline on the control connection. The server sends
 // nothing during the data phase unless it fails.
 func (t *test) idle(deadline time.Time) error {
-	for time.Now().Before(deadline) && !t.capped.Load() {
+	for time.Now().Before(deadline) {
 		_ = t.ctrl.SetReadDeadline(deadline)
 		var b [1]byte
 		_, err := t.ctrl.Read(b[:])
@@ -575,7 +555,7 @@ func (t *test) idle(deadline time.Time) error {
 			return t.stateErr(int8(b[0]))
 		}
 		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() || t.capped.Load() { // capped: the backstop may have closed it
+		if errors.As(err, &ne) && ne.Timeout() {
 			continue
 		}
 		return fmt.Errorf("control connection: %w", err)
@@ -587,7 +567,7 @@ func (t *test) idle(deadline time.Time) error {
 const tick = 100 * time.Millisecond
 
 // dataPhase runs the data phase on 100 ms ticks until the time cap
-// (Omit + Duration), the byte cap, or, when adaptive, a plateau-aware early
+// (Omit + Duration) or, when adaptive, a plateau-aware early
 // stop, then fills res from the one estimator (peak90 over the
 // timestamped ticks: the ramp-up's end is decided after the fact, the
 // same way whatever ended the run). per is each stream's bytes (for our
@@ -623,16 +603,12 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 	}
 	acked := t.c.Direction == Upload && ackedSum() >= 0
 	timeCapped := false // the run reached Omit + Duration
-	var last int64
-	var lastAt time.Duration
 	for k := 1; ; k++ {
 		if err := t.idle(start.Add(time.Duration(k) * tick)); err != nil {
 			return nil, err
 		}
 		now := time.Since(start) // ticks are read late on a busy machine: rates use the actual time
 		b := total()
-		t.updateStop(float64(b-last) / max(now-lastAt, time.Millisecond).Seconds())
-		last, lastAt = b, now
 		c := b
 		if acked {
 			if c = ackedSum(); c < 0 {
@@ -640,10 +616,6 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			}
 		}
 		cum, ats = append(cum, c), append(ats, now)
-		if t.capped.Load() {
-			res.CappedByBytes = true
-			break
-		}
 		if time.Duration(k)*tick >= t.c.Omit+t.c.Duration {
 			timeCapped = true
 			break
@@ -678,40 +650,23 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 			}
 		}
 	}
-	// The estimate: over complete ticks (the byte cap's tick is cut
-	// short), to the last byte.
-	ticks, at := cum, ats
+	// The estimate: over the ticks, to the last byte.
 	end, endBytes := ats[len(ats)-1], cum[len(cum)-1]
-	if res.CappedByBytes {
-		ticks, at = cum[:len(cum)-1], ats[:len(ats)-1]
-		end = time.Since(start)
-		if t.c.Direction == Download {
-			endBytes = res.TotalBytes
-			if a := t.capAt.Load(); a > 0 {
-				end = time.Unix(0, a).Sub(start)
-			}
-		} else if acked {
-			if a := ackedSum(); a >= 0 {
-				endBytes = a
-			}
-		}
-	}
 	from := 0
 	if t.c.Direction == Upload && !acked {
 		from = 1 // written bytes: the first tick fills the send buffers
 	}
-	e := peak90From(from, ticks, at, end, endBytes, t.pathRTT())
-	capped := res.CappedByBytes || timeCapped // an early stop has levelled off
+	e := peak90From(from, cum, ats, end, endBytes, t.pathRTT())
 	res.RateMethod = e.method
 	if e.method == MethodPeak90 {
 		res.Bytes, res.Elapsed, res.Ramp = e.bytes, e.win, e.start
-		res.LowerBound = capped && e.lowerBound
+		res.LowerBound = timeCapped && e.lowerBound // an early stop has levelled off
 	} else { // no tick with bytes: the whole run
 		res.Bytes, res.Elapsed = endBytes, end
 		if t.c.Direction == Upload && allAcked {
 			res.Bytes = ackedBytes
 		}
-		res.LowerBound = capped
+		res.LowerBound = timeCapped
 	}
 	res.clampTotal()
 	if os.Getenv("FYISP_TICKS") != "" { // for checking the estimator on a real line
@@ -721,7 +676,7 @@ func (t *test) dataPhase(counts []atomic.Int64, res *Result) ([]int64, error) {
 		}
 		cmp.Or(t.c.Log, slog.Default()).Info("speed test ticks", "direction", t.c.Direction.String(), "at_ms", ms, "bytes", cum,
 			"rtt_ms", float64(t.pathRTT().Microseconds())/1000, "method", e.method, "lower_bound", res.LowerBound,
-			"capped_by_bytes", res.CappedByBytes, "time_capped", timeCapped)
+			"time_capped", timeCapped)
 	}
 	return per, nil
 }
@@ -826,127 +781,12 @@ func (t *test) snapshot(counts []atomic.Int64, into, retrans, acked []int64) {
 	}
 }
 
-// moved counts the bytes of every stream against Config.MaxBytes; capped
-// is set the moment it is reached, and wakes the control loop.
-func (t *test) count(n *atomic.Int64, k int) {
-	n.Add(int64(k))
-	if t.c.MaxBytes <= 0 || t.c.Direction != Download {
-		return
-	}
-	if t.moved.Add(int64(k)) >= t.stopAt.Load() {
-		t.capNow()
-	}
-}
-
-func (t *test) capNow() {
-	if t.capped.CompareAndSwap(false, true) {
-		t.capAt.Store(time.Now().UnixNano())
-		_ = t.ctrl.SetReadDeadline(time.Now()) // end the current wait now
-	}
-}
-
-// backstopEvery is how often a download's received bytes are checked
-// against the backstop.
-const backstopEvery = 5 * time.Millisecond
-
-// Backstop is where a download is cut with an RST, whatever the server
-// does: the run's cap plus 5%.
-func Backstop(maxBytes int64) int64 { return maxBytes + maxBytes/20 }
-
-// backstop watches a download's bytes received (the kernel's count where
-// known, read or still buffered; else what was read): at the stop point
-// the test is capped as when the reads reach it, and a server that ignores
-// TEST_END or keeps sending is aborted once they reach Backstop.
-func (t *test) backstop() {
-	defer t.wg.Done()
-	limit := Backstop(t.c.MaxBytes)
-	tk := time.NewTicker(backstopEvery)
-	defer tk.Stop()
-	for range tk.C {
-		t.mu.Lock()
-		if t.closed {
-			t.mu.Unlock()
-			return
-		}
-		var n int64
-		for i, s := range t.streams {
-			k := tcpReceived(s)
-			if i < len(t.counts) {
-				k = max(k, t.counts[i].Load())
-			}
-			n += k
-		}
-		t.mu.Unlock()
-		if n >= t.stopAt.Load() {
-			t.capNow()
-		}
-		if n >= limit {
-			t.overrun.Store(true)
-			t.abort()
-			return
-		}
-	}
-}
-
-// Download overshoot: once we stop reading, the server keeps sending until
-// TEST_END reaches it, and that data still arrives (into our receive
-// buffers). A download therefore stops at MaxBytes less the data in
-// flight: the current rate × (the smoothed RTT + inflightSlack), at least
-// inflightFloor.
-const inflightSlack = 50 * time.Millisecond
-
-// inflightFloor is 5 MB, or a twentieth of a small cap.
-func inflightFloor(max int64) int64 { return min(5<<20, max/20) }
-
-// updateStop moves the download's stop point for the rate just measured
-// (bytes per second).
-func (t *test) updateStop(rate float64) {
-	if t.c.MaxBytes <= 0 || t.c.Direction != Download {
-		return
-	}
-	rtt := t.dialRTT
-	t.mu.Lock()
-	if len(t.streams) > 0 {
-		if r := tcpRTT(t.streams[0]); r > 0 {
-			rtt = r
-		}
-	}
-	t.mu.Unlock()
-	in := max(int64(rate*(rtt+inflightSlack).Seconds()), inflightFloor(t.c.MaxBytes))
-	t.stopAt.Store(t.c.MaxBytes - in)
-	if t.moved.Load() >= t.c.MaxBytes-in {
-		t.capNow()
-	}
-}
-
-// reserve claims up to want bytes of the upload's cap for one write: the
-// streams never write more than MaxBytes between them.
-func (t *test) reserve(want int) int {
-	if t.c.MaxBytes <= 0 {
-		return want
-	}
-	for {
-		cur := t.moved.Load()
-		left := t.c.MaxBytes - cur
-		if left <= 0 {
-			t.capNow()
-			return 0
-		}
-		n := min(int64(want), left)
-		if t.moved.CompareAndSwap(cur, cur+n) {
-			return int(n)
-		}
-	}
-}
-
-// drain reads a download stream until the server closes it, or until the
-// byte cap: then it stops reading, so TCP flow control stops the server
-// within its buffers while TEST_END is sent.
+// drain reads a download stream until the server closes it.
 func (t *test) drain(s net.Conn, n *atomic.Int64) {
 	buf := make([]byte, blockSize)
-	for !t.capped.Load() {
+	for {
 		k, err := s.Read(buf)
-		t.count(n, k)
+		n.Add(int64(k))
 		if err != nil {
 			return
 		}
@@ -961,19 +801,12 @@ var payload = func() []byte {
 	return b
 }()
 
-// fill writes an upload stream until done, never past the byte cap.
+// fill writes an upload stream until done.
 func (t *test) fill(s net.Conn, n *atomic.Int64, done *atomic.Bool) {
-	for !done.Load() && !t.capped.Load() {
-		r := t.reserve(len(payload))
-		if r == 0 {
-			return
-		}
+	for !done.Load() {
 		_ = s.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
-		k, err := s.Write(payload[:r])
-		if k < r {
-			t.moved.Add(int64(k - r)) // give back what wasn't written
-		}
-		t.count(n, k)
+		k, err := s.Write(payload)
+		n.Add(int64(k))
 		if err != nil {
 			var ne net.Error
 			if errors.As(err, &ne) && ne.Timeout() {

@@ -48,7 +48,7 @@ STATES.forEach((name, i) => {
       await expect.poll(async () => {
         const got = await (await fetch(api)).json();
         const shown = await page.locator('.hp-headline').textContent();
-        return got.v === 2 && (got.stale ? /^fyisp hasn’t checked since /.test(shown || '') : shown === got.answer.headline);
+        return !!got.answer && (got.stale ? /^fyisp hasn’t checked since /.test(shown || '') : shown === got.answer.headline);
       }, { timeout: 20e3 }).toBe(true);
       for (const t of want.tiles) {
         const st = /^(good|slow|down|off)$/.test(t.state) ? t.state : 'none';

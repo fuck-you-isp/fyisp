@@ -14,12 +14,12 @@ import { Tiles, ico, setText } from './hometiles.js';
 /** @typedef {import('./hometiles.js').HomeTile} HomeTile */
 /** @typedef {{key:string,tone:string,icon:string,tab:string,headline:string,sub:string,day:{text:string,link:string}|null}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,sub:string}} HomeHop */
-/** @typedef {{at:number,down_mbps:number,up_mbps:number,text:string,note:string}} HomeSpeedResult */
-/** @typedef {{available:boolean,latest:HomeSpeedResult|null,empty_text:string,usual:{down_mbps:number,up_mbps:number}|null,running:{entry:number,expected_end:number}|null,can_control:boolean}} HomeSpeed */
+/** @typedef {{at:number,text:string,note:string}} HomeSpeedResult */
+/** @typedef {{available:boolean,latest:HomeSpeedResult|null,empty_text:string,running:{entry:number}|null,can_control:boolean}} HomeSpeed */
 /** @typedef {{id:string,from:number,to:number,ongoing:boolean,level:string,when:string,what:string,cause:string,cause_kind:string,evidence:string}} HomeProblem */
 /**
- * part=now (docs/HOME-API.md, v2).
- * @typedef {{v:number,at:number,last_check:number,stale:boolean,watching_since:number,footer:string,learning:{until:number,text:string}|null,monitored:number,
+ * part=now (docs/HOME-API.md).
+ * @typedef {{at:number,last_check:number,stale:boolean,watching_since:number,footer:string,learning:{text:string}|null,
  *   answer:HomeAnswer,path:HomeHop[],path_hint:string,tiles:HomeTile[],speed:HomeSpeed|null,problems:{summary:string,items:HomeProblem[]}|null}} HomeNow
  */
 /**
@@ -193,7 +193,7 @@ export class Home {
     this.nowAt = Date.now();
     try {
       const d = await fetchJSON(HOME_API + '?' + new URLSearchParams({ part: 'now', tz: tzParam() }), { signal: AbortSignal.timeout(POLL_TIMEOUT_MS) });
-      if (!d || d.v !== 2) throw new Error('not a v2 answer');
+      if (!d || !d.answer) throw new Error('not a Home answer');
       this.data = /** @type {HomeNow} */ (d);
       this.recvAt = Date.now();
       this.fails = 0;

@@ -77,16 +77,6 @@ func TestStockAdaptive(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 		ad, err := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second})
-		time.Sleep(time.Second)
-		capped, err2 := Run(ctx, Config{Addr: addr, Direction: d, Duration: 8 * time.Second, MinDuration: 3 * time.Second, MaxBytes: 100_000_000})
-		if err2 != nil {
-			t.Fatalf("%s capped: %v", d, err2)
-		}
-		t.Logf("%s: capped at 100 MB: %.0f Mbit/s over %v after a %v ramp, %d bytes arrived or written in all, capped=%v", d,
-			capped.BitsPerSecond()/1e6, capped.Elapsed.Round(time.Millisecond), capped.Ramp.Round(time.Millisecond), capped.WireBytes, capped.CappedByBytes)
-		if capped.WireBytes > 100_000_000+setupOverhead {
-			t.Errorf("%s: %d bytes: over the 100 MB cap", d, capped.WireBytes)
-		}
 		if err != nil {
 			t.Fatalf("%s adaptive: %v", d, err)
 		}
@@ -101,7 +91,7 @@ func TestStockAdaptive(t *testing.T) {
 
 // TestLiveSession runs one session against a public server, download then
 // upload, trying up to 3 ports while busy: FYISP_LIVE=host:5201-5210, and
-// FYISP_LIVE_FULL=1 for a full 10 s run (1 s omitted, 9 s, no byte cap)
+// FYISP_LIVE_FULL=1 for a full 10 s run (1 s omitted, 9 s)
 // instead of the scheduler's adaptive one. Run sessions one at a time.
 func TestLiveSession(t *testing.T) {
 	spec := os.Getenv("FYISP_LIVE")
@@ -125,8 +115,8 @@ func TestLiveSession(t *testing.T) {
 			c.Addr = net.JoinHostPort(host, strconv.Itoa(pmin+rand.IntN(pmax-pmin+1)))
 			r, err := Run(context.Background(), c)
 			if err == nil {
-				t.Logf("%s %s full=%v: %.1f Mbit/s over %v after a %v ramp, %d MB moved, capped=%v, retrans %d",
-					c.Addr, d, full, r.BitsPerSecond()/1e6, r.Elapsed.Round(time.Millisecond), r.Ramp.Round(time.Millisecond), r.TotalBytes>>20, r.CappedByBytes, r.Retransmits)
+				t.Logf("%s %s full=%v: %.1f Mbit/s over %v after a %v ramp, %d MB moved, lower bound %v, retrans %d",
+					c.Addr, d, full, r.BitsPerSecond()/1e6, r.Elapsed.Round(time.Millisecond), r.Ramp.Round(time.Millisecond), r.TotalBytes>>20, r.LowerBound, r.Retransmits)
 				break
 			}
 			t.Logf("%s %s try %d: %v", c.Addr, d, try, err)

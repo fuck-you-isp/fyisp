@@ -525,7 +525,7 @@ func (pd *panelData) JSON() []byte {
 		if s.key.Hop > 0 {
 			b = fmt.Appendf(b, `,"hop":%d`, s.key.Hop)
 		}
-		b = fmt.Appendf(b, `,"interval":%d,"mean":`, s.interval.Milliseconds())
+		b = append(b, `,"mean":`...)
 		b = appendFloats(b, c.Mean, pd.nb)
 		b = append(b, `,"min":`...)
 		b = appendFloats(b, c.Min, pd.nb)
@@ -644,12 +644,11 @@ type groupJSON struct {
 }
 
 type targetSummary struct {
-	Name     string   `json:"name"`
-	Group    string   `json:"group"`
-	Kinds    []string `json:"kinds"`
-	Interval int64    `json:"interval_ms"`
-	Layer    string   `json:"layer,omitempty"` // model.Layer* for path targets
-	Trace    bool     `json:"trace,omitempty"` // has an always-on trace
+	Name  string   `json:"name"`
+	Group string   `json:"group"`
+	Kinds []string `json:"kinds"`
+	Layer string   `json:"layer,omitempty"` // model.Layer* for path targets
+	Trace bool     `json:"trace,omitempty"` // has an always-on trace
 	// Provider and location (catalog targets; see model.Target). Targets
 	// without them (default profile, --config files) report their group as
 	// the provider and no geo. Names only: never a host.
@@ -665,9 +664,6 @@ type targetSummary struct {
 	// Home is the target's Home category (profile.HomeCategory: calls,
 	// work, web or other; the Overview's filter); omitted for path targets.
 	Home string `json:"home,omitempty"`
-	// Tile is the Home tile the target feeds (its tile: tag, e.g.
-	// "zoom"); omitted when none.
-	Tile string `json:"tile,omitempty"`
 }
 
 func buildProfile(p *model.Profile) profileJSON {
@@ -689,7 +685,7 @@ func buildProfile(p *model.Profile) profileJSON {
 		titles[g.ID] = g.Title
 	}
 	for _, t := range p.Targets {
-		ts := targetSummary{Name: t.Name, Group: t.Group, Interval: intervalOf(t, model.KindTCP).Milliseconds()}
+		ts := targetSummary{Name: t.Name, Group: t.Group}
 		switch t.Layer {
 		case model.LayerGateway, model.LayerEdge, model.LayerAnycast:
 			ts.Layer = t.Layer
@@ -703,7 +699,6 @@ func buildProfile(p *model.Profile) profileJSON {
 			ts.Kinds = append(ts.Kinds, k.String())
 		}
 		ts.Tags = t.Tags
-		ts.Tile = profile.TileOf(t)
 		out.Targets = append(out.Targets, ts)
 	}
 	return out

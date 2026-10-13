@@ -11,7 +11,6 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,16 +26,12 @@ type Extra struct {
 	// second router): the edge may be the home router, and the link type
 	// is not this machine's.
 	Bridged bool `json:"bridged,omitempty"`
-	// Per direction (down, up) of a capped one: how its rate was taken
-	// (MethodPeak90, MethodWhole; "" when not capped, and in every v0.7.0
-	// row), its window, and whether it is a lower bound (still speeding up
-	// at the cap).
+	// Per direction (down, up): how its rate was taken (MethodPeak90,
+	// MethodWhole), its window, and whether it is a lower bound (still
+	// speeding up at the time cap).
 	RateMethod [2]string  `json:"rate_method,omitzero"`
 	WinMs      [2]float64 `json:"win_ms,omitzero"`
 	LowerBound [2]bool    `json:"lower_bound,omitzero"`
-	// Cap is the limit tests ran under: "time" (v0.7.2: up to 10 s each
-	// way); "" for v0.7.0/v0.7.1 rows (100 MB each way).
-	Cap string `json:"cap,omitempty"`
 	// CancelledBy (a cancelled test): "owner" when the owner stopped it
 	// (the cancel's cause); "" otherwise (a shutdown).
 	CancelledBy string `json:"cancelled_by,omitempty"`
@@ -285,7 +280,6 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 	sctx, cancel := context.WithTimeout(ctx, SlotCap)
 	defer cancel()
 	var x Extra
-	x.Cap = "time"
 	t.Conn = model.ConnUnknown
 	if s.o.Conn != nil {
 		t.Conn = s.o.Conn()
@@ -343,17 +337,7 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		s.saveCancelled(ctx, t, used)
 		return nil, false, t.Bytes
 	}
-	if t.Latency = latency(s.o.Load, s.o.Windows, lr, win.Start); t.Latency != nil {
-		g := t.Latency.Gateway
-		if g.Idle != nil {
-			t.IdleGatewayMs = &g.Idle.P50Ms
-		}
-		for _, x := range []*model.LoadStats{g.Down, g.Up} {
-			if x != nil && (t.LoadedGatewayMs == nil || x.P50Ms > *t.LoadedGatewayMs) {
-				t.LoadedGatewayMs = &x.P50Ms
-			}
-		}
-	}
+	t.Latency = latency(s.o.Load, s.o.Windows, lr, win.Start)
 	if s.o.Handoff != nil && t.Outcome != model.SpeedUnreachable && ip.IsValid() {
 		switch {
 		case ip == pre:
@@ -534,37 +518,19 @@ const (
 // Baseline is the server's baseline (down, up) as of at, false while
 // learning.
 func Baseline(ts []model.SpeedTest, server string, at time.Time) (down, up float64, ok bool) {
-	// Rows from before the time cap (v0.7.0/v0.7.1) that stopped at 100
-	// MB read low on far servers: once a server has any, its normal waits
-	// for BaselineMin time-capped rows and leaves those out.
-	var d, u, dt, ut []float64
-	byteCapped := false
+	var d, u []float64
 	for _, t := range ts {
 		if t.Server != server || t.Trigger != "schedule" || t.Outcome != model.SpeedOK || t.FallbackLevel != FallbackNone ||
 			t.CappedByServer || t.Start.Before(at.Add(-BaselineSpan)) || !t.Start.Before(at) {
 			continue
 		}
-		var x Extra // capped directions: v0.7.0 ones and lower bounds stay out
-		if mayBound(&t) || strings.Contains(t.Extra, `"cap"`) {
-			x = ParseExtra(t.Extra)
+		down, up := LowerBounds(&t) // lower bounds stay out
+		if t.DownBps != nil && !down {
+			d = append(d, *t.DownBps)
 		}
-		timeCap := x.Cap == "time"
-		if !timeCap && (t.DownShort || t.UpShort) {
-			byteCapped = true
+		if t.UpBps != nil && !up {
+			u = append(u, *t.UpBps)
 		}
-		if t.DownBps != nil && baselineRate(t.DownShort, &x, 0) {
-			if d = append(d, *t.DownBps); timeCap {
-				dt = append(dt, *t.DownBps)
-			}
-		}
-		if t.UpBps != nil && baselineRate(t.UpShort, &x, 1) {
-			if u = append(u, *t.UpBps); timeCap {
-				ut = append(ut, *t.UpBps)
-			}
-		}
-	}
-	if byteCapped {
-		d, u = dt, ut
 	}
 	if len(d) < BaselineMin {
 		return 0, 0, false
@@ -640,15 +606,15 @@ func (s *Scheduler) testServer(ctx context.Context, sv Server, t *model.SpeedTes
 			re = &r
 		}
 		x.RampMs[i] = round2(float64(res.Ramp) / float64(time.Millisecond))
-		if res.RateMethod != "" { // capped by bytes, or by time
+		if res.RateMethod != "" {
 			x.RateMethod[i], x.LowerBound[i] = res.RateMethod, res.LowerBound
 			x.WinMs[i] = round2(float64(res.Elapsed) / float64(time.Millisecond))
 		}
 		secs := math.Round(res.Elapsed.Seconds()*100) / 100
 		if dir == Download {
-			t.DownBps, t.DownRetrans, t.DownShort, t.DownSecs = &bps, re, res.CappedByBytes, secs
+			t.DownBps, t.DownRetrans, t.DownSecs = &bps, re, secs
 		} else {
-			t.UpBps, t.UpRetrans, t.UpShort, t.UpSecs = &bps, re, res.CappedByBytes, secs
+			t.UpBps, t.UpRetrans, t.UpSecs = &bps, re, secs
 		}
 	}
 }

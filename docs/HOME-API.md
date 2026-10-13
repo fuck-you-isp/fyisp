@@ -2,8 +2,6 @@
 
 Home answers "is my internet OK, and which apps work": an answer card, the connection strip (router → internet provider → the internet), 11 fixed app tiles with their last 2 hours, the speed, and the problems of the last 7 days. It is built from the tiles engine (`internal/tiles`), not from the store, and every sentence is written on the server (`internal/web/home_copy.go`) and pinned by golden files. The Go types are in `internal/web/home_types.go`; keep the two in sync.
 
-This is version 2 of the API (`"v": 2` in every answer).
-
 ## Request
 
 ```
@@ -25,13 +23,12 @@ Unknown or repeated parameters return 400. Without the tiles engine (only in tes
 
 ```jsonc
 {
-  "v": 2, "at": 1791556200000,
+  "at": 1791556200000,
   "last_check": 1791556196000,        // the newest measured sample; 0: none yet
   "stale": false,                     // last_check is 2 minutes old or more
   "watching_since": 1772548200000,    // the store's oldest sample (whole hours; the engine's first data within the first); 0: none
   "footer": "Watching your connection since Mar 3",
-  "learning": null,                   // the first day: {"until": ms, "text": "fyisp is still learning what’s usual…"}
-  "monitored": 11,                    // tiles that are not off
+  "learning": null,                   // the first day: {"text": "fyisp is still learning what’s usual…"}
   "answer": {
     "key": "app:zoom:1791554700000:1xwl0ja",  // the state plus a hash of headline+sub: one key, one text; announce on change
     "tone": "ok",                     // ok | warn | bad | stale | checking | info
@@ -75,23 +72,22 @@ Unknown or repeated parameters return 400. Without the tiles engine (only in tes
 
 - A tile's `reason` names a likely cause only when it is on the app's side (the app, the call path, a speed test). A router or provider cause is said once, by the card and the strip.
 - Bar `state`: good | slow | down | none. Bar `note`: "Dropped 40 s", "Down since 10:05 am", "Choppy 9:41–9:45 am — likely Slack’s side", "Slow during a speed test", or "" (the client then writes the word). The client writes the bar's times.
-- An `off` tile (the profile has no target for it) has `"bars": []`, an `enable_hint` ("To check GitHub, add services-dev to fyisp’s --profile setting (FYISP_PROFILE in Docker).", or with a `--config` file "To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.") and no `since`. It never counts in `monitored`, the card, the tab or the problems.
+- An `off` tile (the profile has no target for it) has `"bars": []`, an `enable_hint` ("To check GitHub, add services-dev to fyisp’s --profile setting (FYISP_PROFILE in Docker).", or with a `--config` file "To check GitHub, tag a target in your --config file tile:github, or add extends: default to it.") and no `since`. It never counts in "all N apps", the card, the tab or the problems.
 - While checking, every tile that isn't off is `none` with 24 `none` bars.
 
 **`speed`:**
 
 ```jsonc
 {"available": true,                                // speed tests are part of this fyisp
- "latest": {"at": 1791547200000, "down_mbps": 930, "up_mbps": 940,
+ "latest": {"at": 1791547200000,
             "text": "Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.",
             "note": "Today 8:00 am"},              // ", during the problem" when it ran during the card's bad problem; null: none in 7 days
  "empty_text": "No speed test yet. The first one runs within the hour.",
- "usual": {"down_mbps": 925, "up_mbps": 938},      // the median of the OK tests of 7 days, the latest left out, 3 or more; else null
- "running": null,                                  // or {"entry": 12, "expected_end": ms}: a test running now, from any source
+ "running": null,                                  // or {"entry": 12}: a test running now, from any source
  "can_control": true}                              // this request may start a test without the admin token
 ```
 
-Without a usual the text has no comparison ("Your speed: about 930 Mbps down / 940 Mbps up."). Slower than 60% of the usual in either direction is "much slower than usual (usually about 925 / 938 Mbps)", slower than 85% "a bit slower than usual (…)", faster by a quarter in both "faster than usual". There is no internet-plan setting and no plan text.
+The usual is the median of the OK tests of 7 days, the latest left out, once there are 3 or more. Without a usual the text has no comparison ("Your speed: about 930 Mbps down / 940 Mbps up."). Slower than 60% of the usual in either direction is "much slower than usual (usually about 925 / 938 Mbps)", slower than 85% "a bit slower than usual (…)", faster by a quarter in both "faster than usual". There is no internet-plan setting and no plan text.
 
 **`problems.items[]`** (ongoing first, then newest first; at most 100 of the last 7 days; from the same engine tick as the tiles):
 
@@ -111,7 +107,7 @@ The summary counts `provider` ("likely from your internet provider"), `home` ("f
 ## `part=tile`
 
 ```jsonc
-{"v": 2, "at": 1791556200000, "id": "zoom", "state": "down", "word": "Down",
+{"at": 1791556200000, "id": "zoom", "state": "down", "word": "Down",
  "reason": "Not connecting since 10:05 am. Likely cause: Zoom’s side — everything else is normal.",
  "coverage": "Call quality is judged from the general call path; fyisp can’t test Zoom’s own servers before a meeting.",
  "metrics": [{"label": "Delay", "value": "21 ms", "limit": "choppy over 150 ms", "bad": false},
@@ -135,7 +131,7 @@ Pinned by `TestHomeGolden` (`checkHomeCopy`) over every scenario:
 - "internet provider", never "ISP"; US spelling; typographic apostrophes (’).
 - No "ms", "jitter" or "loss" outside a panel's `metrics` (and its chart's `text`); no "plan" or "fiber" anywhere.
 - A cause is always "Likely cause", never "Cause:".
-- `headline` and `sub` hold no relative time ("ago", "just now"); "all N apps" uses `monitored`.
+- `headline` and `sub` hold no relative time ("ago", "just now"); "all N apps" counts the tiles that are not off.
 - Tile reasons don't repeat a router or provider cause.
 
 ## Development: scenarios, goldens and fixtures

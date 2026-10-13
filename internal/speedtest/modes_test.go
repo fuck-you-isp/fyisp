@@ -252,10 +252,9 @@ func TestScheduleThroughQueue(t *testing.T) {
 	}
 }
 
-// TestSlotCap: no test has a byte cap: only
-// the time cap and its backstop. The slot's hard cap holds an attempt
-// started at SlotBudget: both directions to their deadlines and the pause
-// between them.
+// TestSlotCap: every test runs under the time cap and its backstop. The
+// slot's hard cap holds an attempt started at SlotBudget: both directions
+// to their deadlines and the pause between them.
 func TestSlotCap(t *testing.T) {
 	h := newHarness(t, Options{})
 	h.setRun(func(c Config, n int) (Result, error) {
@@ -265,7 +264,7 @@ func TestSlotCap(t *testing.T) {
 		h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), trigger)
 		h.mu.Lock()
 		for _, c := range h.calls {
-			if c.MaxBytes != 0 || c.Backstop != TimeBackstop || c.Duration != MaxMeasure || c.Timeout != DirTimeout {
+			if c.Backstop != TimeBackstop || c.Duration != MaxMeasure || c.Timeout != DirTimeout {
 				t.Errorf("%s: %+v", trigger, c)
 			}
 		}

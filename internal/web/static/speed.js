@@ -17,20 +17,19 @@ import { SpeedQueue } from './speedqueue.js';
 /** @typedef {{text:string,level:string,hours:number[],drop:number}} SpeedPattern */
 /** @typedef {{id:string,kind:string,label:string,why?:string,note?:string,scheduled?:boolean,servers?:string[],server_now?:string,latest_at:number|null,n:number,busy:number,unreachable:number,failed:number,fallback:number,fallback_share?:number,fallback_share_24h?:number,capped_by_server?:number,down_median_bps:number|null,down_p10_bps:number|null,up_median_bps:number|null,up_p10_bps:number|null,best_down_bps:number|null,score_median?:number|null,learning?:boolean,dip:SpeedPattern|null,up_dip?:SpeedPattern|null,hours:SpeedHour[]}} SpeedRow */
 /** @typedef {{n:number,lost:number,loss:number,p50_ms:number,p95_ms:number}} SpeedLat */
-/** @typedef {{id:number,start:number,end:number,trigger:string,on_demand?:boolean,outcome:string,region:string|null,server:string,label:string,display?:string,provider?:string,city?:string,fallback:boolean,fallback_level?:string,attempts:number,down_bps:number|null,up_bps:number|null,down_short?:boolean,up_short?:boolean,capped_by_budget?:boolean,down_s?:number,up_s?:number,capped_by_server?:boolean,score?:number|null,up_score?:number|null,bytes?:number,down_retrans:number|null,up_retrans:number|null,idle_gateway_ms:number|null,loaded_gateway_ms:number|null,conn?:string,handoff?:{asn:number,name:string,isp_asn:number},latency?:{edge?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat},gateway?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat}},port?:number}} SpeedTest */
+/** @typedef {{id:number,start:number,end:number,trigger:string,on_demand?:boolean,outcome:string,region:string|null,server:string,label:string,display?:string,provider?:string,city?:string,fallback:boolean,fallback_level?:string,attempts:number,down_bps:number|null,up_bps:number|null,down_s?:number,up_s?:number,capped_by_server?:boolean,score?:number|null,up_score?:number|null,bytes?:number,down_retrans:number|null,up_retrans:number|null,conn?:string,handoff?:{asn:number,name:string,isp_asn:number},latency?:{edge?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat},gateway?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat}},port?:number}} SpeedTest */
 /** @typedef {{case:string,tier?:string,text:string,evidence:string,caveat?:string,hours:number[],drop:number,days:number,tests:number,regions:string[],providers:string[],network?:string,regions_judged?:number,providers_judged?:number,far_regions?:string[],slow_days?:number,day_count?:number,far_evening?:boolean,bridged?:boolean}} SpeedFinding */
-/** @typedef {{entry?:number,kind?:string,started:number,expected_end:number,direction:string,server:{id:string,label:string}|null,step?:number,steps?:number}} SpeedRunning */
-/** @typedef {{at:number,tz:number,tz_name?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,masked_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{layers:any[],text:string[]}|null}} SpeedSummary */
+/** @typedef {{entry?:number,kind?:string,started:number,direction:string,server:{id:string,label:string}|null,step?:number,steps?:number}} SpeedRunning */
+/** @typedef {{at:number,tz:number,tz_name?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,test_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{text:string[]}|null}} SpeedSummary */
 
 // Seconds a test fills the line in each direction (a 1 s ramp-up, then 3 to 8 s), and a whole test with its pauses.
 const DIR_S = 6, TEST_S = 15;
 const MONTH_S = 30 * 86400;
 
-/** The mode's name and one sentence. "nearby" and "nearest" are the same radio, whichever the server offers. */
+/** The mode's name and one sentence. */
 const MODES = {
   regions: { name: 'Around the world', def: true },
   nearby: { name: 'Near me, more often' },
-  nearest: { name: 'Near me, more often' }, // an older name of nearby
   custom: { name: 'My own servers' },
 };
 
@@ -387,8 +386,8 @@ export class Speed {
         : t.outcome === 'busy' ? 'server busy' : t.outcome === 'unreachable' ? 'didn’t answer' : t.outcome === 'cancelled' ? 'cancelled' : 'didn’t finish';
       lines.push(h('p', {}, h('b', { text: 'Latest test: ' }), `${clock(t.start)} · ${[region, t.label].filter(Boolean).join(' · ')} · ${res}${t.trigger !== 'schedule' ? ' (on demand)' : ''}`));
     }
-    if (d.enabled && d.masked_share_24h > 0) {
-      lines.push(h('p', { class: 'muted small', text: `Tests filled the line ${Math.max(1, Math.round(d.masked_share_24h * 100))}% of the last 24 hours. Those seconds aren’t counted on the other charts.` }));
+    if (d.enabled && d.test_share_24h > 0) {
+      lines.push(h('p', { class: 'muted small', text: `Tests filled the line ${Math.max(1, Math.round(d.test_share_24h * 100))}% of the last 24 hours.` }));
     }
     this.bodyEl.replaceChildren(...lines);
   }
@@ -411,12 +410,11 @@ function modeName(m) { return (MODES[/** @type {'regions'} */ (m)] || { name: m 
 
 /** Tests per hour in mode m (each target once per interval). @param {SpeedSummary} d @param {string} m */
 function testsPerHour(d, m) {
-  const plan = d.plans && d.plans.find((p) => p.mode === m || (m === 'nearest' && p.mode === 'nearby'));
+  const plan = d.plans && d.plans.find((p) => p.mode === m);
   if (plan) return plan.tests_per_hour;
   const per = m === 'regions' ? d.regions.length || 9
-    : m === 'nearest' ? 1 // the 2 nearest, alternating
-      : m === 'nearby' ? 4
-        : Math.max(1, d.servers.filter((s) => s.custom).length);
+    : m === 'nearby' ? 4
+      : Math.max(1, d.servers.filter((s) => s.custom).length);
   return per * 3600 / (d.interval_s || 900);
 }
 /** Bytes a month in mode m, at perTest bytes a test. @param {SpeedSummary} d @param {string} m @param {number} perTest */
@@ -433,7 +431,7 @@ function modeSentence(d, m) {
     const tph = testsPerHour(d, m);
     return `${n} regions, each ${tph ? every(Math.round(3600 * n / tph)) : ev}. Best for telling your provider’s network apart from its links to other networks.`;
   }
-  if (m === 'nearest' || m === 'nearby') return `Servers near you from several providers, more often: ${Math.round(testsPerHour(d, m))} tests an hour.`;
+  if (m === 'nearby') return `Servers near you from several providers, more often: ${Math.round(testsPerHour(d, m))} tests an hour.`;
   return `iperf3 servers you run, given with --speedtest-server, each ${ev}.`;
 }
 

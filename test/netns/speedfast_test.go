@@ -28,9 +28,9 @@ const (
 	fastCut  = 0.3 // the evening cut
 )
 
-// fastEveningCut: a 2 Gbit/s line under v0.7.2's 10 s time cap (no byte
-// cap). Every direction is measured from where its rate levels off (rate
-// method peak90) and stored with cap "time"; a lower bound only when it was
+// fastEveningCut: a 2 Gbit/s line under the 10 s time cap. Every
+// direction is measured from where its rate levels off (rate method
+// peak90); a lower bound only when it was
 // still speeding up at the cap; the API's flags are the stored ones. On
 // this line (htb, whose bursts make the bytes per 100 ms tick swing by a
 // third at 2 Gbit/s while the ticks themselves are on time) the near
@@ -67,7 +67,6 @@ func fastEveningCut(t *testing.T) {
 		api    speedTestAPI
 		method [2]string
 		lower  [2]bool
-		cap    string
 		runS   [2]float64 // each direction's data phase, from fyisp's tick log
 	}
 	run := func(srv string, a netip.Addr) result {
@@ -78,25 +77,20 @@ func fastEveningCut(t *testing.T) {
 		}
 		x := l.storedExtra(t, r.ID)
 		runS := l.lastTickRuns(t)
-		t.Logf("%s: down %.0f Mbit/s up %.0f Mbit/s, ran %.1f/%.1f s, measured %.1f/%.1f s, cap %q/%q, lower bound %v/%v, rate method %q",
-			srv, *r.DownBps/1e6, *r.UpBps/1e6, runS[0], runS[1], r.DownS, r.UpS, x.Cap, r.Cap, r.DownLowerBound, r.UpLowerBound, x.RateMethod)
-		return result{r, x.RateMethod, x.LowerBound, x.Cap, runS}
+		t.Logf("%s: down %.0f Mbit/s up %.0f Mbit/s, ran %.1f/%.1f s, measured %.1f/%.1f s, lower bound %v/%v, rate method %q",
+			srv, *r.DownBps/1e6, *r.UpBps/1e6, runS[0], runS[1], r.DownS, r.UpS, r.DownLowerBound, r.UpLowerBound, x.RateMethod)
+		return result{r, x.RateMethod, x.LowerBound, runS}
 	}
 
-	// v0.7.2: every test runs under the 10 s time cap (stored and in the
-	// API), with no byte cap; every direction has a rate method; the API's
-	// lower-bound flags are the stored ones.
+	// Every test runs under the 10 s time cap: every direction has a rate
+	// method, and the API's lower-bound flags are the stored ones.
 	consistent := func(name string, r result) {
 		t.Helper()
-		if r.cap != "time" || r.api.Cap != "time" {
-			t.Errorf("%s: cap stored %q, API %q; want time", name, r.cap, r.api.Cap)
-		}
 		for i, dir := range []string{"down", "up"} {
-			short := []bool{r.api.DownShort, r.api.UpShort}[i]
 			lb := []bool{r.api.DownLowerBound, r.api.UpLowerBound}[i]
-			if short || r.method[i] == "" || lb != r.lower[i] {
-				t.Errorf("%s %s: short %v, rate method %q, lower bound stored %v, API %v; want no byte cap, a method, the same flags",
-					name, dir, short, r.method[i], r.lower[i], lb)
+			if r.method[i] == "" || lb != r.lower[i] {
+				t.Errorf("%s %s: rate method %q, lower bound stored %v, API %v; want a method, the same flags",
+					name, dir, r.method[i], r.lower[i], lb)
 			}
 		}
 	}
@@ -136,7 +130,7 @@ func fastEveningCut(t *testing.T) {
 	// up at the cap over its RTT-scaled smoothing, so a lower bound.
 	far := run("far", iperfB)
 	consistent("far", far)
-	// v0.7.2 (no byte cap): over up to 10 s the far path's windows grow and
+	// Over up to 10 s the far path's windows grow and
 	// it levels off, socket-buffer limited (1595-1675 Mbit/s in 9 runs on
 	// release/v0.7.2 0f4370a): never a lower bound.
 	for i, dir := range []string{"down", "up"} {
@@ -215,9 +209,7 @@ var fastFar = map[string]bool{"asia-east": true, "asia-southeast": true, "oceani
 // fastRate with fastCut from 19 to 22 h UTC, far ones a lower bound
 // reading 0.6 two hours in three (else 1.05 of a 400 Mbit/s normal). Every
 // test ran under the 10 s time cap with its download measured from its
-// plateau, as v0.7.2 and later store them: a server's v0.7.1 rows
-// (100 MB byte cap, DownShort) have their scores left out (Censored), and
-// the finding would have no tests.
+// plateau.
 func seedFastHistory(t *testing.T, dir string, days int) {
 	cat, err := speedtest.Builtin()
 	if err != nil {
@@ -251,7 +243,7 @@ func seedFastHistory(t *testing.T, dir string, days int) {
 				sc = 1 - fastCut
 			}
 			down, up := sc*base, math.Min(base, 1e9)
-			x := speedtest.Extra{RateMethod: [2]string{speedtest.MethodPeak90, ""}, LowerBound: [2]bool{lower, false}, Cap: "time"}
+			x := speedtest.Extra{RateMethod: [2]string{speedtest.MethodPeak90, ""}, LowerBound: [2]bool{lower, false}}
 			b, err := json.Marshal(x)
 			if err != nil {
 				t.Fatal(err)

@@ -292,13 +292,10 @@ type speedTestAPI struct {
 	Server  string   `json:"server"`
 	DownBps *float64 `json:"down_bps"`
 	UpBps   *float64 `json:"up_bps"`
-	// Capped at 100 MB, and still speeding up there (lower bounds).
-	DownShort      bool `json:"down_short"`
-	UpShort        bool `json:"up_short"`
+	// Still speeding up at the 10 s time cap (lower bounds).
 	DownLowerBound bool `json:"down_lower_bound"`
 	UpLowerBound   bool `json:"up_lower_bound"`
-	// v0.7.2: the limit the test ran under, and seconds measured.
-	Cap     string  `json:"cap"`
+	// Seconds measured.
 	DownS   float64 `json:"down_s"`
 	UpS     float64 `json:"up_s"`
 	Conn    string  `json:"conn"`

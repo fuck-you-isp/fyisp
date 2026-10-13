@@ -271,7 +271,7 @@ func (s *server) homeNow(r *http.Request, p homeParams, now time.Time) *HomeNow 
 	snap, checking, stale := s.homeState(now)
 	c := homeCopy{loc: p.zone.loc, now: now, wifi: s.wifiWording(r), stun: snap.Conn.Kind == string(model.VerdictSTUNBlocked)}
 	learning := snap.Learning && !checking
-	out := &HomeNow{V: 2, At: now.UnixMilli(), Stale: stale, Monitored: snap.Monitored}
+	out := &HomeNow{At: now.UnixMilli(), Stale: stale}
 	if !snap.LastMeasured.IsZero() && !checking { // a (re)start's last stored check isn't news
 		out.LastCheck = snap.LastMeasured.UnixMilli()
 	}
@@ -280,8 +280,7 @@ func (s *server) homeNow(r *http.Request, p homeParams, now time.Time) *HomeNow 
 		out.Footer = "Watching your connection since " + c.watching(w)
 	}
 	if learning && !snap.FirstData.IsZero() {
-		out.Learning = &HomeLearning{Until: snap.FirstData.Add(24 * time.Hour).UnixMilli(),
-			Text: "fyisp is still learning what’s usual for your connection. This takes about a day. Until then it only flags big problems, so small slowdowns won’t show yet."}
+		out.Learning = &HomeLearning{Text: "fyisp is still learning what’s usual for your connection. This takes about a day. Until then it only flags big problems, so small slowdowns won’t show yet."}
 	}
 	var eps []tiles.Episode
 	if !checking {
@@ -788,7 +787,7 @@ func (s *server) homeSpeed(r *http.Request, c homeCopy, cs tiles.ConnState, now 
 	var runID uint64
 	if run != nil {
 		runID = run.ID
-		out.Running = &HomeSpeedRunning{Entry: run.ID, ExpectedEnd: run.EstFinish.UnixMilli()}
+		out.Running = &HomeSpeedRunning{Entry: run.ID}
 	}
 	hc := s.home
 	hc.mu.Lock()
@@ -820,17 +819,17 @@ func (s *server) homeSpeed(r *http.Request, c homeCopy, cs tiles.ConnState, now 
 		return out
 	}
 	last := ok[len(ok)-1]
+	var usual *HomeSpeedUsual
 	if len(ok) > 3 {
 		var down, up []float64
 		for _, t := range ok[:len(ok)-1] {
 			down, up = append(down, *t.DownBps/1e6), append(up, *t.UpBps/1e6)
 		}
-		out.Usual = &HomeSpeedUsual{DownMbps: roundMbps(medianOf(down)), UpMbps: roundMbps(medianOf(up))}
+		usual = &HomeSpeedUsual{DownMbps: roundMbps(medianOf(down)), UpMbps: roundMbps(medianOf(up))}
 	}
 	dn, up := roundMbps(*last.DownBps/1e6), roundMbps(*last.UpBps/1e6)
 	during := cs.Tone == tiles.ToneBad && !cs.Since.IsZero() && !last.Start.Before(cs.Since)
-	out.Latest = &HomeSpeedResult{At: last.Start.UnixMilli(), DownMbps: dn, UpMbps: up,
-		Text: c.speedText(dn, up, out.Usual), Note: c.speedNote(last.Start, during)}
+	out.Latest = &HomeSpeedResult{At: last.Start.UnixMilli(), Text: c.speedText(dn, up, usual), Note: c.speedNote(last.Start, during)}
 	return out
 }
 
@@ -872,7 +871,7 @@ func (s *server) homeTile(p homeParams, now time.Time) (*HomeTileDetail, int, st
 		byID[e.ID] = e
 	}
 	h := c.tile(t, byID, v)
-	out := &HomeTileDetail{V: 2, At: now.UnixMilli(), ID: d.ID, State: h.State, Word: h.Word, Reason: h.Reason, Metrics: []HomeMetric{}}
+	out := &HomeTileDetail{At: now.UnixMilli(), ID: d.ID, State: h.State, Word: h.Word, Reason: h.Reason, Metrics: []HomeMetric{}}
 	if rs := s.home.resolved(s.d.Profile()); i < len(rs) {
 		src := ""
 		if t.Call != nil {

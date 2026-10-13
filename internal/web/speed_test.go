@@ -126,7 +126,7 @@ func newSpeedRigWith(t *testing.T, step time.Duration, ro rigOpts) *speedRig {
 				down, up := base*sc, base*sc/10
 				re := int64(i % 40)
 				x.DownBps, x.UpBps, x.DownRetrans, x.ScoreDown, x.ScoreUp = &down, &up, &re, f(sc), f(sc)
-				x.IdleGatewayMs, x.LoadedGatewayMs, x.Conn = f(1.1), f(1.5), model.ConnWired
+				x.Conn = model.ConnWired
 				x.Latency = &model.SpeedLatency{
 					Edge:    model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 8.2, P95Ms: 9.9}, Down: &model.LoadStats{N: 30, Lost: 1, Loss: 0.033, P50Ms: 21, P95Ms: 34}, Up: &model.LoadStats{N: 25, P50Ms: 48, P95Ms: 90}},
 					Gateway: model.LoadPhases{Idle: &model.LoadStats{N: 40, P50Ms: 1.1, P95Ms: 1.9}, Down: &model.LoadStats{N: 30, P50Ms: 1.4, P95Ms: 2}, Up: &model.LoadStats{N: 25, P50Ms: 1.5, P95Ms: 2.2}}}
@@ -263,7 +263,7 @@ func TestSpeedSummary(t *testing.T) {
 	if s.Coverage[20].N < 30 || s.Coverage[20].Providers != 2 {
 		t.Errorf("coverage %+v", s.Coverage[20])
 	}
-	if len(s.UnderLoad.Layers) != 2 || s.UnderLoad.Layers[0].Layer != "edge" || *s.UnderLoad.Layers[0].UpMs != 48 || len(s.UnderLoad.Text) != 3 ||
+	if len(s.UnderLoad.Text) != 3 ||
 		!strings.Contains(s.UnderLoad.Text[1], "rises from 8 to 48 ms while uploading (+40 ms): a small rise, fine for calls") {
 		t.Errorf("under load %+v", s.UnderLoad)
 	}
@@ -551,8 +551,8 @@ func TestSpeedConfig(t *testing.T) {
 	}
 	var s speedJSON
 	json.Unmarshal(do(loc, "GET", "/api/speed", speedHost).Body.Bytes(), &s)
-	if i := slices.IndexFunc(s.Rows, func(r speedRow) bool { return r.Why == "added" }); len(s.Rows) != 3 || i < 0 || s.Rows[i].ID != "us-mid-atlantic" || len(s.Extra) != 1 {
-		t.Errorf("added region: %d rows, extra %v", len(s.Rows), s.Extra)
+	if i := slices.IndexFunc(s.Rows, func(r speedRow) bool { return r.Why == "added" }); len(s.Rows) != 3 || i < 0 || s.Rows[i].ID != "us-mid-atlantic" || len(g.s.State().Extra) != 1 {
+		t.Errorf("added region: %d rows, extra %v", len(s.Rows), g.s.State().Extra)
 	}
 	if v, _, _ := g.st.Setting(context.Background(), speedtest.SettingKey); v != "regions" {
 		t.Errorf("saved %q", v)
@@ -582,7 +582,7 @@ func TestHomeSpeedLine(t *testing.T) {
 		return n.Speed
 	}
 	sp := home(newSpeedRig(t, 15*time.Minute))
-	if !sp.Available || sp.Latest == nil || sp.Usual == nil || !strings.HasPrefix(sp.Latest.Text, "Your speed: about ") ||
+	if !sp.Available || sp.Latest == nil || !strings.Contains(sp.Latest.Text, "usual") || !strings.HasPrefix(sp.Latest.Text, "Your speed: about ") ||
 		!strings.Contains(sp.EmptyText, "within the hour") {
 		t.Errorf("speed %+v %+v", sp, sp.Latest)
 	}
@@ -593,8 +593,8 @@ func TestHomeSpeedLine(t *testing.T) {
 	}
 }
 
-// TestSpeedEdgeHours: api/speed's edge_hours folds the ISP edge's stored
-// RTT and loss into local hours of day (the access network's control).
+// TestSpeedEdgeHours: edgeHours folds the ISP edge's stored RTT and loss
+// into local hours of day (the access network's control).
 func TestSpeedEdgeHours(t *testing.T) {
 	loc, d := speedHandlers(t, newSpeedRig(t, 5*time.Hour), LocalOptions{})
 	f := store.NewFake()
@@ -615,31 +615,22 @@ func TestSpeedEdgeHours(t *testing.T) {
 	d.Store, d.Profile = f, func() *model.Profile { return p }
 	loc = Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
 	loc.now = func() time.Time { return speedNow }
-	for name, raw := range map[string][]byte{
-		"local": do(loc, "GET", "/api/speed?tz=120", speedHost).Body.Bytes(),
-	} {
-		var s speedJSON
-		if err := json.Unmarshal(raw, &s); err != nil {
-			t.Fatal(err)
-		}
-		if len(s.EdgeHours) != 24 {
-			t.Fatalf("%s: edge_hours %+v", name, s.EdgeHours)
-		}
-		ev, day := s.EdgeHours[21], s.EdgeHours[10] // 19 UTC is 21 at UTC+2
-		if ev.N != 3 || ev.RTTms == nil || *ev.RTTms != 30 || ev.Loss == nil || *ev.Loss != 0.1 {
-			t.Errorf("%s: evening %+v (rtt %v loss %v), want 3 days, 30 ms, 10%% loss", name, ev, ev.RTTms, ev.Loss)
-		}
-		if day.N < 2 || day.RTTms == nil || *day.RTTms != 8 || *day.Loss != 0 {
-			t.Errorf("%s: daytime %+v", name, day)
-		}
+	eh, err := loc.edgeHours(context.Background(), speedNow, time.FixedZone("", 2*3600))
+	if err != nil || len(eh) != 24 {
+		t.Fatalf("edge hours %+v %v", eh, err)
 	}
-	// Without an ISP edge target: null.
-	var s map[string]json.RawMessage
+	ev, day := eh[21], eh[10] // 19 UTC is 21 at UTC+2
+	if ev.N != 3 || ev.RTTms == nil || *ev.RTTms != 30 || ev.Loss == nil || *ev.Loss != 0.1 {
+		t.Errorf("evening %+v (rtt %v loss %v), want 3 days, 30 ms, 10%% loss", ev, ev.RTTms, ev.Loss)
+	}
+	if day.N < 2 || day.RTTms == nil || *day.RTTms != 8 || *day.Loss != 0 {
+		t.Errorf("daytime %+v", day)
+	}
+	// Without an ISP edge target: nil.
 	_, d2 := speedHandlers(t, newSpeedRig(t, 5*time.Hour), LocalOptions{})
 	l2 := Local(d2, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
-	l2.now = func() time.Time { return speedNow }
-	if err := json.Unmarshal(do(l2, "GET", "/api/speed", speedHost).Body.Bytes(), &s); err != nil || string(s["edge_hours"]) != "null" {
-		t.Errorf("edge_hours without an edge target: %s %v", s["edge_hours"], err)
+	if eh, err := l2.edgeHours(context.Background(), speedNow, time.UTC); err != nil || eh != nil {
+		t.Errorf("edge hours without an edge target: %+v %v", eh, err)
 	}
 }
 

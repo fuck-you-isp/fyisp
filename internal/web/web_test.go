@@ -123,7 +123,7 @@ func fixture(t *testing.T, now time.Time) (*countingStore, Deps) {
 		Status: func() Status {
 			return Status{
 				Version: "v9.9.9-build-/home/venkat/src", Started: now.Add(-time.Hour),
-				Caps:    probe.Caps{ICMP: "unavailable", TCP: true, HTTPS: true, ICMPHint: "set /proc/sys/net/ipv4/ping_group_range"},
+				Caps:    probe.Caps{ICMP: "unavailable", ICMPHint: "set /proc/sys/net/ipv4/ping_group_range"},
 				Targets: 4, Ready: 3,
 			}
 		},
@@ -346,16 +346,15 @@ type panelResp struct {
 	Step   int64                      `json:"step"`
 	Len    int                        `json:"len"`
 	Series []struct {
-		Target   string              `json:"target"`
-		Kind     string              `json:"kind"`
-		Interval int64               `json:"interval"`
-		Mean     []*float64          `json:"mean"`
-		Min      []*float64          `json:"min"`
-		Max      []*float64          `json:"max"`
-		N        []uint32            `json:"n"`
-		Lost     []uint32            `json:"lost"`
-		Gap      []uint32            `json:"gap"`
-		LostBy   map[string][]uint32 `json:"lost_by"`
+		Target string              `json:"target"`
+		Kind   string              `json:"kind"`
+		Mean   []*float64          `json:"mean"`
+		Min    []*float64          `json:"min"`
+		Max    []*float64          `json:"max"`
+		N      []uint32            `json:"n"`
+		Lost   []uint32            `json:"lost"`
+		Gap    []uint32            `json:"gap"`
+		LostBy map[string][]uint32 `json:"lost_by"`
 	} `json:"series"`
 }
 
@@ -529,18 +528,23 @@ func TestProfileTCPOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(b), &p); err != nil {
 		t.Fatal(err)
 	}
+	ivs := map[string]int64{}
+	for _, tg := range def.Targets {
+		ivs[tg.Name] = intervalOf(tg, model.KindTCP).Milliseconds()
+	}
 	var path, services, udp int
 	for _, tg := range p.Targets {
+		iv := ivs[tg.Name]
 		switch {
 		case slices.Equal(tg.Kinds, []string{"udp"}):
 			udp++
-			if !slices.Contains(tg.Tags, "udp-path") || (tg.Interval != 5000 && tg.Interval != 15000) {
-				t.Errorf("%s: tags %v interval %d", tg.Name, tg.Tags, tg.Interval)
+			if !slices.Contains(tg.Tags, "udp-path") || (iv != 5000 && iv != 15000) {
+				t.Errorf("%s: tags %v interval %d", tg.Name, tg.Tags, iv)
 			}
 		case tg.Layer == "":
 			services++
-			if !slices.Equal(tg.Kinds, []string{"tcp"}) || tg.Interval != 15000 {
-				t.Errorf("%s: kinds %v interval %d, want [tcp] every 15s", tg.Name, tg.Kinds, tg.Interval)
+			if !slices.Equal(tg.Kinds, []string{"tcp"}) || iv != 15000 {
+				t.Errorf("%s: kinds %v interval %d, want [tcp] every 15s", tg.Name, tg.Kinds, iv)
 			}
 		case !slices.Contains(tg.Kinds, "icmp"):
 			t.Errorf("path target %s without ICMP: %v", tg.Name, tg.Kinds)
@@ -551,7 +555,7 @@ func TestProfileTCPOnly(t *testing.T) {
 	if services != 23 || path != 4 || udp != 5 {
 		t.Errorf("%d services, %d path targets, %d UDP targets", services, path, udp)
 	}
-	if !strings.Contains(b, `"name":"Microsoft-Teams","group":"call-apps","kinds":["tcp"],"interval_ms":15000,"provider":"services-communication","provider_title":"Communication Services","provider_kind":"service","geo":"global","tags":["voice","video","signaling","app:teams","home:calls","tile:teams"]`) {
+	if !strings.Contains(b, `"name":"Microsoft-Teams","group":"call-apps","kinds":["tcp"],"provider":"services-communication","provider_title":"Communication Services","provider_kind":"service","geo":"global","tags":["voice","video","signaling","app:teams","home:calls","tile:teams"]`) {
 		t.Errorf("tags missing from /api/profile: %s", b)
 	}
 }

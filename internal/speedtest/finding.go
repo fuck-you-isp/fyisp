@@ -453,7 +453,7 @@ func states(groups map[string][]model.SpeedTest, loc *time.Location, up bool, p 
 //
 // The ISP case is judged over the access-sensitive rows only: a region (or
 // a server outside regions) whose own p90 reaches nearSpeed of the best
-// row's. Far rows are limited by distance (and the byte cap) below the
+// row's. Far rows are limited by distance below the
 // line's speed, so congestion on the line barely moves them.
 func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 	var noFallback []model.SpeedTest
