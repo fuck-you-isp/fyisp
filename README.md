@@ -13,7 +13,7 @@ fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It
 
 Technical users get every number under **Technical details**: charts per service, traceroutes, call-quality scores, the outage log, reports, Prometheus metrics, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
 
-> **The default is for homes and remote workers.** Since v0.6.0, plain `fyisp` checks calls, work apps and websites instead of the 91 targets of v0.5 (mostly cloud regions and developer services), and opens on the plain-words **Home** view. v0.9.0 extends it to the 28 targets above, one or more for each Home tile, adding GitHub, Dropbox, OneDrive, YouTube, Netflix and the Teams relay (see [Privacy](#privacy) to leave any out). The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
+> **The default is for homes and remote workers.** Since v0.6.0, plain `fyisp` checks calls, work apps and websites instead of the 91 targets of v0.5 (mostly cloud regions and developer services), and opens on the plain-words **Home** view. v0.9.0 extends it to 28 checks by default, one or more for each Home tile, adding GitHub, Dropbox, OneDrive, YouTube, Netflix and the Teams relay (see [Privacy](#privacy) to leave any out). The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
 
 ## Quick start
 
