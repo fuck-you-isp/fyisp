@@ -118,18 +118,38 @@ const (
 
 // Connection state, grouping and attribution.
 const (
-	staleAfter    = 2 * time.Minute
-	verdictLag    = 65 * time.Second // the verdict's 60 s window (and a tick) outlasts a drop by this much
-	absorbBefore  = time.Minute      // a connection episode absorbs what starts this long before it ...
-	absorbAfter   = 2 * time.Minute  // ... and ends this long after it
-	causeSlack    = time.Minute      // incidents this close to an episode explain it (web/home.go homePathLead)
-	vendorMerge   = 2 * time.Minute  // tile episodes with one cause starting this close are one problem
-	sameTileMerge = 5 * time.Minute  // episodes of one tile closer than this are one problem
-	broadShare    = 0.6              // broad slowdown: this share of the covered tiles bad ...
-	broadVendors  = 3                // ... across this many vendors
-	fullLoss      = 0.9              // an incident with this peak loss lost everything
-	layerLossy    = 0.02             // a layer losing this much is lossy
-	layerClean    = 0.01             // a layer losing less is clean
+	staleAfter   = 2 * time.Minute
+	verdictLag   = 65 * time.Second // the verdict's 60 s window (and a tick) outlasts a drop by this much
+	absorbBefore = time.Minute      // a connection episode absorbs what starts this long before it ...
+	absorbAfter  = 2 * time.Minute  // ... and ends this long after it
+	dropLate     = 30 * time.Second // a drop absorbs only the tile parts that start before its end + this
+	lagSlack     = 10 * time.Second // a verdict incident starting this soon after a drop ended can still be its lag
+	// lagMax bounds that lag: the verdict's 60 s window and its recovery
+	// (netns: incidents end 100–110 s after a drop). An incident still on
+	// this long after the drop ended is a problem of its own.
+	lagMax = 150 * time.Second
+	// outIsolated: a path outage this soon after another is part of a
+	// flapping link (loss), not a blip of its own (pathOut)
+	outIsolated = 2 * time.Minute
+	// lossyRunMax: a total-loss run of the edge this long is an outage,
+	// even inside heavy loss (40% random loss has 5 s runs, not 15 s)
+	lossyRunMax   = 15 * time.Second
+	blockedLead   = 3 * time.Minute // a blocked-UDP episode takes call-tile problems that started this long before it
+	causeSlack    = time.Minute     // incidents this close to an episode explain it (web/home.go homePathLead)
+	vendorMerge   = 2 * time.Minute // tile episodes with one cause starting this close are one problem
+	sameTileMerge = 5 * time.Minute // episodes of one tile closer than this are one problem
+	broadShare    = 0.6             // broad slowdown: this share of the covered tiles bad ...
+	broadVendors  = 3               // ... across this many vendors
+	fullLoss      = 0.9             // an incident with this peak loss lost everything
+	// lossyBelow: an isp verdict whose loss at the edge is under this, with
+	// no drop in progress, is partial loss: the amber "losing some data"
+	// card. 6% is a degraded line (calls choppy, sites fine); 40% breaks
+	// most things and keeps the red "having trouble" card.
+	lossyBelow = 0.3
+	edgeRecent = 30 * time.Second // an isp incident this young: the card reads the edge's own checks too ...
+	edgeOnset  = time.Minute      // ... of this long (from the loss's onset), 15 or more
+	layerLossy = 0.02             // a layer losing this much is lossy
+	layerClean = 0.01             // a layer losing less is clean
 )
 
 // State is a tile's word, a minute's judgement or a bar's colour.
@@ -220,10 +240,24 @@ func (m minute) lossPct() float64 {
 // list short): it scans them per lost check. rule says which runs are
 // drops.
 func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) minute {
+	return summarizeOut(cs, rs, rule, from, closeAt, nil)
+}
+
+// summarizeOut is summarize, also leaving out the lost checks of web and
+// UDP series inside out: the path's own outages (pathOut), so a 20 s blip
+// of the whole connection, too short for a drop, leaves no loss behind
+// (calls Down or Choppy for minutes after it), while an endpoint's own
+// short runs stay loss.
+func summarizeOut(cs []check, rs []failRun, rule runRule, from, closeAt time.Time, out []window) minute {
 	lo, hi, cl := from.UnixMilli(), from.Add(time.Minute).UnixMilli(), closeAt.UnixMilli()
 	skip := func(c check) bool {
 		if rule == rulePath {
 			return false
+		}
+		for _, w := range out {
+			if c.ms >= w.from.UnixMilli() && (w.to.IsZero() || c.ms < w.to.UnixMilli()) {
+				return true
+			}
 		}
 		for _, r := range rs {
 			if c.ms < r.firstMs || c.ms > r.lastMs {
@@ -353,7 +387,9 @@ func judgeCall(ms []minute, every time.Duration) (State, callStats) {
 	}
 	lossDown := len(ms) >= callDownLossMins
 	for _, m := range ms[max(0, len(ms)-callDownLossMins):] {
-		lossDown = lossDown && m.n() > 0 && m.lossPctSum >= callDownLossPct*uint32(m.n())
+		// from callChoppyLossBursts lossy bursts a minute: one short outage
+		// straddling two minutes (a burst or two lost in each) is no Down
+		lossDown = lossDown && m.n() > 0 && m.lossPctSum >= callDownLossPct*uint32(m.n()) && int(m.lossy) >= callChoppyLossBursts
 	}
 	switch {
 	case st.delayMs > callDownDelayMs || lossDown:
@@ -546,7 +582,9 @@ type wordRun struct {
 //     (since that minute) and is left after goodRun good minutes in a
 //     row, or as soon as the last badWindow judged minutes hold no Down
 //     minute: to Slow when badOf of them are bad (since the first of
-//     those), else to Good.
+//     those), else to Good. A call tile's Down from loss alone (lossDown)
+//     is left sooner: as soon as a judged minute is not Down (the loss
+//     rule looks at callDownLossMins minutes), the same way.
 //   - None minutes hold the word and do not count.
 //
 // A run that ends on good minutes ends at the first of them, or at the
@@ -558,15 +596,19 @@ type word struct {
 	outSince time.Time
 	level    State // "" before the first judged minute
 	lvlSince time.Time
-	recent   [badWindow]struct { // the last judged minutes, newest first
-		at time.Time
-		s  State
-	}
+	recent   [badWindow]judged // the last judged minutes, newest first
 	nRecent  int
 	good     int       // good minutes in a row
 	goodFrom time.Time // the first of them
 	cleared  time.Time // when the latest outage cleared
 	cur      wordRun   // the open run (Start zero: none)
+	lossDown bool      // the Down level comes from call loss alone
+}
+
+// judged is a judged tile-minute.
+type judged struct {
+	at time.Time
+	s  State
 }
 
 // state returns the word and since when it holds (zero for Good and None).
@@ -600,7 +642,11 @@ func (w *word) outageSignal(sig signal, at time.Time) *wordRun {
 }
 
 // step applies the tile-minute that starts at at.
-func (w *word) step(at time.Time, s State) *wordRun {
+func (w *word) step(at time.Time, s State) *wordRun { return w.stepLoss(at, s, false) }
+
+// stepLoss is step for a call tile-minute; lossDown: a Down minute that
+// comes from UDP loss alone (callDownLossPct), which lifts sooner.
+func (w *word) stepLoss(at time.Time, s State, lossDown bool) *wordRun {
 	if s == None {
 		return nil
 	}
@@ -616,6 +662,14 @@ func (w *word) step(at time.Time, s State) *wordRun {
 		w.good = 0
 	}
 	bad, first, down := w.bad()
+	if s == Down {
+		w.lossDown = lossDown && (w.level != Down || w.lossDown)
+	}
+	if w.level == Down && w.lossDown {
+		// loss Down lifts as soon as the rule, over its last
+		// callDownLossMins minutes, no longer finds the Down loss
+		down = s == Down
+	}
 	switch {
 	case s == Down && w.level != Down:
 		w.level, w.lvlSince = Down, at

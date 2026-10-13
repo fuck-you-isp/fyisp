@@ -3,6 +3,7 @@ package tiles
 import (
 	"context"
 	"hash/fnv"
+	"math"
 	"slices"
 	"strconv"
 	"time"
@@ -122,6 +123,7 @@ func (e *engine) inputs(ctx context.Context, now time.Time) inputs {
 
 // use takes in's re-read sources. The caller holds mu.
 func (e *engine) use(in inputs) {
+	e.verdict = in.verdict
 	if in.incOK {
 		e.incidents = in.incidents
 	}
@@ -216,7 +218,7 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		}
 		st, since := t.w.state()
 		ts.State, ts.Since = st, since
-		tn = append(tn, tileNow{id: t.def.ID, vendor: vendorOf(t.def.TileDef), state: st, since: since})
+		tn = append(tn, tileNow{id: t.def.ID, vendor: vendorOf(t.def.TileDef), state: st, since: since, failing: e.failing(t)})
 		drops := slices.Concat(v.tileDrops[i], v.connDrops)
 		if d := lastDrop(drops, st, now); d != nil {
 			c := *d
@@ -235,8 +237,10 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		ls := &s.Layers[l]
 		h, known := in.layers[layerKeys[l]]
 		switch {
-		case v.layerCur[l] != nil:
+		case v.layerCur[l] != nil && !e.lossyRun(l, v.layerCur[l], in.verdict, now):
 			ls.State, ls.Since = Down, v.layerCur[l].Start
+		case v.layerCur[l] != nil:
+			ls.State = Slow
 		case !known || h == nil:
 			ls.State = None
 		case *h:
@@ -255,11 +259,132 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		layersOK = layersOK && (h == nil || *h)
 	}
 	s.Conn = connState(connIn{now: now, stale: stale(now, e.lastMeasured), ready: ready, verdict: in.verdict,
-		dropNow: v.connCur, drops: v.connDrops, layersOK: layersOK, tiles: tn, eps: v.eps})
+		dropNow: v.connCur, drops: slices.Concat(v.connDrops, v.lagBlips), layersOK: layersOK, tiles: tn, eps: v.eps,
+		clean: func(k model.VerdictKind, from time.Time) bool {
+			return e.layersClean(v, from, time.Time{}, blamed(k)...)
+		},
+		edgeLoss: e.ispPeak(in.verdict, now)})
+	// After a drop or a blip the verdict's layer health lags by its 60 s
+	// window: while the card no longer blames the path, for lagMax at
+	// most, a layer that has been clean (of loss) since is Good.
+	switch s.Conn.Kind {
+	case ConnWorkingAgain, ConnApp, ConnGood:
+		var end time.Time
+		for _, d := range slices.Concat(v.connDrops, v.lagBlips) {
+			if d.End.After(end) && now.Sub(d.End) < lagMax {
+				end = d.End
+			}
+		}
+		for l := range s.Layers {
+			if ls := &s.Layers[l]; !end.IsZero() && ls.State == Slow && e.layersClean(v, end, time.Time{}, l) {
+				ls.State = Good
+			}
+		}
+	}
 	s.Monitored = monitored(tn)
 	s.Day = dayCounts(v.eps, now)
 	s.Rev = epsHash(v.eps)
 	return s
+}
+
+// failing reports that most of a tile's measured series are in an open
+// failure run (their latest applied check failed).
+func (e *engine) failing(t *tile) bool {
+	n, open := 0, 0
+	ids := slices.Clone(t.web)
+	for _, m := range t.udp {
+		ids = append(ids, m...)
+	}
+	for _, i := range ids {
+		tr := &e.ss[i].tr
+		if tr.last == 0 {
+			continue
+		}
+		n++
+		if _, ok := tr.open(); ok {
+			open++
+		}
+	}
+	return n > 0 && 2*open > n
+}
+
+// lossyRun reports a run of total loss of the edge that is part of heavy
+// random loss, not a drop: shorter than lossyRunMax, in an isp incident that
+// has not lost everything, after lost checks in the dropEndedOK before it
+// (an outage starts from clean checks). The strip shows the edge losing
+// data, not "Not answering" (netns S2b: 40% loss has 5 s runs).
+func (e *engine) lossyRun(l int, d *Drop, v model.Verdict, now time.Time) bool {
+	if l != layerEdge || v.Kind != model.VerdictISP || v.Evidence["loss"] >= fullLoss || now.Sub(d.Start) >= lossyRunMax {
+		return false
+	}
+	lo, hi := d.Start.Add(-dropEndedOK).UnixMilli(), d.Start.UnixMilli()
+	lost := 0
+	for _, i := range e.paths[l] {
+		for _, c := range e.ss[i].raw {
+			if c.lost && c.ms >= lo && c.ms < hi {
+				lost++
+			}
+		}
+	}
+	return lost >= 2
+}
+
+// ispPeak is the highest loss seen of the current isp incident: the
+// verdict's 60 s window, and while the incident is young (its window still
+// holds the clean checks from before) the edge's own checks of the last
+// edgeOnset, from the loss's onset. Kept per incident, so a dip of the
+// noisy estimate does not turn a red card amber for a poll.
+func (e *engine) ispPeak(v model.Verdict, now time.Time) float64 {
+	if v.Kind != model.VerdictISP {
+		e.peak = lossPeak{}
+		return 0
+	}
+	if !e.peak.since.Equal(v.Since) {
+		e.peak = lossPeak{since: v.Since}
+	}
+	e.peak.loss = max(e.peak.loss, v.Evidence["loss"])
+	if now.Sub(v.Since) < edgeRecent {
+		// the edge's checks since the loss began (after the first lost
+		// one: the clean ones before would dilute it, the first lost one
+		// would inflate 6%), with one σ on top: a few dozen checks are a
+		// noisy estimate, and 40% must not read under 30%
+		if l, n := e.onsetLoss(layerEdge, now.Add(-edgeOnset)); n >= 15 {
+			e.peak.loss = max(e.peak.loss, l+math.Sqrt(l*(1-l)/float64(n)))
+		}
+	}
+	return e.peak.loss
+}
+
+// lossPeak is the highest loss seen of the isp incident since since.
+type lossPeak struct {
+	since time.Time
+	loss  float64
+}
+
+// onsetLoss is the share of a layer's checks since from that were lost,
+// counted after each series' first lost one, and how many there were.
+func (e *engine) onsetLoss(l int, from time.Time) (float64, int) {
+	n, lost := 0, 0
+	for _, i := range e.paths[l] {
+		began := false
+		for _, c := range e.ss[i].raw {
+			if c.gap || c.ms <= from.UnixMilli() {
+				continue
+			}
+			if !began {
+				began = c.lost
+				continue
+			}
+			n++
+			if c.lost {
+				lost++
+			}
+		}
+	}
+	if n == 0 {
+		return 0, 0
+	}
+	return float64(lost) / float64(n), n
 }
 
 // closedFrom returns the closed minutes from from on: [from, nextMin).
@@ -340,6 +465,9 @@ func tileCause(eps []Episode, id string, st State) Cause {
 	for _, e := range eps { // newest first
 		if !slices.Contains(e.Tiles, id) {
 			continue
+		}
+		if e.Kind == EpBlocked {
+			return Cause{} // the network blocks the calls' fast path: the card says so
 		}
 		switch e.Cause.Who {
 		case WhoApp, WhoCallsPath, WhoSpeedtest, WhoUnknown:

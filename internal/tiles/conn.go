@@ -34,8 +34,12 @@ const (
 //
 //  1. stale; 2. checking (not ready, or the verdict is warming up);
 //  3. verdict no_network / lan / isp / upstream, unless its incident
-//     started inside a connection drop that ended less than verdictLag
-//     ago (then skip it: the verdict's window still holds the drop);
+//     started inside a connection drop or a path blip (or lagSlack after
+//     it) that ended less than lagMax ago and since which the layers up
+//     to the blamed one have been clean, or, when that is not known,
+//     inside one that ended less than verdictLag ago (then skip it: the
+//     verdict's window still holds the drop). An isp verdict from partial
+//     loss (under lossyBelow), with no drop in progress, is amber (Lossy);
 //  4. a connection drop in progress; 5. verdict dns;
 //  6. udp_blocked / stun_blocked (Quiet: info); 7. udp_degraded;
 //  8. broad slowdown; 9. app-only problems (with Working again appended
@@ -49,6 +53,7 @@ type ConnState struct {
 	Icon  State // Good, Slow, Down or None
 	Since time.Time
 	Quiet bool     // a long-standing udp_blocked/stun_blocked
+	Lossy bool     // isp: the provider loses some data, it has not dropped
 	Tiles []string // ConnApp and ConnBroad: the tiles not Good, in tile order
 	// Again is the recent connection problem behind ConnWorkingAgain, also
 	// set with ConnApp when it applies.
@@ -90,7 +95,14 @@ func workingAgain(eps []Episode, now time.Time) *Recovered {
 	if e == nil {
 		return nil
 	}
-	r := &Recovered{Start: e.Start, End: e.End, Dur: e.End.Sub(e.Start), Cause: e.Cause, Episode: e.ID}
+	// the connection's own span, not the tiles' folded in (calls Down from
+	// loss for minutes after a lossy spell must not make it "down for 4
+	// minutes")
+	span := e.window()
+	if !e.own.from.IsZero() && !e.own.to.IsZero() {
+		span = e.own
+	}
+	r := &Recovered{Start: span.from, End: span.to, Dur: span.to.Sub(span.from), Cause: e.Cause, Episode: e.ID}
 	if e.DropDur > 0 {
 		r.Dur = e.DropDur
 	}
@@ -107,10 +119,23 @@ func workingAgain(eps []Episode, now time.Time) *Recovered {
 
 // tileNow is a tile's word for the card.
 type tileNow struct {
-	id     string
-	vendor string
-	state  State // Off for an off tile
-	since  time.Time
+	id      string
+	vendor  string
+	state   State // Off for an off tile
+	since   time.Time
+	failing bool // most of its measured series' latest checks failed (an open run)
+}
+
+// tilesFailing reports that more than half of the covered tiles are still
+// failing: the connection, whatever its ICMP says, is not back.
+func tilesFailing(ts []tileNow) bool {
+	n := 0
+	for _, t := range ts {
+		if t.state != Off && t.failing {
+			n++
+		}
+	}
+	return 2*n > monitored(ts)
 }
 
 // monitored counts the tiles that are not off.
@@ -130,9 +155,13 @@ type connIn struct {
 	stale    bool
 	ready    bool
 	verdict  model.Verdict
-	dropNow  *Drop  // a connection drop in progress
-	drops    []Drop // the connection drops (ended ones matter)
-	layersOK bool   // no path layer is unhealthy
+	dropNow  *Drop   // a connection drop in progress
+	drops    []Drop  // the connection drops and the path blips (ended ones matter)
+	edgeLoss float64 // the isp incident's highest loss so far (engine.ispPeak)
+	// clean reports the layers a verdict kind needs clean (blamed) clean
+	// since from (nil: unknown)
+	clean    func(k model.VerdictKind, from time.Time) bool
+	layersOK bool // no path layer is unhealthy
 	tiles    []tileNow
 	eps      []Episode // for Working again
 }
@@ -153,12 +182,27 @@ func connState(in connIn) ConnState {
 	switch v.Kind {
 	case model.VerdictNoNetwork, model.VerdictLAN, model.VerdictISP, model.VerdictUpstream:
 		// the verdict's 60 s window outlasts a drop: for verdictLag after
-		// a drop ends, an incident that started in it is that drop,
-		// already over
+		// a drop ends, or while the path has been clean since, an
+		// incident that started in it is that drop, already over
 		if !slices.ContainsFunc(in.drops, func(d Drop) bool {
-			return d.Ended() && in.now.Before(d.End.Add(verdictLag)) &&
-				!v.Since.Before(d.Start.Add(-absorbBefore)) && !v.Since.After(d.End)
+			if !d.Ended() || v.Since.Before(d.Start.Add(-absorbBefore)) || v.Since.After(d.End.Add(lagSlack)) {
+				return false
+			}
+			if in.clean != nil {
+				// the apps must be back too: ICMP answering while most
+				// apps still fail (an uplink dead past the edge, a full
+				// state table) is no lag
+				return in.now.Before(d.End.Add(lagMax)) && in.clean(v.Kind, d.End) && !tilesFailing(in.tiles)
+			}
+			return !v.Since.After(d.End) && in.now.Before(d.End.Add(verdictLag))
 		}) {
+			// the verdict's 60 s window understates loss that just began:
+			// the incident's peak, from the edge's own checks too, counts
+			if loss, ok := v.Evidence["loss"]; ok && v.Kind == model.VerdictISP && in.dropNow == nil && loss > 0 && max(loss, in.edgeLoss) < lossyBelow {
+				c := vk("isp_lossy", ToneWarn, Slow)
+				c.Lossy = true
+				return c
+			}
 			return vk(string(v.Kind), ToneBad, Down)
 		}
 	}
@@ -176,10 +220,22 @@ func connState(in connIn) ConnState {
 	case model.VerdictUDPDegraded:
 		return vk(string(v.Kind), ToneWarn, Slow)
 	}
+	// a tile that went bad in a drop or blip that just ended is its tail
+	// (an outage clears a few checks after the path does): not an app's
+	// problem
+	tail := func(t tileNow) bool {
+		if t.failing || tilesFailing(in.tiles) {
+			return false
+		}
+		return slices.ContainsFunc(in.drops, func(d Drop) bool {
+			return d.Ended() && in.now.Before(d.End.Add(lagMax)) &&
+				!t.since.Before(d.Start.Add(-absorbBefore)) && !t.since.After(d.End.Add(dropLate))
+		})
+	}
 	var bad []tileNow
 	vendors := map[string]bool{}
 	for _, t := range in.tiles {
-		if t.state.Bad() {
+		if t.state.Bad() && !tail(t) {
 			bad = append(bad, t)
 			vendors[t.vendor] = true
 		}

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 )
 
@@ -16,7 +17,14 @@ type view struct {
 	layerCur   [nLayers]*Drop
 	connDrops  []Drop // ended
 	connCur    *Drop  // in progress
-	eps        []Episode
+	// blips are the path layers' ended runs of total loss too short for a
+	// drop (connDropNow to dropMin) outside any connection drop: they
+	// leave nothing behind, but the verdict reacts to them
+	blips []Drop
+	// lagBlips are the blips the path was clean after: the ones that
+	// leave nothing behind (the others are part of a lossy spell)
+	lagBlips []Drop
+	eps      []Episode
 }
 
 // view computes the drops and the problems at now. The caller holds mu.
@@ -58,8 +66,124 @@ func (e *engine) view(now time.Time) *view {
 		v.layerEnded[l], v.layerCur[l] = layerDrops(layers[l], now)
 	}
 	v.connDrops, v.connCur = connDrops(layers, tds, len(tds), now)
+	var short []window
+	for _, ws := range v.layerEnded {
+		for _, w := range ws {
+			if w.dur(now) < dropMin {
+				short = append(short, w)
+			}
+		}
+	}
+	for _, b := range toDrops(union(short, now), now) {
+		in := func(d Drop) bool { return (window{d.Start, d.End}).overlaps(window{b.Start, b.End}, now) }
+		if b.Dur < dropMin && !slices.ContainsFunc(v.connDrops, in) && (v.connCur == nil || !in(*v.connCur)) {
+			v.blips = append(v.blips, b)
+		}
+	}
 	v.eps = e.episodes(v)
 	return v
+}
+
+// lagged returns the drop or blip that ended at most lagSlack before a
+// lan, isp, upstream or no_network verdict incident of kind k starting at
+// start began (and at most absorbBefore after it), when the incident ended
+// (to; zero: now) at most lagMax after it and the layers it blames have
+// been clean from its end to then: the incident is the verdict's 60 s
+// window still holding the drop (nil: none).
+func (e *engine) lagged(v *view, k model.VerdictKind, start, to time.Time) *Drop {
+	if to.IsZero() {
+		to = v.now
+	}
+	for _, ds := range [][]Drop{v.connDrops, v.blips} {
+		for i, d := range ds {
+			if d.Ended() && !start.Before(d.Start.Add(-absorbBefore)) && !start.After(d.End.Add(lagSlack)) &&
+				!to.After(d.End.Add(lagMax)) && e.layersClean(v, d.End, to, blamed(k)...) && !e.tilesDropped(v, d.End.Add(dropLate), to) {
+				return &ds[i]
+			}
+		}
+	}
+	return nil
+}
+
+// tilesDropped reports that more than half of the covered tiles were in
+// a tile drop after from (up to to): the apps were not back, whatever the
+// path's ICMP said.
+func (e *engine) tilesDropped(v *view, from, to time.Time) bool {
+	cov, n := 0, 0
+	w := window{from, to}
+	for i, t := range e.tiles {
+		if t.off {
+			continue
+		}
+		cov++
+		if slices.ContainsFunc(v.tileDrops[i], func(d Drop) bool { return (window{d.Start, d.End}).overlaps(w, v.now) }) {
+			n++
+		}
+	}
+	return to.After(from) && 2*n > cov
+}
+
+// blamed are the path layers a verdict kind says are fine up to the one it
+// blames: they must be clean for its incident to be a drop's lag.
+func blamed(k model.VerdictKind) []int {
+	switch k {
+	case model.VerdictLAN:
+		return []int{layerGateway}
+	case model.VerdictISP:
+		return []int{layerGateway, layerEdge}
+	}
+	return []int{layerGateway, layerEdge, layerAnycast}
+}
+
+// layersClean reports that the layers lost nothing of note after from, up
+// to to (zero: now; a span of lagMax at most is walked): each was measured
+// then, no run of total loss of its started, and its closed minutes
+// wholly inside, and its checks not summarized yet, lost under
+// layerLossy. A layer without checks is not clean.
+func (e *engine) layersClean(v *view, from, to time.Time, layers ...int) bool {
+	if to.IsZero() || to.After(v.now) {
+		to = v.now
+	}
+	if lim := from.Add(lagMax + time.Minute); to.After(lim) {
+		to = lim
+	}
+	ep := window{from, to}
+	hi := e.nextMin // exclusive
+	if to.Before(hi) {
+		hi = to.Truncate(time.Minute)
+	}
+	for _, l := range layers {
+		if slices.ContainsFunc(e.layerWindows(v, l), func(w window) bool { return w.from.After(from) && w.overlaps(ep, v.now) }) {
+			return false
+		}
+		n, lost := 0, 0
+		for t := from.Truncate(time.Minute); t.Before(e.nextMin) && !t.After(to); t = t.Add(time.Minute) {
+			m := e.layerMins[l][minIdx(t)]
+			n += m.n() // the partial minutes at either end count as measured ...
+			// ... the whole ones inside count for loss too
+			if t.After(from) && t.Before(hi) && m.n() > 0 && float64(m.lost) >= layerLossy*float64(m.n()) {
+				return false
+			}
+		}
+		// the minutes not summarized yet, from their raw checks: loss
+		// right after a drop must not wait for its minute to close
+		rn := 0
+		for _, i := range e.paths[l] {
+			for _, c := range e.ss[i].raw {
+				if c.gap || c.ms <= from.UnixMilli() || c.ms > to.UnixMilli() {
+					continue
+				}
+				rn++
+				if c.lost {
+					lost++
+				}
+			}
+		}
+		if n+rn == 0 || lost >= 2 && float64(lost) >= layerLossy*float64(rn) {
+			return false
+		}
+	}
+	return true
 }
 
 // episodes groups the problem parts of the last week (groupEpisodes).
@@ -72,7 +196,48 @@ func (e *engine) episodes(v *view) []Episode {
 	if c := v.connCur; c != nil && c.Dur >= dropMin {
 		conn = append(conn, dropEpisode(*c, ""))
 	}
-	for _, in := range e.incidents {
+	for _, d := range v.blips {
+		// a blip leaves nothing behind only when the path was clean after
+		// it: one inside a lossy spell is part of the spell
+		if !e.layersClean(v, d.End, d.End.Add(lagMax), layerGateway, layerEdge, layerAnycast) {
+			continue
+		}
+		v.lagBlips = append(v.lagBlips, d)
+		x := dropEpisode(d, "")
+		x.Kind = epBlip
+		conn = append(conn, x)
+	}
+	// the incidents are re-read every incEvery: the verdict's own may not
+	// be among them yet (the card already shows it)
+	incs := e.incidents
+	cloned := false
+	if vk := e.verdict; !vk.Since.IsZero() && !slices.ContainsFunc(incs, func(in model.Incident) bool {
+		return in.Kind == vk.Kind && in.End.IsZero() && in.Start.Sub(vk.Since).Abs() < time.Second
+	}) {
+		if _, ok := incidentEpisode(model.Incident{Kind: vk.Kind}, false); ok {
+			// its peak loss so far is not known: the window's loss stands in
+			incs, cloned = append(slices.Clip(incs), model.Incident{Kind: vk.Kind, Start: vk.Since, PeakLoss: vk.Evidence["loss"]}), true
+		}
+	}
+	// an incident that is a drop's (or a blip's) lag ends with it: it is
+	// absorbed, is no second ongoing problem, and explains nothing after
+	for i, in := range incs {
+		if !pathKind(in.Kind) {
+			continue
+		}
+		d := e.lagged(v, in.Kind, in.Start, in.End)
+		if d == nil || !in.End.IsZero() && !in.End.After(d.End) {
+			continue
+		}
+		if !cloned {
+			incs, cloned = slices.Clone(incs), true
+		}
+		incs[i].End = d.End
+		if !d.End.After(in.Start) { // it began in the lagSlack after the drop
+			incs[i].End = in.Start.Add(time.Second)
+		}
+	}
+	for _, in := range incs {
 		if x, ok := incidentEpisode(in, e.incidentDropped(in, v)); ok {
 			conn = append(conn, x)
 		}
@@ -98,10 +263,39 @@ func (e *engine) episodes(v *view) []Episode {
 	sp := e.speed()
 	var buf []minute
 	eps := groupEpisodes(conn, parts, func(x Episode) Cause {
-		in := attrIn{from: x.Start, to: x.End, now: now, incidents: e.incidents, speed: sp}
-		for l := range in.layers {
-			buf = e.layerMinutes(buf[:0], l, x.Start, x.End)
-			in.layers[l] = layerEvidence(buf, e.layerWindows(v, l), x.Start, x.End, now)
+		in := attrIn{from: x.Start, to: x.End, now: now, incidents: incs, speed: sp}
+		// a call tile's minute judges the call window that ends with it:
+		// the loss behind a calls-only Choppy problem lies that much
+		// earlier (its last minutes are the window emptying)
+		evidence := func(from, to time.Time) [nLayers]layerEv {
+			var ls [nLayers]layerEv
+			for l := range ls {
+				buf = e.layerMinutes(buf[:0], l, from, to)
+				ls[l] = layerEvidence(buf, e.layerWindows(v, l), from, to, now)
+			}
+			return ls
+		}
+		in.layers = evidence(x.Start, x.End)
+		if !x.Connection && x.Sev == Slow && len(x.Tiles) > 0 && !slices.ContainsFunc(x.Tiles, func(id string) bool {
+			i := tileOrder(id)
+			return i < 0 || profile.Tiles[i].Kind != profile.TileCall
+		}) {
+			// a call tile's minute judges the call window that ends with
+			// it: the loss behind a calls-only Choppy problem may lie that
+			// much earlier (once over, its last minutes are the window
+			// emptying): an ended problem reads the shifted span. An
+			// ongoing one reads the lossier of the two at the edge: its own
+			// span holds its loss.
+			lf, lt := x.Start.Add(-(callWindow - time.Minute)), x.End
+			if !lt.IsZero() {
+				lt = lt.Add(-(callWindow - time.Minute))
+				if lt.Before(x.Start) {
+					lt = x.Start
+				}
+			}
+			if sh := evidence(lf, lt); !x.End.IsZero() || sh[layerEdge].loss > in.layers[layerEdge].loss {
+				in.layers = sh
+			}
 		}
 		in.tiles = e.tileEvs(x, v)
 		return attribute(in)
@@ -111,7 +305,8 @@ func (e *engine) episodes(v *view) []Episode {
 }
 
 // incidentDropped reports that the layer an incident blames lost
-// everything during it (any layer for no_network).
+// everything during it for dropMin or more (any layer for no_network): a
+// few seconds of total loss inside heavy loss is still loss, not a drop.
 func (e *engine) incidentDropped(in model.Incident, v *view) bool {
 	ls := []int{layerGateway, layerEdge, layerAnycast}
 	switch in.Kind {
@@ -125,7 +320,7 @@ func (e *engine) incidentDropped(in model.Incident, v *view) bool {
 	ep := window{in.Start, in.End}
 	for _, l := range ls {
 		for _, w := range e.layerWindows(v, l) {
-			if w.overlaps(ep, v.now) {
+			if w.dur(v.now) >= dropMin && w.overlaps(ep, v.now) {
 				return true
 			}
 		}

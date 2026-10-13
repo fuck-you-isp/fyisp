@@ -43,7 +43,7 @@ var Names = []string{
 	// coverage and history
 	"calls-profile", "no-streaming", "custom-config", "week-with-problems", "not-running",
 	// speed
-	"speed-running", "speed-no-usual", "speed-done", "speedtest-labelled",
+	"speed-running", "speed-no-usual", "speed-done", "speed-upload-slow", "speed-download-slow", "speedtest-labelled",
 	// the end of daylight saving time in New York (Sunday 2026-11-01)
 	"dst",
 }
@@ -643,6 +643,13 @@ func Build(name string, now time.Time) (*Scenario, error) {
 	case "speed-done":
 		x := sp(0, 0, 1, 925, 938) // Test now, a minute ago
 		x.Trigger = "manual"
+		v.Speed.List = append(v.Speed.List, x)
+	case "speed-upload-slow", "speed-download-slow":
+		// the directions apart: one faster or usual, the other slower
+		x := sp(0, 0, 1, 1200, 400)
+		if name == "speed-download-slow" {
+			x = sp(0, 0, 1, 600, 950)
+		}
 		v.Speed.List = append(v.Speed.List, x)
 	case "speedtest-labelled":
 		from, to := b.ago(90*time.Minute), b.ago(87*time.Minute)

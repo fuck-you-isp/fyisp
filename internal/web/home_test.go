@@ -428,7 +428,20 @@ func TestHomeCopyPins(t *testing.T) {
 	check("calls down", h, "Your internet is fine. Calls aren’t connecting.")
 	u := &HomeSpeedUsual{DownMbps: 925, UpMbps: 938}
 	check("faster", c.speedText(1200, 1250, u), "Your speed: about 1200 Mbps down / 1250 Mbps up — faster than usual.")
-	check("a bit slower", c.speedText(700, 900, u), "Your speed: about 700 Mbps down / 900 Mbps up — a bit slower than usual (usually about 925 / 938 Mbps).")
+	check("a bit slower", c.speedText(700, 750, u), "Your speed: about 700 Mbps down / 750 Mbps up — a bit slower than usual (usually about 925 / 938 Mbps).")
+	check("usual", c.speedText(900, 950, u), "Your speed: about 900 Mbps down / 950 Mbps up — about your usual speed.")
+	// each direction on its own (the live preview said "much slower" with
+	// the download faster than usual)
+	u2 := &HomeSpeedUsual{DownMbps: 717, UpMbps: 885}
+	check("download faster, upload much slower", c.speedText(787, 285, u2),
+		"Your speed: about 787 Mbps down / 285 Mbps up — upload much slower than usual (usually about 885 Mbps up).")
+	check("download much faster, upload much slower", c.speedText(1000, 285, u2),
+		"Your speed: about 1000 Mbps down / 285 Mbps up — download faster, upload much slower than usual (usually about 885 Mbps up).")
+	check("download a bit slower", c.speedText(500, 900, u2),
+		"Your speed: about 500 Mbps down / 900 Mbps up — download a bit slower than usual (usually about 717 Mbps down).")
+	check("download much slower, upload a bit slower", c.speedText(300, 700, u),
+		"Your speed: about 300 Mbps down / 700 Mbps up — download much slower, upload a bit slower than usual (usually about 925 / 938 Mbps).")
+	check("upload faster", c.speedText(925, 1500, u), "Your speed: about 925 Mbps down / 1500 Mbps up — upload faster than usual.")
 	check("dropping", c.problemWhat(tiles.Episode{Start: homeNow.Add(-time.Minute), Kind: tiles.EpDrop, Connection: true, Sev: tiles.Down}), "Everything is dropping.")
 	s3 := *snap
 	s3.LastMeasured, s3.Conn = time.Time{}, tiles.ConnState{Kind: tiles.ConnStale}
@@ -464,7 +477,8 @@ func TestHomeRestartNotStale(t *testing.T) {
 
 // stun_blocked (STUN ports blocked, other UDP works) reads as udp_blocked:
 // the engine keeps the verdict's kind, the card's key says udp_blocked
-// (found by the netns i2 scenario, where Home said "All good").
+// (found by the netns i2 scenario, where Home said "All good"). Its sub
+// line names the ports rather than the kind of traffic.
 func TestHomeSTUNBlocked(t *testing.T) {
 	answer := func(kind string) (HomeAnswer, []HomeTile) {
 		sc := scenario(t, "udp-blocked")
@@ -480,8 +494,12 @@ func TestHomeSTUNBlocked(t *testing.T) {
 	}
 	ua, ut := answer(string(model.VerdictUDPBlocked))
 	sa, st := answer(string(model.VerdictSTUNBlocked))
-	if sa.Key != ua.Key || sa.Tone != ua.Tone || sa.Headline != ua.Headline || sa.Sub != ua.Sub || !strings.HasPrefix(sa.Key, "udp_blocked:") {
+	prefix := func(k string) string { return k[:strings.LastIndex(k, ":")] } // the text's hash differs
+	if prefix(sa.Key) != prefix(ua.Key) || sa.Tone != ua.Tone || sa.Headline != ua.Headline || sa.Tab != ua.Tab || !strings.HasPrefix(sa.Key, "udp_blocked:") {
 		t.Errorf("stun_blocked %+v, want udp_blocked's %+v", sa, ua)
+	}
+	if !strings.Contains(sa.Sub, "blocking the ports calls prefer") || !strings.Contains(ua.Sub, "blocking the kind of traffic calls prefer") {
+		t.Errorf("subs: stun_blocked %q, udp_blocked %q", sa.Sub, ua.Sub)
 	}
 	for i := range ut {
 		if st[i].State != ut[i].State {

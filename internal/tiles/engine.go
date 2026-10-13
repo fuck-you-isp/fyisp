@@ -171,6 +171,8 @@ type engine struct {
 	gateway      netip.Addr
 	edge         netip.Addr
 	incidents    []model.Incident
+	verdict      model.Verdict // the latest tick's
+	peak         lossPeak      // the current isp incident's highest loss (the card)
 	incAt        time.Time
 	stored       speedWindows
 	storedAt     time.Time
@@ -603,12 +605,13 @@ func (e *engine) closeMinute(from time.Time) {
 	k := minIdx(from)
 	var lm [nLayers]minute
 	data := false
+	out := e.pathOut(from)
 	for _, s := range e.ss {
 		s.runs = pruneRuns(s.runs, from, s.rule)
 		if n := len(s.runs); n > 0 && !s.runs[0].open() && s.runs[0].toMs < cut {
 			s.runs = slices.DeleteFunc(s.runs, func(r failRun) bool { return !r.open() && r.toMs < cut })
 		}
-		m := summarize(s.raw, s.runsFor(from), s.rule, from, closeAt)
+		m := summarizeOut(s.raw, s.runsFor(from), s.rule, from, closeAt, out)
 		s.raw = slices.DeleteFunc(s.raw, func(c check) bool { return c.ms < end })
 		data = data || m.n() > 0
 		copy(s.mins[:], s.mins[1:])
@@ -643,20 +646,107 @@ func (e *engine) closeMinute(from time.Time) {
 			continue
 		}
 		cov++
-		st := e.tileMinute(t)
+		st, lossDown := e.tileMinute(t)
 		t.mins[k] = st
 		t.plot[k] = e.plotMs(t)
-		if r := t.w.step(from, st); r != nil {
+		if r := t.w.stepLoss(from, st, lossDown); r != nil {
 			t.runs = append(t.runs, *r)
 		}
 		if n := len(t.runs); n > 0 && t.runs[0].End.Before(msTime(cut)) {
 			t.runs = slices.DeleteFunc(t.runs, func(r wordRun) bool { return r.End.Before(msTime(cut)) })
 		}
-		if s, _ := t.w.state(); s.Bad() {
+		// the minutes' word, not an outage seen since (an immediate Down
+		// is the tick's, newer than this minute: a drop starting now would
+		// make this minute's healthy layers look like a slowdown)
+		if t.w.level.Bad() {
 			bad = append(bad, t)
 		}
 	}
 	e.broadMinute(from, bad, cov, lm)
+}
+
+// pathOut returns the connection's own short outages that touch the
+// minute from, as of the latest tick: runs of total loss of the gateway or
+// the edge (layerDrops: connDropNow or more, the one in progress too)
+//   - that are isolated: no other one ended in the outIsolated before it
+//     (a flapping link is loss, not a row of blips), and
+//   - in which most covered tiles lost checks too (the gateway's or the
+//     edge's ICMP alone going silent, a rate limit, is no outage of the
+//     apps: their own loss stays loss).
+func (e *engine) pathOut(from time.Time) []window {
+	var all []window
+	lo := from.Add(-time.Minute - outIsolated).UnixMilli()
+	for _, l := range []int{layerGateway, layerEdge} {
+		var series []runSet
+		for _, i := range e.paths[l] {
+			// only the runs near the minute (a week of them is kept)
+			s := e.ss[i]
+			rs := runSet{every: s.every}
+			if s.tr.last != 0 {
+				rs.last = msTime(s.tr.last)
+			}
+			for j := len(s.runs) - 1; j >= 0 && s.runs[j].toMs >= lo; j-- {
+				rs.runs = append(rs.runs, s.runs[j])
+			}
+			slices.Reverse(rs.runs)
+			if r, ok := s.tr.open(); ok {
+				rs.runs = append(rs.runs, r)
+			}
+			series = append(series, rs)
+		}
+		ended, cur := layerDrops(series, e.last)
+		if cur != nil {
+			ended = append(ended, window{from: cur.Start})
+		}
+		all = append(all, ended...)
+	}
+	all = union(all, e.last)
+	var out []window
+	ep := window{from, from.Add(time.Minute)}
+	for i, w := range all {
+		if !w.overlaps(ep, e.last) {
+			continue
+		}
+		if i > 0 && !all[i-1].to.IsZero() && w.from.Sub(all[i-1].to) < outIsolated {
+			continue
+		}
+		if e.tilesOut(w) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// tilesOut reports that more than half of the covered tiles had a failure
+// run on one of their series during w.
+func (e *engine) tilesOut(w window) bool {
+	cov, n := 0, 0
+	for _, t := range e.tiles {
+		if t.off {
+			continue
+		}
+		cov++
+		ids := slices.Clone(t.web)
+		for _, m := range t.udp {
+			ids = append(ids, m...)
+		}
+		if slices.ContainsFunc(ids, func(i int) bool {
+			s := e.ss[i]
+			hit := func(r failRun) bool { return (window{msTime(r.firstMs), msTime(r.lastMs + 1)}).overlaps(w, e.last) }
+			if r, ok := s.tr.open(); ok && hit(r) {
+				return true
+			}
+			for j := len(s.runs) - 1; j >= 0 && (s.runs[j].toMs == 0 || !msTime(s.runs[j].toMs).Before(w.from)); j-- {
+				if hit(s.runs[j]) {
+					return true
+				}
+			}
+			return false
+		}) {
+			n++
+		}
+	}
+	return 2*n > cov
 }
 
 // runsFor returns the series' runs that can touch the minute from: the
@@ -690,8 +780,10 @@ func (s *ser) set() runSet {
 }
 
 // tileMinute judges a tile's latest minute from its series' judgements,
-// and notes its measured endpoints and call numbers.
-func (e *engine) tileMinute(t *tile) State {
+// and notes its measured endpoints and call numbers. lossDown: a call
+// tile-minute Down from its UDP members' loss alone (not delay, not its web
+// group).
+func (e *engine) tileMinute(t *tile) (st State, lossDown bool) {
 	var wb, ub [8]State
 	web, udp := wb[:0], ub[:0]
 	t.measured = 0
@@ -703,6 +795,7 @@ func (e *engine) tileMinute(t *tile) State {
 		}
 	}
 	var calls []callStats
+	lossDown = true
 	for _, m := range t.udp {
 		var vb [4]State
 		vs := vb[:0]
@@ -715,13 +808,16 @@ func (e *engine) tileMinute(t *tile) State {
 			if s.call.bursts > 0 {
 				calls = append(calls, s.call)
 			}
+			lossDown = lossDown && (s.state != Down || s.call.delayMs <= callDownDelayMs)
 		}
 		udp = append(udp, vote(vs...))
 	}
-	if t.def.Kind == profile.TileCall {
-		t.callM = callMetrics(t.source, calls)
+	if t.def.Kind != profile.TileCall {
+		return tileMinute(t.def.Kind, web, udp), false
 	}
-	return tileMinute(t.def.Kind, web, udp)
+	t.callM = callMetrics(t.source, calls)
+	st = tileMinute(t.def.Kind, web, udp)
+	return st, st == Down && majority(web) != Down && majority(udp) == Down && lossDown
 }
 
 // callMetrics are a call tile's numbers: the medians over its UDP

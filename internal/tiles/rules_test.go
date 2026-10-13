@@ -542,13 +542,14 @@ func TestWordOutageInsideGoodRun(t *testing.T) {
 	}
 }
 
-// TestLiveVsReplayClose: a UDP run 3:00–3:10 lost, OK from 3:15, after
-// lost bursts at 1:40 and 2:55. Live, results arrive up to 6 s after their slot and
-// the engine summarizes minute 2 at its first grid tick at or after
-// closeAt + holdFor; replay sees all checks at once. Both judge alike.
+// TestLiveVsReplayClose: a UDP run 2:55–3:00 lost, OK from 3:05, after a
+// lost burst at 1:40 (a run of tileDropChecks bursts would be a drop, not
+// loss). Live, results arrive up to 6 s after their slot and the engine
+// summarizes minute 2 at its first grid tick at or after closeAt +
+// holdFor; replay sees all checks at once. Both judge alike.
 func TestLiveVsReplayClose(t *testing.T) {
 	const every = 5 * time.Second
-	cs := pattern(every, t0, rep(".", 20)+"x"+rep(".", 14)+"x"+"xxx"+rep(".", 20), ms10)
+	cs := pattern(every, t0, rep(".", 20)+"x"+rep(".", 14)+"xx"+rep(".", 22), ms10)
 	judge := func(runs []failRun) State {
 		var ms []minute
 		for i := range 3 {
