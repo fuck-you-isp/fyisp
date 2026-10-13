@@ -145,13 +145,6 @@ func memo[V any](mu *sync.Mutex, m map[string]V, key string, fill func() (V, boo
 	return v, true
 }
 
-// sameSite reports a request without browser evidence of another site:
-// only those may change the owner's zone (NoteZone).
-func sameSite(r *http.Request) bool {
-	sfs := r.Header.Get("Sec-Fetch-Site")
-	return sfs == "" || sfs == "same-origin"
-}
-
 // serveHome answers /api/home.
 func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
@@ -164,9 +157,6 @@ func (s *server) serveHome(w http.ResponseWriter, r *http.Request) {
 		// No tiles engine (only in tests and tools): no Home.
 		notFound(w, r)
 		return
-	}
-	if s.d.Speed != nil && sameSite(r) {
-		s.d.Speed.NoteZone(p.zone.name)
 	}
 	if p.part == "tile" {
 		t, code, msg := s.homeTile(p, now)

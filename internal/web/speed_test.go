@@ -707,24 +707,6 @@ func TestSpeedLegacyOrigin(t *testing.T) {
 	}
 }
 
-// TestSpeedOwnerZone: a page's IANA tz becomes the owner's zone (the
-// reports' hours), kept when a later request sends none.
-func TestSpeedOwnerZone(t *testing.T) {
-	loc, _ := speedHandlers(t, newSpeedRig(t, 5*time.Hour), LocalOptions{})
-	do(loc, "GET", "/api/speed?days=7&tz=America/New_York", speedHost)
-	var v struct {
-		OwnerTZ   string `json:"owner_tz"`
-		TZName    string `json:"tz_name"`
-		ZoneLabel string `json:"zone_label"`
-	}
-	if err := json.Unmarshal(do(loc, "GET", "/api/speed?days=7&tz=120", speedHost).Body.Bytes(), &v); err != nil {
-		t.Fatal(err)
-	}
-	if v.OwnerTZ != "America/New_York" {
-		t.Errorf("owner zone: %+v", v)
-	}
-}
-
 // TestSweepBytes: "Test every server" is estimated from each server's
 // recent median data, else the line's rate both ways for MaxMeasure;
 // skipped servers and share-link tests from before v0.8.0 (capped) are left out.

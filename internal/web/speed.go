@@ -34,9 +34,6 @@ type SpeedSource interface {
 	MaskedShare(d time.Duration) float64
 	Catalog() *speedtest.Catalog
 	BytesSince(ctx context.Context, t time.Time) (int64, error)
-	// NoteZone keeps the owner's IANA zone (the report's), as a local page
-	// sent it.
-	NoteZone(name string)
 }
 
 // Speed API limits.
@@ -234,7 +231,6 @@ type speedJSON struct {
 	Bytes24h        int64              `json:"bytes_24h"`
 	Connection      speedConnection    `json:"connection"`
 	NextAt          *int64             `json:"next_at"`
-	OwnerTZ         string             `json:"owner_tz,omitempty"` // the owner's IANA zone: the report's times
 	NextRow         *string            `json:"next_row"`
 	Running         *speedRunning      `json:"running"`
 	Rows            []speedRow         `json:"rows"`
@@ -531,7 +527,6 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.d.Speed.NoteZone(p.zone.name)
 	switch p.part {
 	case "queue", "entry", "sweep":
 		s.serveSpeedQueue(w, r, p, now)
@@ -615,7 +610,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
 		MaskedShare24h: math.Round(s.d.Speed.MaskedShare(24*time.Hour)*1000) / 1000,
-		NextAt:         ms(st.Next), OwnerTZ: st.OwnerZone, NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
+		NextAt:         ms(st.Next), NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
 		Rows: []speedRow{}, PerRegion: []speedRow{}, PerServer: []speedRow{}, Servers: []speedServerJSON{}, Regions: []speedRegionJSON{},
 		Connection: speedConnection{Type: "unknown", Source: "detected"}}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)

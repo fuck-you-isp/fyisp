@@ -15,7 +15,7 @@ import (
 // relative to its server's own baseline (Baseline), so far servers that
 // always read lower neither hide nor fake a dip, and only scheduled tests:
 // people press "Test now" when things feel slow, which would bias the
-// hours. The API, Home, the finding and the report share these numbers.
+// hours. The API, Home and the finding share these numbers.
 
 // zone is loc, or UTC for nil.
 func zone(loc *time.Location) *time.Location {

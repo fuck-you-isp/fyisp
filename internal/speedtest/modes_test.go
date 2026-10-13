@@ -638,29 +638,6 @@ func TestHandoffBeforeWindow(t *testing.T) {
 	}
 }
 
-// TestOwnerZone: the owner's zone is kept from a local page's tz (an IANA
-// name only) and is the report's, falling back to the server's zone.
-func TestOwnerZone(t *testing.T) {
-	h := newHarness(t, Options{})
-	for _, bad := range []string{"", "Local", "120", "Nowhere/Else"} {
-		h.s.NoteZone(bad)
-	}
-	if z := h.s.State().OwnerZone; z != "" || StoredZone(context.Background(), h.st) != time.Local {
-		t.Errorf("not a zone: %q", z)
-	}
-	h.s.NoteZone("America/New_York")
-	if z := h.s.State().OwnerZone; z != "America/New_York" || StoredZone(context.Background(), h.st).String() != "America/New_York" {
-		t.Errorf("kept %q, stored %v", z, StoredZone(context.Background(), h.st))
-	}
-	h2 := newHarness(t, Options{})
-	h2.st = h.st
-	h2.s.o.Store = h.st
-	h2.s.load(context.Background())
-	if h2.s.State().OwnerZone != "America/New_York" {
-		t.Error("not kept across a restart")
-	}
-}
-
 // TestCancelledBy: the owner's cancel (its cause) is on the cancelled row;
 // a download that finished keeps its speed.
 func TestCancelledBy(t *testing.T) {

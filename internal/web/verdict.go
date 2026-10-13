@@ -19,8 +19,8 @@ import (
 // {"kind":"unknown"} and /api/incidents [].
 //
 // Contract: Verdict.Summary and Incident.Summary are plain-English sentences
-// free of IP addresses and hostnames (the engine guarantees this; reports,
-// redacted ones included, quote them as is).
+// free of IP addresses and hostnames (the engine guarantees this; the
+// dashboard quotes them as is).
 type VerdictSource interface {
 	Current() model.Verdict
 	Incidents(ctx context.Context, from, to time.Time) ([]model.Incident, error)
