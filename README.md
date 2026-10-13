@@ -49,7 +49,7 @@ Add fyisp options at the end, e.g. `... ))) --profile streaming`. `run.ps1` does
 - **Problems in the last 7 days**: a summary by cause (*5 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves*), then each problem with its time, what happened, its *likely cause* and one line of evidence (*Your router kept answering, but nothing past it did.*). A problem during one of fyisp's own speed tests says so.
 - **The footer**: *Watching your connection since …* and **Technical details →**.
 
-<img src="docs/img/home-phone.png" width="260" align="right" alt="fyisp Home on a phone, in the dark theme, during a problem at the internet provider: a red card, the provider marked on the connection strip, call tiles Choppy and the other apps Slow or Down since 11:48 am">
+<img src="docs/img/home-phone.png" width="260" align="right" alt="fyisp Home on a phone, in the dark theme, during a problem at the internet provider: a red card, the provider marked on the connection strip, call tiles Choppy and the other apps Slow or Down since 8:59 pm">
 
 On a phone the strip stacks and the tiles take 2 columns (right: a problem at the internet provider, in the dark theme).
 
