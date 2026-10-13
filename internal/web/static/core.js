@@ -276,10 +276,14 @@ export function dialog(o) {
 
 // ---------- writes ----------
 
+/** The admin token pasted into the dialog earlier in this tab, or ''. */
+export function storedAdmin() {
+  try { return sessionStorage.getItem('fyisp-admin') || ''; } catch { return ''; }
+}
+
 /** The admin token for speed-test controls: remembered for this tab, else asked for in a password field. @param {string} [why] */
 export async function adminHeader(why = '') {
-  let t = null;
-  try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
+  let t = storedAdmin();
   if (!t) {
     const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
     const v = await dialog({
@@ -324,6 +328,18 @@ export async function apiWrite(method, url, body, why = '') {
     if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
     throw e;
   }
+}
+
+/**
+ * Why this browser can't use the speed-test controls, from what the
+ * dashboard says (status.controls), for a refusal (403 forbidden) or a
+ * hidden button.
+ */
+export function speedRefusal() {
+  const status = statusOf();
+  if (status && status.controls === 'disabled') return 'Speed-test controls are off on this dashboard (--admin-token=off).';
+  if (status && status.controls === 'admin') return 'That needs the admin token: open the link fyisp printed when it started.';
+  return 'Speed tests can only be changed from the device running fyisp.';
 }
 
 /** Owner controls (speed tests) are usable: not disabled by a LAN bind with --admin-token=off. */

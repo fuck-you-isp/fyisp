@@ -6,7 +6,7 @@
 // cancel any entry. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, dialog, clock } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, speedRefusal, dialog, clock } from './core.js';
 import { readingCell, lowerBound } from './speedmap.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -54,7 +54,7 @@ export function queueError(e) {
   switch (b.code) {
     case 'skipped': return 'You skipped that server.';
     case 'not_found': return 'That test isn’t in the queue any more.';
-    case 'forbidden': return 'Speed tests can only be changed from the device running fyisp.';
+    case 'forbidden': return speedRefusal();
   }
   if (e.status === 0) return ''; // the admin dialog was cancelled
   return 'Couldn’t reach fyisp. Try again.';
@@ -296,7 +296,7 @@ export class SpeedQueue {
       ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test every server', disabled: !!mineSweep,
         'aria-describedby': 'sp-sw-why', onclick: () => this.confirmSweep() })
       : null;
-    const why = mineSweep ? 'Your full test is in the queue above.' : !can ? 'Speed tests can only be started from the device running fyisp.' : '';
+    const why = mineSweep ? 'Your full test is in the queue above.' : !can ? speedRefusal() : '';
     // A new reason is said once; the visible text next to the button stays.
     if (why && why !== this.lastWhy && this.lastWhy != null) this.host.say(why);
     this.lastWhy = why;

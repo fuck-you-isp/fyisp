@@ -58,7 +58,9 @@ nothing new. The safeguards are:
 - at most 4 run at once;
 - at most 12 new traces start in a rolling hour, across all targets and
   viewers (429 `rate_limited`); a request carrying the admin token skips
-  this budget, not the 4-at-once cap;
+  this budget, not the 4-at-once cap. So viewers can hold all 4 slots for
+  about 31 minutes an hour (12 traces of about 10 minutes, 4 at a time),
+  and meanwhile even the token holder gets `busy`;
 - the per-router probe cap is unchanged;
 - the route takes exactly one `target` parameter and no body (a declared
   length, chunking or anything read is refused), is never cached, and its
@@ -75,7 +77,7 @@ The dashboard's controls after v0.10.0:
 |---|---|---|---|---|---|
 | GET UI, `/api/*`, `/metrics` | yes | - | no | no | read-only |
 | POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes, where the dashboard has one | yes, on a dashboard without a token | off for everyone when reachable from elsewhere with `--admin-token=off`; one queue, one test at a time |
-| POST `/api/investigate` | yes | yes | no (it skips the hourly budget) | no | the safeguards above |
+| POST `/api/investigate` | yes | yes | not needed (with it, a request skips the hourly budget) | no | the safeguards above |
 | POST/DELETE `/api/admin/session` | yes | yes | POST needs it | - | 404 when no token is set |
 
 ## Exposing the dashboard

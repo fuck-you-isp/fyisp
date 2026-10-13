@@ -259,6 +259,10 @@ type localStatus struct {
 	Status
 	Controls string `json:"controls"` // speed-test controls: "enabled", "admin" (need the admin token) or "disabled"
 	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
+	// CanControl: this request may use the speed-test controls as it is
+	// (api/speed's "configurable"): the owner, so the UI may start a trace
+	// by itself when Investigate opens.
+	CanControl bool `json:"can_control"`
 }
 
 func (s *server) rawStatus(ctx context.Context) Status {

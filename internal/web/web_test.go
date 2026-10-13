@@ -329,6 +329,32 @@ func TestLocalPOST(t *testing.T) {
 	}
 }
 
+// TestStatusCanControl: /api/status's can_control is per request, like
+// api/speed's configurable: the UI starts a trace by itself on opening
+// Investigate only where it is true.
+func TestStatusCanControl(t *testing.T) {
+	canControl := func(h http.Handler, hdr map[string]string) bool {
+		var st localStatus
+		_ = json.Unmarshal(do(h, "GET", "/api/status", hdr).Body.Bytes(), &st)
+		return st.CanControl
+	}
+	loop := map[string]string{"Host": "127.0.0.1:3000"}
+	h, _ := localHandlerFor(t, LocalOptions{})
+	if !canControl(h, loop) || canControl(h, map[string]string{"Host": "127.0.0.1:3000", "X-Forwarded-For": "203.0.113.9"}) {
+		t.Error("loopback: want true from this machine, false through a proxy")
+	}
+	lan := map[string]string{"Host": "192.168.1.5:3000"}
+	ha, _ := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000", AdminToken: "adm"})
+	if canControl(ha, lan) || !canControl(ha, map[string]string{"Host": "192.168.1.5:3000", "Cookie": "fyisp_admin_3000=adm"}) ||
+		!canControl(ha, map[string]string{"Host": "192.168.1.5:3000", HeaderAdmin: "adm"}) {
+		t.Error("admin: want true only with the token")
+	}
+	hd, _ := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000"})
+	if canControl(hd, lan) {
+		t.Error("disabled: want false")
+	}
+}
+
 // ---------- API ----------
 
 type panelResp struct {

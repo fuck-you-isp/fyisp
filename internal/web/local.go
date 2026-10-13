@@ -192,7 +192,7 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, r, http.StatusOK, localStatus{Status: h.rawStatus(r.Context()), Controls: h.controls,
-			Admin: h.controls == "admin" && h.adminOK(r)})
+			Admin: h.controls == "admin" && h.adminOK(r), CanControl: h.canControlSpeed(r)})
 		return
 	}
 	h.serveGET(w, r, rt, rel)

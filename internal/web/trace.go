@@ -746,7 +746,7 @@ func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) stri
 		return ""
 	}
 	q := r.URL.Query()
-	if err := checkParams(q, "target"); err != nil || len(q["target"]) != 1 {
+	if err := checkParams(q, "target"); err != nil || len(q["target"]) != 1 || q.Get("target") == "" {
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "want exactly one target parameter", 0)
 		return ""
 	}

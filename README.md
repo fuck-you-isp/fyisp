@@ -105,7 +105,7 @@ Inside a container fyisp listens on all interfaces, so anyone on your network co
 - `--admin-token=<your own>` uses that token instead (the browser asks for it, or open `http://…:3000/#admin=<token>`). `--admin-token=off` turns speed-test controls off for everyone; the dashboard and Investigate keep working.
 - The dashboard is plain HTTP: someone who can watch your network traffic could copy the cookie, as with any HTTP login. Keep it on a network you trust, or use `-p 127.0.0.1:3000:3000`.
 
-*Investigate* needs no token: anyone who can open the dashboard can trace a profile target, for at most 250 rounds, 4 at once and 12 new traces an hour across all viewers. Opening the view starts one in a browser that opened the link (and on a dashboard without a token); other viewers click *Trace*. A browser with the token skips the hourly limit, not the 4 at once.
+*Investigate* needs no token: anyone who can open the dashboard can trace a profile target, for at most 250 rounds, 4 at once and 12 new traces an hour across all viewers. Opening the view starts one only for the owner: on this machine with a loopback dashboard without a token, or in a browser with the admin token (the link, or the token pasted for a speed test); other viewers click *Trace*. A browser with the token skips the hourly limit, not the 4 at once.
 
 If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name, a tunnel), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding. Any `--allow-host` also turns the admin token on, even with the default loopback `--listen` (see [Sharing](#sharing)).
 

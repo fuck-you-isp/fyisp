@@ -44,7 +44,7 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `bad_request` | a parameter other than one `target`, or a body |
+| 400 | `bad_request` | a parameter other than one `target`, an empty `target`, or a body |
 | 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token` |
 | 404 | `unknown_target` | not a profile target name |
 | 404 | `unavailable` | tracing is not available |
@@ -54,6 +54,8 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 | 500 | `failed` | the tracer failed (with the reason) |
 
 ## Progress
+
+The dashboard posts by itself when Investigate opens only for the owner: when `/api/status` has `"can_control": true` (this request may use the speed-test controls, per request: false through a proxy on a token-less dashboard) or the browser holds an admin token pasted earlier, which it then sends as `X-FYISP-Admin`. Everyone else clicks *Trace*.
 
 `GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
 

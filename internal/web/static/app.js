@@ -14,7 +14,7 @@ import {
   meta, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, toLocalInput, fromLocalInput,
+  hideTip, whyButton, storedAdmin, toLocalInput, fromLocalInput,
   useStatus, hatch, resetHatch, smooth,
 } from './core.js';
 import { Home, firstHome } from './home.js';
@@ -1024,11 +1024,14 @@ function invError(e) {
 
 /**
  * Whether opening Investigate starts a trace by itself: only for the
- * owner (no admin token needed here, or this browser has it). Other
- * viewers click Trace, so browsing targets doesn't spend the hourly budget
- * every viewer shares.
+ * owner, i.e. a request that may use the speed-test controls as it is
+ * (status.can_control: this machine on a loopback dashboard without a
+ * token, or the admin cookie), or a browser holding a pasted admin token.
+ * Other viewers click Trace, so browsing targets doesn't spend the hourly
+ * budget every viewer shares (a tunnel visitor on a token-less dashboard
+ * included: the server sees its proxy headers).
  */
-function autoTrace() { return !!status && (status.controls === 'enabled' || !!status.admin); }
+function autoTrace() { return !!status && (!!status.can_control || (status.controls === 'admin' && !!storedAdmin())); }
 
 function hopAddr(/** @type {HopRef} */ x) {
   if (x.no_reply) return 'no reply';
@@ -1204,6 +1207,10 @@ class Investigate {
     /** @type {Record<string,string>} */
     const headers = {};
     if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
+    // A token pasted into the speed-test dialog (no cookie): with it the
+    // owner's traces skip the hourly budget. Never asked for here.
+    const adm = status && status.controls === 'admin' && !status.admin ? storedAdmin() : '';
+    if (adm) headers['X-FYISP-Admin'] = adm;
     try {
       /** @type {InvState} */
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
@@ -1216,6 +1223,7 @@ class Investigate {
       // The budget used up by opening the view is a state, not an error:
       // the error style is for a click.
       if (auto && (err.body || {}).code === 'rate_limited') {
+        // 12 is InvestigateStartsPerHour (trace.go).
         this.invNote = `12 traces have been started in the last hour, the most allowed. You can start another ${invWait(err)}.`;
       } else this.invErr = invError(err);
     } finally {
@@ -1344,9 +1352,10 @@ class Investigate {
     const kids = [];
     if (!d.hops.length) {
       const t = targetInfo(this.target);
-      const pending = t && !t.trace && !this.invErr && (!this.invState || this.invState.state === 'running');
+      const pending = t && !t.trace && !this.invErr && !this.invIdle && !this.invNote && (!this.invState || this.invState.state === 'running');
       this.summary.className = 'inv-summary v-warming_up';
-      kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.' : 'No trace data in this range.' }));
+      kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.'
+        : this.invIdle ? 'Not tracing. Click Trace to follow this target’s path for about 10 minutes.' : 'No trace data in this range.' }));
       this.summary.replaceChildren(...kids);
       return;
     }
