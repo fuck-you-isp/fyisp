@@ -39,7 +39,7 @@ Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.ym
 
 ## Owner decision (2026-10-12): the Teams relay joins the default
 
-For v0.9.0's Home, every call tile should be judged on its own call path where one exists, so the owner moved the Teams relay `worldaz` (unchanged: same host, 5 s bursts) into `default`. This overrides the "Keep it opt-in" advice below. The traffic estimate at the top (about 8 KB/s per provider for every 1,000 installs) now reaches Microsoft from every default install, not only from `calls` users. It can be left out with a `--config` file that `extends: [default]` and has `remove: [Teams-Relay]` (README, Privacy). The rest of the advice still stands if Microsoft objects: switch to the documented `world.tr.teams.microsoft.com`, slow the cadence, or drop it from the default again.
+For Home, every call tile should be judged on its own call path where one exists, so the owner moved the Teams relay `worldaz` (unchanged: same host, 5 s bursts) into `default`. This overrides the "Keep it opt-in" advice below. The traffic estimate at the top (about 8 KB/s per provider for every 1,000 installs) now reaches Microsoft from every default install, not only from `calls` users. It can be left out with a `--config` file that `extends: [default]` and has `remove: [Teams-Relay]` (README, Privacy). The rest of the advice still stands if Microsoft objects: switch to the documented `world.tr.teams.microsoft.com`, slow the cadence, or drop it from the default again.
 
 ## Google: `stun.l.google.com`
 

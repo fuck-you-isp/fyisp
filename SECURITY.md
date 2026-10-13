@@ -71,7 +71,7 @@ Behind a tunnel, client addresses can't be trusted, so these limits (the
 hourly budget, the 4 slots, 250 rounds and the per-router cap) are the
 only bounds on a visitor or a script that starts traces.
 
-The dashboard's controls after v0.10.0:
+The dashboard's controls:
 
 | Route | Host allowlist | Same origin + CSRF | Admin token | Proxy-header refusal | Other limits |
 |---|---|---|---|---|---|
@@ -83,7 +83,7 @@ The dashboard's controls after v0.10.0:
 ## Exposing the dashboard
 
 fyisp serves one dashboard, by default on 127.0.0.1:3000. It has no public
-or redacted view, and fyisp makes no reports (v0.10.0 removed them):
+or redacted view, and fyisp makes no reports:
 whoever can open the dashboard sees every address and host name. To show
 your connection to others, send a screenshot of Home, which shows no
 addresses, or review a `fyisp export` first (traceroute rows contain hop
