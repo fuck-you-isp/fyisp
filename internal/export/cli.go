@@ -14,41 +14,23 @@ import (
 // --data-dir) and returns a function that builds the Options after
 // fs.Parse. Relative times are resolved against now.
 //
-//	--format csv|sqlite  --tier raw|1h  --from T  --to T
-//	--target NAME[,NAME]  --kind https,tcp,icmp,trace  --output FILE (-o)
-//	--speedtests         (the speed tests instead of samples; CSV only)
+//	--from T  --to T  --target NAME[,NAME]  --kind https,tcp,icmp,trace
+//	--output FILE (-o)  --speedtests (the speed tests instead of samples)
 //
 // T is RFC 3339 ("2026-09-26T12:00:00Z"), a date ("2026-09-26", UTC
 // midnight), "now", or an age such as "24h", "90m", "7d" (that long ago).
 // The defaults export everything stored.
 func Flags(fs *flag.FlagSet) func(now time.Time) (Options, error) {
-	format := fs.String("format", FormatCSV, "output format: csv or sqlite")
-	tier := fs.String("tier", TierRaw, "raw (every sample) or 1h (hourly summaries)")
 	from := fs.String("from", "", "start time: RFC 3339, YYYY-MM-DD, or an age like 24h or 7d (default: oldest data)")
 	to := fs.String("to", "", "end time, same forms as --from (default: newest data)")
 	var targets, kinds multi
 	fs.Var(&targets, "target", "target name to export (repeatable or comma-separated; default all)")
 	fs.Var(&kinds, "kind", "probe kind: https, tcp, icmp, trace (traceroute hops), udp, udp_jitter, udp_loss (repeatable or comma-separated; default all)")
 	speed := fs.Bool("speedtests", false, "export the speed tests (CSV: id,start,end,trigger,outcome,server,...) instead of samples")
-	out := fs.String("output", "", "output file, created with mode 0600 (default stdout; required for sqlite)")
+	out := fs.String("output", "", "output file, created with mode 0600 (default stdout)")
 	fs.StringVar(out, "o", "", "shorthand for --output")
 	return func(now time.Time) (Options, error) {
-		o := Options{Format: *format, Tier: *tier, Targets: targets, Output: *out, SpeedTests: *speed}
-		if o.SpeedTests && o.Format != FormatCSV {
-			return o, fmt.Errorf("--speedtests is exported as CSV only")
-		}
-		switch o.Format {
-		case FormatCSV:
-		case FormatSQLite:
-			if o.Output == "" || o.Output == "-" {
-				return o, fmt.Errorf("--format sqlite needs --output FILE")
-			}
-		default:
-			return o, fmt.Errorf("unknown --format %q (csv or sqlite)", o.Format)
-		}
-		if o.Tier != TierRaw && o.Tier != TierHourly {
-			return o, fmt.Errorf("unknown --tier %q (raw or 1h)", o.Tier)
-		}
+		o := Options{Targets: targets, Output: *out, SpeedTests: *speed}
 		for _, k := range kinds {
 			pk, err := ParseKind(k)
 			if err != nil {
