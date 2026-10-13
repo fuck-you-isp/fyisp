@@ -64,7 +64,7 @@ func New(o Options) Runner {
 		o.UserAgent = defaultUserAgent
 	}
 	silenceHTTP2Noise()
-	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep, lookups: make(chan struct{}, maxLookups), udpTimeout: udpTimeout}
+	return &runner{o: o, caps: Detect(context.Background()), sleep: realSleep, dialTCP: dialTCP, lookups: make(chan struct{}, maxLookups), udpTimeout: udpTimeout}
 }
 
 type runner struct {
@@ -75,6 +75,8 @@ type runner struct {
 	udpTimeout time.Duration // per STUN request (tests: shorter)
 	// udp lists the UDP targets of the running profile, for UDPState.
 	udp atomic.Pointer[[]udpTarget]
+	// dialTCP connects a TCP probe (tests: a stub).
+	dialTCP func(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error)
 }
 
 type udpTarget struct {
@@ -367,10 +369,14 @@ func (r *runner) pathAddr(special string) (ip netip.Addr, ok bool, err error) {
 	return netip.Addr{}, false, nil
 }
 
-func (r *runner) probeTCP(ctx context.Context, ip netip.Addr, port int, timeout time.Duration) (time.Duration, model.Reason, error) {
+func dialTCP(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
 	d := net.Dialer{Timeout: timeout}
+	return d.DialContext(ctx, "tcp4", addr)
+}
+
+func (r *runner) probeTCP(ctx context.Context, ip netip.Addr, port int, timeout time.Duration) (time.Duration, model.Reason, error) {
 	t0 := time.Now()
-	c, err := d.DialContext(ctx, "tcp4", netip.AddrPortFrom(ip, uint16(port)).String())
+	c, err := r.dialTCP(ctx, netip.AddrPortFrom(ip, uint16(port)).String(), timeout)
 	rtt := time.Since(t0)
 	if err != nil {
 		return 0, classify(err), err

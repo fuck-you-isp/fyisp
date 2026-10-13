@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -23,6 +24,10 @@ type fakeServer struct {
 	ln   net.Listener
 	mode string // "", "busy", "close", "error", "terminate", "stall", "deaf" (ignores TEST_END, keeps sending)
 	rate int    // bytes per 10 ms per stream when sending (downloads)
+	// dial and phase are a newPipeServer's: its dialer, and when its
+	// streams start pacing.
+	dial  func(ctx context.Context, network, addr string) (net.Conn, error)
+	phase time.Duration
 
 	mu      sync.Mutex
 	params  map[string]any
@@ -72,11 +77,29 @@ func newFakeServer(t *testing.T, mode string) *fakeServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeServer{ln: ln, mode: mode, rate: 64 << 10}
+	return startFake(t, &fakeServer{ln: ln, mode: mode, rate: 64 << 10})
+}
+
+// newPipeServer is newFakeServer over in-memory connections (net.Pipe),
+// for a test in a synctest bubble: the fake's pacing and the client's
+// ticks run on the bubble's clock, so rates, ramps and early stops are
+// exact whatever the machine's speed. Configs come from f.quick, which
+// dials it. Not for what needs a kernel: TCP_INFO, buffers in flight.
+func newPipeServer(t *testing.T, mode string) *fakeServer {
+	t.Helper()
+	ln := &pipeListener{conns: make(chan net.Conn, 16), done: make(chan struct{})}
+	// The fake's ticks start 1 ms after the client's, so none falls on a
+	// tick boundary of the client's, where which runs first is up to the
+	// scheduler.
+	return startFake(t, &fakeServer{ln: ln, mode: mode, rate: 64 << 10, dial: ln.dial, phase: time.Millisecond})
+}
+
+// startFake serves f until the test ends.
+func startFake(t *testing.T, f *fakeServer) *fakeServer {
 	f.wg.Add(1)
 	go f.serve()
 	t.Cleanup(func() {
-		ln.Close()
+		f.ln.Close()
 		f.wg.Wait()
 		if f.err != nil {
 			t.Errorf("fake server: %v", f.err)
@@ -97,6 +120,46 @@ const (
 )
 
 func (f *fakeServer) addr() string { return f.ln.Addr().String() }
+
+// quick is quick for f: over its pipes for a newPipeServer.
+func (f *fakeServer) quick(d Direction) Config {
+	c := quick(f.addr(), d)
+	c.Dial = f.dial
+	return c
+}
+
+// pipeListener is a net.Listener of in-memory connections: dial hands
+// Accept one end of a net.Pipe.
+type pipeListener struct {
+	conns chan net.Conn
+	done  chan struct{}
+	once  sync.Once
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error { l.once.Do(func() { close(l.done) }); return nil }
+
+func (l *pipeListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5201} }
+
+func (l *pipeListener) dial(ctx context.Context, _, _ string) (net.Conn, error) {
+	c, s := net.Pipe()
+	select {
+	case l.conns <- s:
+		return c, nil
+	case <-l.done:
+		return nil, net.ErrClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
 func (f *fakeServer) fail(err error) {
 	if f.mode == "stall" || f.mode == "deaf" {
@@ -220,6 +283,13 @@ func (f *fakeServer) session(c net.Conn) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if f.phase > 0 {
+				select {
+				case <-stop:
+					return
+				case <-time.After(f.phase):
+				}
+			}
 			if reverse {
 				// Each write carries the bytes due since the last one, so
 				// ticks a busy machine drops are made up and every second
@@ -377,27 +447,32 @@ func TestDownload(t *testing.T) {
 	}
 }
 
+// TestUpload: an upload's bytes are what the server received, at the
+// server's rate; the loopback (TCP_INFO acked bytes) is TestBytesHonest's.
 func TestUpload(t *testing.T) {
-	f := newFakeServer(t, "")
-	r, err := Run(context.Background(), quick(f.addr(), Upload))
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if _, ok := f.params["reverse"]; ok {
-		t.Errorf("params %v", f.params)
-	}
-	// The bytes the server acknowledged in the window (Linux): at most what
-	// it received, plus what its kernel acked but the fake never read
-	// (it closes its streams on TEST_END, as iperf3 does): its receive
-	// buffers, a few MB per stream.
-	if r.Bytes == 0 || r.Bytes > f.recv+3*16<<20 || r.Elapsed <= 0 || r.Elapsed > 2500*time.Millisecond {
-		t.Errorf("result %+v, server received %d", r, f.recv)
-	}
-	if f.results.SenderHasRetransmits < 0 {
-		t.Errorf("upload results claim to be the receiver: %+v", f.results)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := newPipeServer(t, "")
+		r, err := Run(context.Background(), f.quick(Upload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if _, ok := f.params["reverse"]; ok {
+			t.Errorf("params %v", f.params)
+		}
+		// Written bytes (no TCP_INFO on a pipe), less what the server says
+		// never arrived: at most what it received.
+		if r.Bytes == 0 || r.Bytes > f.recv || r.Elapsed < time.Second || r.Elapsed > 2*time.Second {
+			t.Errorf("result %+v, server received %d", r, f.recv)
+		}
+		if bps := float64(r.Bytes) / r.Elapsed.Seconds(); math.Abs(bps/(3*upRate)-1) > 0.05 {
+			t.Errorf("%.3g B/s, want the server's %.3g", bps, 3.0*upRate)
+		}
+		if f.results.SenderHasRetransmits < 0 {
+			t.Errorf("upload results claim to be the receiver: %+v", f.results)
+		}
+	})
 }
 
 func TestFailures(t *testing.T) {
@@ -475,21 +550,25 @@ func TestCookie(t *testing.T) {
 // TestAdaptive: a steady rate ends the test once 2 s are measured (2 s
 // minimum here); a refused port is ErrRefused, not ErrUnreachable.
 func TestAdaptive(t *testing.T) {
-	f := newFakeServer(t, "")
-	cfg := quick(f.addr(), Download)
-	cfg.Duration, cfg.MinDuration = 6*time.Second, 2*time.Second
-	t0 := time.Now()
-	r, err := Run(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Elapsed < 1900*time.Millisecond || r.Elapsed > 5*time.Second || time.Since(t0) > 7*time.Second {
-		t.Errorf("steady rate: measured %v in %v, want an early end before the 6 s limit", r.Elapsed, time.Since(t0))
-	}
-	want := 3 * float64(64<<10) * 100 * 8
-	if bps := r.BitsPerSecond(); bps < want*0.3 || bps > want*2 {
-		t.Errorf("%.1f Mbit/s, want ~%.1f", bps/1e6, want/1e6)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := newPipeServer(t, "")
+		cfg := f.quick(Download)
+		cfg.Duration, cfg.MinDuration = 6*time.Second, 2*time.Second
+		t0 := time.Now()
+		r, err := Run(context.Background(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Level from the first tick: it ends at the first 1 s boundary with
+		// MinDuration since the first tick near the peak, 3 s in.
+		if r.Elapsed < 1900*time.Millisecond || r.Elapsed > 3*time.Second || time.Since(t0) > 3500*time.Millisecond {
+			t.Errorf("steady rate: measured %v in %v, want an early end before the 6 s limit", r.Elapsed, time.Since(t0))
+		}
+		want := 3 * float64(64<<10) * 100 * 8
+		if bps := r.BitsPerSecond(); math.Abs(bps/want-1) > 0.02 {
+			t.Errorf("%.1f Mbit/s, want %.1f", bps/1e6, want/1e6)
+		}
+	})
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	addr := ln.Addr().String()
 	ln.Close()
@@ -501,52 +580,56 @@ func TestAdaptive(t *testing.T) {
 // TestByteCap: a direction stops at MaxBytes, ramp-up included, and says
 // so; the cookie carries the fyisp prefix.
 func TestByteCap(t *testing.T) {
-	f := newFakeServer(t, "")
-	cfg := quick(f.addr(), Download)
-	cfg.MaxBytes = 2 << 20 // 3 streams at ~6.5 MB/s each: ~100-200 ms
-	t0 := time.Now()
-	r, err := Run(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// It stops early enough that what keeps arriving stays within the cap.
-	if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes/2 || r.WireBytes > cfg.MaxBytes+setupOverhead || time.Since(t0) > time.Second || r.Elapsed <= 0 {
-		t.Errorf("capped %v, %d bytes in all, %d measured over %v, run %v", r.CappedByBytes, r.TotalBytes, r.Bytes, r.Elapsed, time.Since(t0))
-	}
-	f.mu.Lock()
-	if !strings.HasPrefix(f.cookies[0], cookiePrefix) {
-		t.Errorf("cookie %q", f.cookies[0])
-	}
-	f.mu.Unlock()
-	// A cap above what the test moves changes nothing.
-	cfg.MaxBytes = 1 << 40
-	if r, _ := Run(context.Background(), cfg); r.CappedByBytes {
-		t.Error("capped without reaching the cap")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := newPipeServer(t, "")
+		cfg := f.quick(Download)
+		cfg.MaxBytes = 2 << 20 // 3 streams at ~6.5 MB/s each: ~100 ms
+		t0 := time.Now()
+		r, err := Run(context.Background(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// It stops early enough that what keeps arriving stays within the cap.
+		if !r.CappedByBytes || r.TotalBytes < cfg.MaxBytes/2 || r.WireBytes > cfg.MaxBytes+setupOverhead || time.Since(t0) > 200*time.Millisecond || r.Elapsed <= 0 {
+			t.Errorf("capped %v, %d bytes in all, %d measured over %v, run %v", r.CappedByBytes, r.TotalBytes, r.Bytes, r.Elapsed, time.Since(t0))
+		}
+		f.mu.Lock()
+		if !strings.HasPrefix(f.cookies[0], cookiePrefix) {
+			t.Errorf("cookie %q", f.cookies[0])
+		}
+		f.mu.Unlock()
+		// A cap above what the test moves changes nothing.
+		cfg.MaxBytes = 1 << 40
+		if r, _ := Run(context.Background(), cfg); r.CappedByBytes {
+			t.Error("capped without reaching the cap")
+		}
+	})
 }
 
 // TestAdaptiveRamp: the ramp-up's end is decided after the fact, where
 // the rate levels off (here after ~500 ms of slow start), not after a
 // fixed second, adaptive or not.
 func TestAdaptiveRamp(t *testing.T) {
-	f := newFakeServer(t, "ramp")
-	cfg := quick(f.addr(), Download)
-	cfg.Omit, cfg.Duration, cfg.MinDuration = time.Second, 3*time.Second, 2*time.Second
-	r, err := Run(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Ramp < 400*time.Millisecond || r.Ramp > 900*time.Millisecond {
-		t.Errorf("adaptive ramp %v, want ~500-700 ms", r.Ramp)
-	}
-	want := 3 * float64(64<<10) * 100 * 8
-	if bps := r.BitsPerSecond(); bps < want*0.75 || bps > want*1.25 {
-		t.Errorf("%.1f Mbit/s, want ~%.1f: the ramp leaked into the window", bps/1e6, want/1e6)
-	}
-	cfg.MinDuration, cfg.Duration = 0, 1500*time.Millisecond
-	if r, _ := Run(context.Background(), cfg); r.Ramp < 400*time.Millisecond || r.Ramp > 900*time.Millisecond {
-		t.Errorf("not adaptive: ramp %v", r.Ramp)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := newPipeServer(t, "ramp")
+		cfg := f.quick(Download)
+		cfg.Omit, cfg.Duration, cfg.MinDuration = time.Second, 3*time.Second, 2*time.Second
+		r, err := Run(context.Background(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Ramp < 400*time.Millisecond || r.Ramp > 700*time.Millisecond {
+			t.Errorf("adaptive ramp %v, want ~500-700 ms", r.Ramp)
+		}
+		want := 3 * float64(64<<10) * 100 * 8
+		if bps := r.BitsPerSecond(); math.Abs(bps/want-1) > 0.05 {
+			t.Errorf("%.1f Mbit/s, want ~%.1f: the ramp leaked into the window", bps/1e6, want/1e6)
+		}
+		cfg.MinDuration, cfg.Duration = 0, 1500*time.Millisecond
+		if r, _ := Run(context.Background(), cfg); r.Ramp < 400*time.Millisecond || r.Ramp > 700*time.Millisecond {
+			t.Errorf("not adaptive: ramp %v", r.Ramp)
+		}
+	})
 }
 
 // trackConn records its Close.
@@ -823,11 +906,13 @@ func TestTimeCapped(t *testing.T) {
 		mode string
 		lb   bool
 	}{{"", false}, {"climb", true}} {
-		f := newFakeServer(t, c.mode)
-		r, err := Run(context.Background(), quick(f.addr(), Download))
-		if err != nil || r.CappedByBytes || r.RateMethod != MethodPeak90 || r.LowerBound != c.lb {
-			t.Errorf("%q: %v %+v", c.mode, err, r)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			f := newPipeServer(t, c.mode)
+			r, err := Run(context.Background(), f.quick(Download))
+			if err != nil || r.CappedByBytes || r.RateMethod != MethodPeak90 || r.LowerBound != c.lb {
+				t.Errorf("%q: %v %+v", c.mode, err, r)
+			}
+		})
 	}
 }
 
@@ -889,15 +974,17 @@ func TestEarlyStopWaitsForPlateau(t *testing.T) {
 		mode     string
 		min, max time.Duration
 	}{{"slowramp", 5 * time.Second, 9 * time.Second}, {"", 3 * time.Second, 5500 * time.Millisecond}} {
-		f := newFakeServer(t, c.mode)
-		cfg := quick(f.addr(), Download)
-		cfg.Duration, cfg.MinDuration, cfg.Omit = 10*time.Second, 3*time.Second, time.Second
-		t0 := time.Now()
-		r, err := Run(context.Background(), cfg)
-		el := time.Since(t0)
-		full := float64(3*f.rate) * 100 // bytes/s: 3 streams, f.rate per 10 ms
-		if err != nil || r.LowerBound || el < c.min || el > c.max || math.Abs(float64(r.Bytes)/r.Elapsed.Seconds()/full-1) > 0.15 {
-			t.Errorf("%q: %v after %v: %+v (%.3g of %.3g B/s)", c.mode, err, el, r, float64(r.Bytes)/r.Elapsed.Seconds(), full)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			f := newPipeServer(t, c.mode)
+			cfg := f.quick(Download)
+			cfg.Duration, cfg.MinDuration, cfg.Omit = 10*time.Second, 3*time.Second, time.Second
+			t0 := time.Now()
+			r, err := Run(context.Background(), cfg)
+			el := time.Since(t0)
+			full := float64(3*f.rate) * 100 // bytes/s: 3 streams, f.rate per 10 ms
+			if err != nil || r.LowerBound || el < c.min || el > c.max || math.Abs(float64(r.Bytes)/r.Elapsed.Seconds()/full-1) > 0.05 {
+				t.Errorf("%q: %v after %v: %+v (%.3g of %.3g B/s)", c.mode, err, el, r, float64(r.Bytes)/r.Elapsed.Seconds(), full)
+			}
+		})
 	}
 }
