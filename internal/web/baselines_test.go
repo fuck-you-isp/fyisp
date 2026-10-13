@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/verdict"
 )
 
 // ---------- fakes ----------
@@ -28,8 +29,8 @@ func baselinesFixture(t *testing.T) Deps {
 	t.Helper()
 	_, d := fixture(t, time.Now())
 	d.Baselines = fakeBaselines{median: 10}
-	d.Slow = func() []SlowTarget {
-		return []SlowTarget{
+	d.Slow = func() []verdict.SlowTarget {
+		return []verdict.SlowTarget{
 			{Target: "Alpha", Kind: model.KindHTTPS, Ratio: 2.346, NowMs: 23.456, NormalMs: 10},
 			{Target: "evil.example.com", Kind: model.KindHTTPS, Ratio: 3, NowMs: 30, NormalMs: 10},
 			{Target: "Beta", Kind: model.KindHTTPS, Ratio: math.NaN(), NowMs: 1, NormalMs: 1},
@@ -71,41 +72,6 @@ func TestBaselinesNil(t *testing.T) {
 	_ = json.Unmarshal(do(h, "GET", "/api/verdict", goodHdr).Body.Bytes(), &v)
 	if _, ok := v["slow"]; ok {
 		t.Error("slow served without Deps.Slow")
-	}
-}
-
-// TestRemovedRoutes: v0.10.0 removed notes and reports. Their routes are
-// plain 404s for every method, even with good write headers or none (never
-// 403 or 405, which would tell a caller about the controls), and
-// /api/profile no longer has their features.
-func TestRemovedRoutes(t *testing.T) {
-	_, d := fixture(t, time.Now())
-	for _, o := range []LocalOptions{
-		{Addr: "127.0.0.1:3000", CSRFToken: "tok123"},
-		{Addr: "127.0.0.1:3000", CSRFToken: "tok123", AdminToken: "adm"},
-	} {
-		h := Local(d, o)
-		for _, p := range []string{"/api/annotations", "/api/annotations/1", "/api/reports", "/api/reports/r" + strings.Repeat("a", 25), "/api/reports/r" + strings.Repeat("a", 25) + "?download=1"} {
-			for _, m := range []string{"GET", "HEAD", "POST", "PUT", "DELETE"} {
-				for _, hdr := range []map[string]string{goodHdr, {"Host": "127.0.0.1:3000"}} {
-					if w := doBody(h, m, p, "{}", hdr); w.Code != 404 {
-						t.Errorf("admin %q: %s %s = %d, want 404", o.AdminToken, m, p, w.Code)
-					}
-				}
-			}
-		}
-		w := do(h, "GET", "/api/profile", goodHdr)
-		var pj struct {
-			Features map[string]bool `json:"features"`
-		}
-		if err := json.Unmarshal(w.Body.Bytes(), &pj); err != nil || pj.Features == nil {
-			t.Fatalf("profile: %v %s", err, w.Body.String())
-		}
-		for _, k := range []string{"notes", "reports"} {
-			if _, ok := pj.Features[k]; ok {
-				t.Errorf("profile still has features.%s", k)
-			}
-		}
 	}
 }
 

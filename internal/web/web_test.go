@@ -22,8 +22,6 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
-const testSecret = "0123456789abcdef0123456789abcdef"
-
 var allKinds = []model.ProbeKind{model.KindHTTPS, model.KindTCP, model.KindICMP}
 
 func testProfile() *model.Profile {
@@ -70,7 +68,7 @@ func (c *countingStore) Panel(ctx context.Context, q store.PanelQuery) (*store.P
 }
 
 func (c *countingStore) Stats(ctx context.Context) (store.Stats, error) {
-	return store.Stats{Dir: "/home/venkat/.local/state/fyisp", FileBytes: 1234, Oldest: c.oldest,
+	return store.Stats{FileBytes: 1234, Oldest: c.oldest,
 		LastFlushErr: "open /var/lib/fyisp/fyisp.db: disk full on 192.168.1.20"}, nil
 }
 
@@ -149,8 +147,6 @@ func do(h http.Handler, method, target string, hdr map[string]string) *httptest.
 	return w
 }
 
-// ---------- public ----------
-
 // portLeak matches the planted port 8443 as a number of its own (":8443",
 // "port":8443, "8443"), not the same digits inside a millisecond timestamp
 // or a decimal RTT.
@@ -159,24 +155,7 @@ const portLeak = `(^|[^\d.])8443($|[^\d.])`
 var portRE = regexp.MustCompile(portLeak)
 
 // leakRE matches private details planted in the fixtures.
-var leakRE = regexp.MustCompile(`\b(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|127\.\d+\.\d+\.\d+|169\.254\.\d+\.\d+)\b|\[?::1\]?|localhost|/home/|/var/|/proc/|/etc/|/Users/|[A-Z]:\\|v9\.9\.9|trycloudflare|secret-path|example\.com|` + portLeak)
-
-type peakStore struct {
-	store.Reader
-	inflight, peak *atomic.Int32
-}
-
-func (p *peakStore) Panel(ctx context.Context, q store.PanelQuery) (*store.PanelResult, error) {
-	n := p.inflight.Add(1)
-	defer p.inflight.Add(-1)
-	for {
-		old := p.peak.Load()
-		if n <= old || p.peak.CompareAndSwap(old, n) {
-			break
-		}
-	}
-	return p.Reader.Panel(ctx, q)
-}
+var leakRE = regexp.MustCompile(`\b(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|127\.\d+\.\d+\.\d+|169\.254\.\d+\.\d+)\b|\[?::1\]?|localhost|/home/|/var/|/proc/|/etc/|/Users/|[A-Z]:\\|v9\.9\.9|secret-path|example\.com|` + portLeak)
 
 // ---------- local ----------
 
@@ -217,7 +196,7 @@ func TestLocalRoutes(t *testing.T) {
 	for p, code := range map[string]int{
 		"/": 200, "/metrics": 200, "/api/status": 200, "/api/profile": 200, "/api/panel?group=lan": 200,
 		"/api/panel.csv?group=lan": 200, "/static/app.js": 200, "/debug/pprof/": 404, "/nope": 404,
-		"/static/index.html": 404, "/api/share/start": 404, "/s/" + testSecret + "/": 404, "/api/verdict": 200, "/api/incidents": 200,
+		"/static/index.html": 404, "/api/verdict": 200, "/api/incidents": 200,
 		"/api/verdict?from=now": 400, "/api/incidents?from=now&to=now-1h": 400,
 	} {
 		if w := do(h, "GET", p, host); w.Code != code {

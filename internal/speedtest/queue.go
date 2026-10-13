@@ -24,14 +24,6 @@ const (
 	KindScheduled Kind = "scheduled" // a schedule slot
 )
 
-// Who asked for an entry.
-type Who string
-
-const (
-	WhoOwner    Who = "owner"    // the dashboard
-	WhoSchedule Who = "schedule" // the schedule
-)
-
 // Entry states.
 const (
 	StateWaiting   = "waiting"
@@ -67,14 +59,12 @@ type Job struct {
 type Request struct {
 	Kind   Kind
 	Target string
-	Who    Who
 }
 
 // Entry is a snapshot of one queue entry.
 type Entry struct {
 	ID        uint64
 	Kind      Kind
-	Who       Who
 	Target    string // a server or region ID; "" for the nearest, a sweep or a slot
 	State     string
 	Position  int // waiting: 1 is next; 0 otherwise
@@ -178,28 +168,28 @@ func (q *Queue) poke() {
 	}
 }
 
-func trigger(k Kind, who Who) string {
-	switch {
-	case k == KindScheduled:
+// trigger is the stored trigger of a test of kind k.
+func trigger(k Kind) string {
+	switch k {
+	case KindScheduled:
 		return "schedule"
-	case k == KindSweep:
+	case KindSweep:
 		return "sweep"
 	}
 	return "manual"
 }
 
-// same reports an equivalent request from the same requester (the owner or
-// the schedule): asking again returns the entry.
+// same reports an equivalent request: asking again returns the entry.
 func (e *qentry) same(r Request) bool {
-	if e.Kind != r.Kind || e.Who != r.Who {
+	if e.Kind != r.Kind {
 		return false
 	}
 	return e.Kind != KindSingle || e.Target == r.Target
 }
 
-// Enqueue adds a request, or returns the same requester's equivalent entry
-// already queued or running (duplicate). The owner's entries go after the
-// owner's waiting ones and ahead of schedule slots.
+// Enqueue adds a request, or returns the equivalent entry already queued or
+// running (duplicate). The owner's entries go after the owner's waiting ones
+// and ahead of schedule slots.
 func (q *Queue) Enqueue(r Request) (Entry, bool, error) {
 	if r.Kind != KindSingle && r.Kind != KindSweep {
 		return Entry{}, false, fmt.Errorf("speed test queue: kind %q", r.Kind)
@@ -223,7 +213,7 @@ func (q *Queue) Enqueue(r Request) (Entry, bool, error) {
 		}
 	}
 	q.nextID++
-	e := &qentry{Entry: Entry{ID: q.nextID, Kind: r.Kind, Who: r.Who, Target: r.Target,
+	e := &qentry{Entry: Entry{ID: q.nextID, Kind: r.Kind, Target: r.Target,
 		State: StateWaiting, Enqueued: now, Steps: len(jobs), Servers: jobServers(jobs), JobTests: make([]int64, len(jobs))}, jobs: jobs}
 	q.insertLocked(e)
 	q.poke()
@@ -241,7 +231,7 @@ func (q *Queue) EnqueueScheduled(j Job) bool {
 		}
 	}
 	q.nextID++
-	q.insertLocked(&qentry{Entry: Entry{ID: q.nextID, Kind: KindScheduled, Who: WhoSchedule, State: StateWaiting,
+	q.insertLocked(&qentry{Entry: Entry{ID: q.nextID, Kind: KindScheduled, State: StateWaiting,
 		Enqueued: q.o.Now(), Steps: 1, Servers: jobServers([]Job{j}), JobTests: make([]int64, 1)}, jobs: []Job{j}})
 	q.poke()
 	return true
@@ -250,14 +240,14 @@ func (q *Queue) EnqueueScheduled(j Job) bool {
 // insertLocked places e by class: the owner's, then schedule slots; FIFO
 // within a class. Nothing pre-empts the running entry.
 func (q *Queue) insertLocked(e *qentry) {
-	rank := func(w Who) int {
-		if w == WhoOwner {
-			return 0
+	rank := func(k Kind) int {
+		if k == KindScheduled {
+			return 1
 		}
-		return 1
+		return 0
 	}
 	i := 0
-	for i < len(q.waiting) && rank(q.waiting[i].Who) <= rank(e.Who) {
+	for i < len(q.waiting) && rank(q.waiting[i].Kind) <= rank(e.Kind) {
 		i++
 	}
 	q.waiting = slices.Insert(q.waiting, i, e)
@@ -362,7 +352,7 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 			break
 		}
 		if q.o.Pause != nil {
-			if why := q.o.Pause(ctx, e.jobs[i], trigger(e.Kind, e.Who)); why != "" {
+			if why := q.o.Pause(ctx, e.jobs[i], trigger(e.Kind)); why != "" {
 				if ctx.Err() == nil {
 					q.mu.Lock()
 					e.Stopped = why
@@ -381,7 +371,7 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		}
 		e.Step = i + 1
 		q.mu.Unlock()
-		id, saved := q.o.Exec(ctx, e.jobs[i], trigger(e.Kind, e.Who))
+		id, saved := q.o.Exec(ctx, e.jobs[i], trigger(e.Kind))
 		q.mu.Lock()
 		e.Ran = i + 1
 		if saved {

@@ -195,9 +195,9 @@ type Sample struct {
 	Lost   bool
 	Reason Reason // valid when Lost
 	Reused bool   // HTTPS only: connection was reused
-	Err    string // not persisted; shown as "last error" in the UI
+	Err    string // not persisted; for tests and debugging
 	// At is when the probe started (not persisted; zero when unknown): the
-	// speed test mask blanks probes that ran during a test.
+	// speed test's load tap files the gateway's and the edge's samples by it.
 	At time.Time
 }
 

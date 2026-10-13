@@ -137,7 +137,6 @@ type hTile struct {
 	w      word
 	runs   []wordRun
 	mins   []State
-	sigs   []string
 	mw, mu [][]*tracker
 }
 

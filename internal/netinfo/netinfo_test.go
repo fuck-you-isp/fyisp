@@ -199,7 +199,7 @@ func TestWatcher(t *testing.T) {
 	go func() { done <- w.Run(ctx) }()
 
 	p := waitFor(t, ch, "initial edge", func(p Path) bool { return p.Edge.IsValid() })
-	if p.Gateway != gw1 || p.Iface != "wlan0" || p.Edge != edge1 || p.EdgeHop != 2 || p.Err != "" || p.Updated.IsZero() {
+	if p.Gateway != gw1 || p.Iface != "wlan0" || p.Edge != edge1 || p.EdgeHop != 2 || p.Err != "" {
 		t.Errorf("initial path %+v", p)
 	}
 	if c := w.Current(); c.Edge != edge1 || c.Gateway != gw1 {

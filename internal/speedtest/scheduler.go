@@ -183,13 +183,6 @@ type target struct {
 	at time.Time
 }
 
-func (t target) row() string {
-	if t.region != "" {
-		return t.region
-	}
-	return t.server
-}
-
 // Scheduler runs speed tests on a schedule and on demand.
 type Scheduler struct {
 	o    Options

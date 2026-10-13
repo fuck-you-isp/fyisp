@@ -22,6 +22,10 @@ func cumOf(d ...int64) []int64 {
 	return out
 }
 
+func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
+	return peak90From(0, cum, at, end, endBytes, rtt)
+}
+
 func TestPeak90(t *testing.T) {
 	const tk = 100 * time.Millisecond
 	nominal := func(n int) []time.Duration {
@@ -429,7 +433,7 @@ func TestOldCappedRows(t *testing.T) {
 	if f := FindFinding(FindingInput{Tests: mixed, Catalog: c}); f.Case != CaseNothing {
 		t.Errorf("old capped rows count: %s: %s", f.Case, f.Text)
 	}
-	for h, m := range HourMedians(mixed, nil, false) {
+	for h, m := range hourMedians(Censored(mixed, nil), nil, false) {
 		if m != 1 {
 			t.Errorf("hour %d: %.2f", h, m)
 		}

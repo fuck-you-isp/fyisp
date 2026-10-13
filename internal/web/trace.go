@@ -260,7 +260,7 @@ func (s *server) checkTarget(w http.ResponseWriter, r *http.Request, target stri
 	return true
 }
 
-// changesJSON redacts route changes with r (already fed every sequence).
+// changesJSON describes route changes with r (already fed every sequence).
 func changesJSON(r *hopView, list []model.RouteChange) []changeJSON {
 	out := make([]changeJSON, 0, len(list))
 	for _, c := range list {
@@ -363,23 +363,20 @@ func routeSeq(hops []netip.Addr) [][]netip.Addr {
 
 // ---------- handlers ----------
 
-// runCached renders and writes the result or the error.
-func (s *server) runCached(w http.ResponseWriter, r *http.Request, key string, render func(ctx context.Context) (*cached, error)) {
-	s.runCachedIn(nil, w, r, key, render)
+// cached is a rendered response.
+type cached struct {
+	code        int
+	ctype       string
+	disposition string
+	body        []byte
 }
 
-// runCachedIn is runCached through a response cache (nil: none).
-func (s *server) runCachedIn(cache *respCache, w http.ResponseWriter, r *http.Request, key string, render func(ctx context.Context) (*cached, error)) {
-	fill := render
+// runCached renders and writes the result or the error; label names the
+// query in the error log.
+func (s *server) runCached(w http.ResponseWriter, r *http.Request, label string, render func(ctx context.Context) (*cached, error)) {
 	ctx, cancel := context.WithTimeout(r.Context(), traceTimeout)
 	defer cancel()
-	var c *cached
-	var err error
-	if cache != nil {
-		c, err = cache.get(ctx, key, fill)
-	} else {
-		c, err = fill(ctx)
-	}
+	c, err := render(ctx)
 	switch {
 	case err == nil:
 	case errors.Is(err, errUnknownTarget):
@@ -388,12 +385,12 @@ func (s *server) runCachedIn(cache *respCache, w http.ResponseWriter, r *http.Re
 	case errors.Is(err, errUnknownGroup):
 		writeErr(w, r, http.StatusNotFound, "unknown group")
 		return
-	case errors.Is(err, errBusy), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		w.Header().Set("Retry-After", "2")
 		writeErr(w, r, http.StatusServiceUnavailable, "busy, retry shortly")
 		return
 	default:
-		s.d.log().Error("query", "key", strings.SplitN(key, "\x00", 2)[0], "err", err)
+		s.d.log().Error("query", "key", label, "err", err)
 		writeErr(w, r, http.StatusInternalServerError, "query failed: "+strings.TrimSpace(err.Error()))
 		return
 	}
@@ -426,7 +423,7 @@ func (s *server) serveTrace(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.runCached(w, r, "trace\x00"+target+"\x00"+p.key, func(ctx context.Context) (*cached, error) {
+	s.runCached(w, r, "trace", func(ctx context.Context) (*cached, error) {
 		t, err := s.trace(ctx, target, p, now)
 		if err != nil {
 			return nil, err
@@ -496,13 +493,7 @@ func (s *server) serveTracePanel(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	hk := make([]string, len(hops))
-	for i, n := range hops {
-		hk[i] = strconv.Itoa(n)
-	}
-	p.group = "trace\x00" + target + "\x00" + strings.Join(hk, ",")
-	p.setKey()
-	s.runCached(w, r, "tpanel\x00"+p.key, func(ctx context.Context) (*cached, error) {
+	s.runCached(w, r, "tpanel", func(ctx context.Context) (*cached, error) {
 		pd, err := s.d.queryTracePanel(ctx, target, hops, p, now)
 		if err != nil {
 			return nil, err
@@ -544,35 +535,6 @@ func (d *Deps) queryTracePanel(ctx context.Context, target string, hops []int, p
 		pd.gap[i] = make([]uint32, pd.nb)
 	}
 	return pd, nil
-}
-
-// serveRouteChanges answers /api/routes/changes?from=&to=: every target's
-// route changes, newest first, redacted like /api/trace.
-func (s *server) serveRouteChanges(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	if err := checkParams(q, "from", "to"); err != nil {
-		writeErr(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
-	p, err := parseRange(q, s.now())
-	if err != nil {
-		writeErr(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
-	s.runCached(w, r, "rchg\x00"+p.key, func(ctx context.Context) (*cached, error) {
-		all, err := s.d.Trace.RouteChanges(ctx, p.from, p.to)
-		if err != nil {
-			return nil, err
-		}
-		var list []model.RouteChange
-		for _, c := range all {
-			if s.knownTarget(c.Target) {
-				list = append(list, c)
-			}
-		}
-		list = newestFirst(list)
-		return jsonCached(changesJSON(newHopView(), list))
-	})
 }
 
 // ---------- on-demand traces (local only) ----------

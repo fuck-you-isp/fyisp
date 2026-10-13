@@ -50,12 +50,12 @@ func TestLookupEmbedded(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	v := Version()
+	v := std.get().version
 	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(v) {
-		t.Fatalf("Version() = %q, want YYYY-MM-DD", v)
+		t.Fatalf("version = %q, want YYYY-MM-DD", v)
 	}
 	if _, err := time.Parse(time.DateOnly, v); err != nil {
-		t.Fatalf("Version() = %q: %v", v, err)
+		t.Fatalf("version = %q: %v", v, err)
 	}
 	if tb := std.get(); !strings.HasPrefix(tb.source, "https://iptoasn.com/") {
 		t.Errorf("source = %q", tb.source)

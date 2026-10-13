@@ -91,3 +91,11 @@ func TestInnermostLossyLayer(t *testing.T) {
 		})
 	}
 }
+
+func TestFmtRatio(t *testing.T) {
+	for r, want := range map[float64]string{1.25: "1.3", 98.0 / 42: "2.3", 3: "3", 3.04: "3", 9.96: "10", 14.4: "14"} {
+		if got := fmtRatio(r); got != want {
+			t.Errorf("fmtRatio(%v) = %q, want %q", r, got, want)
+		}
+	}
+}

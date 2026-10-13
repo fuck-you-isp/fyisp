@@ -205,8 +205,7 @@ func TestSlow(t *testing.T) {
 		asked = append(asked, at)
 		return nf(k, at)
 	}
-	e := Engine(h.e)
-	slow, each := SlowSource(e), VsNormalSource(e)
+	slow, each := h.e.Slow, h.e.EachVsNormal
 	h.run(2 * time.Minute)
 	if s := slow(); len(s) != 0 {
 		t.Fatalf("slow while fine: %v", s)
@@ -254,15 +253,7 @@ func TestSlow(t *testing.T) {
 			t.Errorf("%s: a kind the target does not probe", k)
 		}
 	}
-
-	// Other Engines: no signal.
-	if SlowSource(fakeEngine{})() != nil {
-		t.Error("SlowSource of another Engine")
-	}
-	VsNormalSource(fakeEngine{})(func(string, model.ProbeKind, float64) { t.Error("VsNormalSource of another Engine") })
 }
-
-type fakeEngine struct{ Engine }
 
 func TestNormalSummariesIPFree(t *testing.T) {
 	h := newHarness(t)

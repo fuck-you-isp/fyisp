@@ -151,7 +151,7 @@ func TestResolveCombine(t *testing.T) {
 	if got := groupSummary(p); !slices.Equal(got, wantG) {
 		t.Errorf("groups %v", got)
 	}
-	if err := Validate(p, Limits{}); err != nil {
+	if err := Validate(p, false); err != nil {
 		t.Error(err)
 	}
 
@@ -170,7 +170,7 @@ func TestResolveCombine(t *testing.T) {
 	if !slices.Contains(extra, "Meet-STUN-3478") || slices.Contains(extra, "Teams-Relay") || slices.Contains(extra, "Microsoft-Teams") || slices.Contains(extra, "Meet-STUN") {
 		t.Errorf("added %v", extra)
 	}
-	if err := Validate(p, Limits{}); err != nil {
+	if err := Validate(p, false); err != nil {
 		t.Error(err)
 	}
 	// In the other order the calls groups win, and default's always-on
@@ -239,18 +239,6 @@ func TestGeoFilter(t *testing.T) {
 	}
 	if _, err := ParseGeos("mars"); err == nil {
 		t.Error("ParseGeos mars")
-	}
-}
-
-func TestLimits(t *testing.T) {
-	r := sampleRegistry(t)
-	p := resolve(t, r, false, "clouds", "common") // 5 + 8
-	err := Validate(p, Limits{MaxTargets: 10})
-	if err == nil || !strings.Contains(err.Error(), "at most 10 allowed") {
-		t.Errorf("limit: %v", err)
-	}
-	if err := Validate(p, Limits{MaxTargets: 13}); err != nil {
-		t.Error(err)
 	}
 }
 
@@ -425,10 +413,18 @@ func TestBuiltinProfiles(t *testing.T) {
 			t.Logf("warning: profile %s selects no targets (catalog not there yet?)", d.Name)
 		}
 		if n > 0 {
-			if err := Validate(p, Limits{}); err != nil {
+			if err := Validate(p, false); err != nil {
 				t.Errorf("%s: %v", d.Name, err)
 			}
 		}
 		t.Logf("%-16s %4d targets %3d groups", d.Name, n, len(p.Groups)-1)
 	}
+}
+
+// Definition returns a named profile, or nil.
+func (r *Registry) Definition(name string) *Definition {
+	if name == "default" {
+		return r.Definitions()[0]
+	}
+	return r.byName[name]
 }

@@ -97,7 +97,7 @@ func TestJitterCaps(t *testing.T) {
 		if c.jitter <= JitterUnusableMs && BandOf(m.RawMOS()) != Good {
 			t.Fatalf("jitter %v: MOS %.2f is not Good before the cap", c.jitter, m.RawMOS())
 		}
-		if got := m.Band(); got != c.want || got != Capped(BandOf(m.RawMOS()), c.jitter) || BandOf(m.MOS()) != got {
+		if got := m.Band(); got != c.want || BandOf(m.MOS()) != got {
 			t.Errorf("jitter %v: band %s (MOS %.2f), want %s", c.jitter, got, m.MOS(), c.want)
 		}
 		if want := min(m.RawMOS(), JitterCapMOS(c.jitter)); c.want != Good && m.MOS() != want {
@@ -105,14 +105,6 @@ func TestJitterCaps(t *testing.T) {
 		}
 		if c.want != Good && m.Factor() != "jitter" {
 			t.Errorf("jitter %v: factor %s, want jitter (the cap decided the band)", c.jitter, m.Factor())
-		}
-	}
-	// A cap never improves a band.
-	for _, b := range []Band{Good, Fair, Poor, Unusable} {
-		for _, j := range []float64{math.NaN(), 0, 29.9, 30, 49.9, 50, 99.9, 100} {
-			if got := Capped(b, j); Rank(got) > Rank(b) || Rank(got) > Rank(JitterCap(j)) {
-				t.Errorf("Capped(%s, %v) = %s", b, j, got)
-			}
 		}
 	}
 	// Lossy and jittery: the MOS band is already worse than the cap, so

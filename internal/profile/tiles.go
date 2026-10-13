@@ -93,11 +93,6 @@ type ResolvedTile struct {
 	// anycast STUN targets not tagged for an app or a tile.
 	UDP       []model.Target
 	SharedUDP bool
-	// Missing are the catalog targets of the tile that do not feed it.
-	// Untagged are those of them the profile has by name, without the
-	// tile's tag (e.g. a --config override that replaced the tags).
-	Missing  []string
-	Untagged []string
 }
 
 // Off reports a tile the profile has no targets for.
@@ -112,9 +107,7 @@ func ResolveTiles(p *model.Profile) []ResolvedTile {
 		out[i].TileDef = d
 	}
 	var shared []model.Target
-	names := map[string]bool{}
 	for _, t := range p.Targets {
-		names[t.Name] = true
 		i := tileIndex(TileOf(t))
 		switch {
 		case i >= 0 && t.IsUDP():
@@ -129,14 +122,6 @@ func ResolveTiles(p *model.Profile) []ResolvedTile {
 		r := &out[i]
 		if r.Kind == TileCall && len(r.UDP) == 0 && len(r.Web) > 0 && len(shared) > 0 {
 			r.UDP, r.SharedUDP = slices.Clone(shared), true
-		}
-		for _, n := range slices.Concat(r.Targets, r.TileDef.UDP) {
-			if !slices.ContainsFunc(slices.Concat(r.Web, r.UDP), func(t model.Target) bool { return t.Name == n }) {
-				r.Missing = append(r.Missing, n)
-				if names[n] {
-					r.Untagged = append(r.Untagged, n)
-				}
-			}
 		}
 	}
 	return out

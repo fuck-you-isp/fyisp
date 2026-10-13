@@ -84,7 +84,7 @@ const (
 // recent success, tileDropChecks or more lost checks on a web endpoint,
 // dropMin or more on a UDP one. Its checks count only as the drop, never as
 // loss; any other run's checks are loss (unless the whole path was out
-// then: see summarize). Path runs are never left out.
+// then: see summarizeOut). Path runs are never left out.
 func (r failRun) dropLike(rule runRule) bool {
 	switch rule {
 	case ruleWeb:
@@ -97,7 +97,7 @@ func (r failRun) dropLike(rule runRule) bool {
 
 // kept reports a run worth keeping once the minutes it touches are judged:
 // a drop-like run, or a path run of connDropNow or more (pathRuns,
-// layerDrops). The others matter only to summarize.
+// layerDrops). The others matter only to summarizeOut.
 func (r failRun) kept(rule runRule) bool {
 	if rule == rulePath {
 		return r.est() >= connDropNow

@@ -146,7 +146,7 @@ type harness struct {
 	p    *model.Profile
 	now  time.Time
 	st   *fakeStore
-	e    *engine
+	e    *Engine
 	fx   []behavior // later ones win
 	sink model.Sink // nil: samples go straight to e
 	seen map[model.VerdictKind]bool
@@ -155,7 +155,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	h := &harness{t: t, p: testProfile(), now: t0, seen: map[model.VerdictKind]bool{}}
 	h.st = newFakeStore(func() time.Time { return h.now })
-	h.e = newEngine(func() *model.Profile { return h.p }, h.st, Options{Now: func() time.Time { return h.now }})
+	h.e = New(func() *model.Profile { return h.p }, h.st, Options{Now: func() time.Time { return h.now }})
 	return h
 }
 
@@ -565,12 +565,12 @@ func TestWarmingUp(t *testing.T) {
 	}
 }
 
-func TestLayersAndMetricsSource(t *testing.T) {
+func TestLayers(t *testing.T) {
 	h := newHarness(t)
 	h.with(layer(model.LayerEdge, func(time.Time) outcome { return outcome{reason: 255} })) // edge not discovered
 	h.with(layer(model.LayerAnycast, always(model.ReasonTimeout)))
 	h.run(2 * time.Minute)
-	v, l := MetricsSource(h.e)()
+	v, l := h.e.Current(), h.e.Layers()
 	if v.Kind != model.VerdictUpstream {
 		t.Fatalf("%s", v.Kind)
 	}
@@ -634,7 +634,7 @@ func TestSummaryHidesHostLikeNames(t *testing.T) {
 
 type seq struct {
 	t  *testing.T
-	e  *engine
+	e  *Engine
 	st *fakeStore
 	at time.Time
 }
@@ -642,7 +642,7 @@ type seq struct {
 func newSeq(t *testing.T) *seq {
 	s := &seq{t: t, at: t0}
 	s.st = newFakeStore(func() time.Time { return s.at })
-	s.e = newEngine(func() *model.Profile { return nil }, s.st, Options{Now: func() time.Time { return s.at }})
+	s.e = New(func() *model.Profile { return nil }, s.st, Options{Now: func() time.Time { return s.at }})
 	return s
 }
 
@@ -874,7 +874,7 @@ func TestRun(t *testing.T) {
 // Memory stays bounded: raw samples older than keepRaw are dropped and
 // series without samples for the baseline span are forgotten.
 func TestBoundedMemory(t *testing.T) {
-	e := newEngine(func() *model.Profile { return nil }, nil, Options{})
+	e := New(func() *model.Profile { return nil }, nil, Options{})
 	k := model.SeriesKey{Target: "x", Kind: model.KindICMP}
 	for i := 0; i < 5000; i++ {
 		e.Observe(model.Sample{Key: k, Slot: t0.Add(time.Duration(i) * 100 * time.Millisecond), RTT: time.Millisecond})

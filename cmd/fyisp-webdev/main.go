@@ -275,7 +275,7 @@ func main() {
 			fmt.Fprintln(w, "# fyisp-webdev: no real metrics")
 		}),
 		UDP:  pr,
-		Path: func() netinfo.Path { return fakePath(now, *conn, *noEdge) },
+		Path: func() netinfo.Path { return fakePath(*conn, *noEdge) },
 		Log:  log,
 	}
 	if !*noTrace {
@@ -321,8 +321,8 @@ func main() {
 
 // fakePath is the network path the fake data describes (see the Network
 // details page): conn says how this machine connects.
-func fakePath(now time.Time, conn string, noEdge bool) netinfo.Path {
-	p := netinfo.Path{Gateway: netip.MustParseAddr("192.168.1.1"), Iface: "eth0", Conn: conn, Updated: now}
+func fakePath(conn string, noEdge bool) netinfo.Path {
+	p := netinfo.Path{Gateway: netip.MustParseAddr("192.168.1.1"), Iface: "eth0", Conn: conn}
 	if conn == model.ConnWiFi {
 		p.Iface = "wlan0"
 	}

@@ -201,8 +201,6 @@ type check struct {
 
 const noJitter = math.MaxUint32
 
-func (c check) at() time.Time { return time.UnixMilli(c.ms).UTC() }
-
 // minute is one series' closed minute. Lost checks that belong to a drop
 // (see failRun.dropLike), or to a run still open when the minute closes,
 // are left out: a drop counts only as the drop, so a 40 s drop does not
@@ -222,32 +220,20 @@ func (m minute) medMs() float64    { return float64(m.medUs) / 1000 }
 func (m minute) hasJitter() bool   { return m.jitUs != noJitter && m.ok > 0 }
 func (m minute) jitterMs() float64 { return float64(m.jitUs) / 1000 }
 
-// lossPct is the mean burst loss in %.
-func (m minute) lossPct() float64 {
-	if m.n() == 0 {
-		return 0
-	}
-	return float64(m.lossPctSum) / float64(m.n())
-}
-
-// summarize builds the minute starting at from from a series' checks (any
-// order; others are ignored) and its failure runs as the tracker saw them,
-// as of closeAt (minute end + 20 s): run ends after closeAt are ignored, so
-// a run still open then is left out whenever it ended. The engine calls it
-// once every check with a slot up to closeAt is applied (at the grid tick
-// where now − holdFor(every) ≥ closeAt), so live and replay judge a minute
-// alike. Pass only the runs that can touch the minute (pruneRuns keeps the
-// list short): it scans them per lost check. rule says which runs are
-// drops.
-func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) minute {
-	return summarizeOut(cs, rs, rule, from, closeAt, nil)
-}
-
-// summarizeOut is summarize, also leaving out the lost checks of web and
-// UDP series inside out: the path's own outages (pathOut), so a 20 s blip
-// of the whole connection, too short for a drop, leaves no loss behind
-// (calls Down or Choppy for minutes after it), while an endpoint's own
-// short runs stay loss.
+// summarizeOut builds the minute starting at from from a series' checks
+// (any order; others are ignored) and its failure runs as the tracker saw
+// them, as of closeAt (minute end + 20 s): run ends after closeAt are
+// ignored, so a run still open then is left out whenever it ended. The
+// engine calls it once every check with a slot up to closeAt is applied (at
+// the grid tick where now − holdFor(every) ≥ closeAt), so live and replay
+// judge a minute alike. Pass only the runs that can touch the minute
+// (pruneRuns keeps the list short): it scans them per lost check. rule says
+// which runs are drops.
+//
+// It also leaves out the lost checks of web and UDP series inside out: the
+// path's own outages (pathOut), so a 20 s blip of the whole connection, too
+// short for a drop, leaves no loss behind (calls Down or Choppy for minutes
+// after it), while an endpoint's own short runs stay loss.
 func summarizeOut(cs []check, rs []failRun, rule runRule, from, closeAt time.Time, out []window) minute {
 	lo, hi, cl := from.UnixMilli(), from.Add(time.Minute).UnixMilli(), closeAt.UnixMilli()
 	skip := func(c check) bool {
@@ -641,11 +627,9 @@ func (w *word) outageSignal(sig signal, at time.Time) *wordRun {
 	return w.track(at)
 }
 
-// step applies the tile-minute that starts at at.
-func (w *word) step(at time.Time, s State) *wordRun { return w.stepLoss(at, s, false) }
-
-// stepLoss is step for a call tile-minute; lossDown: a Down minute that
-// comes from UDP loss alone (callDownLossPct), which lifts sooner.
+// stepLoss applies the tile-minute that starts at at. lossDown: a Down
+// minute of a call tile that comes from UDP loss alone (callDownLossPct),
+// which lifts sooner.
 func (w *word) stepLoss(at time.Time, s State, lossDown bool) *wordRun {
 	if s == None {
 		return nil

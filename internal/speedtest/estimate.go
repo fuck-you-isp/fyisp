@@ -33,7 +33,7 @@ type estimate struct {
 	lowerBound bool // still speeding up at the cap: the speed was at least this
 }
 
-// peak90 estimates a capped direction's steady rate. cum[i] is the bytes
+// peak90From estimates a capped direction's steady rate. cum[i] is the bytes
 // counted by the end of complete tick i+1 (the tick the cap fell in is
 // left out) and at[i] when that tick was read; end is when the last byte
 // was counted, endBytes the count then, all from the data phase's start.
@@ -49,12 +49,8 @@ type estimate struct {
 //   - Whether it was still speeding up at the cap (a lower bound) is
 //     stillRising's.
 //   - With no ticks, or none with bytes, it is MethodWhole.
-func peak90(cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
-	return peak90From(0, cum, at, end, endBytes, rtt)
-}
-
-// peak90From is peak90 with the window starting at tick from or later
-// (written bytes: the first tick fills the send buffers, not the path).
+//   - The window starts at tick from or later (written bytes: the first
+//     tick fills the send buffers, not the path).
 func peak90From(from int, cum []int64, at []time.Duration, end time.Duration, endBytes int64, rtt time.Duration) estimate {
 	n := len(cum)
 	if n <= from || end <= 0 || len(at) != n {

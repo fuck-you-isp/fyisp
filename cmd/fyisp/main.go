@@ -5,7 +5,6 @@
 package main
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"crypto/rand"
@@ -171,15 +170,7 @@ func parseFlags(args []string) (config, error) {
 		fmt.Fprintf(fs.Output(), "Usage: fyisp [flags]\n       fyisp profiles [NAME[,NAME...]]\n       fyisp export [flags]\n       fyisp paths\n       fyisp version\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
-	// Usage and parse errors go through a buffer: a removed flag gets its
-	// explanation instead of the flag list.
-	var out bytes.Buffer
-	fs.SetOutput(&out)
 	if err := fs.Parse(args); err != nil {
-		if rerr := removedFlagErr(err); rerr != err {
-			return c, rerr
-		}
-		os.Stderr.Write(out.Bytes())
 		return c, err
 	}
 	if fs.NArg() > 0 {
@@ -201,38 +192,6 @@ func parseFlags(args []string) (config, error) {
 	}
 	envProfiles(&c.profiles, c.configPath)
 	return c, nil
-}
-
-// removedFlags explains flags that v0.8.0 removed together with the share
-// link. They fail at startup, whatever their value, rather than being
-// ignored: a unit file that still passes --share should not look as if it
-// published a link.
-var removedFlags = map[string]string{
-	"share":                   shareRemoved,
-	"share-protocol":          shareRemoved,
-	"speedtest-public":        "speed tests start only from your own dashboard (Test now) or on a schedule (--speedtest)",
-	"speedtest-public-budget": "speed tests start only from your own dashboard (Test now) or on a schedule (--speedtest)",
-}
-
-const shareRemoved = `fyisp no longer publishes a public link.
-  To show someone your connection, send them a screenshot of Home, or the
-  raw numbers from fyisp export.
-  For live access, run your own named tunnel or reverse proxy to the
-  dashboard (a cloudflared named tunnel, tailscale serve 3000, nginx) and
-  start fyisp with --allow-host=<its host name>: the dashboard then
-  requires the admin token for its speed-test controls. See the README's "Sharing"`
-
-// removedFlagErr turns the flag package's "flag provided but not defined"
-// for a removed flag into an explanation.
-func removedFlagErr(err error) error {
-	name, ok := strings.CutPrefix(err.Error(), "flag provided but not defined: -")
-	if !ok {
-		return err
-	}
-	if why, ok := removedFlags[name]; ok {
-		return fmt.Errorf("--%s was removed in v0.8.0 with the share link: %s", name, why)
-	}
-	return err
 }
 
 // envProfiles fills in profiles from FYISP_PROFILE (for container and NAS
@@ -351,9 +310,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	// hourly; the verdict engine judges latency against them.
 	bs := baseline.New(st, func() []model.SeriesKey { return probeKeys(prof) }, baseline.Options{Log: log})
 	eng := verdict.New(func() *model.Profile { return prof }, st, verdict.Options{Log: log, Baseline: bs.Get})
-	mc.SetVerdictSource(verdict.MetricsSource(eng))
-	mc.SetVsNormalSource(metrics.VsNormalSource(verdict.VsNormalSource(eng)))
-	slow := verdict.SlowSource(eng)
+	mc.SetVerdictSource(func() (model.Verdict, map[string]*bool) { return eng.Current(), eng.Layers() })
+	mc.SetVsNormalSource(eng.EachVsNormal)
 	go func() {
 		if err := ni.Run(ctx); err != nil {
 			log.Warn("network path discovery stopped", "err", err)
@@ -368,11 +326,9 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	// The Home tiles: judged per minute from their targets' samples, the
 	// last 8 days replayed from the store at start.
-	vsrc := verdict.MetricsSource(eng)
 	tl := tiles.New(prof, profile.ResolveTiles(prof), tiles.Sources{
 		Store: st, SpeedTests: st.SpeedTests, Incidents: eng.Incidents, Verdict: eng.Current,
-		Layers:    func() map[string]*bool { _, l := vsrc(); return l },
-		SpeedWins: wins, PathChanges: ni.Subscribe,
+		Layers: eng.Layers, SpeedWins: wins, PathChanges: ni.Subscribe,
 	}, tiles.Options{Log: log})
 	// Samples taken during a speed test are kept as measured: the chart
 	// shades the test windows, so a spike can be matched to a test.
@@ -396,17 +352,11 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		Metrics:   mc.Handler(),
 		Verdict:   eng,
 		Baselines: bs,
-		Slow: func() []web.SlowTarget {
-			var out []web.SlowTarget
-			for _, t := range slow() {
-				out = append(out, web.SlowTarget{Target: t.Target, Kind: t.Kind, Ratio: t.Ratio, NowMs: t.NowMs, NormalMs: t.NormalMs})
-			}
-			return out
-		},
-		Trace: newWebTrace(st, tr, prof),
-		Path:  ni.Current,
-		Tiles: tl,
-		Log:   log,
+		Slow:      eng.Slow,
+		Trace:     newWebTrace(st, tr, prof),
+		Path:      ni.Current,
+		Tiles:     tl,
+		Log:       log,
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed

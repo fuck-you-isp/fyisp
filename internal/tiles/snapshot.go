@@ -498,9 +498,6 @@ func epsHash(eps []Episode) uint64 {
 	return h.Sum64()
 }
 
-// Problems implements Engine.
-func (e *engine) Problems(from time.Time) []Episode { return e.snap.Load().Problems(from) }
-
 // Problems are the snapshot's problems that ended after from or go on,
 // newest first, at most maxProblems.
 func (s *Snapshot) Problems(from time.Time) []Episode {

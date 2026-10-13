@@ -381,7 +381,6 @@ type speedParams struct {
 	row             string
 	from, to        time.Time
 	entry           uint64 // part=entry
-	key             string
 }
 
 func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
@@ -441,7 +440,6 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 		if ids > 1 || len(p.row) > 64 {
 			return p, badReq("one of row, server or region")
 		}
-		p.key = p.summaryKey()
 	case "windows":
 		if err := only("windows", "days", "tz", "exclude_fallback", "server", "region", "row", "id"); err != nil {
 			return p, err
@@ -453,12 +451,11 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 		if ts == "" {
 			ts = "now"
 		}
-		var fk, tk string
 		var err error
-		if p.from, fk, err = parseTime(fs, now); err != nil {
+		if p.from, err = parseTime(fs, now); err != nil {
 			return p, err
 		}
-		if p.to, tk, err = parseTime(ts, now); err != nil {
+		if p.to, err = parseTime(ts, now); err != nil {
 			return p, err
 		}
 		if !p.from.Before(p.to) {
@@ -467,7 +464,6 @@ func parseSpeed(q url.Values, now time.Time) (speedParams, error) {
 		if p.to.Sub(p.from) > MaxRange {
 			return p, badReq("range longer than %d days", int(MaxRange/(24*time.Hour)))
 		}
-		p.key = "speedw\x00" + fk + "\x00" + tk
 	case "running":
 		if err := only(p.part, "days", "tz", "exclude_fallback", "server", "region", "row", "from", "to", "id"); err != nil {
 			return p, err
@@ -520,7 +516,7 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, http.StatusNotFound, errNoSpeedID.Error())
 			return
 		}
-		s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
+		s.runCached(w, r, "speed", func(ctx context.Context) (*cached, error) {
 			out, err := s.speedOne(ctx, p, st, names, now)
 			if err != nil {
 				return nil, err
@@ -530,7 +526,7 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	configurable := s.canControlSpeed != nil && s.canControlSpeed(r)
-	s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
+	s.runCached(w, r, "speed", func(ctx context.Context) (*cached, error) {
 		if p.part == "windows" {
 			ts, err := s.d.Speed.SpeedTests(ctx, p.from.Add(-speedtest.SlotCap), p.to)
 			if err != nil {
@@ -1172,11 +1168,6 @@ func sweepBytes(st speedtest.State, ts []model.SpeedTest) (total int64, n int) {
 		}
 	}
 	return total, n
-}
-
-// summaryKey is a summary's cache key.
-func (p speedParams) summaryKey() string {
-	return fmt.Sprintf("speed\x00%d\x00%s\x00%v\x00%s", p.days, p.zone.key, p.excludeFallback, p.row)
 }
 
 func zoneLabel(z zoneParam) string {

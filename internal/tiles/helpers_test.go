@@ -11,6 +11,16 @@ func at(d time.Duration) time.Time { return t0.Add(d) }
 
 const ms10 = 10 * time.Millisecond
 
+func (c check) at() time.Time { return time.UnixMilli(c.ms).UTC() }
+
+// summarize is summarizeOut without path outages.
+func summarize(cs []check, rs []failRun, rule runRule, from, closeAt time.Time) minute {
+	return summarizeOut(cs, rs, rule, from, closeAt, nil)
+}
+
+// step applies a tile-minute that is not a call tile's.
+func (w *word) step(at time.Time, s State) *wordRun { return w.stepLoss(at, s, false) }
+
 // pattern builds checks from a string, one character per slot of every
 // starting at start: '.' an answered check (RTT rtt, jitter 1 ms), 'x' a
 // lost one, '_' a slot that was not measured.

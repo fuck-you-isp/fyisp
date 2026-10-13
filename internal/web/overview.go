@@ -92,7 +92,6 @@ type overviewParams struct {
 	kind     model.ProbeKind
 	from, to time.Time
 	capped   bool
-	key      string // cache key
 }
 
 // parseOverview parses /api/overview?from=&to=&kind= with /api/panel's time
@@ -120,24 +119,22 @@ func parseOverview(q url.Values, now time.Time) (overviewParams, error) {
 	if ts == "" {
 		ts = "now"
 	}
-	var fk, tk string
 	var err error
-	if p.from, fk, err = parseTime(fs, now); err != nil {
+	if p.from, err = parseTime(fs, now); err != nil {
 		return p, err
 	}
-	if p.to, tk, err = parseTime(ts, now); err != nil {
+	if p.to, err = parseTime(ts, now); err != nil {
 		return p, err
 	}
 	if p.to.After(now) {
-		p.to, tk = now, "now"
+		p.to = now
 	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
 	if p.to.Sub(p.from) > OverviewMaxRange {
-		p.from, fk, p.capped = p.to.Add(-OverviewMaxRange), tk+"-cap", true
+		p.from, p.capped = p.to.Add(-OverviewMaxRange), true
 	}
-	p.key = "ov\x00" + p.kind.String() + "\x00" + fk + "\x00" + tk
 	return p, nil
 }
 
@@ -150,7 +147,7 @@ func (s *server) serveOverview(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
+	s.runCached(w, r, "overview", func(ctx context.Context) (*cached, error) {
 		o, err := s.overview(ctx, p)
 		if err != nil {
 			return nil, err

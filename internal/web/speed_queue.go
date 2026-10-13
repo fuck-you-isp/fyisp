@@ -126,7 +126,7 @@ type speedQueueJSON struct {
 
 // who is an entry's "who": the schedule's or the owner's.
 func who(e speedtest.Entry) string {
-	if e.Who == speedtest.WhoSchedule {
+	if e.Kind == speedtest.KindScheduled {
 		return "scheduled"
 	}
 	return "you"
@@ -160,7 +160,7 @@ func (s *server) speedEntry(e speedtest.Entry, st speedtest.State, names speedNa
 		j.Tests = []int64{}
 	}
 	j.Origin = "owner"
-	if e.Who == speedtest.WhoSchedule {
+	if e.Kind == speedtest.KindScheduled {
 		j.Origin = "scheduled"
 	}
 	j.StoppedReason = strPtr(e.Stopped)
@@ -249,7 +249,7 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 		out := speedQueueJSON{At: now.UnixMilli(), Waiting: []speedEntryJSON{}}
 		var mine *uint64
 		note := func(e speedtest.Entry) {
-			if e.Who == speedtest.WhoOwner && (mine == nil || e.ID > *mine) {
+			if e.Kind != speedtest.KindScheduled && (mine == nil || e.ID > *mine) {
 				id := e.ID
 				mine = &id
 			}
@@ -328,7 +328,7 @@ func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.enqueueSpeed(w, r, speedtest.Request{Kind: kind, Target: id, Who: speedtest.WhoOwner})
+	h.enqueueSpeed(w, r, speedtest.Request{Kind: kind, Target: id})
 }
 
 // serveSpeedCancel answers POST api/speed/cancel?id=<entry> (waiting or

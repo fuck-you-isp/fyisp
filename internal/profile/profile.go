@@ -35,7 +35,7 @@
 // An interval must be a whole number of seconds, divisible by 3 (so the ICMP
 // interval is whole seconds too) and divide an hour evenly, so that slots
 // line up with hour boundaries: 6s, 9s, 12s, 15s, 18s, 24s, 30s, 36s, 45s,
-// 60s, ... up to 3600s. It must also be at least Limits.MinIntervalSecs,
+// 60s, ... up to 3600s. It must also be at least 5s,
 // except for targets on the special hosts below, which may use 3s.
 //
 // Special hosts: "@gateway" (the default gateway) and "@isp-edge" (the first
@@ -70,12 +70,8 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// Limits bound what a profile may ask for.
-type Limits struct {
-	MaxTargets      int  // 0: no limit
-	MinIntervalSecs int  // default 5
-	AllowPrivateIPs bool // true only for local files
-}
+// minInterval is the shortest probe interval a profile may ask for.
+const minInterval = 5 * time.Second
 
 // MaxTraced is the most targets a profile may trace always-on.
 const MaxTraced = 20
@@ -208,13 +204,8 @@ func defaultBase(c *Catalog) (*model.Profile, error) {
 }
 
 // Load reads a local profile file, which may extend named profiles, and
-// validates it with local-file limits (private IPs allowed).
+// validates it (private IPs allowed).
 func Load(path string) (*model.Profile, error) {
-	return LoadLimits(path, Limits{})
-}
-
-// LoadLimits is Load with limits; private IPs are always allowed.
-func LoadLimits(path string, l Limits) (*model.Profile, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -223,8 +214,7 @@ func LoadLimits(path string, l Limits) (*model.Profile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	l.AllowPrivateIPs = true
-	if err := Validate(p, l); err != nil {
+	if err := Validate(p, true); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return p, nil
@@ -478,16 +468,12 @@ func indexGroup(gs []model.Group, id string) int {
 	return -1
 }
 
-// Validate checks a profile against limits (zero limits use the defaults)
-// and reports every problem at once.
-func Validate(p *model.Profile, l Limits) error {
+// Validate checks a profile and reports every problem at once. Private IPs
+// are allowed only with allowPrivate (local files).
+func Validate(p *model.Profile, allowPrivate bool) error {
 	if p == nil {
 		return errors.New("nil profile")
 	}
-	if l.MinIntervalSecs <= 0 {
-		l.MinIntervalSecs = 5
-	}
-	minIv := time.Duration(l.MinIntervalSecs) * time.Second
 	var errs []error
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
 
@@ -503,9 +489,6 @@ func Validate(p *model.Profile, l Limits) error {
 	}
 	if len(p.Targets) == 0 {
 		bad("no targets")
-	}
-	if l.MaxTargets > 0 && len(p.Targets) > l.MaxTargets {
-		bad("%d targets, at most %d allowed", len(p.Targets), l.MaxTargets)
 	}
 	traced := 0
 	for _, t := range p.Targets {
@@ -536,7 +519,7 @@ func Validate(p *model.Profile, l Limits) error {
 		if !groups[t.Group] {
 			bad("target %q: unknown group %q", t.Name, t.Group)
 		}
-		if err := checkHost(t.Host, l.AllowPrivateIPs); err != nil {
+		if err := checkHost(t.Host, allowPrivate); err != nil {
 			bad("target %q: host: %v", t.Name, err)
 		}
 		if err := checkHomeTags(t.Tags); err != nil {
@@ -550,7 +533,7 @@ func Validate(p *model.Profile, l Limits) error {
 			if !validKind(k) || k == model.KindUDP {
 				bad("target %q: host_overrides: unknown kind %d", t.Name, k)
 			}
-			if err := checkHost(h, l.AllowPrivateIPs); err != nil {
+			if err := checkHost(h, allowPrivate); err != nil {
 				bad("target %q: host_overrides[%s]: %v", t.Name, k, err)
 			}
 			special = special || isSpecial(h)
@@ -574,12 +557,12 @@ func Validate(p *model.Profile, l Limits) error {
 			seen[k] = true
 		}
 		if t.IsUDP() {
-			validateUDP(t, minIv, bad)
+			validateUDP(t, bad)
 			continue
 		}
-		tMin := minIv
+		tMin := minInterval
 		if special {
-			tMin = min(minIv, PathInterval) // pinging the own router/edge every second is fine
+			tMin = min(minInterval, PathInterval) // pinging the own router/edge every second is fine
 		}
 		if t.Interval < 0 || (t.Interval != 0 && t.Interval < tMin) {
 			bad("target %q: interval %s is below the minimum %s", t.Name, t.Interval, tMin)
@@ -597,9 +580,9 @@ func validKind(k model.ProbeKind) bool {
 }
 
 // validateUDP checks a UDP (STUN) target: kinds [udp] alone, a port, and an
-// interval that divides an hour, at least MinUDPInterval (and minIv) unless
-// the target is shipped as is.
-func validateUDP(t model.Target, minIv time.Duration, bad func(string, ...any)) {
+// interval that divides an hour, at least MinUDPInterval (and minInterval)
+// unless the target is shipped as is.
+func validateUDP(t model.Target, bad func(string, ...any)) {
 	if len(t.Kinds) != 1 {
 		bad("target %q: kind udp cannot be combined with other kinds (use a separate target)", t.Name)
 	}
@@ -613,7 +596,7 @@ func validateUDP(t model.Target, minIv time.Duration, bad func(string, ...any)) 
 		bad("target %q: interval %s must be whole seconds and divide 1h evenly (e.g. 6s, 10s, 15s, 30s, 60s)", t.Name, t.Interval)
 		return
 	}
-	if tMin := max(minIv, MinUDPInterval); !isShippedUDP(t) && t.Interval < tMin {
+	if tMin := max(minInterval, MinUDPInterval); !isShippedUDP(t) && t.Interval < tMin {
 		bad("target %q: interval %s is below the minimum %s for UDP targets", t.Name, t.Interval, tMin)
 	}
 }

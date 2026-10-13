@@ -31,12 +31,8 @@ const (
 	defaultIv     = 15 * time.Second
 )
 
-// errBadRequest marks client errors whose message is safe to show publicly.
-type errBadRequest struct{ msg string }
-
-func (e errBadRequest) Error() string { return e.msg }
-
-func badReq(format string, a ...any) error { return errBadRequest{fmt.Sprintf(format, a...)} }
+// badReq is a client error; its message is sent as is.
+func badReq(format string, a ...any) error { return fmt.Errorf(format, a...) }
 
 var errUnknownGroup = errors.New("unknown group")
 
@@ -65,32 +61,25 @@ type panelParams struct {
 	group    string
 	from, to time.Time
 	points   int
-	key      string // normalized query, for caching
-	fk, tk   string // normalized from and to (see parseTime)
 }
 
-func (p *panelParams) setKey() {
-	p.key = p.group + "\x00" + p.fk + "\x00" + p.tk + "\x00" + strconv.Itoa(p.points)
-}
-
-// parseTime accepts "now", "now-<n><s|m|h|d>" and unix milliseconds. It
-// returns the normalized form for the cache key.
-func parseTime(s string, now time.Time) (time.Time, string, error) {
+// parseTime accepts "now", "now-<n><s|m|h|d>" and unix milliseconds.
+func parseTime(s string, now time.Time) (time.Time, error) {
 	if s == "now" {
-		return now, s, nil
+		return now, nil
 	}
 	if rest, ok := strings.CutPrefix(s, "now-"); ok {
 		d, err := parseDur(rest)
 		if err != nil {
-			return time.Time{}, "", err
+			return time.Time{}, err
 		}
-		return now.Add(-d), "now-" + strconv.FormatInt(int64(d/time.Second), 10) + "s", nil
+		return now.Add(-d), nil
 	}
 	ms, err := strconv.ParseInt(s, 10, 64)
 	if err != nil || ms < 0 || ms > 1<<45 {
-		return time.Time{}, "", badReq("bad time %q: want now, now-<duration> or unix milliseconds", s)
+		return time.Time{}, badReq("bad time %q: want now, now-<duration> or unix milliseconds", s)
 	}
-	return time.UnixMilli(ms), strconv.FormatInt(ms, 10), nil
+	return time.UnixMilli(ms), nil
 }
 
 func parseDur(s string) (time.Duration, error) {
@@ -138,21 +127,20 @@ func parsePanelParams(q url.Values, now time.Time) (panelParams, error) {
 		ts = "now"
 	}
 	var err error
-	if p.from, p.fk, err = parseTime(fs, now); err != nil {
+	if p.from, err = parseTime(fs, now); err != nil {
 		return p, err
 	}
-	if p.to, p.tk, err = parseTime(ts, now); err != nil {
+	if p.to, err = parseTime(ts, now); err != nil {
 		return p, err
 	}
 	if p.to.After(now) {
-		p.to, p.tk = now, "now"
+		p.to = now
 	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
 	if p.to.Sub(p.from) > MaxRange {
 		p.from = p.to.Add(-MaxRange)
-		p.fk = p.tk + "-90d"
 	}
 	p.points = DefaultPoints
 	if s := q.Get("points"); s != "" {
@@ -162,7 +150,6 @@ func parsePanelParams(q url.Values, now time.Time) (panelParams, error) {
 		}
 		p.points = min(max(n, minPoints), MaxPoints)
 	}
-	p.setKey()
 	return p, nil
 }
 
@@ -794,7 +781,7 @@ func writeErr(w http.ResponseWriter, r *http.Request, status int, msg string) {
 	writeErrCode(w, r, status, errCode(status), msg)
 }
 
-// writeErrCode writes an error with an explicit code (e.g. "running").
+// writeErrCode writes an error with an explicit code (e.g. "skipped").
 func writeErrCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
 	writeJSON(w, r, status, map[string]string{"error": msg, "code": code})
 }
@@ -809,12 +796,8 @@ func errCode(status int) string {
 		return "not_found"
 	case http.StatusMethodNotAllowed:
 		return "method_not_allowed"
-	case http.StatusConflict:
-		return "conflict"
 	case http.StatusMisdirectedRequest:
 		return "unknown_host"
-	case http.StatusTooManyRequests:
-		return "rate_limited"
 	case http.StatusServiceUnavailable:
 		return "unavailable"
 	}

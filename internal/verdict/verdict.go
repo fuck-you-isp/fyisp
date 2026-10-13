@@ -17,14 +17,3 @@ type IncidentStore interface {
 	// Incidents returns incidents overlapping [from, to], newest first.
 	Incidents(ctx context.Context, from, to time.Time) ([]model.Incident, error)
 }
-
-// Engine consumes samples (model.Sink) and evaluates every few seconds while
-// Run runs. Safe for concurrent use.
-//
-//	func New(profile func() *model.Profile, st IncidentStore, o Options) Engine
-type Engine interface {
-	model.Sink
-	Run(ctx context.Context) error
-	Current() model.Verdict
-	Incidents(ctx context.Context, from, to time.Time) ([]model.Incident, error)
-}

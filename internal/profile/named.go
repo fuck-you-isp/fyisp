@@ -270,14 +270,6 @@ func (r *Registry) Definitions() []*Definition {
 	return append(out, r.defs...)
 }
 
-// Definition returns a named profile, or nil.
-func (r *Registry) Definition(name string) *Definition {
-	if name == "default" {
-		return r.Definitions()[0]
-	}
-	return r.byName[name]
-}
-
 // ResolveOptions change what Resolve builds.
 type ResolveOptions struct {
 	// NoPath leaves out the built-in network path group.

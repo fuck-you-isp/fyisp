@@ -206,14 +206,9 @@ func Summarize(tests []model.SpeedTest, loc *time.Location) Stats {
 	return st
 }
 
-// HourMedians is the median score per local hour of the scheduled ok
-// tests (NaN with fewer than MinPerHour), scores censored (Censored); up
-// picks the upload score.
-func HourMedians(tests []model.SpeedTest, loc *time.Location, up bool) [24]float64 {
-	return hourMedians(Censored(tests, loc), loc, up)
-}
-
-// hourMedians is HourMedians of tests already censored.
+// hourMedians is the median score per local hour of the scheduled ok
+// tests (NaN with fewer than MinPerHour), tests already censored
+// (Censored); up picks the upload score.
 func hourMedians(tests []model.SpeedTest, loc *time.Location, up bool) [24]float64 {
 	var v [24][]float64
 	for _, t := range tests {
@@ -364,16 +359,4 @@ func PooledPattern(tests []model.SpeedTest, loc *time.Location) *Pattern {
 		}
 	}
 	return FindDip(hourMedians(Censored(keep, loc), loc, false), false)
-}
-
-// Scheduled keeps the schedule's tests: patterns and per-row hours leave
-// on-demand tests (Test now, sweeps) out.
-func Scheduled(tests []model.SpeedTest) []model.SpeedTest {
-	var out []model.SpeedTest
-	for _, t := range tests {
-		if !t.OnDemand() {
-			out = append(out, t)
-		}
-	}
-	return out
 }

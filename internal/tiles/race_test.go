@@ -81,7 +81,7 @@ func TestEngineConcurrent(t *testing.T) {
 					return
 				}
 				b1, _ := json.Marshal(sn)
-				ps := e.Problems(time.Time{})
+				ps := e.Snapshot().Problems(time.Time{})
 				p1, _ := json.Marshal(ps)
 				for _, d := range profile.Tiles {
 					if c, ok := e.Chart(d.ID); ok {

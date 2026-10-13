@@ -1,4 +1,4 @@
-//go:build !linux && !windows && !darwin && !dragonfly && !freebsd && !netbsd && !openbsd
+//go:build !linux && !windows && !darwin
 
 package netinfo
 

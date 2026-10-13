@@ -168,7 +168,6 @@ type callsJSON struct {
 type callsParams struct {
 	from, to time.Time
 	capped   bool
-	key      string
 }
 
 // parseCalls parses /api/calls?from=&to= with /api/panel's time rules
@@ -185,27 +184,25 @@ func parseCalls(q url.Values, now time.Time) (callsParams, error) {
 	if ts == "" {
 		ts = "now"
 	}
-	var fk, tk string
 	var err error
-	if p.from, fk, err = parseTime(fs, now); err != nil {
+	if p.from, err = parseTime(fs, now); err != nil {
 		return p, err
 	}
-	if p.to, tk, err = parseTime(ts, now); err != nil {
+	if p.to, err = parseTime(ts, now); err != nil {
 		return p, err
 	}
 	if p.to.After(now) {
-		p.to, tk = now, "now"
+		p.to = now
 	}
 	if !p.from.Before(p.to) {
 		return p, badReq("from must be before to")
 	}
 	if p.to.Sub(p.from) > CallsMaxRange {
-		p.from, fk, p.capped = p.to.Add(-CallsMaxRange), tk+"-cap", true
+		p.from, p.capped = p.to.Add(-CallsMaxRange), true
 	}
 	if p.to.Sub(p.from) < CallsMinRange {
-		p.from, fk = p.to.Add(-CallsMinRange), tk+"-min"
+		p.from = p.to.Add(-CallsMinRange)
 	}
-	p.key = "calls\x00" + fk + "\x00" + tk
 	return p, nil
 }
 
@@ -218,7 +215,7 @@ func (s *server) serveCalls(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.runCached(w, r, p.key, func(ctx context.Context) (*cached, error) {
+	s.runCached(w, r, "calls", func(ctx context.Context) (*cached, error) {
 		c, err := s.calls(ctx, p)
 		if err != nil {
 			return nil, err

@@ -90,14 +90,6 @@ func JitterCap(jitterMs float64) Band {
 	return Good
 }
 
-// Capped returns the worse of b and the band jitterMs allows.
-func Capped(b Band, jitterMs float64) Band {
-	if c := JitterCap(jitterMs); Rank(c) < Rank(b) {
-		return c
-	}
-	return b
-}
-
 // MinBursts is how many bursts (answered or timed out) a minute needs to be
 // scored; fewer leave it unscored.
 const MinBursts = 3
@@ -139,21 +131,6 @@ func BandOf(mos float64) Band {
 		return Poor
 	}
 	return Unusable
-}
-
-// Rank orders bands worst first (unusable 0 .. good 3); unknown is 4.
-func Rank(b Band) int {
-	switch b {
-	case Unusable:
-		return 0
-	case Poor:
-		return 1
-	case Fair:
-		return 2
-	case Good:
-		return 3
-	}
-	return 4
 }
 
 // Factor names what costs a score the most: "loss", "jitter" or "latency".
@@ -202,7 +179,7 @@ func (m Minute) RawMOS() float64 {
 func (m Minute) MOS() float64 { return min(m.RawMOS(), JitterCapMOS(m.Jitter)) }
 
 // Band is m's band: the band of its MOS, which the jitter caps have
-// already lowered (always Capped(BandOf(m.RawMOS()), m.Jitter)).
+// already lowered (never better than JitterCap(m.Jitter)).
 func (m Minute) Band() Band { return BandOf(m.MOS()) }
 
 // Factor is what costs m its band: "jitter" when a jitter cap decided it,

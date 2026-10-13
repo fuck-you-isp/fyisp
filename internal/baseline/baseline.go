@@ -24,8 +24,6 @@ package baseline
 import (
 	"context"
 	"log/slog"
-	"math"
-	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -271,38 +269,4 @@ func sameHourHours(from, to time.Time, h int) int {
 		return 0
 	}
 	return int((to.Sub(first)-1)/(24*time.Hour)) + 1
-}
-
-// Ratio is how many times slower the current median RTT is than the
-// normal median (0 when either is unknown).
-func Ratio(currentMedianMs float64, b model.Baseline) float64 {
-	if b.MedianMs <= 0 || currentMedianMs <= 0 || math.IsNaN(currentMedianMs) || math.IsInf(currentMedianMs, 0) {
-		return 0
-	}
-	return currentMedianMs / b.MedianMs
-}
-
-// Describe puts a Ratio in words: "" when unknown, "faster than your
-// normal" below 0.8, "about your normal" below 1.25, else "2.3× your
-// normal" (see FormatRatio).
-func Describe(ratio float64) string {
-	switch {
-	case ratio <= 0 || math.IsNaN(ratio) || math.IsInf(ratio, 0):
-		return ""
-	case ratio < 0.8:
-		return "faster than your normal"
-	case ratio < 1.25:
-		return "about your normal"
-	}
-	return FormatRatio(ratio) + "× your normal"
-}
-
-// FormatRatio formats a ratio for people: one decimal below 10 without a
-// trailing ".0" ("2.3", "3"), whole numbers from 10 ("14"). The verdict
-// engine formats the ratios in its summaries the same way.
-func FormatRatio(r float64) string {
-	if r >= 9.95 {
-		return strconv.Itoa(int(math.Round(r)))
-	}
-	return strconv.FormatFloat(math.Round(r*10)/10, 'f', -1, 64)
 }
