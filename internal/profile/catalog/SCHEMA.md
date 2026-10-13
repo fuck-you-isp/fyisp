@@ -42,7 +42,8 @@ Existing entries keep them as a record of those checks; new entries don't
 need them. (Local `--config` profile files can still ask for `https` or
 `icmp` on their own targets, see package profile.)
 
-A `home:<category>` tag puts a target in a tile of the Home view: `home:calls`
+A `home:<category>` tag puts a target in a category that Details' Overview can
+filter by (until v0.9.0, a tile of the Home view): `home:calls`
 (the call path and call and chat apps), `home:work` (work apps) or `home:web`
 (websites). At most one per target, and no other values (the loader rejects
 them). Targets of the default profile must have one; other targets without

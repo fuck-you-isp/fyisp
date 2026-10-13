@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-// Who is looking: the Home says "Your Wi-Fi & router" only when fyisp's
+// Who is looking: the Home says "Your Wi-Fi and router" only when fyisp's
 // own uplink is Wi-Fi and the page is viewed on that machine, since fyisp
 // can't see the Wi-Fi of another device. Only the wording depends on it:
 // the API never returns the viewer's address or the decision, and neither
 // is logged or cached. A forwarder that adds no proxy header (ssh -L,
-// socat) reads as this machine (docs/OPERATORS.md).
+// socat) reads as this machine (README "Wi-Fi or router?").
 
 // ownAddrsTTL is how long the host's interface addresses are kept.
 const ownAddrsTTL = 30 * time.Second

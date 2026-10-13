@@ -6,13 +6,14 @@ fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It
 
 - **Calls, work apps and websites.** It checks the path that call audio and video take, the call and chat apps (Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp), Microsoft 365, Google Workspace, GitHub, Dropbox and OneDrive, the networks most websites are served from, and YouTube and Netflix.
 - **Whose fault it is.** It also checks your own router and your provider's first hop, so it can say *your Wi-Fi or router*, *your internet provider*, *the wider internet* or *one app*.
-- **When it was bad.** A timeline of today and this week, a *Mark a bad call* button, and *What happened at …?* for any time you pick.
-- **Proof for your provider.** *Make a report* builds a redacted 7-day report (no private addresses) as one HTML page you can save, print or send to your provider or your IT team.
+- **Every app at a glance.** 11 tiles (Zoom, Microsoft Teams, Google Meet, Slack, Microsoft 365, Google Workspace, GitHub, Dropbox, OneDrive, YouTube and Netflix), each *Good*, *Slow* (*Choppy* for calls) or *Down*, with the last 2 hours in 5-minute bars. Drops of 30 seconds or more always show.
+- **When it was bad.** The problems of the last 7 days, each with a *likely cause*: your home router (or Wi-Fi), your internet provider, the internet beyond your provider, or the app itself.
+- **Proof for your provider.** A report you can save, print or send to your provider or IT team, with private addresses left out. Make one under Technical details → *Create report*, or run `fyisp report --redact` for the last 7 days.
 - **Private.** No account, no telemetry, nothing to install to try it. fyisp only talks to the services it checks and your DNS resolver. Its data stays on your machine.
 
-Technical users get every number under **Details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
+Technical users get every number under **Technical details**: charts per service, traceroutes, call-quality scores, the outage log, reports, Prometheus metrics, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](#what-to-measure-profiles).
 
-> **The default is for homes and remote workers.** Since v0.6.0, plain `fyisp` checks calls, work apps and websites instead of the 91 targets of v0.5 (mostly cloud regions and developer services), and opens on the plain-words **Home** view. v0.9.0 extends it to the 28 targets above, one or more for each Home tile, adding GitHub, Dropbox, OneDrive, YouTube, Netflix and the Teams relay (see [Privacy](#privacy) to leave any out). The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
+> **The default is for homes and remote workers.** Since v0.6.0, plain `fyisp` checks calls, work apps and websites instead of the 91 targets of v0.5 (mostly cloud regions and developer services), and opens on the plain-words **Home** view. v0.9.0 extends it to 28 checks by default, one or more for each Home tile, adding GitHub, Dropbox, OneDrive, YouTube, Netflix and the Teams relay (see [Privacy](#privacy) to leave any out). The old cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](#what-to-measure-profiles)). Stored history is kept; series that are no longer measured age out after 90 days.
 
 ## Quick start
 
@@ -36,17 +37,25 @@ Add fyisp options at the end, e.g. `... ))) --profile streaming`. `run.ps1` does
 
 ### What you see: Home and Details
 
-![fyisp Home: one answer, the path from your router to the internet, tiles for calls, work apps and websites, and today's timeline](docs/img/home.png)
+![fyisp Home: the answer card, the connection strip from your router to the internet, 11 app tiles with their last 2 hours (Microsoft Teams' panel open, with its 24-hour chart), and the problems of the last 7 days](docs/img/home.png)
 
-**Home** opens first. It answers one question, *is my internet OK for calls and work?*, in plain words, without numbers:
+**Home** opens first. It answers one question, *is my internet OK for calls and work, and which apps work?*, in plain words. Numbers stay in the tile panels.
 
-- **The answer card**: one sentence (*Your internet is fine*, *Your internet provider is having trouble*, *No internet connection*), the chain *Your router → Your provider → The internet → Apps & websites* with a mark on the link that is most likely at fault, *What does this mean?* and, when something is wrong, *What you can try*.
-- **Mark a bad call**: one click saves "now" (with Undo) and says what fyisp saw at that minute, including when your connection looked fine and the problem was more likely the app or the other person's connection. *Was it earlier?* picks another time.
-- **Tiles** for *Calls*, *Work apps* and *Websites* (and *Other services* when you measure more): *Working*, *Slow*, *Not working*, or for calls *Good*, *Some glitches*, *Choppy*, *Breaking up*, *Blocked*. A tile names the one app that fails, e.g. *Zoom isn't answering*.
-- **When was it bad?**: today or this week, block by block, with a sentence such as *2 rough patches this week, both most likely your internet provider*. Time when fyisp wasn't running is hatched and never counted as bad.
-- **What happened at …?** and **Make a report**.
+- **The answer card**: one sentence, e.g. *Everything you use is working normally.*, *Your internet provider is likely having trouble.*, *Your internet is fine. Zoom isn't connecting.* or, for 30 minutes after a drop, *Working again. Your internet dropped for about 40 seconds at 10:14 am.* The line under it gives the *likely cause* and what it means for you (*Teams and Google Meet are working if you need to switch*). Below that: how many problems the last 24 hours had, and when fyisp last checked. The card's color follows your connection, not the worst app: Zoom down on Zoom's side is a green card. The browser tab's title says the same in a few words (*✓ All good*, *✕ Provider problem*).
+- **Your connection**: *Your home router → Your internet provider → The internet*, each with an icon (✓, ! or ✕) and a short line: *Working normally*, *Losing some data since 10:12 am*, *Dropped for 40 s at 10:14 am, fine now*. The first box says *Your Wi-Fi and router* only when fyisp runs on a Linux machine whose own connection is Wi-Fi and you are looking at the page on that same machine. Otherwise it says *Your home router*, with a hint: fyisp checks from the box it runs on, up to your router, and can't see the Wi-Fi of the device you're reading on. In Docker it always says *Your home router* (see [Wi-Fi or router?](#wi-fi-or-router)).
+- **11 app tiles**: Zoom, Microsoft Teams, Google Meet and Slack (calls); Microsoft 365, Google Workspace, GitHub, Dropbox and OneDrive (apps); YouTube and Netflix (streaming). Each says *Good*, *Slow* (*Choppy* for calls) or *Down*, with *since 10:12 am* when it isn't Good, or *Dropped 40 s at 10:14 am* for 30 minutes after a drop. Under it, 24 bars show the last 2 hours in 5-minute steps: green, yellow (slow for 2 minutes or more), red (down, or a drop of 30 seconds or more) or grey (fyisp wasn't running). A tile your profile doesn't cover says *Not checked* and how to turn it on.
+- **Click a tile** for its panel: why it has that word, its numbers against their limits (delay, jitter and loss for calls; the usual time and the *Slow above* limit for the others), and a 24-hour chart with the usual line, the problems and the time fyisp wasn't running. Escape or *Close* returns to the tile. *How fyisp decides Good, Slow, Choppy and Down*, under the tiles, explains the rules (see [below](#how-fyisp-decides-good-slow-choppy-and-down)).
+- **Speed** (when [speed tests](#speed-tests) are on): your latest result in Mbps against your usual speed (once there are a few tests), and **Test speed now**, which runs one test against fyisp's built-in servers. It needs the same permission as other changes (see [Controls under Docker](#controls-under-docker)).
+- **Problems in the last 7 days**: a summary by cause (*5 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves*), then each problem with its time, what happened, its *likely cause* and one line of evidence (*Your router kept answering, but nothing past it did.*). A problem during one of fyisp's own speed tests says so.
+- **The footer**: *Watching your connection since …* and **Technical details →**.
 
-**Details** (the switch at the top; Back returns to Home) is the full instrument panel: the verdict and outage log, notes, reports, the [Calls view](#call-quality) with scores per app, the [Overview](#the-overview-large-profiles), charts for every service, traceroutes (*Investigate*), and CSV export. Clicking a tile on Home opens Details filtered to that tile.
+<img src="docs/img/home-phone.png" width="260" align="right" alt="fyisp Home on a phone, in the dark theme, during a problem at the internet provider: a red card, the provider marked on the connection strip, call tiles Choppy and the other apps Slow or Down since 8:59 pm">
+
+On a phone the strip stacks and the tiles take 2 columns (right: a problem at the internet provider, in the dark theme).
+
+For its first day fyisp is still learning what's usual for your connection: Home says so and flags only big problems until then. If fyisp hasn't checked for 2 minutes or more (the computer it runs on is asleep, or fyisp stopped), the card turns grey, says since when, and the tiles are dimmed.
+
+**Technical details** (*Technical details →* on Home; the *Home | Details* switch at the top goes back) is the full instrument panel: the verdict and outage log, notes, reports, the [Calls view](#call-quality) with scores per app, *Mark a bad call* and *What happened at …?*, the [Overview](#the-overview-large-profiles), charts for every service, traceroutes (*Investigate*), speed tests and CSV export.
 
 ### Download the binary yourself
 
@@ -75,7 +84,7 @@ docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data 
 docker logs fyisp 2>&1 | grep -m1 -o 'http://[^ "]*#admin=[0-9a-f]*'
 ```
 
-Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`) once in your browser. It turns on *Mark a bad call*, notes, reports and speed-test controls for that browser; see [Controls under Docker](#controls-under-docker) below.
+Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`) once in your browser. It turns on notes, reports, *Test speed now* and the other speed-test controls for that browser; see [Controls under Docker](#controls-under-docker) below.
 
 Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The container runs as an unprivileged user (65532) from a `scratch` image and keeps its data in the `/data` volume. `-p 3000:3000` makes the UI reachable from your network; use `-p 127.0.0.1:3000:3000` to keep it on this machine. ICMP works without extra capabilities on Docker 20.10+, which allows unprivileged ping sockets inside containers.
 
@@ -88,7 +97,7 @@ docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data 
 
 #### Controls under Docker
 
-Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. Changes (*Mark a bad call*, notes, reports, speed-test controls, on-demand traces) therefore need an admin token. On first start fyisp generates one, keeps it in the data volume (`/data/admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
+Inside a container fyisp listens on all interfaces, so anyone on your network could reach the UI. Changes (notes, *Mark a bad call*, reports, *Test speed now* and the other speed-test controls, on-demand traces) therefore need an admin token. On first start fyisp generates one, keeps it in the data volume (`/data/admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
 
 - Open the link once per browser. The page swaps the token for a cookie that only this dashboard sees and removes it from the address bar. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers. Looking at the dashboard needs no token.
 - Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`.
@@ -112,7 +121,7 @@ With `--network host`, `-p` is ignored: fyisp listens on the host directly (the 
 
 ## Keep it running
 
-fyisp can only tell you about time when it was running. Started from a terminal or the launcher, it stops when you close that window or log out, and Home shows those hours hatched: *fyisp wasn't running*. To have it start by itself, install the binary once and register it with your system, as below. It then runs in the background whenever you're logged in (or, on Linux and Docker, whenever the machine is on) and you just open <http://127.0.0.1:3000>.
+fyisp can only tell you about time when it was running. Started from a terminal or the launcher, it stops when you close that window or log out, and Home shows that time as grey bars, and as hatched bands in a tile's chart: *fyisp wasn't running*. To have it start by itself, install the binary once and register it with your system, as below. It then runs in the background whenever you're logged in (or, on Linux and Docker, whenever the machine is on) and you just open <http://127.0.0.1:3000>.
 
 A laptop that sleeps still leaves gaps; that's expected and never counted as a problem. For a complete record, run fyisp on something that is always on and on the same network: a NAS, a Raspberry Pi or a home server, with [Docker](#docker) or [systemd](#linux-systemd).
 
@@ -182,6 +191,45 @@ fyisp now runs whenever the machine is on, from boot. [`packaging/fyisp.service`
 
 The [Docker command](#docker) above already uses `--restart unless-stopped`: the container comes back after a reboot as long as Docker itself starts at boot (the default on Linux; on Docker Desktop, turn on *Start Docker Desktop when you sign in*).
 
+## Which apps are measured
+
+Home has 11 fixed tiles, always in this order. With the default profile every one is checked:
+
+| Tile | Kind | What fyisp checks (default) |
+|---|---|---|
+| Zoom | call | its website (`zoom.us`) over TCP; call quality from your [call path](#stun-servers) |
+| Microsoft Teams | call | its website (`teams.microsoft.com`) over TCP; call quality from the Teams relay that Teams clients use (`worldaz.tr.teams.microsoft.com`) |
+| Google Meet | call | its website (`meet.google.com`) over TCP; call quality from `stun.l.google.com`, the STUN server Chrome and Meet use |
+| Slack | call | its website (`wss-primary.slack.com`) over TCP; call quality from your call path |
+| Microsoft 365 | app | Outlook, the Microsoft 365 portal and Microsoft sign-in (`outlook.office365.com`, `www.microsoft365.com`, `login.microsoftonline.com`) |
+| Google Workspace | app | Gmail, Google Docs and Google Drive (`mail.google.com`, `docs.google.com`, `drive.google.com`) |
+| GitHub | app | `github.com` (the catalog target is named `dev-GitHub`) |
+| Dropbox | app | `www.dropbox.com` |
+| OneDrive | app | consumer OneDrive's front door (`skyapi.onedrive.live.com`); work OneDrive on your company's SharePoint isn't checked |
+| YouTube | stream | `www.youtube.com` |
+| Netflix | stream | `www.netflix.com` |
+
+- **Several targets per tile** are judged by majority, so one target that fails alone doesn't make Microsoft 365 or Google Workspace *Down*.
+- **Zoom and Slack** (whose huddles run on Amazon Chime), like Discord, WhatsApp and Webex, hand out a media server per meeting, only after you sign in, and those servers ignore STUN without that session. They can't be tested ahead of a call, so their call quality is judged from your general call path (the panel says so); if your call path is Good, they usually are too.
+- **The Teams relay** is the Microsoft server Teams calls go through; fyisp sends it tiny call-setup (STUN) packets to judge Teams' call quality. (It is GeoDNS, Azure Traffic Manager, not anycast, and can switch region between lookups; the Calls view shows where it landed, *via Sweden Central*.) Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)); it has been in the default since v0.9.0. To leave it out, use a `--config` file with `extends: [default]` and `remove: [Teams-Relay]`: Teams is then judged on your call path plus its website.
+- **Not on Home:** the networks most websites are served from (Cloudflare, Akamai, Fastly, CloudFront, Google's edge) and Webex, Discord and WhatsApp. They are still checked, count toward the [verdicts](#whose-fault-is-it-verdicts), and have their charts under Technical details, as does every target of the other [profiles](#what-to-measure-profiles).
+- **Tiles your profile doesn't cover** say *Not checked*, with how to turn them on. `--profile calls` alone covers the 4 call tiles; `services-productivity` adds Microsoft 365, Google Workspace, Dropbox and OneDrive, `services-dev` GitHub, and `streaming` YouTube and Netflix.
+- **A `--config` file** feeds a tile only through a target's `tile:<id>` tag (`tile:zoom`, `tile:teams`, `tile:meet`, `tile:slack`, `tile:m365`, `tile:gws`, `tile:github`, `tile:dropbox`, `tile:onedrive`, `tile:youtube`, `tile:netflix`), never by name. Start the file from `extends: [default]` (catalog targets keep their tags), or tag your own targets. An `override` that sets `tags:` replaces all of a target's tags, so keep its `tile:` tag. Removing a target (see [Privacy](#privacy)) turns its tile *Not checked*.
+
+## How fyisp decides Good, Slow, Choppy and Down
+
+This is what *How fyisp decides* under Home's tiles says, with the numbers behind it.
+
+- **Calls** (Zoom, Teams, Meet, Slack) are judged on their UDP call path over the last 3 minutes. They are **Choppy** when the delay is over 150 ms, the jitter over 30 ms, or 2% or more of packets are lost (in at least 2 bursts: one unlucky burst isn't enough), the points where people start to notice on a call. **Down** means a delay over 400 ms, 10% loss or more in each of the last 2 minutes, or not connecting (their website or call server stops answering). Too few answers is *not enough data*, never a problem.
+- **Everything else** is **Slow** when a check takes more than twice its usual time *and* at least 30 ms longer, or when a quarter or more of its checks in a minute get no answer. **Down** means it isn't answering: most checks fail. Slowness alone never makes an app *Down*, YouTube and Netflix included.
+- **YouTube and Netflix** buffer ahead, so slowness never marks them Down; only failing to load does. If they buffer, test your speed.
+- **Drops of 30 seconds or more always show**, even when everything recovers: the bar turns red, the tile notes *Dropped 40 s at 10:14 am* for 30 minutes (the most recent drop only), and the drop is listed under problems. A drop counts only when most of an app's checks fail together, so one flaky server can't set it off; shorter blips leave nothing behind. When your whole connection dropped, the card says *Working again* with the likely cause for 30 minutes.
+- **Words don't flicker.** For slowdowns, a tile's word changes once 3 of the last 5 minutes are bad, and goes back to *Good* after 5 good minutes in a row. Outages show at once and clear as soon as the checks answer again.
+- **"Usual"** is learned from your own connection over the last day, per target, leaving out bad minutes. For the first day fyisp uses fixed limits (*Slow* above 300 ms). A lasting route change is learned again after about an hour; a new router or network (a laptop that moved) starts over.
+- **Likely cause** comes from comparing your router, your internet provider's first stop, the internet beyond it and all the apps at the same moment. It's a strong hint, not proof. Problems during one of fyisp's own speed tests are put down to the test.
+
+The card follows the [verdict](#whose-fault-is-it-verdicts) (the last minute, every 5 seconds) and the tiles are judged minute by minute, so for a minute or two they can disagree.
+
 ## Whose fault is it? (verdicts)
 
 Above the charts, fyisp shows one plain-English verdict, re-evaluated every 5 seconds over the last minute of probes, and keeps an outage log of every period that was not *ok*. A target is unhealthy when it loses at least 20% of its probes (and at least 2 in the minute: a single lost connect out of four is noise) or its median latency is far above its own 30-minute baseline. The first matching kind wins:
@@ -207,19 +255,29 @@ A new problem must hold for about 10 seconds before it is shown, and the verdict
 
 The layers come from the built-in **Network path** group, shown first: the *Gateway* and the *ISP edge* (found automatically from the routing table and a short traceroute; pinged every second) and two public anycast resolvers (1.1.1.1, 8.8.8.8; ICMP and TCP). A profile passed with `--config` keeps this group unless it sets `path: false` at the top level (`--no-path` does the same for `--profile`); without it fyisp can still tell `dns`, `service` and `upstream` apart, but not `lan` from `isp`.
 
+### Wi-Fi or router?
+
+fyisp measures from the machine it runs on, so it can only speak for that machine's own Wi-Fi. Home's first box says *Your Wi-Fi and router* only when all of these hold; otherwise it says *Your home router*, with a hint that fyisp can't see the Wi-Fi of the device you're reading on:
+
+- **fyisp's own connection is Wi-Fi.** This is detected on Linux only (from `/sys/class/net`). macOS and Windows report it as unknown.
+- **fyisp is not in a container.** Inside Docker (and Podman, systemd-nspawn, LXC, Kubernetes) the network fyisp sees is the container's, so it always uses the router wording. fyisp counts as containerized when `/.dockerenv`, `/run/.containerenv` or `/run/systemd/container` exists or `$container` is set (the release image sets `container=oci`).
+- **You are looking at the page on that same machine:** the request comes from a loopback address or one of the machine's own addresses, carries no proxy header (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`), and doesn't use an `--allow-host` name. Through a reverse proxy, a tunnel (cloudflared, Tailscale Serve) or from another device on your network, Home uses the router wording.
+
+A forwarder that adds no proxy header (`ssh -L`, `socat`) looks like the same machine, so a page opened through one says *Your Wi-Fi and router*. Only the wording changes; the measurements and the verdicts are the same. Whether you're on the same machine is decided per request and never stored, logged or cached, and the API returns only the resulting words, not your address.
+
 ## Call quality
 
 Call audio and video travel over UDP, and a TCP connect says little about them. fyisp therefore also measures the UDP path with tiny STUN requests, the same kind of packet a call app sends before every call, and answers two questions: *is my connection good for calls right now?* and *why did my call at 14:14 go bad?*
 
 ### The Calls view
 
-Home's *Calls* tile and *Mark a bad call* are built on these measurements. **Details** has the full view: **Calls | Overview | Charts** switches between them, and Details opens on Calls whenever the profile has STUN targets (as `default` and `calls` do); otherwise on the charts, or on the Overview when the profile is large.
+Home's call tiles (Zoom, Microsoft Teams, Google Meet and Slack) are judged on these measurements (see [How fyisp decides](#how-fyisp-decides-good-slow-choppy-and-down)). **Technical details** has the full view: **Calls | Overview | Charts** switches between them, and Details opens on Calls whenever the profile has STUN targets (as `default` and `calls` do); otherwise on the charts, or on the Overview when the profile is large.
 
 - **The top card** gives one answer, e.g. *● Good for calls · 32 ms · 0% loss · steady*, refreshed every few seconds with *updated 4 s ago*: the pre-call check. It is the worst of the path verdict (it never says Good while the banner shows an ISP outage, and it names that cause inline), the UDP verdicts below, your call path's score and the measured apps' scores. When it is not Good it says why, e.g. *Poor: 8% loss on your call path (worst minute 14:12)*.
-- **Working hours**: a strip for Mon–Fri 09–17 local time, coloured per minute (good, fair, poor, unusable, no data), with a summary such as *Today 09–17: Good 92% · Poor 14:10–14:16*. Click a minute to ask about it.
+- **Working hours**: a strip for Mon–Fri 09–17 local time, colored per minute (good, fair, poor, unusable, no data), with a summary such as *Today 09–17: Good 92% · Poor 14:10–14:16*. Click a minute to ask about it.
 - **What happened at …?**: pick a time (the default is the last 60 minutes) and get one sentence about the 15 minutes either side of it that names the layer at fault, e.g. *14:10–14:16: 8% loss at your ISP edge; Wi-Fi/router fine*. It uses the outage log, so it blames layers the same way the verdicts do. It links to the charts and to *Create evidence report*.
 - **By app**, over the last 5 minutes: Meet and Teams get a state, round trip and loss from their own STUN servers; expanding a row shows the MOS, jitter, p95 round trip and the last hour. If you remove the Teams relay (see [Which apps are measured](#which-apps-are-measured)), Teams' row says whether its website answers and that its calls take your call path. Zoom, Slack, Discord, WhatsApp and Webex share one row (see below) that says whether their websites are reachable over TCP.
-- **Mark a bad call** (the same button as on Home): one click saves a **private** note at 2 minutes ago with the call stats of that moment (state, MOS, round trip, jitter, loss; no addresses). *When?* moves it to 15 or 30 minutes ago. The note can be edited, and *Create evidence report* builds a report around it. On a phone the button sticks to the bottom of the screen.
+- **Mark a bad call**: one click saves a **private** note at 2 minutes ago with the call stats of that moment (state, MOS, round trip, jitter, loss; no addresses). *When?* moves it to 15 or 30 minutes ago. The note can be edited, and *Create evidence report* builds a report around it. On a phone the button sticks to the bottom of the screen.
 
 A STUN server that stops answering while the others still answer is shown as *This test server isn't answering; your other call checks look normal*. After a start the view says *Not enough data yet* until 10 bursts have been measured.
 
@@ -268,18 +326,6 @@ The loss penalty is softer than G.711's tables because Opus forward error correc
 
 *Your call path* combines the anycast and GeoDNS STUN servers marked *call path* above: each minute takes the median of the servers' round trip, jitter and loss, so one bad server does not make the path bad.
 
-### Which apps are measured
-
-| App | Measured over | Profile |
-|---|---|---|
-| Google Meet | `stun.l.google.com`, the STUN server Chrome and Meet use | `default`, `calls` |
-| Microsoft Teams | the Teams Transport Relay that Teams clients use | `default`, `calls` |
-| Zoom, Slack, Discord, WhatsApp, Webex | not measurable: your call path plus their websites over TCP | `default`, `calls` |
-
-Zoom, Slack (Amazon Chime), Discord, WhatsApp and Webex hand out a media server per meeting, only after you sign in, and those servers ignore STUN without that session. They can't be tested ahead of a call; if your call path is Good, they usually are too. fyisp still checks their websites over TCP.
-
-The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch region between lookups; the local view shows where it landed (*via Sweden Central*). Microsoft does not document it as a public STUN service (see [docs/STUN-TERMS.md](docs/STUN-TERMS.md)); it has been in the default since v0.9.0. To leave it out, use a `--config` file with `extends: [default]` and `remove: [Teams-Relay]`: Teams is then judged on your call path plus its website over TCP.
-
 ### Verdicts, metrics and the off switch
 
 - **Verdicts.** `udp_blocked`, `stun_blocked` and `udp_degraded` (see [Whose fault is it?](#whose-fault-is-it-verdicts)) fire only when the path and TCP are healthy and at least two independent STUN providers agree, so a single dead STUN server never raises one. After 6 hours a blocked verdict turns quiet: it is shown as information (*It has been this way for hours (common on hotel and office networks)*), and the Calls rows say *Blocked*, not *Unusable*. UDP loss never feeds the main verdict or a service's loss.
@@ -295,7 +341,7 @@ The Teams relay is GeoDNS (Azure Traffic Manager), not anycast, and can switch r
 
 ## Speed tests
 
-fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" queues one test, and "Test every server" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
+fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" (or *Test speed now* on Home) queues one test, and "Test every server" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
 
 ```sh
 fyisp --speedtest                                  # mode regions: 9 regions, each once an hour
@@ -365,7 +411,7 @@ Details → Speed shows:
 - a time series per region and server, a table, and compare;
 - a note when a region mostly used its fallback in the last day.
 
-When every region and provider dips at the same time of day, Home shows one line, for example *Evenings are slower: about 40% below your daytime speed (around 7 to 11 pm). That's still plenty for video calls.* Only scheduled tests count toward patterns: Test now and sweeps don't. Reports get the finding and a speed section by region. `fyisp export --speedtests` writes every test as CSV.
+Home shows your latest result against your usual speed (the median of the last 7 days' tests), e.g. *Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.* When every region and provider dips at the same time of day, Details → Speed says so, for example *Every region slows from about 7 to 11 pm … most likely your internet provider's own network.* Only scheduled tests count toward patterns: Test now and sweeps don't. Reports get the finding and a speed section by region. `fyisp export --speedtests` writes every test as CSV.
 
 **Probes keep running during a test.** Their results are stored as measured, so a test that slows your line shows up as a latency spike or loss, and can count toward the verdict. The "show speed tests" toggle under each chart (off by default) marks when tests ran, so a spike can be matched to a test. Latency under load comes from the same probes. `/api/status` reports the share of the last 24 hours spent under test.
 
@@ -373,14 +419,14 @@ Limits: one test at a time, at most 15 seconds per direction and 45 seconds per 
 
 ## What to measure (profiles)
 
-By default fyisp measures **28 targets** a home and a remote worker rely on, plus your own [network path](#whose-fault-is-it-verdicts) (router, your provider's first hop, three public DNS resolvers):
+By default fyisp measures **28 targets** a home and a remote worker rely on, plus your own [network path](#whose-fault-is-it-verdicts) (router, your provider's first hop, two public DNS resolvers):
 
-| Home tile | Group in Details | Targets |
+| Group in Details | Targets | Home tiles they feed |
 |---|---|---|
-| **Calls** | Call path | 5 STUN servers ([list](#stun-servers)): Google Meet's, Cloudflare's (on its STUN port and on port 53), Twilio's and the Microsoft Teams relay |
-| **Calls** | Call & chat apps | Microsoft Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp |
-| **Work apps** | Work apps | Outlook, the Microsoft 365 portal, Microsoft sign-in, Gmail, Google Docs, Google Drive, GitHub, Dropbox, OneDrive |
-| **Websites** | Websites | Cloudflare, Akamai, Fastly, Amazon CloudFront and Google's edge, the networks most websites are served from; YouTube and Netflix |
+| Call path | 5 STUN servers ([list](#stun-servers)): Google Meet's, Cloudflare's (on its STUN port and on port 53), Twilio's and the Microsoft Teams relay | call quality for Zoom, Microsoft Teams, Google Meet and Slack |
+| Call & chat apps | Microsoft Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp | Zoom, Microsoft Teams, Google Meet, Slack |
+| Work apps | Outlook, the Microsoft 365 portal, Microsoft sign-in, Gmail, Google Docs, Google Drive, GitHub, Dropbox, OneDrive | Microsoft 365, Google Workspace, GitHub, Dropbox, OneDrive |
+| Websites | Cloudflare, Akamai, Fastly, Amazon CloudFront and Google's edge, the networks most websites are served from; YouTube and Netflix | YouTube, Netflix |
 
 Each service gets a TCP connect (handshake, then close; no data, no login) every 15 seconds. The STUN servers get a burst of 5 tiny Binding Requests every 5 seconds ([Call quality](#call-quality)); `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `fyisp profiles default` lists every target with its host.
 
@@ -409,7 +455,7 @@ docker run ... -e FYISP_PROFILE=default,streaming ghcr.io/fuck-you-isp/fyisp
 | `all` | every target in the catalog |
 | `aws`, `gcp`, `azure`, `hetzner`, ... | every provider in the catalog is a profile of its own |
 
-Targets outside the default show on Home in an **Other services** tile: its state counts, but it never names one of hundreds of endpoints. Target names are identities (a name keeps its history), so a target in several profiles is one series.
+Home's 11 tiles stay the same whatever you measure (see [Which apps are measured](#which-apps-are-measured)); targets of other profiles show under Technical details and count toward the [verdicts](#whose-fault-is-it-verdicts). Target names are identities (a name keeps its history), so a target in several profiles is one series.
 
 There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open Details on the [Overview](#the-overview-large-profiles) instead of hundreds of charts.
 
@@ -435,7 +481,7 @@ Missing a provider or region, or found a dead endpoint? Pull requests are welcom
 With more than 150 targets (e.g. `--profile clouds` or `all`) the dashboard opens on the **Overview** rather than one chart per panel; the **Overview | Charts** switch under the Network path panel changes view on any profile. The Overview shows one probe kind at a time (TCP, unless a `--config` file adds HTTPS or ICMP targets and you switch) over the selected time range:
 
 - **Breadth line**: how many targets are worse than normal at the same time, across how many providers and regions. When a quarter or more of them, across several providers and regions, degrade together, the common factor is your side. It backs up the verdict and never overrides it; in the first day, before targets have a normal, it counts only packet loss.
-- **Heatmap**: one row per provider (grouped by kind), one column per region. A cell is coloured by how much slower than normal its targets are (median), or by latency until half the targets have a normal (about a day); a red dot marks loss, a red cell with × heavy loss (20% or more), hatching means not measured. Click a cell or a provider to filter the table.
+- **Heatmap**: one row per provider (grouped by kind), one column per region. A cell is colored by how much slower than normal its targets are (median), or by latency until half the targets have a normal (about a day); a red dot marks loss, a red cell with × heavy loss (20% or more), hatching means not measured. Click a cell or a provider to filter the table.
 - **Table**: every target with its mean round-trip time over the range, its normal, the ratio, loss and a status (failing: 20% loss or more; lossy: 1% or more; very slow: 3× normal or more; slow: 1.5× or more). Sort by any column, filter by text, region or problems only. Click a row to see that target alone on its chart; Back returns to the Overview.
 
 The Overview's window is at most 30 days (it reads every target at once). Filters, sort, view and focus are kept in the URL, so a link opens the same view.
@@ -455,6 +501,7 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
   remove: [YouTube, Netflix]      # also possible: dev-GitHub, Dropbox, OneDrive, Teams-Relay
   ```
 - **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists exactly which names fyisp looks up.
+- **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine. Whether you're on the same machine is decided per request and never stored, logged or returned; the API carries only the resulting words (see [Wi-Fi or router?](#wi-fi-or-router)). The connection type itself is in fyisp's log and, as before, in speed-test results.
 - **A report you send** shows what it says to whoever gets it. A redacted one has no private addresses, no host names and only the notes you marked for redacted reports (see [Sharing](#sharing)).
 
 ## ICMP permissions
@@ -471,7 +518,7 @@ or carry on without ICMP: the services and the anycast resolvers are still measu
 
 fyisp has no public link. To show someone your connection, send a report; for live access, put your own tunnel or reverse proxy in front of the dashboard.
 
-**A report** is one self-contained HTML page: the verdicts, outages, charts, traceroutes and speed tests over a range you pick. Make one with *Make a report* on Home (the last 7 days, redacted), *Create report* in Details → Reports, or from the command line, also while fyisp runs:
+**A report** is one self-contained HTML page: the verdicts, outages, charts, traceroutes and speed tests over a range you pick. Make one with *Create report* in Technical details → Reports, or from the command line, also while fyisp runs:
 
 ```sh
 fyisp report --redact -o report.html            # the last 7 days, fit to send to others
@@ -489,6 +536,24 @@ fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 - Anyone who can open that address sees the **whole dashboard as you do**: every address, host name, note and report, not a redacted view. For people outside your household, send a redacted report instead.
 - Any `--allow-host` turns the **admin token** on, even when fyisp listens on 127.0.0.1 only: fyisp logs an "open this link" URL with it at every start (see [Controls under Docker](#controls-under-docker)), and changes and traces need it. That includes you on this machine, through `127.0.0.1` too: open the link once per browser. With `--admin-token=off` as well, changes and traces are off for everyone.
 - A dashboard without an admin token (loopback `--listen`, no `--allow-host`) refuses changes and traces that come through a proxy or tunnel (requests with `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`): set `--allow-host` or `--admin-token` for one that rewrites the `Host` header to `127.0.0.1`.
+
+## Upgrading to v0.9.0
+
+v0.9.0 replaces Home and adds YouTube, Netflix, GitHub, Dropbox, OneDrive and Microsoft's Teams relay to what fyisp checks by default.
+
+**Everyone:**
+- **A new Home** (see [What you see](#what-you-see-home-and-details)). The timeline, *Mark a bad call*, *What happened at …?* and the *Make a report* button are gone from it. *Mark a bad call* and *What happened at …?* are in Technical details → Calls, and reports under Technical details (*Create report*, and the Reports list).
+- **The first start takes about a minute:** Home says *Checking…* while it rebuilds its tiles, bars and problems from the last 8 days of stored checks and the verdict warms up. Upgrading from v0.8.x you are not *learning* again: the usual times come from your history.
+- **6 new default targets, 28 in all:** GitHub, Dropbox, OneDrive, YouTube, Netflix and the Microsoft Teams relay, one for each Home tile. Each sees a connection from your public address every 15 seconds (the Teams relay: a few tiny packets every 5 seconds), with no data sent and no login, and your DNS resolver sees their names looked up about once a minute. On a work laptop, read [Privacy](#privacy) first: it shows how to leave any of them out with a short `--config` file (their tiles then say *Not checked*).
+- **No database change.** v0.9.0 keeps v0.8.0's database (schema v6), so there is no backup copy and no migration, and v0.8.x still opens it if you go back.
+
+**If you use your own `--config` file:** tiles find their targets by `tile:` tag only, never by name. A file that starts from `extends: [default]` (or another catalog profile) keeps the catalog's tags and needs nothing. A file that lists its own targets needs a `tile:<id>` tag on each target that should feed a tile, or those tiles say *Not checked*. An `override` that sets `tags:` replaces all of a catalog target's tags: keep its `tile:` tag in the list. A bad `tile:` tag (an unknown tile, two on one target, or a UDP target on a tile that isn't a call) is a validation error, so fyisp refuses the file.
+
+**If a script reads `/api/home`:** it now serves the new Home's API, described in [docs/HOME-API.md](docs/HOME-API.md) with its "Removed in v0.9.0" list. `part=live`, `part=history` and `part=at` now answer 400. `/api/home2`, the name used during development, is not kept. `/api/verdict`, `/api/incidents`, `/api/calls`, `/api/overview` and the metric names are unchanged; with the Teams relay in the default, `fyisp_call_mos{app="teams"}` and the relay's `fyisp_udp_*` series now appear without `--profile calls`.
+
+**Upgrading from v0.7.x:** read [Upgrading to v0.8.0](#upgrading-to-v080) first (the share options must go, and the database is upgraded once). Speed findings may say there isn't enough data for a few days, until enough tests of the current kind have run: v0.8.0 left the older, byte-capped results out of a server's normal.
+
+**Old `#hw=w` bookmarks** open Home.
 
 ## Upgrading to v0.8.0
 
@@ -511,7 +576,7 @@ UDP (STUN) targets never feed `ping_*`. Each burst counts once in `fyisp_probe_s
 
 Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{region,server}` and `fyisp_speed_upload_bits_per_second{region,server}`, both from the latest test against that server that measured them (`region` is empty outside mode `regions`). They also add `fyisp_speed_loaded_rtt_seconds{region,server,layer,load}`: the median RTT to your provider's first router (`layer="edge"`) or the gateway (`layer="gateway"`), before the test (`load="idle"`) and during each direction (`load="download"`, `load="upload"`); a lost probe counts as 1 s. `fyisp_speed_tests_total{region,server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable` or `failed`.
 
-`fyisp_call_mos{app}` is the call-quality score the Calls view shows (MOS, 1 to 4.5; 4.0 and up is good, 3.6 fair, 3.1 poor, below that unusable): the worst minute of the last 5 minutes. `app="path"` is your call path, and `app="meet"` and `app="teams"` are the measured apps (Teams only with the `calls` profile). Each is absent until its STUN servers have 10 bursts in the window. With `--no-udp` there are no `fyisp_udp_*` or `fyisp_call_mos` series.
+`fyisp_call_mos{app}` is the call-quality score the Calls view shows (MOS, 1 to 4.5; 4.0 and up is good, 3.6 fair, 3.1 poor, below that unusable): the worst minute of the last 5 minutes. `app="path"` is your call path, and `app="meet"` and `app="teams"` are the measured apps (Teams only while the Teams relay is measured, as in `default` and `calls`). Each is absent until its STUN servers have 10 bursts in the window. With `--no-udp` there are no `fyisp_udp_*` or `fyisp_call_mos` series.
 
 ## Where data lives, and uninstalling
 
@@ -563,17 +628,20 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 `test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) builds throwaway network namespaces (client ↔ gateway ↔ ISP router ↔ internet), runs fyisp in the client namespace as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It also checks the path discovery (gateway and ISP edge) and, with the Network path group enabled, the verdict and outage log for each layer: loss between client and gateway (`lan`), between gateway and ISP (`isp`), anycast and most targets dropped (`upstream`), an unreachable resolver, both while running and at startup (`dns`), and one dropped target (`service`); the faulty layer must be the first problem shown.
 
-Every scenario gets its own topology (namespaces `fyt-<run>-<n>-{cli,gw,isp,net}`, responders, resolver, certificates, fyisp process and data directory), so the scenarios run in parallel and a full run takes about as long as the slowest one, about 5 minutes (almost all of it fyisp's own timings: the 60 s verdict warm-up, fault windows, the 60 s return to ok). The namespaces are deleted when each scenario ends, and `run.sh` checks that none of its run are left and prints the wall time.
+**TestHome10** runs the new Home against the same kind of faults in 17 scenarios, on a lab profile that feeds all 11 tiles through `tile:` tags with 25 hours of seeded history, and checks the recorded `/api/home` answers: drops of 40 s (the card, the tile notes, the red bar and one problem; also at fyisp's real 15 s check interval) and of 20 s (nothing left behind), a 2-minute outage, 40% loss at the provider (the red card), 6% loss at the provider (calls Choppy, other apps Good), one app's outage (green card, *Zoom isn't connecting*), one of 3 Microsoft 365 targets down (still Good), the router down, high jitter, a latency ladder (streams never Down), fyisp paused and stopped, the first day's learning, UDP or only the STUN port blocked, one STUN server dead, and who is looking (the router wording). It runs nightly and on demand in CI (`.github/workflows/netns.yml`, with TestVerdict and TestUDP; the API recordings and the log are kept as an artifact), not per pull request.
+
+Every scenario gets its own topology (namespaces `fyt-<run>-<n>-{cli,gw,isp,net}`, responders, resolver, certificates, fyisp process and data directory), so the scenarios run in parallel and a full run takes about as long as the slowest one, about 20 minutes (the slowest is TestHome10's 6% provider loss, about 18 minutes; almost all of it fyisp's own timings: the 60 s verdict warm-up, fault windows, the 5 good minutes a tile needs to be Good again). The namespaces are deleted when each scenario ends, and `run.sh` checks that none of its run are left and prints the wall time.
 
 ```sh
-test/netns/run.sh                              # everything, in parallel (~5 min)
+test/netns/run.sh                              # everything, in parallel (~20 min)
 test/netns/run.sh -test.run TestVerdict        # only the verdict scenarios
+test/netns/run.sh -test.run TestHome10         # only the Home scenarios
 test/netns/run.sh -test.run 'Faults/b-nft-drop'
-FYISP_NETNS_PARALLEL=0 test/netns/run.sh       # one scenario at a time, for debugging (~35 min)
-FYISP_NETNS_OUT=out test/netns/run.sh          # keep API responses and logs, one directory per scenario
+FYISP_NETNS_PARALLEL=0 test/netns/run.sh       # one scenario at a time, for debugging (~3 h)
+FYISP_NETNS_OUT=out test/netns/run.sh          # keep API responses and logs, one directory per scenario (TestHome10: timeline.jsonl)
 ```
 
-With a Go toolchain: `sudo -E go test -tags netns -v -timeout 20m ./test/netns` (`-parallel 1` and a longer timeout, e.g. `-timeout 90m`, run it serially).
+With a Go toolchain: `sudo -E go test -tags netns -v -timeout 30m ./test/netns` (`-parallel 1` and a longer timeout, e.g. `-timeout 240m`, run it serially).
 
 ## License
 
