@@ -268,7 +268,7 @@ func TestSlotCap(t *testing.T) {
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{WireBytes: 150 << 20}, ErrBusy // busy, after moving data
 	})
-	for _, trigger := range []string{"schedule", "manual", "sweep", "public", "public_sweep"} {
+	for _, trigger := range []string{"schedule", "manual", "sweep"} {
 		h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), trigger)
 		h.mu.Lock()
 		for _, c := range h.calls {

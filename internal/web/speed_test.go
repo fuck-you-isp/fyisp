@@ -688,28 +688,9 @@ func TestWithVia(t *testing.T) {
 	}
 }
 
-// TestSpeedLegacyOrigin: tests the share link started before v0.8.0 show
-// as the owner's on-demand tests: the API has no "public" origin or
-// trigger any more.
-func TestSpeedLegacyOrigin(t *testing.T) {
-	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	ts := []model.SpeedTest{{Start: at, End: at.Add(10 * time.Second), Trigger: "public"}, {Start: at.Add(time.Hour), End: at.Add(time.Hour + 9*time.Second), Trigger: "schedule"},
-		{Start: at.Add(2 * time.Hour), End: at.Add(2*time.Hour + 9*time.Second), Trigger: "public_sweep"}}
-	if w := speedWindows(ts, at.Add(-time.Hour)); len(w) != 3 || w[0].Origin != "owner" || w[1].Origin != "scheduled" || w[2].Origin != "owner" {
-		t.Errorf("windows %+v", w)
-	}
-	n := newSpeedNames(speedtest.State{}, speedCatalog(t))
-	if j := n.test(ts[0]); j.Trigger != "manual" || !j.OnDemand {
-		t.Errorf("public: %+v", j)
-	}
-	if j := n.test(ts[2]); j.Trigger != "sweep" || !j.OnDemand {
-		t.Errorf("public_sweep: %+v", j)
-	}
-}
-
 // TestSweepBytes: "Test every server" is estimated from each server's
 // recent median data, else the line's rate both ways for MaxMeasure;
-// skipped servers and share-link tests from before v0.8.0 (capped) are left out.
+// skipped servers are left out.
 func TestSweepBytes(t *testing.T) {
 	st := speedtest.State{Servers: []speedtest.ServerState{
 		{Server: speedtest.Server{ID: "A"}}, {Server: speedtest.Server{ID: "B"}}, {Server: speedtest.Server{ID: "C"}, Skipped: true}}}
@@ -717,7 +698,6 @@ func TestSweepBytes(t *testing.T) {
 	ts := []model.SpeedTest{
 		{Server: "A", Outcome: model.SpeedOK, Bytes: 100e6, DownBps: &d, UpBps: &u, Trigger: "schedule"},
 		{Server: "A", Outcome: model.SpeedOK, Bytes: 300e6, DownBps: &d, UpBps: &u, Trigger: "manual"},
-		{Server: "B", Outcome: model.SpeedOK, Bytes: 200e6, DownBps: &d, UpBps: &u, Trigger: "public"},
 		{Server: "B", Outcome: model.SpeedBusy, Bytes: 1e3, Trigger: "schedule"},
 	}
 	if b, n := sweepBytes(st, ts); n != 2 || b != 200e6+150e6 {

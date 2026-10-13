@@ -342,7 +342,7 @@ type SpeedTest struct {
 	ID      int64     `json:"id"`
 	Start   time.Time `json:"start"`
 	End     time.Time `json:"end"`
-	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now), "sweep"; before v0.8.0 also "public" or "public_sweep" (the share link)
+	Trigger string    `json:"trigger"` // "schedule", "manual" (Test now), "sweep"
 	Outcome string    `json:"outcome"`
 	// Region is the catalog region the test was for ("" outside mode
 	// regions); Server the server actually used: a catalog ID, or host:port
@@ -443,21 +443,16 @@ type Handoff struct {
 // people look, and sweeps hit every server at once).
 func (t SpeedTest) OnDemand() bool {
 	switch t.Trigger {
-	case "manual", "sweep", "public", "public_sweep": // TODO(v0.9): drop the share link's, gone with v0.8.0's 90 days of retention
+	case "manual", "sweep":
 		return true
 	}
 	return false
 }
 
-// Origin is who asked for the test: "scheduled", "owner", or "public" for
-// a test the share link started before v0.8.0 removed it (TODO(v0.9): drop
-// once no such row is left).
+// Origin is who asked for the test: "scheduled" or "owner".
 func (t SpeedTest) Origin() string {
-	switch t.Trigger {
-	case "manual", "sweep":
+	if t.OnDemand() {
 		return "owner"
-	case "public", "public_sweep":
-		return "public"
 	}
 	return "scheduled"
 }

@@ -333,7 +333,7 @@ func ms(t time.Time) *int64 {
 
 func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	ref, display, provider, city := n.server(t.Server)
-	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: legacyTrigger(t.Trigger), OnDemand: t.OnDemand(),
+	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, OnDemand: t.OnDemand(),
 		Outcome: t.Outcome, Server: ref.ID, Label: ref.Label, Display: display, Provider: provider, City: city,
 		Fallback: t.Fallback, FallbackLevel: t.FallbackLevel, Attempts: t.Attempts,
 		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownShort: t.DownShort, UpShort: t.UpShort, CappedByBudget: t.DownShort || t.UpShort,
@@ -369,30 +369,6 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	j.Latency, j.Conn = t.Latency, cmp.Or(t.Conn, model.ConnUnknown)
 	j.Port, j.Handoff = t.Port, t.Handoff
 	return j
-}
-
-// legacyTrigger maps the share link's triggers, which tests stored before
-// v0.8.0 may still carry, to the owner's: the API knows only schedule,
-// manual and sweep.
-// TODO(v0.9): drop once no such row is left (speedtests are kept 90 days).
-func legacyTrigger(trigger string) string {
-	switch trigger {
-	case "public":
-		return "manual"
-	case "public_sweep":
-		return "sweep"
-	}
-	return trigger
-}
-
-// legacyOrigin is t.Origin() with legacyTrigger's mapping: "public"
-// (before v0.8.0) becomes "owner", the other on-demand origin.
-// TODO(v0.9): drop with legacyTrigger.
-func legacyOrigin(t model.SpeedTest) string {
-	if o := t.Origin(); o != "public" {
-		return o
-	}
-	return "owner"
 }
 
 // ---------- params ----------
@@ -576,7 +552,7 @@ func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
 	out := []speedWindow{}
 	for _, t := range ts {
 		if !t.End.Before(from) && t.End.After(t.Start) {
-			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: legacyOrigin(t)})
+			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: t.Origin()})
 		}
 	}
 	return out
@@ -1155,14 +1131,13 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 // zoneLabel is the IANA name the hours are in: the parameter's, or the
 // server's own for no tz (its TZ, else "Local"), "" for a fixed offset.
 // sweepBytes estimates "Test every server": the sum, over the servers it
-// tests, of each one's median data over its recent ok tests (share-link
-// tests from before v0.8.0, capped at 100 MB, left out), else this line's median rate
-// both ways for MaxMeasure, else defaultTestBytes.
+// tests, of each one's median data over its recent ok tests, else this
+// line's median rate both ways for MaxMeasure, else defaultTestBytes.
 func sweepBytes(st speedtest.State, ts []model.SpeedTest) (total int64, n int) {
 	per := map[string][]float64{}
 	var down, up []float64
 	for _, t := range ts {
-		if t.Outcome != model.SpeedOK || t.Origin() == "public" { // TODO(v0.9): drop the legacy origin
+		if t.Outcome != model.SpeedOK {
 			continue
 		}
 		if t.Bytes > 0 {

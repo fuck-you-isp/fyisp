@@ -10,11 +10,12 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/store/blob"
 )
 
-func TestSummaryV1Decode(t *testing.T) {
-	// A day row as fyisp v0.2 wrote it (format v1): hour 5, n=3, lost=0,
-	// min 100, max-min 50, p95-min 40, sum 390.
-	v1 := []byte{summaryV1, 5, 3, 0, 100, 50, 40, 0x86, 0x03}
-	hs, err := decodeDay(nil, 10, v1)
+// TestSummaryDecode: a day row in the format version 2, with an unknown
+// median (0) and with one; version 1 rows (fyisp v0.1/v0.2) are refused.
+func TestSummaryDecode(t *testing.T) {
+	// hour 5, n=3, lost=0, min 100, max-min 50, p95-min 40, sum 390, p50 unknown.
+	unknown := []byte{summaryV2, 5, 3, 0, 100, 50, 40, 0x86, 0x03, 0}
+	hs, err := decodeDay(nil, 10, unknown)
 	if err != nil || len(hs) != 1 {
 		t.Fatalf("%v %+v", err, hs)
 	}
@@ -22,10 +23,12 @@ func TestSummaryV1Decode(t *testing.T) {
 	if u.p50 != -1 || u.median() != 130 || u.min != 100 || u.max != 150 || u.p95 != 140 || u.sum != 390 {
 		t.Fatalf("%+v median %d", u, u.median())
 	}
-	// Re-encoded as v2 the median stays unknown.
 	again, err := decodeDay(nil, 10, appendDay(nil, 10, hs))
 	if err != nil || !slices.Equal(again, hs) {
-		t.Fatalf("v1 -> v2: %v %+v", err, again)
+		t.Fatalf("re-encoded: %v %+v", err, again)
+	}
+	if _, err := decodeDay(nil, 10, []byte{1, 5, 3, 0, 100, 50, 40, 0x86, 0x03}); err == nil {
+		t.Fatal("a version 1 row was read")
 	}
 	// v2 with a median.
 	hs[0].s.p50 = 120
@@ -60,7 +63,7 @@ type synthHour struct {
 	off      int
 	n, lost  int64
 	p50, p95 float64
-	noP50    bool // stored without a median (format v1); mean = p50+1
+	noP50    bool // stored without a median (p50 unknown); mean = p50+1
 }
 
 func (h synthHour) summary() summary {
@@ -102,28 +105,10 @@ func putHours(t *testing.T, s *SQLite, k model.SeriesKey, at time.Time, hours []
 			t.Fatalf("day %d already stored", day)
 		}
 		data := appendDay(nil, day, list)
-		if slices.ContainsFunc(list, func(x hourSummary) bool { return x.s.n > 0 && x.s.p50 < 0 }) {
-			data = appendDayV1(day, list) // as fyisp v0.2 wrote it
-		}
 		if _, err := s.db.w.Exec(`INSERT INTO summary_1h(day, series, data) VALUES(?, ?, ?)`, day, id, data); err != nil {
 			t.Fatal(err)
 		}
 	}
-}
-
-// appendDayV1 encodes hours without medians in day format v1 (fyisp
-// v0.1/v0.2): format v2 minus the version and each hour's p50 field.
-func appendDayV1(day int64, list []hourSummary) []byte {
-	out := []byte{summaryV1}
-	for _, h := range list {
-		h.s.p50 = -1
-		one := appendDay(nil, day, []hourSummary{h})[1:]
-		if h.s.n > 0 {
-			one = one[:len(one)-1] // an unknown p50 is the single byte 0
-		}
-		out = append(out, one...)
-	}
-	return out
 }
 
 func TestBaselines(t *testing.T) {

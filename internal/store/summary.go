@@ -20,13 +20,13 @@ type summary struct {
 	by            [blob.MaxCode + 1]int64 // lost per reason; by[0] unused
 	min, max, p95 int64                   // valid when n > 0
 	sum           int64                   // sum of values: mean = sum/n, exact
-	// p50 is the hour's median (valid when n > 0), or -1 when unknown: hours
-	// written in day format v1 (fyisp v0.1/v0.2) have none. Use median().
+	// p50 is the hour's median (valid when n > 0), or -1 when unknown (the
+	// format's 0, see appendDay). Use median().
 	p50 int64
 }
 
 // median returns the hour's median RTT, falling back to the mean (rounded)
-// for hours stored without one (day format v1). Only valid when n > 0.
+// for an hour stored without one. Only valid when n > 0.
 func (s *summary) median() int64 {
 	if s.p50 >= 0 {
 		return s.p50
@@ -70,25 +70,17 @@ type hourSummary struct {
 // 90-day, 90-series panel, and iterating rows through database/sql and
 // modernc costs ~0.25-1 µs each: 200+ ms. Packed per day it is 8k rows.
 //
-// Format v1 (uncompressed; written by fyisp v0.1 and v0.2):
+// The format (uncompressed) is version 2; fyisp v0.10.0 started over with
+// an empty database, so version 1 (fyisp v0.1/v0.2, without p50) is no
+// longer read:
 //
-//	byte  version (1)
+//	byte  version (2)
 //	then per hour, in increasing hour order:
 //	  byte     hour of day (0..23)
 //	  uvarint  n, lost
 //	  if lost > 0: 15 uvarints, lost per reason 1..15 (they sum to lost)
-//	  if n > 0:    uvarint min, max-min, p95-min, sum
-//
-// Format v2 (fyisp v0.3, schema v4) is v1 with the version byte 2 and one
-// more uvarint per hour with n > 0, after sum: p50-min+1, or 0 when the
-// median is unknown (an hour first written in v1 and carried over when its
-// day row is rewritten). Both formats are read; v2 is always written, so v1
-// day rows turn into v2 as their days are rewritten (never for closed days,
-// which is fine: readers fall back to the mean, see summary.median).
-const (
-	summaryV1 = 1
-	summaryV2 = 2
-)
+//	  if n > 0:    uvarint min, max-min, p95-min, sum, p50-min+1 (0: unknown)
+const summaryV2 = 2
 
 var errSummary = errors.New("store: corrupt summary")
 
@@ -120,10 +112,9 @@ func appendDay(dst []byte, day int64, hs []hourSummary) []byte {
 
 // decodeDay appends the hours in data to dst. It never panics.
 func decodeDay(dst []hourSummary, day int64, data []byte) ([]hourSummary, error) {
-	if len(data) == 0 || (data[0] != summaryV1 && data[0] != summaryV2) {
+	if len(data) == 0 || data[0] != summaryV2 {
 		return dst, fmt.Errorf("%w: version", errSummary)
 	}
-	v2 := data[0] == summaryV2
 	p := data[1:]
 	next := func() (int64, bool) {
 		v, n := binary.Uvarint(p)
@@ -171,14 +162,12 @@ func decodeDay(dst []hourSummary, day int64, data []byte) ([]hourSummary, error)
 				return dst, fmt.Errorf("%w: values", errSummary)
 			}
 			h.s.min, h.s.max, h.s.p95, h.s.sum = mn, mn+dmax, mn+dp95, sum
-			if v2 {
-				dp50, ok := next()
-				if !ok || dp50 > dmax+1 {
-					return dst, fmt.Errorf("%w: p50", errSummary)
-				}
-				if dp50 > 0 {
-					h.s.p50 = mn + dp50 - 1
-				}
+			dp50, ok := next()
+			if !ok || dp50 > dmax+1 {
+				return dst, fmt.Errorf("%w: p50", errSummary)
+			}
+			if dp50 > 0 {
+				h.s.p50 = mn + dp50 - 1
 			}
 		}
 		dst = append(dst, h)
