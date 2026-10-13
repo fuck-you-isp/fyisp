@@ -14,7 +14,7 @@ import {
   meta, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, addAdmin, toLocalInput, fromLocalInput,
+  hideTip, whyButton, toLocalInput, fromLocalInput,
   useStatus, hatch, resetHatch, smooth,
 } from './core.js';
 import { Home, firstHome } from './home.js';
@@ -997,25 +997,38 @@ function showView() {
   updateRefreshLabel();
 }
 
+/** When a refused trace can start again, from retry_after: "in about 14 minutes". @param {any} e */
+function invWait(e) {
+  const s = Number((e.body || {}).retry_after) || Number(e.retryAfter) || 0;
+  return s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while';
+}
+
 /**
  * Why an on-demand trace couldn't start, in plain words, from the API's
  * stable error code (never its wording): busy (no free slot: 4 in all, with
- * retry_after); unknown_target, unavailable, forbidden.
+ * retry_after); rate_limited (12 new traces an hour, with retry_after);
+ * unknown_target, unavailable, forbidden.
  * @param {any} e
  */
 function invError(e) {
   const b = e.body || {};
-  const s = Number(b.retry_after) || Number(e.retryAfter) || 0;
-  const wait = s > 90 ? `in about ${Math.round(s / 60)} minutes` : s > 0 ? `in ${s} seconds` : 'in a little while';
   switch (b.code) {
     case 'busy': return 'Four traces are already running, which is the most at once. Try again in a few minutes.';
+    case 'rate_limited': return `Too many traces started in the last hour. Try again ${invWait(e)}.`;
     case 'unknown_target': return 'Tracing isn’t available for this target.';
     case 'unavailable': return 'Tracing is turned off on this setup.';
-    case 'forbidden': return /admin token/.test(String(b.error || '')) ? 'Tracing needs the admin token: open the link fyisp printed when it started.'
-      : 'This page can’t start traces: open the dashboard at its own address.';
+    case 'forbidden': return 'This page can’t start traces: open the dashboard at its own address.';
   }
-  return e.status === 429 ? `Too many traces right now. Try again ${wait}.` : 'Couldn’t start the trace. Try again.';
+  return e.status === 429 ? `Too many traces right now. Try again ${invWait(e)}.` : 'Couldn’t start the trace. Try again.';
 }
+
+/**
+ * Whether opening Investigate starts a trace by itself: only for the
+ * owner (no admin token needed here, or this browser has it). Other
+ * viewers click Trace, so browsing targets doesn't spend the hourly budget
+ * every viewer shares.
+ */
+function autoTrace() { return !!status && (status.controls === 'enabled' || !!status.admin); }
 
 function hopAddr(/** @type {HopRef} */ x) {
   if (x.no_reply) return 'no reply';
@@ -1052,6 +1065,10 @@ class Investigate {
     this.ctl = null;
     this.poking = false;
     this.invErr = '';
+    // Calm states, no error: none started (click Trace), or the hourly
+    // budget was used up when the view opened.
+    this.invIdle = false;
+    this.invNote = '';
     /** @type {InvState|null} the on-demand trace of this target (running, or finished within the hour) */
     this.invState = null;
     // Start one on open, once the first load shows none is running.
@@ -1119,6 +1136,7 @@ class Investigate {
       this.sel = new Set();
       this.userSel = false;
       this.invErr = '';
+      this.invNote = '';
       this.invState = null;
       this.tbody.replaceChildren();
       this.summary.replaceChildren();
@@ -1134,6 +1152,7 @@ class Investigate {
     this.titleEl.textContent = 'Investigate';
     const t = targetInfo(target);
     this.wantStart = !!t && !t.trace;
+    this.invIdle = this.wantStart && !autoTrace();
     this.renderStatus();
   }
 
@@ -1165,31 +1184,26 @@ class Investigate {
   }
 
   /**
-   * Starts an on-demand trace (POST api/investigate; the admin token where
-   * the dashboard has one). It runs at most rounds_max rounds and stops by
-   * itself, so it is never re-posted to keep it alive. On a running trace
-   * the POST only returns its state.
+   * Starts an on-demand trace (POST api/investigate: any viewer, no admin
+   * token). It runs at most rounds_max rounds and stops by itself, so it is
+   * never re-posted to keep it alive. On a running trace the POST only
+   * returns its state.
    * @param {boolean} [auto] started by opening the view, not by a click
    */
   async poke(auto = false) {
     const target = this.target;
     if (this.poking) return;
-    // Opening the view never asks for the admin token by itself: "Try again" does.
-    if (auto && status && status.controls === 'admin' && !status.admin) {
-      this.invErr = 'Tracing needs the admin token.';
+    if (auto && !autoTrace()) {
+      this.invIdle = true;
       this.renderStatus();
       return;
     }
     this.poking = true;
+    this.invIdle = false;
+    this.invNote = '';
     /** @type {Record<string,string>} */
     const headers = {};
     if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
-    if (!await addAdmin(headers, 'Tracing needs the admin token. Open the link fyisp printed when it started, or paste the token here.')) {
-      this.poking = false;
-      this.invErr = 'Tracing needs the admin token.';
-      this.renderStatus();
-      return;
-    }
     try {
       /** @type {InvState} */
       const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
@@ -1198,7 +1212,12 @@ class Investigate {
       this.setInv(r);
     } catch (e) {
       if (target !== this.target) return;
-      this.invErr = invError(/** @type {any} */ (e));
+      const err = /** @type {any} */ (e);
+      // The budget used up by opening the view is a state, not an error:
+      // the error style is for a click.
+      if (auto && (err.body || {}).code === 'rate_limited') {
+        this.invNote = `12 traces have been started in the last hour, the most allowed. You can start another ${invWait(err)}.`;
+      } else this.invErr = invError(err);
     } finally {
       this.poking = false;
     }
@@ -1232,6 +1251,10 @@ class Investigate {
     } else if (v && v.state === 'finished') {
       kids.push(h('span', { class: 'pill', text: `Finished: ${v.rounds_done} rounds${v.finished_at ? ` (ended ${fmtWhen(v.finished_at)})` : ''}` }));
       kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace again', disabled: this.poking || null, onclick: () => this.poke() }));
+    } else if (this.invNote || this.invIdle) {
+      kids.push(h('span', { class: 'pill', text: this.invNote || 'Not tracing' }));
+      kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace', disabled: this.poking || null,
+        title: 'Traces this target every few seconds; it stops by itself after about 10 minutes.', onclick: () => this.poke() }));
     } else kids.push(h('span', { class: 'pill', text: 'Starting a trace…' }));
     if (d && d.route) kids.push(h('span', { class: 'muted small', text: `route unchanged since ${fmtWhen(Date.parse(d.route.since))}` }));
     this.statusEl.replaceChildren(...kids);

@@ -5,7 +5,7 @@
 
 /** @type {() => any} */
 let statusOf = () => null;
-/** Gives the write helpers the latest /api/status (its "controls" decide whether writes need the admin token). */
+/** Gives the write helpers the latest /api/status (its "controls" decide whether speed-test controls need the admin token). */
 export function useStatus(/** @type {() => any} */ f) { statusOf = f; }
 
 // ---------- page ----------
@@ -276,7 +276,7 @@ export function dialog(o) {
 
 // ---------- writes ----------
 
-/** The admin token for writes: remembered for this tab, else asked for in a password field. @param {string} [why] */
+/** The admin token for speed-test controls: remembered for this tab, else asked for in a password field. @param {string} [why] */
 export async function adminHeader(why = '') {
   let t = null;
   try { t = sessionStorage.getItem('fyisp-admin'); } catch { /* ignore */ }
@@ -284,7 +284,7 @@ export async function adminHeader(why = '') {
     const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
     const v = await dialog({
       title: 'Admin token',
-      text: why || 'Speed tests and traces on this dashboard need the admin token. Paste it here, or open the link fyisp printed when it started.',
+      text: why || 'Speed tests on this dashboard need the admin token. Paste it here, or open the link fyisp printed when it started.',
       fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
       buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Continue', value: 'ok', primary: true }],
       focus: input,
@@ -296,7 +296,7 @@ export async function adminHeader(why = '') {
 }
 
 /**
- * Adds X-FYISP-Admin when controls need the admin token and no session
+ * Adds X-FYISP-Admin when speed-test controls need the admin token and no session
  * cookie carries it. Resolves false when the token is needed but none was
  * given (the dialog was cancelled): the caller must not send the request.
  * @param {Record<string,string>} headers @param {string} [why] the dialog's first line, for this action
