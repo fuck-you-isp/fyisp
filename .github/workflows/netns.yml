@@ -1,0 +1,43 @@
+name: netns
+# The network-fault harness (test/netns): the new Home (TestHome10), the
+# verdict (TestVerdict) and the call path (TestUDP) under real faults in
+# throwaway network namespaces. About 20 minutes, so nightly and on
+# demand, not per pull request; the release checklist wants a green run
+# on the release commit.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      run:
+        description: "-test.run pattern"
+        default: "TestHome10|TestVerdict|TestUDP"
+permissions:
+  contents: read
+concurrency:
+  group: netns-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  netns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: tools (nft, tc, ip)
+        run: sudo apt-get update -q && sudo apt-get install -yq nftables iproute2
+      - name: test/netns/run.sh
+        env:
+          FYISP_NETNS_OUT: ${{ runner.temp }}/netns
+          RUN: ${{ github.event.inputs.run || 'TestHome10|TestVerdict|TestUDP' }}
+        run: test/netns/run.sh -test.run "$RUN" 2>&1 | tee "$RUNNER_TEMP/netns.log"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: netns-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/netns
+            ${{ runner.temp }}/netns.log
+          if-no-files-found: ignore
+          retention-days: 14

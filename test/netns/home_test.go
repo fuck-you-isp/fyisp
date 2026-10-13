@@ -114,6 +114,11 @@ func homeWrong(l *homeNow, kind string) string {
 		if l.Answer.Tone != "ok" || len(l.hurt()) != 0 {
 			return "ok, the path good"
 		}
+	case "dns":
+		// Names fail, the connection is up: a warning, the path good.
+		if l.kind() != "dns" || l.Answer.Tone != "warn" || len(l.hurt()) != 0 {
+			return "dns, a warning, the path good"
+		}
 	case "udp_blocked", "stun_blocked":
 		if l.kind() != "udp_blocked" || l.Answer.Tone == "bad" || l.Answer.Tone == "ok" || len(l.hurt()) != 0 {
 			return "udp_blocked, a warning, the path good"
