@@ -130,7 +130,10 @@ const (
 	lagMax = 150 * time.Second
 	// outIsolated: a path outage this soon after another is part of a
 	// flapping link (loss), not a blip of its own (pathOut)
-	outIsolated   = 2 * time.Minute
+	outIsolated = 2 * time.Minute
+	// lossyRunMax: a total-loss run of the edge this long is an outage,
+	// even inside heavy loss (40% random loss has 5 s runs, not 15 s)
+	lossyRunMax   = 15 * time.Second
 	blockedLead   = 3 * time.Minute // a blocked-UDP episode takes call-tile problems that started this long before it
 	causeSlack    = time.Minute     // incidents this close to an episode explain it (web/home.go homePathLead)
 	vendorMerge   = 2 * time.Minute // tile episodes with one cause starting this close are one problem

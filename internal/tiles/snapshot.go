@@ -237,7 +237,7 @@ func (e *engine) snapshot(now time.Time, in inputs, ready bool) *Snapshot {
 		ls := &s.Layers[l]
 		h, known := in.layers[layerKeys[l]]
 		switch {
-		case v.layerCur[l] != nil && !e.lossyRun(l, v.layerCur[l], in.verdict):
+		case v.layerCur[l] != nil && !e.lossyRun(l, v.layerCur[l], in.verdict, now):
 			ls.State, ls.Since = Down, v.layerCur[l].Start
 		case v.layerCur[l] != nil:
 			ls.State = Slow
@@ -309,12 +309,12 @@ func (e *engine) failing(t *tile) bool {
 }
 
 // lossyRun reports a run of total loss of the edge that is part of heavy
-// random loss, not a drop: shorter than dropMin, in an isp incident that
+// random loss, not a drop: shorter than lossyRunMax, in an isp incident that
 // has not lost everything, after lost checks in the dropEndedOK before it
 // (an outage starts from clean checks). The strip shows the edge losing
 // data, not "Not answering" (netns S2b: 40% loss has 5 s runs).
-func (e *engine) lossyRun(l int, d *Drop, v model.Verdict) bool {
-	if l != layerEdge || v.Kind != model.VerdictISP || v.Evidence["loss"] >= fullLoss || d.Dur >= dropMin {
+func (e *engine) lossyRun(l int, d *Drop, v model.Verdict, now time.Time) bool {
+	if l != layerEdge || v.Kind != model.VerdictISP || v.Evidence["loss"] >= fullLoss || now.Sub(d.Start) >= lossyRunMax {
 		return false
 	}
 	lo, hi := d.Start.Add(-dropEndedOK).UnixMilli(), d.Start.UnixMilli()

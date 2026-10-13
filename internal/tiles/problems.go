@@ -267,22 +267,34 @@ func (e *engine) episodes(v *view) []Episode {
 		// a call tile's minute judges the call window that ends with it:
 		// the loss behind a calls-only Choppy problem lies that much
 		// earlier (its last minutes are the window emptying)
-		lf, lt := x.Start, x.End
+		evidence := func(from, to time.Time) [nLayers]layerEv {
+			var ls [nLayers]layerEv
+			for l := range ls {
+				buf = e.layerMinutes(buf[:0], l, from, to)
+				ls[l] = layerEvidence(buf, e.layerWindows(v, l), from, to, now)
+			}
+			return ls
+		}
+		in.layers = evidence(x.Start, x.End)
 		if !x.Connection && x.Sev == Slow && len(x.Tiles) > 0 && !slices.ContainsFunc(x.Tiles, func(id string) bool {
 			i := tileOrder(id)
 			return i < 0 || profile.Tiles[i].Kind != profile.TileCall
 		}) {
-			lf = lf.Add(-(callWindow - time.Minute))
+			// a call tile's minute judges the call window that ends with
+			// it: the loss behind a calls-only Choppy problem may lie that
+			// much earlier (once over, its last minutes are the window
+			// emptying). The lossier of the two spans at the edge counts:
+			// an ongoing problem's own span holds its loss.
+			lf, lt := x.Start.Add(-(callWindow - time.Minute)), x.End
 			if !lt.IsZero() {
 				lt = lt.Add(-(callWindow - time.Minute))
 				if lt.Before(x.Start) {
 					lt = x.Start
 				}
 			}
-		}
-		for l := range in.layers {
-			buf = e.layerMinutes(buf[:0], l, lf, lt)
-			in.layers[l] = layerEvidence(buf, e.layerWindows(v, l), lf, lt, now)
+			if sh := evidence(lf, lt); sh[layerEdge].loss > in.layers[layerEdge].loss {
+				in.layers = sh
+			}
 		}
 		in.tiles = e.tileEvs(x, v)
 		return attribute(in)

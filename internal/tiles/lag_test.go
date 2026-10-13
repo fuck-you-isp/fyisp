@@ -678,17 +678,17 @@ func TestLossyRun(t *testing.T) {
 		for _, i := range e.paths[layerEdge] {
 			e.ss[i].raw = pattern(time.Second, now.Add(-16*time.Second), c.p, ms10)
 		}
-		if got := e.lossyRun(layerEdge, d, v); got != c.want {
+		if got := e.lossyRun(layerEdge, d, v, now); got != c.want {
 			t.Errorf("%q: %v, want %v", c.p, got, c.want)
 		}
 	}
 	long := *d
-	long.Dur = dropMin
+	long.Start = now.Add(-lossyRunMax)
 	e := newEngine(p, nil, Sources{}, Options{})
 	for _, i := range e.paths[layerEdge] {
 		e.ss[i].raw = pattern(time.Second, now.Add(-16*time.Second), "x..x.x..x."+rep("x", 6), ms10)
 	}
-	if e.lossyRun(layerEdge, &long, v) {
-		t.Error("a drop of dropMin: lossy")
+	if e.lossyRun(layerEdge, &long, v, now) {
+		t.Error("a run of lossyRunMax: lossy")
 	}
 }
