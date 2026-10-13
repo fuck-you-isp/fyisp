@@ -74,19 +74,25 @@ func (c *countingStore) Stats(ctx context.Context) (store.Stats, error) {
 		LastFlushErr: "open /var/lib/fyisp/fyisp.db: disk full on 192.168.1.20"}, nil
 }
 
-// fakeControl stands in for a write route behind controlAllowed: DELETE
-// /api/annotations/{id} counts the deletes that got through.
+// fakeControl is the speed tests (a stopped speedRig's Scheduler) with a
+// counter: doControl's POST /api/speed/config {"skip": []} counts the
+// writes that got through controlAllowed.
 type fakeControl struct {
-	AnnotationStore
+	SpeedSource
 	mu sync.Mutex
 	n  int
 }
 
-func (f *fakeControl) DeleteAnnotation(context.Context, int64) error {
+func (f *fakeControl) SetSkip(context.Context, []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.n++
 	return nil
+}
+
+// doControl uses a control (the speed tests' skipped servers) with hdr.
+func doControl(h http.Handler, hdr map[string]string) *httptest.ResponseRecorder {
+	return doBody(h, "POST", "/api/speed/config", `{"skip": []}`, hdr)
 }
 
 // fixture fills a fake store: 15s HTTPS/TCP and 5s ICMP samples for the last
@@ -176,8 +182,8 @@ func (p *peakStore) Panel(ctx context.Context, q store.PanelQuery) (*store.Panel
 
 func localHandlerFor(t *testing.T, o LocalOptions) (http.Handler, *fakeControl) {
 	_, d := fixture(t, time.Now())
-	fc := &fakeControl{}
-	d.Annotations = fc
+	fc := &fakeControl{SpeedSource: newSpeedRigWith(t, 24*time.Hour, rigOpts{noRun: true}).s}
+	d.Speed = fc
 	if o.Addr == "" {
 		o.Addr = "127.0.0.1:3000"
 	}
@@ -265,7 +271,7 @@ func TestLocalPOST(t *testing.T) {
 		{"ok via Sec-Fetch-Site only", with(nil, "Origin"), 200},
 	}
 	for _, c := range cases {
-		if w := do(h, "DELETE", "/api/annotations/1", c.hdr); w.Code != c.code {
+		if w := doControl(h, c.hdr); w.Code != c.code {
 			t.Errorf("%s: %d, want %d (%s)", c.name, w.Code, c.code, w.Body.String())
 		}
 	}
@@ -278,7 +284,7 @@ func TestLocalPOST(t *testing.T) {
 
 	// Listening on all interfaces without an admin token: POST disabled.
 	hb, shb := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000"})
-	if w := do(hb, "DELETE", "/api/annotations/1", good); w.Code != 403 || shb.n != 0 {
+	if w := doControl(hb, good); w.Code != 403 || shb.n != 0 {
 		t.Errorf("PublicBind POST = %d (controls %d), want 403", w.Code, shb.n)
 	}
 	var st localStatus
@@ -288,25 +294,37 @@ func TestLocalPOST(t *testing.T) {
 	}
 	// With an admin token, the header is required.
 	ha, sha := localHandlerFor(t, LocalOptions{PublicBind: true, AdminToken: "adm"})
-	if w := do(ha, "DELETE", "/api/annotations/1", good); w.Code != 403 {
+	if w := doControl(ha, good); w.Code != 403 {
 		t.Errorf("admin missing = %d", w.Code)
 	}
-	if w := do(ha, "DELETE", "/api/annotations/1", with(map[string]string{HeaderAdmin: "adm"})); w.Code != 200 || sha.n != 1 {
+	if w := doControl(ha, with(map[string]string{HeaderAdmin: "adm"})); w.Code != 200 || sha.n != 1 {
 		t.Errorf("admin ok = %d", w.Code)
 	}
 	// A loopback dashboard without a token trusts only this machine: a
 	// reverse proxy or tunnel that rewrote Host to 127.0.0.1 is refused.
 	before := sh.n
 	for _, k := range proxyHeaders {
-		if w := do(h, "DELETE", "/api/annotations/1", with(map[string]string{k: "203.0.113.9"})); w.Code != 403 || !strings.Contains(w.Body.String(), "--admin-token") {
+		if w := doControl(h, with(map[string]string{k: "203.0.113.9"})); w.Code != 403 || !strings.Contains(w.Body.String(), "--admin-token") {
 			t.Errorf("through a proxy (%s) = %d %s", k, w.Code, w.Body.String())
 		}
 	}
 	if sh.n != before {
 		t.Error("a proxied request used a control")
 	}
+	// Every speed control goes through the same gate.
+	for _, p := range []string{"/api/speed/run?kind=sweep", "/api/speed/cancel?id=x"} {
+		if w := do(hb, "POST", p, good); w.Code != 403 {
+			t.Errorf("PublicBind POST %s = %d, want 403", p, w.Code)
+		}
+		if w := do(h, "POST", p, with(map[string]string{"X-Forwarded-For": "203.0.113.9"})); w.Code != 403 {
+			t.Errorf("POST %s through a proxy = %d, want 403", p, w.Code)
+		}
+		if w := do(ha, "POST", p, good); w.Code != 403 {
+			t.Errorf("POST %s without the admin token = %d, want 403", p, w.Code)
+		}
+	}
 	// With an admin token, the token decides.
-	if w := do(ha, "DELETE", "/api/annotations/1", with(map[string]string{HeaderAdmin: "adm", "X-Forwarded-For": "203.0.113.9"})); w.Code != 200 {
+	if w := doControl(ha, with(map[string]string{HeaderAdmin: "adm", "X-Forwarded-For": "203.0.113.9"})); w.Code != 200 {
 		t.Errorf("admin through a proxy = %d", w.Code)
 	}
 }

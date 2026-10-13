@@ -425,9 +425,4 @@ func TestTriggerOrigin(t *testing.T) {
 			t.Errorf("%s/%s: trigger %q origin %q on-demand %v", c.k, c.who, tr, st.Origin(), st.OnDemand())
 		}
 	}
-	for _, tr := range []string{"public", "public_sweep"} { // TODO(v0.9): drop with model's legacy triggers
-		if st := (model.SpeedTest{Trigger: tr}); st.Origin() != "public" || !st.OnDemand() {
-			t.Errorf("legacy %s: origin %q on-demand %v", tr, st.Origin(), st.OnDemand())
-		}
-	}
 }

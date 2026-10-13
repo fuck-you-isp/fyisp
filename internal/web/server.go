@@ -124,7 +124,6 @@ const (
 	routeTrace
 	routeTracePanel
 	routeRouteChanges
-	routeNotes
 	routeBaselines
 	routeOverview
 	routeCalls
@@ -154,8 +153,6 @@ func lookup(rel string) route {
 		return routeTracePanel
 	case "api/routes/changes":
 		return routeRouteChanges
-	case "api/annotations":
-		return routeNotes
 	case "api/baselines":
 		return routeBaselines
 	case "api/overview":
@@ -193,8 +190,6 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		writeJSON(w, r, http.StatusOK, s.rawStatus(r.Context()))
 	case routeProfile:
 		pj := buildProfile(s.d.Profile())
-		pj.Features.Notes = s.d.Annotations != nil
-		pj.Features.Reports = s.d.Reports != nil
 		pj.Features.Baselines = s.d.Baselines != nil
 		pj.Features.Speed = s.d.Speed != nil
 		if s.d.Trace != nil {
@@ -211,12 +206,6 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveVerdict(w, r)
 	case routeIncidents:
 		s.serveIncidents(w, r)
-	case routeNotes:
-		if s.d.Annotations == nil {
-			notFound(w, r)
-			return
-		}
-		s.listNotes(w, r)
 	case routeBaselines:
 		s.serveBaselines(w, r)
 	case routeOverview:

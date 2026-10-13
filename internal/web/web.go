@@ -3,11 +3,11 @@
 //
 // Local is the only handler: the owner's listener (default
 // 127.0.0.1:3000). It adds /metrics and the write routes (on-demand traces,
-// notes, reports, speed tests), protected by a Host allowlist, a
-// same-origin check, a per-process CSRF token and, where the dashboard is
-// reachable from elsewhere (--listen beyond loopback, --allow-host), an
-// admin token. Sharing is done with evidence reports (redacted or not), not
-// with a public listener: v0.8.0 removed the share link.
+// speed tests), protected by a Host allowlist, a same-origin check, a
+// per-process CSRF token and, where the dashboard is reachable from
+// elsewhere (--listen beyond loopback, --allow-host), an admin token. There
+// is no public listener (v0.8.0 removed the share link) and no reports
+// (v0.10.0 removed them): live access is the owner's own tunnel or proxy.
 //
 // The caller owns the http.Server. Recommended settings:
 //
@@ -38,9 +38,8 @@ import (
 // required; Metrics may be nil (the route then answers 404).
 // Verdict may be nil: the verdict banner and outage log are then hidden.
 // Trace may be nil: the trace routes then answer 404 and the UI hides the
-// Investigate view. Annotations, Reports and Baselines may be nil: their
-// routes then answer 404 and the UI hides notes, reports and "normal"
-// badges. Slow may be nil (no "slower than your normal" line). UDP may be
+// Investigate view. Baselines may be nil: its route then answers 404 and
+// the UI hides the "normal" badges. Slow may be nil (no "slower than your normal" line). UDP may be
 // nil (no live state of the UDP targets, e.g. the Teams relay's region).
 type Deps struct {
 	Profile func() *model.Profile
@@ -49,11 +48,6 @@ type Deps struct {
 	Metrics http.Handler
 	Verdict VerdictSource // the verdict engine (internal/verdict.Engine)
 	Trace   TraceSource   // per-hop stats, routes and on-demand traces
-	// Annotations keeps timeline notes (store.AnnotationStore).
-	Annotations AnnotationStore
-	// Reports builds and keeps evidence reports (report.Builder plus
-	// store.ReportStore; see ReportSource).
-	Reports ReportSource
 	// Baselines answers each series' normal (baseline.Source).
 	Baselines BaselineSource
 	// Slow lists targets currently slower than their normal (the verdict

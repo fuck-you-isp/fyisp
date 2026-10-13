@@ -58,8 +58,7 @@ type localHandler struct {
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
-// /metrics, and the write routes (POST /api/speed/run|config|cancel,
-// POST/PUT/DELETE /api/annotations[/{id}] and /api/reports[/{id}]), all
+// /metrics, and the write routes (POST /api/speed/run|config|cancel),
 // behind controlAllowed; POST /api/investigate, behind the same-origin and
 // CSRF checks and, when one is set, the admin token; and
 // POST/DELETE /api/admin/session, which exchanges the admin token for a
@@ -171,14 +170,6 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/api/speed/cancel":
 		h.serveSpeedCancel(w, r)
-		return
-	}
-	if rest, ok := strings.CutPrefix(p, "/api/annotations"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
-		h.serveNotes(w, r, strings.TrimPrefix(rest, "/"))
-		return
-	}
-	if rest, ok := strings.CutPrefix(p, "/api/reports"); ok && (rest == "" || (rest[0] == '/' && len(rest) > 1)) {
-		h.serveReports(w, r, strings.TrimPrefix(rest, "/"))
 		return
 	}
 	if !strings.HasPrefix(p, "/") {

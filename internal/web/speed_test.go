@@ -408,7 +408,7 @@ func TestSpeedWrites(t *testing.T) {
 	if c, _ := run("/api/speed/run?id=Nope"); c != 404 {
 		t.Errorf("unknown id: %d", c)
 	}
-	// Cancel (admin-gated like notes).
+	// Cancel (admin-gated like the other speed controls).
 	if w := do(loc, "POST", "/api/speed/cancel?id=2", good); w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"cancelled"`) {
 		t.Errorf("cancel: %d %s", w.Code, w.Body.String())
 	}
@@ -688,46 +688,9 @@ func TestWithVia(t *testing.T) {
 	}
 }
 
-// TestSpeedLegacyOrigin: tests the share link started before v0.8.0 show
-// as the owner's on-demand tests: the API has no "public" origin or
-// trigger any more.
-func TestSpeedLegacyOrigin(t *testing.T) {
-	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	ts := []model.SpeedTest{{Start: at, End: at.Add(10 * time.Second), Trigger: "public"}, {Start: at.Add(time.Hour), End: at.Add(time.Hour + 9*time.Second), Trigger: "schedule"},
-		{Start: at.Add(2 * time.Hour), End: at.Add(2*time.Hour + 9*time.Second), Trigger: "public_sweep"}}
-	if w := speedWindows(ts, at.Add(-time.Hour)); len(w) != 3 || w[0].Origin != "owner" || w[1].Origin != "scheduled" || w[2].Origin != "owner" {
-		t.Errorf("windows %+v", w)
-	}
-	n := newSpeedNames(speedtest.State{}, speedCatalog(t))
-	if j := n.test(ts[0]); j.Trigger != "manual" || !j.OnDemand {
-		t.Errorf("public: %+v", j)
-	}
-	if j := n.test(ts[2]); j.Trigger != "sweep" || !j.OnDemand {
-		t.Errorf("public_sweep: %+v", j)
-	}
-}
-
-// TestSpeedOwnerZone: a page's IANA tz becomes the owner's zone (the
-// reports' hours), kept when a later request sends none.
-func TestSpeedOwnerZone(t *testing.T) {
-	loc, _ := speedHandlers(t, newSpeedRig(t, 5*time.Hour), LocalOptions{})
-	do(loc, "GET", "/api/speed?days=7&tz=America/New_York", speedHost)
-	var v struct {
-		OwnerTZ   string `json:"owner_tz"`
-		TZName    string `json:"tz_name"`
-		ZoneLabel string `json:"zone_label"`
-	}
-	if err := json.Unmarshal(do(loc, "GET", "/api/speed?days=7&tz=120", speedHost).Body.Bytes(), &v); err != nil {
-		t.Fatal(err)
-	}
-	if v.OwnerTZ != "America/New_York" {
-		t.Errorf("owner zone: %+v", v)
-	}
-}
-
 // TestSweepBytes: "Test every server" is estimated from each server's
 // recent median data, else the line's rate both ways for MaxMeasure;
-// skipped servers and share-link tests from before v0.8.0 (capped) are left out.
+// skipped servers are left out.
 func TestSweepBytes(t *testing.T) {
 	st := speedtest.State{Servers: []speedtest.ServerState{
 		{Server: speedtest.Server{ID: "A"}}, {Server: speedtest.Server{ID: "B"}}, {Server: speedtest.Server{ID: "C"}, Skipped: true}}}
@@ -735,7 +698,6 @@ func TestSweepBytes(t *testing.T) {
 	ts := []model.SpeedTest{
 		{Server: "A", Outcome: model.SpeedOK, Bytes: 100e6, DownBps: &d, UpBps: &u, Trigger: "schedule"},
 		{Server: "A", Outcome: model.SpeedOK, Bytes: 300e6, DownBps: &d, UpBps: &u, Trigger: "manual"},
-		{Server: "B", Outcome: model.SpeedOK, Bytes: 200e6, DownBps: &d, UpBps: &u, Trigger: "public"},
 		{Server: "B", Outcome: model.SpeedBusy, Bytes: 1e3, Trigger: "schedule"},
 	}
 	if b, n := sweepBytes(st, ts); n != 2 || b != 200e6+150e6 {

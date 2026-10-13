@@ -106,9 +106,6 @@ const (
 	SettingKey   = "speedtest_mode"
 	settingExtra = "speedtest_extra"
 	settingSeed  = "speedtest_seed"
-	// SettingZone is the owner's IANA time zone, as their browser last
-	// sent it on a local page: the report's zone.
-	SettingZone = "owner_tz"
 )
 
 // Options configure a Scheduler.
@@ -219,7 +216,6 @@ type Scheduler struct {
 	pickedAt     time.Time
 	rtts         map[string]time.Duration
 	vias         map[string]model.Handoff // server -> latest handoff with a Via
-	zone         string                   // the owner's IANA zone ("": unknown)
 }
 
 // Row is a scheduled row of the current mode (a region or a server).
@@ -269,8 +265,6 @@ type State struct {
 	// Vias is each server's latest handoff that crossed an internet
 	// exchange (Handoff.Via; in memory only, local only).
 	Vias map[string]model.Handoff
-	// OwnerZone is the owner's IANA zone ("" unknown: see OwnerZone).
-	OwnerZone string
 }
 
 // New returns a Scheduler; Run drives it.
@@ -539,9 +533,6 @@ func (s *Scheduler) load(ctx context.Context) {
 			s.extra = splitIDs(v)
 		}
 	}
-	if v, ok, err := st.Setting(ctx, SettingZone); err == nil && ok {
-		s.zone = v
-	}
 	if v, ok, err := st.Setting(ctx, settingSkip); err == nil && ok {
 		for _, id := range splitIDs(v) {
 			s.skip[id] = true
@@ -676,44 +667,6 @@ func (s *Scheduler) SetMode(ctx context.Context, m Mode, extra []string) (time.T
 	return next, nil
 }
 
-// NoteZone keeps the owner's IANA zone (from a local page's tz) when it
-// changed; anything time.LoadLocation can't load is ignored.
-func (s *Scheduler) NoteZone(name string) {
-	if name == "" || name == "Local" {
-		return
-	}
-	s.mu.Lock()
-	same := s.zone == name
-	s.mu.Unlock()
-	if same {
-		return
-	}
-	if _, err := time.LoadLocation(name); err != nil {
-		return
-	}
-	s.mu.Lock()
-	s.zone = name
-	s.mu.Unlock()
-	if st := s.o.Store; st != nil {
-		ctx, cancel := storeCtx(context.Background())
-		defer cancel()
-		if err := st.SetSetting(ctx, SettingZone, name); err != nil {
-			s.o.Log.Debug("speed test: saving the owner's time zone failed", "err", err)
-		}
-	}
-}
-
-// OwnerZone is where the owner's times of day are: their IANA zone,
-// else the server's (TZ, time.Local), which is UTC when unset.
-func OwnerZone(name string) *time.Location {
-	if name != "" && name != "Local" {
-		if loc, err := time.LoadLocation(name); err == nil {
-			return loc
-		}
-	}
-	return time.Local
-}
-
 // ZoneLabel names loc at t: "EDT (UTC−4)", "UTC+5:30" when it has no
 // abbreviation, "UTC".
 func ZoneLabel(loc *time.Location, t time.Time) string {
@@ -735,17 +688,6 @@ func ZoneLabel(loc *time.Location, t time.Time) string {
 	return name + " (" + utc + ")"
 }
 
-// StoredZone is OwnerZone of the zone saved in st (the report's zone).
-func StoredZone(ctx context.Context, st interface {
-	Setting(ctx context.Context, key string) (string, bool, error)
-}) *time.Location {
-	if st == nil {
-		return time.Local
-	}
-	v, _, _ := st.Setting(ctx, SettingZone)
-	return OwnerZone(v)
-}
-
 // State reports the schedule, the rows and the servers.
 func (s *Scheduler) State() State {
 	s.mu.Lock()
@@ -753,7 +695,7 @@ func (s *Scheduler) State() State {
 	load := s.planLoadLocked(s.mode)
 	st := State{Mode: s.mode, Modes: s.Modes(), SetByFlag: s.setByFlag, Extra: slices.Clone(s.extra),
 		Interval: s.IntervalFor(s.mode), Spacing: s.spacingLocked(s.mode), PlannedShare: load.Share,
-		Regions: s.o.Catalog.Regions, Next: s.next, Vias: maps.Clone(s.vias), OwnerZone: s.zone}
+		Regions: s.o.Catalog.Regions, Next: s.next, Vias: maps.Clone(s.vias)}
 	if s.mode == ModeOff {
 		st.PlannedShare = 0
 	}

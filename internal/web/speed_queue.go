@@ -198,7 +198,7 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 			writeErr(w, r, http.StatusNotFound, "no such queue entry")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 		defer cancel()
 		j := s.speedEntry(e, st, names)
 		if err := s.speedResults(ctx, &j, e, names, now); err != nil {
@@ -208,7 +208,7 @@ func (s *server) serveSpeedQueue(w http.ResponseWriter, r *http.Request, p speed
 		writeJSON(w, r, http.StatusOK, j)
 	case "sweep":
 		qs := q.State()
-		ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 		defer cancel()
 		// running: a sweep under way (its results so far); entry and tests:
 		// the last finished one.
@@ -318,7 +318,7 @@ func (s *server) enqueueSpeed(w http.ResponseWriter, r *http.Request, req speedt
 }
 
 // serveSpeedRun answers POST api/speed/run?kind=single[&id=]|sweep on the
-// local listener: the same protections as notes.
+// local listener: the write routes' protections (controlAllowed).
 func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r, "kind", "id") {
 		return
@@ -332,7 +332,7 @@ func (h *localHandler) serveSpeedRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveSpeedCancel answers POST api/speed/cancel?id=<entry> (waiting or
-// running): admin-gated like notes.
+// running): admin-gated like the other speed controls.
 func (h *localHandler) serveSpeedCancel(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r, "id") {
 		return

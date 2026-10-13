@@ -47,6 +47,16 @@ RUN --mount=type=cache,target=/go/pkg/mod \
  && GOOS=darwin go vet ./internal/netinfo/... && GOOS=windows go vet ./internal/netinfo/... \
  && CGO_ENABLED=1 go test -race ./...
 
+# An old (schema v6) database with its sidecars and two backups, for CI's
+# check that the runtime image replaces it:
+#   docker buildx build --target oldfixture --output type=local,dest=old .
+FROM source AS oldfixture-gen
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    FYISP_WRITE_OLD=/out go test -count=1 -run '^TestWriteOldFixture$' ./internal/store/ && ls /out/fyisp.db
+FROM scratch AS oldfixture
+COPY --from=oldfixture-gen /out/ /
+
 # Built-in IP-to-ASN table: download the latest iptoasn.com IPv4 data (public
 # domain, PDDL) and convert it with internal/asn/cmd/asngen. ADD re-checks the
 # URL on every build, so a new upstream file is always picked up. The version
@@ -225,7 +235,7 @@ VOLUME /data
 EXPOSE 3000
 STOPSIGNAL SIGTERM
 # Defaults as environment variables (flags win), so subcommands work too:
-# docker run IMG version | profiles | report | export | paths.
+# docker run IMG version | profiles | export | paths.
 # container=oci tells fyisp it runs in a container (netinfo.InContainer),
 # also where the runtime creates no /.dockerenv.
 ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000 container=oci

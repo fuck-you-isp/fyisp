@@ -34,9 +34,6 @@ type SpeedSource interface {
 	MaskedShare(d time.Duration) float64
 	Catalog() *speedtest.Catalog
 	BytesSince(ctx context.Context, t time.Time) (int64, error)
-	// NoteZone keeps the owner's IANA zone (the report's), as a local page
-	// sent it.
-	NoteZone(name string)
 }
 
 // Speed API limits.
@@ -234,7 +231,6 @@ type speedJSON struct {
 	Bytes24h        int64              `json:"bytes_24h"`
 	Connection      speedConnection    `json:"connection"`
 	NextAt          *int64             `json:"next_at"`
-	OwnerTZ         string             `json:"owner_tz,omitempty"` // the owner's IANA zone: the report's times
 	NextRow         *string            `json:"next_row"`
 	Running         *speedRunning      `json:"running"`
 	Rows            []speedRow         `json:"rows"`
@@ -337,7 +333,7 @@ func ms(t time.Time) *int64 {
 
 func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	ref, display, provider, city := n.server(t.Server)
-	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: legacyTrigger(t.Trigger), OnDemand: t.OnDemand(),
+	j := speedTestJSON{ID: t.ID, Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Trigger: t.Trigger, OnDemand: t.OnDemand(),
 		Outcome: t.Outcome, Server: ref.ID, Label: ref.Label, Display: display, Provider: provider, City: city,
 		Fallback: t.Fallback, FallbackLevel: t.FallbackLevel, Attempts: t.Attempts,
 		DownBps: roundP(t.DownBps, 1), UpBps: roundP(t.UpBps, 1), DownShort: t.DownShort, UpShort: t.UpShort, CappedByBudget: t.DownShort || t.UpShort,
@@ -373,30 +369,6 @@ func (n speedNames) test(t model.SpeedTest) speedTestJSON {
 	j.Latency, j.Conn = t.Latency, cmp.Or(t.Conn, model.ConnUnknown)
 	j.Port, j.Handoff = t.Port, t.Handoff
 	return j
-}
-
-// legacyTrigger maps the share link's triggers, which tests stored before
-// v0.8.0 may still carry, to the owner's: the API knows only schedule,
-// manual and sweep.
-// TODO(v0.9): drop once no such row is left (speedtests are kept 90 days).
-func legacyTrigger(trigger string) string {
-	switch trigger {
-	case "public":
-		return "manual"
-	case "public_sweep":
-		return "sweep"
-	}
-	return trigger
-}
-
-// legacyOrigin is t.Origin() with legacyTrigger's mapping: "public"
-// (before v0.8.0) becomes "owner", the other on-demand origin.
-// TODO(v0.9): drop with legacyTrigger.
-func legacyOrigin(t model.SpeedTest) string {
-	if o := t.Origin(); o != "public" {
-		return o
-	}
-	return "owner"
 }
 
 // ---------- params ----------
@@ -531,7 +503,6 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.d.Speed.NoteZone(p.zone.name)
 	switch p.part {
 	case "queue", "entry", "sweep":
 		s.serveSpeedQueue(w, r, p, now)
@@ -581,7 +552,7 @@ func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
 	out := []speedWindow{}
 	for _, t := range ts {
 		if !t.End.Before(from) && t.End.After(t.Start) {
-			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: legacyOrigin(t)})
+			out = append(out, speedWindow{Start: t.Start.UnixMilli(), End: t.End.UnixMilli(), Origin: t.Origin()})
 		}
 	}
 	return out
@@ -615,7 +586,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
 		MaskedShare24h: math.Round(s.d.Speed.MaskedShare(24*time.Hour)*1000) / 1000,
-		NextAt:         ms(st.Next), OwnerTZ: st.OwnerZone, NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
+		NextAt:         ms(st.Next), NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
 		Rows: []speedRow{}, PerRegion: []speedRow{}, PerServer: []speedRow{}, Servers: []speedServerJSON{}, Regions: []speedRegionJSON{},
 		Connection: speedConnection{Type: "unknown", Source: "detected"}}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
@@ -1081,8 +1052,17 @@ func withVia(ts []model.SpeedTest, st speedtest.State) []model.SpeedTest {
 	return out
 }
 
+// storeTimeout bounds a write route's store call.
+const storeTimeout = 10 * time.Second
+
+// storeErr logs a store failure and answers 500.
+func (h *localHandler) storeErr(w http.ResponseWriter, r *http.Request, what string, err error) {
+	h.d.log().Warn(what, "err", err)
+	writeErr(w, r, http.StatusInternalServerError, what+" failed: "+err.Error())
+}
+
 // speedPOST checks a speed-test write: a source, POST, only the allowed
-// parameters, and the same protections as notes.
+// parameters, and the write routes' protections (controlAllowed).
 func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params ...string) bool {
 	if h.d.Speed == nil {
 		notFound(w, r)
@@ -1117,7 +1097,7 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]} and/or {"skip": [server ids]}`)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), notesTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 	defer cancel()
 	out := map[string]any{}
 	if body.Mode != nil {
@@ -1151,14 +1131,13 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 // zoneLabel is the IANA name the hours are in: the parameter's, or the
 // server's own for no tz (its TZ, else "Local"), "" for a fixed offset.
 // sweepBytes estimates "Test every server": the sum, over the servers it
-// tests, of each one's median data over its recent ok tests (share-link
-// tests from before v0.8.0, capped at 100 MB, left out), else this line's median rate
-// both ways for MaxMeasure, else defaultTestBytes.
+// tests, of each one's median data over its recent ok tests, else this
+// line's median rate both ways for MaxMeasure, else defaultTestBytes.
 func sweepBytes(st speedtest.State, ts []model.SpeedTest) (total int64, n int) {
 	per := map[string][]float64{}
 	var down, up []float64
 	for _, t := range ts {
-		if t.Outcome != model.SpeedOK || t.Origin() == "public" { // TODO(v0.9): drop the legacy origin
+		if t.Outcome != model.SpeedOK {
 			continue
 		}
 		if t.Bytes > 0 {

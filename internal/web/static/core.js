@@ -246,8 +246,8 @@ export function whyButton(/** @type {string} */ title, /** @type {string} */ tex
  * optional message, optional fields and buttons. It resolves with the
  * button's value, or '' when dismissed (Escape, Cancel); fields are read by
  * the caller before it resolves.
- * body: paragraphs the dialog is described by (aria-describedby); safe: focus Cancel first even when the primary isn't destructive.
- * @param {{title:string, text?:string, body?:Node[], fields?:Node[], buttons:{label:string,value:string,primary?:boolean,danger?:boolean}[], focus?:HTMLElement, safe?:boolean}} o
+ * body: paragraphs the dialog is described by (aria-describedby); safe: focus Cancel first.
+ * @param {{title:string, text?:string, body?:Node[], fields?:Node[], buttons:{label:string,value:string,primary?:boolean}[], focus?:HTMLElement, safe?:boolean}} o
  * @returns {Promise<string>}
  */
 export function dialog(o) {
@@ -261,28 +261,17 @@ export function dialog(o) {
       // Only the primary button submits: Enter in a field (implicit submission) must pick it, never Cancel.
       h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }),
         ...o.buttons.map((b) => h('button', {
-          class: `btn${b.primary ? ' primary' : ' ghost'}${b.danger ? ' danger' : ''}`, value: b.value, text: b.label,
+          class: `btn${b.primary ? ' primary' : ' ghost'}`, value: b.value, text: b.label,
           type: b.primary ? 'submit' : 'button', onclick: b.primary ? null : () => dlg.close(b.value),
         }))));
     dlg.append(form);
     dlg.addEventListener('close', () => { resolve(dlg.returnValue || ''); dlg.remove(); });
     document.body.append(dlg);
     dlg.showModal();
-    // A field, else the safe choice: Cancel when the primary action is destructive, else the primary.
-    const danger = o.safe || o.buttons.some((b) => b.danger);
-    const pick = o.focus || /** @type {HTMLElement|null} */ (form.querySelector(danger ? 'button[value="cancel"]' : '.btn.primary'));
+    // A field, else the safe choice: Cancel when asked (safe), else the primary.
+    const pick = o.focus || /** @type {HTMLElement|null} */ (form.querySelector(o.safe ? 'button[value="cancel"]' : '.btn.primary'));
     (pick || form).focus();
   });
-}
-
-/** Asks to confirm a destructive action. @param {string} title @param {string} text @param {string} ok */
-export async function confirmDialog(title, text, ok) {
-  return (await dialog({ title, text, buttons: [{ label: 'Cancel', value: 'cancel' }, { label: ok, value: 'ok', primary: true, danger: true }] })) === 'ok';
-}
-
-/** Tells something that needs no answer. @param {string} title @param {string} text */
-export async function alertDialog(title, text) {
-  await dialog({ title, text, buttons: [{ label: 'OK', value: 'ok', primary: true }] });
 }
 
 // ---------- writes ----------
@@ -295,7 +284,7 @@ export async function adminHeader(why = '') {
     const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
     const v = await dialog({
       title: 'Admin token',
-      text: why || 'Notes, reports and speed tests on this dashboard need the admin token. You can also open the link fyisp printed when it started.',
+      text: why || 'Speed tests and traces on this dashboard need the admin token. Paste it here, or open the link fyisp printed when it started.',
       fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
       buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Continue', value: 'ok', primary: true }],
       focus: input,
@@ -337,7 +326,7 @@ export async function apiWrite(method, url, body, why = '') {
   }
 }
 
-/** Owner controls (notes, reports) are usable: not disabled by a LAN bind with --admin-token=off. */
+/** Owner controls (speed tests) are usable: not disabled by a LAN bind with --admin-token=off. */
 export function canWrite() { const status = statusOf(); return !!status && status.controls !== 'disabled'; }
 
 /** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */

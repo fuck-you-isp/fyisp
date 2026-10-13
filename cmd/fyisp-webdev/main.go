@@ -155,8 +155,6 @@ func main() {
 	noEdge := flag.Bool("edge-undiscovered", false, "never report ISP edge samples (shows \"discovering…\")")
 	conn := flag.String("conn", model.ConnWiFi, "how this machine connects (the network path's Conn): wifi, wired or unknown")
 	noTrace := flag.Bool("no-trace", false, "run without a trace source (Investigate view hidden)")
-	noNotes := flag.Bool("no-notes", false, "run without an annotation store (notes hidden)")
-	noReports := flag.Bool("no-reports", false, "run without reports")
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
 	noSpeed := flag.Bool("no-speed", false, "run without speed tests (Speed hidden)")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
@@ -294,24 +292,6 @@ func main() {
 	if live != nil {
 		d.Tiles = live
 		d.Path = func() netinfo.Path { return live.Current().Path }
-	}
-	var notes *fakeNotes
-	if !*noNotes {
-		notes = newFakeNotes(now, *bf)
-		d.Annotations = notes
-	}
-	if !*noReports {
-		if notes == nil {
-			notes = newFakeNotes(now, 0)
-		}
-		fr := newFakeReports(notes, d.Verdict, st)
-		if *bf > 0 {
-			_, isp, _ := windows(*bf, now)
-			if id, err := fr.seed(ctx, isp.from.Add(-30*time.Minute), isp.to.Add(30*time.Minute)); err == nil {
-				log.Info("sample report", "url", "http://"+*listen+"/api/reports/"+id)
-			}
-		}
-		d.Reports = fr
 	}
 	if !*noSpeed {
 		d.Speed = newFakeSpeed(ctx, now, *bf, log)

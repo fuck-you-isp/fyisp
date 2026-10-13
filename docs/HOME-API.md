@@ -4,6 +4,8 @@ Home answers "is my internet OK, and which apps work": an answer card, the conne
 
 This is version 2 of the API (`"v": 2` in every answer). Version 1 (`part=live`, `part=history`, `part=at`) was removed in v0.9.0: see [Removed in v0.9.0](#removed-in-v090).
 
+`/api/annotations` and `/api/reports` were removed in v0.10.0.
+
 ## Request
 
 ```
@@ -154,8 +156,8 @@ v0.9.0 replaced the old Home and its API. `/api/home2`, which served this API du
 - **The 4 category tiles** (`calls`, `work`, `web`, `other`, with `title`, `level`, `label`, `names`, `more`, `affected`, `ok`, `total` and `details`), replaced by the 11 app tiles; and **`part`, `apps`, `apps_note`, `calls`, `other` and `steps`**.
 - **`part=history`:** the timeline (`days` with their `runs`, `off`, `work_from`/`work_to` and `no_record`), `first_data`, `summary`, `counts`, `problems`, `work` and `known`. The problems of the week are `problems` in `part=now`.
 - **`speed`** as a line by time of day (`text`, `kind`, `impact`: "Speed: evenings are about 40% slower…"), replaced by the latest test against the usual. There is no plan setting.
-- **In the page:** "Mark a bad call", "What happened at…?", the Today/Week timeline (and its `#hw=w` hash, which now opens Home) and the Home report button. Notes and reports stay under Technical details.
+- **In the page:** "Mark a bad call", "What happened at…?", the Today/Week timeline (and its `#hw=w` hash, which now opens Home) and the Home report button. Notes and reports stayed under Technical details until v0.10.0 removed them.
 
 ## Removed in v0.8.0
 
-The share link's third-person voice is gone: the `voice` parameter (now a 400, like any unknown parameter) and the `voice` field of every part, the share link's weekly report (the same `part=history&span=w` read in that voice), and the `sides` and `coverage` fields of `part=history`, which only that report read. `answer.try` and every copy field speak to the owner. For something to send to others, build a redacted evidence report (`fyisp report --redact`, or Reports in the dashboard).
+The share link's third-person voice is gone: the `voice` parameter (now a 400, like any unknown parameter) and the `voice` field of every part, the share link's weekly report (the same `part=history&span=w` read in that voice), and the `sides` and `coverage` fields of `part=history`, which only that report read. `answer.try` and every copy field speak to the owner. For something to send to others, use a screenshot of Home.

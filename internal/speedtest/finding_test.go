@@ -3,7 +3,6 @@ package speedtest
 import (
 	"math"
 	"math/rand/v2"
-	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -130,7 +129,7 @@ func TestFinding(t *testing.T) {
 	for _, tc := range cases {
 		ts := synth(c, tc.days, tc.score, tc.conn)
 		f := FindFinding(FindingInput{Tests: ts, Catalog: c, EdgeIdle: tc.edge})
-		publicVoice(t, tc.name, f)
+		neutralEvidence(t, tc.name, f)
 		if f.Case != tc.want || (tc.tier != "" && f.Tier != tc.tier) {
 			t.Errorf("%s: case %s tier %s, want %s %s: %s", tc.name, f.Case, f.Tier, tc.want, tc.tier, f.Text)
 			continue
@@ -140,8 +139,8 @@ func TestFinding(t *testing.T) {
 				t.Errorf("%s: %q lacks %q", tc.name, f.Text, w)
 			}
 		}
-		if strings.Contains(f.TextPublic, "your internet provider") || strings.Contains(f.TextPublic, "Your provider") || f.Evidence == "" {
-			t.Errorf("%s: public %q, evidence %q", tc.name, f.TextPublic, f.Evidence)
+		if f.Evidence == "" {
+			t.Errorf("%s: no evidence", tc.name)
 		}
 		if tc.conn == "wifi" && f.Caveat == "" {
 			t.Errorf("%s: no Wi-Fi caveat", tc.name)
@@ -163,8 +162,8 @@ func TestFinding(t *testing.T) {
 		ts[i].Handoff = h
 	}
 	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseProvider || f.Network != "LEVEL3 (AS3356)" || len(f.Providers) != 2 ||
-		!strings.Contains(f.Text, "the link between your internet provider and LEVEL3 (AS3356).") || strings.Contains(f.TextPublic, "LEVEL3") {
-		t.Errorf("handoff: %s %q %v: %s / %s", f.Case, f.Network, f.Providers, f.Text, f.TextPublic)
+		!strings.Contains(f.Text, "the link between your internet provider and LEVEL3 (AS3356).") {
+		t.Errorf("handoff: %s %q %v: %s", f.Case, f.Network, f.Providers, f.Text)
 	}
 	// Meeting at an internet exchange (local wording only).
 	for i := range ts {
@@ -175,9 +174,8 @@ func TestFinding(t *testing.T) {
 		}
 	}
 	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Via != "DE-CIX" ||
-		!strings.Contains(f.Text, "the link between your internet provider and LEVEL3 (AS3356), where they meet at DE-CIX (an internet exchange)") ||
-		regexp.MustCompile(`DE-CIX|AS[0-9]|via`).MatchString(f.TextPublic) {
-		t.Errorf("via: %q: %s / %s", f.Via, f.Text, f.TextPublic)
+		!strings.Contains(f.Text, "the link between your internet provider and LEVEL3 (AS3356), where they meet at DE-CIX (an internet exchange)") {
+		t.Errorf("via: %q: %s", f.Via, f.Text)
 	}
 	// One provider dips; its traceroutes end at the exchange: the peer
 	// isn't known.
@@ -194,9 +192,8 @@ func TestFinding(t *testing.T) {
 		}
 	}
 	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseProvider ||
-		!strings.Contains(f.Text, "the route through DE-CIX (an internet exchange) to these servers") ||
-		regexp.MustCompile(`DE-CIX|AS[0-9]|via`).MatchString(f.TextPublic) {
-		t.Errorf("peer unknown: %s %q: %s / %s", f.Case, f.Via, f.Text, f.TextPublic)
+		!strings.Contains(f.Text, "the route through DE-CIX (an internet exchange) to these servers") {
+		t.Errorf("peer unknown: %s %q: %s", f.Case, f.Via, f.Text)
 	}
 	// The ISP case's evidence line.
 	f := FindFinding(FindingInput{Tests: synth(c, 9, func(_ string, h int) float64 {
@@ -206,9 +203,8 @@ func TestFinding(t *testing.T) {
 		return 1
 	}, "wired"), Catalog: c})
 	if !strings.HasPrefix(f.Evidence, "Based on 648 tests on 9 days between Tue 1 Sep and Wed 9 Sep; each evening hour was tested at least") ||
-		!strings.HasPrefix(f.EvidencePublic, "Based on 648 tests on 9 days; each evening hour") || strings.Contains(f.EvidencePublic, "Sep") ||
 		len(f.Hours) != 4 || f.Hours[0] != 19 {
-		t.Errorf("evidence %q / %q hours %v", f.Evidence, f.EvidencePublic, f.Hours)
+		t.Errorf("evidence %q hours %v", f.Evidence, f.Hours)
 	}
 	// Manual tests and sweeps never count.
 	ts = synth(c, 9, func(string, int) float64 { return 1 }, "wired")
@@ -271,9 +267,8 @@ func TestFindingThin(t *testing.T) {
 	}
 	f := FindFinding(FindingInput{Tests: ts, Catalog: c})
 	if f.Case != CaseNotEnough || f.Tier != TierEarly || len(f.Hours) == 0 || f.Hours[0] != 21 ||
-		!strings.Contains(f.Text, "Evenings are slower: about 50% below your daytime speed so far (around 9 pm to 1 am)") || !strings.Contains(f.Text, "more day") ||
-		strings.Contains(f.TextPublic, "your") {
-		t.Errorf("%s %s %v: %s / %s", f.Case, f.Tier, f.Hours, f.Text, f.TextPublic)
+		!strings.Contains(f.Text, "Evenings are slower: about 50% below your daytime speed so far (around 9 pm to 1 am)") || !strings.Contains(f.Text, "more day") {
+		t.Errorf("%s %s %v: %s", f.Case, f.Tier, f.Hours, f.Text)
 	}
 	flat := ts[:0:0]
 	for _, x := range ts {
@@ -322,16 +317,13 @@ func synthDown(c *Catalog, days int, score func(sv string, h int) float64, base 
 }
 
 // TestFindingNetIsp: the re-review's cases (net-isp-review.md).
-// publicVoice: the evidence report's texts never address the
-// viewer ("your …") or speak as fyisp ("we"): they're about someone
-// else's line.
-func publicVoice(t *testing.T, name string, f Finding) {
+// neutralEvidence: the evidence line states counts and dates; it never
+// addresses the viewer ("your …") or speaks as fyisp ("we").
+func neutralEvidence(t *testing.T, name string, f Finding) {
 	t.Helper()
-	for what, s := range map[string]string{"text_public": f.TextPublic, "caveat_public": f.CaveatPublic, "evidence": f.Evidence} {
-		l := " " + strings.ToLower(s)
-		if strings.Contains(l, "your") || strings.Contains(l, " you ") || strings.Contains(l, " we ") || strings.Contains(l, " we'") || strings.Contains(l, " we’") {
-			t.Errorf("%s: %s %q", name, what, s)
-		}
+	l := " " + strings.ToLower(f.Evidence)
+	if strings.Contains(l, "your") || strings.Contains(l, " you ") || strings.Contains(l, " we ") || strings.Contains(l, " we'") || strings.Contains(l, " we’") {
+		t.Errorf("%s: evidence %q", name, f.Evidence)
 	}
 }
 
@@ -356,31 +348,31 @@ func TestFindingNetIsp(t *testing.T) {
 	}
 	// M3: a fast line's access dip shows in the near regions only.
 	f := FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), farSlow, 0), Catalog: c})
-	publicVoice(t, "net-isp", f)
+	neutralEvidence(t, "net-isp", f)
 	if f.Case != CaseISP || !strings.Contains(f.Text, "All 2 regions close enough to show your line's speed slow") ||
 		!strings.Contains(f.Text, "Far Asia is too far away to show it.") || len(f.FarRegions) != 1 {
 		t.Errorf("near only: %s %s: %s", f.Case, f.Tier, f.Text)
 	}
 	// M1: 2 of 3 regions is "most", not "every".
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), flatBase, 0), Catalog: c})
-	publicVoice(t, "net-isp", f)
+	neutralEvidence(t, "net-isp", f)
 	if f.Case != CaseISP || !strings.Contains(f.Text, "Most regions (2 of 3) slow") || strings.Contains(f.Text, "Every region") {
 		t.Errorf("2 of 3: %s: %s", f.Case, f.Text)
 	}
 	// S7: ±15% noise still finds it, and counts the evenings.
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, all), flatBase, 0.15), Catalog: c})
-	publicVoice(t, "net-isp", f)
+	neutralEvidence(t, "net-isp", f)
 	if f.Case != CaseISP || f.DayCount < 8 || 2*f.SlowDays < f.DayCount || !strings.Contains(f.Evidence, " evenings.") {
 		t.Errorf("noisy: %s %s %d/%d: %s / %s", f.Case, f.Tier, f.SlowDays, f.DayCount, f.Text, f.Evidence)
 	}
 	// M2: a 15% dip is "a little slower", never "within 10%".
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.15, all), flatBase, 0), Catalog: c})
-	publicVoice(t, "net-isp", f)
+	neutralEvidence(t, "net-isp", f)
 	if f.Case != CaseMild || !strings.Contains(f.Text, "a little slower: about 15% below normal") {
 		t.Errorf("mild: %s: %s", f.Case, f.Text)
 	}
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, func(string, int) float64 { return 1 }, flatBase, 0.05), Catalog: c})
-	publicVoice(t, "net-isp", f)
+	neutralEvidence(t, "net-isp", f)
 	if f.Case != CaseNothing || !strings.HasPrefix(f.Text, "No slowdown of 25% or more stands out") {
 		t.Errorf("flat: %s: %s", f.Case, f.Text)
 	}
@@ -400,9 +392,8 @@ func TestFindingNetIsp(t *testing.T) {
 	for i := range ts {
 		ts[i].Extra = `{"bridged":true}`
 	}
-	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Tier == TierPointsTo || !f.Bridged || !strings.Contains(f.Caveat, "container") ||
-		!strings.Contains(f.CaveatPublic, "people in the home") || !strings.Contains(f.CaveatPublic, "the home router") || strings.Contains(f.CaveatPublic, "your") {
-		t.Errorf("bridged: %s %v %q / %q", f.Tier, f.Bridged, f.Caveat, f.CaveatPublic)
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Tier == TierPointsTo || !f.Bridged || !strings.Contains(f.Caveat, "container") {
+		t.Errorf("bridged: %s %v %q", f.Tier, f.Bridged, f.Caveat)
 	}
 }
 
@@ -437,11 +428,11 @@ func TestFindingDays(t *testing.T) {
 	from := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC) // a 7-day window
 	f := FindFinding(FindingInput{Tests: ts, Catalog: c, From: from, To: from.Add(7 * 24 * time.Hour)})
 	if f.Days != 3 || !strings.HasPrefix(f.Evidence, "Based on 216 tests on 3 days between Tue 1 Sep and Fri 4 Sep") ||
-		f.Coverage != "Speed tests started on Tue 1 Sep, so this covers 3 days, not 7." || f.CoveragePublic != "This covers 3 days, not 7." {
-		t.Errorf("days %d: %q / %q / %q", f.Days, f.Evidence, f.Coverage, f.CoveragePublic)
+		f.Coverage != "Speed tests started on Tue 1 Sep, so this covers 3 days, not 7." {
+		t.Errorf("days %d: %q / %q", f.Days, f.Evidence, f.Coverage)
 	}
 	f = FindFinding(FindingInput{Tests: ts, Catalog: c, From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)})
-	if f.Coverage != "Tests ran on 3 of the last 7 days." || f.CoveragePublic != f.Coverage {
+	if f.Coverage != "Tests ran on 3 of the last 7 days." {
 		t.Errorf("gaps: %q", f.Coverage)
 	}
 	// One day: "1 day".

@@ -323,8 +323,8 @@ func TestFastLineGuard(t *testing.T) {
 			t.Errorf("%s (%.0f%% lower bounds): %s %.2f: %s", tc.name, 100*lbShare(ts), f.Case, f.Drop, f.Text)
 		}
 		if tc.want == CaseTooFast {
-			if !strings.HasPrefix(f.Text, "Your line is too fast for these tests") || !strings.HasPrefix(f.TextPublic, "The line is too fast") {
-				t.Errorf("too fast: %q / %q", f.Text, f.TextPublic)
+			if !strings.HasPrefix(f.Text, "Your line is too fast for these tests") {
+				t.Errorf("too fast: %q", f.Text)
 			}
 			if st := Summarize(ts, nil); !st.TooFast || st.Dip != nil || st.RampCappedShare < 0.8 {
 				t.Errorf("too fast row: %v %v %.2f", st.TooFast, st.Dip, st.RampCappedShare)

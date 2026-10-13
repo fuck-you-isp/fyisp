@@ -14,7 +14,7 @@ import {
   meta, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, addAdmin, apiWrite, confirmDialog, alertDialog, canWrite, toLocalInput, fromLocalInput,
+  hideTip, whyButton, addAdmin, toLocalInput, fromLocalInput,
   useStatus, hatch, resetHatch, smooth,
 } from './core.js';
 import { Home, firstHome } from './home.js';
@@ -74,10 +74,10 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
  * problems-only, heatmap cell and heatmap mode; ot: the Overview's Home-tile filter;
  * sr/sd/snf/ssw: Speed's selected row, span in days, "leave out backup servers" and the full test (sweep=1).
- * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, notes:boolean, reports:boolean, inv:string|null, band:boolean,
+ * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, inv:string|null, band:boolean,
  *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, ot:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
  */
-const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, notes: false, reports: false, inv: null, band: true,
+const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, inv: null, band: true,
   view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', ot: '', sr: '', sd: 7, snf: false, ssw: false };
 /** @type {any} */
 let status = null;
@@ -184,8 +184,6 @@ function readHash() {
   const f = Number(p.get('from')), t = Number(p.get('to'));
   if (f > 0 && t > f) { state.from = f; state.to = t; } else { state.from = state.to = null; }
   state.log = p.get('o') === '1';
-  state.notes = p.get('n') === '1';
-  state.reports = p.get('rp') === '1';
   const ti = p.get('t');
   state.inv = ti && traceOn ? ti : null;
   const k = p.get('k');
@@ -226,8 +224,6 @@ function hashString() {
   if (state.from != null && state.to != null) { p.set('from', String(state.from)); p.set('to', String(state.to)); }
   p.set('k', [...state.kinds].join(','));
   if (state.log) p.set('o', '1');
-  if (state.notes) p.set('n', '1');
-  if (state.reports) p.set('rp', '1');
   if (state.inv) p.set('t', state.inv);
   if (state.view) p.set('v', state.view);
   if (state.ot) p.set('ot', state.ot);
@@ -511,7 +507,7 @@ class Panel {
       hooks: {
         setSelect: [onChartSelect],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawBand(u); self.drawIncidents(u); drawNotes(u); self.drawStrip(); }],
+        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawBand(u); self.drawIncidents(u); self.drawStrip(); }],
       },
     };
     this.emptyEl.remove();
@@ -519,7 +515,6 @@ class Panel {
     this.chartEl.append(this.emptyEl);
     u.over.addEventListener('mouseenter', () => { self.hover = true; });
     u.over.addEventListener('mouseleave', () => { self.hover = false; hideTip(); });
-    bindNoteGestures(u);
     return u;
   }
 
@@ -760,7 +755,6 @@ class Panel {
       }
     }
     nodes.push(...speedTipNodes(d.start + i * d.step, d.start + (i + 1) * d.step));
-    nodes.push(...noteTipNodes(notesNear(u, u.cursor.left)));
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
   }
@@ -1554,7 +1548,7 @@ class Investigate {
           u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
         }],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawChanges(u, !isLoss); drawNotes(u); }],
+        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawChanges(u, !isLoss); }],
       },
     };
     const u = new uPlot(opts, data, el);
@@ -1626,109 +1620,12 @@ class Investigate {
   }
 }
 
-// ---------- write helper ----------
-
-/** The current view as absolute milliseconds. */
-function viewRange() {
-  if (state.from != null && state.to != null) return { from: state.from, to: state.to };
-  const to = Date.now();
-  return { from: to - rangeSecs() * 1000, to };
-}
-
-// ---------- notes (annotations) ----------
-
-/** @typedef {{id:number,at:string,end?:string,text:string,public:boolean,created?:string,updated?:string}} Note */
-
-let notesOn = false;
-/** @type {Note[]} */
-let notes = [];
-let notesLoaded = false;
-
-async function loadNotes() {
-  if (!notesOn) return;
-  const { from, to } = queryRange();
-  try {
-    const list = await fetchJSON('api/annotations?' + new URLSearchParams({ from, to }));
-    notes = Array.isArray(list) ? list : [];
-    notesLoaded = true;
-  } catch {
-    return;
-  }
-  renderNotes();
-  redrawCharts();
-}
-
+/** Redraws every chart (the "normal" band or the speed-test marks changed). */
 function redrawCharts() {
   for (const p of panels) p.u?.redraw(false);
   if (inv) { inv.rttU?.redraw(false); inv.lossU?.redraw(false); }
 }
 
-function noteSpan(/** @type {Note} */ n) {
-  const a = Date.parse(n.at);
-  return { a, b: n.end ? Date.parse(n.end) : a };
-}
-function noteColor(/** @type {Note} */ n) { return n.public ? (css('--accent') || '#3987e5') : (css('--note') || '#c3c2b7'); }
-
-/** Notes whose marker (or range) is under css-pixel x on this chart. */
-function notesNear(/** @type {any} */ u, /** @type {number} */ px) {
-  const out = [];
-  for (const n of notes) {
-    const { a, b } = noteSpan(n);
-    const x0 = u.valToPos(a / 1000, 'x'), x1 = u.valToPos(b / 1000, 'x');
-    if ((px >= x0 - 6 && px <= x0 + 10) || (b > a && px >= x0 && px <= x1)) out.push(n);
-  }
-  return out;
-}
-
-/** Note markers: a flag and a dashed line at the note's time; a faint band for a range. */
-function drawNotes(/** @type {any} */ u) {
-  if (!notes.length) return;
-  const ctx = u.ctx;
-  const { left, top, width, height } = u.bbox;
-  const vmin = u.scales.x.min, vmax = u.scales.x.max;
-  const dpr = window.devicePixelRatio || 1;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(left, top, width, height);
-  ctx.clip();
-  for (const n of notes) {
-    const { a, b } = noteSpan(n);
-    if (b / 1000 < vmin || a / 1000 > vmax) continue;
-    const c = noteColor(n);
-    const x = Math.round(u.valToPos(a / 1000, 'x', true)) + 0.5;
-    if (b > a) {
-      const x1 = u.valToPos(b / 1000, 'x', true);
-      ctx.fillStyle = rgba(c, 0.07);
-      ctx.fillRect(x, top, x1 - x, height);
-      ctx.fillStyle = rgba(c, 0.55);
-      ctx.fillRect(x, top + height - 2 * dpr, x1 - x, 2 * dpr);
-    }
-    ctx.strokeStyle = rgba(c, 0.55);
-    ctx.lineWidth = dpr;
-    ctx.setLineDash([3 * dpr, 3 * dpr]);
-    ctx.beginPath();
-    ctx.moveTo(x, top + 12 * dpr);
-    ctx.lineTo(x, top + height);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.strokeStyle = c;
-    ctx.lineWidth = 1.5 * dpr;
-    ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x, top + 13 * dpr);
-    ctx.stroke();
-    ctx.fillStyle = c;
-    ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x + 10 * dpr, top + 3.5 * dpr);
-    ctx.lineTo(x, top + 7 * dpr);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-/** Tooltip rows for notes under the cursor. */
 // ---------- speed-test windows ----------
 
 /** @typedef {{start:number,end:number,origin?:string}} SpeedWindow */
@@ -1839,188 +1736,11 @@ function speedTipNodes(/** @type {number} */ a, /** @type {number} */ b) {
   return [h('div', { class: 'sep' }), h('div', { class: 'row inc', text: `${n === 1 ? 'speed test' : `${n} speed tests`} running` })];
 }
 
-function noteTipNodes(/** @type {Note[]} */ list) {
-  const nodes = [];
-  if (!list.length) return nodes;
-  nodes.push(h('div', { class: 'sep' }));
-  for (const n of list.slice(0, 3)) {
-    const flag = h('span', { class: 'nflag' + (n.public ? ' pub' : '') });
-    nodes.push(h('div', { class: 'row note' }, flag, h('span', { class: 'ntext', text: n.text }),
-      h('span', { class: 'nbadge' + (n.public ? ' pub' : ''), text: n.public ? 'in redacted reports' : 'private' })));
-  }
-  if (list.length > 3) nodes.push(h('div', { class: 'muted', text: `+${list.length - 3} more notes` }));
-  return nodes;
-}
-
-/**
- * Chart gestures for notes: right-click (or long-press) adds a note at that
- * time, Shift-drag adds one over a range (instead of zooming), clicking a
- * flag edits it. Local and writable only.
- * @param {any} u
- */
-function bindNoteGestures(u) {
-  const over = /** @type {HTMLElement} */ (u.over);
-  const timeAt = (/** @type {number} */ clientX) => Math.round(u.posToVal(clientX - over.getBoundingClientRect().left, 'x') * 1000);
-  // Focusable (not in the tab order), so the note editor can return focus to the chart it was opened from.
-  over.tabIndex = -1;
-  over.setAttribute('aria-label', 'Chart');
-  over.addEventListener('mousedown', (e) => { u._noteDrag = e.shiftKey && notesOn && canWrite(); if (notesOn && canWrite()) over.focus({ preventScroll: true }); }, true);
-  over.addEventListener('contextmenu', (e) => {
-    if (!notesOn || !canWrite()) return;
-    e.preventDefault();
-    openNoteEditor(null, e.clientX, e.clientY, { at: timeAt(e.clientX) });
-  });
-  over.addEventListener('click', (e) => {
-    if (!notesOn || !canWrite()) return;
-    const r = over.getBoundingClientRect();
-    if (e.clientY - r.top > 18) return;
-    const hit = notesNear(u, e.clientX - r.left)[0];
-    if (hit) { e.stopPropagation(); openNoteEditor(hit, e.clientX, e.clientY); }
-  });
-  /** @type {number} */ let timer = 0;
-  let sx = 0, sy = 0;
-  const cancel = () => { clearTimeout(timer); timer = 0; };
-  over.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch' || !notesOn || !canWrite()) return;
-    sx = e.clientX; sy = e.clientY;
-    cancel();
-    timer = window.setTimeout(() => { timer = 0; hideTip(); over.focus({ preventScroll: true }); openNoteEditor(null, sx, sy, { at: timeAt(sx) }); }, 600);
-  });
-  over.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
-  over.addEventListener('pointerup', cancel);
-  over.addEventListener('pointercancel', cancel);
-}
-
-/** A select (drag) on a chart: zoom, or with Shift a note over that range. */
+/** A select (drag) on a chart zooms all charts to it. */
 function onChartSelect(/** @type {any} */ u) {
   const w = u.select.width;
-  if (w > 4) {
-    const a = Math.round(u.posToVal(u.select.left, 'x') * 1000), b = Math.round(u.posToVal(u.select.left + w, 'x') * 1000);
-    if (u._noteDrag) {
-      const r = u.over.getBoundingClientRect();
-      openNoteEditor(null, r.left + u.select.left + w, r.top + 20, { at: a, end: b });
-    } else zoomTo(a, b);
-  }
-  u._noteDrag = false;
+  if (w > 4) zoomTo(Math.round(u.posToVal(u.select.left, 'x') * 1000), Math.round(u.posToVal(u.select.left + w, 'x') * 1000));
   u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
-}
-
-// The note editor is a modal <dialog> (the browser traps focus in it); when
-// it closes, focus returns to what opened it: the "+ note" button, a note's
-// Edit button, or the chart (whose overlay is focusable for this).
-const notePop = /** @type {HTMLDialogElement} */ (h('dialog', { id: 'note-pop', class: 'pop', 'aria-label': 'Note' }));
-/** @type {HTMLElement|null} */
-let noteOpener = null;
-notePop.addEventListener('close', () => {
-  notePop.replaceChildren();
-  const o = noteOpener;
-  noteOpener = null;
-  if (o && o.isConnected) o.focus({ preventScroll: true });
-});
-// A click on the backdrop (outside the editor's box) closes it.
-notePop.addEventListener('mousedown', (e) => { if (e.target === notePop) closeNoteEditor(); });
-
-function closeNoteEditor() { if (notePop.open) notePop.close(); }
-
-/**
- * The note popover: add (note null) or edit. preset gives the time(s) of a new note.
- * @param {Note|null} note @param {number} x @param {number} y @param {{at:number,end?:number}} [preset]
- */
-function openNoteEditor(note, x, y, preset) {
-  hideTip();
-  const ae = document.activeElement;
-  noteOpener = ae instanceof HTMLElement && ae !== document.body ? ae : null;
-  const at = note ? Date.parse(note.at) : (preset ? preset.at : Date.now());
-  const end = note ? (note.end ? Date.parse(note.end) : NaN) : (preset && preset.end ? preset.end : NaN);
-  const atIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(at), required: true, 'aria-label': 'When' }));
-  const endIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: isFinite(end) ? toLocalInput(end) : '', 'aria-label': 'Until (optional)' }));
-  const text = /** @type {HTMLTextAreaElement} */ (h('textarea', { rows: '3', maxlength: '500', placeholder: 'What happened? e.g. "Zoom call dropped", "ISP ticket #123 opened"', 'aria-label': 'Note text' }));
-  text.value = note ? note.text : '';
-  const pub = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
-  pub.checked = !!(note && note.public);
-  const err = h('div', { class: 'perr', role: 'alert' });
-  const save = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: note ? 'Save' : 'Add note' }));
-  const form = h('form', { class: 'pop-form' },
-    h('div', { class: 'pop-title', text: note ? 'Edit note' : preset && preset.end ? 'Note for this range' : 'Add a note' }),
-    h('label', { class: 'fld' }, h('span', { text: 'When' }), atIn),
-    h('label', { class: 'fld' }, h('span', { text: 'Until' }), endIn),
-    text,
-    h('label', { class: 'chk', title: 'Redacted reports include only these notes. Others stay on this machine.' }, pub, ' Include in redacted reports'),
-    err,
-    h('div', { class: 'pop-actions' },
-      note ? h('button', { class: 'btn ghost danger', type: 'button', text: 'Delete', onclick: () => deleteNote(note) }) : null,
-      h('span', { class: 'grow' }),
-      h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: closeNoteEditor }),
-      save));
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const a = fromLocalInput(atIn.value), b = fromLocalInput(endIn.value);
-    const t = text.value.trim();
-    if (!isFinite(a)) { err.textContent = 'Pick a time.'; return; }
-    if (!t) { err.textContent = 'Write something.'; text.focus(); return; }
-    if (endIn.value && !(b > a)) { err.textContent = '"Until" must be after "When".'; return; }
-    /** @type {any} */
-    const body = { at: new Date(a).toISOString(), text: t, public: pub.checked };
-    if (endIn.value) body.end = new Date(b).toISOString();
-    save.disabled = true;
-    try {
-      await apiWrite(note ? 'PUT' : 'POST', note ? `api/annotations/${note.id}` : 'api/annotations', body);
-      closeNoteEditor();
-      await loadNotes();
-    } catch (e2) {
-      err.textContent = `Could not save: ${/** @type {Error} */ (e2).message}`;
-      save.disabled = false;
-    }
-  });
-  notePop.replaceChildren(form);
-  if (!notePop.open) notePop.showModal();
-  const r = notePop.getBoundingClientRect();
-  let left = x + 8, top = y + 8;
-  if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 8);
-  if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
-  notePop.style.left = left + 'px';
-  notePop.style.top = top + 'px';
-  text.focus();
-}
-
-async function deleteNote(/** @type {Note} */ n) {
-  if (!await confirmDialog('Delete this note?', n.text, 'Delete')) return;
-  try {
-    await apiWrite('DELETE', `api/annotations/${n.id}`);
-    closeNoteEditor();
-    await loadNotes();
-  } catch (e) {
-    await alertDialog('Couldn’t delete the note', /** @type {Error} */ (e).message);
-  }
-}
-
-function renderNotes() {
-  const box = $('#notes');
-  box.hidden = !notesOn;
-  if (!notesOn) return;
-  const n = notes.length;
-  $('#notes-count').textContent = notesLoaded ? `· ${n} in range` : '';
-  const list = $('#notes-list');
-  const kids = [];
-  if (!n) {
-    kids.push(h('p', { class: 'muted o-empty', text: 'No notes in this range. Right-click a chart (long-press on a phone) to add one at that time, or Shift-drag for a range.' }));
-  }
-  for (const note of [...notes].reverse()) {
-    const { a, b } = noteSpan(note);
-    const row = h('button', {
-      class: 'o-row n-row', type: 'button', title: 'Zoom all charts to this note',
-      onclick: () => zoomTo(a - 15 * 60e3, Math.min(Date.now(), Math.max(b, a) + 15 * 60e3)),
-    },
-    h('span', { class: 'o-when' }, fmtWhen(a), b > a ? ` – ${fmtWhen(b)}` : ''),
-    h('span', { class: 'nflag' + (note.public ? ' pub' : ''), 'aria-hidden': 'true' }),
-    h('span', { class: 'o-sum n-text', text: note.text }),
-    h('span', { class: 'nbadge' + (note.public ? ' pub' : ''), title: note.public ? 'Included in redacted reports' : 'Only on this machine', text: note.public ? 'in redacted reports' : 'private' }));
-    const acts = canWrite() ? h('span', { class: 'n-acts' },
-      h('button', { class: 'tbtn', type: 'button', text: 'Edit', onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect(); openNoteEditor(note, r.left - 300, r.bottom); } }),
-      h('button', { class: 'tbtn danger', type: 'button', text: 'Delete', onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); deleteNote(note); } })) : null;
-    kids.push(h('div', { class: 'o-item' }, row, acts));
-  }
-  list.replaceChildren(...kids);
 }
 
 // ---------- baselines ----------
@@ -2800,11 +2520,6 @@ class Calls {
     this.liveBusy = false;
     this.dayBusy = false;
     this.err = '';
-    this.markAgo = 0; // the Mark button's time: minutes ago (0: now)
-    this.markBusy = false;
-    this.markErr = '';
-    /** @type {{note:Note,at:number}|null} */
-    this.marked = null;
     /** @type {number|null} "What happened at …?": the picked time; null is the last 60 minutes */
     this.askAt = null;
     this.askSeq = 0;
@@ -2821,20 +2536,6 @@ class Calls {
         whyButton('Your call path', 'fyisp sends tiny STUN requests over UDP, the way call audio and video travel, to Google, Cloudflare and Twilio servers every few seconds. They answer from the edge nearest to you, so this measures your connection to the nearest edge, not the other people on the call.')),
       this.causeEl,
       h('div', { class: 'cq-meta' }, this.updatedEl));
-
-    this.markBtn = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary cq-markbtn', type: 'button', text: 'Mark a bad call', onclick: () => this.mark() }));
-    this.whenSeg = h('div', { class: 'seg sm', role: 'group', 'aria-label': 'When was the bad call?' });
-    this.markOut = h('span', { class: 'cq-marked small', 'aria-live': 'polite' });
-    this.markEl = h('div', { class: 'cq-mark', hidden: true },
-      this.markBtn, h('span', { class: 'cq-when muted small', text: 'When?' }), this.whenSeg, this.markOut);
-    // On a phone the Mark bar floats at the bottom of the screen once it
-    // has been scrolled past (never over the top card); the wrapper keeps
-    // its place in the page.
-    this.markWrap = h('div', { class: 'cq-markwrap' }, this.markEl);
-    this.floating = false;
-    new IntersectionObserver((es) => {
-      for (const e of es) this.setFloat(!e.isIntersecting && e.boundingClientRect.top < 0);
-    }).observe(this.markWrap);
 
     this.stripSum = h('p', { class: 'cq-strip-sum' });
     this.strip = /** @type {HTMLCanvasElement} */ (h('canvas', { class: 'cq-strip', role: 'img' }));
@@ -2872,18 +2573,8 @@ class Calls {
       this.appList);
 
     this.el = h('section', { id: 'calls', class: 'calls', 'aria-label': 'Calls', hidden: true },
-      this.top, this.markWrap, this.stripBox, this.askBox, this.appsBox);
+      this.top, this.stripBox, this.askBox, this.appsBox);
     new ResizeObserver(() => this.drawStrip()).observe(this.strip);
-  }
-
-  /** Floats the Mark bar (phones only, while Calls is on screen and the bar is writable). */
-  setFloat(/** @type {boolean} */ on) {
-    on = on && !this.markEl.hidden && callsShown() && matchMedia('(max-width: 767.98px)').matches;
-    if (on === this.floating) return;
-    this.markWrap.style.minHeight = on ? `${this.markEl.offsetHeight}px` : '';
-    this.floating = on;
-    this.markEl.classList.toggle('float', on);
-    document.body.classList.toggle('cq-floating', on);
   }
 
   /** Loads both windows now (a view switch or a refresh). */
@@ -2912,7 +2603,6 @@ class Calls {
       this.liveBusy = false;
     }
     this.renderTop();
-    this.renderMark();
     this.renderApps();
     renderLayers(); // the Services pill counts the call apps' websites here
   }
@@ -2945,7 +2635,6 @@ class Calls {
 
   render() {
     this.renderTop();
-    this.renderMark();
     this.renderDay();
     this.renderApps();
   }
@@ -3009,72 +2698,6 @@ class Calls {
       return `${label}: ${minuteWhat(w, c?.factor || p.factor || '')} on your call path (worst minute ${hhmm(w.at)}).`;
     }
     return '';
-  }
-
-  /** The "Mark a bad call" row: local and writable only. */
-  renderMark() {
-    const on = notesOn && canWrite();
-    this.markEl.hidden = !on;
-    if (!on) return;
-    this.whenSeg.replaceChildren(...[[0, 'now'], [15, '15 min ago'], [30, '30 min ago']].map(([m, l]) => h('button', {
-      type: 'button', text: l, 'aria-pressed': String(this.markAgo === m), onclick: () => { this.markAgo = /** @type {number} */ (m); this.renderMark(); },
-    })));
-    this.markBtn.disabled = this.markBusy;
-    this.markBtn.title = this.markAgo ? `Save a private note at ${hhmm(Date.now() - this.markAgo * 60e3)} with the call stats of that minute` : 'Save a private note 2 minutes ago with the current call stats';
-    const kids = [];
-    if (this.markErr) kids.push(h('span', { class: 'perr', text: this.markErr }));
-    else if (this.marked) {
-      const m = this.marked;
-      kids.push(h('span', { text: `Saved a private note at ${hhmm(m.at)}. ` }),
-        h('button', {
-          class: 'tbtn', type: 'button', text: 'Edit note',
-          onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect(); openNoteEditor(m.note, r.left, r.bottom); },
-        }), ' ',
-        reportsOn ? h('button', { class: 'tbtn', type: 'button', text: 'Create evidence report', onclick: () => openReportDialog({ from: m.at - 30 * 60e3, to: Math.min(Date.now(), m.at + 30 * 60e3), title: `Bad call: ${fmtWhen(m.at)}` }) }) : null);
-    }
-    this.markOut.replaceChildren(...kids);
-  }
-
-  /** The call stats at t, for a note: from the live window (now) or the day's minutes. */
-  statsAt(/** @type {number} */ t) {
-    const d = this.live;
-    if (this.markAgo === 0 && d && d.path && d.path.samples > 0) {
-      const p = d.path;
-      return { state: d.state, mos: p.mos, rtt: p.rtt_ms, jitter: p.jitter_ms, loss: p.loss };
-    }
-    const day = this.day;
-    const m = day ? minuteAt(day, day.path, minuteIdx(day, t)) : null;
-    return m ? { state: m.state, mos: m.mos, rtt: m.rtt_ms, jitter: m.jitter_ms, loss: m.loss } : null;
-  }
-
-  /** One click: a private note at now − 2 min (or the picked time) with the stats only, no addresses. */
-  async mark() {
-    if (this.markBusy) return;
-    const at = Date.now() - (this.markAgo ? this.markAgo : 2) * 60e3;
-    const s = this.statsAt(at);
-    const bits = [];
-    if (s) {
-      bits.push(callLabel(s.state));
-      if (s.mos != null) bits.push(`MOS ${s.mos.toFixed(1)}`);
-      if (s.rtt != null) bits.push(`RTT ${fmtMs(s.rtt)} ms`);
-      if (s.jitter != null) bits.push(`jitter ${fmtMs(s.jitter)} ms`);
-      if (s.loss != null) bits.push(`loss ${fmtPct(s.loss)}`);
-    }
-    const text = bits.length ? `Bad call (${bits.join(', ')})` : 'Bad call';
-    this.markBusy = true;
-    this.markErr = '';
-    this.renderMark();
-    try {
-      /** @type {Note} */
-      const note = await apiWrite('POST', 'api/annotations', { at: new Date(at).toISOString(), text, public: false });
-      this.marked = { note, at };
-      loadNotes();
-    } catch (e) {
-      this.markErr = `Could not save: ${/** @type {Error} */ (e).message}`;
-    } finally {
-      this.markBusy = false;
-    }
-    this.renderMark();
   }
 
   renderDay() {
@@ -3208,14 +2831,7 @@ class Calls {
     const r = explainCalls(d, a, b, incs);
     this.answer.className = `cq-answer cs-${r.state}`;
     this.answer.textContent = r.text;
-    const links = [h('button', { class: 'tbtn', type: 'button', text: 'Show on the charts', onclick: () => showCallsChart(r.from - 10 * 60e3, Math.min(Date.now(), r.to + 10 * 60e3)) })];
-    if (reportsOn && canWrite()) {
-      links.push(h('button', {
-        class: 'tbtn', type: 'button', text: 'Create evidence report',
-        onclick: () => openReportDialog({ from: r.from - 30 * 60e3, to: Math.min(Date.now(), r.to + 30 * 60e3), title: `Call quality: ${fmtWhen(r.from)}` }),
-      }));
-    }
-    this.askLinks.replaceChildren(...links);
+    this.askLinks.replaceChildren(h('button', { class: 'tbtn', type: 'button', text: 'Show on the charts', onclick: () => showCallsChart(r.from - 10 * 60e3, Math.min(Date.now(), r.to + 10 * 60e3)) }));
   }
 
   renderApps() {
@@ -3537,152 +3153,6 @@ function closeFocus(/** @type {boolean} */ toOverview) {
   if (toOverview) ov?.load(); else loadStale();
 }
 
-// ---------- reports ----------
-
-/** @typedef {{id:string,title:string,from:string,to:string,created:string,bytes:number,redacted:boolean}} ReportMeta */
-
-let reportsOn = false;
-/** @type {ReportMeta[]} */
-let reports = [];
-
-function fmtBytes(/** @type {number} */ n) { return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`; }
-
-async function loadReports() {
-  if (!reportsOn) return;
-  try {
-    const list = await fetchJSON('api/reports');
-    reports = Array.isArray(list) ? list : [];
-  } catch {
-    return;
-  }
-  renderReports();
-}
-
-/**
- * After an action re-renders the control that started it, focus would fall to
- * <body>: put it on the replacement (or a fallback) instead.
- * @param {() => (Element|null)} find
- */
-function refocus(find) {
-  const ae = document.activeElement;
-  if (ae && ae !== document.body && ae.isConnected) return;
-  const el = /** @type {HTMLElement|null} */ (find());
-  el?.focus({ preventScroll: true });
-}
-
-/** Open / Download / Delete for one report. */
-function reportActions(/** @type {ReportMeta} */ r, /** @type {() => void} */ after, big = false) {
-  const cls = big ? 'btn' : 'tbtn';
-  const kids = [
-    h('a', { class: cls + (big ? ' primary' : ''), href: `api/reports/${r.id}`, target: '_blank', rel: 'noopener', text: 'Open' }),
-    h('a', { class: cls, href: `api/reports/${r.id}?download=1`, download: '', text: 'Download' }),
-  ];
-  if (canWrite()) {
-    kids.push(h('button', {
-      class: cls + ' danger', type: 'button', text: 'Delete',
-      onclick: async () => {
-        if (!await confirmDialog(`Delete “${r.title}”?`, 'This can’t be undone.', 'Delete')) return;
-        try { await apiWrite('DELETE', `api/reports/${r.id}`); } catch (e) { await alertDialog('Couldn’t delete the report', /** @type {Error} */ (e).message); }
-        await loadReports();
-        after();
-        // The row is gone: the Reports heading (or, in the "ready" dialog, its first control).
-        refocus(() => (reportDlg && reportDlg.open ? reportDlg.querySelector('button, a') : null) || $('#reports > summary'));
-      },
-    }));
-  }
-  return h('span', { class: 'r-acts' + (big ? ' big' : '') }, ...kids);
-}
-
-function renderReports() {
-  const box = $('#reports');
-  box.hidden = !reportsOn;
-  if (!reportsOn) return;
-  $('#reports-count').textContent = `· ${reports.length} saved`;
-  const list = $('#reports-list');
-  if (!reports.length) {
-    list.replaceChildren(h('p', { class: 'muted o-empty', text: 'Need proof for your provider or IT team? A report is a page you can print or save as a PDF. It shows what went wrong and when. “Create report” makes one for the current range; “Report” on an outage makes one for that problem.' }));
-    return;
-  }
-  list.replaceChildren(...reports.map((r) => h('div', { class: 'r-item' },
-    h('div', { class: 'r-main' },
-      h('span', { class: 'r-title', text: r.title }),
-      h('span', { class: 'r-meta muted' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · created ${fmtWhen(Date.parse(r.created))} · ${fmtBytes(r.bytes)}`),
-      h('span', { class: 'r-badges' },
-        h('span', { class: 'nbadge' + (r.redacted ? '' : ' warn'), title: r.redacted ? 'No private addresses; only notes marked for redacted reports' : 'Includes private addresses, host names and private notes', text: r.redacted ? 'safe to share' : 'private' }))),
-    reportActions(r, renderReports))));
-}
-
-/** @type {HTMLDialogElement|null} */
-let reportDlg = null;
-
-/**
- * The "Create report" dialog. range defaults to the current view.
- * @param {{from:number,to:number,title?:string}} [preset]
- */
-function openReportDialog(preset) {
-  const rng = preset || viewRange();
-  const dlg = reportDlg || /** @type {HTMLDialogElement} */ (h('dialog', { class: 'dlg', 'aria-label': 'Create report' }));
-  if (!reportDlg) { document.body.append(dlg); reportDlg = dlg; }
-  const title = /** @type {HTMLInputElement} */ (h('input', { type: 'text', maxlength: '200', value: rng.title || `Connection report: ${fmtWhen(rng.from)} – ${fmtWhen(rng.to)}` }));
-  const fromIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(rng.from), required: true }));
-  const toIn = /** @type {HTMLInputElement} */ (h('input', { type: 'datetime-local', value: toLocalInput(Math.min(rng.to, Date.now())), required: true }));
-  const priv = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
-  const err = h('div', { class: 'perr', role: 'alert' });
-  const go = /** @type {HTMLButtonElement} */ (h('button', { class: 'btn primary', type: 'submit', text: 'Make the report' }));
-  const form = h('form', { class: 'dlg-form', method: 'dialog' },
-    h('h2', { text: 'Make a report' }),
-    h('p', { class: 'muted small', text: 'A page showing your connection’s problems, charts and notes for the time you pick. You can print it or save it as a PDF.' }),
-    h('label', { class: 'fld' }, h('span', { text: 'Title' }), title),
-    h('div', { class: 'fld-row' },
-      h('label', { class: 'fld' }, h('span', { text: 'From' }), fromIn),
-      h('label', { class: 'fld' }, h('span', { text: 'To' }), toIn)),
-    h('label', { class: 'chk' }, priv, h('span', {}, ' Include private details', h('span', { class: 'hint', text: 'Your network addresses, device names and private notes. Leave this off if you’ll send the report to anyone else.' }))),
-    err,
-    h('div', { class: 'pop-actions' },
-      h('span', { class: 'grow' }),
-      h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => dlg.close() }),
-      go));
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const a = fromLocalInput(fromIn.value), b = fromLocalInput(toIn.value);
-    if (!(isFinite(a) && isFinite(b) && b > a)) { err.textContent = 'The end time must be after the start time.'; return; }
-    go.disabled = true;
-    go.textContent = 'Making your report…';
-    err.textContent = '';
-    try {
-      /** @type {ReportMeta} */
-      const r = await apiWrite('POST', 'api/reports', {
-        from: new Date(a).toISOString(), to: new Date(b).toISOString(), title: title.value.trim(), redact: !priv.checked,
-      });
-      await loadReports();
-      showReportDone(dlg, r);
-    } catch (e2) {
-      err.textContent = `Couldn’t make the report. Try again. (${/** @type {Error} */ (e2).message})`;
-      go.disabled = false;
-      go.textContent = 'Make the report';
-    }
-  });
-  dlg.replaceChildren(form);
-  if (!dlg.open) dlg.showModal();
-  title.focus();
-  title.select();
-}
-
-function showReportDone(/** @type {HTMLDialogElement} */ dlg, /** @type {ReportMeta} */ r) {
-  const refresh = () => {
-    const cur = reports.find((x) => x.id === r.id);
-    if (!cur) { dlg.close(); return; }
-    showReportDone(dlg, cur);
-  };
-  dlg.replaceChildren(h('div', { class: 'dlg-form' },
-    h('h2', { text: 'Your report is ready' }),
-    h('p', { class: 'r-title', text: r.title }),
-    h('p', { class: 'muted small' }, `${fmtWhen(Date.parse(r.from))} – ${fmtWhen(Date.parse(r.to))} · ${fmtBytes(r.bytes)} · `,
-      r.redacted ? 'safe to share' : 'private: for you only'),
-    reportActions(r, refresh, true),
-    h('div', { class: 'pop-actions' }, h('span', { class: 'grow' }), h('button', { class: 'btn', type: 'button', text: 'Close', onclick: () => dlg.close() }))));
-}
-
 // ---------- zoom & refresh ----------
 
 function zoomTo(/** @type {number} */ from, /** @type {number} */ to) {
@@ -3707,12 +3177,12 @@ async function refreshAll() {
   refreshing = true;
   updateRefreshLabel();
   try {
-    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadNotes(), loadSpeedWindows(), inv.load()]);
-    // Home makes two requests; the status (for notes and reports) at most twice a minute.
+    if (state.inv && inv) await Promise.all([loadStatus(), loadVerdict(), loadSpeedWindows(), inv.load()]);
+    // Home makes two requests; the status (for the notices) at most twice a minute.
     else if (homeShown()) await Promise.all([Date.now() - statusAt > 30e3 ? loadStatus() : null, /** @type {Home} */ (home).refresh()]);
     else {
       // Hidden panels (the Overview is showing, or focus) load when shown.
-      await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadNotes(), loadSpeedWindows(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
+      await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadSpeedWindows(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
         callsShown() ? /** @type {Calls} */ (calls).refresh() : null,
         speedShown() ? /** @type {Speed} */ (speed).refresh() : null,
         ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
@@ -3872,12 +3342,8 @@ function renderOutages() {
       class: 'tbtn o-trace', type: 'button', title: `Trace ${tt} hop by hop during this incident`, text: `Trace ${tt}`,
       onclick: () => { zoomTo(a - 5 * 60e3, Math.min(Date.now(), b + 5 * 60e3)); openInvestigate(tt); },
     }) : null;
-    const rb = reportsOn && canWrite() ? h('button', {
-      class: 'tbtn o-trace', type: 'button', title: 'Build an evidence report for this incident (±30 minutes)', text: 'Report',
-      onclick: () => openReportDialog({ from: a - 30 * 60e3, to: Math.min(Date.now(), b + 30 * 60e3), title: `${info.label || info.short}: ${fmtWhen(a)}` }),
-    }) : null;
-    if (!tb && !rb) return h('div', { class: 'o-item' }, row);
-    return h('div', { class: 'o-item' }, row, h('span', { class: 'o-acts' }, rb, tb));
+    if (!tb) return h('div', { class: 'o-item' }, row);
+    return h('div', { class: 'o-item' }, row, h('span', { class: 'o-acts' }, tb));
   }));
 }
 
@@ -3936,7 +3402,7 @@ function renderControls() {
   updateRefreshLabel();
 }
 
-/** Header tools: "+ note", "Create report" (local, writable) and the "normal" band toggle. */
+/** Header tools: the "normal" band toggle. */
 function renderTools() {
   const el = $('#tools');
   const kids = [];
@@ -3946,15 +3412,6 @@ function renderTools() {
       title: 'Shade each target\'s normal latency (median to p95 over the past week) on the charts',
       onclick: () => { state.band = !state.band; storageSet('fyisp-band', state.band ? '1' : '0'); renderTools(); redrawCharts(); },
     }));
-  }
-  if (notesOn && canWrite()) {
-    kids.push(h('button', {
-      class: 'btn', type: 'button', text: '+ note', title: 'Add a note at the current time (or right-click a chart at any time)',
-      onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect(); openNoteEditor(null, r.left - 150, r.bottom, { at: Date.now() }); },
-    }));
-  }
-  if (reportsOn && canWrite()) {
-    kids.push(h('button', { class: 'btn', type: 'button', text: 'Create report', title: 'Build an evidence report for the current range', onclick: () => openReportDialog() }));
   }
   el.replaceChildren(...kids);
   el.hidden = !kids.length;
@@ -3991,7 +3448,7 @@ function renderNotices() {
   if (!status) { el.replaceChildren(); return; }
   if (adminLinkErr) out.push(h('div', { class: 'notice danger' }, adminLinkErr));
   if (status.controls === 'disabled') {
-    out.push(h('div', { class: 'notice' }, 'Dashboard controls (notes, reports, speed tests) are off: the dashboard is reachable from your network and fyisp was started with --admin-token=off.'));
+    out.push(h('div', { class: 'notice' }, 'Speed-test controls are off: the dashboard is reachable from your network and fyisp was started with --admin-token=off.'));
   }
   if (status.targets && status.ready < status.targets) {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));
@@ -4043,15 +3500,6 @@ async function main() {
   const log = /** @type {HTMLDetailsElement} */ ($('#outages'));
   log.open = state.log;
   log.addEventListener('toggle', () => { if (state.log !== log.open) { state.log = log.open; writeHash(); } });
-  const notesBox = /** @type {HTMLDetailsElement} */ ($('#notes'));
-  const repBox = /** @type {HTMLDetailsElement} */ ($('#reports'));
-  notesBox.open = state.notes;
-  repBox.open = state.reports;
-  notesBox.addEventListener('toggle', () => { if (state.notes !== notesBox.open) { state.notes = notesBox.open; writeHash(); } });
-  repBox.addEventListener('toggle', () => { if (state.reports !== repBox.open) { state.reports = repBox.open; writeHash(); } if (repBox.open) loadReports(); });
-  document.body.append(notePop);
-  // Clicks outside the note popover close it.
-
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     hideTip(); // tooltips close on Escape (WCAG 1.4.13)
@@ -4061,7 +3509,7 @@ async function main() {
   onNav = () => {
     if (location.hash === lastHash) return;
     lastHash = location.hash;
-    readHash(); log.open = state.log; notesBox.open = state.notes; repBox.open = state.reports;
+    readHash(); log.open = state.log;
     renderControls(); applyView(); showView(); refreshAll();
   };
   window.addEventListener('hashchange', onNav);
@@ -4074,8 +3522,6 @@ async function main() {
   status = st;
   if (st) statusAt = Date.now();
   traceOn = !!(prof.features && prof.features.trace);
-  notesOn = !!(prof.features && prof.features.notes);
-  reportsOn = !!(prof.features && prof.features.reports);
   baseOn = !!(prof.features && prof.features.baselines);
   allTargets = prof.targets;
   // Which target profile(s) this run measures, unless the default.
@@ -4087,12 +3533,6 @@ async function main() {
   }
   kindsOffered = offeredKinds(prof.targets);
   readHash();
-  notesBox.open = state.notes;
-  repBox.open = state.reports;
-  renderNotes();
-  renderReports();
-  // The reports list is Details only (Home loads it when Details opens).
-  if (reportsOn && state.view && state.view !== 'h') loadReports();
   renderControls();
   renderNotices();
   /** @type {TargetInfo[]} */

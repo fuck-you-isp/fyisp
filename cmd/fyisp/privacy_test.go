@@ -65,9 +65,9 @@ func fakeSTUN(t *testing.T) int {
 }
 
 // TestUDPPrivacyEndToEnd runs the real probe runner against a STUN server
-// that reports a known public address, through the store, /metrics, the
-// dashboard API and a report: the address appears
-// nowhere, and neither do logs at debug level.
+// that reports a known public address, through the store, /metrics and
+// the dashboard API: the address appears nowhere, and neither do logs at
+// debug level.
 func TestUDPPrivacyEndToEnd(t *testing.T) {
 	port := fakeSTUN(t)
 	var logs bytes.Buffer
@@ -164,16 +164,8 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(t.TempDir(), "r.html")
-	if code := cmdReport([]string{"--data-dir", dir, "--config", cfg, "--from", "1h", "-o", out}); code != 0 {
-		t.Fatalf("report: exit %d", code)
-	}
-	html, _ := os.ReadFile(out)
-	if !strings.Contains(string(html), "UDP STUN bursts") {
-		t.Error("report does not describe the UDP target")
-	}
 	logMu.Lock()
-	outputs = append(outputs, string(html), logs.String())
+	outputs = append(outputs, logs.String())
 	logMu.Unlock()
 	for i, o := range outputs {
 		if strings.Contains(o, mappedIP) || strings.Contains(o, "198.51.100") {

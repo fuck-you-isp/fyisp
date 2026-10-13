@@ -121,11 +121,11 @@ func mustSeries(t *testing.T, s *SQLite) []SeriesInfo {
 	return ss
 }
 
-// TestFixtureWithUDP: a database from before UDP probing (the v3 fixture,
-// upgraded on open to the format fyisp v0.3 and v0.4 write) takes the new
-// kinds next to its old series, and both read back after a reopen.
+// TestFixtureWithUDP: a database with TCP, HTTPS and ICMP series (the
+// fixture) takes the UDP kinds next to them, and both read back after a
+// reopen.
 func TestFixtureWithUDP(t *testing.T) {
-	dir := fixtureDirV3(t)
+	dir := fixtureDir(t)
 	now := t0.Add(2*time.Hour + 30*time.Minute)
 	s := openT(t, dir, Options{Interval: func(k model.SeriesKey) time.Duration {
 		if k.Kind.IsUDP() {
@@ -164,11 +164,11 @@ func TestFixtureWithUDP(t *testing.T) {
 	equalPanel(t, "mixed panel", panel(t, s, q), panel(t, f, q), 1e-6)
 }
 
-// TestFixtureIncidentsWithUDPKinds: a v0.4.x database (the v3 fixture,
-// upgraded on open) stores and lists incidents of the call path kinds next
-// to its old ones, also after a reopen.
+// TestFixtureIncidentsWithUDPKinds: a database with incidents (the
+// fixture) stores and lists incidents of the call path kinds next to its
+// old ones, also after a reopen.
 func TestFixtureIncidentsWithUDPKinds(t *testing.T) {
-	dir := fixtureDirV3(t)
+	dir := fixtureDir(t)
 	now := t0.Add(2*time.Hour + 30*time.Minute)
 	s := openT(t, dir, Options{Now: func() time.Time { return now }})
 	kinds := []model.VerdictKind{model.VerdictUDPBlocked, model.VerdictSTUNBlocked, model.VerdictUDPDegraded}

@@ -26,8 +26,8 @@ The STUN servers fyisp measures calls with (listed in the README under
 public IP address and the time of each request. A STUN answer also contains
 your public address as the server sees it (XOR-MAPPED-ADDRESS); fyisp's parser
 skips that attribute without decoding it, keeps no raw datagrams, and never
-stores, logs or exports the address (a test checks samples, the API, metrics,
-reports and logs for it). Socket errors are stored only as a reason code,
+stores, logs or exports the address (a test checks samples, the API, metrics
+and logs for it). Socket errors are stored only as a reason code,
 never as text that could contain an address. `--no-udp` turns STUN off.
 
 Speed tests are off unless you switch them on (`--speedtest` or the Details
@@ -41,7 +41,7 @@ no byte cap, and each direction is hard-stopped 2 seconds later even against
 a server that ignores the end of the test. Once a day per server, fyisp traceroutes the path to
 it to name the first network past your ISP (shown in the dashboard only).
 "Test now", sweeps, cancelling and the mode choice are write actions behind
-the same protections as notes (same origin, CSRF token, admin token). Every
+the dashboard's control checks (same origin, CSRF token, admin token). Every
 test waits in one queue and exactly one runs at a time: the owner's tests
 first, then scheduled ones.
 
@@ -63,9 +63,11 @@ anyone who can open it may start them. The safeguards are:
 ## Exposing the dashboard
 
 fyisp serves one dashboard, by default on 127.0.0.1:3000. It has no public
-or redacted view: whoever can open it sees every address, host name, note
-and report. To show your connection to others, send a redacted report
-(`fyisp report --redact`). If you put a tunnel or reverse proxy in front of
+or redacted view, and fyisp makes no reports (v0.10.0 removed them):
+whoever can open the dashboard sees every address and host name. To show
+your connection to others, send a screenshot of Home, which shows no
+addresses, or review a `fyisp export` first (traceroute rows contain hop
+addresses). If you put a tunnel or reverse proxy in front of
 the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
 `--allow-host`: any `--allow-host` turns the admin token on, even on a
 loopback listener. A loopback dashboard without an admin token refuses
@@ -77,9 +79,8 @@ the details.
 
 In scope, for example:
 
-- a redacted report (`--redact`) that shows what it should leave out:
-  private addresses, the ISP edge unmasked, notes not marked for redacted
-  reports;
+- an address (yours, your router's or your provider's) on Home or in
+  *What happened at …?*;
 - bypasses of the dashboard's protections (Host allowlist, CSRF,
   `--admin-token`, the proxy-header refusal above), or of the on-demand trace safeguards above (tracing
   anything but a profile target, more than 4 at once, past 250 rounds);

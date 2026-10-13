@@ -14,7 +14,7 @@ import (
 )
 
 // The finding: "What we found", one sentence on where a time-of-day
-// slowdown is, generated here and reused by Details, Home and the report.
+// slowdown is, generated here and reused by Details and Home.
 // It compares every destination in the same hours (a cross-section, not
 // per-server patterns alone):
 //
@@ -57,18 +57,15 @@ const (
 
 // Finding is the localisation of a time-of-day slowdown.
 type Finding struct {
-	Case       string `json:"case"`
-	Tier       string `json:"tier,omitempty"`
-	Text       string `json:"text"` // the owner's wording
-	TextPublic string `json:"-"`    // the evidence report's wording (third person)
-	Evidence   string `json:"evidence"`
-	Caveat     string `json:"caveat,omitempty"`
-	// CaveatPublic is the caveat in the evidence report's voice.
-	CaveatPublic string   `json:"-"`
-	Hours        []int    `json:"hours"`
-	Regions      []string `json:"regions"`   // region IDs involved
-	Providers    []string `json:"providers"` // provider names involved
-	Servers      []string `json:"servers"`   // server IDs involved (case server)
+	Case      string   `json:"case"`
+	Tier      string   `json:"tier,omitempty"`
+	Text      string   `json:"text"` // the owner's wording
+	Evidence  string   `json:"evidence"`
+	Caveat    string   `json:"caveat,omitempty"`
+	Hours     []int    `json:"hours"`
+	Regions   []string `json:"regions"`   // region IDs involved
+	Providers []string `json:"providers"` // provider names involved
+	Servers   []string `json:"servers"`   // server IDs involved (case server)
 	// Network is the first network past the ISP that the slow tests share
 	// (case provider: e.g. "LEVEL3 (AS3356)"), from the tests' handoff
 	// traceroutes; "" when unknown or not shared. Via is the internet
@@ -84,12 +81,8 @@ type Finding struct {
 	Tests int       `json:"tests"`
 	First time.Time `json:"-"`
 	Last  time.Time `json:"-"`
-	// EvidencePublic is Evidence without dates (a redacted report keeps
-	// the owner's start date out). Coverage says why fewer than 7 days are
-	// covered (owner voice; CoveragePublic without the date).
-	EvidencePublic string `json:"-"`
-	Coverage       string `json:"coverage,omitempty"`
-	CoveragePublic string `json:"-"`
+	// Coverage says why fewer than 7 days are covered.
+	Coverage string `json:"coverage,omitempty"`
 	// Slowest is the servers slowest in the dip's hours (see slowest);
 	// the caller sets their Display.
 	Slowest []SlowServer `json:"slowest,omitempty"`
@@ -149,17 +142,14 @@ func FindFinding(in FindingInput) (f Finding) {
 	}
 	if out > 0 && out == len(servers) && len(rawDays) >= MinDays {
 		f = Finding{Case: CaseTooFast, Days: len(rawDays), Tests: rawN, Hours: []int{}, Regions: []string{}, Providers: []string{}, Servers: []string{},
-			Text:       "Your line is too fast for these tests to compare times of day: too many tests are still speeding up when they end.",
-			TextPublic: "The line is too fast for these tests to compare times of day: too many tests are still speeding up when they end."}
+			Text: "Your line is too fast for these tests to compare times of day: too many tests are still speeding up when they end."}
 		f.Evidence = fmt.Sprintf("Based on %s on %s.", plural(rawN, "test", "tests"), plural(len(rawDays), "day", "days"))
-		f.EvidencePublic = f.Evidence
 		return f
 	}
 	defer func() {
 		if out > 0 && f.Case != CaseNotEnough {
 			left := fmt.Sprintf(" %d of %d servers were too fast to measure from here and are left out.", out, len(servers))
 			f.Evidence += left
-			f.EvidencePublic += left
 		}
 	}()
 	in.Tests = Censored(in.Tests, in.Loc) // capped directions as patterns use them
@@ -175,9 +165,7 @@ func FindFinding(in FindingInput) (f Finding) {
 	if f.Days < MinDays {
 		f.Case = CaseNotEnough
 		f.Text = fmt.Sprintf("We need about %d days of tests to compare times of day. %d of %d days so far.", MinDays, f.Days, MinDays)
-		f.TextPublic = fmt.Sprintf("About %d days of tests are needed to compare times of day; %d of %d so far.", MinDays, f.Days, MinDays)
 		f.Evidence = fmt.Sprintf("Based on %s so far.", plural(len(tests), "test", "tests"))
-		f.EvidencePublic = f.Evidence
 		return f
 	}
 	// From here Days is the span the tests cover, in whole days: 4 days of
@@ -196,7 +184,6 @@ func FindFinding(in FindingInput) (f Finding) {
 	f.coverage(in, tests)
 	f.Evidence = fmt.Sprintf("Based on %s on %s between %s and %s.", plural(len(tests), "test", "tests"), plural(f.Days, "day", "days"),
 		dayName(first, in.Loc), dayName(last, in.Loc))
-	f.EvidencePublic = fmt.Sprintf("Based on %s on %s.", plural(len(tests), "test", "tests"), plural(f.Days, "day", "days"))
 	if f.thin(in, tests) {
 		return f
 	}
@@ -295,9 +282,6 @@ func (f *Finding) quiet(in FindingInput, tests []model.SpeedTest) {
 			byRow[GroupKey(t)] = append(byRow[GroupKey(t)], t)
 		}
 	}
-	defer func() {
-		f.TextPublic = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual").Replace(f.Text)
-	}()
 	pooled := hourMedians(noFallback, in.Loc, false)
 	var rows []string
 	for _, k := range slices.Sorted(maps.Keys(byRow)) {
@@ -394,7 +378,6 @@ func (f *Finding) thin(in FindingInput, tests []model.SpeedTest) bool {
 	} else {
 		f.Text = fmt.Sprintf("Still learning: %d of 24 hours of the day have enough tests so far. We need %s to compare times of day.", covered, wait)
 	}
-	f.TextPublic = strings.NewReplacer("your daytime", "the daytime", "your usual", "the usual", "We need "+wait+" to compare times of day.", "More tests are needed: "+wait+".").Replace(f.Text)
 	return true
 }
 
@@ -925,8 +908,7 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		caveats = append(caveats, "fyisp measured from inside a container or VM (or behind a second router), so Wi-Fi and your own router can't be ruled out.")
 	}
 	f.Caveat = strings.Join(caveats, " ")
-	f.CaveatPublic = strings.NewReplacer("other people at home", "people in the home", "your own router", "the home router").Replace(f.Caveat)
-	var claim, who, whoPublic string
+	var claim, who string
 	switch f.Case {
 	case CaseISP:
 		what := "Every region"
@@ -967,7 +949,7 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		if ctl != "" {
 			claim += " " + ctl
 		}
-		who, whoPublic = "your internet provider's own network", "the internet provider's own network"
+		who = "your internet provider's own network"
 	case CaseProvider:
 		var regs []string
 		for _, r := range f.Regions {
@@ -976,10 +958,10 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		if len(f.Providers) > 1 { // grouped by the network past the ISP
 			claim = fmt.Sprintf("Only servers reached through one network (%s; %s) %s from about %s; the others we could test stay normal.",
 				joinAnd(f.Providers), joinAnd(regs), slowVerb(f.Up), when)
-			who, whoPublic = "the link between your internet provider and "+f.Network+meetAt(f.Via), "the link between the internet provider and that network"
+			who = "the link between your internet provider and " + f.Network + meetAt(f.Via)
 		} else {
 			claim = fmt.Sprintf("Only %s servers %s from about %s (%s); other providers we could test there stay normal.", f.Providers[0], slowVerb(f.Up), when, joinAnd(regs))
-			who, whoPublic = "the link between your internet provider and "+f.Providers[0], "the link between the internet provider and "+f.Providers[0]
+			who = "the link between your internet provider and " + f.Providers[0]
 			switch {
 			case f.Network != "" && f.Via != "":
 				who = "the link between your internet provider and " + f.Network + meetAt(f.Via)
@@ -991,7 +973,6 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		}
 		if f.FarEvening {
 			who += ", or " + f.Providers[0] + "'s own busy evening hours (the regions are in nearby time zones)"
-			whoPublic += ", or " + f.Providers[0] + "'s own busy evening hours (the regions are in nearby time zones)"
 		}
 	case CaseRoute:
 		claim = fmt.Sprintf("Only tests to %s %s, from about %s, whichever provider; the other regions stay normal.", region(f.Regions[0]), slowVerb(f.Up), when)
@@ -999,7 +980,6 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		if f.FarEvening {
 			who += ", or busy time at that end (it's evening there too)"
 		}
-		whoPublic = who
 	case CaseServer:
 		label := f.Servers[0]
 		if s, ok := in.Catalog.Server(label); ok {
@@ -1011,14 +991,10 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		} else {
 			f.Text = claim + " That's most likely that server's own busy time rather than your connection."
 		}
-		f.TextPublic = strings.Replace(f.Text, "your connection", "the connection", 1)
 		f.evidence(minTests, minProv)
 		return
 	}
 	f.Text = claim + " " + tierTail(f.Tier, who)
-	f.TextPublic = strings.NewReplacer("your line's", "the line's", "Your provider's", "The provider's", "every provider we could test", "every provider tested",
-		"the others we could test stay normal", "the others tested stay normal", "other providers we could test there", "other providers tested there").Replace(claim) +
-		" " + strings.Replace(tierTail(f.Tier, whoPublic), "We'll know more in a few days.", "A few more days of tests will tell.", 1)
 	f.evidence(minTests, minProv)
 }
 
@@ -1079,7 +1055,6 @@ func (f *Finding) evidence(minTests, minProv int) {
 	days := plural(f.Days, "day", "days")
 	f.Evidence = fmt.Sprintf("Based on %s on %s between %s and %s; %s", plural(f.Tests, "test", "tests"), days,
 		dayName(f.First, f.loc), dayName(f.Last, f.loc), each)
-	f.EvidencePublic = fmt.Sprintf("Based on %s on %s; %s", plural(f.Tests, "test", "tests"), days, each)
 	var more string
 	if f.Tier == TierEarly {
 		more += fmt.Sprintf(" Early: %s of tests. A week gives a clearer picture.", days)
@@ -1088,15 +1063,13 @@ func (f *Finding) evidence(minTests, minProv int) {
 		more += fmt.Sprintf(" Slower on %d of %s.", f.SlowDays, plural(f.DayCount, p, p+"s"))
 	}
 	f.Evidence += more
-	f.EvidencePublic += more
 }
 
 // dayName is t's date in loc (nil: UTC), e.g. "Mon 6 Oct".
 func dayName(t time.Time, loc *time.Location) string { return t.In(zone(loc)).Format("Mon 2 Jan") }
 
 // coverage says why the tests cover fewer days than the window's: tests
-// started within it (only the owner's voice names the date), or days
-// without tests.
+// started within it, or days without tests.
 func (f *Finding) coverage(in FindingInput, tests []model.SpeedTest) {
 	if in.From.IsZero() {
 		return
@@ -1118,11 +1091,9 @@ func (f *Finding) coverage(in FindingInput, tests []model.SpeedTest) {
 	}
 	if f.First.Sub(in.From) > 24*time.Hour {
 		f.Coverage = fmt.Sprintf("Speed tests started on %s, so this covers %s, not %d.", dayName(f.First, in.Loc), plural(d, "day", "days"), w)
-		f.CoveragePublic = fmt.Sprintf("This covers %s, not %d.", plural(d, "day", "days"), w)
 		return
 	}
 	f.Coverage = fmt.Sprintf("Tests ran on %d of the last %d days.", d, w)
-	f.CoveragePublic = f.Coverage
 }
 
 func slowVerb(up bool) string {

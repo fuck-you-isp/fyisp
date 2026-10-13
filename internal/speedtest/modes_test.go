@@ -268,7 +268,7 @@ func TestSlotCap(t *testing.T) {
 	h.setRun(func(c Config, n int) (Result, error) {
 		return Result{WireBytes: 150 << 20}, ErrBusy // busy, after moving data
 	})
-	for _, trigger := range []string{"schedule", "manual", "sweep", "public", "public_sweep"} {
+	for _, trigger := range []string{"schedule", "manual", "sweep"} {
 		h.job(t, h.s.slotJob(target{server: "Near", nearby: -1}), trigger)
 		h.mu.Lock()
 		for _, c := range h.calls {
@@ -635,29 +635,6 @@ func TestHandoffBeforeWindow(t *testing.T) {
 	n, calls := len(h.st.tests), len(h.calls)
 	if id, saved := h.s.execJob(ctx, h.s.slotJob(target{server: "Near", nearby: -1}), "schedule"); id != 0 || saved || len(h.st.tests) != n || len(h.calls) != calls {
 		t.Errorf("shut down while tracing: saved %v, %d rows, %d runs", saved, len(h.st.tests)-n, len(h.calls)-calls)
-	}
-}
-
-// TestOwnerZone: the owner's zone is kept from a local page's tz (an IANA
-// name only) and is the report's, falling back to the server's zone.
-func TestOwnerZone(t *testing.T) {
-	h := newHarness(t, Options{})
-	for _, bad := range []string{"", "Local", "120", "Nowhere/Else"} {
-		h.s.NoteZone(bad)
-	}
-	if z := h.s.State().OwnerZone; z != "" || StoredZone(context.Background(), h.st) != time.Local {
-		t.Errorf("not a zone: %q", z)
-	}
-	h.s.NoteZone("America/New_York")
-	if z := h.s.State().OwnerZone; z != "America/New_York" || StoredZone(context.Background(), h.st).String() != "America/New_York" {
-		t.Errorf("kept %q, stored %v", z, StoredZone(context.Background(), h.st))
-	}
-	h2 := newHarness(t, Options{})
-	h2.st = h.st
-	h2.s.o.Store = h.st
-	h2.s.load(context.Background())
-	if h2.s.State().OwnerZone != "America/New_York" {
-		t.Error("not kept across a restart")
 	}
 }
 
