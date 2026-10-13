@@ -27,7 +27,7 @@ targets:
     country: US                    # ISO 3166-1 alpha-2
     geo: na                        # na | sa | eu | me | af | as | oc  (me = Middle East)
     anycast: false                 # true for anycast/global endpoints (no fixed location)
-    tags: []                       # optional, e.g. [voice], [matchmaking]; home:calls|work|web, tile:<id> (see below)
+    tags: []                       # optional, e.g. [voice], [matchmaking]; tile:<id> (see below)
     verified:                      # from your own light checks (free-form, never used for probing)
       date: 2026-09-27
       tcp: true                    # TCP connect to `port` ok
@@ -41,15 +41,6 @@ accepted and validated, but not used: `path` (an HTTPS path), `https` and
 Existing entries keep them as a record of those checks; new entries don't
 need them. (Local `--config` profile files can still ask for `https` or
 `icmp` on their own targets, see package profile.)
-
-A `home:<category>` tag puts a target in a category that Details' Overview can
-filter by (until v0.9.0, a tile of the Home view): `home:calls`
-(the call path and call and chat apps), `home:work` (work apps) or `home:web`
-(websites). At most one per target, and no other values (the loader rejects
-them). Targets of the default profile must have one; other targets without
-one are placed by their other tags and provider (`app:*` and `udp-path` →
-calls, services-productivity → work, CDNs and streaming → web), else under
-"Other services".
 
 A `tile:<id>` tag puts a target in one of the fixed tiles of the new Home view
 (`internal/profile/tiles.go`): `tile:zoom`, `tile:teams`, `tile:meet`,

@@ -30,7 +30,7 @@ targets:
     path: /generate_204
     region: global
     anycast: true
-    tags: [video, streaming, home:web, tile:youtube]
+    tags: [video, streaming, tile:youtube]
     verified:
       date: 2026-09-27
       icmp: true
@@ -46,7 +46,7 @@ targets:
     path: /generate_204
     region: global
     anycast: true
-    tags: [video, streaming, home:web, tile:youtube]
+    tags: [video, streaming, tile:youtube]
     verified:
       date: 2026-09-27
       icmp: true
@@ -60,7 +60,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [video, streaming, home:web, tile:netflix]
+    tags: [video, streaming, tile:netflix]
     verified:
       date: 2026-09-27
       icmp: true
@@ -76,7 +76,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [video, streaming, home:web, tile:netflix]
+    tags: [video, streaming, tile:netflix]
     verified:
       date: 2026-09-27
       icmp: true

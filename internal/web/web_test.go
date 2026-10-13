@@ -555,7 +555,7 @@ func TestProfileTCPOnly(t *testing.T) {
 	if services != 23 || path != 4 || udp != 5 {
 		t.Errorf("%d services, %d path targets, %d UDP targets", services, path, udp)
 	}
-	if !strings.Contains(b, `"name":"Microsoft-Teams","group":"call-apps","kinds":["tcp"],"provider":"services-communication","provider_title":"Communication Services","provider_kind":"service","geo":"global","tags":["voice","video","signaling","app:teams","home:calls","tile:teams"]`) {
+	if !strings.Contains(b, `"name":"Microsoft-Teams","group":"call-apps","kinds":["tcp"],"provider":"services-communication","provider_title":"Communication Services","provider_kind":"service","geo":"global","tags":["voice","video","signaling","app:teams","tile:teams"]`) {
 		t.Errorf("tags missing from /api/profile: %s", b)
 	}
 }

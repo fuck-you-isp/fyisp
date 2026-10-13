@@ -26,7 +26,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [email, home:work, tile:m365]
+    tags: [email, tile:m365]
     verified:
       date: 2026-09-27
       icmp: false
@@ -41,7 +41,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [office, home:work, tile:m365]
+    tags: [office, tile:m365]
     verified:
       date: 2026-09-27
       icmp: true
@@ -59,7 +59,7 @@ targets:
     kinds: [tcp]
     region: global
     anycast: true
-    tags: [auth, home:work, tile:m365]
+    tags: [auth, tile:m365]
     verified:
       date: 2026-10-10
       tcp: true
@@ -72,7 +72,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [email, home:work, tile:gws]
+    tags: [email, tile:gws]
     verified:
       date: 2026-09-27
       icmp: true
@@ -86,7 +86,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [office, home:work, tile:gws]
+    tags: [office, tile:gws]
     verified:
       date: 2026-09-27
       icmp: true
@@ -100,7 +100,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [storage, home:work, tile:gws]
+    tags: [storage, tile:gws]
     verified:
       date: 2026-09-27
       icmp: true
@@ -114,7 +114,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [storage, home:work, tile:dropbox]
+    tags: [storage, tile:dropbox]
     verified:
       date: 2026-09-27
       icmp: true
@@ -134,7 +134,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [storage, home:work, tile:onedrive]
+    tags: [storage, tile:onedrive]
     verified:
       date: 2026-10-12
       icmp: true

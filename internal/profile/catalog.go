@@ -277,9 +277,6 @@ func (p *Provider) validate() error {
 		case t.Geo != "" && !slices.Contains(Geos, t.Geo):
 			bad("target %q: geo %q, want one of %s", t.Name, t.Geo, strings.Join(Geos, ", "))
 		}
-		if err := checkHomeTags(t.Tags); err != nil {
-			bad("target %q: %v", t.Name, err)
-		}
 		if err := checkTileTags(t.Tags, ks[model.KindUDP]); err != nil {
 			bad("target %q: %v", t.Name, err)
 		}

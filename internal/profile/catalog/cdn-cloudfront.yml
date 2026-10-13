@@ -20,7 +20,7 @@ targets:
     host: d1.awsstatic.com
     kinds: [tcp]
     anycast: true
-    tags: [geodns, home:web]
+    tags: [geodns]
     notes: >-
       Empty 200 served from the CloudFront edge cache (X-Cache: Hit).
     verified:

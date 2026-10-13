@@ -20,7 +20,7 @@ import { TileChart } from './homechart.js';
 
 const BAR_MS = 5 * 60e3;
 // The open panel's chart refreshes this often.
-export const TILE_MS = 60e3;
+const TILE_MS = 60e3;
 
 /** A status icon: colour plus a glyph, hidden from screen readers (the word says it). */
 export function ico(/** @type {string} */ state, big = false) {
@@ -33,7 +33,7 @@ export function setText(/** @type {Element} */ el, /** @type {string} */ text) {
   if (el.textContent !== text) el.textContent = text;
 }
 /** Sets or removes an attribute, only when it changed. */
-export function setAttr(/** @type {Element} */ el, /** @type {string} */ name, /** @type {string|null} */ v) {
+function setAttr(/** @type {Element} */ el, /** @type {string} */ name, /** @type {string|null} */ v) {
   if (v == null) { if (el.hasAttribute(name)) el.removeAttribute(name); } else if (el.getAttribute(name) !== v) el.setAttribute(name, v);
 }
 function setClass(/** @type {Element} */ el, /** @type {string} */ c) { if (el.className !== c) el.className = c; }

@@ -1,7 +1,6 @@
 // Home (v0.9.0) navigation: "Technical details →" opens Details and Back
-// returns; old Home links still land on Home; the problems link moves focus
-// without touching the hash; a first answer that never comes holds up
-// neither Details nor Home.
+// returns; the problems link moves focus without touching the hash; a first
+// answer that never comes holds up neither Details nor Home.
 // @ts-check
 const { test, expect } = require('./fixtures');
 const { serveHome, openHome } = require('./home');
@@ -21,14 +20,6 @@ test('Technical details → Details, Back → Home', async ({ page }) => {
   await expect(page).toHaveTitle('✓ All good – fyisp');
   await expect(page.locator('#viewnav')).toBeHidden();
 });
-
-for (const hash of ['#v=h', '#hw=w']) {
-  test(`${hash} opens Home`, async ({ page }) => {
-    await serveHome(page, 'now-good');
-    await openHome(page, hash);
-    await expect(page).toHaveTitle('✓ All good – fyisp');
-  });
-}
 
 test('the problems link focuses the list without changing the hash', async ({ page }) => {
   await serveHome(page, 'now-good');

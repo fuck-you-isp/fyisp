@@ -6,7 +6,7 @@
 // cancel any entry. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, speedRefusal, dialog, clock } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, speedRefusal, dialog, clock, fmtMbps } from './core.js';
 import { readingCell, lowerBound } from './speedmap.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -326,7 +326,7 @@ export class SpeedQueue {
     const done = res.filter((r) => r.status !== 'waiting' && r.status !== 'testing').length;
     const word = (/** @type {SweepResult} */ r) => {
       switch (r.status) {
-        case 'ok': return `${mbit(r.down_bps)} down, ${mbit(r.up_bps)} up`;
+        case 'ok': return `${fmtMbps(r.down_bps)} down, ${fmtMbps(r.up_bps)} up`;
         case 'testing': return 'testing now…';
         case 'busy': return 'server busy';
         case 'unreachable': return 'didn’t answer';
@@ -369,7 +369,7 @@ export class SpeedQueue {
       const item = (/** @type {{k:string,m:number,n:number}} */ x) => {
         const bar = h('span', { class: 'sp-sw-bar', 'aria-hidden': 'true' });
         bar.style.width = `${Math.max(2, Math.round(x.m / max * 100))}%`;
-        return h('li', {}, h('span', { class: 'sp-sw-k', text: x.k }), h('span', { class: 'sp-sw-track' }, bar), h('span', { class: 'sp-sw-v', text: `${mbit(x.m)} · ${x.n} server${x.n === 1 ? '' : 's'}` }));
+        return h('li', {}, h('span', { class: 'sp-sw-k', text: x.k }), h('span', { class: 'sp-sw-track' }, bar), h('span', { class: 'sp-sw-v', text: `${fmtMbps(x.m)} · ${x.n} server${x.n === 1 ? '' : 's'}` }));
       };
       if (key === 'provider') return h('div', { class: 'sp-sw-bars' }, h('h3', { text: title }), h('ul', {}, ...list.map(item)));
       // Regions: the default ones in catalog order, then the other places.
@@ -415,17 +415,11 @@ export class SpeedQueue {
   }
 }
 
-/** "248 Mbit/s", or "—" when not measured (busy is never 0). @param {number|null|undefined} b */
-function mbit(b) {
-  if (b == null) return '—';
-  const m = b / 1e6;
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} Gbit/s` : `${m < 10 ? m.toFixed(1) : Math.round(m)} Mbit/s`;
-}
 /** @param {SpeedTest} t */
 function resultWord(t) {
   if (t.outcome === 'busy') return 'Server busy';
   if (t.outcome === 'unreachable') return 'Didn’t answer';
   if (t.outcome === 'failed') return 'Didn’t finish';
-  if (t.outcome === 'cancelled') return t.down_bps != null ? `Cancelled after download (${mbit(t.down_bps)} down)` : 'Cancelled';
+  if (t.outcome === 'cancelled') return t.down_bps != null ? `Cancelled after download (${fmtMbps(t.down_bps)} down)` : 'Cancelled';
   return 'OK';
 }

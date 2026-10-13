@@ -7,7 +7,7 @@
 // no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, tzParam, clock } from './core.js';
+import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, tzParam, clock, fmtMbps } from './core.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedRow} SpeedRow */
@@ -77,11 +77,6 @@ function hourRange(hours) {
   return `${hourLong(a)} to ${hourLong(b)}`;
 }
 function pct(/** @type {number} */ v) { return `${Math.round(v * 100)}%`; }
-function mb(/** @type {number|null|undefined} */ bps) {
-  if (bps == null) return '—';
-  const m = bps / 1e6;
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} Gbit/s` : `${m < 10 ? m.toFixed(1) : Math.round(m)} Mbit/s`;
-}
 function median(/** @type {number[]} */ v) {
   if (!v.length) return null;
   const s = [...v].sort((a, b) => a - b), m = s.length >> 1;
@@ -94,7 +89,7 @@ function resultWord(t) {
   if (t.outcome === 'busy') return 'Server busy';
   if (t.outcome === 'unreachable') return 'Didn’t answer';
   if (t.outcome === 'failed') return 'Didn’t finish';
-  if (t.outcome === 'cancelled') return t.down_bps != null ? `Cancelled after download (${mb(t.down_bps)} down)` : 'Cancelled';
+  if (t.outcome === 'cancelled') return t.down_bps != null ? `Cancelled after download (${fmtMbps(t.down_bps)} down)` : 'Cancelled';
   const bits = [t.fallback_level === 'nearby_city' ? 'Backup city ◤' : t.fallback ? 'Backup server ◤' : 'OK'];
   if (t.capped_by_server) bits.push('limited by server ⊘');
   return bits.join(' · ');
@@ -131,7 +126,7 @@ function lbCell(atLeast) {
 }
 export function readingCell(k, b, lb, mark) {
   if (b == null) return h('td', { class: 'num', 'data-k': k, text: '—' });
-  const v = mb(b).replace(' Mbit/s', '');
+  const v = fmtMbps(b, true);
   return h('td', { class: 'num', 'data-k': k },
     lb && mark ? h('span', { 'aria-hidden': 'true', text: '≥ ' }) : null,
     lb ? h('span', { class: 'sr-only', text: 'at least ' }) : null, v);
@@ -322,7 +317,7 @@ export class SpeedMap {
         } else {
           const [, c2, word] = bin(v);
           cls += ' ' + c2;
-          name = `${label}, ${at}: ${this.unit === 'pct' ? pct(v) + ' of normal' : mb(bps)}, ${n} tests, ${word}`;
+          name = `${label}, ${at}: ${this.unit === 'pct' ? pct(v) + ' of normal' : fmtMbps(bps)}, ${n} tests, ${word}`;
         }
         if (fb && n) { cls += ' fb'; name += `, ${fb} on a backup server`; }
         if (dip.has(c[0])) cls += ' dip';
@@ -468,7 +463,7 @@ export class SpeedMap {
     const tipFor = (/** @type {{t:SpeedTest,y:number}} */ p) => [
       h('div', { class: 't', text: `${new Date(p.t.start).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${clock(p.t.start)}` }),
       h('div', { text: `${p.t.label}${p.t.fallback ? ' (backup server)' : ''}${p.t.trigger !== 'schedule' ? ' · on demand' : ''}` }),
-      h('div', { text: `${mb(p.t.down_bps)} down · ${mb(p.t.up_bps)} up${this.unit === 'pct' ? ` · ${fmtY(p.y)} of normal` : ''}` })];
+      h('div', { text: `${fmtMbps(p.t.down_bps)} down · ${fmtMbps(p.t.up_bps)} up${this.unit === 'pct' ? ` · ${fmtY(p.y)} of normal` : ''}` })];
     const dipHours = r.dip?.hours || dipHoursOf(d);
     const byHour = scatter({
       x: [0, 24], ticks: [0, 3, 6, 9, 12, 15, 18, 21, 24].map((x) => ({ v: x, label: x === 24 ? '' : hourShort(x) })),
@@ -666,9 +661,9 @@ export class SpeedMap {
     /** @type {[string,string,(r:SpeedRow)=>number|string|null,(r:SpeedRow)=>string][]} */
     const cols = [
       ['label', regions ? 'Region' : 'Server', (r) => r.label, (r) => r.label],
-      ['down', 'Download (median)', (r) => r.down_median_bps, (r) => mb(r.down_median_bps)],
-      ['p10', 'Slow end (p10)', (r) => r.down_p10_bps, (r) => mb(r.down_p10_bps)],
-      ['up', 'Upload (median)', (r) => r.up_median_bps, (r) => mb(r.up_median_bps)],
+      ['down', 'Download (median)', (r) => r.down_median_bps, (r) => fmtMbps(r.down_median_bps)],
+      ['p10', 'Slow end (p10)', (r) => r.down_p10_bps, (r) => fmtMbps(r.down_p10_bps)],
+      ['up', 'Upload (median)', (r) => r.up_median_bps, (r) => fmtMbps(r.up_median_bps)],
       ['dip', 'Slower hours', (r) => (r.dip ? -r.dip.drop : 0), (r) => (r.dip ? `${hourRange(r.dip.hours)}, −${Math.round(r.dip.drop * 100)}%` : '—')],
       ...(regions ? /** @type {typeof cols} */ ([['fb', 'Backup server', (r) => (r.n ? r.fallback / r.n : null), (r) => (r.n ? pct(r.fallback / r.n) : '—')]]) : []),
       ['busy', 'Busy', (r) => r.busy, (r) => String(r.busy)],

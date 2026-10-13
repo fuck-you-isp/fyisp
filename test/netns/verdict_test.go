@@ -24,11 +24,11 @@ groups:
   - {id: core, title: Core}
   - {id: web, title: Web}
 targets:
-  - {name: alpha,   host: 203.0.113.10,   group: core, interval: 6s, tags: [home:work]}
-  - {name: bravo,   host: 203.0.113.11,   group: core, interval: 6s, tags: [home:work]}
-  - {name: charlie, host: 203.0.113.12,   group: web,  interval: 6s, tags: [home:work]}
-  - {name: delta,   host: svc.fyisp.test, group: web,  interval: 6s, tags: [home:web]}
-  - {name: kilo,    host: www.fyisp.test, group: web,  interval: 6s, tags: [home:web]}
+  - {name: alpha,   host: 203.0.113.10,   group: core, interval: 6s}
+  - {name: bravo,   host: 203.0.113.11,   group: core, interval: 6s}
+  - {name: charlie, host: 203.0.113.12,   group: web,  interval: 6s}
+  - {name: delta,   host: svc.fyisp.test, group: web,  interval: 6s}
+  - {name: kilo,    host: www.fyisp.test, group: web,  interval: 6s}
 `
 
 // Hysteresis of the verdict engine (internal/verdict): 60s warm-up, a new

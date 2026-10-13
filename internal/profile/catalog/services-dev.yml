@@ -31,7 +31,7 @@ targets:
     path: /robots.txt
     region: global
     anycast: true
-    tags: [git, home:work, tile:github]
+    tags: [git, tile:github]
     verified:
       date: 2026-09-27
       icmp: true
