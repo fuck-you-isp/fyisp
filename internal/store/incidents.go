@@ -11,7 +11,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// The incidents table (migration v2) is the outage log written by the
+// The incidents table is the outage log written by the
 // verdict engine. *SQLite implements verdict.IncidentStore and
 // verdict.IncidentRecovery. Times are unix milliseconds; end_ms is NULL while
 // an incident is ongoing; updated_ms is stamped (Options.Now) by every

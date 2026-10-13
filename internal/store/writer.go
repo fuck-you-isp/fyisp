@@ -141,7 +141,7 @@ func Open(dir string, o Options) (*SQLite, error) {
 		return nil, err
 	}
 	ctx := context.Background()
-	db, err := openConns(ctx, filepath.Join(dir, DBName), o.Version, o.Now())
+	db, err := openConns(ctx, filepath.Join(dir, DBName), o.Version, o.Now(), o.Log)
 	if err != nil {
 		lk.release()
 		return nil, err
@@ -161,26 +161,23 @@ func Open(dir string, o Options) (*SQLite, error) {
 // instance has flushed (at most ~60s behind).
 func OpenReadOnly(dir string) (*SQLite, error) {
 	path := filepath.Join(dir, DBName)
-	if _, err := os.Stat(path); err != nil {
-		return nil, err
-	}
 	ctx := context.Background()
+	// The daemon's checks (classify), never its fixes: an older or missing
+	// database is left for fyisp to replace or create.
+	switch state, ver, err := classify(ctx, path); {
+	case err != nil:
+		return nil, err
+	case state == dbOld:
+		return nil, fmt.Errorf("store: %s is from an older fyisp (schema v%d); fyisp replaces it with a new empty database when it starts", path, ver)
+	case state == dbNone:
+		if _, err := os.Stat(path); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("store: %s holds no fyisp database yet; fyisp creates one when it starts", path)
+	}
 	r, err := openReader(ctx, path)
 	if err != nil {
 		return nil, err
-	}
-	var ver int
-	if err := r.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&ver); err != nil {
-		r.Close()
-		return nil, err
-	}
-	switch {
-	case ver > SchemaVersion():
-		r.Close()
-		return nil, fmt.Errorf("%w (%d > %d)", ErrNewerSchema, ver, SchemaVersion())
-	case ver < SchemaVersion():
-		r.Close()
-		return nil, fmt.Errorf("store: %s has schema v%d; run fyisp once to upgrade it to v%d", path, ver, SchemaVersion())
 	}
 	s := newSQLite(dir, &conns{path: path, r: r}, Options{Now: time.Now, Log: slog.New(slog.DiscardHandler)})
 	if err := s.loadSeries(ctx); err != nil {
@@ -865,8 +862,8 @@ func (s *SQLite) flushFailed(items []*flushItem, err error) error {
 }
 
 // Prune deletes every hour that ends at or before `before` (and incidents
-// that ended, route changes that happened, annotations and speed tests that ended and hop
-// addresses last seen before the first kept hour; never reports), returns the free pages to the OS
+// that ended, route changes that happened, speed tests that ended and hop
+// addresses last seen before the first kept hour), returns the free pages to the OS
 // (incremental_vacuum) and truncates the WAL.
 //
 // The retention it implies (Options.Now - before) is counted back from the
@@ -945,12 +942,6 @@ func (s *SQLite) prune(ctx context.Context, hour int64) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM hop_info WHERE last_seen_ms < ?`, hour*hourMs); err != nil {
-		return err
-	}
-	// Annotations that ended (or, without an end, happened) before the
-	// first kept hour. Reports are user-created snapshots and are never
-	// pruned by retention (SaveReport caps their number instead).
-	if _, err := tx.ExecContext(ctx, `DELETE FROM annotations WHERE coalesce(end_ms, at_ms) < ?`, hour*hourMs); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM speedtests WHERE end_ms < ?`, hour*hourMs); err != nil {

@@ -11,7 +11,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// The speedtests table (migrations v5 and v6) keeps one row per speed test;
+// The speedtests table keeps one row per speed test;
 // retention (Prune) drops them with the hours they ended in. *SQLite
 // implements speedtest.Store.
 

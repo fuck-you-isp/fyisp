@@ -253,7 +253,7 @@ const (
 
 // Verdict is the current assessment. Summary is one plain-English sentence
 // and must never contain IP addresses or hostnames of the user's network
-// (redacted reports quote it as is).
+// (the dashboard quotes it as is).
 type Verdict struct {
 	Kind    VerdictKind `json:"kind"`
 	Since   time.Time   `json:"since"`
@@ -280,8 +280,7 @@ type Incident struct {
 }
 
 // HopInfo describes the router seen at one hop address. Stored once per IP,
-// not per sample. RDNS and Owner may reveal locations; a redacted report
-// leaves them out for the first public hops.
+// not per sample. RDNS and Owner may reveal locations.
 type HopInfo struct {
 	IP        netip.Addr `json:"ip"`
 	RDNS      string     `json:"rdns,omitempty"`
@@ -310,19 +309,6 @@ type RouteChange struct {
 	FirstDiff int `json:"first_diff"`
 }
 
-// Annotation is a user note on the timeline (e.g. "call dropped", "ISP ticket
-// opened"). End is zero for a point in time. Public notes go into redacted
-// reports too; reports that are not redacted include every note.
-type Annotation struct {
-	ID      int64     `json:"id"`
-	At      time.Time `json:"at"`
-	End     time.Time `json:"end,omitempty"`
-	Text    string    `json:"text"`
-	Public  bool      `json:"public"`
-	Created time.Time `json:"created"`
-	Updated time.Time `json:"updated"`
-}
-
 // Baseline is a series' "normal" from its own recent history (default the
 // past 7 days, excluding the current hour). When HourOfDay is true the values
 // are for the same UTC hour of day as the time asked about.
@@ -335,16 +321,6 @@ type Baseline struct {
 	HourOfDay bool      `json:"hour_of_day"`
 	From      time.Time `json:"from"`
 	To        time.Time `json:"to"`
-}
-
-// ReportMeta describes a stored evidence report snapshot.
-type ReportMeta struct {
-	ID      string    `json:"id"` // random, URL-safe
-	Title   string    `json:"title"`
-	From    time.Time `json:"from"`
-	To      time.Time `json:"to"`
-	Created time.Time `json:"created"`
-	Bytes   int       `json:"bytes"`
 }
 
 // Speed test outcomes (SpeedTest.Outcome).

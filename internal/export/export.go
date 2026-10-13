@@ -20,11 +20,6 @@
 //
 //	target,kind,ts,n,lost,rtt_mean_ms,rtt_min_ms,rtt_max_ms,hop
 //
-// Annotations (--annotations), one row per timeline note, oldest first:
-//
-//	id,at,end,public,text
-//	3,2026-09-26T12:00:00.000Z,2026-09-26T12:30:00.000Z,1,call dropped
-//
 // Speed tests (--speedtests), one row per test, oldest first; bits per
 // second, seconds and milliseconds, empty when not measured or unknown;
 // the edge columns are the ISP edge's latency before (idle) and during
@@ -81,10 +76,6 @@ type Options struct {
 	Targets  []string          // empty: all
 	Kinds    []model.ProbeKind // empty: all
 	Output   string            // file path; "" or "-" means the io.Writer (CSV only)
-	// Annotations exports the timeline notes overlapping [From, To] (all
-	// when unset) as CSV (AnnotationHeader) instead of samples. The reader
-	// must also be a store.AnnotationStore.
-	Annotations bool
 	// SpeedTests exports the speed tests that started in [From, To] as CSV
 	// (SpeedTestHeader) instead of samples. The reader must also be a
 	// SpeedTestReader.
@@ -100,9 +91,6 @@ type SpeedTestReader interface {
 var (
 	RawHeader    = []string{"target", "kind", "ts", "rtt_ms", "lost", "reason", "hop"}
 	HourlyHeader = []string{"target", "kind", "ts", "n", "lost", "rtt_mean_ms", "rtt_min_ms", "rtt_max_ms", "hop"}
-	// AnnotationHeader: at and end in TimeFormat (end empty for a point in
-	// time), public 0 or 1, oldest first.
-	AnnotationHeader = []string{"id", "at", "end", "public", "text"}
 	// SpeedTestHeader: start and end in TimeFormat; outcome ok, busy (the
 	// server ran another test: not a slow result), unreachable or failed.
 	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "fallback_level", "port", "attempts", "down_bps", "up_bps",
@@ -124,13 +112,6 @@ func Run(ctx context.Context, r store.Reader, o Options, stdout io.Writer) error
 func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
 	if o.Format != "" && o.Format != FormatCSV {
 		return fmt.Errorf("export: format %q needs an output file", o.Format)
-	}
-	if o.Annotations {
-		as, ok := r.(store.AnnotationStore)
-		if !ok {
-			return errors.New("export: this store has no annotations")
-		}
-		return WriteAnnotations(ctx, as, w, o.From, o.To)
 	}
 	if o.SpeedTests {
 		sr, ok := r.(SpeedTestReader)
@@ -177,39 +158,6 @@ func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
 	}
 	if err != nil {
 		return err
-	}
-	cw.Flush()
-	return cw.Error()
-}
-
-// WriteAnnotations writes the notes overlapping [from, to] as CSV
-// (AnnotationHeader); a zero from or to leaves that side open.
-func WriteAnnotations(ctx context.Context, as store.AnnotationStore, w io.Writer, from, to time.Time) error {
-	if from.IsZero() {
-		from = time.UnixMilli(0)
-	}
-	if to.IsZero() {
-		to = time.UnixMilli(math.MaxInt64 / 2)
-	}
-	notes, err := as.Annotations(ctx, from, to, false)
-	if err != nil {
-		return err
-	}
-	cw := csv.NewWriter(w)
-	if err := cw.Write(AnnotationHeader); err != nil {
-		return err
-	}
-	for _, a := range notes {
-		end, public := "", "0"
-		if !a.End.IsZero() {
-			end = a.End.UTC().Format(TimeFormat)
-		}
-		if a.Public {
-			public = "1"
-		}
-		if err := cw.Write([]string{strconv.FormatInt(a.ID, 10), a.At.UTC().Format(TimeFormat), end, public, a.Text}); err != nil {
-			return err
-		}
 	}
 	cw.Flush()
 	return cw.Error()
@@ -298,8 +246,8 @@ func WriteSpeedTests(ctx context.Context, sr SpeedTestReader, w io.Writer, from,
 // WriteFile creates path (mode 0600; it must not exist) and exports into it
 // in o.Format. On error the partial file is removed.
 func WriteFile(ctx context.Context, r store.Reader, path string, o Options) (err error) {
-	if (o.Annotations || o.SpeedTests) && o.Format != "" && o.Format != FormatCSV {
-		return fmt.Errorf("export: annotations and speed tests are exported as CSV only")
+	if o.SpeedTests && o.Format != "" && o.Format != FormatCSV {
+		return fmt.Errorf("export: speed tests are exported as CSV only")
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {

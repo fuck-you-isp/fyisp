@@ -1,8 +1,6 @@
 package store
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -143,28 +141,6 @@ func TestPruneIncidents(t *testing.T) {
 	slices.Sort(names)
 	if !slices.Equal(names, []string{"ongoing", "recent", "straddle"}) {
 		t.Fatalf("after prune: %v", names)
-	}
-}
-
-// TestFixtureV1ToV2 upgrades the released v1 fixture: the incidents table
-// appears, the samples survive and a v1 backup is written.
-func TestFixtureV1ToV2(t *testing.T) {
-	dir := fixtureDir(t)
-	s := openT(t, dir, Options{Now: func() time.Time { return t0.Add(2*time.Hour + 30*time.Minute) }})
-	defer s.Close()
-	if v := pragmaInt(t, s.db.w, "user_version"); v != int64(SchemaVersion()) || SchemaVersion() < 2 {
-		t.Fatalf("user_version %d, SchemaVersion %d", v, SchemaVersion())
-	}
-	checkFixture(t, s)
-	in := &model.Incident{Start: t0, Kind: model.VerdictUpstream, Summary: "z"}
-	if err := s.SaveIncident(ctx, in); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := s.Incidents(ctx, t0, t0); err != nil || len(got) != 1 {
-		t.Fatalf("%v %v", got, err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, DBName+".bak-v1")); err != nil {
-		t.Fatal(err)
 	}
 }
 

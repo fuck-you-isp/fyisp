@@ -1,6 +1,6 @@
 // Package store persists probe results in SQLite (modernc.org/sqlite).
 //
-// This file holds the connection setup and the schema migrations. The open
+// This file holds the connection setup and the schema. The open
 // sequence was proven by spike S3 (see docs/PLAN.md "Storage").
 package store
 
@@ -9,6 +9,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,7 +18,8 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // PageSize is the database page size, fixed when the file is created.
@@ -53,18 +56,19 @@ const (
 // keeps them busy, and a process nobody looks at holds none.
 const readerIdleTime = time.Minute
 
-// migrations[i] brings the schema from version i to i+1. Append only: never
-// edit a released migration. The schema version (PRAGMA user_version) is
-// len(migrations).
-var migrations = []string{
-	// v1 (fyisp v0.1)
-	`
+// schema is the whole database, created in one go in a new file. Its
+// version (PRAGMA user_version) is SchemaVersion. fyisp v0.10.0 started over
+// at v7: a file from an older fyisp (v1 to v6) is replaced with a new empty
+// one (see prepare), so there are no migrations. A future change appends
+// a migration and bumps SchemaVersion.
+const schema = `
 CREATE TABLE series(
 	id          INTEGER PRIMARY KEY,
 	target      TEXT    NOT NULL,
 	kind        INTEGER NOT NULL,
+	hop         INTEGER NOT NULL DEFAULT 0, -- the TTL of a KindTrace series, 0 otherwise
 	interval_ms INTEGER NOT NULL,
-	UNIQUE(target, kind)
+	UNIQUE(target, kind, hop)
 );
 -- A rowid table on purpose: in a WITHOUT ROWID table (an index b-tree) a
 -- row larger than ~4 KB on a 16 KB page spills into an overflow page that is
@@ -77,21 +81,21 @@ CREATE TABLE samples(
 	PRIMARY KEY(hour, series)
 );
 -- Hourly summaries of closed hours, packed per UTC day and series (format
--- in summary.go: n, lost, lost per reason, min, max, p95, sum per hour).
--- Long-range panels read these; a row per hour would be too many rows.
+-- in summary.go: n, lost, lost per reason, min, max, p95, sum and median per
+-- hour). Long-range panels read these; a row per hour would be too many rows.
 CREATE TABLE summary_1h(
 	day    INTEGER NOT NULL, -- unix seconds / 86400
 	series INTEGER NOT NULL,
 	data   BLOB    NOT NULL,
 	PRIMARY KEY(day, series)
 ) WITHOUT ROWID;
+-- created_by_version and created_at, and the settings changed in the
+-- dashboard (key 'setting:<name>').
 CREATE TABLE meta(
 	key   TEXT PRIMARY KEY,
 	value ANY
 ) WITHOUT ROWID;
-`,
-	// v2 (fyisp v0.2): the outage log (see incidents.go).
-	`
+-- The outage log (see incidents.go).
 CREATE TABLE incidents(
 	id         INTEGER PRIMARY KEY,
 	start_ms   INT  NOT NULL,
@@ -103,25 +107,8 @@ CREATE TABLE incidents(
 	updated_ms INT   -- last SaveIncident (store clock)
 );
 CREATE INDEX incidents_start ON incidents(start_ms);
-`,
-	// v3 (fyisp v0.2): traceroutes (see trace.go). A series gains the hop
-	// (TTL) of KindTrace series, 0 otherwise; the table is rebuilt because
-	// the UNIQUE constraint changes. Ids are copied, so samples and
-	// summary_1h rows keep pointing at the same series.
-	`
-CREATE TABLE series_v3(
-	id          INTEGER PRIMARY KEY,
-	target      TEXT    NOT NULL,
-	kind        INTEGER NOT NULL,
-	hop         INTEGER NOT NULL DEFAULT 0,
-	interval_ms INTEGER NOT NULL,
-	UNIQUE(target, kind, hop)
-);
-INSERT INTO series_v3(id, target, kind, hop, interval_ms) SELECT id, target, kind, 0, interval_ms FROM series;
-DROP TABLE series;
-ALTER TABLE series_v3 RENAME TO series;
--- One row per router address seen on a traced path. Unknown rdns, asn and
--- owner are NULL.
+-- Traceroutes (see trace.go). One row per router address seen on a traced
+-- path. Unknown rdns, asn and owner are NULL.
 CREATE TABLE hop_info(
 	ip            TEXT PRIMARY KEY,
 	rdns          TEXT,
@@ -147,39 +134,7 @@ CREATE TABLE routes(
 	hops     TEXT NOT NULL,
 	since_ms INT  NOT NULL
 );
-`,
-	// v4 (fyisp v0.3): annotations and evidence report snapshots (see
-	// annotations.go, reports.go). summary_1h day rows gain hourly medians
-	// (day format v2, summary.go) without a schema change: both formats are
-	// read.
-	`
-CREATE TABLE annotations(
-	id         INTEGER PRIMARY KEY,
-	at_ms      INT  NOT NULL,
-	end_ms     INT,  -- NULL for a point in time
-	text       TEXT NOT NULL,
-	public     INT  NOT NULL DEFAULT 0,
-	created_ms INT,
-	updated_ms INT
-);
-CREATE INDEX annotations_at ON annotations(at_ms);
--- html is the rendered report, zstd-compressed; bytes is its uncompressed
--- size (listed without reading the blob).
-CREATE TABLE reports(
-	id         TEXT PRIMARY KEY,
-	title      TEXT,
-	from_ms    INT,
-	to_ms      INT,
-	created_ms INT,
-	public     INT  NOT NULL DEFAULT 0,
-	bytes      INT  NOT NULL DEFAULT 0,
-	html       BLOB NOT NULL
-);
-CREATE INDEX reports_created ON reports(created_ms);
-`,
-	// v5 (fyisp v0.7): speed test results (see speedtests.go). Settings
-	// changed in the dashboard live in meta (key 'setting:<name>').
-	`
+-- Speed test results (see speedtests.go).
 CREATE TABLE speedtests(
 	id              INTEGER PRIMARY KEY,
 	start_ms        INT  NOT NULL,
@@ -215,19 +170,10 @@ CREATE TABLE speedtests(
 	handoff_ms      INT
 );
 CREATE INDEX speedtests_start ON speedtests(start_ms);
-`,
-	// v6 (fyisp v0.8): the share link is gone. Reports are no longer
-	// published, and the share link's speed-test opt-in and time ledger
-	// settings go. Speed tests it started stay, with their triggers
-	// (public, public_sweep).
-	`
-ALTER TABLE reports DROP COLUMN public;
-DELETE FROM meta WHERE key IN ('setting:speedtest_public', 'setting:speedtest_public_bytes');
-`,
-}
+`
 
 // SchemaVersion is the schema version this build writes.
-func SchemaVersion() int { return len(migrations) }
+func SchemaVersion() int { return 7 }
 
 // conns is the writer/reader handle pair.
 type conns struct {
@@ -242,24 +188,22 @@ var ErrNewerSchema = errors.New("store: database schema is newer than this build
 // ErrNotDatabase means the file exists but is not a fyisp database.
 var ErrNotDatabase = errors.New("store: not a fyisp database")
 
-// openConns opens (creating if needed) the database at path.
+// openConns opens the database at path, creating it, or replacing a file
+// from an older fyisp, first (see prepare).
 //
 // Sequence:
-//  1. create the file 0600 if missing: SQLite gives -wal/-shm the same mode
-//     as the main file, so they come out 0600 too;
+//  1. prepare: a complete schema v7 file at path, 0600 (SQLite gives
+//     -wal/-shm the same mode as the main file);
 //  2. writer pool, MaxOpenConns=1, DSN: busy_timeout, synchronous=NORMAL,
 //     BEGIN IMMEDIATE;
-//  3. refuse newer schema versions;
-//  4. on an empty file: PRAGMA page_size=16384; PRAGMA auto_vacuum=INCREMENTAL;
-//  5. PRAGMA journal_mode=WAL (persistent; writes page 1, fixing page_size);
-//  6. migrations (with a VACUUM INTO backup when upgrading an existing file);
-//  7. reader pool, DSN: busy_timeout, query_only.
-func openConns(ctx context.Context, path, version string, now time.Time) (_ *conns, err error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
-	if err != nil {
+//  3. PRAGMA journal_mode=WAL (persistent);
+//  4. reader pool, DSN: busy_timeout, query_only.
+//
+// The caller holds the instance lock, so nothing else uses the file.
+func openConns(ctx context.Context, path, version string, now time.Time, log *slog.Logger) (_ *conns, err error) {
+	if err := prepare(ctx, path, version, now, log); err != nil {
 		return nil, err
 	}
-	f.Close()
 
 	w, err := sql.Open("sqlite", path+writerParams+tempDirParam(path))
 	if err != nil {
@@ -275,29 +219,6 @@ func openConns(ctx context.Context, path, version string, now time.Time) (_ *con
 	w.SetConnMaxLifetime(0)
 	w.SetConnMaxIdleTime(0)
 
-	var nobj, ver int
-	if err := w.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema`).Scan(&nobj); err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrNotDatabase, path, err)
-	}
-	if err := w.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&ver); err != nil {
-		return nil, err
-	}
-	if ver > SchemaVersion() {
-		return nil, fmt.Errorf("%w (%d > %d)", ErrNewerSchema, ver, SchemaVersion())
-	}
-	if ver == 0 && nobj != 0 {
-		return nil, fmt.Errorf("%w: %s has tables but no schema version", ErrNotDatabase, path)
-	}
-	if nobj == 0 {
-		for _, p := range []string{
-			fmt.Sprintf("PRAGMA page_size=%d", PageSize),
-			"PRAGMA auto_vacuum=INCREMENTAL",
-		} {
-			if _, err := w.ExecContext(ctx, p); err != nil {
-				return nil, fmt.Errorf("store: %s: %w", p, err)
-			}
-		}
-	}
 	var mode string
 	if err := w.QueryRowContext(ctx, `PRAGMA journal_mode=WAL`).Scan(&mode); err != nil {
 		return nil, err
@@ -305,12 +226,6 @@ func openConns(ctx context.Context, path, version string, now time.Time) (_ *con
 	if !strings.EqualFold(mode, "wal") {
 		return nil, fmt.Errorf("store: journal_mode is %q, want wal", mode)
 	}
-	if ver < SchemaVersion() {
-		if err := migrate(ctx, w, path, ver, version, now); err != nil {
-			return nil, err
-		}
-	}
-
 	r, err := openReader(ctx, path)
 	if err != nil {
 		return nil, err
@@ -334,42 +249,275 @@ func openReader(ctx context.Context, path string) (*sql.DB, error) {
 	return r, nil
 }
 
-// migrate applies migrations[from:] in one transaction. An existing database
-// (from > 0) is first copied to <path>.bak-v<from> with VACUUM INTO.
-func migrate(ctx context.Context, w *sql.DB, path string, from int, version string, now time.Time) error {
-	if from > 0 {
-		bak := fmt.Sprintf("%s.bak-v%d", path, from)
-		// VACUUM INTO needs a missing or empty file; create it empty so it
-		// gets mode 0600 instead of the umask default.
-		f, err := os.OpenFile(bak, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
-		if err != nil {
-			return fmt.Errorf("store: backup before migration: %w", err)
-		}
-		f.Close()
-		if _, err := w.ExecContext(ctx, `VACUUM INTO ?`, bak); err != nil {
-			return fmt.Errorf("store: backup before migration: %w", err)
+// errSimulatedCrash is returned at crashAt (tests only): the replacement
+// stops there as if the process had been killed, leaving everything as is.
+var errSimulatedCrash = errors.New("store: simulated crash")
+
+// crashAt names the step of prepare at which tests stop it ("" never).
+var crashAt string
+
+func crashPoint(step string) error {
+	if crashAt != "" && crashAt == step {
+		return errSimulatedCrash
+	}
+	return nil
+}
+
+// prepare leaves a complete schema v7 database at path (see classify). No
+// database yet (no file, 0 bytes, or no tables): a new one. A database from
+// an older fyisp: replaced with a new empty one, together with its -wal,
+// -shm and -journal files and the fyisp.db.bak-v<N> backups older versions
+// made; earlier history is not carried over, and one info line says so.
+// Anything classify refuses is left exactly as it is.
+//
+// The new file is built as <path>.new and renamed over path, so a kill at
+// any point leaves either the old file (replaced again on the next start),
+// or a complete v7 database, never a half-made one; a stale <path>.new is
+// removed first. The backups go only after the rename.
+func prepare(ctx context.Context, path, version string, now time.Time, log *slog.Logger) error {
+	state, ver, err := classify(ctx, path)
+	if err != nil {
+		return err
+	}
+	if state == dbCurrent {
+		return nil
+	}
+	tmp := path + ".new"
+	for _, p := range []string{tmp, tmp + "-journal"} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("store: remove a half-made database: %w", err)
 		}
 	}
-	tx, err := w.BeginTx(ctx, nil)
+	if state == dbNone {
+		return replace(ctx, path, tmp, version, now, nil)
+	}
+	// A database from an older fyisp: v0.10.0 starts over.
+	// The line is logged once it is all done, so it never claims backups
+	// that a kill left behind.
+	baks, bakBytes := backups(path)
+	if err := replace(ctx, path, tmp, version, now, baks); err != nil {
+		return err
+	}
+	log.Info(fmt.Sprintf("store: database from an older fyisp (schema v%d) replaced with a new empty one; its history isn't carried over", ver),
+		"backups_removed", len(baks), "backup_bytes_freed", bakBytes)
+	return nil
+}
+
+// What classify found at a database path.
+type dbState int
+
+const (
+	dbNone    dbState = iota // no database yet: no file, 0 bytes, or no tables
+	dbCurrent                // a complete schema v7 database
+	dbOld                    // a database from an older fyisp (schema v1 to v6)
+)
+
+// classify tells what is at path, for the daemon (prepare) and the
+// read-only commands (OpenReadOnly) alike, without writing to it: the
+// connection is read-only, so closing it never checkpoints a WAL into the
+// file or removes its -wal and -shm. It refuses a symbolic link, a newer
+// schema (ErrNewerSchema), and a file that is not a fyisp database, or a v7
+// file without fyisp's tables (ErrNotDatabase).
+func classify(ctx context.Context, path string) (dbState, int, error) {
+	fi, err := os.Lstat(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return dbNone, 0, nil
+	case err != nil:
+		return 0, 0, err
+	case fi.Mode()&fs.ModeSymlink != 0:
+		return 0, 0, fmt.Errorf("store: %s is a symbolic link; fyisp needs the database file itself there (point --data-dir at the directory instead)", path)
+	case !fi.Mode().IsRegular():
+		return 0, 0, fmt.Errorf("%w: %s is not a regular file", ErrNotDatabase, path)
+	case fi.Size() == 0:
+		return dbNone, 0, nil
+	}
+	ver, objs, err := inspect(ctx, path)
+	if err != nil {
+		return 0, 0, err
+	}
+	switch {
+	case ver > SchemaVersion():
+		return 0, 0, fmt.Errorf("%w (%d > %d)", ErrNewerSchema, ver, SchemaVersion())
+	case ver == 0 && len(objs) == 0:
+		return dbNone, 0, nil // SQLite's header and nothing else: no history to lose
+	case ver == SchemaVersion():
+		for _, t := range tables {
+			if !objs[t] {
+				return 0, 0, fmt.Errorf("%w: %s has schema v%d but no %s table", ErrNotDatabase, path, ver, t)
+			}
+		}
+		return dbCurrent, ver, nil
+	case ver == 0 || !objs["meta"] || !objs["series"]:
+		return 0, 0, fmt.Errorf("%w: %s has tables but not fyisp's schema", ErrNotDatabase, path)
+	}
+	return dbOld, ver, nil
+}
+
+// tables are the schema's tables, which a v7 file must all have.
+var tables = []string{"series", "samples", "summary_1h", "meta", "incidents", "hop_info", "route_changes", "routes", "speedtests"}
+
+// inspect reads the schema version and the table names of the database at
+// path over a read-only connection (mode=ro): it writes nothing, and its
+// close checkpoints nothing. Only a file SQLite reads as no database at all
+// is ErrNotDatabase; an error opening or reading it is returned as it is.
+func inspect(ctx context.Context, path string) (ver int, objs map[string]bool, err error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return 0, nil, err
+	}
+	db, err := sql.Open("sqlite", readOnlyURI(filepath.ToSlash(abs)))
+	if err != nil {
+		return 0, nil, err
+	}
+	defer db.Close()
+	notDB := func(err error) error {
+		var se *sqlite.Error
+		if errors.As(err, &se) && se.Code()&0xff == sqlite3.SQLITE_NOTADB {
+			return fmt.Errorf("%w: %s: %v", ErrNotDatabase, path, err)
+		}
+		return fmt.Errorf("store: read %s: %w", path, err)
+	}
+	rows, err := db.QueryContext(ctx, `SELECT name FROM sqlite_schema WHERE type = 'table'`)
+	if err != nil {
+		return 0, nil, notDB(err)
+	}
+	defer rows.Close()
+	objs = map[string]bool{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return 0, nil, err
+		}
+		objs[n] = true
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, notDB(err)
+	}
+	if err := db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&ver); err != nil {
+		return 0, nil, notDB(err)
+	}
+	return ver, objs, nil
+}
+
+// readOnlyURI is the absolute, slash-separated path as an SQLite URI
+// filename opened read-only: file:///home/me/fyisp.db?mode=ro, or
+// file:///C:/Users/me/fyisp.db?mode=ro for a Windows path (a leading slash
+// before the drive, which would otherwise read as the URI's authority).
+// The path is percent-escaped: a space, '?', '#' or '%' in it stays part of
+// the name.
+func readOnlyURI(slashPath string) string {
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	return "file://" + (&url.URL{Path: slashPath}).EscapedPath() + "?mode=ro"
+}
+
+// backups lists the fyisp.db.bak-v<N> files next to path (that exact
+// pattern only) and their total size.
+func backups(path string) (files []string, size int64) {
+	dir, base := filepath.Split(path)
+	ents, err := os.ReadDir(filepath.Clean(dir))
+	if err != nil {
+		return nil, 0
+	}
+	for _, e := range ents {
+		n, ok := strings.CutPrefix(e.Name(), base+".bak-v")
+		if !ok || n == "" || strings.Trim(n, "0123456789") != "" || !e.Type().IsRegular() {
+			continue
+		}
+		if fi, err := e.Info(); err == nil {
+			size += fi.Size()
+		}
+		files = append(files, filepath.Join(dir, e.Name()))
+	}
+	return files, size
+}
+
+// replace builds a new database at tmp, removes the old one's -wal, -shm
+// and -journal files, renames tmp over path (the commit point), and only
+// then removes the given backups: a failed rename keeps them.
+func replace(ctx context.Context, path, tmp, version string, now time.Time, baks []string) error {
+	if err := build(ctx, tmp, version, now); err != nil {
+		return fmt.Errorf("store: create the database: %w", err)
+	}
+	for _, p := range []string{path + "-wal", path + "-shm", path + "-journal"} {
+		if err := crashPoint("remove"); err != nil {
+			return err
+		}
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("store: replace the database: %w", err)
+		}
+	}
+	if err := crashPoint("rename"); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("store: create the database: %w", err)
+	}
+	syncDir(filepath.Dir(path))
+	for _, p := range baks {
+		if err := crashPoint("backups"); err != nil {
+			return err
+		}
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("store: remove an old backup: %w", err)
+		}
+	}
+	return nil
+}
+
+// build writes a complete schema v7 database at path (0600): page size and
+// incremental auto-vacuum, then the schema, the creation stamp and the
+// version in one transaction, synced to disk (rollback journal, synchronous
+// FULL) before build returns.
+func build(ctx context.Context, path, version string, now time.Time) error {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	f.Close()
+	db, err := sql.Open("sqlite", path+"?_pragma=synchronous(FULL)"+tempDirParam(path))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	for _, p := range []string{fmt.Sprintf("PRAGMA page_size=%d", PageSize), "PRAGMA auto_vacuum=INCREMENTAL"} {
+		if _, err := db.ExecContext(ctx, p); err != nil {
+			return fmt.Errorf("%s: %w", p, err)
+		}
+	}
+	if err := crashPoint("build"); err != nil {
+		return err
+	}
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for v := from; v < len(migrations); v++ {
-		if _, err := tx.ExecContext(ctx, migrations[v]); err != nil {
-			return fmt.Errorf("store: migrate to v%d: %w", v+1, err)
-		}
+	if _, err := tx.ExecContext(ctx, schema); err != nil {
+		return fmt.Errorf("schema: %w", err)
 	}
-	if from == 0 {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO meta(key, value) VALUES('created_by_version', ?), ('created_at', ?)`,
-			version, now.UTC().Format(time.RFC3339)); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d", len(migrations))); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO meta(key, value) VALUES('created_by_version', ?), ('created_at', ?)`,
+		version, now.UTC().Format(time.RFC3339)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d", SchemaVersion())); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return db.Close()
+}
+
+// syncDir makes a rename in dir durable where the OS allows it.
+func syncDir(dir string) {
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
 }
 
 // Close closes the reader pool, then the writer (whose close checkpoints and
@@ -419,12 +567,12 @@ func msTime(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
 // inList returns "?,?,?" for n placeholders.
 func inList(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }
 
-// tempDirParam points SQLite's temporary files (used by VACUUM INTO backups
-// before migrations, and large sorts) at a private directory next to the
-// database. Minimal systems such as the scratch Docker image have no /tmp,
-// /var/tmp or TMPDIR, and SQLite then fails with SQLITE_IOERR_GETTEMPPATH
-// ("disk I/O error (6410)"). The environment cannot be used instead: the
-// transpiled libc snapshots it at process start. Windows uses GetTempPath.
+// tempDirParam points SQLite's temporary files (large sorts, temporary
+// indexes) at a private directory next to the database. Minimal systems
+// such as the scratch Docker image have no /tmp, /var/tmp or TMPDIR, and
+// SQLite then fails with SQLITE_IOERR_GETTEMPPATH ("disk I/O error
+// (6410)"). The environment cannot be used instead: the transpiled libc
+// snapshots it at process start. Windows uses GetTempPath.
 func tempDirParam(dbPath string) string {
 	if runtime.GOOS == "windows" {
 		return ""

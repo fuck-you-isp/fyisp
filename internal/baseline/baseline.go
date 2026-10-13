@@ -33,7 +33,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
-// Source is what the verdict engine, the web API and reports use.
+// Source is what the verdict engine and the web API use.
 //
 //	func New(r store.BaselineReader, keys func() []model.SeriesKey, o Options) Source
 type Source interface {

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"math"
 	"net/netip"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -13,87 +12,15 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-func fixtureDirV2(t *testing.T) string {
-	dir := t.TempDir()
-	copyFile(t, filepath.Join("testdata", "v2.db"), filepath.Join(dir, DBName))
-	return dir
-}
-
-// seriesIDs reads the series table of a database file.
-func seriesIDs(t *testing.T, db *sql.DB) map[model.SeriesKey]int64 {
-	t.Helper()
-	rows, err := db.Query(`SELECT id, target, kind FROM series`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	out := map[model.SeriesKey]int64{}
-	for rows.Next() {
-		var id int64
-		var k model.SeriesKey
-		if err := rows.Scan(&id, &k.Target, &k.Kind); err != nil {
-			t.Fatal(err)
-		}
-		out[k] = id
-	}
-	return out
-}
-
-func checkV3Schema(t *testing.T, s *SQLite, bakFrom int) {
-	t.Helper()
-	if v := pragmaInt(t, s.db.w, "user_version"); v != int64(SchemaVersion()) || SchemaVersion() < 3 {
-		t.Fatalf("user_version %d, SchemaVersion %d", v, SchemaVersion())
-	}
-	for _, tbl := range []string{"hop_info", "route_changes", "routes", "incidents"} {
-		var n int
-		if err := s.db.r.QueryRow(`SELECT count(*) FROM ` + tbl).Scan(&n); err != nil {
-			t.Fatalf("%s: %v", tbl, err)
-		}
-	}
-	var idx int
-	s.db.r.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name = 'route_changes_at'`).Scan(&idx)
-	if idx != 1 {
-		t.Fatal("route_changes_at index missing")
-	}
-	checkV4Schema(t, s)
-	var hops int
-	if err := s.db.r.QueryRow(`SELECT count(*) FROM series WHERE hop = 0`).Scan(&hops); err != nil || hops != 3 {
-		t.Fatalf("series hop column: %d %v", hops, err)
-	}
-	bak := filepath.Join(s.dir, DBName+".bak-v"+string(rune('0'+bakFrom)))
-	b, err := sql.Open("sqlite", bak)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer b.Close()
-	var uv int
-	if err := b.QueryRow(`PRAGMA user_version`).Scan(&uv); err != nil || uv != bakFrom {
-		t.Fatalf("backup %s: user_version %d %v", bak, uv, err)
-	}
-}
-
-// TestFixtureV2ToV3 upgrades the v2 fixture: samples, series ids and
-// incidents survive, a v2 backup is written, trace series can be added.
-func TestFixtureV2ToV3(t *testing.T) {
-	dir := fixtureDirV2(t)
-	pre, err := sql.Open("sqlite", filepath.Join(dir, DBName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := seriesIDs(t, pre)
-	pre.Close()
-	if len(before) != 3 {
-		t.Fatalf("fixture series %v", before)
-	}
-
+// TestFixtureReopen: the fixture's samples, incidents and trace data read
+// back after a reopen, and trace series of one target and kind are distinct
+// per hop.
+func TestFixtureReopen(t *testing.T) {
+	dir := fixtureDir(t)
 	now := t0.Add(2*time.Hour + 30*time.Minute)
 	s := openT(t, dir, Options{Now: func() time.Time { return now }})
 	defer func() { s.Close() }()
-	checkV3Schema(t, s, 2)
 	checkFixture(t, s)
-	if after := seriesIDs(t, s.db.r); !mapsEqual(after, before) {
-		t.Fatalf("series ids changed: %v -> %v", before, after)
-	}
 	got, err := s.Incidents(ctx, t0, t0.Add(3*time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -108,6 +35,16 @@ func TestFixtureV2ToV3(t *testing.T) {
 			!slices.Equal(g.Targets, w.Targets) || g.PeakLoss != w.PeakLoss {
 			t.Fatalf("incident %d = %+v, want %+v", i, g, w)
 		}
+	}
+	r, ch, h := fixtureTrace()
+	if got, ok := s.Route(ctx, "github"); !ok || !slices.Equal(got.Hops, r.Hops) {
+		t.Fatalf("route %+v", got)
+	}
+	if got, err := s.RouteChanges(ctx, t0, now); err != nil || len(got) != 1 || got[0].FirstDiff != ch.FirstDiff {
+		t.Fatalf("route changes %+v %v", got, err)
+	}
+	if got, ok, err := s.HopInfo(ctx, h.IP); err != nil || !ok || got.Owner != h.Owner || got.ASN != h.ASN {
+		t.Fatalf("hop info %+v %v %v", got, ok, err)
 	}
 
 	// Same target and kind, several hops: distinct series.
@@ -141,15 +78,6 @@ func mapsEqual[K comparable, V comparable](a, b map[K]V) bool {
 		}
 	}
 	return true
-}
-
-// TestFixtureV1ToV3 upgrades the v1 fixture through v2 to v3.
-func TestFixtureV1ToV3(t *testing.T) {
-	dir := fixtureDir(t)
-	s := openT(t, dir, Options{Now: func() time.Time { return t0.Add(2*time.Hour + 30*time.Minute) }})
-	defer s.Close()
-	checkV3Schema(t, s, 1)
-	checkFixture(t, s)
 }
 
 // traceSamples is n rounds of a 4-hop trace every 5s from t0: hop 2 drops

@@ -13,7 +13,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// Traceroutes (migration v3). *SQLite implements trace.Sink:
+// Traceroutes. *SQLite implements trace.Sink:
 //
 //   - Observe stores per-hop samples like any other series, keyed
 //     {Target, KindTrace, Hop}; Options.Interval must return the tracer's

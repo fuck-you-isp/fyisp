@@ -47,6 +47,16 @@ RUN --mount=type=cache,target=/go/pkg/mod \
  && GOOS=darwin go vet ./internal/netinfo/... && GOOS=windows go vet ./internal/netinfo/... \
  && CGO_ENABLED=1 go test -race ./...
 
+# An old (schema v6) database with its sidecars and two backups, for CI's
+# check that the runtime image replaces it:
+#   docker buildx build --target oldfixture --output type=local,dest=old .
+FROM source AS oldfixture-gen
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    FYISP_WRITE_OLD=/out go test -count=1 -run '^TestWriteOldFixture$' ./internal/store/ && ls /out/fyisp.db
+FROM scratch AS oldfixture
+COPY --from=oldfixture-gen /out/ /
+
 # Built-in IP-to-ASN table: download the latest iptoasn.com IPv4 data (public
 # domain, PDDL) and convert it with internal/asn/cmd/asngen. ADD re-checks the
 # URL on every build, so a new upstream file is always picked up. The version

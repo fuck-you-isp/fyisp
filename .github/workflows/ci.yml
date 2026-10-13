@@ -33,19 +33,24 @@ jobs:
           docker buildx build --target imagetest .
       - name: runtime image for arm64 and arm/v7 (FROM scratch, no QEMU)
         run: docker buildx build --target runtime --platform linux/arm64,linux/arm/v7 .
-      - name: runtime image upgrades a v1 database (scratch image)
+      - name: runtime image replaces an old database (scratch image)
         run: |
           docker buildx build --target image --load -t fyisp:ci .
+          docker buildx build --target oldfixture --output type=local,dest=ci-old .
           docker volume create fyisp-ci
-          docker run --rm -v fyisp-ci:/data -v "$PWD/internal/store/testdata:/fx:ro" busybox \
-            sh -c 'cp /fx/v1.db /data/fyisp.db && chown -R 65532:65532 /data && chmod 700 /data'
+          docker run --rm -v fyisp-ci:/data -v "$PWD/ci-old:/fx:ro" busybox \
+            sh -c 'cp /fx/* /data/ && chown -R 65532:65532 /data && chmod 700 /data && ls -la /data'
           docker run -d --name fyisp-ci -v fyisp-ci:/data fyisp:ci --log-format text
           for i in $(seq 1 30); do docker logs fyisp-ci 2>&1 | grep -q 'fyisp started' && break; sleep 1; done
           docker logs fyisp-ci 2>&1 | grep -v DEBUG
           test "$(docker inspect -f '{{.State.Running}}' fyisp-ci)" = true
+          test "$(docker inspect -f '{{.Config.User}}' fyisp-ci)" = 65532:65532
           docker logs fyisp-ci 2>&1 | grep -q 'fyisp started'
           ! docker logs fyisp-ci 2>&1 | grep -q 'fyisp stopped'
-          docker run --rm -v fyisp-ci:/data busybox ls -la /data | grep -q 'fyisp.db.bak-v1'
+          docker logs fyisp-ci 2>&1 | grep -q 'replaced with a new empty one'
+          docker run --rm -v fyisp-ci:/data busybox ls -la /data
+          ! docker run --rm -v fyisp-ci:/data busybox ls /data | grep -q '^fyisp.db.bak-v'
+          test "$(docker run --rm -v fyisp-ci:/data busybox stat -c %u /data/fyisp.db)" = 65532
           docker rm -f fyisp-ci
       - name: binary size budget (50 MB)
         run: |
