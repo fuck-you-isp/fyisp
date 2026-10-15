@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, windows-2022, macos-latest, macos-15-intel]
+        os: [macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,8 +40,10 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: poc/mtrprobe
         run: |
-          ./mtrprobe -dst 1.1.1.1
-          ./mtrprobe -dst 8.8.8.8
+          ./mtrprobe -dst 1.1.1.1 -max 30
+          ./mtrprobe -dst 8.8.8.8 -max 30
+          ifconfig | grep inet6 || true
+          ping6 -c 2 2606:4700:4700::1111 || echo NO-IPV6
       - name: probe (Windows, elevated runner)
         if: runner.os == 'Windows'
         working-directory: poc/mtrprobe
