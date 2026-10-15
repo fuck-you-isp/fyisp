@@ -371,7 +371,7 @@ add:
 	}
 }
 
-// TestReadmeConfigExample loads the --config example of the README against
+// TestReadmeConfigExample loads the --config example of docs/PROFILES.md against
 // the real catalog.
 func TestReadmeConfigExample(t *testing.T) {
 	r, err := Builtin()

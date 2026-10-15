@@ -89,8 +89,8 @@ fyisp serves one dashboard, by default on 127.0.0.1:3000. It has no public
 or redacted view, and fyisp makes no reports:
 whoever can open the dashboard sees every address and host name. To show
 your connection to others, send a screenshot of Home, which shows no
-addresses, or review a `fyisp export` first (traceroute rows contain hop
-addresses). If you put a tunnel or reverse proxy in front of
+addresses, or review a `fyisp export` first (it lists the targets you
+measure; traceroute rows give the hop number, not its address). If you put a tunnel or reverse proxy in front of
 the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
 `--allow-host`: any `--allow-host` turns the admin token on, even on a
 loopback listener, and the token then guards the speed-test controls.
