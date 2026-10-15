@@ -1,0 +1,63 @@
+name: mtr-poc
+on:
+  push:
+    branches: [exp/mtr-poc]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, windows-2022, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.1
+          cache: false
+      - name: build
+        working-directory: poc/mtrprobe
+        run: go build -o mtrprobe${{ runner.os == 'Windows' && '.exe' || '' }} .
+      - name: environment
+        shell: bash
+        run: |
+          uname -a || true
+          if [ "$RUNNER_OS" = Windows ]; then cmd //c ver; powershell -c "Get-NetFirewallProfile | ft Name,Enabled"; tracert -d -h 6 -w 1000 1.1.1.1 || true; fi
+          if [ "$RUNNER_OS" = Linux ]; then sysctl net.ipv4.ping_group_range; fi
+          if [ "$RUNNER_OS" = macOS ]; then sw_vers; traceroute -n -m 6 -w 1 1.1.1.1 || true; fi
+      - name: probe as an unprivileged user (Linux)
+        if: runner.os == 'Linux'
+        working-directory: poc/mtrprobe
+        run: |
+          sudo useradd -M nopriv || true
+          chmod 755 mtrprobe
+          sudo -u nopriv ./mtrprobe -dst 1.1.1.1
+          sudo -u nopriv ./mtrprobe -dst 8.8.8.8
+      - name: probe (macOS, runner user is not root)
+        if: runner.os == 'macOS'
+        working-directory: poc/mtrprobe
+        run: |
+          ./mtrprobe -dst 1.1.1.1
+          ./mtrprobe -dst 8.8.8.8
+      - name: probe (Windows, elevated runner)
+        if: runner.os == 'Windows'
+        working-directory: poc/mtrprobe
+        run: |
+          ./mtrprobe.exe -dst 1.1.1.1
+          ./mtrprobe.exe -dst 8.8.8.8
+      - name: probe (Windows, as a standard non-admin user)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: poc/mtrprobe
+        run: |
+          $pw = 'P0c!' + [guid]::NewGuid().ToString('N').Substring(0,12)
+          net user nopriv $pw /add | Out-Null
+          $cred = New-Object System.Management.Automation.PSCredential('nopriv', (ConvertTo-SecureString $pw -AsPlainText -Force))
+          $exe = (Resolve-Path ./mtrprobe.exe).Path
+          Copy-Item $exe C:\Users\Public\mtrprobe.exe
+          $p = Start-Process C:\Users\Public\mtrprobe.exe -ArgumentList '-dst','1.1.1.1' -Credential $cred -NoNewWindow -Wait -PassThru -RedirectStandardOutput C:\Users\Public\out.txt -RedirectStandardError C:\Users\Public\err.txt -WorkingDirectory C:\Users\Public
+          Get-Content C:\Users\Public\out.txt
+          Get-Content C:\Users\Public\err.txt
