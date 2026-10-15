@@ -332,7 +332,7 @@ For compare, make one request per row (up to 4).
 {"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "owner"}]}
 ```
 
-`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples inside a window are stored as measured, so a test that loads the line shows up as a spike or loss. Home blames a problem that overlaps a window (or the 2 s after it, 3 s after a cut-short test) on the test (`cause_kind` `speedtest`).
+`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples inside a window are stored as measured, so a test that loads the line shows up as a spike or loss. Home blames a problem that overlaps a window (or the 2 s after it) on the test (`cause_kind` `speedtest`).
 
 ## The queue
 
@@ -440,7 +440,7 @@ POST api/speed/config
 
 ## `api/home`
 
-`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it, 3 s after a cut-short test) is put down to the test (`cause_kind` `speedtest`, bar note "<Slow|Choppy|Down> during a speed test") rather than to the provider.
+`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it, 5 s after a cut-short test) is put down to the test (`cause_kind` `speedtest`, bar note "<Slow|Choppy|Down> during a speed test") rather than to the provider.
 
 ## Metrics (`/metrics`)
 
