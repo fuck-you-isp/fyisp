@@ -1,11 +1,6 @@
 # Contributing
 
-Everything is built and tested in Docker; you don't need Go installed.
-
-```sh
-docker build --target test .                      # gofmt, vet, go test -race
-docker build --target dist --output type=local,dest=dist .   # release binaries
-```
+Everything is built and tested in Docker; you don't need Go installed. This file covers the endpoints fyisp measures. For code changes, read [AGENTS.md](AGENTS.md): the repo map, every build and test command, and the project's conventions.
 
 ## Adding or fixing endpoints
 
@@ -54,6 +49,7 @@ Targets with `kinds: [udp]` measure the UDP path of calls with STUN (format in [
 - **Documented public STUN only.** The vendor publishes the server for clients to use without credentials, or its own clients and network test tools use it unauthenticated. No community STUN lists, no media ports that only work inside a call.
 - **Check it with a couple of Binding Requests** and record the result in `verified`, e.g. `{date: 2026-10-10, stun: 2/2, rtt_ms: 26.4}`.
 - **Tags:** `udp-path` on every STUN target, plus `app:<name>` (e.g. `app:teams`) when it stands for one app's media path.
+- **Add it to [docs/STUN-TERMS.md](docs/STUN-TERMS.md)** with a link to the vendor's documentation. Undocumented hosts are not shipped.
 
 A STUN server sees your public IP address, as every TCP target does.
 
@@ -63,14 +59,25 @@ A STUN server sees your public IP address, as every TCP target does.
 docker build --target test .
 ```
 
-`TestEmbeddedCatalog` rejects malformed files: unknown fields, duplicate names, bad `geo`, `kinds` (anything but `[tcp]`, `[udp]` or `[]`) or `country` values, udp targets without a `port`, and private addresses. `TestBuiltinProfiles` checks that every profile still resolves.
+This runs every catalog check:
+- `TestEmbeddedCatalog` rejects malformed files: unknown fields, duplicate names, bad `geo`, `kinds` (anything but `[tcp]`, `[udp]` or `[]`) or `country` values, udp targets without a `port`, and private addresses.
+- `TestBuiltinProfiles` checks that every profile still resolves.
+- `TestTilesCatalog` checks that every target with a `tile:` tag is listed by its tile in [`tiles.go`](internal/profile/tiles.go).
+- `TestDefaultMatchesCatalog` checks that every target in [`default.yml`](internal/profile/default.yml) matches its catalog entry.
+- `TestShippedProfilesTCPOnly` and `TestShippedUDP` check that shipped profiles use TCP only, apart from the pinned STUN targets.
+
+If you change a target in `default.yml` or a `tile:` tag, the Home goldens change too: regenerate them as described in [AGENTS.md](AGENTS.md#build-and-test-docker-only).
 
 To see what a profile selects:
 
 ```sh
-docker build --target source -t fyisp-src . && docker run --rm fyisp-src go run ./cmd/fyisp profiles aws
+docker build -t fyisp-dev . && docker run --rm fyisp-dev profiles aws
 ```
+
+## Speed-test servers (iperf3)
+
+The public iperf3 servers fyisp uses for speed tests live in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), one file per provider, plus `regions.yml`. Only servers from a published public list are used, and each operator needs a row in [docs/IPERF3-TERMS.md](docs/IPERF3-TERMS.md). The steps and the tests that guard them are in [AGENTS.md](AGENTS.md#rules-that-tests-enforce).
 
 ## Code changes
 
-Open an issue first for anything larger than a fix, so we can agree on the approach. Keep pull requests focused, run the test target, and add a test for the behaviour you change. Security issues go through [SECURITY.md](SECURITY.md), not public issues.
+Open an issue first for anything larger than a fix, so we can agree on the approach. Keep pull requests focused, run the test target, and add a test for the behaviour you change. [AGENTS.md](AGENTS.md) has the commands and conventions. Security issues go through [SECURITY.md](SECURITY.md), not public issues.
