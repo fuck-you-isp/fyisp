@@ -205,7 +205,7 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 			if ct, ok := r.Catalog.Target(t.Name); ok && ct.Host == t.Host {
 				where = strings.Join(nonEmpty(ct.Region, ct.City, ct.Country, geoOf(ct)), " ")
 			}
-			target := targetHosts(t)
+			target := t.Host
 			if t.Port != 0 && t.Port != 443 {
 				target += fmt.Sprintf(":%d", t.Port)
 			}
@@ -228,21 +228,6 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 		_ = w.Flush()
 	}
 	return 0
-}
-
-// targetHosts is the host each of t's kinds probes (host_overrides
-// included): the names fyisp looks up for it, comma-separated.
-func targetHosts(t model.Target) string {
-	var hosts []string
-	for _, k := range t.Kinds {
-		if h := t.HostFor(k); !slices.Contains(hosts, h) {
-			hosts = append(hosts, h)
-		}
-	}
-	if len(hosts) == 0 {
-		return t.Host
-	}
-	return strings.Join(hosts, ",")
 }
 
 func geoOf(t profile.CatalogTarget) string {
