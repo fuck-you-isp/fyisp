@@ -76,7 +76,7 @@ docker build -t fyisp-dev . && docker run --rm fyisp-dev profiles aws
 
 ## Speed-test servers (iperf3)
 
-The public iperf3 servers fyisp uses for speed tests live in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), one file per provider, plus `regions.yml`. Only servers from a published public list are used, and each operator needs a row in [docs/IPERF3-TERMS.md](docs/IPERF3-TERMS.md). The steps and the tests that guard them are in [AGENTS.md](AGENTS.md#catalog-profiles-and-speed-test-servers).
+The public iperf3 servers fyisp uses for speed tests live in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), one file per provider, plus `regions.yml`. Only servers from a published public list are used, and each operator needs a row in [docs/IPERF3-TERMS.md](docs/IPERF3-TERMS.md). The steps and the tests that guard them are in [AGENTS.md](AGENTS.md#rules-that-tests-enforce).
 
 ## Code changes
 
