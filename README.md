@@ -606,17 +606,9 @@ Everything builds in Docker; no Go toolchain is needed on your machine.
 docker build --target test .                                         # gofmt check, go vet, go test -race
 docker buildx build --target dist --output type=local,dest=dist .    # the 7 release binaries + SHA256SUMS
 docker build -t fyisp .                                              # the runtime image
-docker build --target launchertest .                                 # run.sh against a fake release
-docker build --target launchertest-pwsh .                            # run.ps1 under PowerShell 7
-docker build --target servicetest .                                  # systemd-analyze verify on the unit
-docker build --target imagetest .                                    # runtime image smoke test
-docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright)
-docker buildx build --target fmt --output type=local,dest=. .        # gofmt -w
-docker buildx build --target modfiles --output type=local,dest=. .   # go mod tidy
-docker buildx build --target asndb --output type=local,dest=. .      # refresh the built-in IP-to-ASN table
 ```
 
-The [Dockerfile](Dockerfile) has the rest: each stage's comment gives its command.
+[AGENTS.md](AGENTS.md) lists every other target (UI tests, launcher and image tests, regenerating goldens and fixtures) and how the code is laid out.
 
 Hop owners (AS number and name) come from a table built into the binary, [`internal/asn/data/ip2asn-v4.bin`](internal/asn/data), generated from the [iptoasn.com](https://iptoasn.com/) IPv4 data; fyisp never looks them up over the network. The `asndb` target downloads the latest file and regenerates the table; releases do this automatically and fall back to the committed table if iptoasn.com is unreachable.
 
@@ -624,22 +616,7 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 ### Network-fault tests (Linux, sudo)
 
-`test/netns/run.sh` builds fyisp and the harness in Docker, then (with sudo) builds throwaway network namespaces (client ↔ gateway ↔ ISP router ↔ internet), runs fyisp in the client namespace as uid 65532 without capabilities, and injects faults on the ISP router: `nft drop` (timeout, holes in the panel, `ping_loss_percent` 1), `nft reject with tcp reset` (refused), a withdrawn route (unreachable), netem 20% loss (matching loss ratio) and 80 ms delay (RTT +80 ms), an unresolvable name (dns), an untrusted certificate (tls), and a restart on a persistent `--data-dir` ("not measured", never loss). It also checks the path discovery (gateway and ISP edge) and, with the Network path group enabled, the verdict and outage log for each layer: loss between client and gateway (`lan`), between gateway and ISP (`isp`), anycast and most targets dropped (`upstream`), an unreachable resolver, both while running and at startup (`dns`), and one dropped target (`service`); the faulty layer must be the first problem shown.
-
-**TestHome10** runs Home against the same kind of faults in 17 scenarios, on a lab profile that feeds all 11 tiles through `tile:` tags with 25 hours of seeded history, and checks the recorded `/api/home` answers: drops of 40 s (the card, the tile notes, the red bar and one problem; also at fyisp's real 15 s check interval) and of 20 s (nothing left behind), a 2-minute outage, 40% loss at the provider (the red card), 6% loss at the provider (calls Choppy, other apps Good), one app's outage (green card, *Zoom isn't connecting*), one of 3 Microsoft 365 targets down (still Good), the router down, high jitter, a latency ladder (streams never Down), fyisp paused and stopped, the first day's learning, UDP or only the STUN port blocked, one STUN server dead, and who is looking (the router wording). It runs nightly and on demand in CI (`.github/workflows/netns.yml`, with TestVerdict and TestUDP; the API recordings and the log are kept as an artifact), not per pull request.
-
-Every scenario gets its own topology (namespaces `fyt-<run>-<n>-{cli,gw,isp,net}`, responders, resolver, certificates, fyisp process and data directory), so the scenarios run in parallel and a full run takes about as long as the slowest one, about 20 minutes (the slowest is TestHome10's 6% provider loss, about 18 minutes; almost all of it fyisp's own timings: the 60 s verdict warm-up, fault windows, the 5 good minutes a tile needs to be Good again). The namespaces are deleted when each scenario ends, and `run.sh` checks that none of its run are left and prints the wall time.
-
-```sh
-test/netns/run.sh                              # everything, in parallel (~20 min)
-test/netns/run.sh -test.run TestVerdict        # only the verdict scenarios
-test/netns/run.sh -test.run TestHome10         # only the Home scenarios
-test/netns/run.sh -test.run 'Faults/b-nft-drop'
-FYISP_NETNS_PARALLEL=0 test/netns/run.sh       # one scenario at a time, for debugging (~3 h)
-FYISP_NETNS_OUT=out test/netns/run.sh          # keep API responses and logs, one directory per scenario (TestHome10: timeline.jsonl)
-```
-
-With a Go toolchain: `sudo -E go test -tags netns -v -timeout 30m ./test/netns` (`-parallel 1` and a longer timeout, e.g. `-timeout 240m`, run it serially).
+`test/netns/run.sh` builds fyisp in Docker, then (with sudo) builds throwaway network namespaces (client ↔ gateway ↔ ISP router ↔ internet), runs fyisp in the client namespace as uid 65532 without capabilities, and injects real faults: dropped and rejected packets, a withdrawn route, loss, delay, DNS and TLS failures, blocked UDP and restarts. It checks that the verdict blames the right layer, and that Home answers correctly in 17 scenarios (TestHome10). A full run takes about 20 minutes; it runs nightly in CI ([`netns.yml`](.github/workflows/netns.yml)), not per pull request. The commands are in [AGENTS.md](AGENTS.md#build-and-test-docker-only).
 
 ## License
 
