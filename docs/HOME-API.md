@@ -1,5 +1,7 @@
 # `/api/home`: the Home view's API
 
+Part of the [API index](API.md).
+
 Home answers "is my internet OK, and which apps work": an answer card, the connection strip (router → internet provider → the internet), 11 fixed app tiles with their last 2 hours, the speed, and the problems of the last 7 days. It is built from the tiles engine (`internal/tiles`), not from the store, and every sentence is written on the server (`internal/web/home_copy.go`) and pinned by golden files. The Go types are in `internal/web/home_types.go`; keep the two in sync.
 
 ## Request

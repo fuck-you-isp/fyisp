@@ -22,8 +22,8 @@ targets (and, by traceroute, the routers on the way to them), your DNS
 resolver and, if you turn speed tests on, iperf3 servers. Every probe target, TCP or UDP, sees
 your public IP address, as any website you visit does.
 
-The STUN servers fyisp measures calls with (listed in the README under
-"STUN servers") are no different: they see your
+The STUN servers fyisp measures calls with (listed in
+[docs/CALL-QUALITY.md](docs/CALL-QUALITY.md#stun-servers)) are no different: they see your
 public IP address and the time of each request. A STUN answer also contains
 your public address as the server sees it (XOR-MAPPED-ADDRESS); fyisp's parser
 skips that attribute without decoding it, keeps no raw datagrams, and never
@@ -34,7 +34,7 @@ never as text that could contain an address. `--no-udp` turns STUN off.
 Speed tests are off unless you switch them on (`--speedtest` or the Details
 choice). Then fyisp sends iperf3 traffic over IPv4 to public iperf3 servers in
 its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
-Scaleway and others; the README lists them) and to servers you name with
+Scaleway and others; [docs/SPEED-TESTS.md](docs/SPEED-TESTS.md) lists them) and to servers you name with
 `--speedtest-server`, and to no one else. The catalog is built into the
 binary and never fetched. Those servers see your public IP address. Each test
 runs at most about 11 seconds each way, ramp-up included, with
@@ -89,8 +89,8 @@ fyisp serves one dashboard, by default on 127.0.0.1:3000. It has no public
 or redacted view, and fyisp makes no reports:
 whoever can open the dashboard sees every address and host name. To show
 your connection to others, send a screenshot of Home, which shows no
-addresses, or review a `fyisp export` first (traceroute rows contain hop
-addresses). If you put a tunnel or reverse proxy in front of
+addresses, or review a `fyisp export` first (it lists the targets you
+measure; traceroute rows give the hop number, not its address). If you put a tunnel or reverse proxy in front of
 the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
 `--allow-host`: any `--allow-host` turns the admin token on, even on a
 loopback listener, and the token then guards the speed-test controls.
@@ -104,8 +104,8 @@ above. A loopback dashboard without an admin token refuses speed-test
 controls from requests that carry proxy headers (`Forwarded`,
 `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`,
 `Tailscale-User-Login`), so a proxy that rewrites `Host` to 127.0.0.1 can't
-hand its visitors the owner's speed tests. The README's "Remote access" section
-has the details.
+hand its visitors the owner's speed tests. The README's [Remote access](README.md#remote-access) and
+[Admin token](README.md#admin-token) sections have the details.
 
 In scope, for example:
 

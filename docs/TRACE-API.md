@@ -1,5 +1,7 @@
 # On-demand traces (*Investigate*) API
 
+Part of the [API index](API.md).
+
 An on-demand trace follows one profile target's path hop by hop every 2.5 s, for **250 rounds** (about 10.4 minutes), and then stops by itself. Always-on traces (`trace: true` in the profile) are not affected.
 
 ## Start

@@ -14,7 +14,7 @@ import (
 // can't see the Wi-Fi of another device. Only the wording depends on it:
 // the API never returns the viewer's address or the decision, and neither
 // is logged or cached. A forwarder that adds no proxy header (ssh -L,
-// socat) reads as this machine (README "Wi-Fi or router?").
+// socat) reads as this machine (docs/VERDICTS.md, "Wi-Fi or router?").
 
 // ownAddrsTTL is how long the host's interface addresses are kept.
 const ownAddrsTTL = 30 * time.Second
