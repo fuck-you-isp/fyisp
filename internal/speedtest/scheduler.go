@@ -123,7 +123,7 @@ type Options struct {
 	// saved Details choice.
 	Skip    []string
 	Store   Store
-	Windows *Windows // marked for every test (masking)
+	Windows *Windows // marked for every test (chart shading, Home attribution)
 	Load    *LoadTap // idle latency before each test; nil: none
 	// Path returns the gateway and the ISP edge (netinfo); OpenPinger the
 	// ICMP pinger (probe.OpenPinger). With both, each direction of a test

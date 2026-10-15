@@ -18,7 +18,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/tiles"
 )
 
-// /api/home is the Home (v0.9.0): part=now, the answer, the strip, the 11
+// /api/home is the Home: part=now, the answer, the strip, the 11
 // tiles, the speed and the problems of the week, from the tiles engine's
 // snapshot; part=tile, a tile's panel. See docs/HOME-API.md.
 //

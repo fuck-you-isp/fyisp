@@ -3,14 +3,16 @@
 # this machine into a temporary directory, verifies its SHA-256 against the
 # release's SHA256SUMS (mandatory) and, if the GitHub CLI is installed and
 # logged in, its build provenance attestation; then runs it with your
-# arguments. Nothing is installed; the download is deleted when fyisp exits.
+# arguments. Nothing is installed; the download is deleted when fyisp exits
+# (fyisp's data stays in its data directory).
 #
 #   curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/download/<version>/run.sh | sh
 #   curl ... | sh -s -- --speedtest      # pass arguments to fyisp
 #
 # Environment:
 #   FYISP_BASE_URL  download from here instead of the GitHub release (must be
-#                   https://, or http:// on localhost / 127.0.0.1 for tests)
+#                   https://, or http:// on localhost / 127.0.0.1 for tests;
+#                   skips the attestation check)
 #   TMPDIR          where the temporary directory is created (must allow exec)
 #
 # The whole script is inside main(), called on the last line, so a truncated

@@ -8,6 +8,8 @@ Run it now, with everything on (every target, calls and the Home tiles, and sche
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile all --speedtest
 ```
 
+Speed tests can use terabytes a month on a fast line: on a metered or capped connection, leave out `--speedtest` (see [Speed tests](#speed-tests)).
+
 Then open <http://127.0.0.1:3000>. Run the same command again to update. Windows, Docker, other ports and options: [Quick start](#quick-start).
 
 fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It runs on your computer (or a NAS or Raspberry Pi), checks your connection every few seconds, and shows the answer at <http://127.0.0.1:3000>:
@@ -106,7 +108,7 @@ Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`
 
 Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The container runs as an unprivileged user (65532) from a `scratch` image and keeps its data in the `/data` volume. `-p 3000:3000` makes the UI reachable from your network; use `-p 127.0.0.1:3000:3000` to keep it on this machine. ICMP works without extra capabilities on Docker 20.10+, which allows unprivileged ping sockets inside containers.
 
-fyisp options go **after the image name** (the image already sets `--data-dir=/data --listen=0.0.0.0:3000`):
+fyisp options go **after the image name** (the image sets `FYISP_DATA_DIR=/data` and `FYISP_LISTEN=0.0.0.0:3000`; `--data-dir` and `--listen` after the image name override them):
 
 ```sh
 # No speed-test controls for anyone (the dashboard and Investigate stay open)
@@ -133,7 +135,7 @@ If you open the UI by a name instead of an IP address (`http://nas.local:3000`, 
 docker run -d --name fyisp --restart unless-stopped --network host -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --listen=127.0.0.1:3000
 ```
 
-With `--network host`, `-p` is ignored: fyisp listens on the host directly (the image's default `--listen=0.0.0.0:3000` makes it reachable from your network; the `--listen=127.0.0.1:3000` above keeps it on this machine).
+With `--network host`, `-p` is ignored: fyisp listens on the host directly (the image's default `FYISP_LISTEN=0.0.0.0:3000` makes it reachable from your network; the `--listen=127.0.0.1:3000` above keeps it on this machine).
 
 **Docker Desktop (macOS, Windows)** runs containers inside a Linux VM: the container's gateway is the VM's virtual network, every probe is NATed by the VM, and `--network host` means the VM's network, not your Mac's or PC's. The charts are still useful, but the Gateway and ISP edge layers (and so the *Wi-Fi/router* vs *ISP* verdicts) are not about your real network there. For layer-accurate verdicts, run the native binary on macOS and Windows (see [Quick start](#quick-start)).
 
@@ -218,7 +220,7 @@ Home has 11 fixed tiles, always in this order. With the default profile every on
 | Zoom | call | its website (`zoom.us`) over TCP; call quality from your [call path](#stun-servers) |
 | Microsoft Teams | call | its website (`teams.microsoft.com`) over TCP; call quality from the Teams relay that Teams clients use (`worldaz.tr.teams.microsoft.com`) |
 | Google Meet | call | its website (`meet.google.com`) over TCP; call quality from `stun.l.google.com`, the STUN server Chrome and Meet use |
-| Slack | call | its website (`wss-primary.slack.com`) over TCP; call quality from your call path |
+| Slack | call | its connection endpoint (`wss-primary.slack.com`) over TCP; call quality from your call path |
 | Microsoft 365 | app | Outlook, the Microsoft 365 portal and Microsoft sign-in (`outlook.office365.com`, `www.microsoft365.com`, `login.microsoftonline.com`) |
 | Google Workspace | app | Gmail, Google Docs and Google Drive (`mail.google.com`, `docs.google.com`, `drive.google.com`) |
 | GitHub | app | `github.com` (the catalog target is named `dev-GitHub`) |
@@ -250,7 +252,7 @@ The card follows the [verdict](#whose-fault-is-it-verdicts) (the last minute, ev
 
 ## Whose fault is it? (verdicts)
 
-Above the charts, fyisp shows one plain-English verdict, re-evaluated every 5 seconds over the last minute of probes, and keeps an outage log of every period that was not *ok*. A target is unhealthy when it loses at least 20% of its probes (and at least 2 in the minute: a single lost connect out of four is noise) or its median latency is far above its own 30-minute baseline. The first matching kind wins:
+Above the charts, fyisp shows one plain-English verdict, re-evaluated every 5 seconds over the last minute of probes, and keeps an outage log of every period that was not *ok*. A target is unhealthy when it loses at least 20% of its probes (and at least 2 in the minute: a single lost connect out of four is noise) or its median latency is far above its usual (the last 7 days at this hour once known, otherwise the last 30 minutes). The first matching kind wins:
 
 | Kind | Meaning |
 |---|---|
@@ -302,7 +304,7 @@ A STUN server that stops answering while the others still answer is shown as *Th
 
 - Every STUN target gets **one long-lived UDP socket**, as a real call does (one address and port pair, so there is no new NAT mapping per sample). It is reopened only when the server's address changes or after an error.
 - Each sample is a **burst of 5 STUN Binding Requests, 20 ms apart** (RFC 5389, 20 bytes each, no attributes; never TURN, never credentials). Bursts run every 5 seconds per target unless the [list below](#stun-servers) says otherwise.
-- A burst records the **median round trip**, the **in-burst jitter** (the mean difference between consecutive round trips, close to what a call's jitter buffer sees) and **loss**: requests not answered within 1 s. Only timeouts count as loss. A refused port or a failed DNS lookup is *unknown*, never loss. `--timeout` does not apply to UDP.
+- A burst records the **median round trip**, the **in-burst jitter** (the mean difference between consecutive round trips, close to what a call's jitter buffer sees) and **loss**: requests not answered within 1 s. Only timeouts count as loss. A refused port or a failed DNS lookup is *unknown*, never loss.
 - A burst never spans an address change, so a GeoDNS server switching region (the Teams relay) is never counted as jitter.
 - Each one-minute bucket is scored on its own, and a window is judged by its **worst minute**: a 5-minute mean would hide a 30-second stall.
 
@@ -358,26 +360,26 @@ The loss penalty is softer than G.711's tables because Opus forward error correc
 
 ## Speed tests
 
-fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). "Test now" (or *Test speed now* on Home) queues one test, and "Test every server" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
+fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). A `--speedtest` flag wins: Details then shows its mode but can't change it, and turning tests off there lasts only until the next restart. "Test now" (or *Test speed now* on Home) queues one test, and "Test every server" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
 
 ```sh
 fyisp --speedtest                                  # mode regions: 9 regions, each once an hour
 fyisp --speedtest=regions,add=canada,us-northwest  # plus opt-in regions
 fyisp --speedtest=nearby                           # 3 nearby providers and 1 far region, every 15 minutes
 fyisp --speedtest=nearby,far=us-west               # plus another far region
-fyisp --speedtest-server 192.168.1.20:5201 --speedtest=every=5m   # your own iperf3 server: no minimum
-fyisp --speedtest-server Leaseweb-Tokyo,OVH-Sydney                 # chosen catalog servers (mode custom)
+fyisp --speedtest-server 192.168.1.20:5201 --speedtest=every=5m   # your own iperf3 server on your network: down to every=1m
+fyisp --speedtest --speedtest-server Leaseweb-Tokyo,OVH-Sydney     # chosen catalog servers (mode custom)
 ```
 
 **Modes:**
 - **`regions`**, the default once switched on: 9 regions (UK, Western Europe, Central Europe, US East, US Central, US West, East Asia, Southeast Asia and Oceania), each tested once an hour.
   - Only one test runs at a time; the regions are spread over the hour, about 400 seconds apart, in an order and at minutes that differ per install, with a minute of jitter on each hour's start.
-  - Each region has servers from several providers in the same city. The provider rotates by hour and day, so every hour of the day is measured with every provider within a few days.
+  - Most regions have servers from several providers in the same city. The provider rotates by hour and day, so every hour of the day is measured with every provider within a few days.
   - Opt-in regions (`add=`): US Northwest, US Mid-Atlantic, US Midwest, US Southeast, Canada, US Bay Area, South America, Central Asia, Netherlands and UK North.
   - Results show whether a dip is your line (every region and provider at once), one provider, one route or one server.
 - **`nearby`**: the nearest server of 3 different providers (same city preferred), plus one far region (US East from Europe, London from the US; `far=` adds more), each every 15 minutes. The nearby servers are picked again daily. It is lighter on distance, heavier on frequency.
 - **`custom`**: the servers you list with `--speedtest-server`, catalog ids or `host:port` of your own iperf3 server, each every 15 minutes.
-- `every=` sets the interval per region or server (at least 15 minutes against public servers).
+- `every=` sets the interval per region or server (at least 15 minutes against public servers; at least 1 minute in mode `custom` when every server is on your own network).
 
 **What is sent, to whom.** Each test is an iperf3 test over IPv4, built into fyisp, so nothing has to be installed:
 - download, then upload, each with 8 parallel TCP streams;
@@ -388,7 +390,7 @@ fyisp --speedtest-server Leaseweb-Tokyo,OVH-Sydney                 # chosen cata
 The servers are public iperf3 servers run by hosting companies and volunteers: Leaseweb (16), OVH (12), Clouvider (9), InterServer (3), Hurricane Electric, Scaleway, Eranium, Uztelecom and Edgoo. All 45 are listed with their sources in [`internal/profile/catalog/iperf3/`](internal/profile/catalog/iperf3/), with the regions in `regions.yml`. The list is built into fyisp and changes only with a release. Like every probe target, they see your public IP address.
 
 **How much it costs your line.** A speed test fills the line while it runs, by design:
-- **Time under test:** mode `regions` keeps the line under test about 5% of the time (9 tests of 10 to 25 seconds an hour); `nearby` about 7%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
+- **Time under test:** mode `regions` keeps the line under test about 5% of the time (9 tests of 10 to 25 seconds an hour); `nearby` about 9%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
 - **Data:** a test moves your line's speed for 4 to 11 seconds each way; there is no byte cap. Mode `regions`, the default, runs 216 tests a day:
 
   | Your line | Data a month (mode `regions`) |
@@ -405,13 +407,13 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 **Be kind to the servers.** The operators and what fyisp sends them are listed in [`docs/IPERF3-TERMS.md`](docs/IPERF3-TERMS.md); [`docs/OPERATORS.md`](docs/OPERATORS.md) is for the operators themselves. Each server port runs one test at a time.
 - If a port is busy, or refuses for a moment (a stock iperf3 server re-listens after every test), fyisp tries up to 2 more ports.
 - Then it moves to another provider in the same city, then to a nearby city. Single-port servers (Hurricane Electric) are never retried. If nothing answers, it records **"server busy"**, never a slow result.
-- A slot never uses more than about 30 seconds and never delays the next one.
+- No new port or server is tried after 25 seconds of a slot, and a slot never delays the next one.
 - A server that was busy 3 scheduled tests in a row rests for 6 hours.
 - `--speedtest-skip=<id,…>` (or the toggle per server in Details → Speed) never tests a server again: honour an operator's request without waiting for a release.
 
 **One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
-Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own: `iperf3 -s` on a VPS or another machine, then `--speedtest-server host:5201`.
+Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own iperf3 server on your own network (`iperf3 -s` on a NAS or another computer), then `--speedtest-server 192.168.1.20:5201`: servers on your own network may be tested as often as every minute. Your own servers elsewhere (a VPS) keep the 15-minute minimum.
 
 **What you get.** For each test:
 - download and upload speed, and how long each was measured;
@@ -419,7 +421,7 @@ Please don't run modes more often than every 15 minutes against these servers. F
 - TCP retransmits;
 - the region, the server, and the fallback level (`none`, `same_metro` or `nearby_city`);
 - whether the server's own link was the limit (a result within 10% of its published capacity);
-- **latency under load**: the round-trip time to your ISP's first router (behind your line's queue) and to your own router, in the 2 minutes before the test and during its download and upload, pinged every 150 ms; lost pings count. A big jump at the ISP's router is bufferbloat, the reason calls break while someone uploads; a jump at your own router is your home network (often Wi-Fi).
+- **latency under load**: the round-trip time to your ISP's first router (behind your line's queue) and to your own router, in the 2 minutes before the test (from the regular probes) and during its download and upload (pinged every 150 ms); lost pings count. A big jump at the ISP's router is bufferbloat, the reason calls break while someone uploads; a jump at your own router is your home network (often Wi-Fi).
 - **connection type** (wired or Wi-Fi, Linux) and, locally, **the first network past your ISP** on the way to each server (a traceroute at most once a day per server).
 
 Details → Speed shows:
@@ -430,9 +432,9 @@ Details → Speed shows:
 
 Home shows your latest result against your usual speed (the median of the last 7 days' tests), e.g. *Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.* When every region and provider dips at the same time of day, Details → Speed says so, for example *Every region slows from about 7 to 11 pm … most likely your internet provider's own network.* Only scheduled tests count toward patterns: Test now and sweeps don't. `fyisp export --speedtests` writes every test as CSV.
 
-**Probes keep running during a test.** Their results are stored as measured, so a test that slows your line shows up as a latency spike or loss, and can count toward the verdict. The "show speed tests" toggle under each chart (off by default) marks when tests ran, so a spike can be matched to a test. Latency under load comes from the same probes. `/api/speed` reports the share of the last 24 hours spent under test (`test_share_24h`).
+**Probes keep running during a test.** Their results are stored as measured, so a test that slows your line shows up as a latency spike or loss, and can count toward the verdict. The "show speed tests" toggle under each chart (off by default) marks when tests ran, so a spike can be matched to a test. The 2 minutes before a test in *latency under load* come from these probes; during the test fyisp adds its own pings every 150 ms. `/api/speed` reports the share of the last 24 hours spent under test (`test_share_24h`).
 
-Limits: one test at a time, at most 15 seconds per direction and 45 seconds per slot, retries included; IPv4 only.
+Limits: one test at a time; each direction sends data for at most 11 seconds (ramp-up included) and is cut off at 13; no new server is tried after 25 seconds of a slot, so a slot ends within about a minute even in the worst case; IPv4 only.
 
 ## What to measure (profiles)
 
@@ -447,7 +449,7 @@ By default fyisp measures **28 targets** a home and a remote worker rely on, plu
 
 Each service gets a TCP connect (handshake, then close; no data, no login) every 15 seconds. The STUN servers get a burst of 5 tiny Binding Requests every 5 seconds ([Call quality](#call-quality)); `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `fyisp profiles default` lists every target with its host.
 
-**Everything else is opt-in.** `--profile` picks from the built-in **target catalog** (about 1,400 endpoints, one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand). For containers, compose files and NAS templates, the environment variable `FYISP_PROFILE` does the same; `--profile` and `--config` win over it.
+**Everything else is opt-in.** `--profile` picks from the built-in **target catalog** (about 1,400 endpoints, one file per provider in [`internal/profile/catalog/`](internal/profile/catalog/), every endpoint checked by hand). For containers, compose files and NAS templates, the environment variable `FYISP_PROFILE` does the same; `--profile` and `--config` win over it. Likewise `FYISP_LISTEN` and `FYISP_DATA_DIR` set the defaults of `--listen` and `--data-dir`.
 
 ```sh
 fyisp profiles                       # list the profiles, with target and panel counts
@@ -474,7 +476,7 @@ docker run ... -e FYISP_PROFILE=default,streaming ghcr.io/fuck-you-isp/fyisp
 
 Home's 11 tiles stay the same whatever you measure (see [Which apps are measured](#which-apps-are-measured)); targets of other profiles show under Technical details and count toward the [verdicts](#whose-fault-is-it-verdicts). Target names are identities (a name keeps its history), so a target in several profiles is one series.
 
-There is no limit on the number of targets; you can run every profile at once (`--profile all`); profiles of more than 150 targets open Details on the [Overview](#the-overview-large-profiles) instead of hundreds of charts.
+There is no limit on the number of targets; you can run every profile at once (`--profile all`). Profiles of more than 150 targets and no STUN targets (e.g. `--profile clouds`) open Details on the [Overview](#the-overview-large-profiles) instead of hundreds of charts; profiles with STUN targets (`default`, `calls`, `all`) open it on Calls.
 
 A `--config` file can start from any profiles and change them:
 
@@ -495,7 +497,7 @@ Missing a provider or region, or found a dead endpoint? Pull requests are welcom
 
 ### The Overview (large profiles)
 
-With more than 150 targets (e.g. `--profile clouds` or `all`) the dashboard opens on the **Overview** rather than one chart per panel; the **Overview | Charts** switch under the Network path panel changes view on any profile. The Overview shows one probe kind at a time (TCP, unless a `--config` file adds HTTPS or ICMP targets and you switch) over the selected time range:
+With more than 150 targets and no STUN targets (e.g. `--profile clouds`), **Details** opens on the **Overview** rather than one chart per panel; profiles with STUN targets (`default`, `calls`, `all`) open it on Calls. The **Overview | Charts** switch (with **Calls** first when the profile has STUN targets) changes view on any profile. The Overview shows one probe kind at a time (TCP, unless a `--config` file adds HTTPS or ICMP targets and you switch) over the selected time range:
 
 - **Breadth line**: how many targets are worse than normal at the same time, across how many providers and regions. When a quarter or more of them, across several providers and regions, degrade together, the common factor is your side. It backs up the verdict and never overrides it; in the first day, before targets have a normal, it counts only packet loss.
 - **Heatmap**: one row per provider (grouped by kind), one column per region. A cell is colored by how much slower than normal its targets are (median), or by latency until half the targets have a normal (about a day); a red dot marks loss, a red cell with × heavy loss (20% or more), hatching means not measured. Click a cell or a provider to filter the table.
@@ -517,13 +519,13 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
   extends: [default]
   remove: [YouTube, Netflix]      # also possible: dev-GitHub, Dropbox, OneDrive, Teams-Relay
   ```
-- **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists exactly which names fyisp looks up.
-- **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine. Whether you're on the same machine is decided per request and never stored, logged or returned; the API carries only the resulting words (see [Wi-Fi or router?](#wi-fi-or-router)). The connection type itself is in fyisp's log and, as before, in speed-test results.
+- **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists the names fyisp looks up (Google Meet's TCP check goes to `meet.google.com`).
+- **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine. Whether you're on the same machine is decided per request and never stored, logged or returned; the API carries only the resulting words (see [Wi-Fi or router?](#wi-fi-or-router)). The connection type itself is in fyisp's log and in speed-test results.
 - **A screenshot or export you send** shows what it says. Home and *What happened at …?* show no addresses; the Details charts, traceroutes and `fyisp export` include your router's and your provider's addresses.
 
 ## ICMP permissions
 
-fyisp never asks for admin rights. Only the Network path is pinged (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
+fyisp never asks for admin rights. Only the Network path, traceroutes (Investigate, and the always-on ones of `trace: true` targets), speed tests' latency under load and your own ICMP targets use ICMP (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
 
 ```sh
 sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
@@ -560,17 +562,17 @@ fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
   (Repeat the options you started it with.)
 - **Installed binary** ([Keep it running](#keep-it-running)): download the new `fyisp-<os>-<arch>`, verify it, replace the old file and restart the service.
 
-fyisp has no database migrations. When a release changes the database format, its first start replaces the old database with an empty one and logs `store: database from an older fyisp (schema vN) replaced with a new empty one`: the history from before the upgrade isn't kept. The release notes say when that happens (v0.10.0 and v0.11.0 both start fresh). Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched.
+fyisp has no database migrations. When a release changes the database format, its first start replaces the old database with an empty one and logs `store: database from an older fyisp (schema vN) replaced with a new empty one`: the history from before the upgrade isn't kept. The release notes say when that happens. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched.
 
 ## Prometheus metrics
 
-The dashboard serves `/metrics`. ICMP results use the same `ping_*` metric names, help, types and labels as [network_exporter](https://github.com/syepes/network_exporter). Differences: the `target` label is the hostname (the old stack used the IP it resolved once at startup), and `target_ip` is empty.
+The dashboard serves `/metrics`. ICMP results use the same `ping_*` metric names, help, types and labels as [network_exporter](https://github.com/syepes/network_exporter). Differences: the `target` label is the host name (network_exporter uses the IP it resolved once at startup), and `target_ip` is empty.
 
-The services are measured with TCP only, so `ping_*` now covers the Network path (`Gateway`, `ISP edge` and the two anycast resolvers) plus any ICMP targets of your own `--config` file. The services' latency is `fyisp_tcp_rtt_seconds{name,target}` (the latest connect time) and their loss is `fyisp_probe_lost_total{kind="tcp"}` over `fyisp_probe_samples_total{kind="tcp"}`; point old-stack panels and alerts that used `ping_*` for services at those. fyisp never fills `ping_*` from TCP results: a connect time is not an echo reply. `fyisp_https_rtt_seconds` exists only for `--config` targets that ask for HTTPS.
+The services are measured with TCP only, so `ping_*` covers the Network path (`Gateway`, `ISP edge` and the two anycast resolvers) plus any ICMP targets of your own `--config` file. The services' latency is `fyisp_tcp_rtt_seconds{name,target}` (the latest connect time) and their loss is `fyisp_probe_lost_total{kind="tcp"}` over `fyisp_probe_samples_total{kind="tcp"}`; point network_exporter panels and alerts that used `ping_*` for services at those. fyisp never fills `ping_*` from TCP results: a connect time is not an echo reply. `fyisp_https_rtt_seconds` exists only for `--config` targets that ask for HTTPS.
 
 UDP (STUN) targets never feed `ping_*`. Each burst counts once in `fyisp_probe_samples_total{kind="udp"}` (and `fyisp_probe_lost_total{kind="udp"}` when nothing answered); the latest burst's values are `fyisp_udp_rtt_seconds{name,target}` (median round trip), `fyisp_udp_jitter_seconds` and `fyisp_udp_loss_ratio` (0 to 1), each absent while the latest burst did not measure it.
 
-Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{region,server}` and `fyisp_speed_upload_bits_per_second{region,server}`, both from the latest test against that server that measured them (`region` is empty outside mode `regions`). They also add `fyisp_speed_loaded_rtt_seconds{region,server,layer,load}`: the median RTT to your provider's first router (`layer="edge"`) or the gateway (`layer="gateway"`), before the test (`load="idle"`) and during each direction (`load="download"`, `load="upload"`); a lost probe counts as 1 s. `fyisp_speed_tests_total{region,server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable` or `failed`.
+Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per_second{region,server}` and `fyisp_speed_upload_bits_per_second{region,server}`, both from the latest test against that server that measured them (`region` is empty outside mode `regions`). They also add `fyisp_speed_loaded_rtt_seconds{region,server,layer,load}`: the median RTT to your provider's first router (`layer="edge"`) or the gateway (`layer="gateway"`), before the test (`load="idle"`) and during each direction (`load="download"`, `load="upload"`); a lost probe counts as 1 s. `fyisp_speed_tests_total{region,server,outcome}` counts tests by outcome: `ok`, `busy`, `unreachable`, `failed` or `cancelled`.
 
 `fyisp_call_mos{app}` is the call-quality score the Calls view shows (MOS, 1 to 4.5; 4.0 and up is good, 3.6 fair, 3.1 poor, below that unusable): the worst minute of the last 5 minutes. `app="path"` is your call path, and `app="meet"` and `app="teams"` are the measured apps (Teams only while the Teams relay is measured, as in `default` and `calls`). Each is absent until its STUN servers have 10 bursts in the window. With `--no-udp` there are no `fyisp_udp_*` or `fyisp_call_mos` series.
 
@@ -588,13 +590,13 @@ Speed tests (see [Speed tests](#speed-tests)) add `fyisp_speed_download_bits_per
 
 Change it with `--data-dir`, or use `--ephemeral` for a temporary directory that is deleted on exit. Samples older than 90 days are deleted automatically (`--retention`).
 
-To uninstall, stop fyisp, then delete its data directory and the binary. The launchers leave nothing behind.
+To uninstall, stop fyisp, then delete its data directory and the binary. The launchers leave no binary behind; only the data directory remains.
 
 - **Linux:** `rm -rf ~/.local/state/fyisp` (or the directory `fyisp paths` printed).
 - **macOS:** `rm -rf ~/Library/Application\ Support/fyisp`.
 - **Windows:** `Remove-Item -Recurse "$env:LOCALAPPDATA\fyisp"`.
 - **Docker:** `docker rm -f fyisp && docker volume rm fyisp`.
-- **systemd:** `sudo systemctl disable --now fyisp && sudo rm /etc/systemd/system/fyisp.service /usr/local/bin/fyisp && sudo rm -rf /var/lib/private/fyisp`.
+- **systemd:** `sudo systemctl disable --now fyisp && sudo rm /etc/systemd/system/fyisp.service /usr/local/bin/fyisp && sudo rm -rf /etc/systemd/system/fyisp.service.d /var/lib/private/fyisp`.
 
 fyisp does not update itself: run the launcher from a newer release, or replace the binary.
 

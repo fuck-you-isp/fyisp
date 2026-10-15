@@ -1,6 +1,7 @@
-// Package speedtest runs scheduled throughput tests against public iperf3
-// servers (YABS's list in the catalog), with a pure-Go iperf3 client that
-// speaks the stock iperf3 3.x control protocol.
+// Package speedtest runs scheduled throughput tests against the public
+// iperf3 servers of internal/profile/catalog/iperf3 (and the user's own
+// servers), with a pure-Go iperf3 client that speaks the stock iperf3 3.x
+// control protocol.
 package speedtest
 
 import (
@@ -421,7 +422,7 @@ func (t *test) shut(rst bool) {
 // abort closes the run on cancel, timeout or error (close reads the
 // kernel's counts before anything changes): the data streams with
 // SO_LINGER 0, so upload data still queued in the kernel is dropped (an RST)
-// rather than sent on after the masked window. The happy path closes
+// rather than sent on after the test's window. The happy path closes
 // gracefully (a stock server reading an RST mid-test logs an error).
 func (t *test) abort() { t.shut(true) }
 

@@ -121,7 +121,7 @@ func checkSpeedFlags(c *config) error {
 
 // newSpeed sets up the speed tests: the scheduler (always present, so the
 // Details choice and Test now work; it only tests when a mode is on), the
-// load tap and the windows the mask uses.
+// load tap and the test windows (chart shading, Home attribution).
 func newSpeed(c config, prof *model.Profile, st speedtest.Store, mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*speedtest.Scheduler, *speedtest.LoadTap, *speedtest.Windows, error) {
 	o, err := speedOptions(c, prof, st, path, log)
 	if err != nil {

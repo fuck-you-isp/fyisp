@@ -1,12 +1,11 @@
 # Leaseweb's public speed-test servers: iperf3 on ports 5201-5210 (one test
-# per port at a time). See SCHEMA in ../../../speedtest/catalog.go.
+# per port at a time). Format: internal/speedtest/catalog.go (Server, Region).
 provider: leaseweb
 display: Leaseweb
 sources:
   - https://speedtest.leaseweb.net/
 notes: >-
-  Ports checked open with one TCP connect each (team lead, 2026-10-10); iperf3 tests
-  confirmed where verified.iperf3 is true.
+  Ports checked open with one TCP connect each (team lead, 2026-10-10).
   capacity_gbps is the link YABS's server list states (yabs.sh IPERF_LOCS labels), where it states one.
 servers:
   - {id: Leaseweb-Amsterdam, host: speedtest.ams1.nl.leaseweb.net, ports: 5201-5210, city: Amsterdam, country: NL, metro: amsterdam, geo: eu, verified: {date: 2026-10-10, tcp: true}}

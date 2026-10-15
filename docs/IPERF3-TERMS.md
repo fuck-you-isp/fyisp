@@ -1,6 +1,6 @@
 # iperf3 speed test servers: operators and use
 
-The record of the public iperf3 servers fyisp's speed tests use, what fyisp sends them and how often, kept before the v0.7 release as the product review asks. The list is built into fyisp (`internal/profile/catalog/iperf3/`) and changes only with a release: there is no remote list and no remote switch. A user can stop testing any server at once with `--speedtest-skip` or the Details toggle.
+The record of the public iperf3 servers fyisp's speed tests use, what fyisp sends them and how often. The list is built into fyisp (`internal/profile/catalog/iperf3/`) and changes only with a release: there is no remote list and no remote switch. A user can stop testing any server at once with `--speedtest-skip` or the Details toggle.
 
 ## What fyisp sends
 
@@ -9,7 +9,7 @@ The record of the public iperf3 servers fyisp's speed tests use, what fyisp send
 - **One at a time:** an install never runs two tests at once, against any server.
 - **Busy servers:** a busy or refusing port gets at most 2 more ports, 2 seconds apart (single-port servers: none), then fyisp moves to another provider. A server busy 3 scheduled tests in a row is left alone for 6 hours.
 - **From where:** the user's own connection; the server sees the user's public IP address.
-- **Not sent:** nothing besides iperf3; no account, no credentials.
+- **Besides the tests:** in mode `nearby` (and for Test now of the nearest servers), at most once a day, an RTT check of every catalog server: 3 checks each, 8 servers at a time, each an ICMP echo or, without an answer, a TCP connect to port 80, 443 or, last, the first iperf3 port. And at most once a day per tested server, just before a test, a TTL-limited ICMP traceroute towards it. No account, no credentials.
 
 ## How often, per install
 

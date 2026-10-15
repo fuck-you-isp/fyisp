@@ -91,7 +91,7 @@ type series struct {
 	// (another kind's series keeps 0).
 	timeouts int
 	// gaps are the slots (unix ms) of the last keepRaw that were not
-	// measured (model.ReasonGap, e.g. masked by a speed test). They are
+	// measured (model.ReasonGap: fyisp stopped, the machine slept). They are
 	// never loss; they only tell a window that was mostly not measured.
 	gaps []int64
 }

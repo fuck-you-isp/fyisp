@@ -330,14 +330,15 @@ const (
 	SpeedUnreachable = "unreachable" // the server did not accept a connection
 	SpeedFailed      = "failed"      // anything else (timeout, protocol error)
 	// SpeedCancelled: stopped by the owner (or shutdown) mid-test. Stored
-	// without speeds so its masked window stays explained (charts, Home);
+	// without speeds so its window stays explained (charts, Home);
 	// never counted as a result, busy or failed.
 	SpeedCancelled = "cancelled"
 )
 
 // SpeedTest is one iperf3 speed test (download then upload). Start..End is
-// its window: probes in it measure a loaded link and are not judged. Bits
-// per second, RTTs in ms; nil when not measured.
+// its window: probes in it measure a loaded link; the Home tiles attribute a
+// problem in it to the test, and the charts shade it. Bits per second, RTTs
+// in ms; nil when not measured.
 type SpeedTest struct {
 	ID      int64     `json:"id"`
 	Start   time.Time `json:"start"`

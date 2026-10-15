@@ -45,7 +45,7 @@
 // Network path group: Default and every loaded file (standalone or
 // extending a profile) get a built-in group "path" ("Network path", shown
 // first) that measures the layers of the path: the gateway and the ISP edge
-// (ICMP every second), and three anycast resolvers (ICMP and TCP). A file
+// (ICMP every second), and two anycast resolvers (ICMP and TCP). A file
 // opts out with `path: false` at the top level. Its target names are
 // reserved while it is present.
 package profile
@@ -122,8 +122,8 @@ type fileProfile struct {
 // PathGroup is the ID of the built-in network path group.
 const PathGroup = "path"
 
-// PathInterval is the interval of the gateway and ISP edge targets: ICMP
-// every second.
+// PathInterval is the interval of the gateway and ISP edge targets: as ICMP
+// runs at interval/3, they are pinged every second.
 const PathInterval = 3 * time.Second
 
 // pathTargets are the built-in network path targets. Names are identities
@@ -677,7 +677,7 @@ func checkHost(h string, allowPrivate bool) error {
 	if isSpecial(h) {
 		return nil
 	}
-	// IPv6 literals are not accepted in v0.1: probes are IPv4-only.
+	// IPv6 literals are not accepted: probes are IPv4-only.
 	if len(h) > 253 || strings.ContainsAny(h, "/:@ \t\r\n?#[]") {
 		return fmt.Errorf("%q is not a hostname or IPv4 address", h)
 	}

@@ -177,7 +177,7 @@ func listProfiles(r *profile.Registry, geos geoList, stdout, stderr io.Writer) i
 	fmt.Fprintf(stdout, `
 Run with:  fyisp --profile NAME[,NAME...]   (a union; --geo eu keeps only one region)
 Details:   fyisp profiles NAME[,NAME...]
-Every run also measures the 5-target "Network path" group (off with --no-path).
+Every run also measures the 4-target "Network path" group (off with --no-path).
 Cost grows with the target count; see "What to measure" in the README.
 `)
 	return 0
@@ -189,7 +189,7 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 		fmt.Fprintln(stderr, "fyisp:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Profile %s: %d targets in %d panels (plus the 5-target Network path group)\n", p.Name, len(p.Targets), len(p.Groups))
+	fmt.Fprintf(stdout, "Profile %s: %d targets in %d panels (plus the 4-target Network path group)\n", p.Name, len(p.Targets), len(p.Groups))
 	for _, g := range p.Groups {
 		fmt.Fprintf(stdout, "\n%s  [%s]\n", g.Title, g.ID)
 		w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)

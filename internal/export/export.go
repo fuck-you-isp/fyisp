@@ -69,7 +69,8 @@ type SpeedTestReader interface {
 var (
 	RawHeader = []string{"target", "kind", "ts", "rtt_ms", "lost", "reason", "hop"}
 	// SpeedTestHeader: start and end in TimeFormat; outcome ok, busy (the
-	// server ran another test: not a slow result), unreachable or failed.
+	// server ran another test: not a slow result), unreachable, failed or
+	// cancelled.
 	SpeedTestHeader = []string{"id", "start", "end", "trigger", "outcome", "region", "server", "fallback", "fallback_level", "port", "attempts", "down_bps", "up_bps",
 		"down_retrans", "up_retrans", "down_s", "up_s", "capped_by_server", "bytes", "score_down", "score_up",
 		"conn", "handoff_asn", "isp_asn", "edge_idle_p50_ms", "edge_idle_loss", "edge_down_p50_ms", "edge_down_p95_ms", "edge_down_loss",

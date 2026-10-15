@@ -77,9 +77,9 @@ type overlapper interface {
 	Overlaps(from, to time.Time) bool
 }
 
-// speedWindows are stored speed tests' windows (store.SpeedTests). Like
-// speedtest.Windows they are extended by speedtest.MaskTail, as the live
-// mask is; a window without an end is running.
+// speedWindows are stored speed tests' windows (store.SpeedTests). Like the
+// live speedtest.Windows they are extended by speedtest.MaskTail; a window
+// without an end is running.
 type speedWindows []speedtest.Window
 
 func (ws speedWindows) Overlaps(from, to time.Time) bool {

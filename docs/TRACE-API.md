@@ -21,7 +21,7 @@ There is no body. Anyone who can open the dashboard may start a trace: there is 
 **Request rules:**
 - Exactly one `target` parameter and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
 - Only profile target names are accepted; never a host or an address.
-- Every response has `Cache-Control: no-store`.
+- Every response past the host check has `Cache-Control: no-store`.
 - Logs name the target and the error, never the client.
 
 **What a POST does:**
@@ -49,6 +49,7 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 | 404 | `unknown_target` | not a profile target name |
 | 404 | `unavailable` | tracing is not available |
 | 405 | `method_not_allowed` | not POST |
+| 421 | `unknown_host` | the `Host` isn't allowed (open the dashboard's own address, or add `--allow-host`) |
 | 429 | `busy` | no free slot (4 in all; `retry_after`) |
 | 429 | `rate_limited` | 12 traces started in the last hour (`retry_after`: until the oldest leaves the hour) |
 | 500 | `failed` | the tracer failed (with the reason) |
