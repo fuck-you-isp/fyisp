@@ -55,8 +55,10 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
+# No ProcSubset=pid: it hides /proc/net/route (the gateway lookup) and
+# /proc/sys (the ICMP hint). ProtectProc=invisible still hides other
+# users' processes.
 ProtectProc=invisible
-ProcSubset=pid
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 RestrictNamespaces=yes
 RestrictRealtime=yes

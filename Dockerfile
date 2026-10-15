@@ -145,7 +145,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends systemd && rm -
 COPY --from=launcher-bin /lt/fyisp /usr/local/bin/fyisp
 COPY packaging/fyisp.service /etc/systemd/system/fyisp.service
 RUN out=$(systemd-analyze verify /etc/systemd/system/fyisp.service 2>&1); echo "$out"; \
-    ! echo "$out" | grep -v -e 'Failed to .* bus' -e 'System has not been booted' -e '^$' | grep .
+    ! echo "$out" | grep -v -e 'Failed to .* bus' -e 'System has not been booted' -e '^$' | grep . && \
+    ! grep -n '^ProcSubset=' /etc/systemd/system/fyisp.service
 
 # UI tests: Playwright against fyisp-webdev (fake probes, real API), all in
 # one container, so it works with Docker-outside-of-Docker. Separate from
