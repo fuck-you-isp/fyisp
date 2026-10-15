@@ -202,8 +202,8 @@ func FindFinding(in FindingInput) (f Finding) {
 // SlowServer is one of the servers slowest in the dip's hours.
 type SlowServer struct {
 	Server    string  `json:"-"`       // its ID (local)
-	Ref       string  `json:"server"`  // its public-safe ID, set by the caller
-	Display   string  `json:"display"` // its public-safe name, set by the caller
+	Ref       string  `json:"server"`  // its display-safe ID, set by the caller
+	Display   string  `json:"display"` // its display-safe name, set by the caller
 	Pct       int     `json:"pct"`     // its dip hours' median, % of its usual
 	MedianBps float64 `json:"median_bps"`
 	UsualBps  float64 `json:"usual_bps"` // its median outside the dip hours

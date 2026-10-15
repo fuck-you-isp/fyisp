@@ -94,8 +94,8 @@ type HomeSpeedResult struct {
 	Note string `json:"note"`
 }
 
-// HomeSpeedUsual is the usual speed: the median of the OK tests of 7 days
-// (3 or more), the latest left out.
+// HomeSpeedUsual is the usual speed: the median of the OK tests of 7 days,
+// the latest left out, once 3 or more precede it.
 type HomeSpeedUsual struct {
 	DownMbps, UpMbps float64
 }

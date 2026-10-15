@@ -59,9 +59,8 @@ type hourSummary struct {
 // 90-day, 90-series panel, and iterating rows through database/sql and
 // modernc costs ~0.25-1 µs each: 200+ ms. Packed per day it is 8k rows.
 //
-// The format (uncompressed) is version 2; fyisp v0.10.0 started over with
-// an empty database, so version 1 (fyisp v0.1/v0.2, without p50) is no
-// longer read:
+// The format (uncompressed) is version 2; other versions are not read (an
+// older database is replaced, see sqlite.go):
 //
 //	byte  version (2)
 //	then per hour, in increasing hour order:

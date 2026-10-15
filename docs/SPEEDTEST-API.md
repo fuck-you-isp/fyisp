@@ -8,13 +8,13 @@ Modes:
 - **`nearby`**: the nearest server of 3 different providers (same metro preferred), plus 1 automatic far region on a major route (Europe and South America → US East; North America, Africa and the Middle East → UK; Asia and Oceania → US West) and any `extra` far regions, each every 15 minutes. The picks are redone daily.
 - **`custom`**: the `--speedtest-server` list, each every 15 minutes. It is offered only with that flag.
 
-Intervals can be changed with `--speedtest=…,every=`. The floor is 15 minutes against public servers; with only the user's own servers there is no floor.
+Intervals can be changed with `--speedtest=…,every=`. The floor is 15 minutes against public servers; with only the user's own servers on their own network (private, CGNAT, link-local or loopback addresses), 1 minute.
 
 The catalog (`internal/profile/catalog/iperf3/`: 45 servers in per-provider files, plus `regions.yml`) is built into the binary. It changes only with a release.
 
 The Go types live in `internal/web/speed.go`; keep this file in sync with them. Golden example: `internal/web/testdata/speed/local.json`.
 
-Routes are relative like every other API. Unknown parameters return 400. When fyisp runs without a speed-test source (an old build, or `fyisp-webdev -no-speed`), every route answers 404 and `/api/profile` has `features.speed: false`. Hide Speed then.
+Routes are relative like every other API. Unknown parameters return 400. When fyisp runs without a speed-test source (only `fyisp-webdev -no-speed` and tests), every route answers 404 and `/api/profile` has `features.speed: false`. Hide Speed then.
 
 ## Errors
 
@@ -28,7 +28,8 @@ Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and n
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
 | 421 | `unknown_host` |
-| 503 | `unavailable` (retry after `Retry-After`) |
+| 500 | `error` (a store error) |
+| 503 | `unavailable` (the store timed out or failed: retry after `Retry-After` when it is sent, else after a few seconds) |
 
 ## Nullables
 
@@ -46,6 +47,8 @@ Regions have an `id` (`uk`, `eu-west`, …) and a `title` ("UK", "Western Europe
 Wording: `finding.text`, `pattern.text`, row dips and `under_load.text` speak to the owner ("your internet provider").
 
 ## `GET api/speed` (summary)
+
+`part=summary` is the default.
 
 ```
 GET api/speed?days=7&tz=120[&exclude_fallback=1]
@@ -113,6 +116,10 @@ The queue's running entry in short (the full entry is in `part=queue`):
 }
 ```
 
+### `GET api/speed?part=running`
+
+`{"at": 1760104800000, "running": { ...Running } | null}`. In memory, so it is never cached (`Cache-Control: no-store`); poll every 3 s while a test runs. It takes no other parameter.
+
 ### Server
 
 ```jsonc
@@ -128,8 +135,8 @@ The queue's running entry in short (the full entry is in `part=queue`):
   "skipped": false,               // the user skipped it: never tested (config {"skip": [...]})
   "skip_locked": false,           // skipped by --speedtest-skip: the toggle can't undo it
   "rest_until": null,             // |null: resting after BusyRun (3) busy scheduled tests in a row, for 6 h
-  "host": "speedtest.nyc1.us.leaseweb.net",
-  "ports": "5201-5210"
+  "host": "speedtest.nyc1.us.leaseweb.net",   // (omitempty)
+  "ports": "5201-5210"                        // (omitempty)
 }
 ```
 
@@ -254,7 +261,7 @@ The latency under load over the span, one sentence per layer, from the median ov
 ```jsonc
 {
   "id": 412,
-  "start": 1760104790000, "end": 1760104808000,   // the window: probes in it (+2 s) are not judged
+  "start": 1760104790000, "end": 1760104808000,   // the test's window (charts shade it; Home blames problems that overlap it on the test)
   "trigger": "schedule",          // "schedule" | "manual" (Test now) | "sweep"
   "on_demand": false,             // not "schedule": never in rows, patterns or the finding
   "outcome": "ok",                // "ok" | "busy" | "unreachable" | "failed" | "cancelled"
@@ -263,12 +270,12 @@ The latency under load over the span, one sentence per layer, from the median ov
   "provider": "Leaseweb", "city": "New York",
   "fallback": false,
   "fallback_level": "none",       // "none" | "same_metro" | "nearby_city"
-  "port": 5203,
+  "port": 5203,                   // (omitempty)
   "attempts": 2,                  // connection attempts over every server tried
   "down_bps": 182345678, "up_bps": 38123456,   // |null when not measured
   "down_lower_bound": true, "up_lower_bound": true, // omitted when false: still speeding up at the 10 s cap (below)
   "cancelled_by": "owner",        // a cancelled test the owner stopped; omitted otherwise (a shutdown)
-  "down_lb_counted": true, "up_lb_counted": false, // a lower bound that reached normal (counts as normal: "at least normal"); false: left out ("not counted")
+  "down_lb_counted": true,        // (omitempty) present, true, only for a lower bound that reached normal (counts as "at least normal"); a lower bound without it was left out ("not counted"); likewise up_lb_counted
   "down_s": 4.0, "up_s": 3.2,                  // seconds measured (0 when not measured)
   "capped_by_server": false,      // a direction within 10% of the server's published capacity
   "score": 0.94, "up_score": 0.97,             // |null: against the server's baseline
@@ -279,7 +286,7 @@ The latency under load over the span, one sentence per layer, from the median ov
     "gateway": {"idle": Stats, "down": Stats, "up": Stats}    // the router: the home network
   },
   "conn": "wired",                // "wired" | "wifi" | "unknown": the interface the test ran on
-  "handoff": {"asn": 3356, "name": "LEVEL3", "isp_asn": 3320, "at": 1760090000000}   // |null
+  "handoff": {"asn": 3356, "name": "LEVEL3", "isp_asn": 3320, "at": "2026-10-10T13:30:00Z", "via": "DE-CIX"}   // (omitempty); at is RFC 3339; via (omitempty)
 }
 ```
 
@@ -291,7 +298,7 @@ With the environment variable `FYISP_TICKS` set, fyisp logs each direction's tic
 
 **Bytes.** `bytes` is what the test moved on the wire, every attempt included, also when it failed or was cancelled (then it's what moved until the cancel, and a cancel during setup still counts the few hundred bytes of the handshake). On Linux each stream counts what the kernel saw (received, read or still buffered, for downloads; acknowledged for uploads) when that's more than what fyisp read or wrote; other systems count what fyisp read or wrote. `bytes_24h` and `bytes_month` add up these numbers.
 
-**Handoff**: the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`). `null` when unknown. The traceroute runs just before the test (bounded to 10 s; without an answer the test goes ahead without a handoff), to the address the test then dials. When the path crosses an internet exchange on fyisp's built-in list (DE-CIX, AMS-IX, LINX and others), the handoff is the network behind it, and `via` names the exchange (`asn` 0 when the path ends there). `via` is kept in memory only, so it fills in within a day of a restart.
+**Handoff**: the first network outside your ISP on the path to the server (`asn`, `name`), after your ISP's `isp_asn`, from a traceroute at most once a day per server (`at`, RFC 3339). Omitted when unknown. The traceroute runs just before the test (bounded to 10 s; without an answer the test goes ahead without a handoff), to the address the test then dials. When the path crosses an internet exchange on fyisp's built-in list (DE-CIX, AMS-IX, LINX and others), the handoff is the network behind it, and `via` names the exchange (`asn` 0 when the path ends there). `via` is kept in memory only, so it fills in within a day of a restart.
 
 **Outcomes.**
 - `busy`: every port and server tried within the slot's budget was running someone else's test. Never draw it as a slow or zero result; show a gap labelled "server busy".
@@ -301,7 +308,7 @@ With the environment variable `FYISP_TICKS` set, fyisp logs each direction's tic
 
 When a download worked but the upload failed, `down_bps` is set and `outcome` is the upload's.
 
-**Fallback.** A busy or refusing port gets up to 2 more ports. After that, fyisp moves to the next same-metro provider (`same_metro`), then the nearby city (`nearby_city`). Unreachable servers are skipped at once. Single-port servers get no port retries. There is no new attempt after 25 s, and a slot is cut off at 45 s. A slot never pushes later slots back; a late one is skipped.
+**Fallback.** A busy or refusing port gets up to 2 more ports. After that, fyisp moves to the next same-metro provider (`same_metro`), then the nearby city (`nearby_city`). Unreachable servers are skipped at once. Single-port servers get no port retries. There is no new attempt after 25 s, and a slot is cut off at 62 s (an attempt started at 25 s still gets both directions). A slot never pushes later slots back; a late one is skipped.
 
 ## `GET api/speed?row=<id>` (or `server=`, `region=`)
 
@@ -325,7 +332,7 @@ For compare, make one request per row (up to 4).
 {"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "owner"}]}
 ```
 
-`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples that ran inside a window, or within 2 s after it, are stored as "not measured", so charts show a gap. The verdict, call minutes, Home and history never count them, and history never calls them "fyisp wasn't running".
+`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples inside a window are stored as measured, so a test that loads the line shows up as a spike or loss. Home blames a problem that overlaps a window (or the 2 s after it, 3 s after a cut-short test) on the test (`cause_kind` `speedtest`).
 
 ## The queue
 
@@ -375,8 +382,9 @@ In memory, so it is never cached (`Cache-Control: no-store`). It's cheap; poll e
   "stopped_reason": null,       // finished before its last test: "cancelled" | "unreachable" (a sweep stopped after servers in a row didn't answer); else null
   "cancelled_by": null,         // cancelled by the owner: "owner"; else null (also a shutdown)
   "results": [                  // a sweep's servers in order (part=entry and part=sweep only)
-    {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "status": "ok", "test": 412,
-     "down_bps": 412000000, "up_bps": 38000000},
+    {"server": {"id": "Leaseweb-Amsterdam", "label": "Leaseweb Amsterdam"}, "display": "Netherlands · Leaseweb, Amsterdam",
+     "region": "netherlands", "provider": "Leaseweb",   // region |null: the server is in no region
+     "status": "ok", "test": 412, "down_bps": 412000000, "up_bps": 38000000},
     {"server": {"id": "OVH-Erith", "label": "OVH Erith"}, "status": "busy", "test": 413, "down_bps": null, "up_bps": null},
     {"server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"}, "status": "testing", "test": null, "down_bps": null, "up_bps": null},
     {"server": {"id": "Clouvider-NewYork", "label": "Clouvider New York"}, "status": "waiting", "test": null, "down_bps": null, "up_bps": null}
@@ -432,7 +440,7 @@ POST api/speed/config
 
 ## `api/home`
 
-`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it) is put down to the test (`cause_kind` `speedtest`, bar note "Slow during a speed test") rather than to the provider.
+`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it, 3 s after a cut-short test) is put down to the test (`cause_kind` `speedtest`, bar note "<Slow|Choppy|Down> during a speed test") rather than to the provider.
 
 ## Metrics (`/metrics`)
 
@@ -443,7 +451,7 @@ These give the latest result per region and server, set after every test:
 | `fyisp_speed_download_bits_per_second` | `region`, `server` | gauge (`region` empty for tests for no region) |
 | `fyisp_speed_upload_bits_per_second` | `region`, `server` | gauge |
 | `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`edge`, `gateway`), `load` (`idle`, `download`, `upload`) | gauge: median RTT |
-| `fyisp_speed_tests_total` | `region`, `server`, `outcome` | counter |
+| `fyisp_speed_tests_total` | `region`, `server`, `outcome` (`ok`, `busy`, `unreachable`, `failed`, `cancelled`) | counter |
 
 ## Export
 

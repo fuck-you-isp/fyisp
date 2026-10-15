@@ -177,7 +177,7 @@ func listProfiles(r *profile.Registry, geos geoList, stdout, stderr io.Writer) i
 	fmt.Fprintf(stdout, `
 Run with:  fyisp --profile NAME[,NAME...]   (a union; --geo eu keeps only one region)
 Details:   fyisp profiles NAME[,NAME...]
-Every run also measures the 5-target "Network path" group (off with --no-path).
+Every run also measures the 4-target "Network path" group (off with --no-path).
 Cost grows with the target count; see "What to measure" in the README.
 `)
 	return 0
@@ -189,7 +189,7 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 		fmt.Fprintln(stderr, "fyisp:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Profile %s: %d targets in %d panels (plus the 5-target Network path group)\n", p.Name, len(p.Targets), len(p.Groups))
+	fmt.Fprintf(stdout, "Profile %s: %d targets in %d panels (plus the 4-target Network path group)\n", p.Name, len(p.Targets), len(p.Groups))
 	for _, g := range p.Groups {
 		fmt.Fprintf(stdout, "\n%s  [%s]\n", g.Title, g.ID)
 		w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
@@ -205,7 +205,7 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 			if ct, ok := r.Catalog.Target(t.Name); ok && ct.Host == t.Host {
 				where = strings.Join(nonEmpty(ct.Region, ct.City, ct.Country, geoOf(ct)), " ")
 			}
-			target := t.Host
+			target := targetHosts(t)
 			if t.Port != 0 && t.Port != 443 {
 				target += fmt.Sprintf(":%d", t.Port)
 			}
@@ -228,6 +228,21 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 		_ = w.Flush()
 	}
 	return 0
+}
+
+// targetHosts is the host each of t's kinds probes (host_overrides
+// included): the names fyisp looks up for it, comma-separated.
+func targetHosts(t model.Target) string {
+	var hosts []string
+	for _, k := range t.Kinds {
+		if h := t.HostFor(k); !slices.Contains(hosts, h) {
+			hosts = append(hosts, h)
+		}
+	}
+	if len(hosts) == 0 {
+		return t.Host
+	}
+	return strings.Join(hosts, ",")
 }
 
 func geoOf(t profile.CatalogTarget) string {

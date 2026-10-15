@@ -22,7 +22,7 @@ import { SpeedQueue } from './speedqueue.js';
 /** @typedef {{entry?:number,kind?:string,started:number,direction:string,server:{id:string,label:string}|null,step?:number,steps?:number}} SpeedRunning */
 /** @typedef {{at:number,tz:number,tz_name?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,test_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{text:string[]}|null}} SpeedSummary */
 
-// Seconds a test fills the line in each direction (a 1 s ramp-up, then 3 to 8 s), and a whole test with its pauses.
+// Seconds a typical test fills the line in each direction (a ramp-up of up to 1 s, then 3 to 10 s), and a whole test with its pauses.
 const DIR_S = 6, TEST_S = 15;
 const MONTH_S = 30 * 86400;
 

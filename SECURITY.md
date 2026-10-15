@@ -17,8 +17,9 @@ Only the latest release receives security fixes.
 
 ## What leaves your machine
 
-fyisp has no telemetry and no share link: it talks to its probe
-targets and your DNS resolver. Every probe target, TCP or UDP, sees
+fyisp has no telemetry and no share link: it talks only to its probe
+targets (and, by traceroute, the routers on the way to them), your DNS
+resolver and, if you turn speed tests on, iperf3 servers. Every probe target, TCP or UDP, sees
 your public IP address, as any website you visit does.
 
 The STUN servers fyisp measures calls with (listed in the README under
@@ -39,7 +40,9 @@ binary and never fetched. Those servers see your public IP address. Each test
 runs at most about 11 seconds each way, ramp-up included, with
 no byte cap, and each direction is hard-stopped 2 seconds later even against
 a server that ignores the end of the test. Once a day per server, fyisp traceroutes the path to
-it to name the first network past your ISP (shown in the dashboard only).
+it to name the first network past your ISP (kept locally: shown in Details →
+Speed and in `fyisp export --speedtests`). In mode `nearby` it also checks
+the round-trip time to every catalog server once a day, to pick the nearest.
 "Test now", sweeps, cancelling, the mode choice and skipped servers are
 the speed-test controls: write actions behind the same origin, the CSRF
 token and, where the dashboard has one, the admin token. Every
@@ -91,6 +94,11 @@ addresses). If you put a tunnel or reverse proxy in front of
 the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
 `--allow-host`: any `--allow-host` turns the admin token on, even on a
 loopback listener, and the token then guards the speed-test controls.
+A generated token is kept in the data directory (`admin-token`, mode 0600)
+and printed in fyisp's log at every start as the "open this link" URL, so
+anyone who can read the logs (`journalctl`, `docker logs`) can use the
+speed-test controls. To revoke it and every browser session, delete
+`admin-token` and restart.
 Anyone who can open the dashboard can start traces, within the limits
 above. A loopback dashboard without an admin token refuses speed-test
 controls from requests that carry proxy headers (`Forwarded`,

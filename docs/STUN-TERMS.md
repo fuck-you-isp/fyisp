@@ -1,8 +1,8 @@
 # STUN endpoints: terms-of-service check
 
-Checked on 2026-10-10 before the call-quality release (v0.5.0). This is a reading of the providers' public docs and terms, not legal advice. The owner decides what ships.
+Checked on 2026-10-10. This is a reading of the providers' public docs and terms, not legal advice. The owner decides what ships.
 
-**What fyisp sends.** RFC 5389 STUN Binding Requests only: 20 bytes, no attributes, no credentials, never TURN, never an allocation. Each sample is a burst of 5 requests 20 ms apart: every 5 s per target (15 s for Cloudflare port 53, 30 s for the Twilio regions), around the clock, from the user's own machine. That is about 1 request per second per target per install, or roughly 8 KB/s per provider for every 1,000 installs. A WebRTC client sends a similar burst at the start of every call.
+**What fyisp sends.** RFC 5389 STUN Binding Requests only: 20 bytes, no attributes, no credentials, never TURN, never an allocation. Each sample is a burst of 5 requests 20 ms apart: every 5 s per target (15 s for Cloudflare port 53, 30 s for the Twilio regions), around the clock, from the user's own machine. That is about 1 request per second per target per install, or roughly 20 KB/s of requests (about 50 KB/s on the wire, with the IPv4 and UDP headers) per target for every 1,000 installs; Cloudflare, with two default targets, gets a third more. A WebRTC client sends a similar burst at the start of every call.
 
 ## Result
 
@@ -39,7 +39,7 @@ Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.ym
 
 ## Owner decision (2026-10-12): the Teams relay joins the default
 
-For Home, every call tile should be judged on its own call path where one exists, so the owner moved the Teams relay `worldaz` (unchanged: same host, 5 s bursts) into `default`. This overrides the "Keep it opt-in" advice below. The traffic estimate at the top (about 8 KB/s per provider for every 1,000 installs) now reaches Microsoft from every default install, not only from `calls` users. It can be left out with a `--config` file that `extends: [default]` and has `remove: [Teams-Relay]` (README, Privacy). The rest of the advice still stands if Microsoft objects: switch to the documented `world.tr.teams.microsoft.com`, slow the cadence, or drop it from the default again.
+For Home, every call tile should be judged on its own call path where one exists, so the owner moved the Teams relay `worldaz` (unchanged: same host, 5 s bursts) into `default`. This overrides the "Keep it opt-in" advice below. The traffic estimate at the top (about 20 KB/s of requests, 50 KB/s on the wire, per target for every 1,000 installs) now reaches Microsoft from every default install, not only from `calls` users. It can be left out with a `--config` file that `extends: [default]` and has `remove: [Teams-Relay]` (README, Privacy). The rest of the advice still stands if Microsoft objects: switch to the documented `world.tr.teams.microsoft.com`, slow the cadence, or drop it from the default again.
 
 ## Google: `stun.l.google.com`
 

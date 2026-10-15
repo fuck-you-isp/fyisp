@@ -188,8 +188,8 @@ func worse(a, b State) State {
 
 // check is one result of a tracked series: a TCP/HTTPS/ICMP check or a
 // STUN burst (the engine merges a burst's three kinds by slot), or a slot
-// that was not measured (model.ReasonGap: fyisp stopped, a speed test's
-// mask), which only counts in minute.gap.
+// that was not measured (model.ReasonGap: fyisp stopped, the machine
+// slept), which only counts in minute.gap.
 type check struct {
 	ms      int64  // the slot, Unix ms
 	rttUs   uint32 // when !lost; UDP the burst's median RTT

@@ -143,6 +143,11 @@ func TestCmdProfiles(t *testing.T) {
 	if s := out.String(); !strings.Contains(s, "Profile default: 28 targets in 4 panels") || !strings.Contains(s, "CDN-Google      www.gstatic.com/generate_204") {
 		t.Errorf("default:\n%s", s)
 	}
+	// The host each kind probes (host_overrides included): Google-Meet's
+	// TCP connect goes to meet.google.com, never lens.l.google.com.
+	if s := out.String(); !regexp.MustCompile(`Google-Meet +meet\.google\.com`).MatchString(s) || strings.Contains(s, "lens.l.google.com") {
+		t.Errorf("default lists the wrong host for Google-Meet:\n%s", s)
+	}
 
 	r, _ := profile.Builtin()
 	if slices.ContainsFunc(r.Definitions(), func(d *profile.Definition) bool { return d.Name == "aws" }) {

@@ -75,14 +75,14 @@ import (
 //
 //  0. unknown (no verdict: the engine holds the current one and its
 //     incident): more than a quarter of the window's slots not measured
-//     (a speed test masks every probe it overlaps), including a window of
-//     nothing but such slots, unless at least half the window is measured
-//     and shows a dead connection (rule 1's loss clauses). Not measured is never loss and never "no
-//     network". A quarter, not half:
-//     a mask removes evidence unevenly (the layers are probed every 5 s,
-//     services every 15 s), and a window a third masked can already shift
-//     the blame, e.g. from the ISP edge to "beyond your ISP".
-//  1. no_network: no samples at all and none masked (no probe even ran);
+//     (fyisp stopped, the machine slept, the clock jumped), including a
+//     window of nothing but such slots, unless at least half the window is
+//     measured and shows a dead connection (rule 1's loss clauses). Not
+//     measured is never loss and never "no network". A quarter, not half:
+//     a gap removes evidence unevenly (the layers are probed every 5 s,
+//     services every 15 s), and a window a third unmeasured can already
+//     shift the blame, e.g. from the ISP edge to "beyond your ISP".
+//  1. no_network: no samples at all and none unmeasured (no probe even ran);
 //     or at least 5 samples lost, and nothing succeeded with most losses
 //     "no network"/"unreachable", or every known layer loses everything
 //     that way while no internet target succeeds.
@@ -303,12 +303,11 @@ func judge(p *model.Profile, ts []*tstat) judgement {
 	dead := lost >= minLost && (lost == n && 2*nonet > lost ||
 		knownLayers > 0 && deadLayers == knownLayers && inetOK == 0)
 	// 0. unknown: more than a quarter of the window's slots not measured
-	// (masked by a speed test). Not measured is never loss. A dead
-	// connection with at least half the window measured is judged anyway:
-	// masking never produces "no network" or "unreachable" samples, and a
-	// sweep's tests fail fast without a network, so its windows stay
-	// partly masked for the whole outage. (A few stray dead samples in a
-	// mostly masked window are not enough.)
+	// (fyisp stopped, the machine slept). Not measured is never loss. A
+	// dead connection with at least half the window measured is judged
+	// anyway: a gap never produces "no network" or "unreachable" samples.
+	// (A few stray dead samples in a mostly unmeasured window are not
+	// enough.)
 	if !(dead && n >= gap) && gap > 0 && 3*gap > n {
 		j.unknown = true
 		return j
@@ -641,8 +640,8 @@ var (
 	ratioTok = regexp.MustCompile(`(^|[^0-9.])[0-9]+\.[0-9]×`)
 )
 
-// namer maps profile names to display names that are safe for the public
-// page: a target or group name that contains a probed host, or looks like a
+// namer maps profile names to display names that are safe to show on Home
+// (and in a screenshot of it): a target or group name that contains a probed host, or looks like a
 // host or an address, is replaced by a generic phrase.
 type namer struct {
 	hosts  []string

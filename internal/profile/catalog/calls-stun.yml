@@ -20,8 +20,8 @@ notes: >-
   unlimited; its port 53 answers STUN too, which tells "STUN ports blocked" from "UDP
   blocked". Twilio's global name is GeoDNS to the nearest of its regions (see twilio.yml).
   The Teams Transport Relay is GeoDNS (Azure Traffic Manager), not anycast: its CNAME names
-  the Azure region it landed in, and it can switch region between lookups. It is opt-in
-  (the calls profile), not in default. Every endpoint answered 2/2 Binding Requests from a
+  the Azure region it landed in, and it can switch region between lookups. It is in default
+  (owner decision 2026-10-12, docs/STUN-TERMS.md) and in calls. Every endpoint answered 2/2 Binding Requests from a
   Frankfurt-area vantage point on 2026-10-10.
 targets:
   # Anycast Google edge; 3.4 ms from Frankfurt. Responses carry XOR-MAPPED-ADDRESS only.

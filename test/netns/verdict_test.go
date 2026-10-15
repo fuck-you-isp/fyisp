@@ -14,7 +14,7 @@ import (
 )
 
 // verdictProfileYAML keeps the built-in network path group (gateway, ISP
-// edge, the three anycast resolvers, which live on the internet namespace's loopback in
+// edge, the two anycast resolvers, which live on the internet namespace's loopback in
 // the lab). The internet targets: three IP literals and two names served by
 // the test resolver, in two groups; on Home, alpha, bravo and charlie are
 // work apps and delta and kilo websites (home_test.go).

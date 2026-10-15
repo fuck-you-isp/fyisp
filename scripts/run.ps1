@@ -3,14 +3,16 @@
 # directory, verifies its SHA-256 against the release's SHA256SUMS (mandatory)
 # and, if the GitHub CLI is installed and logged in, its build provenance
 # attestation; then runs it with your arguments. Nothing is installed; the
-# download is deleted when fyisp exits.
+# download is deleted when fyisp exits (fyisp's data stays in its data
+# directory).
 #
 #   powershell -ExecutionPolicy Bypass -File run.ps1 [fyisp args]
 #   & ([scriptblock]::Create((irm https://github.com/fuck-you-isp/fyisp/releases/download/<version>/run.ps1))) --speedtest
 #
 # Environment:
 #   FYISP_BASE_URL  download from here instead of the GitHub release (must be
-#                   https://, or http:// on localhost / 127.0.0.1 for tests)
+#                   https://, or http:// on localhost / 127.0.0.1 for tests;
+#                   skips the attestation check)
 #
 # The whole script is inside Main, called on the last lines, so a truncated
 # download never runs a partial script.

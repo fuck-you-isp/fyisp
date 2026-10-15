@@ -99,8 +99,8 @@ func (w *Windows) Overlaps(from, to time.Time) bool {
 	return false
 }
 
-// SweepGap is the unmasked time left between a sweep's tests, so the path
-// probes still get real samples while every server is tested.
+// SweepGap is the idle time left between a sweep's tests, so the probes
+// also see the unloaded link while every server is tested.
 const SweepGap = 4 * time.Second
 
 // LastEnd is the end of the newest ended window (zero for none).
@@ -123,7 +123,7 @@ func (w *Windows) Running() bool {
 	return !w.active.IsZero()
 }
 
-// Share is the fraction of [now-d, now] masked: windows plus their tails.
+// Share is the fraction of [now-d, now] under test: windows plus their tails.
 func (w *Windows) Share(now time.Time, d time.Duration) float64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()

@@ -10,7 +10,7 @@ import (
 
 var (
 	speedDownDesc = prometheus.NewDesc("fyisp_speed_download_bits_per_second",
-		"Download speed of the latest speed test against this server that measured it (iperf3 over IPv4, 8 streams, the ramp-up of up to 1 s left out, 3 to 8 s measured). region is the catalog region the test was for (empty outside mode regions).",
+		"Download speed of the latest speed test against this server that measured it (iperf3 over IPv4, 8 streams, the ramp-up of up to 1 s left out, 3 to 10 s measured). region is the catalog region the test was for (empty outside mode regions).",
 		[]string{"region", "server"}, nil)
 	speedUpDesc = prometheus.NewDesc("fyisp_speed_upload_bits_per_second",
 		"Upload speed of the latest speed test against this server that measured it.",
@@ -19,7 +19,7 @@ var (
 		"Latency under load of the latest speed test against this server: the median RTT to the ISP edge (layer=\"edge\", behind the line's queue) or the gateway (layer=\"gateway\", the home network) in the 2 minutes before the test (load=\"idle\") and during its download and upload (load=\"download\", \"upload\"). Lost probes count as 1 s.",
 		[]string{"region", "server", "layer", "load"}, nil)
 	speedTestsDesc = prometheus.NewDesc("fyisp_speed_tests_total",
-		"Speed tests since start by server and outcome (ok, busy: the server was running another test, unreachable, failed).",
+		"Speed tests since start by server and outcome (ok, busy: the server was running another test, unreachable, failed, cancelled).",
 		[]string{"region", "server", "outcome"}, nil)
 )
 

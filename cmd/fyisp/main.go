@@ -1,7 +1,8 @@
-// Command fyisp is a single-binary internet quality monitor: it probes
-// hyperscalers and popular services with TCP connects (and the network path
-// to them with ICMP), keeps every
-// sample for up to 90 days in a local SQLite file, and serves a dashboard.
+// Command fyisp is a single-binary internet quality monitor: it probes the
+// apps and services you use (TCP, HTTPS, ICMP, STUN over UDP, traceroutes)
+// and optionally runs iperf3 speed tests, keeps every sample for up to 90
+// days in a local SQLite file, and serves a dashboard that says whose fault
+// a problem is.
 package main
 
 import (

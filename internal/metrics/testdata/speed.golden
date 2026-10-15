@@ -1,4 +1,4 @@
-# HELP fyisp_speed_download_bits_per_second Download speed of the latest speed test against this server that measured it (iperf3 over IPv4, 8 streams, the ramp-up of up to 1 s left out, 3 to 8 s measured). region is the catalog region the test was for (empty outside mode regions).
+# HELP fyisp_speed_download_bits_per_second Download speed of the latest speed test against this server that measured it (iperf3 over IPv4, 8 streams, the ramp-up of up to 1 s left out, 3 to 10 s measured). region is the catalog region the test was for (empty outside mode regions).
 # TYPE fyisp_speed_download_bits_per_second gauge
 fyisp_speed_download_bits_per_second{region="",server="Leaseweb-Tokyo"} 1.2e+08
 fyisp_speed_download_bits_per_second{region="eu-central",server="Eranium-Amsterdam"} 3.9e+08
@@ -10,7 +10,7 @@ fyisp_speed_loaded_rtt_seconds{layer="edge",load="idle",region="uk",server="Clou
 fyisp_speed_loaded_rtt_seconds{layer="edge",load="upload",region="uk",server="Clouvider-London"} 0.14
 fyisp_speed_loaded_rtt_seconds{layer="gateway",load="download",region="uk",server="Clouvider-London"} 0.0014
 fyisp_speed_loaded_rtt_seconds{layer="gateway",load="idle",region="uk",server="Clouvider-London"} 0.0012
-# HELP fyisp_speed_tests_total Speed tests since start by server and outcome (ok, busy: the server was running another test, unreachable, failed).
+# HELP fyisp_speed_tests_total Speed tests since start by server and outcome (ok, busy: the server was running another test, unreachable, failed, cancelled).
 # TYPE fyisp_speed_tests_total counter
 fyisp_speed_tests_total{outcome="busy",region="uk",server="Clouvider-London"} 1
 fyisp_speed_tests_total{outcome="failed",region="eu-central",server="Eranium-Amsterdam"} 1

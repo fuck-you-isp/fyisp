@@ -1,5 +1,5 @@
-// Package web serves the fyisp dashboard: an embedded static UI plus a small
-// read-only JSON/CSV API over store.Reader.
+// Package web serves the fyisp dashboard: an embedded static UI, a JSON/CSV
+// API over store.Reader and a few write routes.
 //
 // Local is the only handler: the owner's listener (default
 // 127.0.0.1:3000). It adds /metrics and the write routes (on-demand traces,
@@ -7,9 +7,8 @@
 // per-process CSRF token. Where the dashboard is reachable from elsewhere
 // (--listen beyond loopback, --allow-host), the speed-test controls also
 // need an admin token; traces are open to any viewer, within a slot cap
-// and an hourly start budget. There
-// is no public listener (v0.8.0 removed the share link) and no reports
-// (v0.10.0 removed them): live access is the owner's own tunnel or proxy.
+// and an hourly start budget. There is one listener; live access from
+// elsewhere is the owner's own tunnel or proxy (--allow-host).
 //
 // The caller owns the http.Server. Recommended settings:
 //

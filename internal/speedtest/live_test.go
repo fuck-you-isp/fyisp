@@ -60,7 +60,7 @@ func TestStockServer(t *testing.T) {
 	}
 }
 
-// TestStockAdaptive compares the adaptive length (1 s omitted, 3-8 s,
+// TestStockAdaptive compares the adaptive length (1 s omitted, 3-10 s,
 // ending when a second is within 5% of the one before) with a full 10 s
 // run (1 s omitted, 9 s), both directions; FYISP_IPERF3 as above.
 func TestStockAdaptive(t *testing.T) {

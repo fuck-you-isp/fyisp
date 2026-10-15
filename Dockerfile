@@ -73,7 +73,8 @@ FROM scratch AS asndb
 COPY --from=asndb-gen /out/ip2asn-v4.bin /internal/asn/data/
 
 # License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
-# fyisp on any release platform, for the release assets and the image.
+# fyisp on any release platform, the Go distribution (runtime and standard
+# library) and the vendored uPlot, for the release assets and the image.
 FROM source AS licenses
 RUN --mount=type=cache,target=/go/pkg/mod <<'SH'
 set -eu
@@ -81,15 +82,22 @@ for os in linux darwin windows; do
   GOOS=$os go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{with .Replace}}(replaced-by:{{.Path}}@{{.Version}}){{end}} {{.Dir}}{{end}}{{end}}' ./cmd/fyisp
 done | sort -u > /tmp/mods
 out=/THIRD_PARTY_LICENSES.txt
-printf 'fyisp includes the following third-party Go modules. Their license and notice\nfiles follow. See NOTICE for a summary.\n\n' > $out
+printf 'fyisp includes the following third-party software: the Go runtime and standard\nlibrary, Go modules and uPlot. Their license and notice files follow. See NOTICE\nfor a summary.\n\n' > $out
+section() { printf '================================================================================\n%s\n================================================================================\n' "$1" >> $out; }
+section "Go (runtime and standard library) $(go env GOVERSION)"
+cat "$(go env GOROOT)/LICENSE" >> $out; printf '\n' >> $out
 while read -r path ver dir; do
-  printf '================================================================================\n%s %s\n================================================================================\n' "$path" "$ver" >> $out
+  section "$path $ver"
   found=0
   for f in $(find "$dir" -maxdepth 1 -type f \( -iname 'LICEN[CS]E*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) | sort); do
     printf -- '--- %s\n' "$(basename "$f")" >> $out; cat "$f" >> $out; printf '\n' >> $out; found=1
   done
   [ $found = 1 ] || { echo "no license file for $path in $dir" >&2; exit 1; }
 done < /tmp/mods
+uplot=$(sed -n '1s/.*uPlot (\(v[0-9.]*\)).*/\1/p' internal/web/static/vendor/uPlot.iife.min.js)
+[ -n "$uplot" ] || { echo "no uPlot version in uPlot.iife.min.js" >&2; exit 1; }
+section "uPlot $uplot (github.com/leeoniya/uPlot)"
+cat internal/web/static/vendor/uPlot.LICENSE >> $out; printf '\n' >> $out
 wc -l /tmp/mods $out
 SH
 

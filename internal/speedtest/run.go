@@ -103,12 +103,12 @@ func (s *Scheduler) slotJob(t target) Job {
 }
 
 // pause runs before each queued job (QueueOptions.Pause).
-// A sweep's tests would blind the monitoring for minutes back to back: it
-// leaves the probes SweepGap of unmasked time after the last window's
-// tail. StopCancelled: ctx ended while waiting.
+// A sweep's tests would load the line for minutes back to back: it leaves
+// the probes SweepGap of idle time after the last window's tail.
+// StopCancelled: ctx ended while waiting.
 //
 // A sweep also stops (StopUnreachable) after SweepUnreachable unreachable
-// servers in a row: during an outage it would only mask the monitoring.
+// servers in a row: during an outage it would only load the line for nothing.
 func (s *Scheduler) pause(ctx context.Context, _ Job, trigger string) string {
 	if trigger != "sweep" {
 		return ""
@@ -329,10 +329,10 @@ func (s *Scheduler) runSteps(ctx context.Context, region string, steps []Step, t
 		end = end.Add(AbortTail)
 	}
 	win := s.o.Windows.End(end)
-	t.End = end // the stored window covers what was masked
+	t.End = end // the stored window covers the test's traffic
 	if ctx.Err() != nil {
 		// Cancelled or shutting down: not a result, but a row without
-		// speeds keeps its masked window explained. Never linked to a
+		// speeds keeps its window explained. Never linked to a
 		// sweep (saved false).
 		s.saveCancelled(ctx, t, used)
 		return nil, false, t.Bytes

@@ -1,6 +1,6 @@
-// Package store persists probe results in SQLite (modernc.org/sqlite).
-//
-// This file holds the connection setup and the schema.
+// Probe results in SQLite (modernc.org/sqlite): this file holds the
+// connection setup and the schema.
+
 package store
 
 import (
