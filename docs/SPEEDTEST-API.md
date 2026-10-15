@@ -1,5 +1,7 @@
 # Speed tests: API contract
 
+The routes and types of the speed tests. What they measure and how to use them is in [SPEED-TESTS.md](SPEED-TESTS.md); every other route is in [API.md](API.md).
+
 iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs download, then upload: 8 TCP streams, a ramp-up that is left out (decided afterwards, where the rate levels off), then at least 3 s and up to 10 s: a direction stops early only once its rate has levelled off, at least 3 s have passed since it first came near its peak, and a second is within 5% of the one before. So a direction runs at most about 11 s, ramp-up included; a hard stop (an RST) 2 s after that ends it whatever the server does. There is no byte cap.
 
 Modes:
@@ -442,17 +444,6 @@ POST api/speed/config
 
 `part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it, 5 s after a cut-short test) is put down to the test (`cause_kind` `speedtest`, bar note "<Slow|Choppy|Down> during a speed test") rather than to the provider.
 
-## Metrics (`/metrics`)
+## Metrics and export
 
-These give the latest result per region and server, set after every test:
-
-| Metric | Labels | |
-|---|---|---|
-| `fyisp_speed_download_bits_per_second` | `region`, `server` | gauge (`region` empty for tests for no region) |
-| `fyisp_speed_upload_bits_per_second` | `region`, `server` | gauge |
-| `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`edge`, `gateway`), `load` (`idle`, `download`, `upload`) | gauge: median RTT |
-| `fyisp_speed_tests_total` | `region`, `server`, `outcome` (`ok`, `busy`, `unreachable`, `failed`, `cancelled`) | counter |
-
-## Export
-
-`fyisp export --speedtests` writes CSV with these columns: `id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts,down_bps,up_bps,down_retrans,up_retrans,down_s,up_s,capped_by_server,bytes,score_down,score_up,conn,handoff_asn,isp_asn,edge_idle_p50_ms,edge_idle_loss,edge_down_p50_ms,edge_down_p95_ms,edge_down_loss,edge_up_p50_ms,edge_up_p95_ms,edge_up_loss,gw_down_p50_ms,gw_down_p95_ms,gw_up_p50_ms,gw_up_p95_ms`.
+The `fyisp_speed_*` series on `/metrics` and the `fyisp export --speedtests` columns are in [API.md](API.md#metrics) and [API.md](API.md#fyisp-export).

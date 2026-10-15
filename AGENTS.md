@@ -1,6 +1,6 @@
 # AGENTS.md
 
-How to work on fyisp, for people and coding agents. User docs are in [README.md](README.md), the rules for adding endpoints in [CONTRIBUTING.md](CONTRIBUTING.md), and security reports go to [SECURITY.md](SECURITY.md).
+How to work on fyisp, for people and coding agents. User docs are in [README.md](README.md) and [docs/](docs/) (the API index is [docs/API.md](docs/API.md)), the rules for adding endpoints in [CONTRIBUTING.md](CONTRIBUTING.md), and security reports go to [SECURITY.md](SECURITY.md).
 
 fyisp is one static Go binary (`./cmd/fyisp`). It probes services with TCP connects, STUN and ICMP, keeps up to 90 days in one SQLite file, and serves a dashboard and a JSON API on 127.0.0.1:3000.
 
@@ -18,7 +18,7 @@ fyisp is one static Go binary (`./cmd/fyisp`). It probes services with TCP conne
 | `internal/web` | HTTP handler, JSON API, embedded UI (`static/`), goldens (`testdata/`) |
 | `internal/metrics`, `export`, `asn` | `/metrics`, `fyisp export`, the built-in IP → AS table |
 | `test/netns`, `test/ui` | Network-fault harness (Linux, sudo), Playwright specs and fixtures |
-| `scripts/`, `packaging/`, `docs/` | Launchers, the systemd unit, API and operator docs |
+| `scripts/`, `packaging/`, `docs/` | Launchers, the systemd unit, user, API and operator docs |
 
 ## Build and test: Docker only
 
@@ -72,7 +72,7 @@ docker run --rm -p 3000:3000 fyisp-webdev /fyisp-webdev -listen 0.0.0.0:3000 -ho
 - **Names are identities.** Catalog target names, iperf3 server ids and region ids key the stored history. Never rename them.
 - **Catalog:** the format is in [SCHEMA.md](internal/profile/catalog/SCHEMA.md). `docker build --target test .` runs all the catalog checks. Changing `default.yml` or a `tile:` tag changes the Home goldens.
 - **iperf3 servers:** add the server to its provider file and to a region in `regions.yml`. Add a new metro to `metroZones` (`internal/speedtest/catalog.go`), and update the count in `TestBuiltinCatalog` and the table in `docs/IPERF3-TERMS.md`.
-- **Web UI:** plain ES modules, no build step, and a strict CSP. That means no inline scripts, styles or handlers, and no `innerHTML`. Build the DOM with `h()` from `core.js` and reuse its helpers (`fmtMs`, `fetchJSON`, `apiWrite`, ...). An API change also updates `docs/*-API.md`.
+- **Web UI:** plain ES modules, no build step, and a strict CSP. That means no inline scripts, styles or handlers, and no `innerHTML`. Build the DOM with `h()` from `core.js` and reuse its helpers (`fmtMs`, `fetchJSON`, `apiWrite`, ...). An API change also updates `docs/API.md` and `docs/*-API.md`.
 
 ## Conventions
 

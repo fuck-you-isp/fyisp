@@ -35,7 +35,7 @@ If a provider objects, or a hostname stops resolving, drop or rename that target
 - Twilio regions → the documented edge names;
 - Teams → `world.tr.teams.microsoft.com` probed every few minutes, or removed.
 
-Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.yml`, `twilio.yml`), and the README's STUN server table lists them all.
+Each target is one entry in the catalog (`internal/profile/catalog/calls-stun.yml`, `twilio.yml`), and the STUN server table in [CALL-QUALITY.md](CALL-QUALITY.md#stun-servers) lists them all.
 
 ## Owner decision (2026-10-12): the Teams relay joins the default
 
