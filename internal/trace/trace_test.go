@@ -260,6 +260,55 @@ func TestRoundRouteAndEarlyStop(t *testing.T) {
 	}
 }
 
+// TestRoundMaxUnknown: like mtr --max-unknown, a round stops after
+// maxUnknown silent TTLs past the last answer, but never before the
+// destination's known TTL.
+func TestRoundMaxUnknown(t *testing.T) {
+	ctx := context.Background()
+	slot := time.Unix(1_800_000_000, 0).UTC()
+	ms := time.Millisecond
+
+	// The destination never answers: TTLs 3.. are silent.
+	f := newFakeNet("192.168.1.1", "62.1.1.1")
+	f.set(func(f *fakeNet) {
+		for ttl := 3; ttl <= 30; ttl++ {
+			f.silent[ttl] = true
+		}
+	})
+	// One probe at a time, so that the TTLs sent are exact (with more,
+	// those in flight when the run completes still go out).
+	tr, st, sink := roundTracer(t, f, Options{MaxHops: 30, Parallel: 1})
+	tr.round(ctx, st, slot)
+	if c := f.callsTo(a("1.1.1.1")); slices.Max(c) != 2+maxUnknown || len(c) != 2+maxUnknown {
+		t.Errorf("probed TTLs %v, want 1 to %d", c, 2+maxUnknown)
+	}
+	smp, _, _ := sink.take()
+	checkRound(t, "silent from 3", smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {lost: true}})
+	// With the default parallelism it stops too.
+	f.set(func(f *fakeNet) { f.calls = map[netip.Addr][]int{} })
+	tr, st, sink = roundTracer(t, f, Options{MaxHops: 30})
+	tr.round(ctx, st, slot)
+	if c := f.callsTo(a("1.1.1.1")); !slices.Contains(c, 2+maxUnknown) || slices.Max(c) == 30 {
+		t.Errorf("parallel: probed TTLs %v, want up to %d and fewer than 30", c, 2+maxUnknown)
+	}
+	sink.take()
+
+	// A known route with maxUnknown silent routers before the destination:
+	// every TTL up to the destination is probed.
+	f = newFakeNet("192.168.1.1", "62.1.1.1", "62.1.1.2", "62.1.1.3", "62.1.1.4", "62.1.1.5", "62.1.1.6")
+	tr, st, sink = roundTracer(t, f, Options{MaxHops: 30})
+	tr.round(ctx, st, slot)
+	sink.take()
+	f.set(func(f *fakeNet) { f.silent = map[int]bool{2: true, 3: true, 4: true, 5: true, 6: true} })
+	tr.round(ctx, st, slot.Add(5*time.Second))
+	smp, _, changes := sink.take()
+	checkRound(t, "silent middle", smp, slot.Add(5*time.Second), []hopWant{{rtt: ms}, {lost: true}, {lost: true}, {lost: true},
+		{lost: true}, {lost: true}, {rtt: 7 * ms}, {rtt: 8 * ms}})
+	if len(changes) != 0 {
+		t.Errorf("silent middle: changes %+v", changes)
+	}
+}
+
 func TestRoundLoss(t *testing.T) {
 	f := newFakeNet("192.168.1.1", "62.1.1.1", "62.2.2.2")
 	tr, st, sink := roundTracer(t, f, Options{MaxHops: 10})
@@ -289,8 +338,8 @@ func TestRoundLoss(t *testing.T) {
 	if len(changes) != 0 {
 		t.Errorf("loss from hop 3: changes %+v", changes)
 	}
-	if c := f.callsTo(a("1.1.1.1")); !slices.Contains(c, 10) {
-		t.Errorf("destination silent: probed TTLs %v, want up to MaxHops", c)
+	if c := f.callsTo(a("1.1.1.1")); !slices.Contains(c, 2+maxUnknown) {
+		t.Errorf("destination silent: probed TTLs %v, want up to %d silent ones", c, maxUnknown)
 	}
 
 	// A local error (no route): every hop is lost with its reason.
