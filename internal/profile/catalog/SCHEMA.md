@@ -36,11 +36,12 @@ targets:
 Catalog targets are probed with a **TCP connect only** (handshake, then an
 immediate close; no data is sent), every 15 s. The loader rejects any other
 kind. Fields from when the catalog also used HTTPS and ICMP are still
-accepted and validated, but not used: `path` (an HTTPS path), `https` and
-`icmp` keys in `host_overrides`, and `icmp`/`https`/`bytes` in `verified`.
+accepted and validated, but not used for probing: `path` (an HTTPS path),
+`https` keys in `host_overrides`, and `icmp`/`https`/`bytes` in `verified`.
 Existing entries keep them as a record of those checks; new entries don't
-need them. (Local `--config` profile files can still ask for `https` or
-`icmp` on their own targets, see package profile.)
+need them. An `icmp` key in `host_overrides` is still used: it is the host
+the target's traceroutes go to. (Local `--config` profile files can still
+ask for `https` or `icmp` on their own targets, see package profile.)
 
 A `tile:<id>` tag puts a target in one of the fixed tiles of the new Home view
 (`internal/profile/tiles.go`): `tile:zoom`, `tile:teams`, `tile:meet`,

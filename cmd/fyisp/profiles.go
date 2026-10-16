@@ -197,20 +197,32 @@ func showProfile(r *profile.Registry, names profileNames, geos geoList, stdout, 
 			if t.Group != g.ID {
 				continue
 			}
+			probeKinds := t.ProbeKinds()
 			var kinds []string
-			for _, k := range t.Kinds {
+			for _, k := range probeKinds {
 				kinds = append(kinds, k.String())
 			}
 			where := ""
 			if ct, ok := r.Catalog.Target(t.Name); ok && ct.Host == t.Host {
 				where = strings.Join(nonEmpty(ct.Region, ct.City, ct.Country, geoOf(ct)), " ")
 			}
-			target := t.Host
+			// The host and path the first kind probes, then any other host
+			// a kind or the traceroute (ICMP host override) goes to.
+			host := t.HostFor(probeKinds[0])
+			target := host
 			if t.Port != 0 && t.Port != 443 {
 				target += fmt.Sprintf(":%d", t.Port)
 			}
-			if t.Path != "" && t.Path != "/" {
+			if probeKinds[0] == model.KindHTTPS && t.Path != "" && t.Path != "/" {
 				target += t.Path
+			}
+			for _, k := range probeKinds[1:] {
+				if h := t.HostFor(k); h != host {
+					target += " " + k.String() + ": " + h
+				}
+			}
+			if h := t.HostFor(model.KindICMP); h != host && !slices.Contains(probeKinds, model.KindICMP) {
+				target += " trace: " + h
 			}
 			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", t.Name, target, strings.Join(kinds, ","), where)
 		}
