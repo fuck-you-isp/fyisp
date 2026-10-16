@@ -33,6 +33,16 @@ func TestLoopback(t *testing.T) {
 	wg.Wait()
 }
 
+func TestForTransport(t *testing.T) {
+	dst, r := netip.MustParseAddr("192.0.2.9"), netip.MustParseAddr("10.0.0.1")
+	if h := forTransport(dst, Hop{Addr: dst, Unreach: true}); h != (Hop{Addr: dst, Reached: true}) {
+		t.Errorf("unreachable from the destination: %+v", h)
+	}
+	if h := forTransport(dst, Hop{Addr: r, Unreach: true}); h != (Hop{Addr: r, Unreach: true}) {
+		t.Errorf("unreachable from a router: %+v", h)
+	}
+}
+
 func TestEchoRequestChecksum(t *testing.T) {
 	b := echoRequest(1, 2, [8]byte{1, 2, 3, 4, 5, 6, 7, 8})
 	if checksum(b) != 0 {

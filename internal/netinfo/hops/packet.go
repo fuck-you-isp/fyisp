@@ -31,13 +31,21 @@ type packetProber struct {
 	mu      sync.Mutex
 	seq     uint16
 	pending map[uint16]*pendingProbe
+	tpend   map[l4Key]*pendingProbe // TCP and UDP probes (bsd.go), by source port
 	done    chan struct{}
 }
 
 type pendingProbe struct {
-	dst  netip.Addr
-	sent time.Time
-	ch   chan Hop // buffered, 1
+	dst   netip.Addr
+	dport uint16 // TCP and UDP probes
+	sent  time.Time
+	ch    chan Hop // buffered, 1
+}
+
+// l4Key names a TCP or UDP probe by its protocol and source port.
+type l4Key struct {
+	tp    Transport
+	sport uint16
 }
 
 func openPacket(network string) (*packetProber, error) {
@@ -46,7 +54,7 @@ func openPacket(network string) (*packetProber, error) {
 		return nil, err
 	}
 	t := &packetProber{c: c, raw: network == "ip4:icmp", id: uint16(os.Getpid()), magic: newMagic(),
-		pending: map[uint16]*pendingProbe{}, done: make(chan struct{})}
+		pending: map[uint16]*pendingProbe{}, tpend: map[l4Key]*pendingProbe{}, done: make(chan struct{})}
 	go t.read()
 	return t, nil
 }
@@ -155,6 +163,13 @@ func (t *packetProber) match(b []byte, from netip.Addr) (*pendingProbe, Hop, boo
 		if len(q) < 20 || q[0]>>4 != 4 {
 			return nil, Hop{}, false
 		}
+		if l, ok := parseQuotedL4(q); ok {
+			p := t.tpend[l4Key{l.tp, l.sport}]
+			if p == nil || p.dst != l.dst || p.dport != l.dport {
+				return nil, Hop{}, false
+			}
+			return p, forTransport(p.dst, Hop{Addr: from, Unreach: b[0] == 3}), true
+		}
 		ihl := int(q[0]&0x0f) * 4
 		if ihl < 20 || len(q) < ihl+8 || q[9] != 1 || q[ihl] != 8 {
 			return nil, Hop{}, false
@@ -169,6 +184,29 @@ func (t *packetProber) match(b []byte, from netip.Addr) (*pendingProbe, Hop, boo
 		return p, Hop{Addr: from, Unreach: b[0] == 3}, true
 	}
 	return nil, Hop{}, false
+}
+
+// quotedL4 is what an ICMP error quotes of a TCP or UDP probe.
+type quotedL4 struct {
+	tp           Transport
+	dst          netip.Addr
+	sport, dport uint16
+}
+
+// parseQuotedL4 reads the quoted IPv4 header and the first 8 bytes of a TCP
+// or UDP packet (both start with the source and destination ports) from
+// the body of an ICMP error.
+func parseQuotedL4(q []byte) (quotedL4, bool) {
+	if len(q) < 20 || q[0]>>4 != 4 {
+		return quotedL4{}, false
+	}
+	ihl := int(q[0]&0x0f) * 4
+	tp := Transport(q[9])
+	if ihl < 20 || len(q) < ihl+8 || (tp != TCP && tp != UDP) {
+		return quotedL4{}, false
+	}
+	return quotedL4{tp: tp, dst: netip.AddrFrom4([4]byte(q[16:20])),
+		sport: binary.BigEndian.Uint16(q[ihl:]), dport: binary.BigEndian.Uint16(q[ihl+2:])}, true
 }
 
 // stripIPv4 removes an IPv4 header if the platform delivered one.
