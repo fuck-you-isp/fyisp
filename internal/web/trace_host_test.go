@@ -169,6 +169,24 @@ func TestInvestigateHost(t *testing.T) {
 	ft.mu.Unlock()
 }
 
+// A long host name (200 characters, under DNS's 253) is traced and read
+// under its name.
+func TestInvestigateLongHost(t *testing.T) {
+	d, _, _ := traceFixture(t)
+	dns := newFakeDNS()
+	long := strings.Repeat(strings.Repeat("a", 63)+".", 3) + "examples"
+	dns.names[long] = []netip.Addr{ip("93.184.215.14")}
+	d.Resolve = dns.resolve
+	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
+	good := sameOriginHdr("127.0.0.1:3000")
+	if w := do(h, "POST", "/api/investigate?host="+long, good); w.Code != 200 {
+		t.Fatalf("POST = %d %s", w.Code, w.Body)
+	}
+	if w := do(h, "GET", "/api/trace?target=host:"+long, good); w.Code != 200 {
+		t.Errorf("GET = %d %s", w.Code, w.Body)
+	}
+}
+
 // Hosts share the profile targets' budget; past it, a host is refused
 // before any DNS lookup.
 func TestInvestigateHostBudget(t *testing.T) {

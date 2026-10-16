@@ -280,7 +280,7 @@ func (s *server) traced() map[string]bool {
 // knownTarget reports a profile target name, or the name of a trace of a
 // host outside the profile (model.HostTarget, normalised).
 func (s *server) knownTarget(name string) bool {
-	if name == "" || len(name) > 128 {
+	if name == "" || len(name) > len(model.HostTargetPrefix)+maxHostLen {
 		return false
 	}
 	if h, ok := model.HostOf(name); ok {
