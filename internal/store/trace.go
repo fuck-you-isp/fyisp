@@ -631,8 +631,9 @@ func (s *SQLite) Hops(ctx context.Context, target string, from, to time.Time) ([
 }
 
 // HopsKind is Hops over the hop series of a trace kind. The store keeps
-// the routes of KindTrace only; for the other kinds route (the tracer's,
-// nil: unknown) names the hops.
+// the routes of profile targets' KindTrace series only; for the other kinds,
+// and when route is given (a host outside the profile), route (the
+// tracer's, nil: unknown) names the hops.
 func (s *SQLite) HopsKind(ctx context.Context, target string, kind model.ProbeKind, route []netip.Addr, from, to time.Time) ([]HopStat, error) {
 	if to.Before(from) {
 		return nil, fmt.Errorf("store: range ends before it starts")
@@ -662,7 +663,7 @@ func (s *SQLite) HopsKind(ctx context.Context, target string, kind model.ProbeKi
 	}); err != nil {
 		return nil, err
 	}
-	if kind != model.KindTrace {
+	if kind != model.KindTrace || route != nil {
 		return buildHopStats(ctx, accs, model.Route{Hops: route}, route != nil, nil, from, to, s.hopInfos)
 	}
 	r, haveRoute := s.Route(ctx, target)

@@ -403,6 +403,7 @@ func TestValidate(t *testing.T) {
 		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a\tb" }},
 		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = " a" }},
 		{"whitespace", func(p *model.Profile) { p.Targets[0].Name = "a  b" }},
+		{"reserved", func(p *model.Profile) { p.Targets[0].Name = model.HostTarget("example.com") }},
 		{"below the minimum 5s", func(p *model.Profile) { p.Targets[0].Interval = 3 * time.Second }},
 		{"ICMP only", func(p *model.Profile) { p.Targets[0].Host = model.HostGateway }},
 		{"listed twice", func(p *model.Profile) { p.Targets[0].Kinds = []model.ProbeKind{1, 1} }},

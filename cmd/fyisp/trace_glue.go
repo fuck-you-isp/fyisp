@@ -58,8 +58,8 @@ func newWebTrace(st store.TraceReader, tr trace.Tracer, prof *model.Profile) *we
 }
 
 func (w *webTrace) Hops(ctx context.Context, target string, mode model.TraceMode, from, to time.Time) ([]web.HopStat, error) {
-	var route []netip.Addr // the store keeps ICMP routes only
-	if mode != model.TraceICMP {
+	var route []netip.Addr // the store keeps profile targets' ICMP routes only
+	if _, host := model.HostOf(target); mode != model.TraceICMP || host {
 		if r, ok := w.tr.Route(target, mode); ok {
 			route = r.Hops
 		}
@@ -89,7 +89,8 @@ func (w *webTrace) Hops(ctx context.Context, target string, mode model.TraceMode
 }
 
 func (w *webTrace) Route(ctx context.Context, target string, mode model.TraceMode) (model.Route, bool) {
-	if r, ok := w.tr.Route(target, mode); ok || mode != model.TraceICMP {
+	_, host := model.HostOf(target)
+	if r, ok := w.tr.Route(target, mode); ok || mode != model.TraceICMP || host {
 		return r, ok
 	}
 	return w.st.Route(ctx, target)

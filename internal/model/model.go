@@ -134,6 +134,24 @@ func ParseTraceMode(s string) (TraceMode, bool) {
 	return 0, false
 }
 
+// HostTargetPrefix starts the target name of an on-demand trace of a host
+// outside the profile: "host:example.com", "host:192.0.2.1". Its hop series
+// and in-memory route use that name. Profile target names never start with
+// it (profile.checkName refuses them).
+const HostTargetPrefix = "host:"
+
+// HostTarget is the target name of an on-demand trace of host (normalised
+// by the caller: lowercase, no trailing dot).
+func HostTarget(host string) string { return HostTargetPrefix + host }
+
+// HostOf returns the host of a HostTarget name.
+func HostOf(name string) (string, bool) {
+	if len(name) > len(HostTargetPrefix) && name[:len(HostTargetPrefix)] == HostTargetPrefix {
+		return name[len(HostTargetPrefix):], true
+	}
+	return "", false
+}
+
 // Reason explains a missing sample. It fits in 4 bits of the storage format.
 // ReasonGap means "not measured" (fyisp was stopped, the machine slept, the
 // clock jumped) and must never be reported as loss.

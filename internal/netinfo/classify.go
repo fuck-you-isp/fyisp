@@ -35,3 +35,29 @@ func IsPublic(a netip.Addr) bool {
 	}
 	return true
 }
+
+// documentation are the IPv4 documentation ranges (RFC 5737): never a real
+// destination.
+var documentation = []netip.Prefix{
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+}
+
+// Traceable reports whether a may be the destination of an on-demand trace
+// of a host outside the profile: a public unicast IPv4 address (IsPublic:
+// not private, CGNAT, loopback, link-local, multicast, broadcast, reserved
+// or benchmarking space), not in a documentation range. It keeps viewers
+// from mapping the LAN or the ISP's private plant through such traces.
+func Traceable(a netip.Addr) bool {
+	if !IsPublic(a) {
+		return false
+	}
+	a = a.Unmap()
+	for _, p := range documentation {
+		if p.Contains(a) {
+			return false
+		}
+	}
+	return true
+}

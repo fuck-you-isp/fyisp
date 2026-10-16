@@ -5,7 +5,9 @@
 // Always-on traces send ICMP echo requests. An on-demand trace may send TCP
 // SYNs or UDP datagrams instead (model.TraceMode, where hops.Supported
 // allows): its hops are KindTraceTCP or KindTraceUDP series, and its route
-// is kept in memory only (Route), never reported to the sink.
+// is kept in memory only (Route), never reported to the sink. So is the
+// route of a host outside the profile (model.HostTarget), which Investigate
+// traces as a temporary target.
 //
 // Hops that several traces share (the home gateway, the ISP's routers) are
 // measured once per round and that one measurement is reported in every
@@ -49,6 +51,13 @@ type Tracer interface {
 	// share one trace; it slows back down (or stops, for an untraced target
 	// or a TCP or UDP trace) when the last one ends. Errors: not running,
 	// unknown target, rounds <= 0, a mode this OS does not support.
+	//
+	// A model.HostTarget name traces a host outside the profile (the
+	// caller checked its syntax and its first resolution): a temporary
+	// target, dropped when its last session ends (its route stays known to
+	// Route for an hour). Its route is kept in memory only, never reported
+	// to the sink. Every resolution must give only public addresses
+	// (netinfo.Traceable); otherwise its sessions end.
 	Investigate(target string, mode model.TraceMode, rounds int) (Investigation, error)
 	// Routes returns the current ICMP route of every traced target.
 	Routes() []model.Route

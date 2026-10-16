@@ -48,6 +48,10 @@ const (
 	maxUnknown = 5
 )
 
+// hostKeep is how long the route of a host outside the profile stays known
+// (Route) after its last session ended and it was dropped.
+const hostKeep = time.Hour
+
 // Options configures a Tracer. Zero fields use the defaults.
 type Options struct {
 	Interval    time.Duration // always-on traces: one round per Interval (default 5s)
@@ -189,13 +193,22 @@ type tracer struct {
 	ctx     context.Context
 	sink    Sink
 	prober  hops.Prober
-	targets map[tkey]*target // ICMP: every profile target; TCP, UDP: once investigated
+	targets map[tkey]*target // ICMP: every profile target; TCP, UDP and hosts: once investigated
+	gone    map[tkey]dropped // hosts outside the profile, dropped less than hostKeep ago
 	hops    *hopCache
 	wg      sync.WaitGroup
 	nextID  uint64
 }
 
-// target is one profile target. Fields under "tracer.mu" are guarded by
+// dropped is a host outside the profile whose last session ended.
+type dropped struct {
+	st *target
+	at time.Time
+}
+
+// target is one profile target, or a host outside the profile under
+// Investigate (adhoc: a temporary target, dropped when its last session
+// ends). Fields under "tracer.mu" are guarded by
 // tracer.mu; the round state is owned by the target's loop goroutine, and
 // the route (read by Routes) by rmu.
 type target struct {
@@ -204,6 +217,7 @@ type target struct {
 	host  string
 	phase float64 // fraction of the interval: spreads targets
 	idx   int     // profile order: staggers re-validation rounds
+	adhoc bool    // a host outside the profile (model.HostTarget): public addresses only
 	wake  chan struct{}
 
 	// tracer.mu
@@ -236,7 +250,12 @@ type resolution struct {
 	err   error
 }
 
-var errNotRunning = errors.New("trace: not running")
+var (
+	errNotRunning = errors.New("trace: not running")
+	// errNotPublic: a host outside the profile resolved to an address that
+	// isn't netinfo.Traceable. Its sessions end.
+	errNotPublic = errors.New("resolves to a non-public address")
+)
 
 func (tr *tracer) Run(ctx context.Context, p *model.Profile, sink Sink) error {
 	if p == nil {
@@ -261,6 +280,7 @@ func (tr *tracer) Run(ctx context.Context, p *model.Profile, sink Sink) error {
 	tr.running, tr.ctx, tr.sink, tr.prober = true, ctx, sink, pr
 	tr.hops = newHopCache(tr.o, sink)
 	tr.targets = map[tkey]*target{}
+	tr.gone = map[tkey]dropped{}
 	for i, t := range p.Targets {
 		tr.targets[tkey{t.Name, model.TraceICMP}] = &target{
 			t: t, host: t.HostFor(model.KindICMP),
@@ -346,18 +366,29 @@ func (tr *tracer) Investigate(name string, mode model.TraceMode, rounds int) (In
 	if !tr.running {
 		return nil, errNotRunning
 	}
-	base := tr.targets[tkey{name, model.TraceICMP}]
-	if base == nil {
-		return nil, fmt.Errorf("trace: unknown target %q", name)
-	}
-	if isSpecial(base.host) && tr.o.Path == nil {
-		return nil, fmt.Errorf("trace: target %q: %s cannot be resolved", name, base.host)
-	}
 	st := tr.targets[tkey{name, mode}]
-	if st == nil {
-		st = &target{t: base.t, mode: mode, host: base.host, phase: base.phase, idx: base.idx,
-			wake: make(chan struct{}, 1), sessions: map[uint64]*session{}}
-		tr.targets[tkey{name, mode}] = st
+	if host, ok := model.HostOf(name); ok {
+		// A host outside the profile: a temporary target while it has
+		// sessions. Its addresses are checked at every resolution (dest).
+		if st == nil {
+			st = &target{t: model.Target{Name: name, Host: host}, mode: mode, host: host, adhoc: true,
+				wake: make(chan struct{}, 1), sessions: map[uint64]*session{}}
+			tr.targets[tkey{name, mode}] = st
+			delete(tr.gone, tkey{name, mode})
+		}
+	} else {
+		base := tr.targets[tkey{name, model.TraceICMP}]
+		if base == nil {
+			return nil, fmt.Errorf("trace: unknown target %q", name)
+		}
+		if isSpecial(base.host) && tr.o.Path == nil {
+			return nil, fmt.Errorf("trace: target %q: %s cannot be resolved", name, base.host)
+		}
+		if st == nil {
+			st = &target{t: base.t, mode: mode, host: base.host, phase: base.phase, idx: base.idx,
+				wake: make(chan struct{}, 1), sessions: map[uint64]*session{}}
+			tr.targets[tkey{name, mode}] = st
+		}
 	}
 	tr.nextID++
 	// The deadline only guards against a loop that cannot keep up: the
@@ -403,7 +434,7 @@ func (tr *tracer) Routes() []model.Route {
 	tr.mu.Unlock()
 	var out []model.Route
 	for _, st := range ts {
-		if st.mode != model.TraceICMP {
+		if st.mode != model.TraceICMP || st.adhoc {
 			continue
 		}
 		st.rmu.Lock()
@@ -421,7 +452,15 @@ func (tr *tracer) Routes() []model.Route {
 // Route returns the current route of target's trace with mode.
 func (tr *tracer) Route(name string, mode model.TraceMode) (model.Route, bool) {
 	tr.mu.Lock()
-	st := tr.targets[tkey{name, mode}]
+	k := tkey{name, mode}
+	st := tr.targets[k]
+	if g, ok := tr.gone[k]; ok && st == nil {
+		if tr.o.Now().Sub(g.at) < hostKeep {
+			st = g.st
+		} else {
+			delete(tr.gone, k)
+		}
+	}
 	tr.mu.Unlock()
 	if st == nil {
 		return model.Route{}, false
@@ -435,7 +474,8 @@ func (tr *tracer) Route(name string, mode model.TraceMode) (model.Route, bool) {
 
 // Interval returns the slot interval of target's hop series of kind right
 // now: Options.Investigate while it is investigated, else Options.Interval
-// (ICMP) or Options.Investigate (TCP, UDP: only ever traced on demand).
+// (ICMP) or Options.Investigate (TCP, UDP and hosts outside the profile:
+// only ever traced on demand).
 func (tr *tracer) Interval(name string, kind model.ProbeKind) time.Duration {
 	mode := model.TraceICMP
 	switch kind {
@@ -449,7 +489,7 @@ func (tr *tracer) Interval(name string, kind model.ProbeKind) time.Duration {
 	if st := tr.targets[tkey{name, mode}]; st != nil && st.curIv > 0 {
 		return st.curIv
 	}
-	if mode != model.TraceICMP {
+	if _, host := model.HostOf(name); mode != model.TraceICMP || host {
 		return tr.o.Investigate
 	}
 	return tr.o.Interval
@@ -477,9 +517,29 @@ func (tr *tracer) interval(st *target) (time.Duration, bool) {
 	default:
 		st.looping = false
 		st.curIv = 0
+		if k := (tkey{st.t.Name, st.mode}); st.adhoc && tr.targets[k] == st {
+			// Its last session ended: drop it, keeping its route for a while.
+			delete(tr.targets, k)
+			for g, d := range tr.gone {
+				if now.Sub(d.at) >= hostKeep {
+					delete(tr.gone, g)
+				}
+			}
+			tr.gone[k] = dropped{st, now}
+		}
 		return 0, false
 	}
 	return st.curIv, true
+}
+
+// stopSessions ends every session of st.
+func (tr *tracer) stopSessions(st *target) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	now := tr.o.Now()
+	for _, se := range st.sessions {
+		se.endLocked(now)
+	}
 }
 
 // loop runs one round per slot, one at a time, until st is no longer traced.
@@ -549,7 +609,10 @@ func (tr *tracer) dest(ctx context.Context, st *target) (netip.Addr, error) {
 		return a, nil
 	}
 	if a, err := netip.ParseAddr(st.host); err == nil {
-		return a.Unmap(), nil
+		if a = a.Unmap(); st.adhoc && !netinfo.Traceable(a) {
+			return netip.Addr{}, errNotPublic
+		}
+		return a, nil
 	}
 	now := tr.o.Now()
 	if !st.resolved.IsValid() {
@@ -560,6 +623,9 @@ func (tr *tracer) dest(ctx context.Context, st *target) (netip.Addr, error) {
 	r := st.res.Load()
 	if r == nil {
 		return netip.Addr{}, errors.New("not resolved")
+	}
+	if errors.Is(r.err, errNotPublic) {
+		return netip.Addr{}, errNotPublic
 	}
 	// Stick to the current address while DNS still returns it, so that
 	// round-robin DNS does not look like a route change.
@@ -593,6 +659,11 @@ func (tr *tracer) resolve(ctx context.Context, st *target) {
 	}
 	if err == nil && len(addrs) == 0 {
 		err = errors.New("no IPv4 address")
+	}
+	if st.adhoc && slices.ContainsFunc(addrs, func(a netip.Addr) bool { return !netinfo.Traceable(a) }) {
+		// Every answer is checked, not just the first (DNS rebinding).
+		st.res.Store(&resolution{err: errNotPublic})
+		return
 	}
 	if err != nil {
 		if prev := st.res.Load(); prev != nil {
@@ -679,6 +750,11 @@ func (st *target) use(ttl int, at time.Time) bool {
 // round traces st once and reports samples, hop sightings and the route.
 func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 	dst, err := tr.dest(ctx, st)
+	if errors.Is(err, errNotPublic) {
+		tr.o.Log.Warn("trace: stopped: the host resolves to a non-public address", "target", st.t.Name)
+		tr.stopSessions(st)
+		return
+	}
 	if err != nil {
 		tr.o.Log.Debug("trace: skipping round", "target", st.t.Name, "err", err)
 		return
@@ -1078,8 +1154,8 @@ func (tr *tracer) updateRoute(st *target, obs []netip.Addr, partial bool) {
 		tr.o.Log.Info("trace: route changed", "target", change.Target, "mode", st.mode.String(), "first_diff", change.FirstDiff,
 			"from_hops", len(change.From), "to_hops", len(change.To))
 	}
-	if st.mode != model.TraceICMP {
-		return // TCP and UDP routes stay in memory (Route)
+	if st.mode != model.TraceICMP || st.adhoc {
+		return // TCP, UDP and hosts outside the profile: routes stay in memory (Route)
 	}
 	if change != nil {
 		tr.sink.ObserveRouteChange(*change)
