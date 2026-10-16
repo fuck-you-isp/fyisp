@@ -5,7 +5,9 @@
 // tile-<name>.json. So the client is tested against what the server really
 // says. The clock is 2026-10-09 10:30 am in America/New_York (the specs run
 // in that zone), like the goldens.
-//   node fixtures/gen.js [<goldens dir> [<out dir>]]   # Dockerfile: uifixtures
+//   node fixtures/gen.js [<goldens dir> [<out dir>]]
+// The Dockerfile's uitest-run stage runs it before the specs; the output is
+// not committed.
 // @ts-check
 'use strict';
 const fs = require('fs');

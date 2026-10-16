@@ -35,7 +35,6 @@ Don't install Go or Node on the host. Everything runs through the [Dockerfile](D
 | Runtime image | `docker build -t fyisp .` |
 | `go mod tidy` | `docker buildx build --target modfiles --output type=local,dest=. .` |
 | `gofmt -w` | `docker buildx build --target fmt --output type=local,dest=. .` |
-| Regenerate the UI fixtures from the Home goldens | `docker buildx build --target uifixtures --output type=local,dest=. .` |
 | Regenerate the last release's database fixture (after tagging a release) | `docker buildx build --target dbfixture --output type=local,dest=. .` |
 | Network-fault tests (**Linux, needs sudo**, ~20 min) | `test/netns/run.sh` (one scenario: `test/netns/run.sh -test.run 'NetworkFaults/a-baseline'`) |
 
@@ -56,8 +55,7 @@ docker run --rm fyisp-src sh -c 'GOOS=windows go vet ./...'   # after touching *
 ```sh
 docker run --name fyisp-gold fyisp-src go test ./internal/web -run 'TestHomeGolden|TestSpeedGolden' -update
 docker cp fyisp-gold:/src/internal/web/testdata ./internal/web/ && docker rm fyisp-gold
-docker buildx build --target uifixtures --output type=local,dest=. .   # the UI fixtures come from the goldens
-git diff internal/web/testdata test/ui/fixtures                        # review the copy changes
+git diff internal/web/testdata   # review the copy changes
 ```
 
 **fyisp-webdev** serves the real UI over fake data. Open it as `localhost`, because any other Host name gets 421.
@@ -96,4 +94,3 @@ docker run --rm -p 3000:3000 fyisp-webdev /fyisp-webdev -listen 0.0.0.0:3000 -ho
 - **Per-OS files** (`_windows.go`, `_darwin.go`, ...): `test` vets only `netinfo` for other OSes. Run `GOOS=windows go vet ./...` or rely on the native CI.
 - **Host allowlist:** the handler answers 421 to unknown Host headers, so tests must set `r.Host`.
 - **SQLite pragmas:** modernc runs `_pragma` DSN values in lexicographic order, so persistent pragmas are set in code (`sqlite.go`), not in the DSN.
-- **Stale fixtures:** nothing checks that `test/ui/fixtures` match the goldens. Rerun `uifixtures` after updating goldens.
