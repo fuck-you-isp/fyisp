@@ -1,7 +1,8 @@
 // Investigate traces any public host typed in its host box, with the
 // picked probe type. The trace is named "host:<host>": the URL reopens it,
 // and the mtr view, the report and "Run it yourself" work as for a target.
-// A refusal is shown under the box with the server's reason.
+// A refusal is shown under the box with the server's reason. A pasted
+// host: link never starts a trace by itself, not even the owner's: Trace does.
 // @ts-check
 const { test, expect } = require('./fixtures');
 const { patchStatus } = require('./home');
@@ -35,6 +36,26 @@ test('the host box traces a public host, and the URL reopens it', async ({ page 
   await expect(box).toHaveValue('example.com');
   await expect(inv.locator('.inv-run .inv-cmd')).toHaveText('mtr -rwzbc 100 example.com');
   expect(posts.length).toBe(1);
+});
+
+test('a pasted host: link never starts a trace by itself, even for the owner; Trace does', async ({ page }) => {
+  await patchStatus(page, { controls: 'admin', admin: true, can_control: true });
+  /** @type {string[]} */
+  const posts = [];
+  await page.route('**/api/investigate?*', (route) => {
+    if (route.request().method() === 'POST') posts.push(new URL(route.request().url()).search);
+    return route.fulfill({ json: { target: 'host:example.com', mode: 'icmp', state: 'running', rounds_done: 0, rounds_max: 250, interval_ms: 2500, started_at: Date.now() } });
+  });
+  await page.goto('/#' + new URLSearchParams({ t: 'host:example.com' }));
+  const st = page.locator('#inv .inv-status');
+  await expect(st.locator('.pill', { hasText: 'Not tracing' })).toBeVisible();
+  await expect(page.locator('#inv .inv-summary')).toContainText('Not tracing. Click Trace');
+  await page.waitForLoadState('networkidle');
+  expect(posts).toEqual([]);
+
+  await st.getByRole('button', { name: 'Trace', exact: true }).click();
+  await expect(st.locator('.pill.on', { hasText: /^Tracing… \d+ of 250 rounds$/ })).toBeVisible();
+  expect(posts).toEqual(['?target=host%3Aexample.com&mode=icmp']);
 });
 
 test('a refused host shows the server\'s reason under the box', async ({ page, failOk }) => {

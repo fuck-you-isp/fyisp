@@ -754,7 +754,7 @@ class Panel {
         sw.style.background = verdictColor(inc.kind);
         // A connection-wide incident is on every panel: name it briefly here,
         // the outage log has the full summary.
-        const txt = inc.targets?.length ? `incident: ${inc.summary}` : `connection problem: ${VERDICTS[inc.kind]?.short || inc.kind}`;
+        const txt = inc.targets?.length ? `incident: ${inc.summary}` : VERDICTS[inc.kind]?.label || inc.kind;
         nodes.push(h('div', { class: 'row inc' }, sw, txt));
       }
     }
@@ -964,7 +964,7 @@ function modeReason(m) {
 /** What a mode's probes are, in a sentence. @param {TraceMode|undefined} m */
 function modeNote(m) {
   if (!m || m.mode === 'icmp') return '';
-  if (m.mode === 'tcp' && m.hops_via === 'icmp') return 'On Windows the routers are found with ICMP (its firewall drops their replies to TCP); only the destination is probed with TCP connects to port 443.';
+  if (m.mode === 'tcp' && m.hops_via === 'icmp') return 'On Windows the routers are found with ICMP (its firewall drops their replies to TCP); each probe is an ICMP echo and a TCP SYN to port 443 with the same TTL, and the destination answers the TCP one.';
   if (m.mode === 'tcp') return 'TCP SYNs to port 443, like a web connection; each is closed with a reset, so no connection is left open.';
   return `UDP datagrams to port ${m.port || 33434}; the destination answers with "port unreachable".`;
 }
@@ -1109,6 +1109,7 @@ function invHeaders() {
   return headers;
 }
 
+/** Whether opening Investigate starts a trace by itself: for the owner only (a host: link never does, see poke). */
 function autoTrace() { return !!status && (!!status.can_control || (status.controls === 'admin' && !!storedAdmin())); }
 
 function hopAddr(/** @type {HopRef} */ x) {
@@ -1283,7 +1284,7 @@ class Investigate {
     const host = hostOf(target);
     if (host && document.activeElement !== this.hostIn) this.hostIn.value = host;
     this.wantStart = (!!t || !!host) && !this.alwaysOn();
-    this.invIdle = this.wantStart && !autoTrace();
+    this.invIdle = this.wantStart && (!autoTrace() || !!host);
     this.renderModes();
     this.renderStatus();
   }
@@ -1363,7 +1364,8 @@ class Investigate {
   async poke(auto = false) {
     const target = this.target;
     if (this.poking) return;
-    if (auto && !autoTrace()) {
+    // A pasted host: link never starts a trace of a host by itself.
+    if (auto && (!autoTrace() || hostOf(target))) {
       this.invIdle = true;
       this.renderStatus();
       return;
@@ -1534,7 +1536,7 @@ class Investigate {
       this.renderModes();
       const sk = `${!!this.invState}|${this.sessionOn()}`;
       if (sk !== this.shownSession) { this.shownSession = sk; renderControls(); }
-      // Opening a target without an always-on trace starts one, unless one is running or just finished.
+      // Opening a target without an always-on trace starts one (for the owner, not for a host:), unless one is running or just finished.
       if (this.wantStart) {
         this.wantStart = false;
         if (!d.investigation) this.poke(true);
@@ -1605,6 +1607,8 @@ class Investigate {
       head = `The destination itself drops ${fmtPct(destLoss)} of probes, but no hop before it shows real loss.`;
     } else if (destLoss > 0) {
       head = `The destination loses ${fmtPct(destLoss)} of probes, too little to tell where the loss starts.`;
+    } else if (destRows.reduce((m, x) => Math.max(m, x.n + x.lost), 0) < LOSS_MIN_SEEN) {
+      head = 'Too few probes yet to judge loss.';
     } else {
       head = 'No real packet loss on this path in this range.';
     }

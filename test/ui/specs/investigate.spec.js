@@ -288,6 +288,39 @@ test('Copy report: mtr\'s text, JSON and CSV, from fyisp, never an address', asy
   for (const l of csv.slice(1)) expect(l.split(',')).toHaveLength(15);
 });
 
+test('the text report keeps its columns apart for a 6-digit ASN and RTTs of a second or more', async ({ page }) => {
+  await page.goto('/');
+  const text = await page.evaluate(async () => {
+    const { mtrText } = await import('/static/invreport.js');
+    const hop = { ip: '1.2.3.4', asn: 396982, n: 10, lost: 0, loss: 0, min: 2000, mean: 9999.9, max: 9999.9, last: 9999.9, stdev: 1000 };
+    return mtrText({ dst: '1.2.3.4', start: 0, end: 1000, intervalMs: 2500, hops: [{ hop: 1, ...hop }] });
+  });
+  const row = text.split('\n')[2];
+  expect(row).toMatch(/^ {2}1\.\|-- AS396982 1\.2\.3\.4 /);
+  expect(row.trim().split(/\s+/)).toEqual(['1.|--', 'AS396982', '1.2.3.4', '0.00%', '10', '9999.9', '9999.9', '2000.0', '9999.9', '1000.0']);
+});
+
+/** fyisp-webdev's hops, rewritten: no loss anywhere, sent probes at each hop. @param {import('@playwright/test').Page} page @param {number} sent */
+async function lossFreeHops(page, sent) {
+  await page.route('**/api/trace?*', async (route) => {
+    const res = await route.fetch();
+    const d = await res.json();
+    d.hops = d.hops.map((/** @type {any} */ x) => ({ ...x, n: sent, lost: 0, loss: 0, rate_limited: false, loss_continues: false }));
+    return route.fulfill({ response: res, json: d });
+  });
+}
+
+test('one probe is too few to say there is no loss; ten are enough', async ({ page }) => {
+  await lossFreeHops(page, 1);
+  await page.goto('/#' + new URLSearchParams({ t: 'Google DNS 8.8.8.8', r: '1h' }));
+  const head = page.locator('#inv .inv-summary .is-head');
+  await expect(head).toHaveText('Too few probes yet to judge loss.');
+  await page.unrouteAll({ behavior: 'wait' });
+  await lossFreeHops(page, 10);
+  await page.reload();
+  await expect(head).toHaveText('No real packet loss on this path in this range.');
+});
+
 test('Copy report copies to the clipboard, or selects the text without one', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/#' + new URLSearchParams({ t: 'Google DNS 8.8.8.8', r: '1h' }));
@@ -383,7 +416,7 @@ test('Windows: TCP finds the routers with ICMP, and UDP is off with the reason',
   const note = page.locator('#inv .inv-mode-note');
   await expect(note).toContainText('UDP traces aren’t available on Windows');
   await expect(note).toContainText('the routers are found with ICMP');
-  expect(await report(page, 'Text (mtr -rwz)')).toMatch(/fyisp: ICMP echo probes for the routers and TCP SYNs to port 443 for the destination, /);
+  expect(await report(page, 'Text (mtr -rwz)')).toMatch(/fyisp: ICMP echo and TCP SYN \(port 443\) probes at each TTL, the routers named from the ICMP replies, /);
 });
 
 for (const width of [1400, 390]) {

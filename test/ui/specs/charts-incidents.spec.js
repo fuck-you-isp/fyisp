@@ -1,6 +1,6 @@
 // Details > Charts: an incident naming services (a service verdict) is marked
 // only on the panels that draw one of them; a connection-wide one (ISP, no
-// targets) on every panel, with a short tooltip line. Each scenario is its
+// targets) on every panel, its tooltip line the verdict's headline. Each scenario is its
 // own fyisp-webdev -verdict, which keeps the incident going since 13 min ago:
 // the right of the 30 min chart is inside it. Screenshots go to
 // out/shots/charts-incident-<kind>.png.
@@ -53,7 +53,7 @@ test('a connection-wide incident is marked on every panel', async ({ page }) => 
   const proc = await openCharts(page, 3302, 'isp');
   try {
     for (const group of ['call-apps', 'work']) {
-      expect(await incidentLines(page, group)).toEqual(['connection problem: Provider']);
+      expect(await incidentLines(page, group)).toEqual(['Internet provider problem']);
     }
     await page.locator('#panel-work').screenshot({ path: 'out/shots/charts-incident-isp.png' });
   } finally {

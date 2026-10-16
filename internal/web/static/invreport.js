@@ -61,14 +61,15 @@ function nums(x) {
 }
 
 const r2 = (/** @type {number|null} */ f) => (f == null ? null : Math.round(f * 100) / 100);
-const f1 = (/** @type {number|null} */ f, /** @type {number} */ w) => (f == null ? '-' : f.toFixed(1)).padStart(w);
+// A cell keeps a space before it however wide its value (e.g. 9999.9).
+const f1 = (/** @type {number|null} */ f, /** @type {number} */ w) => (' ' + (f == null ? '-' : f.toFixed(1))).padStart(w);
 
 /** mtr's report time: 2026-10-16T10:53:47+0000. @param {number} ms */
 function isoTime(ms) { return new Date(ms).toISOString().replace(/\.\d+Z$/, '+0000'); }
 
 /** The probe type, in words. @param {ReportInput} r */
 export function probeName(r) {
-  if (r.mode === 'tcp') return r.viaICMP ? `ICMP echo probes for the routers and TCP SYNs to port ${r.port || 443} for the destination` : `TCP SYN probes to port ${r.port || 443}`;
+  if (r.mode === 'tcp') return r.viaICMP ? `ICMP echo and TCP SYN (port ${r.port || 443}) probes at each TTL, the routers named from the ICMP replies` : `TCP SYN probes to port ${r.port || 443}`;
   if (r.mode === 'udp') return `UDP probes to port ${r.port || 33434}`;
   return 'ICMP echo probes';
 }
@@ -82,7 +83,7 @@ function footer(r) {
 /** `mtr -rwz` text. @param {ReportInput} r */
 export function mtrText(r) {
   const rows = byHop(r.hops);
-  const label = (/** @type {ReportHop|null} */ x) => `${asnName(x).padEnd(8)}${hostName(x)}`;
+  const label = (/** @type {ReportHop|null} */ x) => `${asnName(x)} `.padEnd(9) + hostName(x);
   const w = Math.max(SRC.length + 2, ...rows.map((x) => label(x.main).length + 2)) + 1;
   const head = ('HOST: ' + SRC).padEnd(8 + w) + '   Loss%   Snt   Last   Avg  Best  Wrst StDev';
   const lines = [`Start: ${isoTime(r.start)}`, head];
