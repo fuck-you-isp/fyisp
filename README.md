@@ -129,6 +129,17 @@ For its first day fyisp is still learning what's usual for your connection: Home
 
 Home's 11 tiles and what each one checks, the 28 default targets and the profiles that add about 1,400 more are in [What to measure](docs/PROFILES.md); how a tile becomes *Slow*, *Choppy* or *Down*, and how fyisp decides whose fault a problem is, in [How fyisp decides](docs/VERDICTS.md).
 
+### Investigate (traceroutes)
+
+*Investigate* follows one target's path hop by hop, like `mtr`. Each row is a router, with mtr's columns: *Host* (address and reverse DNS name), *ASN*, *Loss%*, *Snt* (probes sent), *Last*, *Avg*, *Best*, *Wrst* and *StDev* (round trips in ms), and a bar from best to worst with a tick at the average. *More columns* adds *P95*, *Javg* (average jitter) and *Jmax* (worst jitter), and the browser remembers the choice. Over ranges longer than 48 hours fyisp has only hourly summaries, so *Last*, *StDev* and *Jmax* are blank.
+
+- **Loss**: the first hop where real loss starts (it continues to the destination) is marked *loss starts here*. A middle hop that drops replies while the destination doesn't is marked *not real — router rate-limiting*. The line above the table says the same in words. See [Hop loss flags](docs/TRACE-API.md#hop-loss-flags).
+- **Range**: while a trace runs, and for an hour after it finishes, the numbers cover that trace (*This trace* in the range buttons). Pick another range to see more; *This trace* goes back.
+- **Copy report**: the table as `mtr -rwz` text, `mtr -j` JSON or `mtr -C` CSV, for a support ticket or a forum post. The source host is always `fyisp`, never your machine's name or address. The text ends with how fyisp measured: ICMP echo, the round interval, and at most 1 probe a second per router.
+- **Run it yourself**: the `mtr -rwzbc 100 <host>` command for the target, to compare from Linux or macOS (on macOS it may need `sudo`), and `pathping -n <host>` for Windows.
+
+Each round stops after 5 silent hops in a row past the last one that answered (like `mtr --max-unknown`), but never before the destination once fyisp knows how far it is.
+
 ## Keep it running
 
 fyisp can only tell you about time when it was running. Started from a terminal or the launcher, it stops when you close that window or log out, and Home shows that time as grey bars, and as hatched bands in a tile's chart: *fyisp wasn't running*. To have it start by itself, install the binary once and register it with your system, as below. It then runs in the background whenever you're logged in (or, on Linux and Docker, whenever the machine is on) and you just open <http://127.0.0.1:3000>.

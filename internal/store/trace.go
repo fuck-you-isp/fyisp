@@ -69,6 +69,13 @@ type HopStat struct {
 	MaxMs    float64 `json:"max_ms"`
 	P95Ms    float64 `json:"p95_ms"`
 	JitterMs float64 `json:"jitter_ms"` // mean |difference| of consecutive answered RTTs
+	// LastMs (the newest answered RTT), StDevMs (sample standard deviation
+	// of the answered RTTs, 0 for one) and JmaxMs (the largest |difference|
+	// of consecutive answered RTTs) come from the raw tier only: NaN in the
+	// hourly tier, which does not keep them, and when N == 0.
+	LastMs  float64 `json:"-"`
+	StDevMs float64 `json:"-"`
+	JmaxMs  float64 `json:"-"`
 
 	// LossContinues: this hop's loss is at least HopLossMin and the
 	// destination (the highest TTL with probes in the range) loses at least
@@ -731,6 +738,12 @@ type hopAcc struct {
 	jitN     int64
 	prev     float64
 	hasPrev  bool
+	// raw tier only (see HopStat.LastMs)
+	raw   bool
+	last  float64
+	wMean float64 // Welford's running mean and sum of squared deviations
+	wM2   float64
+	jmax  float64
 }
 
 type weightedP95 struct {
@@ -752,11 +765,18 @@ func (a *hopAcc) addRTT(ms float64) {
 func (a *hopAcc) addRaw(p RawPoint) {
 	switch {
 	case !p.Lost:
+		a.raw = true
 		a.addRTT(p.RTTms)
 		a.vals = append(a.vals, p.RTTms)
+		d := p.RTTms - a.wMean
+		a.wMean += d / float64(a.n)
+		a.wM2 += d * (p.RTTms - a.wMean)
+		a.last = p.RTTms
 		if a.hasPrev {
-			a.jitSum += math.Abs(p.RTTms - a.prev)
+			j := math.Abs(p.RTTms - a.prev)
+			a.jitSum += j
 			a.jitN++
+			a.jmax = max(a.jmax, j)
 		}
 		a.prev, a.hasPrev = p.RTTms, true
 	case p.Reason == model.ReasonGap:
@@ -784,7 +804,8 @@ func (a *hopAcc) addSummary(u *summary) {
 }
 
 func (a *hopAcc) stat(hop int) HopStat {
-	st := HopStat{Hop: hop, N: a.n, Lost: a.lost}
+	nan := math.NaN()
+	st := HopStat{Hop: hop, N: a.n, Lost: a.lost, LastMs: nan, StDevMs: nan, JmaxMs: nan}
 	if t := a.n + a.lost; t > 0 {
 		st.Loss = float64(a.lost) / float64(t)
 	}
@@ -792,6 +813,12 @@ func (a *hopAcc) stat(hop int) HopStat {
 		return st
 	}
 	st.MinMs, st.MaxMs, st.MeanMs = a.min, a.max, a.sum/float64(a.n)
+	if a.raw {
+		st.LastMs, st.JmaxMs, st.StDevMs = a.last, a.jmax, 0
+		if a.n > 1 {
+			st.StDevMs = math.Sqrt(a.wM2 / float64(a.n-1))
+		}
+	}
 	if len(a.vals) > 0 {
 		v := slices.Clone(a.vals)
 		slices.Sort(v)
@@ -864,7 +891,7 @@ func buildHopStats(ctx context.Context, accs map[uint8]*hopAcc, route model.Rout
 		}
 		out = append(out, st)
 	}
-	classifyLoss(out)
+	ClassifyLoss(out)
 	if len(lookup) > 0 && infos != nil {
 		m, err := infos(ctx, lookup)
 		if err != nil {
@@ -883,9 +910,10 @@ func buildHopStats(ctx context.Context, accs map[uint8]*hopAcc, route model.Rout
 	return out, nil
 }
 
-// classifyLoss sets LossContinues and RateLimited. The destination is the
-// highest TTL with probes in the range.
-func classifyLoss(hs []HopStat) {
+// ClassifyLoss sets LossContinues and RateLimited from N, Lost and Loss of
+// hs, which is sorted by Hop. The destination is the highest TTL with probes
+// in the range. Hops reuses it, and so does fyisp-webdev.
+func ClassifyLoss(hs []HopStat) {
 	dest := -1
 	for i := range hs {
 		if hs[i].N+hs[i].Lost > 0 {

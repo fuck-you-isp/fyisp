@@ -41,6 +41,11 @@ const (
 	// (0.4^5 ≈ 1%), 10 rounds once every few days (0.4^10 ≈ 1e-4). A real
 	// longer route still shows within 10 rounds.
 	growRounds = 10
+	// maxUnknown is how many TTLs in a row past the last one that answered
+	// may stay silent before a round stops probing further (mtr's
+	// --max-unknown default). It never stops before the destination's
+	// known TTL.
+	maxUnknown = 5
 )
 
 // Options configures a Tracer. Zero fields use the defaults.
@@ -712,7 +717,10 @@ func (tr *tracer) round(ctx context.Context, st *target, slot time.Time) {
 
 // probeAll sends TTL 1.. towards p.dst, at most Parallel at a time per
 // target and MaxInFlight overall, until the destination (or an unreachable)
-// answers or MaxHops. res[ttl] is the answer for ttl; res[0] is unused.
+// answers, maxUnknown TTLs in a row past the last answer stay silent (not
+// before the destination's known TTL), or MaxHops. res[ttl] is the answer
+// for ttl; res[0] is unused. TTLs not sent because of the silent run are
+// skipped (not measured).
 func (tr *tracer) probeAll(ctx context.Context, p *plan) []hopResult {
 	res := make([]hopResult, tr.o.MaxHops+1)
 	var stop atomic.Int32 // lowest TTL that ended the route
@@ -723,6 +731,36 @@ func (tr *tracer) probeAll(ctx context.Context, p *plan) []hopResult {
 	// did not answer (it answers them all).
 	d := p.dstTTL()
 	dstDone := make(chan struct{})
+	// cut: the TTL that ends a run of maxUnknown silent TTLs past the last
+	// answer, among the probes done so far (MaxHops+1: none).
+	var cut atomic.Int32
+	cut.Store(int32(tr.o.MaxHops + 1))
+	var qmu sync.Mutex
+	quiet := make([]bool, len(res)) // done without an answer (not skipped)
+	answered := 0                   // highest TTL done with an answer
+	done := func(ttl int, r hopResult) {
+		qmu.Lock()
+		defer qmu.Unlock()
+		switch {
+		case r.h.Addr.IsValid():
+			answered = max(answered, ttl)
+		case !r.skipped:
+			quiet[ttl] = true
+		}
+		c, run := tr.o.MaxHops+1, 0
+		for t := answered + 1; t <= tr.o.MaxHops; t++ {
+			if !quiet[t] {
+				run = 0
+				continue
+			}
+			if run++; run == maxUnknown {
+				c = t
+				break
+			}
+		}
+		cut.Store(int32(c))
+	}
+	unsent := 0 // the first TTL not sent because of a silent run
 launch:
 	for ttl := 1; ttl <= tr.o.MaxHops; ttl++ {
 		if d > 0 && ttl == d+1 {
@@ -739,6 +777,16 @@ launch:
 		case per <- struct{}{}:
 		case <-ctx.Done():
 			break launch
+		}
+		// Checked once a slot is free: the probe that freed it is counted.
+		if ttl > d && int32(ttl) > cut.Load() {
+			// An answer still in flight past the run lifts the cut.
+			wg.Wait()
+			if int32(ttl) > cut.Load() && int32(ttl) <= stop.Load() {
+				<-per
+				unsent = ttl
+				break
+			}
 		}
 		select {
 		case tr.inflight <- struct{}{}:
@@ -759,6 +807,7 @@ launch:
 			}
 			r := tr.hop(ctx, p, ttl)
 			res[ttl] = r
+			done(ttl, r)
 			if h := r.h; h.Addr.IsValid() && (h.Reached || h.Unreach) {
 				for {
 					cur := stop.Load()
@@ -770,6 +819,9 @@ launch:
 		}()
 	}
 	wg.Wait()
+	for ttl := unsent; unsent > 0 && ttl <= tr.o.MaxHops; ttl++ {
+		res[ttl] = hopResult{skipped: true}
+	}
 	// Answers past the end of the route (the destination answering a
 	// higher TTL too) are not hops.
 	for ttl := int(stop.Load()) + 1; ttl <= tr.o.MaxHops; ttl++ {
