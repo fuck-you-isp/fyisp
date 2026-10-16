@@ -89,3 +89,35 @@ func TestTraceModes(t *testing.T) {
 		t.Errorf("refused modes started traces: %v", ft.modes)
 	}
 }
+
+// TestTraceHostBare: "Run it yourself" gets the bare host: never the
+// target's port, HTTPS path or a query.
+func TestTraceHostBare(t *testing.T) {
+	d, _, _ := traceFixture(t)
+	p := d.Profile()
+	for i := range p.Targets {
+		if p.Targets[i].Name == "Alpha" {
+			p.Targets[i].Port = 8443 // its Path is /secret-path
+		}
+	}
+	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
+	w := do(h, "GET", "/api/trace?target=Alpha", map[string]string{"Host": "127.0.0.1:3000"})
+	body := w.Body.String()
+	if w.Code != 200 || !strings.Contains(body, `"host":"alpha.example.com"`) || strings.Contains(body, "secret-path") || strings.Contains(body, "8443") {
+		t.Errorf("trace = %d %s", w.Code, body)
+	}
+	for in, want := range map[string]string{
+		"alpha.example.com":                                     "alpha.example.com",
+		"alpha.example.com:8443":                                "alpha.example.com",
+		"alpha.example.com/secret-path":                         "alpha.example.com",
+		"https://user@alpha.example.com:8443/secret-path?q=1#f": "alpha.example.com",
+		"192.0.2.1":    "192.0.2.1",
+		"":             "",
+		"/secret-path": "",
+		"a b":          "",
+	} {
+		if got := bareHost(in); got != want {
+			t.Errorf("bareHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

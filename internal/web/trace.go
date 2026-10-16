@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -234,8 +235,9 @@ type traceJSON struct {
 	// destination port (TCP, UDP).
 	Mode string `json:"mode"`
 	Port int    `json:"port,omitempty"`
-	// Host is the name (or address) the target's trace goes to, for
-	// running mtr yourself; omitted for the gateway and the ISP edge.
+	// Host is the bare name (or address) the target's trace goes to, for
+	// running mtr yourself: never a port, path or query. Omitted for the
+	// gateway and the ISP edge.
 	Host   string `json:"host,omitempty"`
 	Traced bool   `json:"traced"` // always-on trace (ICMP only)
 	// IntervalMs is the always-on traces' round interval (on-demand
@@ -287,19 +289,41 @@ func (s *server) knownTarget(name string) bool {
 	return false
 }
 
-// traceHost is the host target's trace goes to (its ICMP host), or "" for
-// the gateway and the ISP edge, whose addresses are discovered.
+// traceHost is the host target's trace goes to (its ICMP host), bare (see
+// bareHost), or "" for the gateway and the ISP edge, whose addresses are
+// discovered.
 func (s *server) traceHost(name string) string {
 	if p := s.d.Profile(); p != nil {
 		for _, t := range p.Targets {
 			if t.Name == name {
 				if h := t.HostFor(model.KindICMP); h != model.HostGateway && h != model.HostEdge {
-					return h
+					return bareHost(h)
 				}
 			}
 		}
 	}
 	return ""
+}
+
+// bareHost is the host name or address in h with any scheme, user, port,
+// path, query or fragment removed; "" if nothing usable is left.
+func bareHost(h string) string {
+	if _, rest, ok := strings.Cut(h, "://"); ok {
+		h = rest
+	}
+	if i := strings.IndexAny(h, "/?#"); i >= 0 {
+		h = h[:i]
+	}
+	if i := strings.LastIndexByte(h, '@'); i >= 0 {
+		h = h[i+1:]
+	}
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	if h == "" || strings.ContainsAny(h, " \t[]:") {
+		return ""
+	}
+	return h
 }
 
 // checkTarget answers 400 without a target and 404 for one not in the
