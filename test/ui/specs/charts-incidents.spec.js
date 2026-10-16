@@ -60,3 +60,15 @@ test('a connection-wide incident is marked on every panel', async ({ page }) => 
     proc.kill();
   }
 });
+
+test.describe('a locale tag Intl rejects', () => {
+  test.use({ locale: 'en-US@posix' });
+
+  test('Home and the charts still render', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.hp-tile')).toHaveCount(11);
+    await page.goto('/#v=c');
+    await expect(page.locator('#panels canvas:visible').first()).toBeVisible();
+    await page.waitForLoadState('networkidle');
+  });
+});
