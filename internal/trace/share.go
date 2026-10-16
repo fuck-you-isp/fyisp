@@ -29,6 +29,11 @@ package trace
 // itself, so a route change at a shared hop is seen in each trace's own
 // probes and reported once per trace (updateRoute).
 //
+// Only traces with the same mode share: a router may treat ICMP, TCP and
+// UDP differently (and Windows finds TCP traces' routers with ICMP), so a
+// TCP trace never reports an ICMP measurement or the reverse. Each mode has
+// its own cache (tracer.share).
+//
 // Re-validation: a trace probes its whole path itself (still offering its
 // measurements to the others) until it has a route, while a different route
 // is pending, in its first round after any trace's route changed, and every
@@ -39,7 +44,8 @@ package trace
 // # Per-router cap
 //
 // Every probe also takes a token from a bucket per router (Options.RouterRate
-// probes/s, burst 2) shared by all traces, always-on and Investigate: over
+// probes/s, burst 2) shared by all traces, always-on and Investigate, of
+// every mode (it is about the router's load): over
 // any period T a router gets at most 2+T*RouterRate probes. (The burst of 2
 // lets a trace re-validate a shared hop right after another trace probed it;
 // Linux routers allow a burst of 6.) The

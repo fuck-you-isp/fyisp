@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
@@ -15,7 +16,7 @@ func TestFakeTraceLossLabels(t *testing.T) {
 	now := time.Date(2026, 10, 10, 15, 37, 0, 0, time.UTC)
 	f := newFakeTrace(store.NewFake(), now, 6*time.Hour)
 	for target, realFrom := range map[string]int{"CDN-Cloudflare": 0, "Google DNS 8.8.8.8": 3} {
-		hs, err := f.Hops(context.Background(), target, now.Add(-6*time.Hour), now)
+		hs, err := f.Hops(context.Background(), target, model.TraceICMP, now.Add(-6*time.Hour), now)
 		if err != nil || len(hs) != 12 {
 			t.Fatalf("%s: %d hops, %v", target, len(hs), err)
 		}

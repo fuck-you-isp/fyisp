@@ -24,19 +24,38 @@ import (
 // Deps.Trace (an adapter over internal/trace.Tracer and the store). Nil
 // hides the feature: every trace route answers 404.
 type TraceSource interface {
-	// Hops returns per-hop statistics of target over [from, to): one entry
-	// per (hop, address) seen, so a hop with ECMP paths has several.
-	Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error)
-	// Route returns target's current route, if it has one.
-	Route(ctx context.Context, target string) (model.Route, bool)
-	// RouteChanges returns every target's route changes in [from, to).
+	// Hops returns per-hop statistics of target's trace with mode over
+	// [from, to): one entry per (hop, address) seen, so a hop with ECMP
+	// paths has several.
+	Hops(ctx context.Context, target string, mode model.TraceMode, from, to time.Time) ([]HopStat, error)
+	// Route returns the current route of target's trace with mode, if it
+	// has one.
+	Route(ctx context.Context, target string, mode model.TraceMode) (model.Route, bool)
+	// RouteChanges returns every target's ICMP route changes in [from, to)
+	// (TCP and UDP traces record none).
 	RouteChanges(ctx context.Context, from, to time.Time) ([]model.RouteChange, error)
-	// Investigate starts an on-demand trace session of target for at most
-	// rounds rounds; see internal/trace.Tracer. Concurrent sessions of one
-	// target share one trace.
-	Investigate(target string, rounds int) (Investigation, error)
-	// Traced returns the targets with always-on traces.
+	// Investigate starts an on-demand trace session of target with mode
+	// for at most rounds rounds; see internal/trace.Tracer. Concurrent
+	// sessions of one target and mode share one trace.
+	Investigate(target string, mode model.TraceMode, rounds int) (Investigation, error)
+	// Traced returns the targets with always-on (ICMP) traces.
 	Traced() []string
+	// Modes says which trace modes this machine supports, in
+	// model.TraceModes order.
+	Modes() []TraceModeInfo
+}
+
+// TraceModeInfo is one trace mode in /api/trace's "modes".
+type TraceModeInfo struct {
+	Mode      string `json:"mode"`           // icmp | tcp | udp
+	Port      int    `json:"port,omitempty"` // TCP and UDP: the fixed destination port
+	Available bool   `json:"available"`
+	// HopsVia "icmp": the routers are found with ICMP echo requests and
+	// only the destination is probed with this mode (TCP on Windows).
+	HopsVia string `json:"hops_via,omitempty"`
+	// Reason a mode is not available: "windows_firewall" (UDP on Windows)
+	// or "os" (this OS can't send it unprivileged).
+	Reason string `json:"reason,omitempty"`
 }
 
 // HopStat summarizes one hop address over a range. Times are milliseconds;
@@ -211,10 +230,14 @@ type changeJSON struct {
 // traceJSON is /api/trace.
 type traceJSON struct {
 	Target string `json:"target"`
+	// Mode is the trace's probe type (icmp, tcp or udp), Port its fixed
+	// destination port (TCP, UDP).
+	Mode string `json:"mode"`
+	Port int    `json:"port,omitempty"`
 	// Host is the name (or address) the target's trace goes to, for
 	// running mtr yourself; omitted for the gateway and the ISP edge.
 	Host   string `json:"host,omitempty"`
-	Traced bool   `json:"traced"` // always-on trace
+	Traced bool   `json:"traced"` // always-on trace (ICMP only)
 	// IntervalMs is the always-on traces' round interval (on-demand
 	// traces report theirs in Investigation).
 	IntervalMs int64         `json:"interval_ms"`
@@ -226,9 +249,11 @@ type traceJSON struct {
 	Hops       []hopStatJSON `json:"hops"`
 	// Changes of this target's route in the range, newest first.
 	Changes []changeJSON `json:"changes"`
-	// Investigation is the target's on-demand trace: running, or finished
-	// less than InvestigationKeep ago (omitted otherwise).
+	// Investigation is the target's on-demand trace with Mode: running,
+	// or finished less than InvestigationKeep ago (omitted otherwise).
 	Investigation *investigationJSON `json:"investigation,omitempty"`
+	// Modes are the trace modes this machine supports.
+	Modes []TraceModeInfo `json:"modes"`
 }
 
 func clamp01(f float64) float64 {
@@ -311,25 +336,27 @@ func newestFirst(list []model.RouteChange) []model.RouteChange {
 	return list
 }
 
-// trace builds /api/trace for target over p.
-func (s *server) trace(ctx context.Context, target string, p incidentParams, now time.Time) (*traceJSON, error) {
+// trace builds /api/trace for target's trace with mode over p.
+func (s *server) trace(ctx context.Context, target string, mode model.TraceMode, p incidentParams, now time.Time) (*traceJSON, error) {
 	src := s.d.Trace
-	stats, err := src.Hops(ctx, target, p.from, p.to)
-	if err != nil {
-		return nil, err
-	}
-	all, err := src.RouteChanges(ctx, p.from, p.to)
+	stats, err := src.Hops(ctx, target, mode, p.from, p.to)
 	if err != nil {
 		return nil, err
 	}
 	var changes []model.RouteChange
-	for _, c := range all {
-		if c.Target == target {
-			changes = append(changes, c)
+	if mode == model.TraceICMP {
+		all, err := src.RouteChanges(ctx, p.from, p.to)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range all {
+			if c.Target == target {
+				changes = append(changes, c)
+			}
 		}
 	}
 	changes = newestFirst(changes)
-	route, hasRoute := src.Route(ctx, target)
+	route, hasRoute := src.Route(ctx, target, mode)
 
 	stats = append([]HopStat(nil), stats...)
 	sort.SliceStable(stats, func(i, j int) bool {
@@ -361,8 +388,10 @@ func (s *server) trace(ctx context.Context, target string, p incidentParams, now
 		}
 	}
 
-	out := &traceJSON{Target: target, Host: s.traceHost(target), Traced: s.traced()[target], IntervalMs: s.d.traceInterval().Milliseconds(),
-		From: p.from.UnixMilli(), To: p.to.UnixMilli(), Now: now.UnixMilli(), Hops: []hopStatJSON{}, Changes: changesJSON(r, changes)}
+	out := &traceJSON{Target: target, Mode: mode.String(), Port: mode.Port(), Host: s.traceHost(target),
+		Traced: mode == model.TraceICMP && s.traced()[target], IntervalMs: s.d.traceInterval().Milliseconds(),
+		From: p.from.UnixMilli(), To: p.to.UnixMilli(), Now: now.UnixMilli(), Hops: []hopStatJSON{}, Changes: changesJSON(r, changes),
+		Modes: s.d.Trace.Modes()}
 	// The ISP's ASN: the first public hop with a known ASN.
 	for _, sq := range [][][]netip.Addr{seq, routeSeq(route.Hops)} {
 		for _, addrs := range sq {
@@ -437,15 +466,34 @@ func jsonCached(v any) (*cached, error) {
 	return &cached{code: http.StatusOK, ctype: "application/json; charset=utf-8", body: append(b, '\n')}, nil
 }
 
-// serveTrace answers /api/trace?target=&from=&to=.
+// parseMode parses the mode parameter (default icmp).
+func parseMode(q url.Values) (model.TraceMode, error) {
+	v, ok := q["mode"]
+	if !ok {
+		return model.TraceICMP, nil
+	}
+	if len(v) == 1 {
+		if m, ok := model.ParseTraceMode(v[0]); ok {
+			return m, nil
+		}
+	}
+	return 0, badReq("bad mode: want one of icmp, tcp or udp")
+}
+
+// serveTrace answers /api/trace?target=&mode=&from=&to=.
 func (s *server) serveTrace(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	if err := checkParams(q, "target", "from", "to"); err != nil {
+	if err := checkParams(q, "target", "mode", "from", "to"); err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	target := q.Get("target")
 	if !s.checkTarget(w, r, target) {
+		return
+	}
+	mode, err := parseMode(q)
+	if err != nil {
+		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	now := s.now()
@@ -455,12 +503,12 @@ func (s *server) serveTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.runCached(w, r, "trace", func(ctx context.Context) (*cached, error) {
-		t, err := s.trace(ctx, target, p, now)
+		t, err := s.trace(ctx, target, mode, p, now)
 		if err != nil {
 			return nil, err
 		}
 		if s.inv != nil {
-			t.Investigation = s.inv.state(target)
+			t.Investigation = s.inv.state(invKey{target, mode})
 		}
 		return jsonCached(t)
 	})
@@ -487,17 +535,23 @@ func parseHops(s string) ([]int, error) {
 	return out, nil
 }
 
-// serveTracePanel answers /api/trace/panel?target=&hops=1,4,12&from=&to=&points=
-// in /api/panel's format with one series per hop (kind "trace", "hop": n).
-// hops defaults to every hop of the current route. One store query.
+// serveTracePanel answers /api/trace/panel?target=&mode=&hops=1,4,12&from=&to=&points=
+// in /api/panel's format with one series per hop (kind "trace",
+// "trace_tcp" or "trace_udp", "hop": n). hops defaults to every hop of the
+// current route. One store query.
 func (s *server) serveTracePanel(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	if err := checkParams(q, "target", "hops", "from", "to", "points"); err != nil {
+	if err := checkParams(q, "target", "mode", "hops", "from", "to", "points"); err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	target := q.Get("target")
 	if !s.checkTarget(w, r, target) {
+		return
+	}
+	mode, err := parseMode(q)
+	if err != nil {
+		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	hops, err := parseHops(q.Get("hops"))
@@ -518,14 +572,14 @@ func (s *server) serveTracePanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if hops == nil {
-		if rt, ok := s.d.Trace.Route(r.Context(), target); ok {
+		if rt, ok := s.d.Trace.Route(r.Context(), target, mode); ok {
 			for i := range min(len(rt.Hops), MaxTraceHops) {
 				hops = append(hops, i+1)
 			}
 		}
 	}
 	s.runCached(w, r, "tpanel", func(ctx context.Context) (*cached, error) {
-		pd, err := s.d.queryTracePanel(ctx, target, hops, p, now)
+		pd, err := s.d.queryTracePanel(ctx, target, mode.Kind(), hops, p, now)
 		if err != nil {
 			return nil, err
 		}
@@ -536,12 +590,12 @@ func (s *server) serveTracePanel(w http.ResponseWriter, r *http.Request) {
 // queryTracePanel runs exactly one store.Panel call over the hop series.
 // Trace series report no "not measured" counts: on-demand traces run only
 // now and then, so missing rounds are expected, not an outage of fyisp.
-func (d *Deps) queryTracePanel(ctx context.Context, target string, hops []int, p panelParams, now time.Time) (*panelData, error) {
+func (d *Deps) queryTracePanel(ctx context.Context, target string, kind model.ProbeKind, hops []int, p panelParams, now time.Time) (*panelData, error) {
 	iv := d.traceInterval()
 	series := make([]panelSeries, len(hops))
 	keys := make([]model.SeriesKey, len(hops))
 	for i, n := range hops {
-		keys[i] = model.SeriesKey{Target: target, Kind: model.KindTrace, Hop: uint8(n)}
+		keys[i] = model.SeriesKey{Target: target, Kind: kind, Hop: uint8(n)}
 		series[i] = panelSeries{key: keys[i], interval: iv}
 	}
 	points := min(p.points, max(1, int(p.to.Sub(p.from)/iv)))
@@ -580,6 +634,7 @@ type Investigation interface {
 // and /api/trace.
 type investigationJSON struct {
 	Target     string `json:"target"`
+	Mode       string `json:"mode"`  // icmp | tcp | udp
 	State      string `json:"state"` // running | finished
 	RoundsDone int    `json:"rounds_done"`
 	RoundsMax  int    `json:"rounds_max"`
@@ -593,9 +648,9 @@ type invSession struct {
 	started time.Time
 }
 
-func (se *invSession) json(target string) *investigationJSON {
+func (se *invSession) json(k invKey) *investigationJSON {
 	n, ended := se.inv.Progress()
-	j := &investigationJSON{Target: target, State: "running", RoundsDone: n, RoundsMax: InvestigateRounds,
+	j := &investigationJSON{Target: k.target, Mode: k.mode.String(), State: "running", RoundsDone: n, RoundsMax: InvestigateRounds,
 		IntervalMs: InvestigateInterval.Milliseconds(), StartedAt: se.started.UnixMilli()}
 	if !ended.IsZero() {
 		j.State, j.FinishedAt = "finished", ended.UnixMilli()
@@ -605,17 +660,23 @@ func (se *invSession) json(target string) *investigationJSON {
 
 func (se *invSession) running() bool { _, ended := se.inv.Progress(); return ended.IsZero() }
 
+// invKey names an on-demand trace: a target and a mode.
+type invKey struct {
+	target string
+	mode   model.TraceMode
+}
+
 // Investigations tracks on-demand traces.
 type Investigations struct {
 	mu     sync.Mutex
-	m      map[string]*invSession
+	m      map[invKey]*invSession
 	starts []time.Time // budgeted starts in the last hour, oldest first
 	now    func() time.Time
 }
 
 // NewInvestigations returns an empty set.
 func NewInvestigations() *Investigations {
-	return &Investigations{m: map[string]*invSession{}, now: time.Now}
+	return &Investigations{m: map[invKey]*invSession{}, now: time.Now}
 }
 
 // invError is a refused start: a stable code for the UI (docs/TRACE-API.md)
@@ -650,17 +711,18 @@ func (iv *Investigations) pruneLocked(now time.Time) {
 	iv.starts = iv.starts[n:]
 }
 
-// start starts target's trace for InvestigateRounds rounds. A running one
-// is returned as is (its count is not reset); a finished one starts
-// afresh. Unless unbudgeted (the admin token), a new trace needs room in
-// the hourly start budget; only starts that succeed use it.
-func (iv *Investigations) start(src TraceSource, target string, unbudgeted bool) (st *investigationJSON, created bool, err error) {
+// start starts k's trace for InvestigateRounds rounds. A running one is
+// returned as is (its count is not reset); a finished one starts afresh.
+// Unless unbudgeted (the admin token), a new trace needs room in the
+// hourly start budget; only starts that succeed use it. Traces of one
+// target with different modes are different traces (slots, budget).
+func (iv *Investigations) start(src TraceSource, k invKey, unbudgeted bool) (st *investigationJSON, created bool, err error) {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
 	now := iv.now()
 	iv.pruneLocked(now)
-	if se := iv.m[target]; se != nil && se.running() {
-		return se.json(target), false, nil
+	if se := iv.m[k]; se != nil && se.running() {
+		return se.json(k), false, nil
 	}
 	if !unbudgeted && len(iv.starts) >= InvestigateStartsPerHour {
 		return nil, false, &invError{http.StatusTooManyRequests, "rate_limited",
@@ -675,25 +737,25 @@ func (iv *Investigations) start(src TraceSource, target string, unbudgeted bool)
 	if all >= MaxInvestigations {
 		return nil, false, errNoSlot
 	}
-	inv, err := src.Investigate(target, InvestigateRounds)
+	inv, err := src.Investigate(k.target, k.mode, InvestigateRounds)
 	if err != nil {
 		return nil, false, err
 	}
 	se := &invSession{inv: inv, started: now}
-	iv.m[target] = se
+	iv.m[k] = se
 	if !unbudgeted {
 		iv.starts = append(iv.starts, now)
 	}
-	return se.json(target), true, nil
+	return se.json(k), true, nil
 }
 
-// state is target's trace, if it runs or finished recently.
-func (iv *Investigations) state(target string) *investigationJSON {
+// state is k's trace, if it runs or finished recently.
+func (iv *Investigations) state(k invKey) *investigationJSON {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
 	iv.pruneLocked(iv.now())
-	if se := iv.m[target]; se != nil {
-		return se.json(target)
+	if se := iv.m[k]; se != nil {
+		return se.json(k)
 	}
 	return nil
 }
@@ -714,47 +776,67 @@ func writeInvErr(w http.ResponseWriter, r *http.Request, status int, code, msg s
 const investigateBodyMax = 1 << 10
 
 // investigateRequest applies the request checks: POST, no body, exactly
-// one target parameter. It writes the refusal and returns "" on failure.
-// The response is never cached. The handler then checks the origin, and
-// investigate the target name.
-func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) string {
+// one target parameter and at most one mode (icmp, tcp, udp; default
+// icmp). It writes the refusal and returns "" on failure. The response is
+// never cached. The handler then checks the origin, and investigate the
+// target name and the mode.
+func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) (string, model.TraceMode) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.d.Trace == nil {
 		writeInvErr(w, r, http.StatusNotFound, "unavailable", "tracing is not available", 0)
-		return ""
+		return "", 0
 	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		writeInvErr(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", 0)
-		return ""
+		return "", 0
 	}
 	// No body: refused by its declared length or chunking before reading,
 	// and anything that still arrives (at most investigateBodyMax is read).
 	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "this request takes no body", 0)
-		return ""
+		return "", 0
 	}
 	if n, _ := io.Copy(io.Discard, http.MaxBytesReader(w, r.Body, investigateBodyMax)); n > 0 {
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "this request takes no body", 0)
-		return ""
+		return "", 0
 	}
 	q := r.URL.Query()
-	if err := checkParams(q, "target"); err != nil || len(q["target"]) != 1 || q.Get("target") == "" {
-		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "want exactly one target parameter", 0)
-		return ""
+	if err := checkParams(q, "target", "mode"); err != nil || len(q["target"]) != 1 || q.Get("target") == "" {
+		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "want exactly one target parameter, and at most one mode", 0)
+		return "", 0
 	}
-	return q.Get("target")
+	mode, err := parseMode(q)
+	if err != nil {
+		writeInvErr(w, r, http.StatusBadRequest, "bad_request", err.Error(), 0)
+		return "", 0
+	}
+	return q.Get("target"), mode
+}
+
+// modeAvailable reports whether src can trace with mode on this machine.
+func modeAvailable(src TraceSource, mode model.TraceMode) bool {
+	for _, m := range src.Modes() {
+		if m.Mode == mode.String() {
+			return m.Available
+		}
+	}
+	return false
 }
 
 // investigate starts the trace once the handler's checks passed;
 // unbudgeted skips the hourly start budget. Logs name the target and the
 // error, never the client.
-func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string, unbudgeted bool) {
+func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string, mode model.TraceMode, unbudgeted bool) {
 	if !s.knownTarget(target) { // profile target names only, never a host or an address
 		writeInvErr(w, r, http.StatusNotFound, "unknown_target", "unknown target", 0)
 		return
 	}
-	st, _, err := s.inv.start(s.d.Trace, target, unbudgeted)
+	if !modeAvailable(s.d.Trace, mode) {
+		writeInvErr(w, r, http.StatusBadRequest, "unsupported_mode", mode.String()+" traces are not available on this machine", 0)
+		return
+	}
+	st, _, err := s.inv.start(s.d.Trace, invKey{target, mode}, unbudgeted)
 	var ie *invError
 	switch {
 	case errors.As(err, &ie):
@@ -777,7 +859,7 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, target stri
 // and reveals nothing the dashboard doesn't. A request carrying the token
 // skips the start budget.
 func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) {
-	target := h.investigateRequest(w, r)
+	target, mode := h.investigateRequest(w, r)
 	if target == "" {
 		return
 	}
@@ -789,5 +871,5 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 		writeInvErr(w, r, http.StatusForbidden, "forbidden", "missing or bad "+HeaderCSRF, 0)
 		return
 	}
-	h.investigate(w, r, target, h.adminOK(r))
+	h.investigate(w, r, target, mode, h.adminOK(r))
 }

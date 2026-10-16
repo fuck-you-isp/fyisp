@@ -32,7 +32,7 @@ type fakeTrace struct {
 	hole  window // fyisp "not running": no trace rounds
 
 	mu      sync.Mutex
-	invest  map[string]time.Time
+	invest  map[invKey]time.Time
 	changes []model.RouteChange
 	info    map[netip.Addr]model.HopInfo
 }
@@ -92,7 +92,7 @@ func cloudFor(target string) cloud {
 }
 
 func newFakeTrace(st *store.Fake, start time.Time, backfill time.Duration) *fakeTrace {
-	f := &fakeTrace{st: st, start: start, iv: 10 * time.Second, invest: map[string]time.Time{}, info: map[netip.Addr]model.HopInfo{}}
+	f := &fakeTrace{st: st, start: start, iv: 10 * time.Second, invest: map[invKey]time.Time{}, info: map[netip.Addr]model.HopInfo{}}
 	f.hole, f.isp, _ = windows(backfill, start)
 	add := func(h fhop) {
 		a := netip.MustParseAddr(h.ip)
@@ -125,7 +125,7 @@ func newFakeTrace(st *store.Fake, start time.Time, backfill time.Duration) *fake
 	chg(2, "Microsoft-Teams", start.Add(-12*time.Minute))
 	if backfill > 0 {
 		for _, n := range tracedTargets {
-			f.write(n, start.Add(-backfill), start)
+			f.write(n, model.KindTrace, start.Add(-backfill), start)
 		}
 	}
 	return f
@@ -188,8 +188,15 @@ func (f *fakeTrace) realLoss(target string, t time.Time) float64 {
 	return 0.002
 }
 
-// write stores one trace round per interval for target in [from, to).
-func (f *fakeTrace) write(target string, from, to time.Time) {
+// invKey is an on-demand trace: a target and a mode.
+type invKey struct {
+	target string
+	mode   model.TraceMode
+}
+
+// write stores one trace round per interval for target's hop series of
+// kind in [from, to). Every mode sees the same network.
+func (f *fakeTrace) write(target string, kind model.ProbeKind, from, to time.Time) {
 	h := fnv.New64a()
 	h.Write([]byte(target))
 	r := mrand.New(mrand.NewPCG(h.Sum64(), uint64(from.UnixNano())))
@@ -202,7 +209,7 @@ func (f *fakeTrace) write(target string, from, to time.Time) {
 		real := f.realLoss(target, ts)
 		for i := range route {
 			hop := i + 1
-			s := model.Sample{Key: model.SeriesKey{Target: target, Kind: model.KindTrace, Hop: uint8(hop)}, Slot: ts}
+			s := model.Sample{Key: model.SeriesKey{Target: target, Kind: kind, Hop: uint8(hop)}, Slot: ts}
 			var base, lossP float64
 			switch {
 			case hop == 1:
@@ -249,19 +256,22 @@ func (f *fakeTrace) run(ctx context.Context) {
 			return
 		case now := <-t.C:
 			f.mu.Lock()
-			targets := append([]string(nil), tracedTargets...)
-			for n, until := range f.invest {
+			var keys []invKey
+			for _, n := range tracedTargets {
+				keys = append(keys, invKey{n, model.TraceICMP})
+			}
+			for k, until := range f.invest {
 				if now.After(until) {
-					delete(f.invest, n)
+					delete(f.invest, k)
 					continue
 				}
-				if !contains(tracedTargets, n) {
-					targets = append(targets, n)
+				if k.mode != model.TraceICMP || !contains(tracedTargets, k.target) {
+					keys = append(keys, k)
 				}
 			}
 			f.mu.Unlock()
-			for _, n := range targets {
-				f.write(n, last, now)
+			for _, k := range keys {
+				f.write(k.target, k.mode.Kind(), last, now)
 			}
 			last = now.Truncate(f.iv)
 		}
@@ -280,15 +290,21 @@ func contains(l []string, s string) bool {
 func (f *fakeTrace) Interval() time.Duration { return f.iv }
 func (f *fakeTrace) Traced() []string        { return append([]string(nil), tracedTargets...) }
 
-func (f *fakeTrace) Investigate(target string, rounds int) (web.Investigation, error) {
+func (f *fakeTrace) Investigate(target string, mode model.TraceMode, rounds int) (web.Investigation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	inv := &fakeInvestigation{start: time.Now(), max: rounds}
 	until := inv.start.Add(time.Duration(rounds) * web.InvestigateInterval)
-	if until.After(f.invest[target]) {
-		f.invest[target] = until
+	if k := (invKey{target, mode}); until.After(f.invest[k]) {
+		f.invest[k] = until
 	}
 	return inv, nil
+}
+
+// Modes: the fake traces with every mode.
+func (f *fakeTrace) Modes() []web.TraceModeInfo {
+	return []web.TraceModeInfo{{Mode: "icmp", Available: true}, {Mode: "tcp", Port: model.TraceTCPPort, Available: true},
+		{Mode: "udp", Port: model.TraceUDPPort, Available: true}}
 }
 
 // fakeInvestigation counts a round every web.InvestigateInterval.
@@ -321,11 +337,11 @@ func (i *fakeInvestigation) Progress() (int, time.Time) {
 	return n, i.stopped
 }
 
-func (f *fakeTrace) Route(_ context.Context, target string) (model.Route, bool) {
+func (f *fakeTrace) Route(_ context.Context, target string, mode model.TraceMode) (model.Route, bool) {
 	f.mu.Lock()
-	_, inv := f.invest[target]
+	_, inv := f.invest[invKey{target, mode}]
 	f.mu.Unlock()
-	if !contains(tracedTargets, target) && !inv {
+	if (mode != model.TraceICMP || !contains(tracedTargets, target)) && !inv {
 		return model.Route{}, false
 	}
 	hops, since := f.routeAt(target, time.Now())
@@ -347,10 +363,10 @@ func (f *fakeTrace) RouteChanges(_ context.Context, from, to time.Time) ([]model
 
 // Hops computes per-(hop, address) statistics from the stored samples, as
 // the real store does.
-func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time) ([]web.HopStat, error) {
+func (f *fakeTrace) Hops(ctx context.Context, target string, mode model.TraceMode, from, to time.Time) ([]web.HopStat, error) {
 	keys := make([]model.SeriesKey, 16)
 	for i := range keys {
-		keys[i] = model.SeriesKey{Target: target, Kind: model.KindTrace, Hop: uint8(i + 1)}
+		keys[i] = model.SeriesKey{Target: target, Kind: mode.Kind(), Hop: uint8(i + 1)}
 	}
 	type acc struct {
 		hop      int

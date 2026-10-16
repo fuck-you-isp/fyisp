@@ -24,7 +24,7 @@ type instantTrace struct {
 	n  int
 }
 
-func (f *instantTrace) Investigate(target string, rounds int) (Investigation, error) {
+func (f *instantTrace) Investigate(target string, mode model.TraceMode, rounds int) (Investigation, error) {
 	if f.fakeTrace.err != nil {
 		return nil, f.fakeTrace.err
 	}

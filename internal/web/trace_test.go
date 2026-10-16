@@ -21,8 +21,11 @@ type fakeTrace struct {
 	mu       sync.Mutex
 	now      time.Time
 	started  []string
+	modes    []model.TraceMode // of started
 	sessions []*fakeInv
 	err      error
+	avail    []TraceModeInfo // Modes (nil: all three)
+	asked    model.TraceMode // the mode of the last Hops
 }
 
 // fakeInv is an on-demand session whose rounds the test advances.
@@ -85,10 +88,13 @@ var (
 	}
 )
 
-func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error) {
+func (f *fakeTrace) Hops(ctx context.Context, target string, mode model.TraceMode, from, to time.Time) ([]HopStat, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
+	f.mu.Lock()
+	f.asked = mode
+	f.mu.Unlock()
 	if target != "Alpha" {
 		return nil, nil
 	}
@@ -125,7 +131,7 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 	return out, nil
 }
 
-func (f *fakeTrace) Route(ctx context.Context, target string) (model.Route, bool) {
+func (f *fakeTrace) Route(ctx context.Context, target string, mode model.TraceMode) (model.Route, bool) {
 	if target != "Alpha" {
 		return model.Route{}, false
 	}
@@ -139,19 +145,27 @@ func (f *fakeTrace) RouteChanges(ctx context.Context, from, to time.Time) ([]mod
 	}, nil
 }
 
-func (f *fakeTrace) Investigate(target string, rounds int) (Investigation, error) {
+func (f *fakeTrace) Investigate(target string, mode model.TraceMode, rounds int) (Investigation, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.started = append(f.started, target)
+	f.modes = append(f.modes, mode)
 	inv := &fakeInv{target: target, max: rounds}
 	f.sessions = append(f.sessions, inv)
 	return inv, nil
 }
 
 func (f *fakeTrace) Traced() []string { return []string{"Alpha"} }
+
+func (f *fakeTrace) Modes() []TraceModeInfo {
+	if f.avail != nil {
+		return f.avail
+	}
+	return []TraceModeInfo{{Mode: "icmp", Available: true}, {Mode: "tcp", Port: 443, Available: true}, {Mode: "udp", Port: 33434, Available: true}}
+}
 
 func traceFixture(t *testing.T) (Deps, *fakeTrace, *countingStore) {
 	now := time.Now()
