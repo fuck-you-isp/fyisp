@@ -27,6 +27,11 @@ const (
 	// KindUDPLoss is the burst's loss in the RTT field, as a percentage in
 	// milliseconds: 1 ms = 1% of the burst's requests timed out (0..100).
 	KindUDPLoss ProbeKind = 7
+	// KindTraceTCP and KindTraceUDP are hops of on-demand traceroutes sent
+	// as TCP SYNs (to TraceTCPPort) and UDP datagrams (to TraceUDPPort):
+	// like KindTrace, SeriesKey.Hop is the TTL.
+	KindTraceTCP ProbeKind = 8
+	KindTraceUDP ProbeKind = 9
 )
 
 // UDPKinds are the kinds every UDP burst writes, in this order.
@@ -34,6 +39,9 @@ var UDPKinds = []ProbeKind{KindUDP, KindUDPJitter, KindUDPLoss}
 
 // IsUDP reports one of the UDP burst kinds.
 func (k ProbeKind) IsUDP() bool { return k >= KindUDP && k <= KindUDPLoss }
+
+// IsTrace reports a traceroute hop kind (any TraceMode).
+func (k ProbeKind) IsTrace() bool { return k == KindTrace || k == KindTraceTCP || k == KindTraceUDP }
 
 // DefaultKinds is the kind list of a target that sets none: a TCP connect.
 // HTTPS and ICMP stay available to targets that list them (the network path
@@ -56,8 +64,74 @@ func (k ProbeKind) String() string {
 		return "udp_jitter"
 	case KindUDPLoss:
 		return "udp_loss"
+	case KindTraceTCP:
+		return "trace_tcp"
+	case KindTraceUDP:
+		return "trace_udp"
 	}
 	return "unknown"
+}
+
+// TraceMode is how a traceroute probes. Always-on traces use TraceICMP;
+// on-demand ones (Investigate) may use any mode the OS supports.
+type TraceMode uint8
+
+const (
+	TraceICMP TraceMode = iota // ICMP echo requests (KindTrace)
+	TraceTCP                   // TCP SYNs to TraceTCPPort (KindTraceTCP)
+	TraceUDP                   // UDP datagrams to TraceUDPPort (KindTraceUDP)
+)
+
+// The fixed destination ports of TCP and UDP traces: one port per trace
+// keeps ECMP routers on one path.
+const (
+	TraceTCPPort = 443
+	TraceUDPPort = 33434
+)
+
+// TraceModes lists every mode, in the UI's order.
+var TraceModes = []TraceMode{TraceICMP, TraceTCP, TraceUDP}
+
+func (m TraceMode) String() string {
+	switch m {
+	case TraceTCP:
+		return "tcp"
+	case TraceUDP:
+		return "udp"
+	}
+	return "icmp"
+}
+
+// Kind is the kind of m's hop series.
+func (m TraceMode) Kind() ProbeKind {
+	switch m {
+	case TraceTCP:
+		return KindTraceTCP
+	case TraceUDP:
+		return KindTraceUDP
+	}
+	return KindTrace
+}
+
+// Port is m's destination port (0 for ICMP).
+func (m TraceMode) Port() int {
+	switch m {
+	case TraceTCP:
+		return TraceTCPPort
+	case TraceUDP:
+		return TraceUDPPort
+	}
+	return 0
+}
+
+// ParseTraceMode parses "icmp", "tcp" or "udp".
+func ParseTraceMode(s string) (TraceMode, bool) {
+	for _, m := range TraceModes {
+		if s == m.String() {
+			return m, true
+		}
+	}
+	return 0, false
 }
 
 // Reason explains a missing sample. It fits in 4 bits of the storage format.
@@ -182,7 +256,7 @@ type Profile struct {
 type SeriesKey struct {
 	Target string    `json:"target"`
 	Kind   ProbeKind `json:"kind"`
-	// Hop is the TTL for KindTrace series (1 = first hop), 0 otherwise.
+	// Hop is the TTL for trace series (Kind.IsTrace; 1 = first hop), 0 otherwise.
 	Hop uint8 `json:"hop,omitempty"`
 }
 

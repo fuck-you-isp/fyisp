@@ -16,8 +16,11 @@ import (
 // Traceroutes. *SQLite implements trace.Sink:
 //
 //   - Observe stores per-hop samples like any other series, keyed
-//     {Target, KindTrace, Hop}; Options.Interval must return the tracer's
-//     round interval for them (default 5s).
+//     {Target, KindTrace (or KindTraceTCP, KindTraceUDP), Hop};
+//     Options.Interval must return the tracer's round interval for them
+//     (default 5s).
+//   - Routes and route changes are those of the ICMP traces (KindTrace);
+//     the tracer keeps TCP and UDP routes in memory only.
 //   - ObserveHop, ObserveRoute and ObserveRouteChange only touch memory, like
 //     Observe; Flush writes them in its transaction.
 //
@@ -93,6 +96,9 @@ type HopStat struct {
 type TraceReader interface {
 	// Hops returns per-hop statistics of target over [from, to], by TTL.
 	Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error)
+	// HopsKind is Hops for a trace kind (KindTrace, KindTraceTCP or
+	// KindTraceUDP); see SQLite.HopsKind.
+	HopsKind(ctx context.Context, target string, kind model.ProbeKind, route []netip.Addr, from, to time.Time) ([]HopStat, error)
 	// Route returns target's current route.
 	Route(ctx context.Context, target string) (model.Route, bool)
 	// RouteChanges returns the route changes of every target in [from, to],
@@ -586,13 +592,13 @@ func (s *SQLite) hopInfos(ctx context.Context, ips []netip.Addr) (map[netip.Addr
 	return out, nil
 }
 
-// traceKeys returns the KindTrace series of target known to the store.
-func (s *SQLite) traceKeys(target string) []model.SeriesKey {
+// traceKeys returns the hop series of kind of target known to the store.
+func (s *SQLite) traceKeys(target string, kind model.ProbeKind) []model.SeriesKey {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seen := map[model.SeriesKey]bool{}
 	add := func(k model.SeriesKey) {
-		if k.Target == target && k.Kind == model.KindTrace {
+		if k.Target == target && k.Kind == kind {
 			seen[k] = true
 		}
 	}
@@ -617,13 +623,21 @@ func sortedKeys(m map[model.SeriesKey]bool) []model.SeriesKey {
 	return out
 }
 
-// Hops returns per-hop statistics of target over [from, to]: raw samples
-// for ranges up to RawMaxRange, else the hourly summaries (see HopStat).
+// Hops returns per-hop statistics of target's ICMP trace (KindTrace) over
+// [from, to]: raw samples for ranges up to RawMaxRange, else the hourly
+// summaries (see HopStat).
 func (s *SQLite) Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error) {
+	return s.HopsKind(ctx, target, model.KindTrace, nil, from, to)
+}
+
+// HopsKind is Hops over the hop series of a trace kind. The store keeps
+// the routes of KindTrace only; for the other kinds route (the tracer's,
+// nil: unknown) names the hops.
+func (s *SQLite) HopsKind(ctx context.Context, target string, kind model.ProbeKind, route []netip.Addr, from, to time.Time) ([]HopStat, error) {
 	if to.Before(from) {
 		return nil, fmt.Errorf("store: range ends before it starts")
 	}
-	keys := s.traceKeys(target)
+	keys := s.traceKeys(target, kind)
 	accs := map[uint8]*hopAcc{}
 	if to.Sub(from) <= RawMaxRange {
 		err := s.Raw(ctx, keys, from, to, func(p RawPoint) error {
@@ -648,12 +662,15 @@ func (s *SQLite) Hops(ctx context.Context, target string, from, to time.Time) ([
 	}); err != nil {
 		return nil, err
 	}
-	route, haveRoute := s.Route(ctx, target)
+	if kind != model.KindTrace {
+		return buildHopStats(ctx, accs, model.Route{Hops: route}, route != nil, nil, from, to, s.hopInfos)
+	}
+	r, haveRoute := s.Route(ctx, target)
 	changes, err := s.routeChanges(ctx, target, from, time.UnixMilli(math.MaxInt64/2))
 	if err != nil {
 		return nil, err
 	}
-	return buildHopStats(ctx, accs, route, haveRoute, changes, from, to, s.hopInfos)
+	return buildHopStats(ctx, accs, r, haveRoute, changes, from, to, s.hopInfos)
 }
 
 // hourlySummaries calls fn with every hourly summary (and its unix hour) of

@@ -32,7 +32,7 @@ type Options struct {
 	// Interval returns the slot interval of a series. It is read for every
 	// sample (keep it cheap): a new hour uses it, and an hour whose interval
 	// differs (restored after a profile change) is regridded to fit both;
-	// nil or 0 means 15s (ICMP, KindTrace hops and the UDP kinds 5s). Values are clamped to
+	// nil or 0 means 15s (ICMP, trace hops and the UDP kinds 5s). Values are clamped to
 	// [100ms, 24h]. KindTrace series (one per hop: SeriesKey.Hop is the TTL)
 	// must return the tracer's round interval.
 	Interval func(model.SeriesKey) time.Duration
@@ -418,7 +418,7 @@ func (s *SQLite) interval(k model.SeriesKey) int64 {
 	}
 	if d <= 0 {
 		d = 15 * time.Second
-		if k.Kind == model.KindICMP || k.Kind == model.KindTrace || k.Kind.IsUDP() {
+		if k.Kind == model.KindICMP || k.Kind.IsTrace() || k.Kind.IsUDP() {
 			d = 5 * time.Second
 		}
 	}

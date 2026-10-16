@@ -309,10 +309,14 @@ func (f *Fake) hopInfos(_ context.Context, ips []netip.Addr) (map[netip.Addr]mod
 }
 
 func (f *Fake) Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error) {
+	return f.HopsKind(ctx, target, model.KindTrace, nil, from, to)
+}
+
+func (f *Fake) HopsKind(ctx context.Context, target string, kind model.ProbeKind, hops []netip.Addr, from, to time.Time) ([]HopStat, error) {
 	f.mu.RLock()
 	seen := map[model.SeriesKey]bool{}
 	for k := range f.data {
-		if k.Target == target && k.Kind == model.KindTrace {
+		if k.Target == target && k.Kind == kind {
 			seen[k] = true
 		}
 	}
@@ -329,6 +333,9 @@ func (f *Fake) Hops(ctx context.Context, target string, from, to time.Time) ([]H
 	})
 	if err != nil {
 		return nil, err
+	}
+	if kind != model.KindTrace {
+		return buildHopStats(ctx, accs, model.Route{Hops: hops}, hops != nil, nil, from, to, f.hopInfos)
 	}
 	route, ok := f.Route(ctx, target)
 	changes := f.routeChanges(target, from, time.UnixMilli(math.MaxInt64/2))

@@ -376,6 +376,23 @@ func TestHops(t *testing.T) {
 	check("sqlite flushed", s, false)
 	check("sqlite hourly", s, true)
 
+	// A TCP trace's hops are their own series, named by the route passed
+	// in (the store keeps ICMP routes only); ICMP's stay as they were.
+	tcpR := []netip.Addr{ip("192.168.1.1"), ip("140.82.112.4")}
+	for i := range 4 {
+		for hop := 1; hop <= 2; hop++ {
+			s.Observe(model.Sample{Key: model.SeriesKey{Target: "gh", Kind: model.KindTraceTCP, Hop: uint8(hop)},
+				Slot: now.Add(-time.Minute + time.Duration(i)*5*time.Second), RTT: time.Duration(hop) * time.Millisecond})
+		}
+	}
+	hs, err := s.HopsKind(ctx, "gh", model.KindTraceTCP, tcpR, now.Add(-time.Hour), now)
+	if err != nil || len(hs) != 2 || hs[1].N != 4 || hs[1].IP != tcpR[1] || hs[0].MeanMs != 1 {
+		t.Fatalf("tcp hops: %+v %v", hs, err)
+	}
+	if hs, _ := s.Hops(ctx, "gh", now.Add(-time.Hour), now); len(hs) == 0 || hs[1].N == 4 {
+		t.Fatalf("icmp hops mixed with tcp: %+v", hs)
+	}
+
 	// Unknown target: nothing.
 	if hs, err := s.Hops(ctx, "nope", t0, now); err != nil || len(hs) != 0 {
 		t.Fatalf("unknown target: %v %v", hs, err)

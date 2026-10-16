@@ -231,7 +231,7 @@ func (c *Collector) SetVsNormalSource(f VsNormalSource) {
 // not measure it). The UDP siblings are not counted.
 func (c *Collector) Observe(s model.Sample) {
 	sibling := s.Key.Kind == model.KindUDPJitter || s.Key.Kind == model.KindUDPLoss
-	if (s.Lost && s.Reason == model.ReasonGap && !sibling) || s.Key.Kind == model.KindTrace {
+	if (s.Lost && s.Reason == model.ReasonGap && !sibling) || s.Key.Kind.IsTrace() {
 		return
 	}
 	c.mu.Lock()

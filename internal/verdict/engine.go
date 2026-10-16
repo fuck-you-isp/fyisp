@@ -208,7 +208,7 @@ func (e *Engine) EachVsNormal(fn func(name string, kind model.ProbeKind, ratio f
 // mutex).
 func (e *Engine) Observe(s model.Sample) {
 	if s.Lost && s.Reason == model.ReasonGap {
-		if s.Key.Kind.IsUDP() || s.Key.Kind == model.KindTrace {
+		if s.Key.Kind.IsUDP() || s.Key.Kind.IsTrace() {
 			return
 		}
 		e.mu.Lock()
