@@ -25,9 +25,9 @@ The destination port is fixed per trace, but the source port changes with every 
 ```
 
 - `hops_via: "icmp"` (Windows): the default firewall drops the routers' replies to a standard user's TCP probes, so every probe is an ICMP echo request and a TCP connect to the port with the same TTL, sent together. The routers are named from the ICMP replies; the destination counts as reached when the connect completes or is refused, with the connect's round trip.
-- `reason` of a mode that isn't available: `windows_firewall` (UDP on Windows, for the same reason) or `os` (this OS can't send it without admin rights).
+- `reason` of a mode that isn't available: `windows_firewall` (UDP on Windows, for the same reason), `os` (this OS can't send it without admin rights) or `icmp_unavailable` (fyisp could not open its ICMP socket, so the tracer isn't running and every mode, ICMP included, has it).
 
-Linux reads the routers' replies to TCP and UDP probes from each probe socket's error queue (`IP_RECVERR`), so those probes need no ping socket. macOS gets them on its unprivileged ICMP socket and matches them by the quoted header. Tracing in any mode still needs the ICMP socket to start (see [ICMP permissions](../README.md#icmp-permissions)): without it no trace runs. IPv4 only.
+Linux reads the routers' replies to TCP and UDP probes from each probe socket's error queue (`IP_RECVERR`), so those probes need no ping socket. macOS gets them on its unprivileged ICMP socket and matches them by the quoted header. Tracing in any mode still needs the ICMP socket to start (see [ICMP permissions](../README.md#icmp-permissions)): without it no trace runs, and every mode in `modes` is unavailable with `icmp_unavailable`. IPv4 only.
 
 ## Start
 
@@ -125,7 +125,7 @@ A slot that wasn't measured (fyisp stopped, no trace running) breaks the run of 
 
 `host` is the bare name (or address) the target's trace goes to, for running `mtr` yourself: never a scheme, port, path or query. It is left out for the gateway and the ISP edge. `mode` and `port` say which trace the numbers are of. `interval_ms` is the always-on traces' round interval; an on-demand trace reports its own in `investigation`.
 
-Each round probes TTL 1 upwards until the destination answers. Like `mtr --max-unknown`, it stops after 5 TTLs in a row past the last answer stay silent, but never before the destination's TTL once that is known. TTLs not probed have no sample that round.
+Each round probes TTL 1 upwards until the destination answers. Like `mtr --max-unknown`, it stops after 5 TTLs in a row stay silent past the last answer, or past the destination's TTL once that is known. TTLs not probed have no sample that round.
 
 ## Hop loss flags
 
