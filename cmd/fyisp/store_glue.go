@@ -28,7 +28,7 @@ const defaultProbeInterval = 15 * time.Second
 // seriesInterval is every series' slot interval (the store's): the target's interval (default 15s), a third of it for
 // ICMP, the target's interval for all three UDP siblings (one burst per
 // slot), and the tracer's round interval for trace hops.
-func seriesInterval(prof *model.Profile, traceInterval func(target string) time.Duration) func(model.SeriesKey) time.Duration {
+func seriesInterval(prof *model.Profile, traceInterval func(target string, kind model.ProbeKind) time.Duration) func(model.SeriesKey) time.Duration {
 	iv := map[string]time.Duration{}
 	for _, t := range prof.Targets {
 		d := t.Interval
@@ -38,8 +38,8 @@ func seriesInterval(prof *model.Profile, traceInterval func(target string) time.
 		iv[t.Name] = d
 	}
 	return func(k model.SeriesKey) time.Duration {
-		if k.Kind == model.KindTrace {
-			return traceInterval(k.Target) // 5s, 2.5s while investigated
+		if k.Kind.IsTrace() {
+			return traceInterval(k.Target, k.Kind) // 5s, 2.5s while investigated
 		}
 		d, ok := iv[k.Target]
 		if !ok {
@@ -54,7 +54,7 @@ func seriesInterval(prof *model.Profile, traceInterval func(target string) time.
 
 // openStore opens the SQLite store. Series intervals must match the probe
 // scheduler exactly (seriesInterval).
-func openStore(dir string, prof *model.Profile, traceInterval func(target string) time.Duration, log *slog.Logger) (*store.SQLite, error) {
+func openStore(dir string, prof *model.Profile, traceInterval func(target string, kind model.ProbeKind) time.Duration, log *slog.Logger) (*store.SQLite, error) {
 	st, err := store.Open(dir, store.Options{
 		Version:  version,
 		Log:      log,

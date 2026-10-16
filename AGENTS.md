@@ -36,6 +36,7 @@ Don't install Go or Node on the host. Everything runs through the [Dockerfile](D
 | `go mod tidy` | `docker buildx build --target modfiles --output type=local,dest=. .` |
 | `gofmt -w` | `docker buildx build --target fmt --output type=local,dest=. .` |
 | Regenerate the UI fixtures from the Home goldens | `docker buildx build --target uifixtures --output type=local,dest=. .` |
+| Regenerate the last release's database fixture (after tagging a release) | `docker buildx build --target dbfixture --output type=local,dest=. .` |
 | Network-fault tests (**Linux, needs sudo**, ~20 min) | `test/netns/run.sh` (one scenario: `test/netns/run.sh -test.run 'NetworkFaults/a-baseline'`) |
 
 The Dockerfile's stage comments list the rest (`uitest-report`, `uilock`, `asndb`). `out/` is not git-ignored, so delete it after a UI run.
@@ -68,7 +69,7 @@ docker run --rm -p 3000:3000 fyisp-webdev /fyisp-webdev -listen 0.0.0.0:3000 -ho
 
 ## Rules that tests enforce
 
-- **Store schema:** `internal/store/sqlite.go` holds the full DDL and `SchemaVersion()`. There are no migrations. Bump the version on any DDL change and update `tables` and `wantSchema` (`schema_test.go`). An older database is replaced with an empty one, and a newer one is refused.
+- **Store schema:** `internal/store/sqlite.go` holds the full DDL, `SchemaVersion()` and `migrations`. Changes are additive only: new tables, columns and indexes; never drop, rename or retype anything, and keep reading the stored blob formats. A DDL change goes into `schema`, bumps `schemaVersion`, adds the step from the previous version to `migrations` (one transaction upgrades the file in place), and updates `tables` and `wantSchema` (`schema_test.go`). `internal/store/testdata/v0.11.0.db` is a database written by the last release (the `dbfixture` stage); `upgrade_test.go` checks that it opens with all of its rows, that every table, column and index in it survives with the same type, and that `migrations` cover every step from its schema. If a step is missing, fyisp refuses to start and leaves the file alone. A database from before v0.11.0 (schema older than 8) is replaced with an empty one, and a newer one is refused.
 - **Names are identities.** Catalog target names, iperf3 server ids and region ids key the stored history. Never rename them.
 - **Catalog:** the format is in [SCHEMA.md](internal/profile/catalog/SCHEMA.md). `docker build --target test .` runs all the catalog checks. Changing `default.yml` or a `tile:` tag changes the Home goldens.
 - **iperf3 servers:** add the server to its provider file and to a region in `regions.yml`. Add a new metro to `metroZones` (`internal/speedtest/catalog.go`), and update the count in `TestBuiltinCatalog` and the table in `docs/IPERF3-TERMS.md`.
@@ -79,11 +80,11 @@ docker run --rm -p 3000:3000 fyisp-webdev /fyisp-webdev -listen 0.0.0.0:3000 -ho
 - **Commits:** Conventional Commits, lowercase, e.g. `feat(web)!: ...`, `fix(ui): ...`, `docs(readme): ...`. `!` marks a breaking change. The body says why.
 - **PRs:** keep them focused. They are merged with merge commits. Open an issue before large changes.
 - **CI** runs the Docker targets above, the UI tests when the UI changes, and native `go test` on Windows and macOS. The netns suite runs nightly. Known flakes: #37 (macOS Intel timing) and #43 (netns `S2b-provider-lossy`); rerun them once. Write timing tests with `testing/synctest`, not sleeps.
-- **Releases:** pushing a `v*` tag runs `release.yml`.
+- **Releases:** pushing a `v*` tag runs `release.yml`. After tagging, set the new tag everywhere the fixture's release is written (the Dockerfile's header comment and the `dbfixture` stage's `RELEASE`; the comment and `Version` in `internal/store/testdata/genfixture/main.go`; `lastRelease` in `internal/store/upgrade_test.go`; the fixture's file name in the store schema rule above), regenerate the fixture with `dbfixture`, delete the old one and commit.
 
 ## Project policies
 
-- **Roll forward.** No migrations, compat shims or deprecation periods. Remove dead code.
+- **Roll forward,** with additive migrations from the last release's schema. No compat shims or deprecation periods. Remove dead code. fyisp makes no backups: users handle their own.
 - **Docs describe current behaviour**, with no version history. Check every statement against the code.
 - **No telemetry.** A new outbound connection must be documented in README "Privacy" and SECURITY.md.
 - **Never store, log or serve the user's public IP address** (`cmd/fyisp/privacy_test.go`).

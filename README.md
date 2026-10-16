@@ -129,6 +129,20 @@ For its first day fyisp is still learning what's usual for your connection: Home
 
 Home's 11 tiles and what each one checks, the 28 default targets and the profiles that add about 1,400 more are in [What to measure](docs/PROFILES.md); how a tile becomes *Slow*, *Choppy* or *Down*, and how fyisp decides whose fault a problem is, in [How fyisp decides](docs/VERDICTS.md).
 
+### Investigate (traceroutes)
+
+*Investigate* follows one target's path hop by hop, like `mtr`. The *ICMP | TCP 443 | UDP* picker chooses the probes: ICMP echo (like `mtr`), TCP SYNs to port 443 (like `mtr -T -P 443`: the same path and treatment as web traffic, useful when routers filter or deprioritise ICMP) or UDP to port 33434 (like `mtr -u`). None needs admin rights. Each probe type is its own trace, with its own numbers; always-on traces use ICMP, and route changes are recorded for ICMP traces only. Each row is a router, with mtr's columns: *Host* (address and reverse DNS name), *ASN*, *Loss%*, *Snt* (probes sent), *Last*, *Avg*, *Best*, *Wrst* and *StDev* (round trips in ms), and a bar from best to worst with a tick at the average. *More columns* adds *P95*, *Javg* (average jitter) and *Jmax* (worst jitter), and the browser remembers the choice. Over ranges longer than 48 hours fyisp has only hourly summaries, so *Last*, *StDev* and *Jmax* are blank.
+
+- **Loss**: the first hop where real loss starts (it continues to the destination) is marked *loss starts here*. A middle hop that drops replies while the destination doesn't is marked *not real — router rate-limiting*. The line above the table says the same in words. See [Hop loss flags](docs/TRACE-API.md#hop-loss-flags).
+- **Range**: while a trace runs, and for an hour after it finishes, the numbers cover that trace (*This trace* in the range buttons). Pick another range to see more; *This trace* goes back.
+- **Copy report**: the table as `mtr -rwz` text, `mtr -j` JSON or `mtr -C` CSV, for a support ticket or a forum post. The source host is always `fyisp`, never your machine's name or address. The text ends with how fyisp measured: the probe type, the round interval, and at most 1 probe a second per router; for TCP and UDP the JSON also has `type`, `port` and `probe`.
+- **Any public host**: type a name or an IPv4 address in the host box to trace it with the picked probe type, like `mtr <host>`. It must resolve to public addresses only: fyisp refuses names and addresses on your LAN (private, loopback, link-local, carrier-grade NAT, multicast and the like) and says why under the box, and stops a trace whose name later resolves to one. The URL (`#t=host:example.com`) reopens it. The same limits apply as for targets; see [Hosts outside the profile](docs/TRACE-API.md#hosts-outside-the-profile).
+- **Run it yourself**: the same trace as an `mtr` command for the target (`mtr -rwzbc 100 <host>`, with `-T -P 443` or `-u -P 33434` for TCP and UDP), to compare from Linux or macOS (it may need `sudo`), and `pathping -n <host>` (ICMP only) for Windows.
+
+**Platform notes.** Tracing, in any mode, needs fyisp's ICMP socket to start (see [ICMP permissions](#icmp-permissions)); without it no trace runs, and Investigate shows every probe type as unavailable. The TCP and UDP probes themselves need no ping socket: Linux reads the routers' replies to them from the socket's error queue, and macOS gets them on its unprivileged ICMP socket. On **Windows** the default firewall drops the routers' replies to TCP and UDP probes of a standard user, so a TCP trace sends an ICMP echo request and a TCP SYN to port 443 with the same TTL at every hop and names the routers from the ICMP replies (the view says so), and UDP traces aren't offered. Traces are IPv4 only.
+
+Each round stops after 5 silent hops in a row past the last one that answered (like `mtr --max-unknown`), or past the destination once fyisp knows how far it is.
+
 ## Keep it running
 
 fyisp can only tell you about time when it was running. Started from a terminal or the launcher, it stops when you close that window or log out, and Home shows that time as grey bars, and as hatched bands in a tile's chart: *fyisp wasn't running*. To have it start by itself, install the binary once and register it with your system, as below. It then runs in the background whenever you're logged in (or, on Linux and Docker, whenever the machine is on) and you just open <http://127.0.0.1:3000>.
@@ -228,12 +242,13 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
   remove: [YouTube, Netflix]      # also possible: dev-GitHub, Dropbox, OneDrive, Teams-Relay
   ```
 - **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists the names fyisp looks up (Google Meet's TCP check goes to `meet.google.com`).
+- **Hosts traced on request.** *Investigate* traces any public host someone who can open your dashboard types in (within its limits: 4 at once, 12 new traces an hour, about 10 minutes each). That host and the routers on the way see probes from your public IP address, and your DNS resolver sees the name looked up, about once a minute while the trace runs. Its hop numbers age out with the rest of the data, but the host's name stays in the database's index of series. No other service is involved.
 - **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine, which is never stored, logged or returned (see [Wi-Fi or router?](docs/VERDICTS.md#wi-fi-or-router)). The connection type itself is in fyisp's log and in speed-test results.
 - **A screenshot or export you send** shows what it says. Home and *What happened at …?* show no addresses; the Details charts, traceroutes and `fyisp export` include your router's and your provider's addresses.
 
 ## ICMP permissions
 
-fyisp never asks for admin rights. Only the Network path, traceroutes (Investigate, and the always-on ones of `trace: true` targets), speed tests' latency under load and your own ICMP targets use ICMP (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
+fyisp never asks for admin rights. Only the Network path, ICMP traceroutes (Investigate, and the always-on ones of `trace: true` targets), speed tests' latency under load and your own ICMP targets use ICMP (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
 
 ```sh
 sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
@@ -253,7 +268,7 @@ fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 
 - Anyone who can open that address sees the **whole dashboard as you do**: every address and host name. For people outside your household, send a screenshot of Home instead.
 - Any `--allow-host` turns the **admin token** on, even when fyisp listens on 127.0.0.1 only: fyisp logs an "open this link" URL with it at every start (see [Admin token](#admin-token)), and only speed-test controls need the token. That includes you on this machine, through `127.0.0.1` too: open the link once per browser. With `--admin-token=off` as well, speed-test controls are off for everyone.
-- Anyone who can open the dashboard can start traces (*Investigate*), within the limits under [Admin token](#admin-token). Those limits, and fyisp's cap on probes per router, are all that bound a visitor or a script behind your tunnel.
+- Anyone who can open the dashboard can start traces (*Investigate*), to profile targets or any public host, within the limits under [Admin token](#admin-token). Those limits, and fyisp's cap on probes per router, are all that bound a visitor or a script behind your tunnel.
 - A dashboard without an admin token (loopback `--listen`, no `--allow-host`) refuses speed-test controls that come through a proxy or tunnel (requests with `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`): set `--allow-host` or `--admin-token` for one that rewrites the `Host` header to `127.0.0.1`.
 
 ## Admin token
@@ -266,7 +281,7 @@ The speed-test controls (*Test speed now*, *Test every server*, cancel, the sche
 - `--admin-token=<your own>` uses that token instead (the browser asks for it, or open `http://…:3000/#admin=<token>`). `--admin-token=off` turns speed-test controls off for everyone; the dashboard and Investigate keep working.
 - The dashboard is plain HTTP: someone who can watch your network traffic could copy the cookie, as with any HTTP login. Keep it on a network you trust, or use `-p 127.0.0.1:3000:3000`.
 
-*Investigate* needs no token: anyone who can open the dashboard can trace a profile target, for at most 250 rounds, 4 at once and 12 new traces an hour across all viewers. Opening the view starts one only for the owner: on this machine with a loopback dashboard without a token, or in a browser with the admin token (the link, or the token pasted for a speed test); other viewers click *Trace*. A browser with the token skips the hourly limit, not the 4 at once.
+*Investigate* needs no token: anyone who can open the dashboard can trace a profile target or any public host (never an address on your LAN), for at most 250 rounds, 4 at once and 12 new traces an hour across all viewers. Opening the view starts one only for the owner: on this machine with a loopback dashboard without a token, or in a browser with the admin token (the link, or the token pasted for a speed test); other viewers click *Trace*. A browser with the token skips the hourly limit, not the 4 at once.
 
 ## Upgrading
 
@@ -282,7 +297,7 @@ The speed-test controls (*Test speed now*, *Test every server*, cancel, the sche
   (Repeat the options you started it with.)
 - **Installed binary** ([Keep it running](#keep-it-running)): download the new `fyisp-<os>-<arch>`, verify it, replace the old file and restart the service.
 
-fyisp has no database migrations. When a release changes the database format, its first start replaces the old database with an empty one and logs `store: database from an older fyisp (schema vN) replaced with a new empty one`: the history from before the upgrade isn't kept. The release notes say when that happens. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched.
+Upgrading keeps your history. When a release changes the database format, its first start upgrades the database in place and logs `store: database upgraded from schema vN to vM`. A database from before v0.11.0 is the exception: it is replaced with an empty one, and fyisp logs `store: database from an older fyisp (schema vN) replaced with a new empty one`. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched. fyisp makes no backups of its database; to keep one, stop fyisp and copy `fyisp.db` (`fyisp paths` shows where it is).
 
 fyisp does not update itself: run the launcher from a newer release, or replace the binary.
 

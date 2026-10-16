@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"hash/fnv"
 	"math"
 	mrand "math/rand/v2"
 	"net/netip"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,8 +23,9 @@ import (
 // transit), then the destination's cloud. Hop 5 drops ~25% of replies all
 // the time (ICMP rate limiting: the loss does not continue), and every 20
 // minutes, plus during the backfilled ISP outage, hops 3.. lose packets all
-// the way to the destination (real loss). Microsoft-Teams' route changed 12
-// minutes before start, the Cloudflare resolver's during the backfill.
+// the way to the destination (real loss). Two targets lose packets steadily
+// instead (steadyLoss). Microsoft-Teams' route changed 12 minutes before
+// start, the Cloudflare resolver's during the backfill.
 type fakeTrace struct {
 	st    *store.Fake
 	start time.Time
@@ -31,7 +34,7 @@ type fakeTrace struct {
 	hole  window // fyisp "not running": no trace rounds
 
 	mu      sync.Mutex
-	invest  map[string]time.Time
+	invest  map[invKey]time.Time
 	changes []model.RouteChange
 	info    map[netip.Addr]model.HopInfo
 }
@@ -91,7 +94,7 @@ func cloudFor(target string) cloud {
 }
 
 func newFakeTrace(st *store.Fake, start time.Time, backfill time.Duration) *fakeTrace {
-	f := &fakeTrace{st: st, start: start, iv: 10 * time.Second, invest: map[string]time.Time{}, info: map[netip.Addr]model.HopInfo{}}
+	f := &fakeTrace{st: st, start: start, iv: 10 * time.Second, invest: map[invKey]time.Time{}, info: map[netip.Addr]model.HopInfo{}}
 	f.hole, f.isp, _ = windows(backfill, start)
 	add := func(h fhop) {
 		a := netip.MustParseAddr(h.ip)
@@ -124,7 +127,7 @@ func newFakeTrace(st *store.Fake, start time.Time, backfill time.Duration) *fake
 	chg(2, "Microsoft-Teams", start.Add(-12*time.Minute))
 	if backfill > 0 {
 		for _, n := range tracedTargets {
-			f.write(n, start.Add(-backfill), start)
+			f.write(n, model.KindTrace, start.Add(-backfill), start)
 		}
 	}
 	return f
@@ -166,9 +169,18 @@ func (f *fakeTrace) routeAt(target string, t time.Time) ([]netip.Addr, time.Time
 	return f.routeVia(target, true), since
 }
 
-// realLoss reports the loss fraction that starts at hop 3 and continues to
-// the destination at t.
-func (f *fakeTrace) realLoss(t time.Time) float64 {
+// steadyLoss: targets whose loss from hop 3 to the destination is constant.
+// CDN-Cloudflare's is below store.HopLossMin, so no hop gets a loss label
+// but hop 5 (rate-limiting); Google DNS's is above it, so real loss starts
+// at hop 3.
+var steadyLoss = map[string]float64{"CDN-Cloudflare": 0.03, "Google DNS 8.8.8.8": 0.08}
+
+// realLoss reports target's loss fraction that starts at hop 3 and continues
+// to the destination at t.
+func (f *fakeTrace) realLoss(target string, t time.Time) float64 {
+	if l, ok := steadyLoss[target]; ok {
+		return l
+	}
 	if f.isp.has(t) {
 		return 0.35
 	}
@@ -178,8 +190,15 @@ func (f *fakeTrace) realLoss(t time.Time) float64 {
 	return 0.002
 }
 
-// write stores one trace round per interval for target in [from, to).
-func (f *fakeTrace) write(target string, from, to time.Time) {
+// invKey is an on-demand trace: a target and a mode.
+type invKey struct {
+	target string
+	mode   model.TraceMode
+}
+
+// write stores one trace round per interval for target's hop series of
+// kind in [from, to). Every mode sees the same network.
+func (f *fakeTrace) write(target string, kind model.ProbeKind, from, to time.Time) {
 	h := fnv.New64a()
 	h.Write([]byte(target))
 	r := mrand.New(mrand.NewPCG(h.Sum64(), uint64(from.UnixNano())))
@@ -189,10 +208,10 @@ func (f *fakeTrace) write(target string, from, to time.Time) {
 			continue
 		}
 		route, _ := f.routeAt(target, ts)
-		real := f.realLoss(ts)
+		real := f.realLoss(target, ts)
 		for i := range route {
 			hop := i + 1
-			s := model.Sample{Key: model.SeriesKey{Target: target, Kind: model.KindTrace, Hop: uint8(hop)}, Slot: ts}
+			s := model.Sample{Key: model.SeriesKey{Target: target, Kind: kind, Hop: uint8(hop)}, Slot: ts}
 			var base, lossP float64
 			switch {
 			case hop == 1:
@@ -239,19 +258,22 @@ func (f *fakeTrace) run(ctx context.Context) {
 			return
 		case now := <-t.C:
 			f.mu.Lock()
-			targets := append([]string(nil), tracedTargets...)
-			for n, until := range f.invest {
+			var keys []invKey
+			for _, n := range tracedTargets {
+				keys = append(keys, invKey{n, model.TraceICMP})
+			}
+			for k, until := range f.invest {
 				if now.After(until) {
-					delete(f.invest, n)
+					delete(f.invest, k)
 					continue
 				}
-				if !contains(tracedTargets, n) {
-					targets = append(targets, n)
+				if k.mode != model.TraceICMP || !contains(tracedTargets, k.target) {
+					keys = append(keys, k)
 				}
 			}
 			f.mu.Unlock()
-			for _, n := range targets {
-				f.write(n, last, now)
+			for _, k := range keys {
+				f.write(k.target, k.mode.Kind(), last, now)
 			}
 			last = now.Truncate(f.iv)
 		}
@@ -270,15 +292,37 @@ func contains(l []string, s string) bool {
 func (f *fakeTrace) Interval() time.Duration { return f.iv }
 func (f *fakeTrace) Traced() []string        { return append([]string(nil), tracedTargets...) }
 
-func (f *fakeTrace) Investigate(target string, rounds int) (web.Investigation, error) {
+func (f *fakeTrace) Investigate(target string, mode model.TraceMode, rounds int) (web.Investigation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	inv := &fakeInvestigation{start: time.Now(), max: rounds}
 	until := inv.start.Add(time.Duration(rounds) * web.InvestigateInterval)
-	if until.After(f.invest[target]) {
-		f.invest[target] = until
+	if k := (invKey{target, mode}); until.After(f.invest[k]) {
+		f.invest[k] = until
 	}
 	return inv, nil
+}
+
+// fakeResolve resolves a host to trace without DNS: names under .lan are
+// on the LAN (192.168.1.20), "nowhere.example" has no address, any other
+// name gets a public address derived from it.
+func fakeResolve(_ context.Context, host string) ([]netip.Addr, error) {
+	switch {
+	case strings.HasSuffix(host, ".lan"):
+		return []netip.Addr{netip.MustParseAddr("192.168.1.20")}, nil
+	case host == "nowhere.example":
+		return nil, errors.New("no such host")
+	}
+	h := fnv.New32a()
+	h.Write([]byte(host))
+	x := h.Sum32()
+	return []netip.Addr{netip.AddrFrom4([4]byte{93, byte(x), byte(x >> 8), byte(x>>16) | 1})}, nil
+}
+
+// Modes: the fake traces with every mode.
+func (f *fakeTrace) Modes() []web.TraceModeInfo {
+	return []web.TraceModeInfo{{Mode: "icmp", Available: true}, {Mode: "tcp", Port: model.TraceTCPPort, Available: true},
+		{Mode: "udp", Port: model.TraceUDPPort, Available: true}}
 }
 
 // fakeInvestigation counts a round every web.InvestigateInterval.
@@ -311,11 +355,11 @@ func (i *fakeInvestigation) Progress() (int, time.Time) {
 	return n, i.stopped
 }
 
-func (f *fakeTrace) Route(_ context.Context, target string) (model.Route, bool) {
+func (f *fakeTrace) Route(_ context.Context, target string, mode model.TraceMode) (model.Route, bool) {
 	f.mu.Lock()
-	_, inv := f.invest[target]
+	_, inv := f.invest[invKey{target, mode}]
 	f.mu.Unlock()
-	if !contains(tracedTargets, target) && !inv {
+	if (mode != model.TraceICMP || !contains(tracedTargets, target)) && !inv {
 		return model.Route{}, false
 	}
 	hops, since := f.routeAt(target, time.Now())
@@ -337,10 +381,10 @@ func (f *fakeTrace) RouteChanges(_ context.Context, from, to time.Time) ([]model
 
 // Hops computes per-(hop, address) statistics from the stored samples, as
 // the real store does.
-func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time) ([]web.HopStat, error) {
+func (f *fakeTrace) Hops(ctx context.Context, target string, mode model.TraceMode, from, to time.Time) ([]web.HopStat, error) {
 	keys := make([]model.SeriesKey, 16)
 	for i := range keys {
-		keys[i] = model.SeriesKey{Target: target, Kind: model.KindTrace, Hop: uint8(i + 1)}
+		keys[i] = model.SeriesKey{Target: target, Kind: mode.Kind(), Hop: uint8(i + 1)}
 	}
 	type acc struct {
 		hop      int
@@ -350,6 +394,7 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 		prev     float64
 		jit      float64
 		jn       int
+		jmax     float64
 		min, max float64
 		sum      float64
 	}
@@ -382,8 +427,10 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 		a.min, a.max = min(a.min, p.RTTms), max(a.max, p.RTTms)
 		a.rtts = append(a.rtts, p.RTTms)
 		if !math.IsNaN(a.prev) {
-			a.jit += math.Abs(p.RTTms - a.prev)
+			j := math.Abs(p.RTTms - a.prev)
+			a.jit += j
 			a.jn++
+			a.jmax = max(a.jmax, j)
 		}
 		a.prev = p.RTTms
 		return nil
@@ -391,6 +438,8 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 	if err != nil {
 		return nil, err
 	}
+	// The store's loss classification, over per-TTL totals as the store
+	// keeps them.
 	maxHop := 0
 	for h := range hopN {
 		maxHop = max(maxHop, h)
@@ -398,33 +447,43 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 	for h := range hopLost {
 		maxHop = max(maxHop, h)
 	}
-	lossOf := func(h int) float64 {
+	perHop := make([]store.HopStat, maxHop)
+	for i := range perHop {
+		h := i + 1
+		perHop[i] = store.HopStat{Hop: h, N: int64(hopN[h]), Lost: int64(hopLost[h])}
 		if t := hopN[h] + hopLost[h]; t > 0 {
-			return float64(hopLost[h]) / float64(t)
+			perHop[i].Loss = float64(hopLost[h]) / float64(t)
 		}
-		return math.NaN()
 	}
+	store.ClassifyLoss(perHop)
 	var out []web.HopStat
 	for _, a := range accs {
 		hs := web.HopStat{Hop: a.hop, IP: a.ip, Info: f.info[a.ip], N: a.n, Lost: a.lost,
-			Min: math.NaN(), Mean: math.NaN(), Max: math.NaN(), P95: math.NaN(), Jitter: math.NaN()}
+			Min: math.NaN(), Mean: math.NaN(), Max: math.NaN(), P95: math.NaN(), Jitter: math.NaN(),
+			Last: math.NaN(), StDev: math.NaN(), Jmax: math.NaN()}
 		if t := a.n + a.lost; t > 0 {
 			hs.Loss = float64(a.lost) / float64(t)
 		}
 		if a.n > 0 {
+			hs.Last, hs.Jmax = a.rtts[len(a.rtts)-1], a.jmax
+			hs.Mean = a.sum / float64(a.n)
+			var ss float64
+			for _, x := range a.rtts {
+				ss += (x - hs.Mean) * (x - hs.Mean)
+			}
+			hs.StDev = 0
+			if a.n > 1 {
+				hs.StDev = math.Sqrt(ss / float64(a.n-1))
+			}
 			sort.Float64s(a.rtts)
-			hs.Min, hs.Max, hs.Mean = a.min, a.max, a.sum/float64(a.n)
+			hs.Min, hs.Max = a.min, a.max
 			hs.P95 = a.rtts[min(len(a.rtts)-1, int(math.Ceil(0.95*float64(len(a.rtts))))-1)]
 			if a.jn > 0 {
 				hs.Jitter = a.jit / float64(a.jn)
 			}
 		}
-		// Real loss continues to the destination; hop 5's extra loss is the
-		// router rate-limiting its replies. (The fake knows its own model;
-		// the real store compares hops.)
-		if l := lossOf(a.hop); l > 0.005 {
-			hs.LossContinues = a.hop != 5 || l < 0.1
-		}
+		c := perHop[a.hop-1]
+		hs.LossContinues, hs.RateLimited = c.LossContinues, c.RateLimited
 		out = append(out, hs)
 	}
 	return out, nil

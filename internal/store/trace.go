@@ -16,8 +16,11 @@ import (
 // Traceroutes. *SQLite implements trace.Sink:
 //
 //   - Observe stores per-hop samples like any other series, keyed
-//     {Target, KindTrace, Hop}; Options.Interval must return the tracer's
-//     round interval for them (default 5s).
+//     {Target, KindTrace (or KindTraceTCP, KindTraceUDP), Hop};
+//     Options.Interval must return the tracer's round interval for them
+//     (default 5s).
+//   - Routes and route changes are those of the ICMP traces (KindTrace);
+//     the tracer keeps TCP and UDP routes in memory only.
 //   - ObserveHop, ObserveRoute and ObserveRouteChange only touch memory, like
 //     Observe; Flush writes them in its transaction.
 //
@@ -69,6 +72,13 @@ type HopStat struct {
 	MaxMs    float64 `json:"max_ms"`
 	P95Ms    float64 `json:"p95_ms"`
 	JitterMs float64 `json:"jitter_ms"` // mean |difference| of consecutive answered RTTs
+	// LastMs (the newest answered RTT), StDevMs (sample standard deviation
+	// of the answered RTTs, 0 for one) and JmaxMs (the largest |difference|
+	// of consecutive answered RTTs) come from the raw tier only: NaN in the
+	// hourly tier, which does not keep them, and when N == 0.
+	LastMs  float64 `json:"-"`
+	StDevMs float64 `json:"-"`
+	JmaxMs  float64 `json:"-"`
 
 	// LossContinues: this hop's loss is at least HopLossMin and the
 	// destination (the highest TTL with probes in the range) loses at least
@@ -86,6 +96,9 @@ type HopStat struct {
 type TraceReader interface {
 	// Hops returns per-hop statistics of target over [from, to], by TTL.
 	Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error)
+	// HopsKind is Hops for a trace kind (KindTrace, KindTraceTCP or
+	// KindTraceUDP); see SQLite.HopsKind.
+	HopsKind(ctx context.Context, target string, kind model.ProbeKind, route []netip.Addr, from, to time.Time) ([]HopStat, error)
 	// Route returns target's current route.
 	Route(ctx context.Context, target string) (model.Route, bool)
 	// RouteChanges returns the route changes of every target in [from, to],
@@ -579,13 +592,13 @@ func (s *SQLite) hopInfos(ctx context.Context, ips []netip.Addr) (map[netip.Addr
 	return out, nil
 }
 
-// traceKeys returns the KindTrace series of target known to the store.
-func (s *SQLite) traceKeys(target string) []model.SeriesKey {
+// traceKeys returns the hop series of kind of target known to the store.
+func (s *SQLite) traceKeys(target string, kind model.ProbeKind) []model.SeriesKey {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seen := map[model.SeriesKey]bool{}
 	add := func(k model.SeriesKey) {
-		if k.Target == target && k.Kind == model.KindTrace {
+		if k.Target == target && k.Kind == kind {
 			seen[k] = true
 		}
 	}
@@ -610,13 +623,22 @@ func sortedKeys(m map[model.SeriesKey]bool) []model.SeriesKey {
 	return out
 }
 
-// Hops returns per-hop statistics of target over [from, to]: raw samples
-// for ranges up to RawMaxRange, else the hourly summaries (see HopStat).
+// Hops returns per-hop statistics of target's ICMP trace (KindTrace) over
+// [from, to]: raw samples for ranges up to RawMaxRange, else the hourly
+// summaries (see HopStat).
 func (s *SQLite) Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error) {
+	return s.HopsKind(ctx, target, model.KindTrace, nil, from, to)
+}
+
+// HopsKind is Hops over the hop series of a trace kind. The store keeps
+// the routes of profile targets' KindTrace series only; for the other kinds,
+// and when route is given (a host outside the profile), route (the
+// tracer's, nil: unknown) names the hops.
+func (s *SQLite) HopsKind(ctx context.Context, target string, kind model.ProbeKind, route []netip.Addr, from, to time.Time) ([]HopStat, error) {
 	if to.Before(from) {
 		return nil, fmt.Errorf("store: range ends before it starts")
 	}
-	keys := s.traceKeys(target)
+	keys := s.traceKeys(target, kind)
 	accs := map[uint8]*hopAcc{}
 	if to.Sub(from) <= RawMaxRange {
 		err := s.Raw(ctx, keys, from, to, func(p RawPoint) error {
@@ -641,12 +663,15 @@ func (s *SQLite) Hops(ctx context.Context, target string, from, to time.Time) ([
 	}); err != nil {
 		return nil, err
 	}
-	route, haveRoute := s.Route(ctx, target)
+	if kind != model.KindTrace || route != nil {
+		return buildHopStats(ctx, accs, model.Route{Hops: route}, route != nil, nil, from, to, s.hopInfos)
+	}
+	r, haveRoute := s.Route(ctx, target)
 	changes, err := s.routeChanges(ctx, target, from, time.UnixMilli(math.MaxInt64/2))
 	if err != nil {
 		return nil, err
 	}
-	return buildHopStats(ctx, accs, route, haveRoute, changes, from, to, s.hopInfos)
+	return buildHopStats(ctx, accs, r, haveRoute, changes, from, to, s.hopInfos)
 }
 
 // hourlySummaries calls fn with every hourly summary (and its unix hour) of
@@ -731,6 +756,12 @@ type hopAcc struct {
 	jitN     int64
 	prev     float64
 	hasPrev  bool
+	// raw tier only (see HopStat.LastMs)
+	raw   bool
+	last  float64
+	wMean float64 // Welford's running mean and sum of squared deviations
+	wM2   float64
+	jmax  float64
 }
 
 type weightedP95 struct {
@@ -752,11 +783,18 @@ func (a *hopAcc) addRTT(ms float64) {
 func (a *hopAcc) addRaw(p RawPoint) {
 	switch {
 	case !p.Lost:
+		a.raw = true
 		a.addRTT(p.RTTms)
 		a.vals = append(a.vals, p.RTTms)
+		d := p.RTTms - a.wMean
+		a.wMean += d / float64(a.n)
+		a.wM2 += d * (p.RTTms - a.wMean)
+		a.last = p.RTTms
 		if a.hasPrev {
-			a.jitSum += math.Abs(p.RTTms - a.prev)
+			j := math.Abs(p.RTTms - a.prev)
+			a.jitSum += j
 			a.jitN++
+			a.jmax = max(a.jmax, j)
 		}
 		a.prev, a.hasPrev = p.RTTms, true
 	case p.Reason == model.ReasonGap:
@@ -784,7 +822,8 @@ func (a *hopAcc) addSummary(u *summary) {
 }
 
 func (a *hopAcc) stat(hop int) HopStat {
-	st := HopStat{Hop: hop, N: a.n, Lost: a.lost}
+	nan := math.NaN()
+	st := HopStat{Hop: hop, N: a.n, Lost: a.lost, LastMs: nan, StDevMs: nan, JmaxMs: nan}
 	if t := a.n + a.lost; t > 0 {
 		st.Loss = float64(a.lost) / float64(t)
 	}
@@ -792,6 +831,12 @@ func (a *hopAcc) stat(hop int) HopStat {
 		return st
 	}
 	st.MinMs, st.MaxMs, st.MeanMs = a.min, a.max, a.sum/float64(a.n)
+	if a.raw {
+		st.LastMs, st.JmaxMs, st.StDevMs = a.last, a.jmax, 0
+		if a.n > 1 {
+			st.StDevMs = math.Sqrt(a.wM2 / float64(a.n-1))
+		}
+	}
 	if len(a.vals) > 0 {
 		v := slices.Clone(a.vals)
 		slices.Sort(v)
@@ -864,7 +909,7 @@ func buildHopStats(ctx context.Context, accs map[uint8]*hopAcc, route model.Rout
 		}
 		out = append(out, st)
 	}
-	classifyLoss(out)
+	ClassifyLoss(out)
 	if len(lookup) > 0 && infos != nil {
 		m, err := infos(ctx, lookup)
 		if err != nil {
@@ -883,9 +928,10 @@ func buildHopStats(ctx context.Context, accs map[uint8]*hopAcc, route model.Rout
 	return out, nil
 }
 
-// classifyLoss sets LossContinues and RateLimited. The destination is the
-// highest TTL with probes in the range.
-func classifyLoss(hs []HopStat) {
+// ClassifyLoss sets LossContinues and RateLimited from N, Lost and Loss of
+// hs, which is sorted by Hop. The destination is the highest TTL with probes
+// in the range. Hops reuses it, and so does fyisp-webdev.
+func ClassifyLoss(hs []HopStat) {
 	dest := -1
 	for i := range hs {
 		if hs[i].N+hs[i].Lost > 0 {

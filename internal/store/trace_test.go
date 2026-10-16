@@ -200,6 +200,8 @@ func TestClassifyLoss(t *testing.T) {
 		{"destination loses half", []hop{{100, 0}, {60, 40}, {80, 20}}, []bool{false, true, true}, []bool{false, false, false}},
 		{"destination loses less than half", []hop{{100, 0}, {60, 40}, {81, 19}}, []bool{false, false, true}, []bool{false, true, false}},
 		{"below 5 points ignored", []hop{{100, 0}, {96, 4}, {96, 4}}, []bool{false, false, false}, []bool{false, false, false}},
+		{"steady 3 points from hop 3, rate-limited hop 4", []hop{{100, 0}, {100, 0}, {97, 3}, {72, 28}, {97, 3}, {97, 3}},
+			[]bool{false, false, false, false, false, false}, []bool{false, false, false, true, false, false}},
 		{"exactly 5 points", []hop{{95, 5}, {95, 5}}, []bool{true, true}, []bool{false, false}},
 		{"destination only", []hop{{100, 0}, {100, 0}, {50, 50}}, []bool{false, false, true}, []bool{false, false, false}},
 		{"silent hop", []hop{{100, 0}, {0, 100}, {100, 0}}, []bool{false, false, false}, []bool{false, true, false}},
@@ -216,7 +218,7 @@ func TestClassifyLoss(t *testing.T) {
 				}
 				hs = append(hs, st)
 			}
-			classifyLoss(hs)
+			ClassifyLoss(hs)
 			for i := range hs {
 				if hs[i].LossContinues != c.continues[i] || hs[i].RateLimited != c.limited[i] {
 					t.Errorf("hop %d (loss %.2f): continues %v limited %v, want %v %v",
@@ -263,8 +265,11 @@ func TestHops(t *testing.T) {
 
 	// Expected numbers straight from the samples.
 	type exp struct {
-		n, lost int64
-		rtts    []float64
+		n, lost    int64
+		rtts       []float64
+		last, jmax float64
+		prev       float64
+		hasPrev    bool
 	}
 	want := map[uint8]*exp{}
 	for _, x := range samples {
@@ -276,8 +281,15 @@ func TestHops(t *testing.T) {
 		switch {
 		case !x.Lost:
 			e.n++
-			e.rtts = append(e.rtts, float64(x.RTT)/1e6)
-		case x.Reason != model.ReasonGap:
+			ms := float64(x.RTT) / 1e6
+			e.rtts = append(e.rtts, ms)
+			if e.hasPrev {
+				e.jmax = max(e.jmax, math.Abs(ms-e.prev))
+			}
+			e.last, e.prev, e.hasPrev = ms, ms, true
+		case x.Reason == model.ReasonGap:
+			e.hasPrev = false
+		default:
 			e.lost++
 		}
 	}
@@ -318,8 +330,22 @@ func TestHops(t *testing.T) {
 				if h.JitterMs <= 0 {
 					t.Fatalf("%s: hop %d jitter %v", name, h.Hop, h.JitterMs)
 				}
+				mean := sum / float64(len(v))
+				var ss float64
+				for _, x := range v {
+					ss += (x - mean) * (x - mean)
+				}
+				if sd := math.Sqrt(ss / float64(len(v)-1)); !closeTo(h.StDevMs, sd) {
+					t.Fatalf("%s: hop %d stdev %v, want %v", name, h.Hop, h.StDevMs, sd)
+				}
+				if !closeTo(h.LastMs, e.last) || !closeTo(h.JmaxMs, e.jmax) || h.JmaxMs < h.JitterMs {
+					t.Fatalf("%s: hop %d last %v jmax %v, want %v %v", name, h.Hop, h.LastMs, h.JmaxMs, e.last, e.jmax)
+				}
 			} else if h.P95Ms < h.MinMs || h.P95Ms > h.MaxMs || h.JitterMs != 0 {
 				t.Fatalf("%s: hourly hop %d p95 %v jitter %v", name, h.Hop, h.P95Ms, h.JitterMs)
+			} else if !math.IsNaN(h.LastMs) || !math.IsNaN(h.StDevMs) || !math.IsNaN(h.JmaxMs) {
+				// The hourly summaries do not keep them.
+				t.Fatalf("%s: hourly hop %d last %v stdev %v jmax %v, want NaN", name, h.Hop, h.LastMs, h.StDevMs, h.JmaxMs)
 			}
 			if h.IP != newR[i] {
 				t.Fatalf("%s: hop %d ip %v", name, h.Hop, h.IP)
@@ -350,13 +376,30 @@ func TestHops(t *testing.T) {
 	check("sqlite flushed", s, false)
 	check("sqlite hourly", s, true)
 
+	// A TCP trace's hops are their own series, named by the route passed
+	// in (the store keeps ICMP routes only); ICMP's stay as they were.
+	tcpR := []netip.Addr{ip("192.168.1.1"), ip("140.82.112.4")}
+	for i := range 4 {
+		for hop := 1; hop <= 2; hop++ {
+			s.Observe(model.Sample{Key: model.SeriesKey{Target: "gh", Kind: model.KindTraceTCP, Hop: uint8(hop)},
+				Slot: now.Add(-time.Minute + time.Duration(i)*5*time.Second), RTT: time.Duration(hop) * time.Millisecond})
+		}
+	}
+	hs, err := s.HopsKind(ctx, "gh", model.KindTraceTCP, tcpR, now.Add(-time.Hour), now)
+	if err != nil || len(hs) != 2 || hs[1].N != 4 || hs[1].IP != tcpR[1] || hs[0].MeanMs != 1 {
+		t.Fatalf("tcp hops: %+v %v", hs, err)
+	}
+	if hs, _ := s.Hops(ctx, "gh", now.Add(-time.Hour), now); len(hs) == 0 || hs[1].N == 4 {
+		t.Fatalf("icmp hops mixed with tcp: %+v", hs)
+	}
+
 	// Unknown target: nothing.
 	if hs, err := s.Hops(ctx, "nope", t0, now); err != nil || len(hs) != 0 {
 		t.Fatalf("unknown target: %v %v", hs, err)
 	}
 	// A current route longer than the samples shows its hops, empty.
 	s.ObserveRoute(model.Route{Target: "gh", Hops: append(slices.Clone(newR), ip("140.82.112.4"))})
-	if hs, _ := s.Hops(ctx, "gh", t0, t0.Add(2*time.Hour)); len(hs) != 5 || hs[4].N+hs[4].Lost != 0 || hs[4].IP != ip("140.82.112.4") {
+	if hs, _ := s.Hops(ctx, "gh", t0, t0.Add(2*time.Hour)); len(hs) != 5 || hs[4].N+hs[4].Lost != 0 || hs[4].IP != ip("140.82.112.4") || !math.IsNaN(hs[4].LastMs) {
 		t.Fatalf("route-only hop: %+v", hs)
 	}
 }
@@ -657,5 +700,38 @@ func TestTraceFlushFailure(t *testing.T) {
 	s.mu.Unlock()
 	if left != 0 {
 		t.Fatalf("%d items still queued", left)
+	}
+}
+
+// TestHopAccMtrStats: mtr's Last, StDev and Jmax in the raw tier; a gap
+// (not measured) breaks the run of consecutive RTTs, a loss does not. The
+// hourly tier has none of them.
+func TestHopAccMtrStats(t *testing.T) {
+	k := model.SeriesKey{Target: "x", Kind: model.KindTrace, Hop: 1}
+	rtt := func(ms float64) RawPoint { return RawPoint{Key: k, RTTms: ms} }
+	a := &hopAcc{}
+	for _, p := range []RawPoint{rtt(10), rtt(12), {Key: k, Lost: true, Reason: model.ReasonTimeout}, rtt(11),
+		{Key: k, Lost: true, Reason: model.ReasonGap}, rtt(20), rtt(14)} {
+		a.addRaw(p)
+	}
+	st := a.stat(1)
+	// RTTs 10 12 11 20 14: mean 13.4, squared deviations 11.56+1.96+5.76+43.56+0.36 = 63.2.
+	if st.N != 5 || st.Lost != 1 || !closeTo(st.LastMs, 14) || !closeTo(st.JmaxMs, 6) || !closeTo(st.StDevMs, math.Sqrt(63.2/4)) {
+		t.Fatalf("raw: %+v", st)
+	}
+	one := &hopAcc{}
+	one.addRaw(rtt(7))
+	if st := one.stat(1); st.LastMs != 7 || st.StDevMs != 0 || st.JmaxMs != 0 {
+		t.Fatalf("one RTT: %+v", st)
+	}
+	none := &hopAcc{}
+	none.addRaw(RawPoint{Key: k, Lost: true, Reason: model.ReasonTimeout})
+	if st := none.stat(1); !math.IsNaN(st.LastMs) || !math.IsNaN(st.StDevMs) || !math.IsNaN(st.JmaxMs) {
+		t.Fatalf("no answers: %+v", st)
+	}
+	h := &hopAcc{}
+	h.addSummary(&summary{n: 3, min: 1000, max: 3000, sum: 6000, p95: 3000})
+	if st := h.stat(1); st.N != 3 || !math.IsNaN(st.LastMs) || !math.IsNaN(st.StDevMs) || !math.IsNaN(st.JmaxMs) {
+		t.Fatalf("hourly: %+v", st)
 	}
 }

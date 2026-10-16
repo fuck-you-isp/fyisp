@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo/hops"
 )
 
 // manualClock is a clock the simulation sets.
@@ -51,18 +52,19 @@ func newSim(t *testing.T, f *fakeNet, o Options, n int) *sim {
 	f.jitter = true
 	o.Log, o.Now = quiet(), clock.Now
 	o.open = nil
+	o.support = allModes
 	o.ReverseDNS = func(context.Context, netip.Addr) string { return "" }
 	tr := newTracer(o)
 	sink := &recSink{}
 	tr.sink, tr.prober = sink, f
 	tr.hops = newHopCache(tr.o, sink)
-	tr.targets = map[string]*target{}
+	tr.targets = map[tkey]*target{}
 	s := &sim{t: t, tr: tr, f: f, sink: sink, clock: clock}
 	for i := range n {
 		host := fmt.Sprintf("1.1.1.%d", i+1)
 		st := &target{t: model.Target{Name: fmt.Sprintf("t%d", i), Host: host, Trace: true}, host: host,
 			idx: i, phase: float64(i) / float64(n), wake: make(chan struct{}, 1), sessions: map[uint64]*session{}}
-		tr.targets[st.t.Name] = st
+		tr.targets[tkey{st.t.Name, model.TraceICMP}] = st
 		s.targets = append(s.targets, st)
 	}
 	return s
@@ -171,6 +173,51 @@ func (s *sim) route(st *target) []netip.Addr {
 	st.rmu.Lock()
 	defer st.rmu.Unlock()
 	return slices.Clone(st.route.Hops)
+}
+
+// Traces with different modes never share a measurement (a router may
+// treat ICMP, TCP and UDP differently), but the per-router cap counts all of
+// them: three modes every 2.5s would ask each router for 1.2 probes/s.
+func TestModesShareNothing(t *testing.T) {
+	f := newFakeNet(gwIP, isp1IP, isp2IP)
+	s := newSim(t, f, Options{Revalidate: 1000}, 6)
+	modes := []model.TraceMode{model.TraceICMP, model.TraceTCP, model.TraceUDP}
+	tps := map[model.TraceMode]hops.Transport{model.TraceICMP: 0, model.TraceTCP: hops.TCP, model.TraceUDP: hops.UDP}
+	for i, st := range s.targets {
+		st.mode = modes[i%3]
+		s.investigate(st)
+	}
+	const rounds = 24
+	s.run(simStart, simStart.Add(rounds*DefaultInvestigate))
+	byRTT := map[time.Duration]probeRec{}
+	for _, r := range f.log {
+		byRTT[r.rtt] = r
+	}
+	measured := map[model.TraceMode]int{}
+	for i, st := range s.targets {
+		for k, x := range s.samplesBy(st.t.Name) {
+			if x.Key.Kind != st.mode.Kind() {
+				t.Fatalf("%s: kind %v, want %v", st.t.Name, x.Key.Kind, st.mode.Kind())
+			}
+			if r := byRTT[x.RTT]; r.tp != tps[st.mode] {
+				t.Errorf("%s (%s) slot %v hop %d: measured by a probe of transport %d", st.t.Name, st.mode, k.slot, k.hop, r.tp)
+			}
+			if k.hop == 1 {
+				measured[modes[i%3]]++
+			}
+		}
+	}
+	for _, m := range modes {
+		if measured[m] == 0 {
+			t.Errorf("%s: hop 1 never measured", m)
+		}
+	}
+	for _, r := range []string{gwIP, isp1IP, isp2IP} {
+		checkCap(t, r, s.probesAt(r, simStart))
+	}
+	if routes := s.sink.routes; len(routes) == 0 || slices.ContainsFunc(routes, func(r model.Route) bool { return r.Target != "t0" && r.Target != "t3" }) {
+		t.Errorf("routes reported for TCP or UDP traces: %d routes", len(routes))
+	}
 }
 
 // Seven traces share three hops: each shared hop is probed exactly once per
@@ -315,8 +362,8 @@ func TestSharedHopRouteChange(t *testing.T) {
 	per := map[string]int{}
 	for _, c := range ch {
 		per[c.Target]++
-		want := addrs(gwIP, "62.5.5.5", isp2IP, s.tr.targets[c.Target].host)
-		if c.FirstDiff != 2 || !slices.Equal(c.To, want) || !slices.Equal(c.From, addrs(gwIP, isp1IP, isp2IP, s.tr.targets[c.Target].host)) {
+		want := addrs(gwIP, "62.5.5.5", isp2IP, s.tr.targets[tkey{c.Target, model.TraceICMP}].host)
+		if c.FirstDiff != 2 || !slices.Equal(c.To, want) || !slices.Equal(c.From, addrs(gwIP, isp1IP, isp2IP, s.tr.targets[tkey{c.Target, model.TraceICMP}].host)) {
 			t.Errorf("change %+v", c)
 		}
 		if d := c.At.Sub(changed); d > 8*iv {

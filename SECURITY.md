@@ -18,7 +18,8 @@ Only the latest release receives security fixes.
 ## What leaves your machine
 
 fyisp has no telemetry and no share link: it talks only to its probe
-targets (and, by traceroute, the routers on the way to them), your DNS
+targets (and, by traceroute, the routers on the way to them), public hosts
+a dashboard viewer asks *Investigate* to trace (below), your DNS
 resolver and, if you turn speed tests on, iperf3 servers. Every probe target, TCP or UDP, sees
 your public IP address, as any website you visit does.
 
@@ -51,28 +52,47 @@ first, then scheduled ones.
 
 On-demand traces (*Investigate*) are open to anyone who can open the
 dashboard, behind the same origin and the CSRF token: no admin token, on
-any dashboard, through a proxy or not. A trace re-runs fyisp's own
-traceroute against a target the viewer can already see, so it reveals
-nothing new. The safeguards are:
+any dashboard, through a proxy or not. A trace runs fyisp's traceroute
+against a profile target or any public host the viewer names, as `mtr`
+would from this machine: so a viewer can make this machine send trace
+probes to public hosts of their choice, within the budgets below, and see
+the path from your connection to them. It can't reach your LAN. The
+safeguards are:
 
-- only the profile's target names are accepted, never a host or address;
+- a profile target name, or a host (a DNS name or an IPv4 address) whose
+  every IPv4 address is public: names are resolved with the system
+  resolver first, and a host that is or resolves to a private, loopback,
+  link-local, carrier-grade NAT (100.64/10), multicast, broadcast,
+  reserved, benchmarking or documentation address is refused without
+  naming the address. IPv6 is not traced. The tracer checks every later
+  resolution too and stops the trace if the name starts resolving to such
+  an address (DNS rebinding);
+- the ports are fixed: TCP traces go to port 443 only, UDP traces to
+  33434; there is no port parameter, so it can't scan ports;
 - each trace stops by itself after 250 rounds (about 10 minutes); re-posting
   doesn't extend it;
 - at most 4 run at once;
-- at most 12 new traces start in a rolling hour, across all targets and
-  viewers (429 `rate_limited`); a request carrying the admin token skips
+- at most 12 new traces start in a rolling hour, across all targets,
+  hosts and viewers (429 `rate_limited`), checked before a host is looked
+  up; a request carrying the admin token skips
   this budget, not the 4-at-once cap. So viewers can hold all 4 slots for
   about 31 minutes an hour (12 traces of about 10 minutes, 4 at a time),
   and meanwhile even the token holder gets `busy`;
 - the per-router probe cap is unchanged;
-- the route takes exactly one `target` parameter and no body (a declared
-  length, chunking or anything read is refused), is never cached, and its
-  responses carry only the trace's state (target name, rounds, times);
+- the route takes exactly one `target` or `host` parameter, an optional
+  `mode` (`icmp`, `tcp` or `udp`) and no body (a declared length,
+  chunking or anything read is refused), is never cached, and its
+  responses carry only the trace's state (target name, mode, rounds,
+  times);
+- a host's hop numbers are stored under its name (`host:example.com`)
+  and age out with the rest of the data, but the name stays in the
+  database's index of series; its route stays in memory;
 - client addresses are never logged.
 
 Behind a tunnel, client addresses can't be trusted, so these limits (the
-hourly budget, the 4 slots, 250 rounds and the per-router cap) are the
-only bounds on a visitor or a script that starts traces.
+hourly budget, the 4 slots, 250 rounds, the public-address check and the
+per-router cap) are the only bounds on a visitor or a script that starts
+traces.
 
 The dashboard's controls:
 
@@ -80,7 +100,7 @@ The dashboard's controls:
 |---|---|---|---|---|---|
 | GET UI, `/api/*`, `/metrics` | yes | - | no | no | read-only |
 | POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes, where the dashboard has one | yes, on a dashboard without a token | off for everyone when reachable from elsewhere with `--admin-token=off`; one queue, one test at a time |
-| POST `/api/investigate` | yes | yes | not needed (with it, a request skips the hourly budget) | no | the safeguards above |
+| POST `/api/investigate` (`target=` or `host=`, optional `mode=`) | yes | yes | not needed (with it, a request skips the hourly budget) | no | the safeguards above: public hosts only, fixed ports, 4 at once, 12 an hour, 250 rounds |
 | POST/DELETE `/api/admin/session` | yes | yes | POST needs it | - | 404 when no token is set |
 
 ## Exposing the dashboard
@@ -114,8 +134,9 @@ In scope, for example:
 - bypasses of the dashboard's protections (Host allowlist, CSRF, the
   admin token on speed-test controls, the proxy-header refusal for them),
   or of the on-demand trace safeguards above (tracing anything but a
-  profile target, more than 4 at once, past 250 rounds, more than 12 new
-  traces an hour without the admin token);
+  profile target or a public address, another port, more than 4 at once,
+  past 250 rounds, more than 12 new traces an hour without the admin
+  token);
 - ways for a remote party to make fyisp run commands, read or write files, or
   exhaust memory or disk;
 - supply-chain issues in the release process (launchers, checksums, images).

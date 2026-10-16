@@ -30,7 +30,7 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 | GET | `api/calls` | the Calls view | [below](#get-apicalls) |
 | GET | `api/trace` | a traced target's route, hop statistics and route changes | [below](#get-apitrace-and-apitracepanel) |
 | GET | `api/trace/panel` | per-hop chart data for a traced target | [below](#get-apitrace-and-apitracepanel) |
-| POST | `api/investigate` | start an on-demand trace | [TRACE-API.md](TRACE-API.md) |
+| POST | `api/investigate` | start an on-demand trace of a profile target or any public host | [TRACE-API.md](TRACE-API.md) |
 | GET | `api/speed` | speed tests: summary, rows, windows, queue, running test | [SPEEDTEST-API.md](SPEEDTEST-API.md) |
 | POST | `api/speed/run`, `api/speed/cancel`, `api/speed/config` | the speed-test controls | [SPEEDTEST-API.md](SPEEDTEST-API.md) |
 | POST, DELETE | `api/admin/session` | swap the admin token for a cookie, or sign out | [below](#post-and-delete-apiadminsession) |
@@ -76,11 +76,11 @@ No parameters. `profileJSON` in `internal/web/api.go`: `name`, `features` (`trac
 
 ### GET `api/trace` and `api/trace/panel`
 
-`api/trace` takes `target`, `from` and `to` (default the last 30 minutes) and returns the target's current `route` (`since`, `hops`), per-hop statistics (`hops`: loss, min, mean, max, p95, jitter), the route `changes` in the range, newest first, and the `investigation` while one runs or for an hour after (`traceJSON` in `internal/web/trace.go`). A hop has `hop` and, when known, `ip`, `rdns`, `asn` and `owner`.
+`api/trace` takes `target` (a profile target, or a host's trace such as `host:example.com`, see [TRACE-API.md](TRACE-API.md#hosts-outside-the-profile)), `mode` (`icmp`, the default, `tcp` or `udp`: which trace, see [TRACE-API.md](TRACE-API.md#probe-types)), `from` and `to` (default the last 30 minutes) and returns the `mode` and its `port` (TCP, UDP), the modes this machine supports (`modes`, each with `available` and, when off, a `reason`: `windows_firewall`, `os` or `icmp_unavailable`, see [TRACE-API.md](TRACE-API.md#probe-types)), the target's bare `host` name or address (never a port or path; left out for the gateway and the ISP edge), the always-on round interval `interval_ms`, its current `route` (`since`, `hops`), per-hop statistics (`hops`: `n`, `lost`, `loss`, `min`, `mean`, `max`, `p95`, `jitter`, `last`, `stdev` and `jmax`, see [TRACE-API.md](TRACE-API.md#hop-statistics), and the loss flags `loss_continues` and `rate_limited`, see [TRACE-API.md](TRACE-API.md#hop-loss-flags)), the route `changes` in the range, newest first (ICMP only), and the `investigation` of that mode while one runs or for an hour after (`traceJSON` in `internal/web/trace.go`). A hop has `hop` and, when known, `ip`, `rdns`, `asn` and `owner`.
 
-`api/trace/panel` takes `target`, `hops` (e.g. `1,4,12`; default every hop of the current route), `from`, `to` and `points`, and answers in `api/panel`'s format with one series per hop.
+`api/trace/panel` takes `target`, `mode`, `hops` (e.g. `1,4,12`; default every hop of the current route), `from`, `to` and `points`, and answers in `api/panel`'s format with one series per hop (kind `trace`, `trace_tcp` or `trace_udp`).
 
-Both answer 404 when tracing is off or the target is not a profile target.
+Both answer 404 when tracing is off or the target is neither a profile target nor a valid host's trace name (`host:<host>`).
 
 ### POST and DELETE `api/admin/session`
 
@@ -121,7 +121,7 @@ The Go runtime's `go_*` and `process_*` series are there too.
 
 ## `fyisp export`
 
-`fyisp export` writes the stored samples as CSV to stdout, or to a file with `-o` (created with mode 0600). It reads what the running fyisp has written to disk, which it does every minute. Flags: `--from` and `--to` (RFC 3339, `YYYY-MM-DD`, or an age like `24h` or `7d`; default all the data), `--target` and `--kind` (`https`, `tcp`, `icmp`, `trace`, `udp`, `udp_jitter`, `udp_loss`), each repeatable or comma-separated, and `--data-dir`. In Docker: `docker exec fyisp /fyisp export --from 7d > fyisp.csv`.
+`fyisp export` writes the stored samples as CSV to stdout, or to a file with `-o` (created with mode 0600). It reads what the running fyisp has written to disk, which it does every minute. Flags: `--from` and `--to` (RFC 3339, `YYYY-MM-DD`, or an age like `24h` or `7d`; default all the data), `--target` and `--kind` (`https`, `tcp`, `icmp`, `trace`, `trace_tcp`, `trace_udp`, `udp`, `udp_jitter`, `udp_loss`), each repeatable or comma-separated, and `--data-dir`. In Docker: `docker exec fyisp /fyisp export --from 7d > fyisp.csv`.
 
 **Samples**, one row per stored slot:
 
@@ -131,7 +131,7 @@ github,tcp,2026-09-26T12:00:15.000Z,,1,timeout,
 github,trace,2026-09-26T12:00:00.000Z,8.2,0,,3
 ```
 
-`ts` is the slot start in UTC, with milliseconds. `rtt_ms` is set only for measured slots. `lost` is 0 or 1, and empty for slots that weren't measured (fyisp was stopped, the machine slept), which are not losses. `reason` is why a probe was lost. `hop` is a traceroute hop's TTL (kind `trace`) and empty for every other kind.
+`ts` is the slot start in UTC, with milliseconds. `rtt_ms` is set only for measured slots. `lost` is 0 or 1, and empty for slots that weren't measured (fyisp was stopped, the machine slept), which are not losses. `reason` is why a probe was lost. `hop` is a traceroute hop's TTL (kinds `trace`, `trace_tcp` and `trace_udp`) and empty for every other kind.
 
 **Speed tests** (`--speedtests`), one row per test, oldest first:
 

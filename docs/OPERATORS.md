@@ -1,4 +1,8 @@
-# For iperf3 server operators
+# For operators
+
+What fyisp sends to servers it does not run: [iperf3 servers](#for-iperf3-server-operators) and [traced hosts and routers](#for-operators-of-traced-hosts-and-routers). STUN servers are in [STUN-TERMS.md](STUN-TERMS.md).
+
+## For iperf3 server operators
 
 fyisp is a home internet monitor. If a user turns its speed tests on (they are off by default), it runs iperf3 tests against public iperf3 servers, yours possibly among them, to see when the user's connection slows down during the day.
 
@@ -15,3 +19,15 @@ fyisp is a home internet monitor. If a user turns its speed tests on (they are o
 **When your server is busy** (ACCESS_DENIED, or refusing), fyisp tries at most 2 other ports, then another provider. After 3 busy scheduled tests in a row it leaves your server alone for 6 hours.
 
 **To have your server removed:** open an issue at https://github.com/fuck-you-isp/fyisp/issues, or, to ask privately, use GitHub's private reporting on the Security tab (see [SECURITY.md](../SECURITY.md)). Removal ships in the next release; until then users can stop testing it with `--speedtest-skip=<server id>` (the ids are in [`internal/profile/catalog/iperf3/`](../internal/profile/catalog/iperf3/)). The list of operators and what fyisp sends is in [`IPERF3-TERMS.md`](IPERF3-TERMS.md).
+
+## For operators of traced hosts and routers
+
+A user's *Investigate* view (traceroutes, like `mtr`) probes the path to one of the targets in their profile, or to any public host that someone who can open their dashboard types in, yours possibly among them: hop by hop, one round every 2.5 seconds, for at most 250 rounds (about 10 minutes), then it stops by itself. At most 4 such traces run at once per install, and at most 12 start per hour, targets and typed hosts together. A typed host must resolve to public IPv4 addresses only, and is looked up about once a minute while it is traced. Always-on traces (`trace: true` in the user's profile) run one round every 5 seconds with ICMP only.
+
+**What you will see:**
+- **ICMP** (the default): echo requests with a low TTL, 16 bytes of payload starting with a random tag and `fyisp-tr`.
+- **TCP**, if the user picks *TCP 443*: TCP SYNs to port 443 with a low TTL, from an ordinary socket. When one reaches your host the handshake may complete, but fyisp then resets it at once (`SO_LINGER 0`, a RST); a SYN without an answer is reset within about a second, before it would be retransmitted. None is left half-open or open. On Windows each TCP probe is an ICMP echo request and a TCP SYN with the same TTL, so a router gets 2 packets per counted probe. A firewall or IDS may log them as short connection attempts.
+- **UDP**, if the user picks *UDP*: datagrams of 8 bytes (`fyisp-tr`) to port 33434 with a low TTL. A host answers them with ICMP port unreachable.
+
+Each probe goes out once per round per hop; the destination gets at most one probe per round, plus up to 5 more past it when it does not answer. **Routers** on the way get at most 1 probe a second from one install, over all of its traces and probe types together (with a burst of 2), and hops that several traces of the same probe type share are probed once per round for all of them.
+

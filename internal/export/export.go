@@ -263,7 +263,7 @@ func selectKeys(ctx context.Context, r store.Reader, o Options) ([]model.SeriesK
 
 // hopText is the hop column: the TTL of a trace hop, else empty.
 func hopText(k model.SeriesKey) string {
-	if k.Kind != model.KindTrace {
+	if !k.Kind.IsTrace() {
 		return ""
 	}
 	return strconv.Itoa(int(k.Hop))

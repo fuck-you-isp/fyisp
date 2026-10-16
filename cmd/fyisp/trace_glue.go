@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"net/netip"
+	"runtime"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo/hops"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/web"
@@ -54,8 +57,14 @@ func newWebTrace(st store.TraceReader, tr trace.Tracer, prof *model.Profile) *we
 	return w
 }
 
-func (w *webTrace) Hops(ctx context.Context, target string, from, to time.Time) ([]web.HopStat, error) {
-	hs, err := w.st.Hops(ctx, target, from, to)
+func (w *webTrace) Hops(ctx context.Context, target string, mode model.TraceMode, from, to time.Time) ([]web.HopStat, error) {
+	var route []netip.Addr // the store keeps profile targets' ICMP routes only
+	if _, host := model.HostOf(target); mode != model.TraceICMP || host {
+		if r, ok := w.tr.Route(target, mode); ok {
+			route = r.Hops
+		}
+	}
+	hs, err := w.st.HopsKind(ctx, target, mode.Kind(), route, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +77,8 @@ func (w *webTrace) Hops(ctx context.Context, target string, from, to time.Time) 
 		o := web.HopStat{
 			Hop: h.Hop, IP: ip, N: int(h.N), Lost: int(h.Lost), Loss: h.Loss,
 			Min: h.MinMs, Mean: h.MeanMs, Max: h.MaxMs, P95: h.P95Ms, Jitter: h.JitterMs,
-			LossContinues: h.LossContinues,
+			Last: h.LastMs, StDev: h.StDevMs, Jmax: h.JmaxMs,
+			LossContinues: h.LossContinues, RateLimited: h.RateLimited,
 		}
 		if h.Info != nil {
 			o.Info = *h.Info
@@ -78,11 +88,10 @@ func (w *webTrace) Hops(ctx context.Context, target string, from, to time.Time) 
 	return out, nil
 }
 
-func (w *webTrace) Route(ctx context.Context, target string) (model.Route, bool) {
-	for _, r := range w.tr.Routes() {
-		if r.Target == target {
-			return r, true
-		}
+func (w *webTrace) Route(ctx context.Context, target string, mode model.TraceMode) (model.Route, bool) {
+	_, host := model.HostOf(target)
+	if r, ok := w.tr.Route(target, mode); ok || mode != model.TraceICMP || host {
+		return r, ok
 	}
 	return w.st.Route(ctx, target)
 }
@@ -91,8 +100,38 @@ func (w *webTrace) RouteChanges(ctx context.Context, from, to time.Time) ([]mode
 	return w.st.RouteChanges(ctx, from, to)
 }
 
-func (w *webTrace) Investigate(target string, rounds int) (web.Investigation, error) {
-	return w.tr.Investigate(target, rounds)
+func (w *webTrace) Investigate(target string, mode model.TraceMode, rounds int) (web.Investigation, error) {
+	return w.tr.Investigate(target, mode, rounds)
+}
+
+// Modes reports what this OS can trace with (hops.Supported): nothing
+// while the tracer is not running (no ICMP sockets).
+func (w *webTrace) Modes() []web.TraceModeInfo {
+	return traceModes(hops.Supported(), runtime.GOOS, w.tr.Running())
+}
+
+func traceModes(s hops.Support, goos string, running bool) []web.TraceModeInfo {
+	if !running {
+		off := func(m string, port int) web.TraceModeInfo {
+			return web.TraceModeInfo{Mode: m, Port: port, Reason: "icmp_unavailable"}
+		}
+		return []web.TraceModeInfo{off("icmp", 0), off("tcp", model.TraceTCPPort), off("udp", model.TraceUDPPort)}
+	}
+	why := func(ok bool) string {
+		switch {
+		case ok:
+			return ""
+		case goos == "windows":
+			return "windows_firewall"
+		}
+		return "os"
+	}
+	tcp := web.TraceModeInfo{Mode: "tcp", Port: model.TraceTCPPort, Available: s.TCP, Reason: why(s.TCP)}
+	if s.TCPViaICMP {
+		tcp.HopsVia = "icmp"
+	}
+	return []web.TraceModeInfo{{Mode: "icmp", Available: true}, tcp,
+		{Mode: "udp", Port: model.TraceUDPPort, Available: s.UDP, Reason: why(s.UDP)}}
 }
 
 func (w *webTrace) Traced() []string { return w.traced }

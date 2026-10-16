@@ -3,8 +3,10 @@
 package hops
 
 import (
+	"context"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func TestParseExtendedErr(t *testing.T) {
@@ -27,5 +29,18 @@ func TestParseExtendedErr(t *testing.T) {
 	}
 	if _, ok := parseExtendedErr(make([]byte, 10)); ok {
 		t.Error("short buffer accepted")
+	}
+}
+
+// TestTransportLoopback: TCP and UDP probes to a closed loopback port reach
+// the destination (a RST; port unreachable through the error queue),
+// without privileges.
+func TestTransportLoopback(t *testing.T) {
+	dst := netip.MustParseAddr("127.0.0.1")
+	for _, tp := range []Transport{TCP, UDP} {
+		h, err := errqTransport(context.Background(), tp, netip.AddrPortFrom(dst, 9), 8, 2*time.Second)
+		if err != nil || h.Addr != dst || !h.Reached || h.RTT <= 0 {
+			t.Errorf("%s: %+v, %v", tp, h, err)
+		}
 	}
 }

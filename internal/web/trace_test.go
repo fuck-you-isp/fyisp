@@ -21,8 +21,11 @@ type fakeTrace struct {
 	mu       sync.Mutex
 	now      time.Time
 	started  []string
+	modes    []model.TraceMode // of started
 	sessions []*fakeInv
 	err      error
+	avail    []TraceModeInfo // Modes (nil: all three)
+	asked    model.TraceMode // the mode of the last Hops
 }
 
 // fakeInv is an on-demand session whose rounds the test advances.
@@ -85,16 +88,23 @@ var (
 	}
 )
 
-func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time) ([]HopStat, error) {
+func (f *fakeTrace) Hops(ctx context.Context, target string, mode model.TraceMode, from, to time.Time) ([]HopStat, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
+	f.mu.Lock()
+	f.asked = mode
+	f.mu.Unlock()
 	if target != "Alpha" {
 		return nil, nil
 	}
 	var out []HopStat
 	for i, a := range routeA {
-		h := HopStat{Hop: i + 1, IP: a, N: 100, Lost: 0, Min: float64(i) + 1, Mean: float64(i) + 2, Max: float64(i) + 5, P95: float64(i) + 4, Jitter: 0.5}
+		h := HopStat{Hop: i + 1, IP: a, N: 100, Lost: 0, Min: float64(i) + 1, Mean: float64(i) + 2, Max: float64(i) + 5, P95: float64(i) + 4, Jitter: 0.5,
+			Last: float64(i) + 3, StDev: 0.25, Jmax: 2.5}
+		if i == 1 {
+			h.Last, h.StDev, h.Jmax = math.NaN(), math.NaN(), math.NaN() // the hourly tier: not known
+		}
 		if a.IsValid() {
 			h.Info = hopInfo[a]
 			h.Info.IP = a
@@ -102,7 +112,7 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 			h.N, h.Lost, h.Loss = 0, 100, 1
 		}
 		if i == 4 {
-			h.Lost, h.Loss = 30, 0.3 // rate limiting
+			h.Lost, h.Loss, h.RateLimited = 30, 0.3, true // rate limiting
 		}
 		out = append(out, h)
 	}
@@ -121,7 +131,7 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 	return out, nil
 }
 
-func (f *fakeTrace) Route(ctx context.Context, target string) (model.Route, bool) {
+func (f *fakeTrace) Route(ctx context.Context, target string, mode model.TraceMode) (model.Route, bool) {
 	if target != "Alpha" {
 		return model.Route{}, false
 	}
@@ -135,19 +145,27 @@ func (f *fakeTrace) RouteChanges(ctx context.Context, from, to time.Time) ([]mod
 	}, nil
 }
 
-func (f *fakeTrace) Investigate(target string, rounds int) (Investigation, error) {
+func (f *fakeTrace) Investigate(target string, mode model.TraceMode, rounds int) (Investigation, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.started = append(f.started, target)
+	f.modes = append(f.modes, mode)
 	inv := &fakeInv{target: target, max: rounds}
 	f.sessions = append(f.sessions, inv)
 	return inv, nil
 }
 
 func (f *fakeTrace) Traced() []string { return []string{"Alpha"} }
+
+func (f *fakeTrace) Modes() []TraceModeInfo {
+	if f.avail != nil {
+		return f.avail
+	}
+	return []TraceModeInfo{{Mode: "icmp", Available: true}, {Mode: "tcp", Port: 443, Available: true}, {Mode: "udp", Port: 33434, Available: true}}
+}
 
 func traceFixture(t *testing.T) (Deps, *fakeTrace, *countingStore) {
 	now := time.Now()
@@ -190,14 +208,16 @@ func TestTraceNil(t *testing.T) {
 }
 
 type traceResp struct {
-	Target  string `json:"target"`
-	Traced  bool   `json:"traced"`
-	From    int64  `json:"from"`
-	To      int64  `json:"to"`
-	ISPASN  uint32 `json:"isp_asn"`
-	Route   *struct{ Hops []hopJSON }
-	Hops    []map[string]any `json:"hops"`
-	Changes []struct {
+	Target     string `json:"target"`
+	Host       string `json:"host"`
+	IntervalMs int64  `json:"interval_ms"`
+	Traced     bool   `json:"traced"`
+	From       int64  `json:"from"`
+	To         int64  `json:"to"`
+	ISPASN     uint32 `json:"isp_asn"`
+	Route      *struct{ Hops []hopJSON }
+	Hops       []map[string]any `json:"hops"`
+	Changes    []struct {
 		ID        int64     `json:"id"`
 		FirstDiff int       `json:"first_diff"`
 		From      []hopJSON `json:"from"`
@@ -221,6 +241,22 @@ func TestTraceShapeAndClamps(t *testing.T) {
 	if tr.Target != "Alpha" || !tr.Traced || tr.ISPASN != 64500 || tr.Route == nil || len(tr.Route.Hops) != len(routeA) {
 		t.Errorf("trace = %+v", tr)
 	}
+	if tr.Host != "alpha.example.com" || tr.IntervalMs != DefaultTraceInterval.Milliseconds() {
+		t.Errorf("host %q interval %d", tr.Host, tr.IntervalMs)
+	}
+	// mtr's Last, StDev and Jmax; null when not known.
+	for _, hp := range tr.Hops {
+		if hp["hop"].(float64) == 1 && (hp["last"] != 3.0 || hp["stdev"] != 0.25 || hp["jmax"] != 2.5) {
+			t.Errorf("hop 1 last/stdev/jmax: %v", hp)
+		}
+		if hp["hop"].(float64) == 2 {
+			for _, k := range []string{"last", "stdev", "jmax"} {
+				if v, ok := hp[k]; !ok || v != nil {
+					t.Errorf("hop 2 %s = %v, want null", k, v)
+				}
+			}
+		}
+	}
 	if span := time.Duration(tr.To-tr.From) * time.Millisecond; span > MaxRange {
 		t.Errorf("span %v > MaxRange", span)
 	}
@@ -236,8 +272,18 @@ func TestTraceShapeAndClamps(t *testing.T) {
 		}
 		last = n
 	}
+	// The store's loss classification is served as is.
+	for _, hp := range tr.Hops {
+		lim, ok := hp["rate_limited"].(bool)
+		if !ok {
+			t.Fatalf("hop without rate_limited: %v", hp)
+		}
+		if want := hp["hop"].(float64) == 5 && hp["ip"] == routeA[4].String(); lim != want {
+			t.Errorf("hop %v %v: rate_limited %v, want %v", hp["hop"], hp["ip"], lim, want)
+		}
+	}
 	body := w.Body.String()
-	for _, want := range []string{`"192.168.1.1"`, `"203.0.113.9"`, "edge1.springfield.isp.test", `"loss_continues":true`, `"no_reply":true`} {
+	for _, want := range []string{`"192.168.1.1"`, `"203.0.113.9"`, "edge1.springfield.isp.test", `"loss_continues":true`, `"rate_limited":true`, `"no_reply":true`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("local trace lacks %s", want)
 		}

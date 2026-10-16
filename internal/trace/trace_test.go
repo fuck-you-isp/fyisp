@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
@@ -36,6 +37,7 @@ type fakeNet struct {
 	inflight map[netip.Addr]int
 	maxIn    map[netip.Addr]int
 	delay    time.Duration
+	wait     bool // unanswered probes wait the full timeout
 
 	paths  map[netip.Addr][]string // per-destination routers (default: routers)
 	now    func() time.Time        // stamps log entries
@@ -51,6 +53,8 @@ type probeRec struct {
 	ttl  int
 	addr netip.Addr // who answered (invalid: nobody)
 	rtt  time.Duration
+	tp   hops.Transport // 0: ICMP
+	port uint16
 }
 
 func newFakeNet(routers ...string) *fakeNet {
@@ -64,12 +68,22 @@ func (f *fakeNet) set(fn func(f *fakeNet)) {
 	fn(f)
 }
 
-func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, _ time.Duration) (hops.Hop, error) {
+func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, timeout time.Duration) (hops.Hop, error) {
+	return f.probe(ctx, 0, netip.AddrPortFrom(dst, 0), ttl, timeout)
+}
+
+// ProbeTransport answers TCP and UDP probes like ICMP ones.
+func (f *fakeNet) ProbeTransport(ctx context.Context, tp hops.Transport, dst netip.AddrPort, ttl int, timeout time.Duration) (hops.Hop, error) {
+	return f.probe(ctx, tp, dst, ttl, timeout)
+}
+
+func (f *fakeNet) probe(ctx context.Context, tp hops.Transport, ap netip.AddrPort, ttl int, timeout time.Duration) (hops.Hop, error) {
+	dst := ap.Addr()
 	f.mu.Lock()
 	f.calls[dst] = append(f.calls[dst], ttl)
 	f.inflight[dst]++
 	f.maxIn[dst] = max(f.maxIn[dst], f.inflight[dst])
-	routers, silent, err, delay := f.routers, f.silent[ttl], f.err, f.delay
+	routers, silent, err, delay, wait := f.routers, f.silent[ttl], f.err, f.delay, f.wait
 	if p, ok := f.paths[dst]; ok {
 		routers = p
 	}
@@ -78,7 +92,7 @@ func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, _ time.Dur
 	if f.jitter {
 		rtt += time.Duration(f.n) * time.Microsecond
 	}
-	rec := probeRec{dst: dst, ttl: ttl, rtt: rtt}
+	rec := probeRec{dst: dst, ttl: ttl, rtt: rtt, tp: tp, port: ap.Port()}
 	if f.now != nil {
 		rec.at = f.now()
 	}
@@ -92,6 +106,9 @@ func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, _ time.Dur
 	f.log = append(f.log, rec)
 	f.mu.Unlock()
 	defer func() { f.mu.Lock(); f.inflight[dst]--; f.mu.Unlock() }()
+	if wait && err == nil && !rec.addr.IsValid() {
+		delay = timeout
+	}
 	if delay > 0 {
 		select {
 		case <-time.After(delay):
@@ -114,6 +131,9 @@ func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, _ time.Dur
 }
 
 func (f *fakeNet) Close() error { return nil }
+
+// allModes: the fake network answers ICMP, TCP and UDP probes.
+func allModes() hops.Support { return hops.Support{TCP: true, UDP: true} }
 
 func (f *fakeNet) callsTo(dst netip.Addr) []int {
 	f.mu.Lock()
@@ -176,6 +196,7 @@ func roundTracer(t *testing.T, f *fakeNet, o Options) (*tracer, *target, *recSin
 	t.Helper()
 	o.Log = quiet()
 	o.open = func() (hops.Prober, error) { return f, nil }
+	o.support = allModes
 	if o.RouterRate == 0 {
 		o.RouterRate = -1 // rounds back to back: no per-router cap
 	}
@@ -260,6 +281,55 @@ func TestRoundRouteAndEarlyStop(t *testing.T) {
 	}
 }
 
+// TestRoundMaxUnknown: like mtr --max-unknown, a round stops after
+// maxUnknown silent TTLs past the last answer, but never before the
+// destination's known TTL.
+func TestRoundMaxUnknown(t *testing.T) {
+	ctx := context.Background()
+	slot := time.Unix(1_800_000_000, 0).UTC()
+	ms := time.Millisecond
+
+	// The destination never answers: TTLs 3.. are silent.
+	f := newFakeNet("192.168.1.1", "62.1.1.1")
+	f.set(func(f *fakeNet) {
+		for ttl := 3; ttl <= 30; ttl++ {
+			f.silent[ttl] = true
+		}
+	})
+	// One probe at a time, so that the TTLs sent are exact (with more,
+	// those in flight when the run completes still go out).
+	tr, st, sink := roundTracer(t, f, Options{MaxHops: 30, Parallel: 1})
+	tr.round(ctx, st, slot)
+	if c := f.callsTo(a("1.1.1.1")); slices.Max(c) != 2+maxUnknown || len(c) != 2+maxUnknown {
+		t.Errorf("probed TTLs %v, want 1 to %d", c, 2+maxUnknown)
+	}
+	smp, _, _ := sink.take()
+	checkRound(t, "silent from 3", smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {lost: true}})
+	// With the default parallelism it stops too.
+	f.set(func(f *fakeNet) { f.calls = map[netip.Addr][]int{} })
+	tr, st, sink = roundTracer(t, f, Options{MaxHops: 30})
+	tr.round(ctx, st, slot)
+	if c := f.callsTo(a("1.1.1.1")); !slices.Contains(c, 2+maxUnknown) || slices.Max(c) == 30 {
+		t.Errorf("parallel: probed TTLs %v, want up to %d and fewer than 30", c, 2+maxUnknown)
+	}
+	sink.take()
+
+	// A known route with maxUnknown silent routers before the destination:
+	// every TTL up to the destination is probed.
+	f = newFakeNet("192.168.1.1", "62.1.1.1", "62.1.1.2", "62.1.1.3", "62.1.1.4", "62.1.1.5", "62.1.1.6")
+	tr, st, sink = roundTracer(t, f, Options{MaxHops: 30})
+	tr.round(ctx, st, slot)
+	sink.take()
+	f.set(func(f *fakeNet) { f.silent = map[int]bool{2: true, 3: true, 4: true, 5: true, 6: true} })
+	tr.round(ctx, st, slot.Add(5*time.Second))
+	smp, _, changes := sink.take()
+	checkRound(t, "silent middle", smp, slot.Add(5*time.Second), []hopWant{{rtt: ms}, {lost: true}, {lost: true}, {lost: true},
+		{lost: true}, {lost: true}, {rtt: 7 * ms}, {rtt: 8 * ms}})
+	if len(changes) != 0 {
+		t.Errorf("silent middle: changes %+v", changes)
+	}
+}
+
 func TestRoundLoss(t *testing.T) {
 	f := newFakeNet("192.168.1.1", "62.1.1.1", "62.2.2.2")
 	tr, st, sink := roundTracer(t, f, Options{MaxHops: 10})
@@ -289,8 +359,8 @@ func TestRoundLoss(t *testing.T) {
 	if len(changes) != 0 {
 		t.Errorf("loss from hop 3: changes %+v", changes)
 	}
-	if c := f.callsTo(a("1.1.1.1")); !slices.Contains(c, 10) {
-		t.Errorf("destination silent: probed TTLs %v, want up to MaxHops", c)
+	if c := f.callsTo(a("1.1.1.1")); !slices.Contains(c, 2+maxUnknown) {
+		t.Errorf("destination silent: probed TTLs %v, want up to %d silent ones", c, maxUnknown)
 	}
 
 	// A local error (no route): every hop is lost with its reason.
@@ -435,6 +505,7 @@ func runTracer(t *testing.T, f *fakeNet, o Options, p *model.Profile) (*tracer, 
 	t.Helper()
 	o.Log = quiet()
 	o.open = func() (hops.Prober, error) { return f, nil }
+	o.support = allModes
 	if o.RouterRate == 0 {
 		o.RouterRate = -1 // intervals of milliseconds: no per-router cap
 	}
@@ -452,7 +523,7 @@ func runTracer(t *testing.T, f *fakeNet, o Options, p *model.Profile) (*tracer, 
 			t.Errorf("Run: %v", err)
 		}
 	})
-	waitFor(t, "running", func() bool { tr.mu.Lock(); defer tr.mu.Unlock(); return tr.running })
+	waitFor(t, "running", tr.Running)
 	return tr, sink
 }
 
@@ -516,7 +587,7 @@ func TestRunTracesMarkedTargets(t *testing.T) {
 		!slices.Equal(rs[0].Hops, addrs("192.168.1.1", "62.1.1.1", "1.1.1.1")) {
 		t.Errorf("Routes %+v", rs)
 	}
-	if got := tr.Interval("traced"); got != iv {
+	if got := tr.Interval("traced", model.KindTrace); got != iv {
 		t.Errorf("Interval %v", got)
 	}
 }
@@ -566,6 +637,74 @@ func TestHopInfo(t *testing.T) {
 	}
 }
 
+// A TCP round stores KindTraceTCP hops from TCP probes to port 443, and
+// keeps its route to itself: the sink only gets ICMP routes.
+func TestRoundTCP(t *testing.T) {
+	f := newFakeNet("192.168.1.1", "62.1.1.1")
+	tr, st, sink := roundTracer(t, f, Options{})
+	st.mode = model.TraceTCP
+	slot := time.Unix(1_800_000_000, 0).UTC()
+	tr.round(context.Background(), st, slot)
+	smp, routes, _ := sink.take()
+	if len(smp) != 3 {
+		t.Fatalf("%d samples: %+v", len(smp), smp)
+	}
+	for i, s := range smp {
+		if s.Key != (model.SeriesKey{Target: "x", Kind: model.KindTraceTCP, Hop: uint8(i + 1)}) || s.Lost {
+			t.Errorf("sample %d: %+v", i, s)
+		}
+	}
+	for _, r := range f.log {
+		if r.tp != hops.TCP || r.port != model.TraceTCPPort {
+			t.Errorf("probe %+v: want TCP to %d", r, model.TraceTCPPort)
+		}
+	}
+	if len(routes) != 0 {
+		t.Errorf("TCP route reported to the sink: %+v", routes)
+	}
+	st.rmu.Lock()
+	defer st.rmu.Unlock()
+	if !st.hasRoute || !slices.Equal(st.route.Hops, addrs("192.168.1.1", "62.1.1.1", "1.1.1.1")) {
+		t.Errorf("route %+v", st.route)
+	}
+}
+
+// Investigate with a mode runs its own trace next to the ICMP one; a mode
+// the OS lacks is refused.
+func TestInvestigateModes(t *testing.T) {
+	f := newFakeNet("192.168.1.1")
+	inv := 20 * time.Millisecond
+	tr, sink := runTracer(t, f, Options{Interval: time.Hour, Investigate: inv}, labProfile())
+	tr.o.support = func() hops.Support { return hops.Support{TCP: true} }
+	if _, err := tr.Investigate("plain", model.TraceUDP, 10); err == nil {
+		t.Error("unsupported UDP: no error")
+	}
+	s, err := tr.Investigate("plain", model.TraceTCP, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "TCP rounds", func() bool { _, ended := s.Progress(); return !ended.IsZero() })
+	for _, x := range sink.samplesOf("plain") {
+		if x.Key.Kind != model.KindTraceTCP {
+			t.Errorf("sample %+v: want KindTraceTCP", x.Key)
+		}
+	}
+	if r, ok := tr.Route("plain", model.TraceTCP); !ok || len(r.Hops) != 2 {
+		t.Errorf("TCP route %+v %v", r, ok)
+	}
+	if _, ok := tr.Route("plain", model.TraceICMP); ok {
+		t.Error("an ICMP route without an ICMP trace")
+	}
+	for _, r := range tr.Routes() {
+		if r.Target == "plain" {
+			t.Errorf("Routes lists the TCP route: %+v", r)
+		}
+	}
+	if got := tr.Interval("plain", model.KindTraceTCP); got != inv {
+		t.Errorf("TCP interval %v, want %v", got, inv)
+	}
+}
+
 func TestInvestigate(t *testing.T) {
 	f := newFakeNet("192.168.1.1")
 	iv, inv := 400*time.Millisecond, 20*time.Millisecond
@@ -574,34 +713,34 @@ func TestInvestigate(t *testing.T) {
 		off time.Duration
 	}{}
 	clock := func() time.Time { now.Lock(); defer now.Unlock(); return time.Now().Add(now.off) }
-	if _, err := New(Options{}).Investigate("plain", 100); err == nil {
+	if _, err := New(Options{}).Investigate("plain", model.TraceICMP, 100); err == nil {
 		t.Error("Investigate before Run: no error")
 	}
 	tr, sink := runTracer(t, f, Options{Interval: iv, Investigate: inv, Now: clock}, labProfile())
 
-	if _, err := tr.Investigate("nope", 100); err == nil {
+	if _, err := tr.Investigate("nope", model.TraceICMP, 100); err == nil {
 		t.Error("unknown target: no error")
 	}
-	if _, err := tr.Investigate("plain", 0); err == nil {
+	if _, err := tr.Investigate("plain", model.TraceICMP, 0); err == nil {
 		t.Error("0 rounds: no error")
 	}
 
 	// Two callers share one fast trace of an untraced target.
-	s1, err := tr.Investigate("plain", 100000)
+	s1, err := tr.Investigate("plain", model.TraceICMP, 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := tr.Investigate("plain", 100000)
+	s2, err := tr.Investigate("plain", model.TraceICMP, 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := tr.Interval("plain"); got != inv {
-		waitFor(t, "investigate interval", func() bool { return tr.Interval("plain") == inv })
+	if got := tr.Interval("plain", model.KindTrace); got != inv {
+		waitFor(t, "investigate interval", func() bool { return tr.Interval("plain", model.KindTrace) == inv })
 	}
 	waitFor(t, "fast rounds", func() bool { return len(sink.samplesOf("plain")) >= 2*5 })
 	tr.mu.Lock()
 	loops := 0
-	if tr.targets["plain"].looping {
+	if tr.targets[tkey{"plain", model.TraceICMP}].looping {
 		loops++
 	}
 	tr.mu.Unlock()
@@ -621,13 +760,17 @@ func TestInvestigate(t *testing.T) {
 	n := len(sink.samplesOf("plain"))
 	waitFor(t, "rounds continue for the second caller", func() bool { return len(sink.samplesOf("plain")) >= n+4 })
 	s2.Stop()
-	waitFor(t, "loop ends", func() bool { tr.mu.Lock(); defer tr.mu.Unlock(); return !tr.targets["plain"].looping })
+	waitFor(t, "loop ends", func() bool {
+		tr.mu.Lock()
+		defer tr.mu.Unlock()
+		return !tr.targets[tkey{"plain", model.TraceICMP}].looping
+	})
 	n = len(sink.samplesOf("plain"))
 	time.Sleep(5 * inv)
 	if m := len(sink.samplesOf("plain")); m != n {
 		t.Errorf("%d samples after the last caller stopped", m-n)
 	}
-	if got := tr.Interval("plain"); got != iv {
+	if got := tr.Interval("plain", model.KindTrace); got != iv {
 		t.Errorf("Interval after investigate %v, want the default %v", got, iv)
 	}
 
@@ -635,16 +778,16 @@ func TestInvestigate(t *testing.T) {
 	// (twice the rounds' time plus a minute) ends a session that can't
 	// finish its rounds.
 	before := len(sink.samplesOf("traced"))
-	if _, err := tr.Investigate("traced", 1000); err != nil {
+	if _, err := tr.Investigate("traced", model.TraceICMP, 1000); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "fast rounds of the traced target", func() bool { return len(sink.samplesOf("traced")) >= before+2*6 })
 	now.Lock()
 	now.off = 2 * time.Minute // past 2 × 1000 × 20ms + 1 min
 	now.Unlock()
-	waitFor(t, "back to the normal interval", func() bool { return tr.Interval("traced") == iv })
+	waitFor(t, "back to the normal interval", func() bool { return tr.Interval("traced", model.KindTrace) == iv })
 	tr.mu.Lock()
-	looping := tr.targets["traced"].looping
+	looping := tr.targets[tkey{"traced", model.TraceICMP}].looping
 	tr.mu.Unlock()
 	if !looping {
 		t.Error("always-on trace stopped after investigate")
@@ -668,7 +811,7 @@ func TestInvestigateRounds(t *testing.T) {
 	f := newFakeNet("192.168.1.1")
 	iv, inv := 400*time.Millisecond, 20*time.Millisecond
 	tr, _ := runTracer(t, f, Options{Interval: iv, Investigate: inv}, labProfile())
-	short, err := tr.Investigate("plain", 5)
+	short, err := tr.Investigate("plain", model.TraceICMP, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,13 +819,17 @@ func TestInvestigateRounds(t *testing.T) {
 	if n, _ := short.Progress(); n != 5 {
 		t.Errorf("short session: %d rounds, want 5", n)
 	}
-	waitFor(t, "loop ends", func() bool { tr.mu.Lock(); defer tr.mu.Unlock(); return !tr.targets["plain"].looping })
+	waitFor(t, "loop ends", func() bool {
+		tr.mu.Lock()
+		defer tr.mu.Unlock()
+		return !tr.targets[tkey{"plain", model.TraceICMP}].looping
+	})
 
-	long, err := tr.Investigate("plain", 1000)
+	long, err := tr.Investigate("plain", model.TraceICMP, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := tr.Investigate("plain", 3)
+	again, err := tr.Investigate("plain", model.TraceICMP, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -697,6 +844,9 @@ func TestRunErrors(t *testing.T) {
 	tr := newTracer(Options{Log: quiet(), open: func() (hops.Prober, error) { return nil, errors.New("no ICMP") }})
 	if err := tr.Run(context.Background(), labProfile(), &recSink{}); err == nil {
 		t.Error("Run without a prober: no error")
+	}
+	if tr.Running() {
+		t.Error("Running after Run failed")
 	}
 }
 
@@ -737,6 +887,34 @@ func TestDestinationAnswersHigherTTL(t *testing.T) {
 	next()
 	smp, _, _ = sink.take()
 	checkRound(t, "shorter", smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {rtt: 3 * ms}})
+}
+
+// The route grows by one hop behind 4 silent ones before the destination's
+// known TTL (silent probes take the full timeout): TTLs past the old one are
+// still probed, so the longer route is confirmed.
+func TestRouteGrowsBehindSilentHops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newFakeNet("192.168.1.1", "62.1.1.1", "", "", "", "")
+		f.wait = true
+		tr, st, sink := roundTracer(t, f, Options{})
+		ctx := context.Background()
+		slot := time.Unix(1_800_000_000, 0).UTC()
+		next := func() { slot = slot.Add(5 * time.Second); tr.round(ctx, st, slot) }
+		next()
+		if smp, _, _ := sink.take(); len(smp) != 7 || smp[6].Lost {
+			t.Fatalf("destination at TTL 7: samples %+v", smp)
+		}
+		f.set(func(f *fakeNet) { f.routers = append(f.routers, "") })
+		for range growRounds - 1 {
+			next()
+		}
+		sink.take()
+		next()
+		smp, _, _ := sink.take()
+		if len(smp) != 8 || smp[7].Lost || smp[7].RTT != 8*time.Millisecond {
+			t.Errorf("destination at TTL 8 after %d rounds: samples %+v", growRounds, smp)
+		}
+	})
 }
 
 // 40% loss on the destination's probe at its own TTL (a higher TTL then

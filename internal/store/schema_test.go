@@ -180,15 +180,15 @@ func fileSum(t *testing.T, path string) [32]byte {
 	return sha256.Sum256(b)
 }
 
-// TestOldSchemaReplaced: a file with a lower user_version than this build's
-// schema is refused by the read-only commands (fyisp export), which leave it
-// as it is, and is not touched while another instance holds the lock. The
-// daemon's Open replaces it and its -wal, -shm and -journal files with a new
+// TestOldSchemaReplaced: a file with a user_version older than
+// oldestUpgradable (from before fyisp v0.11.0) is refused by the read-only
+// commands (fyisp export), which leave it as it is, and is not touched while
+// another instance holds the lock. The daemon's Open replaces it and its -wal, -shm and -journal files with a new
 // empty database, logging one line with the old version. Nothing of the old
 // file is kept, settings included, and stray files stay. A higher
 // user_version is refused and left as it is.
 func TestOldSchemaReplaced(t *testing.T) {
-	for _, ver := range []int{1, SchemaVersion() - 1} {
+	for _, ver := range []int{1, oldestUpgradable - 1} {
 		dir := t.TempDir()
 		writeOld(t, dir, ver)
 		writeStrays(t, dir)
@@ -345,8 +345,8 @@ func TestRefusedUntouched(t *testing.T) {
 		want error
 	}{
 		"newer schema":                   {[]string{meta, series, `INSERT INTO meta VALUES('k', 1)`, version(SchemaVersion() + 1)}, ErrNewerSchema},
-		"old version, foreign tables":    {[]string{`CREATE TABLE other(x)`, `INSERT INTO other VALUES(1)`, version(SchemaVersion() - 1)}, ErrNotDatabase},
-		"old version, no series":         {[]string{meta, `INSERT INTO meta VALUES('k', 1)`, version(SchemaVersion() - 1)}, ErrNotDatabase},
+		"old version, foreign tables":    {[]string{`CREATE TABLE other(x)`, `INSERT INTO other VALUES(1)`, version(oldestUpgradable - 1)}, ErrNotDatabase},
+		"old version, no series":         {[]string{meta, `INSERT INTO meta VALUES('k', 1)`, version(oldestUpgradable - 1)}, ErrNotDatabase},
 		"no version, tables":             {[]string{`CREATE TABLE other(x)`, `INSERT INTO other VALUES(1)`}, ErrNotDatabase},
 		"current without fyisp's tables": {[]string{meta, series, `INSERT INTO series VALUES(1)`, version(SchemaVersion())}, ErrNotDatabase},
 	} {
@@ -388,7 +388,7 @@ func TestRefusedUntouched(t *testing.T) {
 func TestOldPendingWALUntouchedReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	writePending(t, dir, `CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY) WITHOUT ROWID`, `CREATE TABLE series(id INTEGER PRIMARY KEY)`,
-		`INSERT INTO series VALUES(1)`, fmt.Sprintf(`PRAGMA user_version=%d`, SchemaVersion()-1))
+		`INSERT INTO series VALUES(1)`, fmt.Sprintf(`PRAGMA user_version=%d`, oldestUpgradable-1))
 	before := sums(t, dir)
 	if _, err := OpenReadOnly(dir); err == nil || !strings.Contains(err.Error(), "older fyisp") {
 		t.Errorf("OpenReadOnly: %v", err)

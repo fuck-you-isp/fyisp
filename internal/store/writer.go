@@ -32,7 +32,7 @@ type Options struct {
 	// Interval returns the slot interval of a series. It is read for every
 	// sample (keep it cheap): a new hour uses it, and an hour whose interval
 	// differs (restored after a profile change) is regridded to fit both;
-	// nil or 0 means 15s (ICMP, KindTrace hops and the UDP kinds 5s). Values are clamped to
+	// nil or 0 means 15s (ICMP, trace hops and the UDP kinds 5s). Values are clamped to
 	// [100ms, 24h]. KindTrace series (one per hop: SeriesKey.Hop is the TTL)
 	// must return the tracer's round interval.
 	Interval func(model.SeriesKey) time.Duration
@@ -162,10 +162,12 @@ func OpenReadOnly(dir string) (*SQLite, error) {
 	path := filepath.Join(dir, DBName)
 	ctx := context.Background()
 	// The daemon's checks (classify), never its fixes: an older or missing
-	// database is left for fyisp to replace or create.
+	// database is left for fyisp to upgrade, replace or create.
 	switch state, ver, err := classify(ctx, path); {
 	case err != nil:
 		return nil, err
+	case state == dbUpgrade:
+		return nil, fmt.Errorf("store: %s is from an older fyisp (schema v%d); fyisp upgrades it when it starts", path, ver)
 	case state == dbOld:
 		return nil, fmt.Errorf("store: %s is from an older fyisp (schema v%d); fyisp replaces it with a new empty database when it starts", path, ver)
 	case state == dbNone:
@@ -416,7 +418,7 @@ func (s *SQLite) interval(k model.SeriesKey) int64 {
 	}
 	if d <= 0 {
 		d = 15 * time.Second
-		if k.Kind == model.KindICMP || k.Kind == model.KindTrace || k.Kind.IsUDP() {
+		if k.Kind == model.KindICMP || k.Kind.IsTrace() || k.Kind.IsUDP() {
 			d = 5 * time.Second
 		}
 	}

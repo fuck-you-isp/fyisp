@@ -88,7 +88,7 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	st, err := openStore(dir, prof, func(string) time.Duration { return 5 * time.Second }, log)
+	st, err := openStore(dir, prof, func(string, model.ProbeKind) time.Duration { return 5 * time.Second }, log)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -626,6 +626,9 @@ func checkName(n string) error {
 	if strings.TrimSpace(n) != n || strings.Contains(n, "  ") {
 		return errors.New("name contains whitespace at the start or end, or double spaces")
 	}
+	if strings.HasPrefix(n, model.HostTargetPrefix) {
+		return fmt.Errorf("names starting with %q are reserved for traces of hosts outside the profile", model.HostTargetPrefix)
+	}
 	return nil
 }
 
