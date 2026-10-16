@@ -1,5 +1,5 @@
 // Command genfixture writes the database fixture of the last release
-// (testdata/v0.11.0.db): the dbfixture Dockerfile stage copies it into a
+// (testdata/<release>.db): the dbfixture Dockerfile stage copies it into a
 // checkout of that release's tag and runs it there, so the file is written
 // by the release's own store. It uses a fixed clock and fixed values, which
 // upgrade_test.go recomputes (relSamples and the others): keep both in
@@ -88,7 +88,7 @@ func main() {
 	out := flag.String("out", "", "data directory to write fyisp.db into")
 	flag.Parse()
 	ctx := context.Background()
-	s, err := store.Open(*out, store.Options{Version: "v0.11.0", Interval: interval, Now: func() time.Time { return end }})
+	s, err := store.Open(*out, store.Options{Version: "v0.12.0", Interval: interval, Now: func() time.Time { return end }})
 	if err != nil {
 		log.Fatal(err)
 	}
