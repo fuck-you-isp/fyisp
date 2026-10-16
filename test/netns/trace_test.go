@@ -34,8 +34,8 @@ import (
 // A /32 route in the ISP namespace moves it behind alt: [gw, isp, alt, hotel].
 const (
 	altAddr       = "10.99.4.2"
-	traceIv       = 2 * time.Second // below the kernel's ICMP error rate limit (1/s per router)
-	traceProbeEnv = "FYISP_NETNS_TRACEPROBE"
+	traceIv       = 2 * time.Second          // below the kernel's ICMP error rate limit (1/s per router)
+	traceProbeEnv = "FYISP_NETNS_TRACEPROBE" // "icmp": always-on; "tcp", "udp": on demand with that mode
 )
 
 var addrHotel = netip.MustParseAddr("203.0.113.20")
@@ -79,13 +79,25 @@ func (s *lineSink) ObserveRoute(r model.Route)             { s.emit(traceLine{Ro
 func (s *lineSink) ObserveRouteChange(c model.RouteChange) { s.emit(traceLine{Change: &c}) }
 
 // runTraceProbe traces hotel every traceIv with package trace, as uid 65532
-// in the client namespace, printing JSON lines on stdout.
+// in the client namespace, printing JSON lines on stdout: an always-on ICMP
+// trace, or an on-demand one with the mode in traceProbeEnv.
 func runTraceProbe() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	tr := trace.New(trace.Options{Interval: traceIv, MaxHops: 8, Log: log,
+	mode, _ := model.ParseTraceMode(os.Getenv(traceProbeEnv))
+	tr := trace.New(trace.Options{Interval: traceIv, Investigate: traceIv, MaxHops: 8, Log: log,
 		ReverseDNS: func(context.Context, netip.Addr) string { return "" }})
 	p := &model.Profile{Name: "trace", Groups: []model.Group{{ID: "lab"}},
-		Targets: []model.Target{{Name: "hotel", Host: addrHotel.String(), Group: "lab", Trace: true}}}
+		Targets: []model.Target{{Name: "hotel", Host: addrHotel.String(), Group: "lab", Trace: mode == model.TraceICMP}}}
+	if mode != model.TraceICMP {
+		go func() {
+			for {
+				if _, err := tr.Investigate("hotel", mode, 100000); err == nil {
+					return
+				}
+				time.Sleep(50 * time.Millisecond) // until Run runs
+			}
+		}()
+	}
 	err := tr.Run(context.Background(), p, &lineSink{enc: json.NewEncoder(os.Stdout)})
 	log.Error("trace returned", "err", err)
 	os.Exit(1)
@@ -95,6 +107,7 @@ type traceProc struct {
 	cmd     *exec.Cmd
 	mu      sync.Mutex
 	samples []traceLine
+	seen    map[netip.Addr]bool // hop addresses (ObserveHop)
 	routes  []model.Route
 	changes []model.RouteChange
 }
@@ -143,7 +156,7 @@ func (tp *traceProc) routeChanges() []model.RouteChange {
 	return slices.Clone(tp.changes)
 }
 
-func (h *harness) startTraceProbe(t *testing.T) *traceProc {
+func (h *harness) startTraceProbe(t *testing.T, mode model.TraceMode) *traceProc {
 	t.Helper()
 	bin := bins.test // readable by uid 65532 (see TestMain)
 	logf, err := os.Create(filepath.Join(h.dir, "traceprobe.log"))
@@ -154,7 +167,7 @@ func (h *harness) startTraceProbe(t *testing.T) *traceProc {
 		"setpriv", "--reuid="+strconv.Itoa(runUID), "--regid="+strconv.Itoa(runUID), "--clear-groups",
 		"--inh-caps=-all", "--no-new-privs", "--pdeathsig=KILL",
 		bin, "-test.run=^$")
-	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", traceProbeEnv + "=1",
+	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", traceProbeEnv + "=" + mode.String(),
 		"HOME=" + filepath.Join(h.dir, "home"), "TMPDIR=" + filepath.Join(h.dir, "tmp")}
 	cmd.Stderr = logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
@@ -165,7 +178,7 @@ func (h *harness) startTraceProbe(t *testing.T) *traceProc {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	tp := &traceProc{cmd: cmd}
+	tp := &traceProc{cmd: cmd, seen: map[netip.Addr]bool{}}
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
@@ -191,6 +204,8 @@ func (h *harness) startTraceProbe(t *testing.T) *traceProc {
 				tp.routes = append(tp.routes, *l.Route)
 			case l.Change != nil:
 				tp.changes = append(tp.changes, *l.Change)
+			case l.Info != nil:
+				tp.seen[l.Info.IP] = true
 			}
 			tp.mu.Unlock()
 		}
@@ -251,7 +266,7 @@ func TestTrace(t *testing.T) {
 	parallel(t)
 	h := newHarness(t)
 	h.setupAlt(t)
-	tp := h.startTraceProbe(t)
+	tp := h.startTraceProbe(t, model.TraceICMP)
 	gw, isp, alt := gwAddr, edgeAddr, netip.MustParseAddr(altAddr)
 	direct := []netip.Addr{gw, isp, addrHotel}
 
@@ -383,5 +398,44 @@ func TestTrace(t *testing.T) {
 		if st[hop].ok < 3 || st[hop].lost != 0 {
 			t.Errorf("via alt: hop %d %s, want answers and no loss", hop, st[hop])
 		}
+	}
+}
+
+// TestTraceModes: unprivileged TCP (to 443) and UDP (to 33434) traces see
+// the same routers as ICMP, and reach hotel (a RST; port unreachable). They
+// store their own hop kinds and report no routes.
+func TestTraceModes(t *testing.T) {
+	parallel(t)
+	h := newHarness(t)
+	h.setupAlt(t)
+	for _, mode := range []model.TraceMode{model.TraceTCP, model.TraceUDP} {
+		t.Run(mode.String(), func(t *testing.T) {
+			tp := h.startTraceProbe(t, mode)
+			t0 := time.Now()
+			time.Sleep(12 * traceIv)
+			checkUnprivileged(t, tp.cmd.Process.Pid)
+			st := tp.stats(t0, time.Now().Add(-traceIv-time.Second))
+			for hop := 1; hop <= 3; hop++ {
+				t.Logf("%s: hop %d %s", mode, hop, st[hop])
+				if s := st[hop]; s.ok < 5 || s.lost > 1 {
+					t.Errorf("%s: hop %d %s, want answers", mode, hop, s)
+				}
+			}
+			tp.mu.Lock()
+			defer tp.mu.Unlock()
+			for _, l := range tp.samples {
+				if l.Sample.Kind != mode.Kind().String() || l.Hop > 3 {
+					t.Fatalf("%s: sample %s hop %d, want %s hops 1..3", mode, l.Sample.Kind, l.Hop, mode.Kind())
+				}
+			}
+			for _, a := range []netip.Addr{gwAddr, edgeAddr} {
+				if !tp.seen[a] {
+					t.Errorf("%s: router %v never answered (seen %v)", mode, a, tp.seen)
+				}
+			}
+			if len(tp.routes) != 0 {
+				t.Errorf("%s: %d routes reported, want none", mode, len(tp.routes))
+			}
+		})
 	}
 }
