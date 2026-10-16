@@ -30,7 +30,7 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 | GET | `api/calls` | the Calls view | [below](#get-apicalls) |
 | GET | `api/trace` | a traced target's route, hop statistics and route changes | [below](#get-apitrace-and-apitracepanel) |
 | GET | `api/trace/panel` | per-hop chart data for a traced target | [below](#get-apitrace-and-apitracepanel) |
-| POST | `api/investigate` | start an on-demand trace | [TRACE-API.md](TRACE-API.md) |
+| POST | `api/investigate` | start an on-demand trace of a profile target or any public host | [TRACE-API.md](TRACE-API.md) |
 | GET | `api/speed` | speed tests: summary, rows, windows, queue, running test | [SPEEDTEST-API.md](SPEEDTEST-API.md) |
 | POST | `api/speed/run`, `api/speed/cancel`, `api/speed/config` | the speed-test controls | [SPEEDTEST-API.md](SPEEDTEST-API.md) |
 | POST, DELETE | `api/admin/session` | swap the admin token for a cookie, or sign out | [below](#post-and-delete-apiadminsession) |
@@ -76,7 +76,7 @@ No parameters. `profileJSON` in `internal/web/api.go`: `name`, `features` (`trac
 
 ### GET `api/trace` and `api/trace/panel`
 
-`api/trace` takes `target`, `mode` (`icmp`, the default, `tcp` or `udp`: which trace, see [TRACE-API.md](TRACE-API.md#probe-types)), `from` and `to` (default the last 30 minutes) and returns the `mode` and its `port` (TCP, UDP), the modes this machine supports (`modes`), the target's bare `host` name or address (never a port or path; left out for the gateway and the ISP edge), the always-on round interval `interval_ms`, its current `route` (`since`, `hops`), per-hop statistics (`hops`: `n`, `lost`, `loss`, `min`, `mean`, `max`, `p95`, `jitter`, `last`, `stdev` and `jmax`, see [TRACE-API.md](TRACE-API.md#hop-statistics), and the loss flags `loss_continues` and `rate_limited`, see [TRACE-API.md](TRACE-API.md#hop-loss-flags)), the route `changes` in the range, newest first (ICMP only), and the `investigation` of that mode while one runs or for an hour after (`traceJSON` in `internal/web/trace.go`). A hop has `hop` and, when known, `ip`, `rdns`, `asn` and `owner`.
+`api/trace` takes `target` (a profile target, or a host's trace such as `host:example.com`, see [TRACE-API.md](TRACE-API.md#hosts-outside-the-profile)), `mode` (`icmp`, the default, `tcp` or `udp`: which trace, see [TRACE-API.md](TRACE-API.md#probe-types)), `from` and `to` (default the last 30 minutes) and returns the `mode` and its `port` (TCP, UDP), the modes this machine supports (`modes`), the target's bare `host` name or address (never a port or path; left out for the gateway and the ISP edge), the always-on round interval `interval_ms`, its current `route` (`since`, `hops`), per-hop statistics (`hops`: `n`, `lost`, `loss`, `min`, `mean`, `max`, `p95`, `jitter`, `last`, `stdev` and `jmax`, see [TRACE-API.md](TRACE-API.md#hop-statistics), and the loss flags `loss_continues` and `rate_limited`, see [TRACE-API.md](TRACE-API.md#hop-loss-flags)), the route `changes` in the range, newest first (ICMP only), and the `investigation` of that mode while one runs or for an hour after (`traceJSON` in `internal/web/trace.go`). A hop has `hop` and, when known, `ip`, `rdns`, `asn` and `owner`.
 
 `api/trace/panel` takes `target`, `mode`, `hops` (e.g. `1,4,12`; default every hop of the current route), `from`, `to` and `points`, and answers in `api/panel`'s format with one series per hop (kind `trace`, `trace_tcp` or `trace_udp`).
 

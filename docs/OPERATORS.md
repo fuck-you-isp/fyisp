@@ -22,7 +22,7 @@ fyisp is a home internet monitor. If a user turns its speed tests on (they are o
 
 ## For operators of traced hosts and routers
 
-A user's *Investigate* view (traceroutes, like `mtr`) probes the path to one of the targets in their profile: hop by hop, one round every 2.5 seconds, for at most 250 rounds (about 10 minutes), then it stops by itself. At most 4 such traces run at once per install, and at most 12 start per hour. Always-on traces (`trace: true` in the user's profile) run one round every 5 seconds with ICMP only.
+A user's *Investigate* view (traceroutes, like `mtr`) probes the path to one of the targets in their profile, or to any public host that someone who can open their dashboard types in, yours possibly among them: hop by hop, one round every 2.5 seconds, for at most 250 rounds (about 10 minutes), then it stops by itself. At most 4 such traces run at once per install, and at most 12 start per hour, targets and typed hosts together. A typed host must resolve to public IPv4 addresses only, and is looked up about once a minute while it is traced. Always-on traces (`trace: true` in the user's profile) run one round every 5 seconds with ICMP only.
 
 **What you will see:**
 - **ICMP** (the default): echo requests with a low TTL, 16 bytes of payload starting with a random tag and `fyisp-tr`.

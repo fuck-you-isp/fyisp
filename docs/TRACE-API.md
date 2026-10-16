@@ -2,7 +2,7 @@
 
 Part of the [API index](API.md).
 
-An on-demand trace follows one profile target's path hop by hop every 2.5 s, for **250 rounds** (about 10.4 minutes), and then stops by itself. Always-on traces (`trace: true` in the profile) are not affected.
+An on-demand trace follows one profile target's path, or the path to [any public host](#hosts-outside-the-profile), hop by hop every 2.5 s, for **250 rounds** (about 10.4 minutes), and then stops by itself. Always-on traces (`trace: true` in the profile) are not affected.
 
 ## Probe types
 
@@ -33,6 +33,7 @@ Linux reads the routers' replies from each probe socket's error queue (`IP_RECVE
 
 ```
 POST api/investigate?target=<profile target name>[&mode=icmp|tcp|udp]
+POST api/investigate?host=<name or IPv4 address>[&mode=icmp|tcp|udp]
 ```
 
 There is no body. Anyone who can open the dashboard may start a trace: there is no admin token check. The checks are:
@@ -43,20 +44,22 @@ There is no body. Anyone who can open the dashboard may start a trace: there is 
 | Same origin (`Origin` / `Sec-Fetch-Site`) | yes |
 | `X-FYISP-Token` (CSRF, page meta) | yes |
 | Slots | at most 4 traces at once |
-| Start budget | at most 12 new traces in a rolling hour, across all targets and viewers. A request carrying the admin token (`X-FYISP-Admin` or the session cookie) skips the budget, not the slots |
+| Start budget | at most 12 new traces in a rolling hour, across all targets, hosts and viewers. A request carrying the admin token (`X-FYISP-Admin` or the session cookie) skips the budget, not the slots |
+| Public addresses only | a `host` must resolve to public IPv4 addresses only (see [below](#hosts-outside-the-profile)) |
 
 **Request rules:**
-- Exactly one `target` parameter, at most one `mode` (default `icmp`) and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
-- Only profile target names are accepted; never a host or an address.
+- Exactly one `target` or `host` parameter, at most one `mode` (default `icmp`) and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
+- `target` is a profile target name, or the name of a host's trace (`host:example.com`), which is the same as `host=example.com`.
+- There is no port parameter: TCP traces always go to port 443, UDP traces to port 33434.
 - Every response past the host check has `Cache-Control: no-store`.
 - Logs name the target and the error, never the client.
 
 **What a POST does:**
 - **Trace running:** returns its state. It doesn't extend the trace or reset the count, and it uses no budget.
 - **Trace finished:** starts a fresh 250 rounds.
-- Only starts that succeed use the budget; refused ones (no slot, unknown target, a tracer error) don't.
+- Only starts that succeed use the budget; refused ones (no slot, unknown target, a refused host, a tracer error) don't.
 
-Client addresses behind a tunnel can't be trusted, so the budget, the slots, the 250 rounds and the tracer's per-router probe cap are the only bounds on a script that starts traces.
+Client addresses behind a tunnel can't be trusted, so the budget, the slots, the 250 rounds, the public-address check and the tracer's per-router probe cap are the only bounds on a script that starts traces.
 
 **Response 200:**
 
@@ -71,16 +74,31 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `bad_request` | a parameter other than one `target` and one `mode`, an empty `target`, an unknown `mode`, or a body |
+| 400 | `bad_request` | a parameter other than one `target` or `host` and one `mode` (a `port` too), an empty one, an unknown `mode`, or a body |
+| 400 | `bad_host` | `host` is not a DNS name or an IPv4 address (an IPv6 address, a port, a scheme or a path included) |
 | 400 | `unsupported_mode` | this machine can't trace with `mode` (see `modes`) |
 | 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token` |
+| 403 | `not_public` | `host` is, or resolves to, an address that isn't public (the address is not named) |
 | 404 | `unknown_target` | not a profile target name |
+| 404 | `unresolved` | `host` has no IPv4 address |
 | 404 | `unavailable` | tracing is not available |
 | 405 | `method_not_allowed` | not POST |
 | 421 | `unknown_host` | the `Host` isn't allowed (open the dashboard's own address, or add `--allow-host`) |
 | 429 | `busy` | no free slot (4 in all; `retry_after`) |
 | 429 | `rate_limited` | 12 traces started in the last hour (`retry_after`: until the oldest leaves the hour) |
 | 500 | `failed` | the tracer failed (with the reason) |
+
+## Hosts outside the profile
+
+`host=` traces any public host, like `mtr` does whatever you type. The checks, in order:
+
+1. **Syntax.** A DNS name (letters, digits and hyphens; at most 253 characters; not all digits in the last label) or an IPv4 address. It is lowercased and loses a trailing dot, so `Example.COM.` and `example.com` are one trace. IPv6 is not traced.
+2. **The limits** (slots and the hourly budget), before any lookup.
+3. **Public addresses only.** The name is resolved with the system resolver, IPv4 only, as targets are. Every address must be public: not private (RFC 1918), loopback, link-local, carrier-grade NAT (100.64/10), multicast, broadcast, "this network", reserved, benchmarking (198.18/15) or documentation space. One such address refuses the host. This keeps a viewer behind your tunnel from mapping your LAN; the Network path already shows your router.
+
+The trace is named `host:<host>` (`"target"` in the response): `GET api/trace?target=host:example.com&mode=` and `api/trace/panel` read it like a target's, with `host` set to it. Profile target names can't start with `host:`. The tracer re-resolves the name every minute, as it does for targets, and checks every answer again: if the name later resolves to an address that isn't public (DNS rebinding), the trace stops (`finished`) and nothing is sent there.
+
+A host's hop numbers are stored like a target's, under its name, and age out with the rest of the data. Its route is kept in memory, never stored: while the trace runs and for an hour after, so after that (or a restart) its hop numbers have no addresses. No route changes are recorded for it.
 
 ## Progress
 
