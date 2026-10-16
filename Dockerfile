@@ -5,6 +5,7 @@
 #   docker buildx build --target modfiles --output type=local,dest=. .  # go mod tidy -> go.mod/go.sum
 #   docker buildx build --target fmt --output type=local,dest=. .       # gofmt -w all Go files
 #   docker buildx build --target asndb --output type=local,dest=. .     # refresh internal/asn/data/ip2asn-v4.bin
+#   docker buildx build --target dbfixture --output type=local,dest=. . # regenerate internal/store/testdata/v0.11.0.db (after tagging a release)
 #   docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
 #   docker build --target imagetest .                               # runtime image smoke test (--ephemeral)
@@ -71,6 +72,23 @@ go run ./internal/asn/cmd/asngen -in /asndb/ip2asn-v4.tsv.gz -out /out/ip2asn-v4
 SH
 FROM scratch AS asndb
 COPY --from=asndb-gen /out/ip2asn-v4.bin /internal/asn/data/
+
+# The database fixture of the last release, for TestUpgradeFromLastRelease:
+# the generator (internal/store/testdata/genfixture) runs in a checkout of
+# the release tag, so the file is written by that release's own store.
+# Regenerate it after tagging a release (set RELEASE and lastRelease in
+# internal/store/upgrade_test.go to the new tag, and delete the old file).
+#   docker buildx build --target dbfixture --output type=local,dest=. .
+FROM base AS dbfixture-gen
+ARG RELEASE=v0.11.0
+RUN git clone --depth 1 --branch ${RELEASE} https://github.com/fuck-you-isp/fyisp /rel
+COPY internal/store/testdata/genfixture/main.go /rel/cmd/genfixture/
+WORKDIR /rel
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go run ./cmd/genfixture -out /gen && mkdir /out && cp /gen/fyisp.db /out/${RELEASE}.db && ls -l /out
+FROM scratch AS dbfixture
+COPY --from=dbfixture-gen /out/ /internal/store/testdata/
 
 # License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
 # fyisp on any release platform, for the release assets and the image.

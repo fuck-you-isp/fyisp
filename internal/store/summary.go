@@ -59,8 +59,8 @@ type hourSummary struct {
 // 90-day, 90-series panel, and iterating rows through database/sql and
 // modernc costs ~0.25-1 µs each: 200+ ms. Packed per day it is 8k rows.
 //
-// The format (uncompressed) is version 2; other versions are not read (an
-// older database is replaced, see sqlite.go):
+// The format (uncompressed) is version 2. Databases upgraded in place (see
+// sqlite.go) hold version 2 rows, so a new format must keep reading it:
 //
 //	byte  version (2)
 //	then per hour, in increasing hour order:

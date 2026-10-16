@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,9 +57,11 @@ const (
 const readerIdleTime = time.Minute
 
 // schema is the whole database, created in one go in a new file. Its
-// version (PRAGMA user_version) is SchemaVersion. There are no migrations:
-// a change bumps SchemaVersion, and a file with an older schema is replaced
-// with a new empty one (see prepare).
+// version (PRAGMA user_version) is SchemaVersion. A change is additive only
+// (new tables, columns and indexes; nothing dropped, renamed or retyped): it
+// goes into schema, bumps schemaVersion, and adds the step from the previous
+// version to migrations, which upgrades the files of earlier releases in
+// place (see prepare).
 const schema = `
 CREATE TABLE series(
 	id          INTEGER PRIMARY KEY,
@@ -167,7 +170,38 @@ CREATE INDEX speedtests_start ON speedtests(start_ms);
 `
 
 // SchemaVersion is the schema version this build writes.
-func SchemaVersion() int { return 8 }
+func SchemaVersion() int { return schemaVersion }
+
+// schemaVersion is SchemaVersion (a variable for the migration tests).
+var schemaVersion = 8
+
+// oldestUpgradable is the oldest schema upgraded in place: fyisp v0.11.0's.
+// A file with an older schema is replaced with a new empty one.
+const oldestUpgradable = 8
+
+// A migration upgrades schema from to from+1, with additive DDL only.
+type migration struct {
+	from int
+	up   func(ctx context.Context, tx *sql.Tx) error
+}
+
+// migrations upgrade every schema from oldestUpgradable to SchemaVersion,
+// one step per version, oldest first.
+var migrations = []migration{}
+
+// migrationsFrom returns the steps from schema ver to SchemaVersion, or an
+// error naming the first missing one.
+func migrationsFrom(ver int) ([]migration, error) {
+	var out []migration
+	for v := ver; v < SchemaVersion(); v++ {
+		i := slices.IndexFunc(migrations, func(m migration) bool { return m.from == v })
+		if i < 0 {
+			return nil, fmt.Errorf("store: this build has no upgrade from schema v%d to v%d; the database is left as it is", v, v+1)
+		}
+		out = append(out, migrations[i])
+	}
+	return out, nil
+}
 
 // conns is the writer/reader handle pair.
 type conns struct {
@@ -182,8 +216,8 @@ var ErrNewerSchema = errors.New("store: database schema is newer than this build
 // ErrNotDatabase means the file exists but is not a fyisp database.
 var ErrNotDatabase = errors.New("store: not a fyisp database")
 
-// openConns opens the database at path, creating it, or replacing a file
-// from an older fyisp, first (see prepare).
+// openConns opens the database at path, creating, upgrading or replacing it
+// first (see prepare).
 //
 // Sequence:
 //  1. prepare: a complete file of the current schema at path, 0600 (SQLite
@@ -243,8 +277,9 @@ func openReader(ctx context.Context, path string) (*sql.DB, error) {
 	return r, nil
 }
 
-// errSimulatedCrash is returned at crashAt (tests only): the replacement
-// stops there as if the process had been killed, leaving everything as is.
+// errSimulatedCrash is returned at crashAt (tests only): the replacement or
+// upgrade stops there as if the process had been killed, leaving everything
+// as is.
 var errSimulatedCrash = errors.New("store: simulated crash")
 
 // crashAt names the step of prepare at which tests stop it ("" never).
@@ -259,12 +294,15 @@ func crashPoint(step string) error {
 
 // prepare leaves a complete database of the current schema at path (see
 // classify). No database yet (no file, 0 bytes, or no tables): a new one. A
-// database with an older schema: replaced with a new empty one, together
-// with its -wal, -shm and -journal files; its history is not carried over,
-// and one info line says so. Anything classify refuses is left exactly as
-// it is.
+// database with an older schema from oldestUpgradable on: upgraded in place
+// (migrate) with all of its data, and one info line says so; if this build
+// lacks a step, prepare fails and leaves the file as it is. A database with
+// a schema older than oldestUpgradable: replaced with a new empty one,
+// together with its -wal, -shm and -journal files; its history is not
+// carried over, and one info line says so. Anything classify refuses is
+// left exactly as it is.
 //
-// The new file is built as <path>.new, synced, and renamed over path, so a
+// A new file is built as <path>.new, synced, and renamed over path, so a
 // kill at any point leaves either the old file (replaced again on the next
 // start) or a complete new database, never a half-made one; a stale
 // <path>.new is removed first.
@@ -273,7 +311,14 @@ func prepare(ctx context.Context, path, version string, now time.Time, log *slog
 	if err != nil {
 		return err
 	}
-	if state == dbCurrent {
+	switch state {
+	case dbCurrent:
+		return nil
+	case dbUpgrade:
+		if err := migrate(ctx, path, ver); err != nil {
+			return err
+		}
+		log.Info(fmt.Sprintf("store: database upgraded from schema v%d to v%d", ver, SchemaVersion()))
 		return nil
 	}
 	tmp := path + ".new"
@@ -297,7 +342,8 @@ type dbState int
 const (
 	dbNone    dbState = iota // no database yet: no file, 0 bytes, or no tables
 	dbCurrent                // a complete database of the current schema
-	dbOld                    // a database from an older fyisp (an older schema)
+	dbUpgrade                // an older schema from oldestUpgradable on: upgraded in place
+	dbOld                    // a schema older than oldestUpgradable: replaced
 )
 
 // classify tells what is at path, for the daemon (prepare) and the
@@ -339,6 +385,8 @@ func classify(ctx context.Context, path string) (dbState, int, error) {
 		return dbCurrent, ver, nil
 	case ver == 0 || !objs["meta"] || !objs["series"]:
 		return 0, 0, fmt.Errorf("%w: %s has tables but not fyisp's schema", ErrNotDatabase, path)
+	case ver >= oldestUpgradable:
+		return dbUpgrade, ver, nil
 	}
 	return dbOld, ver, nil
 }
@@ -467,6 +515,44 @@ func build(ctx context.Context, path, version string, now time.Time) error {
 	}
 	if err := tx.Commit(); err != nil {
 		return err
+	}
+	return db.Close()
+}
+
+// migrate upgrades the database at path from schema ver to SchemaVersion in
+// place: every step and the new user_version in one transaction, synced to
+// disk (synchronous FULL) before migrate returns. A kill at any point leaves
+// the file at schema ver (upgraded again on the next start) or fully
+// upgraded. A missing step is an error before anything is written.
+func migrate(ctx context.Context, path string, ver int) error {
+	steps, err := migrationsFrom(ver)
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("sqlite", path+"?_pragma=synchronous(FULL)"+tempDirParam(path))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: upgrade the database: %w", err)
+	}
+	defer tx.Rollback()
+	for _, m := range steps {
+		if err := m.up(ctx, tx); err != nil {
+			return fmt.Errorf("store: upgrade schema v%d to v%d: %w", m.from, m.from+1, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d", SchemaVersion())); err != nil {
+		return fmt.Errorf("store: upgrade the database: %w", err)
+	}
+	if err := crashPoint("migrate"); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: upgrade the database: %w", err)
 	}
 	return db.Close()
 }
