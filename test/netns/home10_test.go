@@ -281,22 +281,24 @@ func TestHome10(t *testing.T) {
 				}
 			}
 		}
-		// The cause. With an isp incident from the verdict it is the
-		// provider. Without one, the layers decide, and the edge's measured
-		// loss in this lab sits right at the 2% layerLossy line (6% netem on
-		// the replies, the edge's 1 s pings), so "the internet past your
-		// provider" is accepted too. The thresholds are kept on purpose; the
-		// flip-flop between the two is a follow-up after the release.
-		inc, _ := lab.incidents(t, t0)
-		isp := slices.ContainsFunc(inc, func(in incidentAPI) bool { return in.Kind == "isp" })
-		p := lab.last(t)
-		ok := func(it h10Problem) bool {
-			return it.CauseKind == "provider" || !isp && it.Cause == "the internet past your provider"
+		// The cause: the provider, at every poll from Choppy to the loss's
+		// end and at the last one. The edge's measured loss in this lab
+		// sits right at the 2% layerLossy line (6% netem on the replies,
+		// the edge's 1 s pings): an ongoing problem once blamed on the
+		// provider stays so while the edge still loses some.
+		notProvider := func(n *h10Now) bool {
+			return len(n.Problems.Items) == 0 || slices.ContainsFunc(n.Problems.Items, func(it h10Problem) bool { return it.CauseKind != "provider" })
 		}
-		if items := p.n.Problems.Items; len(items) == 0 || !slices.ContainsFunc(items, ok) ||
-			slices.ContainsFunc(items, func(it h10Problem) bool { return !ok(it) }) {
-			lab.errorf(t, p, "provider loss (isp incident: %v): want the problems blamed on the provider%s", isp,
-				map[bool]string{false: " or the internet past it", true: ""}[isp])
+		if c := lab.first(t0, t0.Add(6*time.Minute+home10Poll), choppy); c != nil {
+			for _, q := range lab.polls(c.t, t1) {
+				if notProvider(q.n) {
+					lab.errorf(t, q, "provider loss: want every problem blamed on the provider at every poll while calls are Choppy")
+					break
+				}
+			}
+		}
+		if p := lab.last(t); notProvider(p.n) {
+			lab.errorf(t, p, "provider loss: want the problems blamed on the provider")
 		}
 		for _, id := range []string{"zoom", "teams", "meet", "slack"} {
 			g := lab.first(t1, time.Now(), func(n *h10Now) bool { return n.tile(id).State == "good" })
