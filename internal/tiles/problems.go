@@ -198,8 +198,11 @@ func (e *engine) episodes(v *view) []Episode {
 	}
 	for _, d := range v.blips {
 		// a blip leaves nothing behind only when the path was clean after
-		// it: one inside a lossy spell is part of the spell
-		if !e.layersClean(v, d.End, d.End.Add(lagMax), layerGateway, layerEdge, layerAnycast) {
+		// it: one inside a lossy spell is part of the spell, also one
+		// right after another blip
+		if !e.layersClean(v, d.End, d.End.Add(lagMax), layerGateway, layerEdge, layerAnycast) || slices.ContainsFunc(v.blips, func(o Drop) bool {
+			return o.End.Before(d.Start) && o.End.After(d.Start.Add(-absorbBefore))
+		}) {
 			continue
 		}
 		v.lagBlips = append(v.lagBlips, d)
@@ -262,6 +265,7 @@ func (e *engine) episodes(v *view) []Episode {
 	}
 	sp := e.speed()
 	var buf []minute
+	causes := map[string]Cause{}
 	eps := groupEpisodes(conn, parts, func(x Episode) Cause {
 		in := attrIn{from: x.Start, to: x.End, now: now, incidents: incs, speed: sp}
 		// a call tile's minute judges the call window that ends with it:
@@ -298,8 +302,21 @@ func (e *engine) episodes(v *view) []Episode {
 			}
 		}
 		in.tiles = e.tileEvs(x, v)
-		return attribute(in)
+		c := attribute(in)
+		if !x.Ongoing() {
+			return c
+		}
+		// an ongoing problem blamed on the provider stays so while the
+		// edge still loses some (the calls' loss reads at the layerLossy
+		// line, #35)
+		id := episodeID(x)
+		if e.causes[id].Who == WhoProvider && c.Who == WhoCallsPath && in.layers[layerEdge].loss >= layerClean {
+			c = e.causes[id]
+		}
+		causes[id] = c
+		return c
 	}, now)
+	e.causes = causes
 	cut := now.Add(-problemsFor)
 	return slices.DeleteFunc(eps, func(x Episode) bool { return !x.Ongoing() && x.End.Before(cut) })
 }

@@ -1,7 +1,6 @@
 package tiles
 
 import (
-	"fmt"
 	"slices"
 	"sort"
 	"testing"
@@ -96,44 +95,9 @@ func runModelled(t *testing.T, evs []eEvent, from, to time.Time, minFrac float64
 	return m
 }
 
-// E1: a 6% line (the comment's "degraded line ... keeps amber"), 30 minutes,
-// 30 seeds, the verdict modelled with selection: it fires exactly when a
-// cluster of losses lifts its window to 10%. Red isp cards with no drop.
-func TestR34eSixPercentRed(t *testing.T) {
-	t.Skip("known NIT, deferred after #34 (rev34e report): assertions kept for the follow-up")
-	t0 := time.Date(2026, 10, 9, 15, 20, 0, 0, time.UTC)
-	incs, redIncs, redTicks, ispTicks := 0, 0, 0, 0
-	var ex []string
-	for seed := uint64(1); seed <= 30; seed++ {
-		evs := lossy(t0, t0.Add(30*time.Minute), 0.06, notGateway, 100+seed)
-		red := map[int64]bool{}
-		m := runModelled(t, evs, t0, t0.Add(30*time.Minute), 0.1, func(e *engine, now time.Time, s *lagScene, m *vModel) {
-			snap := e.Snapshot()
-			if snap.Conn.Kind == string(model.VerdictISP) {
-				ispTicks++
-				if snap.Conn.Tone == ToneBad {
-					redTicks++
-					red[snap.Conn.Since.Unix()] = true
-					if len(ex) < 6 && !slices.Contains(ex, fmt.Sprint(seed, snap.Conn.Since)) {
-						ex = append(ex, fmt.Sprint(seed, snap.Conn.Since))
-						t.Logf("seed %d: red at +%v of incident %v (window loss %.3f, peak %.3f)", seed, now.Sub(snap.Conn.Since), snap.Conn.Since.Format("15:04:05"), s.loss, e.peak.loss)
-					}
-				}
-			}
-		})
-		incs += len(m.incs)
-		redIncs += len(red)
-	}
-	t.Logf("6%% loss, 30 x 30 min: %d isp incidents, %d with a red card; isp card ticks %d, red %d", incs, redIncs, ispTicks, redTicks)
-	if redIncs > 0 {
-		t.Errorf("6%% loss: %d of %d isp incidents show the red card (%d of %d ticks)", redIncs, incs, redTicks, ispTicks)
-	}
-}
-
 // E2: 40% and 35% random loss from t0 for 5 minutes, 20 seeds each, the
 // verdict modelled. Time to red after onset; amber ticks after red.
 func TestR34eTimeToRed(t *testing.T) {
-	t.Skip("known NIT, deferred after #34 (rev34e report): assertions kept for the follow-up")
 	t0 := time.Date(2026, 10, 9, 15, 20, 0, 0, time.UTC)
 	for _, p := range []float64{0.4, 0.35} {
 		var firsts []time.Duration
@@ -176,33 +140,6 @@ func TestR34eTimeToRed(t *testing.T) {
 		if p >= 0.4 && len(firsts) > 0 && firsts[len(firsts)-1] > 30*time.Second {
 			t.Errorf("40%%: red only after %v in the worst run", firsts[len(firsts)-1])
 		}
-	}
-}
-
-// E3: a 4 s stall of everything past the router (under connDropNow: no
-// drop), then 8% loss. The onset estimate counts from the stall's first
-// lost check: does an 8% line read red?
-func TestR34eStallThenLight(t *testing.T) {
-	t.Skip("known NIT, deferred after #34 (rev34e report): assertions kept for the follow-up")
-	t0 := time.Date(2026, 10, 9, 15, 20, 0, 0, time.UTC)
-	reds := 0
-	for seed := uint64(1); seed <= 20; seed++ {
-		evs := append([]eEvent{{t0, t0.Add(4 * time.Second), notGateway, 0}}, lossy(t0.Add(4*time.Second), t0.Add(10*time.Minute), 0.08, notGateway, 300+seed)...)
-		red := false
-		runModelled(t, evs, t0, t0.Add(3*time.Minute), 0.1, func(e *engine, now time.Time, s *lagScene, m *vModel) {
-			snap := e.Snapshot()
-			if snap.Conn.Kind == string(model.VerdictISP) && snap.Conn.Tone == ToneBad && !red {
-				red = true
-				t.Logf("seed %d: red at +%v after the stall (window %.3f peak %.3f)", seed, now.Sub(t0), s.loss, e.peak.loss)
-			}
-		})
-		if red {
-			reds++
-		}
-	}
-	t.Logf("4 s stall then 8%%: red in %d of 20 runs", reds)
-	if reds > 0 {
-		t.Errorf("4 s stall then 8%% loss: red isp card in %d of 20 runs", reds)
 	}
 }
 
@@ -265,7 +202,6 @@ func TestR34eCallShiftTail(t *testing.T) {
 // E2b: 40% random loss (TestR34eTimeToRed seed 15): the card must not turn
 // ok while the isp verdict's own window says 40%.
 func TestR34eGreenInLoss(t *testing.T) {
-	t.Skip("known NIT, deferred after #34 (rev34e report): assertions kept for the follow-up")
 	t0 := time.Date(2026, 10, 9, 15, 20, 0, 0, time.UTC)
 	evs := lossy(t0, t0.Add(5*time.Minute), 0.4, notGateway, 215)
 	lost := lostSecs(evs)

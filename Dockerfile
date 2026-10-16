@@ -5,14 +5,14 @@
 #   docker buildx build --target modfiles --output type=local,dest=. .  # go mod tidy -> go.mod/go.sum
 #   docker buildx build --target fmt --output type=local,dest=. .       # gofmt -w all Go files
 #   docker buildx build --target asndb --output type=local,dest=. .     # refresh internal/asn/data/ip2asn-v4.bin
-#   docker buildx build --target dbfixture --output type=local,dest=. . # regenerate internal/store/testdata/v0.11.0.db (after tagging a release)
+#   docker buildx build --target dbfixture --output type=local,dest=. . # regenerate internal/store/testdata/<release>.db (after tagging a release)
 #   docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
 #   docker build --target imagetest .                               # runtime image smoke test (--ephemeral)
 
 ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
 # The browser image for the UI tests; its Playwright must match test/ui/package.json.
-ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.55.0-noble@sha256:b27e719ecbfef153e13fd24e8341736733bf2658b229677eb21ff57ff5d7fb29
+ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS base
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS=-trimpath
@@ -80,7 +80,7 @@ COPY --from=asndb-gen /out/ip2asn-v4.bin /internal/asn/data/
 # internal/store/upgrade_test.go to the new tag, and delete the old file).
 #   docker buildx build --target dbfixture --output type=local,dest=. .
 FROM base AS dbfixture-gen
-ARG RELEASE=v0.11.0
+ARG RELEASE=v0.12.0
 RUN git clone --depth 1 --branch ${RELEASE} https://github.com/fuck-you-isp/fyisp /rel
 COPY internal/store/testdata/genfixture/main.go /rel/cmd/genfixture/
 WORKDIR /rel
@@ -99,7 +99,7 @@ for os in linux darwin windows; do
   GOOS=$os go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{with .Replace}}(replaced-by:{{.Path}}@{{.Version}}){{end}} {{.Dir}}{{end}}{{end}}' ./cmd/fyisp
 done | sort -u > /tmp/mods
 out=/THIRD_PARTY_LICENSES.txt
-printf 'fyisp includes the following third-party Go modules. Their license and notice\nfiles follow. See NOTICE for a summary.\n\n' > $out
+printf 'fyisp includes the following third-party software: the Go modules linked into\nit, the Go standard library and runtime, and uPlot (vendored in the web UI).\nTheir license and notice files follow. See NOTICE for a summary.\n\n' > $out
 while read -r path ver dir; do
   printf '================================================================================\n%s %s\n================================================================================\n' "$path" "$ver" >> $out
   found=0
@@ -108,6 +108,10 @@ while read -r path ver dir; do
   done
   [ $found = 1 ] || { echo "no license file for $path in $dir" >&2; exit 1; }
 done < /tmp/mods
+printf '================================================================================\nGo standard library and runtime %s\n================================================================================\n--- LICENSE\n' "$(go env GOVERSION)" >> $out
+cat "$(go env GOROOT)/LICENSE" >> $out; printf '\n' >> $out
+printf '================================================================================\nuPlot (internal/web/static/vendor)\n================================================================================\n--- uPlot.LICENSE\n' >> $out
+cat internal/web/static/vendor/uPlot.LICENSE >> $out; printf '\n' >> $out
 wc -l /tmp/mods $out
 SH
 
@@ -173,7 +177,6 @@ RUN out=$(systemd-analyze verify /etc/systemd/system/fyisp.service 2>&1); echo "
 #   docker buildx build --target uitest-out --output type=local,dest=out .     # + out/shots, out/report
 #   docker buildx build --target uitest-report --output type=local,dest=out .  # report even when tests fail
 #   docker buildx build --target uilock --output type=local,dest=. .           # regenerate test/ui/package-lock.json
-#   docker buildx build --target uifixtures --output type=local,dest=. .       # regenerate test/ui/fixtures/*.json from the home goldens (gen.js)
 # Unchanged inputs reuse the cached run; add --no-cache-filter uitest-run to run the tests again.
 
 FROM source AS webdev
@@ -188,18 +191,13 @@ RUN npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 FROM scratch AS uilock
 COPY --from=uilock-gen /ui/package-lock.json /test/ui/
 
-FROM ${PLAYWRIGHT_IMAGE} AS uifixtures-gen
-COPY test/ui/fixtures/gen.js /gen/
-COPY internal/web/testdata/home/ /gold/
-RUN node /gen/gen.js /gold /out
-FROM scratch AS uifixtures
-COPY --from=uifixtures-gen /out/ /test/ui/fixtures/
-
 FROM ${PLAYWRIGHT_IMAGE} AS uitest-run
 WORKDIR /ui
 COPY test/ui/package.json test/ui/package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY test/ui/ ./
+COPY internal/web/testdata/home/ /gold/
+RUN node fixtures/gen.js /gold fixtures
 COPY --from=webdev /fyisp-webdev /usr/local/bin/fyisp-webdev
 # Records the result instead of failing, so uitest-report can still export it.
 RUN <<'SH'

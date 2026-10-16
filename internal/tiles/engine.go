@@ -168,8 +168,9 @@ type engine struct {
 	gateway      netip.Addr
 	edge         netip.Addr
 	incidents    []model.Incident
-	verdict      model.Verdict // the latest tick's
-	peak         lossPeak      // the current isp incident's highest loss (the card)
+	verdict      model.Verdict    // the latest tick's
+	peak         lossPeak         // the current isp incident's highest loss (the card)
+	causes       map[string]Cause // the ongoing problems' causes at the last tick, by episodeID
 	incAt        time.Time
 	stored       speedWindows
 	storedAt     time.Time

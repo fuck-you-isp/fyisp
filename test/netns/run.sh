@@ -57,6 +57,8 @@ if [ "${FYISP_NETNS_PARALLEL:-1}" = 0 ]; then
 fi
 test_start=$SECONDS
 rc=0
-sudo env "${env[@]}" "$bin/netns.test" -test.v -test.timeout "$timeout" "$@" || rc=$?
+# -test.parallel defaults to GOMAXPROCS, 4 on GitHub runners, which queued
+# ~31 scenarios behind 4 slots and hit the 30m timeout.
+sudo env "${env[@]}" "$bin/netns.test" -test.v -test.timeout "$timeout" -test.parallel 64 "$@" || rc=$?
 echo "run.sh: tests took $((SECONDS - test_start))s" >&2
 exit "$rc"

@@ -140,7 +140,7 @@ func TestCmdProfiles(t *testing.T) {
 	if code := cmdProfiles([]string{"default"}, &out, &errb); code != 0 {
 		t.Fatal(code)
 	}
-	if s := out.String(); !strings.Contains(s, "Profile default: 28 targets in 4 panels") || !strings.Contains(s, "CDN-Google      www.gstatic.com/generate_204") {
+	if s := out.String(); !strings.Contains(s, "Profile default: 28 targets in 4 panels") || !regexp.MustCompile(`CDN-Google +www\.gstatic\.com +tcp`).MatchString(s) || !regexp.MustCompile(`Google-Meet +meet\.google\.com trace: lens\.l\.google\.com +tcp`).MatchString(s) {
 		t.Errorf("default:\n%s", s)
 	}
 
