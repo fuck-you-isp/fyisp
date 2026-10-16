@@ -742,13 +742,16 @@ class Panel {
       for (const l of lossy.slice(0, 5)) nodes.push(h('div', { text: l }));
       if (lossy.length > 5) nodes.push(h('div', { class: 'muted', text: `+${lossy.length - 5} more` }));
     }
-    const hits = incidentsAt(d.start + i * d.step, d.start + (i + 1) * d.step);
+    const hits = this.incidentsAt(d.start + i * d.step, d.start + (i + 1) * d.step);
     if (hits.length) {
       nodes.push(h('div', { class: 'sep' }));
       for (const inc of hits.slice(0, 3)) {
         const sw = h('span', { class: 'chip' });
         sw.style.background = verdictColor(inc.kind);
-        nodes.push(h('div', { class: 'row inc' }, sw, `incident: ${inc.summary}`));
+        // A connection-wide incident is on every panel: name it briefly here,
+        // the outage log has the full summary.
+        const txt = inc.targets?.length ? `incident: ${inc.summary}` : `connection problem: ${VERDICTS[inc.kind]?.short || inc.kind}`;
+        nodes.push(h('div', { class: 'row inc' }, sw, txt));
       }
     }
     nodes.push(...speedTipNodes(d.start + i * d.step, d.start + (i + 1) * d.step));
@@ -756,10 +759,24 @@ class Panel {
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
   }
 
+  /** The incidents this panel shows: connection-wide ones (no targets) and
+   * those naming a target it draws now (selected kinds, not hidden). */
+  incidents() {
+    const shown = new Set(this.visibleSeries().map((s) => s.target));
+    return incidents.filter((inc) => !inc.targets?.length || inc.targets.some((t) => shown.has(t)));
+  }
+
+  /** This panel's incidents overlapping [from, to) (milliseconds). */
+  incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
+    const now = Date.now();
+    return this.incidents().filter((inc) => Date.parse(inc.start) < to && (inc.end ? Date.parse(inc.end) : now) >= from);
+  }
+
   /** Incidents as faint vertical bands (drawn after the series), with a
    * stronger edge on top, coloured by verdict kind. */
   drawIncidents(/** @type {any} */ u) {
-    if (!incidents.length) return;
+    const list = this.incidents();
+    if (!list.length) return;
     const ctx = u.ctx;
     const { left, top, width, height } = u.bbox;
     const vmin = u.scales.x.min, vmax = u.scales.x.max;
@@ -769,7 +786,7 @@ class Panel {
     ctx.beginPath();
     ctx.rect(left, top, width, height);
     ctx.clip();
-    for (const inc of incidents) {
+    for (const inc of list) {
       const a = Date.parse(inc.start) / 1000, b = (inc.end ? Date.parse(inc.end) : now) / 1000;
       if (!(b >= vmin && a <= vmax)) continue;
       let x0 = u.valToPos(a, 'x', true), x1 = u.valToPos(b, 'x', true);
@@ -913,12 +930,6 @@ function servicesStats() {
     }
   }
   return { ever, n, lost, loss: n + lost ? lost / (n + lost) : NaN, rtt: null };
-}
-
-/** Incidents overlapping [from, to) (milliseconds). */
-function incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
-  const now = Date.now();
-  return incidents.filter((inc) => Date.parse(inc.start) < to && (inc.end ? Date.parse(inc.end) : now) >= from);
 }
 
 // ---------- investigate (per-hop traces) ----------
