@@ -26,8 +26,8 @@ A user's *Investigate* view (traceroutes, like `mtr`) probes the path to one of 
 
 **What you will see:**
 - **ICMP** (the default): echo requests with a low TTL, 16 bytes of payload starting with a random tag and `fyisp-tr`.
-- **TCP**, if the user picks *TCP 443*: TCP SYNs to port 443 with a low TTL, from an ordinary socket. The ones that reach your host open no connection: fyisp closes each socket with a reset (`SO_LINGER 0`) within about a second, before the SYN would be retransmitted, so no half-open or established connection is left behind. A firewall or IDS may log them as short connection attempts.
+- **TCP**, if the user picks *TCP 443*: TCP SYNs to port 443 with a low TTL, from an ordinary socket. When one reaches your host the handshake may complete, but fyisp then resets it at once (`SO_LINGER 0`, a RST); a SYN without an answer is reset within about a second, before it would be retransmitted. None is left half-open or open. On Windows each TCP probe is an ICMP echo request and a TCP SYN with the same TTL, so a router gets 2 packets per counted probe. A firewall or IDS may log them as short connection attempts.
 - **UDP**, if the user picks *UDP*: datagrams of 8 bytes (`fyisp-tr`) to port 33434 with a low TTL. A host answers them with ICMP port unreachable.
 
-Each probe goes out once per round per hop; the destination gets at most one probe per round, plus up to 5 more past it when it does not answer. **Routers** on the way get at most 1 probe a second from one install, over all of its traces and probe types together (with a burst of 2), and hops that several traces share are probed once per round for all of them.
+Each probe goes out once per round per hop; the destination gets at most one probe per round, plus up to 5 more past it when it does not answer. **Routers** on the way get at most 1 probe a second from one install, over all of its traces and probe types together (with a burst of 2), and hops that several traces of the same probe type share are probed once per round for all of them.
 

@@ -79,12 +79,14 @@ safeguards are:
   about 31 minutes an hour (12 traces of about 10 minutes, 4 at a time),
   and meanwhile even the token holder gets `busy`;
 - the per-router probe cap is unchanged;
-- the route takes exactly one `target` or `host` parameter and no body (a
-  declared length, chunking or anything read is refused), is never
-  cached, and its responses carry only the trace's state (target name,
-  rounds, times);
+- the route takes exactly one `target` or `host` parameter, an optional
+  `mode` (`icmp`, `tcp` or `udp`) and no body (a declared length,
+  chunking or anything read is refused), is never cached, and its
+  responses carry only the trace's state (target name, mode, rounds,
+  times);
 - a host's hop numbers are stored under its name (`host:example.com`)
-  and age out with the rest of the data; its route stays in memory;
+  and age out with the rest of the data, but the name stays in the
+  database's index of series; its route stays in memory;
 - client addresses are never logged.
 
 Behind a tunnel, client addresses can't be trusted, so these limits (the
@@ -98,7 +100,7 @@ The dashboard's controls:
 |---|---|---|---|---|---|
 | GET UI, `/api/*`, `/metrics` | yes | - | no | no | read-only |
 | POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes, where the dashboard has one | yes, on a dashboard without a token | off for everyone when reachable from elsewhere with `--admin-token=off`; one queue, one test at a time |
-| POST `/api/investigate` (`target=` or `host=`) | yes | yes | not needed (with it, a request skips the hourly budget) | no | the safeguards above: public hosts only, fixed ports, 4 at once, 12 an hour, 250 rounds |
+| POST `/api/investigate` (`target=` or `host=`, optional `mode=`) | yes | yes | not needed (with it, a request skips the hourly budget) | no | the safeguards above: public hosts only, fixed ports, 4 at once, 12 an hour, 250 rounds |
 | POST/DELETE `/api/admin/session` | yes | yes | POST needs it | - | 404 when no token is set |
 
 ## Exposing the dashboard

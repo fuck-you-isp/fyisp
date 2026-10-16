@@ -14,7 +14,7 @@ A trace has a mode, which picks its probes. None needs admin rights.
 | `tcp` | TCP SYNs to port 443, closed with a reset | `mtr -T -P 443` | `trace_tcp` |
 | `udp` | UDP datagrams to port 33434; the destination answers "port unreachable" | `mtr -u` | `trace_udp` |
 
-The port is fixed per trace, so routers that balance by port (ECMP) keep the trace on one path. Each mode of a target is its own trace: its own session, slot and start in the budget, numbers and route. Always-on traces are ICMP. Hops are shared only between traces of the same mode, but the cap of 1 probe a second per router counts every mode. Route changes are recorded for ICMP traces only; the route of a TCP or UDP trace is kept in memory while fyisp runs, so after a restart its hop numbers have no addresses until it is traced again.
+The destination port is fixed per trace, but the source port changes with every probe, so routers that balance per flow (ECMP) can still show several addresses at one hop, as with `mtr`. Each mode of a target is its own trace: its own session, slot and start in the budget, numbers and route. Always-on traces are ICMP. Hops are shared only between traces of the same mode, but the cap of 1 probe a second per router counts every mode. Route changes are recorded for ICMP traces only; the route of a TCP or UDP trace is kept in memory while fyisp runs, so after a restart its hop numbers have no addresses until it is traced again.
 
 `GET api/trace` lists what this machine supports in `modes`:
 
@@ -24,10 +24,10 @@ The port is fixed per trace, so routers that balance by port (ECMP) keep the tra
           {"mode":"udp","port":33434,"available":false,"reason":"windows_firewall"}]
 ```
 
-- `hops_via: "icmp"` (Windows): the default firewall drops the routers' replies to a standard user's TCP probes, so the routers are found with ICMP echo requests and only the destination is probed with a TCP connect to the port, with the connect's round trip.
+- `hops_via: "icmp"` (Windows): the default firewall drops the routers' replies to a standard user's TCP probes, so every probe is an ICMP echo request and a TCP connect to the port with the same TTL, sent together. The routers are named from the ICMP replies; the destination counts as reached when the connect completes or is refused, with the connect's round trip.
 - `reason` of a mode that isn't available: `windows_firewall` (UDP on Windows, for the same reason) or `os` (this OS can't send it without admin rights).
 
-Linux reads the routers' replies from each probe socket's error queue (`IP_RECVERR`; no ping sockets needed). macOS gets them on its unprivileged ICMP socket and matches them by the quoted header. IPv4 only.
+Linux reads the routers' replies to TCP and UDP probes from each probe socket's error queue (`IP_RECVERR`), so those probes need no ping socket. macOS gets them on its unprivileged ICMP socket and matches them by the quoted header. Tracing in any mode still needs the ICMP socket to start (see [ICMP permissions](../README.md#icmp-permissions)): without it no trace runs. IPv4 only.
 
 ## Start
 
@@ -80,7 +80,7 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 | 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token` |
 | 403 | `not_public` | `host` is, or resolves to, an address that isn't public (the address is not named) |
 | 404 | `unknown_target` | not a profile target name |
-| 404 | `unresolved` | `host` has no IPv4 address |
+| 404 | `unresolved` | `host` could not be resolved to an IPv4 address (no address, a lookup failure or a timeout) |
 | 404 | `unavailable` | tracing is not available |
 | 405 | `method_not_allowed` | not POST |
 | 421 | `unknown_host` | the `Host` isn't allowed (open the dashboard's own address, or add `--allow-host`) |
@@ -98,11 +98,11 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 
 The trace is named `host:<host>` (`"target"` in the response): `GET api/trace?target=host:example.com&mode=` and `api/trace/panel` read it like a target's, with `host` set to it. Profile target names can't start with `host:`. The tracer re-resolves the name every minute, as it does for targets, and checks every answer again: if the name later resolves to an address that isn't public (DNS rebinding), the trace stops (`finished`) and nothing is sent there.
 
-A host's hop numbers are stored like a target's, under its name, and age out with the rest of the data. Its route is kept in memory, never stored: while the trace runs and for an hour after, so after that (or a restart) its hop numbers have no addresses. No route changes are recorded for it.
+A host's hop numbers are stored like a target's, under its name, and age out with the rest of the data; the name itself stays in the database's index of series. Its route is kept in memory, never stored: while the trace runs and for an hour after, so after that (or a restart) its hop numbers have no addresses. No route changes are recorded for it.
 
 ## Progress
 
-The dashboard posts by itself when Investigate opens only for the owner: when `/api/status` has `"can_control": true` (this request may use the speed-test controls, per request: false through a proxy on a token-less dashboard) or the browser holds an admin token pasted earlier, which it then sends as `X-FYISP-Admin`. Everyone else clicks *Trace*.
+The dashboard posts by itself when Investigate opens only for a profile target, and only for the owner: when `/api/status` has `"can_control": true` (this request may use the speed-test controls, per request: false through a proxy on a token-less dashboard) or the browser holds an admin token pasted earlier, which it then sends as `X-FYISP-Admin`. Everyone else, and anyone opening a host's trace (`#t=host:…`), clicks *Trace*.
 
 `GET api/trace?target=&mode=` carries `"investigation": {…same object…}` of that mode while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
 

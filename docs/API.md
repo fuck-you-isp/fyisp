@@ -80,7 +80,7 @@ No parameters. `profileJSON` in `internal/web/api.go`: `name`, `features` (`trac
 
 `api/trace/panel` takes `target`, `mode`, `hops` (e.g. `1,4,12`; default every hop of the current route), `from`, `to` and `points`, and answers in `api/panel`'s format with one series per hop (kind `trace`, `trace_tcp` or `trace_udp`).
 
-Both answer 404 when tracing is off or the target is not a profile target.
+Both answer 404 when tracing is off or the target is neither a profile target nor a valid host's trace name (`host:<host>`).
 
 ### POST and DELETE `api/admin/session`
 

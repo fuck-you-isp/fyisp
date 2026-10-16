@@ -2,7 +2,7 @@
 // (testdata/v0.11.0.db): the dbfixture Dockerfile stage copies it into a
 // checkout of that release's tag and runs it there, so the file is written
 // by the release's own store. It uses a fixed clock and fixed values, which
-// upgrade_test.go recomputes (v011Samples and the others): keep both in
+// upgrade_test.go recomputes (relSamples and the others): keep both in
 // step.
 //
 //	go run ./cmd/genfixture -out DIR   # writes DIR/fyisp.db

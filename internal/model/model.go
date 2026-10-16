@@ -82,8 +82,9 @@ const (
 	TraceUDP                   // UDP datagrams to TraceUDPPort (KindTraceUDP)
 )
 
-// The fixed destination ports of TCP and UDP traces: one port per trace
-// keeps ECMP routers on one path.
+// The fixed destination ports of TCP and UDP traces. The source port
+// varies per probe, so per-flow ECMP can still show several addresses at
+// one hop, as with mtr.
 const (
 	TraceTCPPort = 443
 	TraceUDPPort = 33434
