@@ -198,8 +198,11 @@ func (e *engine) episodes(v *view) []Episode {
 	}
 	for _, d := range v.blips {
 		// a blip leaves nothing behind only when the path was clean after
-		// it: one inside a lossy spell is part of the spell
-		if !e.layersClean(v, d.End, d.End.Add(lagMax), layerGateway, layerEdge, layerAnycast) {
+		// it: one inside a lossy spell is part of the spell, also one
+		// right after another blip
+		if !e.layersClean(v, d.End, d.End.Add(lagMax), layerGateway, layerEdge, layerAnycast) || slices.ContainsFunc(v.blips, func(o Drop) bool {
+			return o.End.Before(d.Start) && o.End.After(d.Start.Add(-absorbBefore))
+		}) {
 			continue
 		}
 		v.lagBlips = append(v.lagBlips, d)
