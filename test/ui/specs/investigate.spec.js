@@ -322,6 +322,70 @@ test('Run it yourself: mtr against the target\'s host, pathping on Windows', asy
   await expect(run.locator('.inv-cmd')).toHaveText(`mtr -rwzbc 100 ${tr.host}`);
 });
 
+/** Records the mode of every api/trace request, optionally replacing "modes". @param {import('@playwright/test').Page} page @param {any} [modes] */
+async function traceModes(page, modes) {
+  /** @type {string[]} */
+  const asked = [];
+  await page.route('**/api/trace?*', async (route) => {
+    asked.push(new URL(route.request().url()).searchParams.get('mode') || '');
+    if (!modes) return route.continue();
+    const res = await route.fetch();
+    return route.fulfill({ response: res, json: { ...(await res.json()), modes } });
+  });
+  return asked;
+}
+
+test('the probe picker: TCP 443 and UDP traces, with a matching report and mtr command', async ({ page }) => {
+  await patchStatus(page, { controls: 'admin', admin: true, can_control: true });
+  const posts = { modes: /** @type {string[]} */ ([]) };
+  await page.route('**/api/investigate?*', (route) => {
+    const mode = new URL(route.request().url()).searchParams.get('mode') || '';
+    posts.modes.push(mode);
+    return route.fulfill({ json: { target: 'Google DNS 8.8.8.8', mode, state: 'running', rounds_done: 0, rounds_max: 250, interval_ms: 2500, started_at: Date.now() } });
+  });
+  const asked = await traceModes(page);
+  await page.goto('/#' + new URLSearchParams({ t: 'Google DNS 8.8.8.8', r: '1h' }));
+  const modes = page.getByRole('group', { name: 'Probe type' });
+  await expect(modes.getByRole('button', { name: 'ICMP' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#inv .inv-status .pill.on', { hasText: 'Always-on trace' })).toBeVisible();
+  expect(posts.modes).toEqual([]); // the always-on trace is ICMP
+
+  await modes.getByRole('button', { name: 'TCP 443' }).click();
+  await expect(modes.getByRole('button', { name: 'TCP 443' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => posts.modes).toEqual(['tcp']); // the owner's view starts the TCP trace
+  expect(asked).toContain('tcp');
+  await expect(page.locator('#inv .inv-status .pill.on', { hasText: 'Tracing…' })).toBeVisible();
+  await expect(page.locator('#inv .inv-mode-note')).toContainText('TCP SYNs to port 443');
+  await expect(page.locator('#inv .inv-run .inv-cmd')).toHaveText('mtr -T -P 443 -rwzbc 100 8.8.8.8');
+  await expect(page.locator('#inv .inv-changes')).toContainText('Route changes are recorded for ICMP traces only.');
+  expect(await report(page, 'Text (mtr -rwz)')).toMatch(/fyisp: TCP SYN probes to port 443, one round every/);
+  expect(JSON.parse(await report(page, 'JSON (mtr -j)')).report.mtr).toMatchObject({ type: 'tcp', port: 443, psize: '60' });
+  expect(new URLSearchParams(new URL(page.url()).hash.slice(1)).get('im')).toBe('tcp');
+
+  // The mode is part of the link.
+  await page.reload();
+  await expect(modes.getByRole('button', { name: 'TCP 443' })).toHaveAttribute('aria-pressed', 'true');
+
+  await modes.getByRole('button', { name: 'UDP' }).click();
+  await expect(page.locator('#inv .inv-run .inv-cmd')).toHaveText('mtr -u -P 33434 -rwzbc 100 8.8.8.8');
+  expect(await report(page, 'Text (mtr -rwz)')).toMatch(/fyisp: UDP probes to port 33434, /);
+  await modes.getByRole('button', { name: 'ICMP' }).click();
+  await expect(page.locator('#inv .inv-run .inv-cmd')).toHaveText('mtr -rwzbc 100 8.8.8.8');
+  expect(new URL(page.url()).hash).not.toContain('im=');
+});
+
+test('Windows: TCP finds the routers with ICMP, and UDP is off with the reason', async ({ page }) => {
+  await traceModes(page, [{ mode: 'icmp', available: true }, { mode: 'tcp', port: 443, available: true, hops_via: 'icmp' },
+    { mode: 'udp', port: 33434, available: false, reason: 'windows_firewall' }]);
+  await page.goto('/#' + new URLSearchParams({ t: 'Google DNS 8.8.8.8', r: '1h', im: 'tcp' }));
+  const modes = page.getByRole('group', { name: 'Probe type' });
+  await expect(modes.getByRole('button', { name: 'UDP' })).toBeDisabled();
+  const note = page.locator('#inv .inv-mode-note');
+  await expect(note).toContainText('UDP traces aren’t available on Windows');
+  await expect(note).toContainText('the routers are found with ICMP');
+  expect(await report(page, 'Text (mtr -rwz)')).toMatch(/fyisp: ICMP echo probes for the routers and TCP SYNs to port 443 for the destination, /);
+});
+
 for (const width of [1400, 390]) {
   test(`investigate screenshot ${width} px`, async ({ page }) => {
     await page.addInitScript(() => { try { localStorage.setItem('fyisp-inv-more', '1'); } catch { /* none */ } });

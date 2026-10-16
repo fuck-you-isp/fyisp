@@ -11,13 +11,14 @@
  *   last?:number|null,stdev?:number|null}} ReportHop
  */
 /**
- * @typedef {{dst:string,start:number,end:number,intervalMs:number,hops:ReportHop[]}} ReportInput
+ * @typedef {{dst:string,start:number,end:number,intervalMs:number,hops:ReportHop[],mode?:string,port?:number,viaICMP?:boolean}} ReportInput
  */
 
 export const SRC = 'fyisp';
-// The tracer's ICMP echo: a 20-byte IPv4 header, 8 bytes of ICMP header
-// and 16 of payload (internal/netinfo/hops).
-const PSIZE = '44';
+// Probe sizes (internal/netinfo/hops), IPv4 header included. ICMP echo: 8
+// bytes of ICMP header and 16 of payload. TCP: a SYN with the usual
+// options. UDP: 8 bytes of header and 8 of payload.
+const PSIZE = { icmp: '44', tcp: '60', udp: '36' };
 // internal/trace.DefaultRouterRate: probes answered per router per second.
 const ROUTER_RATE = 1;
 
@@ -65,10 +66,17 @@ const f1 = (/** @type {number|null} */ f, /** @type {number} */ w) => (f == null
 /** mtr's report time: 2026-10-16T10:53:47+0000. @param {number} ms */
 function isoTime(ms) { return new Date(ms).toISOString().replace(/\.\d+Z$/, '+0000'); }
 
+/** The probe type, in words. @param {ReportInput} r */
+export function probeName(r) {
+  if (r.mode === 'tcp') return r.viaICMP ? `ICMP echo probes for the routers and TCP SYNs to port ${r.port || 443} for the destination` : `TCP SYN probes to port ${r.port || 443}`;
+  if (r.mode === 'udp') return `UDP probes to port ${r.port || 33434}`;
+  return 'ICMP echo probes';
+}
+
 /** The footer: how fyisp measured. @param {ReportInput} r */
 function footer(r) {
   const s = Math.round(r.intervalMs / 100) / 10;
-  return `fyisp: ICMP echo probes, one round every ${s} s, at most ${ROUTER_RATE} probe a second per router (a busy router misses some rounds); ${isoTime(r.start)} to ${isoTime(r.end)}.`;
+  return `fyisp: ${probeName(r)}, one round every ${s} s, at most ${ROUTER_RATE} probe a second per router (a busy router misses some rounds); ${isoTime(r.start)} to ${isoTime(r.end)}.`;
 }
 
 /** `mtr -rwz` text. @param {ReportInput} r */
@@ -97,7 +105,12 @@ export function mtrJSON(r) {
       Last: r2(v.last), Avg: r2(v.avg), Best: r2(v.best), Wrst: r2(v.wrst), StDev: r2(v.stdev) };
   });
   const tests = rows.reduce((m, x) => Math.max(m, nums(x.main).snt), 0);
-  return JSON.stringify({ report: { mtr: { src: SRC, dst: r.dst, tos: 0, tests, psize: PSIZE, bitpattern: 'n/a' }, hubs } }, null, 4) + '\n';
+  const mode = r.mode || 'icmp';
+  /** @type {Record<string, string|number>} */
+  const mtr = { src: SRC, dst: r.dst, tos: 0, tests, psize: PSIZE[/** @type {'icmp'|'tcp'|'udp'} */ (mode)] || PSIZE.icmp, bitpattern: 'n/a' };
+  // mtr -j has no probe type: added for TCP and UDP only, so ICMP reports stay mtr's.
+  if (mode !== 'icmp') Object.assign(mtr, { type: mode, port: r.port || (mode === 'tcp' ? 443 : 33434), probe: probeName(r) });
+  return JSON.stringify({ report: { mtr, hubs } }, null, 4) + '\n';
 }
 
 /** `mtr -C` CSV (with -z: the Asn column). The empty column is mtr's field separator. @param {ReportInput} r */
@@ -113,7 +126,10 @@ export function mtrCSV(r) {
   return lines.join('\n') + '\n';
 }
 
-/** The command to run the same trace yourself. @param {string} host */
-export function mtrCommand(host) { return `mtr -rwzbc 100 ${host}`; }
+/** The command to run the same trace yourself, with the same probes. @param {string} host @param {string} [mode] */
+export function mtrCommand(host, mode = 'icmp') {
+  const how = mode === 'tcp' ? '-T -P 443 ' : mode === 'udp' ? '-u -P 33434 ' : '';
+  return `mtr ${how}-rwzbc 100 ${host}`;
+}
 /** @param {string} host */
 export function pathpingCommand(host) { return `pathping -n ${host}`; }

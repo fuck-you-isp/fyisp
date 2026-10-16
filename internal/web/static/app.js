@@ -78,7 +78,7 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, inv:string|null, band:boolean,
  *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
  */
-const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, inv: null, band: true,
+const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, inv: null, im: 'icmp', band: true,
   view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', sr: '', sd: 7, snf: false, ssw: false };
 /** @type {any} */
 let status = null;
@@ -187,6 +187,8 @@ function readHash() {
   state.log = p.get('o') === '1';
   const ti = p.get('t');
   state.inv = ti && traceOn ? ti : null;
+  const im = p.get('im');
+  state.im = im === 'tcp' || im === 'udp' ? im : 'icmp';
   const k = p.get('k');
   if (k != null) {
     const ks = k.split(',').filter((x) => KINDS.includes(x));
@@ -224,6 +226,7 @@ function hashString() {
   p.set('k', [...state.kinds].join(','));
   if (state.log) p.set('o', '1');
   if (state.inv) p.set('t', state.inv);
+  if (state.inv && state.im !== 'icmp') p.set('im', state.im);
   if (state.view) p.set('v', state.view);
   if (state.focus) p.set('f', state.focus);
   if (state.os) p.set('os', state.os);
@@ -938,8 +941,9 @@ function servicesStats() {
 /** @typedef {{hop:number,ip?:string,no_reply?:boolean,private?:boolean,rdns?:string,asn?:number,owner?:string}} HopRef */
 /** @typedef {HopRef & {n:number,lost:number,loss:number,min:number|null,mean:number|null,max:number|null,p95:number|null,jitter:number|null,last:number|null,stdev:number|null,jmax:number|null,loss_continues:boolean,rate_limited:boolean}} HopRow */
 /** @typedef {{id:number,target:string,at:string,first_diff:number,from:HopRef[],to:HopRef[]}} RouteChange */
-/** @typedef {{target:string,host?:string,traced:boolean,interval_ms:number,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigation?:InvState}} TraceData */
-/** @typedef {{target:string,state:string,rounds_done:number,rounds_max:number,interval_ms:number,started_at:number,finished_at?:number}} InvState */
+/** @typedef {{mode:string,port?:number,available:boolean,hops_via?:string,reason?:string}} TraceMode */
+/** @typedef {{target:string,mode:string,port?:number,host?:string,traced:boolean,interval_ms:number,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigation?:InvState,modes?:TraceMode[]}} TraceData */
+/** @typedef {{target:string,mode?:string,state:string,rounds_done:number,rounds_max:number,interval_ms:number,started_at:number,finished_at?:number}} InvState */
 
 const INV_REFRESH_MS = 5000;
 const REAL_LOSS = 0.01; // loss below 1% is noise (colours only: the server labels a hop's loss)
@@ -949,6 +953,21 @@ const INV_MORE = 'fyisp-inv-more'; // localStorage: the hops table shows P95, Ja
 const HOP_COLS = [['#', 'hn', 'Hop: TTL, 1 = your router'], ['Host', 'addr', 'Router address and its reverse DNS name'], ['ASN', 'own', 'The network (autonomous system) the address belongs to'],
   ['Loss%', 'loss', 'Share of probes this hop did not answer'], ['Snt', 'num', 'Probes sent'], ['Last', 'num', 'Newest round-trip time (ms)'], ['Avg', 'num', 'Average round-trip time (ms)'],
   ['Best', 'num', 'Lowest round-trip time (ms)'], ['Wrst', 'num', 'Highest round-trip time (ms)'], ['StDev', 'num', 'Standard deviation of the round-trip times (ms)']];
+// Trace modes: the picker's label, and what a probe is, for the report and the copy.
+const MODE_LABEL = { icmp: 'ICMP', tcp: 'TCP 443', udp: 'UDP' };
+/** Why a mode is off, from /api/trace's reason code. @param {TraceMode} m */
+function modeReason(m) {
+  const what = m.mode === 'udp' ? 'UDP' : 'TCP';
+  if (m.reason === 'windows_firewall') return `${what} traces aren’t available on Windows: its firewall drops the routers’ replies to them.`;
+  return `${what} traces aren’t available on this system.`;
+}
+/** What a mode's probes are, in a sentence. @param {TraceMode|undefined} m */
+function modeNote(m) {
+  if (!m || m.mode === 'icmp') return '';
+  if (m.mode === 'tcp' && m.hops_via === 'icmp') return 'On Windows the routers are found with ICMP (its firewall drops their replies to TCP); only the destination is probed with TCP connects to port 443.';
+  if (m.mode === 'tcp') return 'TCP SYNs to port 443, like a web connection; each is closed with a reset, so no connection is left open.';
+  return `UDP datagrams to port ${m.port || 33434}; the destination answers with "port unreachable".`;
+}
 const MORE_COLS = [['P95', 'num', '95th percentile round-trip time (ms)'], ['Javg', 'num', 'Jitter: average difference between consecutive round-trip times (ms)'],
   ['Jmax', 'num', 'Largest difference between consecutive round-trip times (ms)']];
 
@@ -1124,6 +1143,9 @@ class Investigate {
     this.picker.addEventListener('change', () => openInvestigate(this.picker.value));
     this.titleEl = h('h2', { text: 'Investigate' });
     this.statusEl = h('span', { class: 'inv-status' });
+    this.mode = 'icmp';
+    this.modeSeg = h('div', { class: 'seg sm inv-modes', role: 'group', 'aria-label': 'Probe type' });
+    this.modeNoteEl = h('p', { class: 'muted small inv-mode-note' });
     this.summary = h('div', { class: 'inv-summary', 'aria-live': 'polite' });
     this.tbody = h('tbody');
     this.thead = h('thead');
@@ -1166,7 +1188,8 @@ class Investigate {
       this.invSay,
       h('div', { class: 'inv-head' },
         h('button', { class: 'btn', type: 'button', text: '← Dashboard', onclick: closeInvestigate }),
-        this.titleEl, this.picker, this.statusEl),
+        this.titleEl, this.picker, this.modeSeg, this.statusEl),
+      this.modeNoteEl,
       this.summary,
       h('section', { class: 'panel', 'aria-label': 'Hops' },
         h('div', { class: 'panel-head' }, h('h2', { text: 'Hops' }), h('span', { class: 'meta', text: 'Click a hop to add it to the timeline' }), this.moreBtn),
@@ -1198,8 +1221,9 @@ class Investigate {
 
   /** @param {string} target */
   open(target) {
-    if (target !== this.target) {
+    if (target !== this.target || state.im !== this.mode) {
       this.target = target;
+      this.mode = state.im;
       this.data = null;
       this.tl = null;
       this.sel = new Set();
@@ -1211,6 +1235,7 @@ class Investigate {
       this.tbody.replaceChildren();
       this.runEl.replaceChildren();
       this.runFor = '';
+      this.repText.value = '';
       this.summary.replaceChildren();
       this.changesEl.replaceChildren();
       this.chartLegend.replaceChildren();
@@ -1223,9 +1248,48 @@ class Investigate {
     this.fillPicker();
     this.titleEl.textContent = 'Investigate';
     const t = targetInfo(target);
-    this.wantStart = !!t && !t.trace;
+    this.wantStart = !!t && !this.alwaysOn();
     this.invIdle = this.wantStart && !autoTrace();
+    this.renderModes();
     this.renderStatus();
+  }
+
+  /** Whether the shown trace is the target's always-on one (always-on traces are ICMP). */
+  alwaysOn() {
+    const t = targetInfo(this.target);
+    return !!t && !!t.trace && this.mode === 'icmp';
+  }
+
+  /** The modes this machine supports (from the last /api/trace; ICMP until then). @returns {TraceMode[]} */
+  modes() { return (this.data && this.data.modes) || [{ mode: 'icmp', available: true }]; }
+
+  /** The ICMP | TCP 443 | UDP picker: unsupported modes are disabled, with the reason. */
+  renderModes() {
+    const ms = this.modes();
+    this.modeSeg.replaceChildren(...['icmp', 'tcp', 'udp'].map((k) => {
+      const m = ms.find((x) => x.mode === k);
+      if (!m && k !== 'icmp') return null;
+      const off = !!m && !m.available;
+      return h('button', {
+        type: 'button', text: MODE_LABEL[/** @type {'icmp'|'tcp'|'udp'} */ (k)], 'data-mode': k, 'aria-pressed': String(k === this.mode),
+        disabled: off || null, title: off ? modeReason(/** @type {TraceMode} */ (m)) : k === 'icmp' ? 'ICMP echo requests, like ping and mtr' : modeNote(m),
+        onclick: () => this.setMode(k),
+      });
+    }).filter((x) => !!x));
+    const cur = ms.find((x) => x.mode === this.mode);
+    const off = ms.filter((x) => !x.available);
+    const lines = [modeNote(cur), ...off.map(modeReason)].filter(Boolean);
+    this.modeNoteEl.textContent = lines.join(' ');
+    this.modeNoteEl.hidden = !lines.length;
+  }
+
+  /** Switches the probe type: a different trace of the same target. @param {string} m */
+  setMode(m) {
+    if (m === this.mode) return;
+    state.im = m;
+    writeHash();
+    this.open(this.target);
+    this.load();
   }
 
   close() { this.ctl?.abort(); }
@@ -1283,8 +1347,9 @@ class Investigate {
     let started = false;
     try {
       /** @type {InvState} */
-      const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target }), { method: 'POST', headers }, 1);
-      if (target !== this.target) return;
+      const mode = this.mode;
+      const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target, mode }), { method: 'POST', headers }, 1);
+      if (target !== this.target || mode !== this.mode) return;
       this.invErr = '';
       this.setInv(r);
       started = true;
@@ -1330,19 +1395,19 @@ class Investigate {
     const prev = this.invState;
     this.invState = v || null;
     if (!v) return;
+    const how = this.mode === 'icmp' ? '' : ` with ${MODE_LABEL[/** @type {'tcp'|'udp'} */ (this.mode)]}`;
     if (v.state === 'running' && (!prev || prev.state !== 'running' || prev.started_at !== v.started_at)) {
-      this.invSay.textContent = `Tracing ${v.target}: up to ${v.rounds_max} rounds.`;
+      this.invSay.textContent = `Tracing ${v.target}${how}: up to ${v.rounds_max} rounds.`;
     } else if (v.state === 'finished' && prev && prev.state === 'running') {
-      this.invSay.textContent = `Trace of ${v.target} finished: ${v.rounds_done} rounds.`;
+      this.invSay.textContent = `Trace of ${v.target}${how} finished: ${v.rounds_done} rounds.`;
     }
   }
 
   renderStatus() {
-    const t = targetInfo(this.target);
     const d = this.data;
     const v = this.invState;
     const kids = [];
-    if (t && t.trace) kids.push(h('span', { class: 'pill on', text: 'Always-on trace' }));
+    if (this.alwaysOn()) kids.push(h('span', { class: 'pill on', text: 'Always-on trace' }));
     else if (this.invErr) {
       kids.push(h('span', { class: 'pill err', text: this.invErr }));
       kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Try again', onclick: () => { this.invErr = ''; this.poke(); } }));
@@ -1388,12 +1453,13 @@ class Investigate {
     this.ctl?.abort();
     const ctl = this.ctl = new AbortController();
     const target = this.target;
+    const mode = this.mode;
     const { from, to } = this.range();
     this.rttEl.classList.add('loading');
     try {
       /** @type {TraceData} */
-      const d = await fetchJSON('api/trace?' + new URLSearchParams({ target, from, to }), { signal: ctl.signal });
-      if (ctl.signal.aborted || target !== this.target) return;
+      const d = await fetchJSON('api/trace?' + new URLSearchParams({ target, mode, from, to }), { signal: ctl.signal });
+      if (ctl.signal.aborted || target !== this.target || mode !== this.mode) return;
       // A response can predate our start: never forget a known trace.
       if (d.investigation) this.setInv(d.investigation);
       const r = this.range();
@@ -1402,6 +1468,7 @@ class Investigate {
         return this.load();
       }
       this.data = d;
+      this.renderModes();
       const sk = `${!!this.invState}|${this.sessionOn()}`;
       if (sk !== this.shownSession) { this.shownSession = sk; renderControls(); }
       // Opening a target without an always-on trace starts one, unless one is running or just finished.
@@ -1423,8 +1490,8 @@ class Investigate {
       this.renderStatus();
       if (this.hops.length) {
         const points = Math.min(1000, Math.max(50, Math.round(this.width() / 2)));
-        this.tl = await fetchJSON('api/trace/panel?' + new URLSearchParams({ target, hops: this.hops.join(','), from, to, points: String(points) }), { signal: ctl.signal });
-        if (ctl.signal.aborted || target !== this.target) return;
+        this.tl = await fetchJSON('api/trace/panel?' + new URLSearchParams({ target, mode, hops: this.hops.join(','), from, to, points: String(points) }), { signal: ctl.signal });
+        if (ctl.signal.aborted || target !== this.target || mode !== this.mode) return;
       } else this.tl = null;
       this.renderCharts();
     } catch (e) {
@@ -1451,7 +1518,7 @@ class Investigate {
     const kids = [];
     if (!d.hops.length) {
       const t = targetInfo(this.target);
-      const pending = t && !t.trace && !this.invErr && !this.invIdle && !this.invNote && (!this.invState || this.invState.state === 'running');
+      const pending = t && !this.alwaysOn() && !this.invErr && !this.invIdle && !this.invNote && (!this.invState || this.invState.state === 'running');
       this.summary.className = 'inv-summary v-warming_up';
       kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.'
         : this.invIdle ? 'Not tracing. Click Trace to follow this target’s path for about 10 minutes.' : 'No trace data in this range.' }));
@@ -1571,7 +1638,9 @@ class Investigate {
     const d = /** @type {TraceData} */ (this.data);
     const v = this.invState;
     const iv = this.sessionOn() && v ? v.interval_ms : d.interval_ms;
-    return { dst: this.runHost(), start: d.from, end: Math.min(d.to, d.now), intervalMs: iv || 0, hops: d.hops };
+    const m = this.modes().find((x) => x.mode === this.mode);
+    return { dst: this.runHost(), start: d.from, end: Math.min(d.to, d.now), intervalMs: iv || 0, hops: d.hops,
+      mode: this.mode, port: d.port || 0, viaICMP: !!m && m.hops_via === 'icmp' };
   }
 
   reportText() {
@@ -1600,10 +1669,11 @@ class Investigate {
   /** "Run it yourself": the same trace with mtr (or pathping on Windows). */
   renderRun() {
     const host = this.runHost();
-    if (host === this.runFor) return;
-    this.runFor = host;
+    const key = `${this.mode} ${host}`;
+    if (key === this.runFor) return;
+    this.runFor = key;
     if (!host) { this.runEl.replaceChildren(); return; }
-    const cmd = mtrCommand(host);
+    const cmd = mtrCommand(host, this.mode);
     const say = h('span', { class: 'muted small', role: 'status', 'aria-live': 'polite' });
     const ta = /** @type {HTMLTextAreaElement} */ (h('textarea', { class: 'inv-rep-text', readonly: true, rows: '1', hidden: true, 'aria-label': 'Command' }));
     this.runEl.replaceChildren(
@@ -1611,7 +1681,8 @@ class Investigate {
       h('code', { class: 'inv-cmd', text: cmd }),
       h('button', { class: 'tbtn', type: 'button', text: 'Copy', 'aria-label': 'Copy the mtr command', onclick: () => copyText(cmd, ta, say) }),
       say,
-      h('span', { class: 'muted small inv-run-hint' }, 'Linux or macOS (on macOS it may need sudo). On Windows: ', h('code', { text: pathpingCommand(host) }), '.'),
+      h('span', { class: 'muted small inv-run-hint' }, this.mode === 'icmp' ? 'Linux or macOS (on macOS it may need sudo). On Windows: ' : 'Linux or macOS (it may need sudo). Windows has no built-in TCP or UDP trace; its ICMP one is ',
+        h('code', { text: pathpingCommand(host) }), '.'),
       ta);
   }
 
@@ -1626,7 +1697,7 @@ class Investigate {
   renderChanges() {
     const d = /** @type {TraceData} */ (this.data);
     if (!d.changes.length) {
-      this.changesEl.replaceChildren(h('p', { class: 'muted o-empty', text: 'No route changes in this range.' }));
+      this.changesEl.replaceChildren(h('p', { class: 'muted o-empty', text: this.mode === 'icmp' ? 'No route changes in this range.' : 'Route changes are recorded for ICMP traces only.' }));
       return;
     }
     this.changesEl.replaceChildren(...d.changes.map((c) => {
