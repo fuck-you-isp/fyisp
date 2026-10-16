@@ -998,6 +998,11 @@ let inv = null;
 
 function targetInfo(/** @type {string} */ name) { return allTargets.find((t) => t.name === name); }
 
+// A trace of a host outside the profile is named "host:<host>" (model.HostTargetPrefix).
+const HOST_PREFIX = 'host:';
+/** The host of a "host:" trace name, else ''. @param {string} name */
+function hostOf(name) { return name.startsWith(HOST_PREFIX) ? name.slice(HOST_PREFIX.length) : ''; }
+
 /** The target the path panel and path-level incidents open: a traced anycast target, else any traced one. */
 function defaultTraceTarget() {
   const tr = allTargets.filter((t) => t.trace);
@@ -1074,6 +1079,8 @@ function invError(e) {
     case 'unknown_target': return 'Tracing isn’t available for this target.';
     case 'unavailable': return 'Tracing is turned off on this setup.';
     case 'forbidden': return 'This page can’t start traces: open the dashboard at its own address.';
+    // A host outside the profile: the server's reason (no address in it).
+    case 'bad_host': case 'not_public': case 'unresolved': return `Can’t trace this host: ${b.error}.`;
   }
   return e.status === 429 ? `Too many traces right now. Try again ${invWait(e)}.` : 'Couldn’t start the trace. Try again.';
 }
@@ -1087,6 +1094,21 @@ function invError(e) {
  * budget every viewer shares (a visitor through a reverse proxy on a
  * token-less dashboard included: the server sees its proxy headers).
  */
+/**
+ * Headers of POST api/investigate: the CSRF token and, when the browser
+ * holds a token pasted into the speed-test dialog (no cookie), the admin
+ * token, with which the owner's traces skip the hourly budget. Never asked
+ * for here.
+ */
+function invHeaders() {
+  /** @type {Record<string,string>} */
+  const headers = {};
+  if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
+  const adm = status && status.controls === 'admin' && !status.admin ? storedAdmin() : '';
+  if (adm) headers['X-FYISP-Admin'] = adm;
+  return headers;
+}
+
 function autoTrace() { return !!status && (!!status.can_control || (status.controls === 'admin' && !!storedAdmin())); }
 
 function hopAddr(/** @type {HopRef} */ x) {
@@ -1146,6 +1168,15 @@ class Investigate {
     this.mode = 'icmp';
     this.modeSeg = h('div', { class: 'seg sm inv-modes', role: 'group', 'aria-label': 'Probe type' });
     this.modeNoteEl = h('p', { class: 'muted small inv-mode-note' });
+    // Any public host, traced with the picked probe type (POST api/investigate?host=).
+    this.hostIn = /** @type {HTMLInputElement} */ (h('input', {
+      type: 'text', name: 'host', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', maxlength: '253',
+      placeholder: 'Any public host, e.g. example.com', 'aria-label': 'Host to trace', 'aria-describedby': 'inv-host-err',
+    }));
+    this.hostErr = h('p', { id: 'inv-host-err', class: 'small inv-host-err', role: 'alert' });
+    this.hostBtn = h('button', { class: 'btn', type: 'submit', text: 'Trace host' });
+    this.hostForm = h('form', { class: 'inv-host', 'aria-label': 'Trace any public host', onsubmit: (/** @type {Event} */ e) => { e.preventDefault(); this.traceHost(); } },
+      this.hostIn, this.hostBtn, this.hostErr);
     this.summary = h('div', { class: 'inv-summary', 'aria-live': 'polite' });
     this.tbody = h('tbody');
     this.thead = h('thead');
@@ -1189,6 +1220,7 @@ class Investigate {
       h('div', { class: 'inv-head' },
         h('button', { class: 'btn', type: 'button', text: '← Dashboard', onclick: closeInvestigate }),
         this.titleEl, this.picker, this.modeSeg, this.statusEl),
+      this.hostForm,
       this.modeNoteEl,
       this.summary,
       h('section', { class: 'panel', 'aria-label': 'Hops' },
@@ -1248,7 +1280,9 @@ class Investigate {
     this.fillPicker();
     this.titleEl.textContent = 'Investigate';
     const t = targetInfo(target);
-    this.wantStart = !!t && !this.alwaysOn();
+    const host = hostOf(target);
+    if (host && document.activeElement !== this.hostIn) this.hostIn.value = host;
+    this.wantStart = (!!t || !!host) && !this.alwaysOn();
     this.invIdle = this.wantStart && !autoTrace();
     this.renderModes();
     this.renderStatus();
@@ -1314,7 +1348,7 @@ class Investigate {
       const rest = ts.filter((/** @type {TargetInfo} */ t) => !t.trace);
       if (rest.length) opts.push(h('optgroup', { label: `${g} (on demand)` }, ...rest.map((/** @type {TargetInfo} */ t) => h('option', { value: t.name, text: t.name }))));
     }
-    if (!allTargets.some((t) => t.name === this.target && ok(t))) opts.unshift(h('option', { value: this.target, text: this.target }));
+    if (!allTargets.some((t) => t.name === this.target && ok(t))) opts.unshift(h('option', { value: this.target, text: hostOf(this.target) || this.target }));
     this.picker.replaceChildren(...opts);
     this.picker.value = this.target;
   }
@@ -1337,18 +1371,11 @@ class Investigate {
     this.poking = true;
     this.invIdle = false;
     this.invNote = '';
-    /** @type {Record<string,string>} */
-    const headers = {};
-    if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
-    // A token pasted into the speed-test dialog (no cookie): with it the
-    // owner's traces skip the hourly budget. Never asked for here.
-    const adm = status && status.controls === 'admin' && !status.admin ? storedAdmin() : '';
-    if (adm) headers['X-FYISP-Admin'] = adm;
     let started = false;
     try {
       /** @type {InvState} */
       const mode = this.mode;
-      const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target, mode }), { method: 'POST', headers }, 1);
+      const r = await fetchJSON('api/investigate?' + new URLSearchParams({ target, mode }), { method: 'POST', headers: invHeaders() }, 1);
       if (target !== this.target || mode !== this.mode) return;
       this.invErr = '';
       this.setInv(r);
@@ -1369,6 +1396,41 @@ class Investigate {
     this.renderSummaryIfEmpty();
     // A new session: show it (its range) right away.
     if (started && this.sessionOn()) this.load();
+  }
+
+  /**
+   * Traces the host typed in the box with the picked probe type (POST
+   * api/investigate?host=), then shows it like a target: its name is
+   * "host:<host>", so the URL (#t=host:…) reopens it. A refusal (bad
+   * syntax, a non-public address, no address, the limits) is shown under
+   * the box with the server's reason.
+   */
+  async traceHost() {
+    const host = this.hostIn.value.trim();
+    if (!host || this.poking) return;
+    this.poking = true;
+    this.hostBtn.setAttribute('disabled', '');
+    this.hostErr.textContent = '';
+    this.hostIn.removeAttribute('aria-invalid');
+    try {
+      /** @type {InvState} */
+      const r = await fetchJSON('api/investigate?' + new URLSearchParams({ host, mode: this.mode }), { method: 'POST', headers: invHeaders() }, 1);
+      this.poking = false;
+      this.hostIn.value = hostOf(r.target); // as the server normalised it
+      openInvestigate(r.target);
+      this.wantStart = false;
+      this.invIdle = false;
+      this.invErr = '';
+      this.setInv(r);
+      this.renderStatus();
+    } catch (e) {
+      const err = /** @type {any} */ (e);
+      this.hostErr.textContent = invError(err);
+      this.hostIn.setAttribute('aria-invalid', 'true');
+    } finally {
+      this.poking = false;
+      this.hostBtn.removeAttribute('disabled');
+    }
   }
 
   /** Whether the range is the trace session: one runs or just finished, no range was picked since, no zoom. */
@@ -1396,10 +1458,11 @@ class Investigate {
     this.invState = v || null;
     if (!v) return;
     const how = this.mode === 'icmp' ? '' : ` with ${MODE_LABEL[/** @type {'tcp'|'udp'} */ (this.mode)]}`;
+    const name = hostOf(v.target) || v.target;
     if (v.state === 'running' && (!prev || prev.state !== 'running' || prev.started_at !== v.started_at)) {
-      this.invSay.textContent = `Tracing ${v.target}${how}: up to ${v.rounds_max} rounds.`;
+      this.invSay.textContent = `Tracing ${name}${how}: up to ${v.rounds_max} rounds.`;
     } else if (v.state === 'finished' && prev && prev.state === 'running') {
-      this.invSay.textContent = `Trace of ${v.target}${how} finished: ${v.rounds_done} rounds.`;
+      this.invSay.textContent = `Trace of ${name}${how} finished: ${v.rounds_done} rounds.`;
     }
   }
 
@@ -1517,7 +1580,7 @@ class Investigate {
     const dest = this.dest();
     const kids = [];
     if (!d.hops.length) {
-      const t = targetInfo(this.target);
+      const t = targetInfo(this.target) || hostOf(this.target);
       const pending = t && !this.alwaysOn() && !this.invErr && !this.invIdle && !this.invNote && (!this.invState || this.invState.state === 'running');
       this.summary.className = 'inv-summary v-warming_up';
       kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.'
@@ -1697,7 +1760,8 @@ class Investigate {
   renderChanges() {
     const d = /** @type {TraceData} */ (this.data);
     if (!d.changes.length) {
-      this.changesEl.replaceChildren(h('p', { class: 'muted o-empty', text: this.mode === 'icmp' ? 'No route changes in this range.' : 'Route changes are recorded for ICMP traces only.' }));
+      this.changesEl.replaceChildren(h('p', { class: 'muted o-empty', text: hostOf(this.target) ? 'Route changes are recorded for the profile’s targets only.'
+        : this.mode === 'icmp' ? 'No route changes in this range.' : 'Route changes are recorded for ICMP traces only.' }));
       return;
     }
     this.changesEl.replaceChildren(...d.changes.map((c) => {
