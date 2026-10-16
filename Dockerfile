@@ -99,7 +99,7 @@ for os in linux darwin windows; do
   GOOS=$os go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{with .Replace}}(replaced-by:{{.Path}}@{{.Version}}){{end}} {{.Dir}}{{end}}{{end}}' ./cmd/fyisp
 done | sort -u > /tmp/mods
 out=/THIRD_PARTY_LICENSES.txt
-printf 'fyisp includes the following third-party Go modules. Their license and notice\nfiles follow. See NOTICE for a summary.\n\n' > $out
+printf 'fyisp includes the following third-party software: the Go modules linked into\nit, the Go standard library and runtime, and uPlot (vendored in the web UI).\nTheir license and notice files follow. See NOTICE for a summary.\n\n' > $out
 while read -r path ver dir; do
   printf '================================================================================\n%s %s\n================================================================================\n' "$path" "$ver" >> $out
   found=0
@@ -108,6 +108,10 @@ while read -r path ver dir; do
   done
   [ $found = 1 ] || { echo "no license file for $path in $dir" >&2; exit 1; }
 done < /tmp/mods
+printf '================================================================================\nGo standard library and runtime %s\n================================================================================\n--- LICENSE\n' "$(go env GOVERSION)" >> $out
+cat "$(go env GOROOT)/LICENSE" >> $out; printf '\n' >> $out
+printf '================================================================================\nuPlot (internal/web/static/vendor)\n================================================================================\n--- uPlot.LICENSE\n' >> $out
+cat internal/web/static/vendor/uPlot.LICENSE >> $out; printf '\n' >> $out
 wc -l /tmp/mods $out
 SH
 
