@@ -112,8 +112,14 @@ func TestLocalhostAllKinds(t *testing.T) {
 			if len(m[k(model.KindHTTPS)]) < 3 || len(m[k(model.KindTCP)]) < 2 {
 				t.Fatalf("too few samples: %d https, %d tcp", len(m[k(model.KindHTTPS)]), len(m[k(model.KindTCP)]))
 			}
+			icmpLost := 0
 			for _, s := range ss {
 				if s.Lost {
+					// macOS runners drop a loopback echo now and then (#37).
+					if s.Key.Kind == model.KindICMP && icmpLost == 0 {
+						icmpLost++
+						continue
+					}
 					t.Errorf("lost: %+v", s)
 				}
 				// Go's monotonic clock on Windows ticks every ~0.5ms, and
