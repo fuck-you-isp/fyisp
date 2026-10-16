@@ -5,7 +5,7 @@
 #   docker buildx build --target modfiles --output type=local,dest=. .  # go mod tidy -> go.mod/go.sum
 #   docker buildx build --target fmt --output type=local,dest=. .       # gofmt -w all Go files
 #   docker buildx build --target asndb --output type=local,dest=. .     # refresh internal/asn/data/ip2asn-v4.bin
-#   docker buildx build --target dbfixture --output type=local,dest=. . # regenerate internal/store/testdata/v0.11.0.db (after tagging a release)
+#   docker buildx build --target dbfixture --output type=local,dest=. . # regenerate internal/store/testdata/<release>.db (after tagging a release)
 #   docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
 #   docker build --target imagetest .                               # runtime image smoke test (--ephemeral)
@@ -80,7 +80,7 @@ COPY --from=asndb-gen /out/ip2asn-v4.bin /internal/asn/data/
 # internal/store/upgrade_test.go to the new tag, and delete the old file).
 #   docker buildx build --target dbfixture --output type=local,dest=. .
 FROM base AS dbfixture-gen
-ARG RELEASE=v0.11.0
+ARG RELEASE=v0.12.0
 RUN git clone --depth 1 --branch ${RELEASE} https://github.com/fuck-you-isp/fyisp /rel
 COPY internal/store/testdata/genfixture/main.go /rel/cmd/genfixture/
 WORKDIR /rel
