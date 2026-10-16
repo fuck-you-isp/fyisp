@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
@@ -275,9 +276,15 @@ func (s *server) traced() map[string]bool {
 	return m
 }
 
+// knownTarget reports a profile target name, or the name of a trace of a
+// host outside the profile (model.HostTarget, normalised).
 func (s *server) knownTarget(name string) bool {
 	if name == "" || len(name) > 128 {
 		return false
+	}
+	if h, ok := model.HostOf(name); ok {
+		n, err := normHost(h)
+		return err == nil && n == h
 	}
 	if p := s.d.Profile(); p != nil {
 		for _, t := range p.Targets {
@@ -291,8 +298,11 @@ func (s *server) knownTarget(name string) bool {
 
 // traceHost is the host target's trace goes to (its ICMP host), bare (see
 // bareHost), or "" for the gateway and the ISP edge, whose addresses are
-// discovered.
+// discovered. A host outside the profile is its own.
 func (s *server) traceHost(name string) string {
+	if h, ok := model.HostOf(name); ok {
+		return h
+	}
 	if p := s.d.Profile(); p != nil {
 		for _, t := range p.Targets {
 			if t.Name == name {
@@ -748,18 +758,8 @@ func (iv *Investigations) start(src TraceSource, k invKey, unbudgeted bool) (st 
 	if se := iv.m[k]; se != nil && se.running() {
 		return se.json(k), false, nil
 	}
-	if !unbudgeted && len(iv.starts) >= InvestigateStartsPerHour {
-		return nil, false, &invError{http.StatusTooManyRequests, "rate_limited",
-			"too many on-demand traces started in the last hour", iv.starts[0].Add(budgetWindow).Sub(now)}
-	}
-	all := 0
-	for _, se := range iv.m {
-		if se.running() {
-			all++
-		}
-	}
-	if all >= MaxInvestigations {
-		return nil, false, errNoSlot
+	if e := iv.refusedLocked(now, unbudgeted); e != nil {
+		return nil, false, e
 	}
 	inv, err := src.Investigate(k.target, k.mode, InvestigateRounds)
 	if err != nil {
@@ -771,6 +771,38 @@ func (iv *Investigations) start(src TraceSource, k invKey, unbudgeted bool) (st 
 		iv.starts = append(iv.starts, now)
 	}
 	return se.json(k), true, nil
+}
+
+// refusedLocked is why a new trace can't start now: the hourly budget
+// (unless unbudgeted) or the slots. mu is held.
+func (iv *Investigations) refusedLocked(now time.Time, unbudgeted bool) *invError {
+	if !unbudgeted && len(iv.starts) >= InvestigateStartsPerHour {
+		return &invError{http.StatusTooManyRequests, "rate_limited",
+			"too many on-demand traces started in the last hour", iv.starts[0].Add(budgetWindow).Sub(now)}
+	}
+	all := 0
+	for _, se := range iv.m {
+		if se.running() {
+			all++
+		}
+	}
+	if all >= MaxInvestigations {
+		return errNoSlot
+	}
+	return nil
+}
+
+// check is start's refusal for the budget or the slots, without starting
+// (nil while k runs: start returns its state).
+func (iv *Investigations) check(k invKey, unbudgeted bool) *invError {
+	iv.mu.Lock()
+	defer iv.mu.Unlock()
+	now := iv.now()
+	iv.pruneLocked(now)
+	if se := iv.m[k]; se != nil && se.running() {
+		return nil
+	}
+	return iv.refusedLocked(now, unbudgeted)
 }
 
 // state is k's trace, if it runs or finished recently.
@@ -799,43 +831,133 @@ func writeInvErr(w http.ResponseWriter, r *http.Request, status int, code, msg s
 // investigateBodyMax caps the request body; the route takes none.
 const investigateBodyMax = 1 << 10
 
+// invRequest is a POST /api/investigate that passed investigateRequest:
+// a profile target name, or a host (as typed, not checked yet).
+type invRequest struct {
+	target, host string
+	mode         model.TraceMode
+}
+
 // investigateRequest applies the request checks: POST, no body, exactly
-// one target parameter and at most one mode (icmp, tcp, udp; default
-// icmp). It writes the refusal and returns "" on failure. The response is
-// never cached. The handler then checks the origin, and investigate the
-// target name and the mode.
-func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) (string, model.TraceMode) {
+// one target or host parameter and at most one mode (icmp, tcp, udp;
+// default icmp). It writes the refusal and returns false on failure. The
+// response is never cached. The handler then checks the origin, and
+// investigate the target name or the host, and the mode.
+func (s *server) investigateRequest(w http.ResponseWriter, r *http.Request) (invRequest, bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.d.Trace == nil {
 		writeInvErr(w, r, http.StatusNotFound, "unavailable", "tracing is not available", 0)
-		return "", 0
+		return invRequest{}, false
 	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		writeInvErr(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", 0)
-		return "", 0
+		return invRequest{}, false
 	}
 	// No body: refused by its declared length or chunking before reading,
 	// and anything that still arrives (at most investigateBodyMax is read).
 	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "this request takes no body", 0)
-		return "", 0
+		return invRequest{}, false
 	}
 	if n, _ := io.Copy(io.Discard, http.MaxBytesReader(w, r.Body, investigateBodyMax)); n > 0 {
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "this request takes no body", 0)
-		return "", 0
+		return invRequest{}, false
 	}
 	q := r.URL.Query()
-	if err := checkParams(q, "target", "mode"); err != nil || len(q["target"]) != 1 || q.Get("target") == "" {
-		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "want exactly one target parameter, and at most one mode", 0)
-		return "", 0
+	if err := checkParams(q, "target", "host", "mode"); err != nil || len(q["target"])+len(q["host"]) != 1 || q.Get("target")+q.Get("host") == "" {
+		writeInvErr(w, r, http.StatusBadRequest, "bad_request", "want exactly one target or host parameter, and at most one mode", 0)
+		return invRequest{}, false
 	}
 	mode, err := parseMode(q)
 	if err != nil {
 		writeInvErr(w, r, http.StatusBadRequest, "bad_request", err.Error(), 0)
-		return "", 0
+		return invRequest{}, false
 	}
-	return q.Get("target"), mode
+	return invRequest{target: q.Get("target"), host: q.Get("host"), mode: mode}, true
+}
+
+// ---------- hosts outside the profile ----------
+
+// maxHostLen is the longest host name accepted (DNS: 253).
+const maxHostLen = 253
+
+// hostResolveTimeout bounds the lookup of a host to trace.
+const hostResolveTimeout = 5 * time.Second
+
+// normHost checks and normalises a host to trace: an IPv4 address, or a DNS
+// name of letters, digits and hyphens, lowercased and without a trailing
+// dot, so that repeated traces of one host share a name.
+func normHost(s string) (string, error) {
+	h := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(s)), ".")
+	if a, err := netip.ParseAddr(h); err == nil {
+		if !a.Is4() {
+			return "", errors.New("IPv6 addresses can’t be traced: enter a name or an IPv4 address")
+		}
+		return a.String(), nil
+	}
+	bad := errors.New("not a host name or IPv4 address")
+	if h == "" || len(h) > maxHostLen {
+		return "", bad
+	}
+	labels := strings.Split(h, ".")
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+			return "", bad
+		}
+		for _, c := range l {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+				return "", bad
+			}
+		}
+	}
+	// No top-level domain is all digits: "127.1" or "010.0.0.1" are
+	// addresses in disguise, not names.
+	if strings.Trim(labels[len(labels)-1], "0123456789") == "" {
+		return "", bad
+	}
+	return h, nil
+}
+
+// resolveHost returns host's IPv4 addresses: host itself for an address,
+// else Deps.Resolve.
+func (d *Deps) resolveHost(ctx context.Context, host string) ([]netip.Addr, error) {
+	if a, err := netip.ParseAddr(host); err == nil {
+		return []netip.Addr{a}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, hostResolveTimeout)
+	defer cancel()
+	if d.Resolve != nil {
+		return d.Resolve(ctx, host)
+	}
+	return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+}
+
+// checkHost resolves host and refuses it unless every IPv4 address it has
+// is public (netinfo.Traceable): no private, loopback, link-local, CGNAT,
+// multicast, broadcast, reserved or documentation address. The tracer
+// checks every later resolution too. The refusal never names the address.
+func (d *Deps) checkHost(ctx context.Context, host string) *invError {
+	addrs, err := d.resolveHost(ctx, host)
+	var v4 []netip.Addr
+	for _, a := range addrs {
+		if a = a.Unmap(); a.Is4() {
+			v4 = append(v4, a)
+		}
+	}
+	if err != nil || len(v4) == 0 {
+		return &invError{http.StatusNotFound, "unresolved", host + " has no IPv4 address (IPv6 can’t be traced)", 0}
+	}
+	for _, a := range v4 {
+		if !netinfo.Traceable(a) {
+			what := host + " resolves to"
+			if a.String() == host {
+				what = host + " is"
+			}
+			return &invError{http.StatusForbidden, "not_public", what + " a private, local or otherwise non-public address: only public hosts can be traced", 0}
+		}
+	}
+	return nil
 }
 
 // modeAvailable reports whether src can trace with mode on this machine.
@@ -849,10 +971,22 @@ func modeAvailable(src TraceSource, mode model.TraceMode) bool {
 }
 
 // investigate starts the trace once the handler's checks passed;
-// unbudgeted skips the hourly start budget. Logs name the target and the
-// error, never the client.
-func (s *server) investigate(w http.ResponseWriter, r *http.Request, target string, mode model.TraceMode, unbudgeted bool) {
-	if !s.knownTarget(target) { // profile target names only, never a host or an address
+// unbudgeted skips the hourly start budget. A host (or a model.HostTarget
+// name) is checked and resolved first: public addresses only. Logs name the
+// target and the error, never the client.
+func (s *server) investigate(w http.ResponseWriter, r *http.Request, q invRequest, unbudgeted bool) {
+	target, mode := q.target, q.mode
+	if h, ok := model.HostOf(target); ok && q.host == "" {
+		q.host = h
+	}
+	if q.host != "" {
+		h, err := normHost(q.host)
+		if err != nil {
+			writeInvErr(w, r, http.StatusBadRequest, "bad_host", err.Error(), 0)
+			return
+		}
+		target = model.HostTarget(h)
+	} else if !s.knownTarget(target) {
 		writeInvErr(w, r, http.StatusNotFound, "unknown_target", "unknown target", 0)
 		return
 	}
@@ -860,8 +994,22 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, target stri
 		writeInvErr(w, r, http.StatusBadRequest, "unsupported_mode", mode.String()+" traces are not available on this machine", 0)
 		return
 	}
-	st, _, err := s.inv.start(s.d.Trace, invKey{target, mode}, unbudgeted)
+	k := invKey{target, mode}
 	var ie *invError
+	if h, ok := model.HostOf(target); ok {
+		// Refused for the budget or the slots before any DNS lookup.
+		if err := s.inv.check(k, unbudgeted); err != nil {
+			ie = err
+		} else {
+			ie = s.d.checkHost(r.Context(), h)
+		}
+		if ie != nil {
+			s.d.log().Debug("investigate refused", "target", target, "code", ie.code)
+			writeInvErr(w, r, ie.status, ie.code, ie.msg, ie.retry)
+			return
+		}
+	}
+	st, _, err := s.inv.start(s.d.Trace, k, unbudgeted)
 	switch {
 	case errors.As(err, &ie):
 		s.d.log().Debug("investigate refused", "target", target, "code", ie.code)
@@ -875,16 +1023,16 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, target stri
 	writeJSON(w, r, http.StatusOK, st)
 }
 
-// serveInvestigate answers POST /api/investigate?target= for any viewer:
-// same origin and the CSRF token, then the trace limits (profile targets
-// only, InvestigateRounds, MaxInvestigations, InvestigateStartsPerHour and
-// the tracer's per-router cap). No admin token: a trace re-runs the
-// always-available traceroute against a target the viewer already sees,
-// and reveals nothing the dashboard doesn't. A request carrying the token
-// skips the start budget.
+// serveInvestigate answers POST /api/investigate?target=|host= for any
+// viewer: same origin and the CSRF token, then the trace limits (profile
+// targets, or hosts whose every address is public; InvestigateRounds,
+// MaxInvestigations, InvestigateStartsPerHour and the tracer's per-router
+// cap). No admin token: a trace runs the same traceroute anyone can run
+// against a public host, from this machine, within those budgets. A request
+// carrying the token skips the start budget.
 func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) {
-	target, mode := h.investigateRequest(w, r)
-	if target == "" {
+	q, ok := h.investigateRequest(w, r)
+	if !ok {
 		return
 	}
 	if !sameOrigin(r) {
@@ -895,5 +1043,5 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 		writeInvErr(w, r, http.StatusForbidden, "forbidden", "missing or bad "+HeaderCSRF, 0)
 		return
 	}
-	h.investigate(w, r, target, mode, h.adminOK(r))
+	h.investigate(w, r, q, h.adminOK(r))
 }

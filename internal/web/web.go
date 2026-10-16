@@ -23,8 +23,10 @@
 package web
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -50,6 +52,11 @@ type Deps struct {
 	Metrics http.Handler
 	Verdict VerdictSource // the verdict engine (internal/verdict.Engine)
 	Trace   TraceSource   // per-hop stats, routes and on-demand traces
+	// Resolve looks up the IPv4 addresses of a host a viewer asks to trace
+	// (POST /api/investigate?host=), to refuse non-public ones. Nil: the
+	// system resolver (net.DefaultResolver.LookupNetIP "ip4"), as the
+	// tracer resolves targets.
+	Resolve func(ctx context.Context, host string) ([]netip.Addr, error)
 	// Baselines answers each series' normal (baseline.Source).
 	Baselines BaselineSource
 	// Slow lists targets currently slower than their normal (the verdict

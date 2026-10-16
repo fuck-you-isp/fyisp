@@ -282,6 +282,7 @@ func main() {
 		ft := newFakeTrace(st, now, *bf)
 		go ft.run(ctx)
 		d.Trace = ft
+		d.Resolve = fakeResolve
 	}
 	if !*noVerdict {
 		d.Verdict = callsVerdict{newFakeVerdict(now, *bf, *vCycle, model.VerdictKind(*vKind), *noEdge), *callsMode, now}

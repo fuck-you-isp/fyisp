@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"hash/fnv"
 	"math"
 	mrand "math/rand/v2"
 	"net/netip"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -299,6 +301,22 @@ func (f *fakeTrace) Investigate(target string, mode model.TraceMode, rounds int)
 		f.invest[k] = until
 	}
 	return inv, nil
+}
+
+// fakeResolve resolves a host to trace without DNS: names under .lan are
+// on the LAN (192.168.1.20), "nowhere.example" has no address, any other
+// name gets a public address derived from it.
+func fakeResolve(_ context.Context, host string) ([]netip.Addr, error) {
+	switch {
+	case strings.HasSuffix(host, ".lan"):
+		return []netip.Addr{netip.MustParseAddr("192.168.1.20")}, nil
+	case host == "nowhere.example":
+		return nil, errors.New("no such host")
+	}
+	h := fnv.New32a()
+	h.Write([]byte(host))
+	x := h.Sum32()
+	return []netip.Addr{netip.AddrFrom4([4]byte{93, byte(x), byte(x >> 8), byte(x>>16) | 1})}, nil
 }
 
 // Modes: the fake traces with every mode.
