@@ -162,10 +162,12 @@ func OpenReadOnly(dir string) (*SQLite, error) {
 	path := filepath.Join(dir, DBName)
 	ctx := context.Background()
 	// The daemon's checks (classify), never its fixes: an older or missing
-	// database is left for fyisp to replace or create.
+	// database is left for fyisp to upgrade, replace or create.
 	switch state, ver, err := classify(ctx, path); {
 	case err != nil:
 		return nil, err
+	case state == dbUpgrade:
+		return nil, fmt.Errorf("store: %s is from an older fyisp (schema v%d); fyisp upgrades it when it starts", path, ver)
 	case state == dbOld:
 		return nil, fmt.Errorf("store: %s is from an older fyisp (schema v%d); fyisp replaces it with a new empty database when it starts", path, ver)
 	case state == dbNone:

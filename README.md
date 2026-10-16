@@ -282,7 +282,7 @@ The speed-test controls (*Test speed now*, *Test every server*, cancel, the sche
   (Repeat the options you started it with.)
 - **Installed binary** ([Keep it running](#keep-it-running)): download the new `fyisp-<os>-<arch>`, verify it, replace the old file and restart the service.
 
-fyisp has no database migrations. When a release changes the database format, its first start replaces the old database with an empty one and logs `store: database from an older fyisp (schema vN) replaced with a new empty one`: the history from before the upgrade isn't kept. The release notes say when that happens. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched.
+Upgrading keeps your history. When a release changes the database format, its first start upgrades the database in place and logs `store: database upgraded from schema vN to vM`. A database from before v0.11.0 is the exception: it is replaced with an empty one, and fyisp logs `store: database from an older fyisp (schema vN) replaced with a new empty one`. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched. fyisp makes no backups of its database; to keep one, stop fyisp and copy `fyisp.db` (`fyisp paths` shows where it is).
 
 fyisp does not update itself: run the launcher from a newer release, or replace the binary.
 
