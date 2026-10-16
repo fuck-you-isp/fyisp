@@ -10,19 +10,26 @@ import (
 
 // TestTraceModes: what /api/trace's "modes" says per OS.
 func TestTraceModes(t *testing.T) {
-	win := traceModes(hops.Support{TCP: true, TCPViaICMP: true}, "windows")
+	win := traceModes(hops.Support{TCP: true, TCPViaICMP: true}, "windows", true)
 	want := []web.TraceModeInfo{{Mode: "icmp", Available: true}, {Mode: "tcp", Port: 443, Available: true, HopsVia: "icmp"},
 		{Mode: "udp", Port: 33434, Reason: "windows_firewall"}}
 	if !slices.Equal(win, want) {
 		t.Errorf("windows: %+v", win)
 	}
-	lin := traceModes(hops.Support{TCP: true, UDP: true}, "linux")
+	lin := traceModes(hops.Support{TCP: true, UDP: true}, "linux", true)
 	want = []web.TraceModeInfo{{Mode: "icmp", Available: true}, {Mode: "tcp", Port: 443, Available: true},
 		{Mode: "udp", Port: 33434, Available: true}}
 	if !slices.Equal(lin, want) {
 		t.Errorf("linux: %+v", lin)
 	}
-	if other := traceModes(hops.Support{}, "plan9"); other[1].Reason != "os" || other[2].Available {
+	if other := traceModes(hops.Support{}, "plan9", true); other[1].Reason != "os" || other[2].Available {
 		t.Errorf("no transports: %+v", other)
+	}
+	// The tracer is not running (no ICMP socket): every mode is off.
+	off := traceModes(hops.Support{TCP: true, UDP: true}, "linux", false)
+	want = []web.TraceModeInfo{{Mode: "icmp", Reason: "icmp_unavailable"}, {Mode: "tcp", Port: 443, Reason: "icmp_unavailable"},
+		{Mode: "udp", Port: 33434, Reason: "icmp_unavailable"}}
+	if !slices.Equal(off, want) {
+		t.Errorf("not running: %+v", off)
 	}
 }

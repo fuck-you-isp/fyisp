@@ -104,10 +104,19 @@ func (w *webTrace) Investigate(target string, mode model.TraceMode, rounds int) 
 	return w.tr.Investigate(target, mode, rounds)
 }
 
-// Modes reports what this OS can trace with (hops.Supported).
-func (w *webTrace) Modes() []web.TraceModeInfo { return traceModes(hops.Supported(), runtime.GOOS) }
+// Modes reports what this OS can trace with (hops.Supported): nothing
+// while the tracer is not running (no ICMP sockets).
+func (w *webTrace) Modes() []web.TraceModeInfo {
+	return traceModes(hops.Supported(), runtime.GOOS, w.tr.Running())
+}
 
-func traceModes(s hops.Support, goos string) []web.TraceModeInfo {
+func traceModes(s hops.Support, goos string, running bool) []web.TraceModeInfo {
+	if !running {
+		off := func(m string, port int) web.TraceModeInfo {
+			return web.TraceModeInfo{Mode: m, Port: port, Reason: "icmp_unavailable"}
+		}
+		return []web.TraceModeInfo{off("icmp", 0), off("tcp", model.TraceTCPPort), off("udp", model.TraceUDPPort)}
+	}
 	why := func(ok bool) string {
 		switch {
 		case ok:

@@ -957,7 +957,7 @@ const HOP_COLS = [['#', 'hn', 'Hop: TTL, 1 = your router'], ['Host', 'addr', 'Ro
 const MODE_LABEL = { icmp: 'ICMP', tcp: 'TCP 443', udp: 'UDP' };
 /** Why a mode is off, from /api/trace's reason code. @param {TraceMode} m */
 function modeReason(m) {
-  const what = m.mode === 'udp' ? 'UDP' : 'TCP';
+  const what = m.mode === 'udp' ? 'UDP' : m.mode === 'icmp' ? 'ICMP' : 'TCP';
   if (m.reason === 'windows_firewall') return `${what} traces aren’t available on Windows: its firewall drops the routers’ replies to them.`;
   return `${what} traces aren’t available on this system.`;
 }

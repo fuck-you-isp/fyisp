@@ -68,4 +68,6 @@ type Tracer interface {
 	// KindTrace and Options.Investigate for the others), for the store's
 	// per-series interval.
 	Interval(target string, kind model.ProbeKind) time.Duration
+	// Running reports whether Run is tracing (it opened its prober).
+	Running() bool
 }

@@ -55,8 +55,9 @@ type TraceModeInfo struct {
 	// HopsVia "icmp": the routers are found with ICMP echo requests and
 	// only the destination is probed with this mode (TCP on Windows).
 	HopsVia string `json:"hops_via,omitempty"`
-	// Reason a mode is not available: "windows_firewall" (UDP on Windows)
-	// or "os" (this OS can't send it unprivileged).
+	// Reason a mode is not available: "windows_firewall" (UDP on Windows),
+	// "os" (this OS can't send it unprivileged) or "icmp_unavailable" (no
+	// ICMP socket: the tracer is not running, every mode is off).
 	Reason string `json:"reason,omitempty"`
 }
 

@@ -425,6 +425,12 @@ func poke(c chan struct{}) {
 	}
 }
 
+func (tr *tracer) Running() bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.running
+}
+
 func (tr *tracer) Routes() []model.Route {
 	tr.mu.Lock()
 	ts := make([]*target, 0, len(tr.targets))

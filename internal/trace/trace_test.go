@@ -523,7 +523,7 @@ func runTracer(t *testing.T, f *fakeNet, o Options, p *model.Profile) (*tracer, 
 			t.Errorf("Run: %v", err)
 		}
 	})
-	waitFor(t, "running", func() bool { tr.mu.Lock(); defer tr.mu.Unlock(); return tr.running })
+	waitFor(t, "running", tr.Running)
 	return tr, sink
 }
 
@@ -844,6 +844,9 @@ func TestRunErrors(t *testing.T) {
 	tr := newTracer(Options{Log: quiet(), open: func() (hops.Prober, error) { return nil, errors.New("no ICMP") }})
 	if err := tr.Run(context.Background(), labProfile(), &recSink{}); err == nil {
 		t.Error("Run without a prober: no error")
+	}
+	if tr.Running() {
+		t.Error("Running after Run failed")
 	}
 }
 
