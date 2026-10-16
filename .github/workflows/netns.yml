@@ -27,6 +27,9 @@ jobs:
       - name: tools (nft, tc, ip)
         run: sudo apt-get update -q && sudo apt-get install -yq nftables iproute2
       - name: test/netns/run.sh
+        # An explicit shell adds -o pipefail, so a failing run.sh fails the
+        # step through the tee.
+        shell: bash
         env:
           FYISP_NETNS_OUT: ${{ runner.temp }}/netns
           RUN: ${{ github.event.inputs.run || 'TestHome10|TestVerdict|TestUDP' }}

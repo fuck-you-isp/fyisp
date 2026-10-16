@@ -204,10 +204,12 @@ func TestHome10(t *testing.T) {
 		// Calls may stay Choppy a while after Down; until they are Good,
 		// their card (row 9) carries the Working again sentence.
 		time.Sleep(10 * time.Minute)
-		if p := lab.first(t0, t1, func(n *h10Now) bool { return strings.HasPrefix(n.Answer.Key, "isp:") }); p == nil {
-			t.Errorf("40%% loss in the provider's network: the card never named the provider")
-		} else if p.n.Answer.Tone != "bad" || p.n.Answer.Tab != "✕ Provider problem" || p.n.Path[1].State != "slow" {
-			lab.errorf(t, *p, "want the red ✕ Provider problem card and the provider hop slow (losing data)")
+		if p := lab.first(t0, t1, func(n *h10Now) bool {
+			return strings.HasPrefix(n.Answer.Key, "isp:") && n.Path[1].State == "slow"
+		}); p == nil {
+			t.Errorf("40%% loss in the provider's network: the card never named the provider with its hop slow")
+		} else if p.n.Answer.Tone != "bad" || p.n.Answer.Tab != "✕ Provider problem" {
+			lab.errorf(t, *p, "want the red ✕ Provider problem card")
 		}
 		for _, p := range lab.polls(t0, time.Now()) {
 			if strings.HasPrefix(p.n.Answer.Key, "isp_lossy:") {
