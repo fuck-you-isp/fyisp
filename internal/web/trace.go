@@ -52,8 +52,9 @@ type TraceModeInfo struct {
 	Mode      string `json:"mode"`           // icmp | tcp | udp
 	Port      int    `json:"port,omitempty"` // TCP and UDP: the fixed destination port
 	Available bool   `json:"available"`
-	// HopsVia "icmp": the routers are found with ICMP echo requests and
-	// only the destination is probed with this mode (TCP on Windows).
+	// HopsVia "icmp": every TTL also gets an ICMP echo request, and the
+	// routers are found from its answers; only the destination answers in
+	// this mode (TCP on Windows).
 	HopsVia string `json:"hops_via,omitempty"`
 	// Reason a mode is not available: "windows_firewall" (UDP on Windows),
 	// "os" (this OS can't send it unprivileged) or "icmp_unavailable" (no

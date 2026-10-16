@@ -70,9 +70,10 @@ type TransportProber interface {
 // Support says which transports this OS traces without elevation.
 type Support struct {
 	TCP, UDP bool
-	// TCPViaICMP: a TCP trace finds the routers with ICMP echo requests and
-	// probes only the destination with TCP connects (Windows: its default
-	// firewall drops the routers' answers to TCP probes).
+	// TCPViaICMP: a TCP trace sends an ICMP echo request and a TTL-limited
+	// TCP SYN at every TTL; the routers are found from the ICMP answers and
+	// only the destination from TCP (Windows: its default firewall drops the
+	// routers' answers to TCP probes).
 	TCPViaICMP bool
 }
 
