@@ -4,10 +4,35 @@ Part of the [API index](API.md).
 
 An on-demand trace follows one profile target's path hop by hop every 2.5 s, for **250 rounds** (about 10.4 minutes), and then stops by itself. Always-on traces (`trace: true` in the profile) are not affected.
 
+## Probe types
+
+A trace has a mode, which picks its probes. None needs admin rights.
+
+| `mode` | Probes | Like | Hop series kind |
+|---|---|---|---|
+| `icmp` (default) | ICMP echo requests | `mtr` | `trace` |
+| `tcp` | TCP SYNs to port 443, closed with a reset | `mtr -T -P 443` | `trace_tcp` |
+| `udp` | UDP datagrams to port 33434; the destination answers "port unreachable" | `mtr -u` | `trace_udp` |
+
+The port is fixed per trace, so routers that balance by port (ECMP) keep the trace on one path. Each mode of a target is its own trace: its own session, slot and start in the budget, numbers and route. Always-on traces are ICMP. Hops are shared only between traces of the same mode, but the cap of 1 probe a second per router counts every mode. Route changes are recorded for ICMP traces only; the route of a TCP or UDP trace is kept in memory while fyisp runs, so after a restart its hop numbers have no addresses until it is traced again.
+
+`GET api/trace` lists what this machine supports in `modes`:
+
+```json
+"modes": [{"mode":"icmp","available":true},
+          {"mode":"tcp","port":443,"available":true,"hops_via":"icmp"},
+          {"mode":"udp","port":33434,"available":false,"reason":"windows_firewall"}]
+```
+
+- `hops_via: "icmp"` (Windows): the default firewall drops the routers' replies to a standard user's TCP probes, so the routers are found with ICMP echo requests and only the destination is probed with a TCP connect to the port, with the connect's round trip.
+- `reason` of a mode that isn't available: `windows_firewall` (UDP on Windows, for the same reason) or `os` (this OS can't send it without admin rights).
+
+Linux reads the routers' replies from each probe socket's error queue (`IP_RECVERR`; no ping sockets needed). macOS gets them on its unprivileged ICMP socket and matches them by the quoted header. IPv4 only.
+
 ## Start
 
 ```
-POST api/investigate?target=<profile target name>
+POST api/investigate?target=<profile target name>[&mode=icmp|tcp|udp]
 ```
 
 There is no body. Anyone who can open the dashboard may start a trace: there is no admin token check. The checks are:
@@ -21,7 +46,7 @@ There is no body. Anyone who can open the dashboard may start a trace: there is 
 | Start budget | at most 12 new traces in a rolling hour, across all targets and viewers. A request carrying the admin token (`X-FYISP-Admin` or the session cookie) skips the budget, not the slots |
 
 **Request rules:**
-- Exactly one `target` parameter and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
+- Exactly one `target` parameter, at most one `mode` (default `icmp`) and nothing else, with no body: a declared length or chunking is refused before reading, and anything sent anyway is read up to 1 KiB and refused.
 - Only profile target names are accepted; never a host or an address.
 - Every response past the host check has `Cache-Control: no-store`.
 - Logs name the target and the error, never the client.
@@ -36,7 +61,7 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 **Response 200:**
 
 ```json
-{"target":"Microsoft-Teams","state":"running","rounds_done":37,"rounds_max":250,
+{"target":"Microsoft-Teams","mode":"tcp","state":"running","rounds_done":37,"rounds_max":250,
  "interval_ms":2500,"started_at":1760103900000}
 ```
 
@@ -46,7 +71,8 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `bad_request` | a parameter other than one `target`, an empty `target`, or a body |
+| 400 | `bad_request` | a parameter other than one `target` and one `mode`, an empty `target`, an unknown `mode`, or a body |
+| 400 | `unsupported_mode` | this machine can't trace with `mode` (see `modes`) |
 | 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token` |
 | 404 | `unknown_target` | not a profile target name |
 | 404 | `unavailable` | tracing is not available |
@@ -60,7 +86,7 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 
 The dashboard posts by itself when Investigate opens only for the owner: when `/api/status` has `"can_control": true` (this request may use the speed-test controls, per request: false through a proxy on a token-less dashboard) or the browser holds an admin token pasted earlier, which it then sends as `X-FYISP-Admin`. Everyone else clicks *Trace*.
 
-`GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
+`GET api/trace?target=&mode=` carries `"investigation": {…same object…}` of that mode while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
 
 ## Hop statistics
 
@@ -79,7 +105,7 @@ The dashboard posts by itself when Investigate opens only for the owner: when `/
 
 A slot that wasn't measured (fyisp stopped, no trace running) breaks the run of consecutive round trips for `jitter` and `jmax`; a lost probe doesn't. For ranges up to 48 hours the numbers come from every sample. Longer ranges use the hourly summaries: `p95` is then the probe-weighted 95th percentile of the hourly ones, `jitter` is 0, and `last`, `stdev` and `jmax` are `null`. They are also `null` for a hop without answers.
 
-`host` is the name (or address) the target's trace goes to, for running `mtr` yourself; it is left out for the gateway and the ISP edge. `interval_ms` is the always-on traces' round interval; an on-demand trace reports its own in `investigation`.
+`host` is the bare name (or address) the target's trace goes to, for running `mtr` yourself: never a scheme, port, path or query. It is left out for the gateway and the ISP edge. `mode` and `port` say which trace the numbers are of. `interval_ms` is the always-on traces' round interval; an on-demand trace reports its own in `investigation`.
 
 Each round probes TTL 1 upwards until the destination answers. Like `mtr --max-unknown`, it stops after 5 TTLs in a row past the last answer stay silent, but never before the destination's TTL once that is known. TTLs not probed have no sample that round.
 

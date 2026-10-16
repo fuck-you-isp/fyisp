@@ -131,12 +131,14 @@ Home's 11 tiles and what each one checks, the 28 default targets and the profile
 
 ### Investigate (traceroutes)
 
-*Investigate* follows one target's path hop by hop, like `mtr`. Each row is a router, with mtr's columns: *Host* (address and reverse DNS name), *ASN*, *Loss%*, *Snt* (probes sent), *Last*, *Avg*, *Best*, *Wrst* and *StDev* (round trips in ms), and a bar from best to worst with a tick at the average. *More columns* adds *P95*, *Javg* (average jitter) and *Jmax* (worst jitter), and the browser remembers the choice. Over ranges longer than 48 hours fyisp has only hourly summaries, so *Last*, *StDev* and *Jmax* are blank.
+*Investigate* follows one target's path hop by hop, like `mtr`. The *ICMP | TCP 443 | UDP* picker chooses the probes: ICMP echo (like `mtr`), TCP SYNs to port 443 (like `mtr -T -P 443`: the same path and treatment as web traffic, useful when routers filter or deprioritise ICMP) or UDP to port 33434 (like `mtr -u`). None needs admin rights. Each probe type is its own trace, with its own numbers; always-on traces use ICMP, and route changes are recorded for ICMP traces only. Each row is a router, with mtr's columns: *Host* (address and reverse DNS name), *ASN*, *Loss%*, *Snt* (probes sent), *Last*, *Avg*, *Best*, *Wrst* and *StDev* (round trips in ms), and a bar from best to worst with a tick at the average. *More columns* adds *P95*, *Javg* (average jitter) and *Jmax* (worst jitter), and the browser remembers the choice. Over ranges longer than 48 hours fyisp has only hourly summaries, so *Last*, *StDev* and *Jmax* are blank.
 
 - **Loss**: the first hop where real loss starts (it continues to the destination) is marked *loss starts here*. A middle hop that drops replies while the destination doesn't is marked *not real — router rate-limiting*. The line above the table says the same in words. See [Hop loss flags](docs/TRACE-API.md#hop-loss-flags).
 - **Range**: while a trace runs, and for an hour after it finishes, the numbers cover that trace (*This trace* in the range buttons). Pick another range to see more; *This trace* goes back.
-- **Copy report**: the table as `mtr -rwz` text, `mtr -j` JSON or `mtr -C` CSV, for a support ticket or a forum post. The source host is always `fyisp`, never your machine's name or address. The text ends with how fyisp measured: ICMP echo, the round interval, and at most 1 probe a second per router.
-- **Run it yourself**: the `mtr -rwzbc 100 <host>` command for the target, to compare from Linux or macOS (on macOS it may need `sudo`), and `pathping -n <host>` for Windows.
+- **Copy report**: the table as `mtr -rwz` text, `mtr -j` JSON or `mtr -C` CSV, for a support ticket or a forum post. The source host is always `fyisp`, never your machine's name or address. The text ends with how fyisp measured: the probe type, the round interval, and at most 1 probe a second per router; for TCP and UDP the JSON also has `type`, `port` and `probe`.
+- **Run it yourself**: the same trace as an `mtr` command for the target (`mtr -rwzbc 100 <host>`, with `-T -P 443` or `-u -P 33434` for TCP and UDP), to compare from Linux or macOS (it may need `sudo`), and `pathping -n <host>` (ICMP only) for Windows.
+
+**Platform notes.** Linux reads the routers' replies to TCP and UDP probes from the socket's error queue (no ping sockets or capabilities needed); macOS gets them on its unprivileged ICMP socket. On **Windows** the default firewall drops the routers' replies to TCP and UDP probes of a standard user, so a TCP trace finds the routers with ICMP and only the destination is probed with TCP connects to port 443 (the view says so), and UDP traces aren't offered. Traces are IPv4 only.
 
 Each round stops after 5 silent hops in a row past the last one that answered (like `mtr --max-unknown`), but never before the destination once fyisp knows how far it is.
 
@@ -244,7 +246,7 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
 
 ## ICMP permissions
 
-fyisp never asks for admin rights. Only the Network path, traceroutes (Investigate, and the always-on ones of `trace: true` targets), speed tests' latency under load and your own ICMP targets use ICMP (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
+fyisp never asks for admin rights. Only the Network path, ICMP traceroutes (Investigate, and the always-on ones of `trace: true` targets), speed tests' latency under load and your own ICMP targets use ICMP (the services get TCP connects, which need no permission). On Linux it uses unprivileged ping sockets, which the kernel allows for the groups in `net.ipv4.ping_group_range` (most distributions allow everyone). If fyisp logs `ICMP unavailable`, allow your group:
 
 ```sh
 sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
