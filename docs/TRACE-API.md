@@ -62,6 +62,27 @@ The dashboard posts by itself when Investigate opens only for the owner: when `/
 
 `GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
 
+## Hop statistics
+
+`GET api/trace` sends, per hop, the numbers `mtr` shows. Times are milliseconds.
+
+| Field | mtr | What it is |
+|---|---|---|
+| `n`, `lost` | `Snt` is `n + lost` | answered and unanswered probes; slots that weren't measured are neither |
+| `loss` | `Loss%` | `lost / (n + lost)`, a fraction |
+| `last` | `Last` | the newest answered round trip in the range |
+| `mean`, `min`, `max` | `Avg`, `Best`, `Wrst` | |
+| `stdev` | `StDev` | the sample standard deviation of the answered round trips (0 for one) |
+| `p95` | | the 95th percentile |
+| `jitter` | `Javg` | the mean difference between consecutive answered round trips |
+| `jmax` | `Jmax` | the largest such difference |
+
+A slot that wasn't measured (fyisp stopped, no trace running) breaks the run of consecutive round trips for `jitter` and `jmax`; a lost probe doesn't. For ranges up to 48 hours the numbers come from every sample. Longer ranges use the hourly summaries: `p95` is then the probe-weighted 95th percentile of the hourly ones, `jitter` is 0, and `last`, `stdev` and `jmax` are `null`. They are also `null` for a hop without answers.
+
+`host` is the name (or address) the target's trace goes to, for running `mtr` yourself; it is left out for the gateway and the ISP edge. `interval_ms` is the always-on traces' round interval; an on-demand trace reports its own in `investigation`.
+
+Each round probes TTL 1 upwards until the destination answers. Like `mtr --max-unknown`, it stops after 5 TTLs in a row past the last answer stay silent, but never before the destination's TTL once that is known. TTLs not probed have no sample that round.
+
 ## Hop loss flags
 
 Each hop in `GET api/trace`'s `hops` has two flags that say whether its loss is real. fyisp sets them over the requested range. The destination is the deepest hop with probes in the range.
@@ -73,4 +94,4 @@ Each hop in `GET api/trace`'s `hops` has two flags that say whether its loss is 
 
 Loss below 5% sets neither flag. The destination's own loss, when 5% or more, sets `loss_continues`.
 
-*Investigate* labels hops only from these flags: *real loss, continues to destination* for `loss_continues`, and *not real — router rate-limiting* for `rate_limited`. A hop with neither flag shows only its loss. The summary names the first hop before the destination with `loss_continues` as where real loss starts. It blames the destination only when the destination has `loss_continues` and no hop before it does. When no hop is flagged but the destination loses probes, it says there is too little loss to tell where it starts.
+*Investigate* labels hops only from these flags: *loss starts here* on the first hop with `loss_continues` (one marker, not one per flagged hop), and *not real — router rate-limiting* on each hop before the destination with `rate_limited`. Other hops show only their loss. The summary names the first hop before the destination with `loss_continues` as where real loss starts. It blames the destination only when the destination has `loss_continues` and no hop before it does. When no hop is flagged but the destination loses probes, it says there is too little loss to tell where it starts.

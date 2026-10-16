@@ -442,6 +442,22 @@ table.hops { width: 100%; border-collapse: collapse; font-size: 13px; font-varia
 .lbar .avg { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink); }
 .lbar .over { position: absolute; right: 1px; top: -3px; font-size: 12px; color: var(--ink-2); }
 .hops td.none { text-align: center; padding: 16px; cursor: default; }
+.inv-more { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+.inv-report { margin-top: 10px; font-size: 13px; }
+.inv-report summary { cursor: pointer; font-weight: 600; width: fit-content; }
+.inv-rep-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 6px; }
+.inv-rep-text {
+  display: block; width: 100%; box-sizing: border-box; resize: vertical; padding: 8px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow: auto;
+  color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.inv-run { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 10px; font-size: 13px; }
+.inv-run-label { font-weight: 600; }
+.inv-run code, .inv-cmd {
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 1px 6px; border-radius: 6px;
+  background: var(--surface-2); border: 1px solid var(--border); overflow-wrap: anywhere;
+}
+.inv-run-hint { flex-basis: 100%; }
 
 .inv-changes { display: flex; flex-direction: column; }
 .c-row {
@@ -467,24 +483,30 @@ table.hops { width: 100%; border-collapse: collapse; font-size: 13px; font-varia
   .hops thead { display: none; }
   table.hops, .hops tbody { display: block; }
   .hops tbody tr {
-    display: grid; grid-template-columns: 3em repeat(5, minmax(0, 1fr)); gap: 2px 8px;
+    display: grid; grid-template-columns: 2.6em repeat(6, minmax(0, 1fr)); gap: 2px 6px;
     padding: 8px 4px; border-bottom: 1px solid var(--border);
   }
   .hops td { display: block; padding: 0; border: 0; }
   .hops td.hn { grid-row: 1 / span 2; grid-column: 1; width: auto; }
-  .hops td.addr { grid-row: 1; grid-column: 2 / span 3; max-width: none; min-width: 0; }
+  .hops td.addr { grid-row: 1; grid-column: 2 / span 4; max-width: none; min-width: 0; }
   .hops .ip, .hops .rdns { overflow: hidden; text-overflow: ellipsis; max-width: none; }
-  .hops td.loss { grid-row: 1 / span 2; grid-column: 5 / span 2; min-width: 0; text-align: right; }
+  .hops td.loss { grid-row: 1 / span 2; grid-column: 6 / span 2; min-width: 0; text-align: right; }
   .hops td.loss .lbadge.real { margin-left: auto; }
-  .hops td.own { grid-row: 2; grid-column: 2 / span 3; white-space: normal; font-size: 12px; color: var(--ink-2); }
+  .hops td.own { grid-row: 2; grid-column: 2 / span 4; white-space: normal; font-size: 12px; color: var(--ink-2); }
   .hops td.num { grid-row: 3; text-align: left; font-size: 12px; }
   .hops td.num::before { content: attr(data-label); display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
+  /* Snt Last Avg Best Wrst StDev, then (More columns) P95 Javg Jmax */
   .hops td:nth-child(5) { grid-column: 2; }
   .hops td:nth-child(6) { grid-column: 3; }
   .hops td:nth-child(7) { grid-column: 4; }
   .hops td:nth-child(8) { grid-column: 5; }
   .hops td:nth-child(9) { grid-column: 6; }
+  .hops td:nth-child(10) { grid-column: 7; }
+  .hops.more td:nth-child(11) { grid-row: 4; grid-column: 2; }
+  .hops.more td:nth-child(12) { grid-row: 4; grid-column: 3; }
+  .hops.more td:nth-child(13) { grid-row: 4; grid-column: 4; }
   .hops td.bar { grid-row: 4; grid-column: 2 / -1; width: auto; min-width: 0; margin-top: 4px; }
+  .hops.more td.bar { grid-row: 5; }
   .hops td.none { grid-column: 1 / -1; }
   .c-row { grid-template-columns: auto minmax(0, 1fr); }
   .c-row .c-what { grid-column: 1 / -1; grid-row: 2; }

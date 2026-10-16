@@ -360,6 +360,7 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 		prev     float64
 		jit      float64
 		jn       int
+		jmax     float64
 		min, max float64
 		sum      float64
 	}
@@ -392,8 +393,10 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 		a.min, a.max = min(a.min, p.RTTms), max(a.max, p.RTTms)
 		a.rtts = append(a.rtts, p.RTTms)
 		if !math.IsNaN(a.prev) {
-			a.jit += math.Abs(p.RTTms - a.prev)
+			j := math.Abs(p.RTTms - a.prev)
+			a.jit += j
 			a.jn++
+			a.jmax = max(a.jmax, j)
 		}
 		a.prev = p.RTTms
 		return nil
@@ -422,13 +425,24 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 	var out []web.HopStat
 	for _, a := range accs {
 		hs := web.HopStat{Hop: a.hop, IP: a.ip, Info: f.info[a.ip], N: a.n, Lost: a.lost,
-			Min: math.NaN(), Mean: math.NaN(), Max: math.NaN(), P95: math.NaN(), Jitter: math.NaN()}
+			Min: math.NaN(), Mean: math.NaN(), Max: math.NaN(), P95: math.NaN(), Jitter: math.NaN(),
+			Last: math.NaN(), StDev: math.NaN(), Jmax: math.NaN()}
 		if t := a.n + a.lost; t > 0 {
 			hs.Loss = float64(a.lost) / float64(t)
 		}
 		if a.n > 0 {
+			hs.Last, hs.Jmax = a.rtts[len(a.rtts)-1], a.jmax
+			hs.Mean = a.sum / float64(a.n)
+			var ss float64
+			for _, x := range a.rtts {
+				ss += (x - hs.Mean) * (x - hs.Mean)
+			}
+			hs.StDev = 0
+			if a.n > 1 {
+				hs.StDev = math.Sqrt(ss / float64(a.n-1))
+			}
 			sort.Float64s(a.rtts)
-			hs.Min, hs.Max, hs.Mean = a.min, a.max, a.sum/float64(a.n)
+			hs.Min, hs.Max = a.min, a.max
 			hs.P95 = a.rtts[min(len(a.rtts)-1, int(math.Ceil(0.95*float64(len(a.rtts))))-1)]
 			if a.jn > 0 {
 				hs.Jitter = a.jit / float64(a.jn)

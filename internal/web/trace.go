@@ -43,7 +43,9 @@ type TraceSource interface {
 // Loss is a fraction (0..1). LossContinues and RateLimited are the store's
 // classification of the hop's loss (store.ClassifyLoss): real loss that
 // continues to the destination, or a router that rate-limits its own ICMP
-// replies. Both are false for loss below store.HopLossMin.
+// replies. Both are false for loss below store.HopLossMin. Last (the newest
+// RTT), StDev and Jmax (the largest jitter) are NaN when not known (the
+// store's hourly tier); NaN is served as null.
 type HopStat struct {
 	Hop           int
 	IP            netip.Addr // invalid: the hop did not answer
@@ -53,6 +55,8 @@ type HopStat struct {
 	Min, Mean     float64
 	Max, P95      float64
 	Jitter        float64
+	Last, StDev   float64
+	Jmax          float64
 	LossContinues bool
 	RateLimited   bool
 }
@@ -183,6 +187,9 @@ type hopStatJSON struct {
 	Max           jf   `json:"max"`
 	P95           jf   `json:"p95"`
 	Jitter        jf   `json:"jitter"`
+	Last          jf   `json:"last"`
+	StDev         jf   `json:"stdev"`
+	Jmax          jf   `json:"jmax"`
 	LossContinues bool `json:"loss_continues"`
 	RateLimited   bool `json:"rate_limited"`
 }
@@ -203,14 +210,20 @@ type changeJSON struct {
 
 // traceJSON is /api/trace.
 type traceJSON struct {
-	Target string        `json:"target"`
-	Traced bool          `json:"traced"` // always-on trace
-	From   int64         `json:"from"`
-	To     int64         `json:"to"`
-	Now    int64         `json:"now"`
-	ISPASN uint32        `json:"isp_asn,omitempty"` // ASN of the first public hop
-	Route  *routeJSON    `json:"route"`
-	Hops   []hopStatJSON `json:"hops"`
+	Target string `json:"target"`
+	// Host is the name (or address) the target's trace goes to, for
+	// running mtr yourself; omitted for the gateway and the ISP edge.
+	Host   string `json:"host,omitempty"`
+	Traced bool   `json:"traced"` // always-on trace
+	// IntervalMs is the always-on traces' round interval (on-demand
+	// traces report theirs in Investigation).
+	IntervalMs int64         `json:"interval_ms"`
+	From       int64         `json:"from"`
+	To         int64         `json:"to"`
+	Now        int64         `json:"now"`
+	ISPASN     uint32        `json:"isp_asn,omitempty"` // ASN of the first public hop
+	Route      *routeJSON    `json:"route"`
+	Hops       []hopStatJSON `json:"hops"`
 	// Changes of this target's route in the range, newest first.
 	Changes []changeJSON `json:"changes"`
 	// Investigation is the target's on-demand trace: running, or finished
@@ -247,6 +260,21 @@ func (s *server) knownTarget(name string) bool {
 		}
 	}
 	return false
+}
+
+// traceHost is the host target's trace goes to (its ICMP host), or "" for
+// the gateway and the ISP edge, whose addresses are discovered.
+func (s *server) traceHost(name string) string {
+	if p := s.d.Profile(); p != nil {
+		for _, t := range p.Targets {
+			if t.Name == name {
+				if h := t.HostFor(model.KindICMP); h != model.HostGateway && h != model.HostEdge {
+					return h
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // checkTarget answers 400 without a target and 404 for one not in the
@@ -333,8 +361,8 @@ func (s *server) trace(ctx context.Context, target string, p incidentParams, now
 		}
 	}
 
-	out := &traceJSON{Target: target, Traced: s.traced()[target], From: p.from.UnixMilli(), To: p.to.UnixMilli(),
-		Now: now.UnixMilli(), Hops: []hopStatJSON{}, Changes: changesJSON(r, changes)}
+	out := &traceJSON{Target: target, Host: s.traceHost(target), Traced: s.traced()[target], IntervalMs: s.d.traceInterval().Milliseconds(),
+		From: p.from.UnixMilli(), To: p.to.UnixMilli(), Now: now.UnixMilli(), Hops: []hopStatJSON{}, Changes: changesJSON(r, changes)}
 	// The ISP's ASN: the first public hop with a known ASN.
 	for _, sq := range [][][]netip.Addr{seq, routeSeq(route.Hops)} {
 		for _, addrs := range sq {
@@ -348,7 +376,7 @@ func (s *server) trace(ctx context.Context, target string, p incidentParams, now
 	for _, h := range stats {
 		out.Hops = append(out.Hops, hopStatJSON{hopJSON: r.hop(h.Hop, h.IP), N: max(0, h.N), Lost: max(0, h.Lost),
 			Loss: jf(clamp01(h.Loss)), Min: jf(h.Min), Mean: jf(h.Mean), Max: jf(h.Max), P95: jf(h.P95), Jitter: jf(h.Jitter),
-			LossContinues: h.LossContinues, RateLimited: h.RateLimited})
+			Last: jf(h.Last), StDev: jf(h.StDev), Jmax: jf(h.Jmax), LossContinues: h.LossContinues, RateLimited: h.RateLimited})
 	}
 	if hasRoute {
 		out.Route = &routeJSON{Since: route.Since.UTC(), Hops: r.hops(route.Hops)}

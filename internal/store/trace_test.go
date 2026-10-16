@@ -265,8 +265,11 @@ func TestHops(t *testing.T) {
 
 	// Expected numbers straight from the samples.
 	type exp struct {
-		n, lost int64
-		rtts    []float64
+		n, lost    int64
+		rtts       []float64
+		last, jmax float64
+		prev       float64
+		hasPrev    bool
 	}
 	want := map[uint8]*exp{}
 	for _, x := range samples {
@@ -278,8 +281,15 @@ func TestHops(t *testing.T) {
 		switch {
 		case !x.Lost:
 			e.n++
-			e.rtts = append(e.rtts, float64(x.RTT)/1e6)
-		case x.Reason != model.ReasonGap:
+			ms := float64(x.RTT) / 1e6
+			e.rtts = append(e.rtts, ms)
+			if e.hasPrev {
+				e.jmax = max(e.jmax, math.Abs(ms-e.prev))
+			}
+			e.last, e.prev, e.hasPrev = ms, ms, true
+		case x.Reason == model.ReasonGap:
+			e.hasPrev = false
+		default:
 			e.lost++
 		}
 	}
@@ -320,8 +330,22 @@ func TestHops(t *testing.T) {
 				if h.JitterMs <= 0 {
 					t.Fatalf("%s: hop %d jitter %v", name, h.Hop, h.JitterMs)
 				}
+				mean := sum / float64(len(v))
+				var ss float64
+				for _, x := range v {
+					ss += (x - mean) * (x - mean)
+				}
+				if sd := math.Sqrt(ss / float64(len(v)-1)); !closeTo(h.StDevMs, sd) {
+					t.Fatalf("%s: hop %d stdev %v, want %v", name, h.Hop, h.StDevMs, sd)
+				}
+				if !closeTo(h.LastMs, e.last) || !closeTo(h.JmaxMs, e.jmax) || h.JmaxMs < h.JitterMs {
+					t.Fatalf("%s: hop %d last %v jmax %v, want %v %v", name, h.Hop, h.LastMs, h.JmaxMs, e.last, e.jmax)
+				}
 			} else if h.P95Ms < h.MinMs || h.P95Ms > h.MaxMs || h.JitterMs != 0 {
 				t.Fatalf("%s: hourly hop %d p95 %v jitter %v", name, h.Hop, h.P95Ms, h.JitterMs)
+			} else if !math.IsNaN(h.LastMs) || !math.IsNaN(h.StDevMs) || !math.IsNaN(h.JmaxMs) {
+				// The hourly summaries do not keep them.
+				t.Fatalf("%s: hourly hop %d last %v stdev %v jmax %v, want NaN", name, h.Hop, h.LastMs, h.StDevMs, h.JmaxMs)
 			}
 			if h.IP != newR[i] {
 				t.Fatalf("%s: hop %d ip %v", name, h.Hop, h.IP)
@@ -358,7 +382,7 @@ func TestHops(t *testing.T) {
 	}
 	// A current route longer than the samples shows its hops, empty.
 	s.ObserveRoute(model.Route{Target: "gh", Hops: append(slices.Clone(newR), ip("140.82.112.4"))})
-	if hs, _ := s.Hops(ctx, "gh", t0, t0.Add(2*time.Hour)); len(hs) != 5 || hs[4].N+hs[4].Lost != 0 || hs[4].IP != ip("140.82.112.4") {
+	if hs, _ := s.Hops(ctx, "gh", t0, t0.Add(2*time.Hour)); len(hs) != 5 || hs[4].N+hs[4].Lost != 0 || hs[4].IP != ip("140.82.112.4") || !math.IsNaN(hs[4].LastMs) {
 		t.Fatalf("route-only hop: %+v", hs)
 	}
 }
@@ -659,5 +683,38 @@ func TestTraceFlushFailure(t *testing.T) {
 	s.mu.Unlock()
 	if left != 0 {
 		t.Fatalf("%d items still queued", left)
+	}
+}
+
+// TestHopAccMtrStats: mtr's Last, StDev and Jmax in the raw tier; a gap
+// (not measured) breaks the run of consecutive RTTs, a loss does not. The
+// hourly tier has none of them.
+func TestHopAccMtrStats(t *testing.T) {
+	k := model.SeriesKey{Target: "x", Kind: model.KindTrace, Hop: 1}
+	rtt := func(ms float64) RawPoint { return RawPoint{Key: k, RTTms: ms} }
+	a := &hopAcc{}
+	for _, p := range []RawPoint{rtt(10), rtt(12), {Key: k, Lost: true, Reason: model.ReasonTimeout}, rtt(11),
+		{Key: k, Lost: true, Reason: model.ReasonGap}, rtt(20), rtt(14)} {
+		a.addRaw(p)
+	}
+	st := a.stat(1)
+	// RTTs 10 12 11 20 14: mean 13.4, squared deviations 11.56+1.96+5.76+43.56+0.36 = 63.2.
+	if st.N != 5 || st.Lost != 1 || !closeTo(st.LastMs, 14) || !closeTo(st.JmaxMs, 6) || !closeTo(st.StDevMs, math.Sqrt(63.2/4)) {
+		t.Fatalf("raw: %+v", st)
+	}
+	one := &hopAcc{}
+	one.addRaw(rtt(7))
+	if st := one.stat(1); st.LastMs != 7 || st.StDevMs != 0 || st.JmaxMs != 0 {
+		t.Fatalf("one RTT: %+v", st)
+	}
+	none := &hopAcc{}
+	none.addRaw(RawPoint{Key: k, Lost: true, Reason: model.ReasonTimeout})
+	if st := none.stat(1); !math.IsNaN(st.LastMs) || !math.IsNaN(st.StDevMs) || !math.IsNaN(st.JmaxMs) {
+		t.Fatalf("no answers: %+v", st)
+	}
+	h := &hopAcc{}
+	h.addSummary(&summary{n: 3, min: 1000, max: 3000, sum: 6000, p95: 3000})
+	if st := h.stat(1); st.N != 3 || !math.IsNaN(st.LastMs) || !math.IsNaN(st.StDevMs) || !math.IsNaN(st.JmaxMs) {
+		t.Fatalf("hourly: %+v", st)
 	}
 }

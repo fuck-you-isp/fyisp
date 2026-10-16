@@ -94,7 +94,11 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 	}
 	var out []HopStat
 	for i, a := range routeA {
-		h := HopStat{Hop: i + 1, IP: a, N: 100, Lost: 0, Min: float64(i) + 1, Mean: float64(i) + 2, Max: float64(i) + 5, P95: float64(i) + 4, Jitter: 0.5}
+		h := HopStat{Hop: i + 1, IP: a, N: 100, Lost: 0, Min: float64(i) + 1, Mean: float64(i) + 2, Max: float64(i) + 5, P95: float64(i) + 4, Jitter: 0.5,
+			Last: float64(i) + 3, StDev: 0.25, Jmax: 2.5}
+		if i == 1 {
+			h.Last, h.StDev, h.Jmax = math.NaN(), math.NaN(), math.NaN() // the hourly tier: not known
+		}
 		if a.IsValid() {
 			h.Info = hopInfo[a]
 			h.Info.IP = a
@@ -190,14 +194,16 @@ func TestTraceNil(t *testing.T) {
 }
 
 type traceResp struct {
-	Target  string `json:"target"`
-	Traced  bool   `json:"traced"`
-	From    int64  `json:"from"`
-	To      int64  `json:"to"`
-	ISPASN  uint32 `json:"isp_asn"`
-	Route   *struct{ Hops []hopJSON }
-	Hops    []map[string]any `json:"hops"`
-	Changes []struct {
+	Target     string `json:"target"`
+	Host       string `json:"host"`
+	IntervalMs int64  `json:"interval_ms"`
+	Traced     bool   `json:"traced"`
+	From       int64  `json:"from"`
+	To         int64  `json:"to"`
+	ISPASN     uint32 `json:"isp_asn"`
+	Route      *struct{ Hops []hopJSON }
+	Hops       []map[string]any `json:"hops"`
+	Changes    []struct {
 		ID        int64     `json:"id"`
 		FirstDiff int       `json:"first_diff"`
 		From      []hopJSON `json:"from"`
@@ -220,6 +226,22 @@ func TestTraceShapeAndClamps(t *testing.T) {
 	}
 	if tr.Target != "Alpha" || !tr.Traced || tr.ISPASN != 64500 || tr.Route == nil || len(tr.Route.Hops) != len(routeA) {
 		t.Errorf("trace = %+v", tr)
+	}
+	if tr.Host != "alpha.example.com" || tr.IntervalMs != DefaultTraceInterval.Milliseconds() {
+		t.Errorf("host %q interval %d", tr.Host, tr.IntervalMs)
+	}
+	// mtr's Last, StDev and Jmax; null when not known.
+	for _, hp := range tr.Hops {
+		if hp["hop"].(float64) == 1 && (hp["last"] != 3.0 || hp["stdev"] != 0.25 || hp["jmax"] != 2.5) {
+			t.Errorf("hop 1 last/stdev/jmax: %v", hp)
+		}
+		if hp["hop"].(float64) == 2 {
+			for _, k := range []string{"last", "stdev", "jmax"} {
+				if v, ok := hp[k]; !ok || v != nil {
+					t.Errorf("hop 2 %s = %v, want null", k, v)
+				}
+			}
+		}
 	}
 	if span := time.Duration(tr.To-tr.From) * time.Millisecond; span > MaxRange {
 		t.Errorf("span %v > MaxRange", span)

@@ -68,6 +68,7 @@ func (w *webTrace) Hops(ctx context.Context, target string, from, to time.Time) 
 		o := web.HopStat{
 			Hop: h.Hop, IP: ip, N: int(h.N), Lost: int(h.Lost), Loss: h.Loss,
 			Min: h.MinMs, Mean: h.MeanMs, Max: h.MaxMs, P95: h.P95Ms, Jitter: h.JitterMs,
+			Last: h.LastMs, StDev: h.StDevMs, Jmax: h.JmaxMs,
 			LossContinues: h.LossContinues, RateLimited: h.RateLimited,
 		}
 		if h.Info != nil {

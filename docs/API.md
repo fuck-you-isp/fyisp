@@ -76,7 +76,7 @@ No parameters. `profileJSON` in `internal/web/api.go`: `name`, `features` (`trac
 
 ### GET `api/trace` and `api/trace/panel`
 
-`api/trace` takes `target`, `from` and `to` (default the last 30 minutes) and returns the target's current `route` (`since`, `hops`), per-hop statistics (`hops`: `n`, `lost`, `loss`, `min`, `mean`, `max`, `p95`, `jitter` and the loss flags `loss_continues` and `rate_limited`, see [TRACE-API.md](TRACE-API.md#hop-loss-flags)), the route `changes` in the range, newest first, and the `investigation` while one runs or for an hour after (`traceJSON` in `internal/web/trace.go`). A hop has `hop` and, when known, `ip`, `rdns`, `asn` and `owner`.
+`api/trace` takes `target`, `from` and `to` (default the last 30 minutes) and returns the target's `host` (left out for the gateway and the ISP edge), the always-on round interval `interval_ms`, its current `route` (`since`, `hops`), per-hop statistics (`hops`: `n`, `lost`, `loss`, `min`, `mean`, `max`, `p95`, `jitter`, `last`, `stdev` and `jmax`, see [TRACE-API.md](TRACE-API.md#hop-statistics), and the loss flags `loss_continues` and `rate_limited`, see [TRACE-API.md](TRACE-API.md#hop-loss-flags)), the route `changes` in the range, newest first, and the `investigation` while one runs or for an hour after (`traceJSON` in `internal/web/trace.go`). A hop has `hop` and, when known, `ip`, `rdns`, `asn` and `owner`.
 
 `api/trace/panel` takes `target`, `hops` (e.g. `1,4,12`; default every hop of the current route), `from`, `to` and `points`, and answers in `api/panel`'s format with one series per hop.
 
