@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
@@ -36,6 +37,7 @@ type fakeNet struct {
 	inflight map[netip.Addr]int
 	maxIn    map[netip.Addr]int
 	delay    time.Duration
+	wait     bool // unanswered probes wait the full timeout
 
 	paths  map[netip.Addr][]string // per-destination routers (default: routers)
 	now    func() time.Time        // stamps log entries
@@ -66,22 +68,22 @@ func (f *fakeNet) set(fn func(f *fakeNet)) {
 	fn(f)
 }
 
-func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, _ time.Duration) (hops.Hop, error) {
-	return f.probe(ctx, 0, netip.AddrPortFrom(dst, 0), ttl)
+func (f *fakeNet) Probe(ctx context.Context, dst netip.Addr, ttl int, timeout time.Duration) (hops.Hop, error) {
+	return f.probe(ctx, 0, netip.AddrPortFrom(dst, 0), ttl, timeout)
 }
 
 // ProbeTransport answers TCP and UDP probes like ICMP ones.
-func (f *fakeNet) ProbeTransport(ctx context.Context, tp hops.Transport, dst netip.AddrPort, ttl int, _ time.Duration) (hops.Hop, error) {
-	return f.probe(ctx, tp, dst, ttl)
+func (f *fakeNet) ProbeTransport(ctx context.Context, tp hops.Transport, dst netip.AddrPort, ttl int, timeout time.Duration) (hops.Hop, error) {
+	return f.probe(ctx, tp, dst, ttl, timeout)
 }
 
-func (f *fakeNet) probe(ctx context.Context, tp hops.Transport, ap netip.AddrPort, ttl int) (hops.Hop, error) {
+func (f *fakeNet) probe(ctx context.Context, tp hops.Transport, ap netip.AddrPort, ttl int, timeout time.Duration) (hops.Hop, error) {
 	dst := ap.Addr()
 	f.mu.Lock()
 	f.calls[dst] = append(f.calls[dst], ttl)
 	f.inflight[dst]++
 	f.maxIn[dst] = max(f.maxIn[dst], f.inflight[dst])
-	routers, silent, err, delay := f.routers, f.silent[ttl], f.err, f.delay
+	routers, silent, err, delay, wait := f.routers, f.silent[ttl], f.err, f.delay, f.wait
 	if p, ok := f.paths[dst]; ok {
 		routers = p
 	}
@@ -104,6 +106,9 @@ func (f *fakeNet) probe(ctx context.Context, tp hops.Transport, ap netip.AddrPor
 	f.log = append(f.log, rec)
 	f.mu.Unlock()
 	defer func() { f.mu.Lock(); f.inflight[dst]--; f.mu.Unlock() }()
+	if wait && err == nil && !rec.addr.IsValid() {
+		delay = timeout
+	}
 	if delay > 0 {
 		select {
 		case <-time.After(delay):
@@ -879,6 +884,34 @@ func TestDestinationAnswersHigherTTL(t *testing.T) {
 	next()
 	smp, _, _ = sink.take()
 	checkRound(t, "shorter", smp, slot, []hopWant{{rtt: ms}, {rtt: 2 * ms}, {rtt: 3 * ms}})
+}
+
+// The route grows by one hop behind 4 silent ones before the destination's
+// known TTL (silent probes take the full timeout): TTLs past the old one are
+// still probed, so the longer route is confirmed.
+func TestRouteGrowsBehindSilentHops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newFakeNet("192.168.1.1", "62.1.1.1", "", "", "", "")
+		f.wait = true
+		tr, st, sink := roundTracer(t, f, Options{})
+		ctx := context.Background()
+		slot := time.Unix(1_800_000_000, 0).UTC()
+		next := func() { slot = slot.Add(5 * time.Second); tr.round(ctx, st, slot) }
+		next()
+		if smp, _, _ := sink.take(); len(smp) != 7 || smp[6].Lost {
+			t.Fatalf("destination at TTL 7: samples %+v", smp)
+		}
+		f.set(func(f *fakeNet) { f.routers = append(f.routers, "") })
+		for range growRounds - 1 {
+			next()
+		}
+		sink.take()
+		next()
+		smp, _, _ := sink.take()
+		if len(smp) != 8 || smp[7].Lost || smp[7].RTT != 8*time.Millisecond {
+			t.Errorf("destination at TTL 8 after %d rounds: samples %+v", growRounds, smp)
+		}
+	})
 }
 
 // 40% loss on the destination's probe at its own TTL (a higher TTL then

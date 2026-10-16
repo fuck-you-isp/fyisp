@@ -875,7 +875,7 @@ func (tr *tracer) probeAll(ctx context.Context, p *plan) []hopResult {
 	d := p.dstTTL()
 	dstDone := make(chan struct{})
 	// cut: the TTL that ends a run of maxUnknown silent TTLs past the last
-	// answer, among the probes done so far (MaxHops+1: none).
+	// answer and d, among the probes done so far (MaxHops+1: none).
 	var cut atomic.Int32
 	cut.Store(int32(tr.o.MaxHops + 1))
 	var qmu sync.Mutex
@@ -891,7 +891,7 @@ func (tr *tracer) probeAll(ctx context.Context, p *plan) []hopResult {
 			quiet[ttl] = true
 		}
 		c, run := tr.o.MaxHops+1, 0
-		for t := answered + 1; t <= tr.o.MaxHops; t++ {
+		for t := max(answered, d) + 1; t <= tr.o.MaxHops; t++ {
 			if !quiet[t] {
 				run = 0
 				continue
