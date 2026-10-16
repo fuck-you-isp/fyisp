@@ -34,7 +34,8 @@ var supported = Support{TCP: true, UDP: true}
 // them to this probe by the quoted header: protocol, source port,
 // destination address and port. A TCP connect that completes or is
 // refused is the destination answering; the socket is closed with
-// SO_LINGER 0 (a RST: no half-open connection on the server).
+// SO_LINGER 0 (a RST: no half-open connection on the server) within
+// 900 ms, before the first SYN retransmit (1 s).
 func (t *packetProber) ProbeTransport(ctx context.Context, tp Transport, dst netip.AddrPort, ttl int, timeout time.Duration) (Hop, error) {
 	if !dst.Addr().Is4() {
 		return Hop{}, fmt.Errorf("%s is not IPv4", dst.Addr())
@@ -94,6 +95,9 @@ func (t *packetProber) ProbeTransport(ctx context.Context, tp Transport, dst net
 		}
 	} else if err := unix.Sendto(fd, []byte("fyisp-tr"), 0, sa); err != nil {
 		return Hop{}, err
+	}
+	if tp == TCP {
+		timeout = min(timeout, 900*time.Millisecond) // before the SYN retransmit (1 s)
 	}
 	tm := time.NewTimer(timeout)
 	defer tm.Stop()

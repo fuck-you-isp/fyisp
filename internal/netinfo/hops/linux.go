@@ -133,8 +133,8 @@ func (errqProber) ProbeTransport(ctx context.Context, tp Transport, dst netip.Ad
 // router sends back is queued on the socket's error queue with the router's
 // address. It needs neither ping sockets nor privileges. A connect that
 // completes or is refused is the destination answering. The socket is
-// closed with SO_LINGER 0 (a RST: no half-open connection on the server),
-// before the first SYN retransmit (about 1 s) at the default timeout.
+// closed with SO_LINGER 0 (a RST: no half-open connection on the server)
+// within 900 ms, before the first SYN retransmit (1 s).
 func errqTransport(ctx context.Context, tp Transport, dst netip.AddrPort, ttl int, timeout time.Duration) (Hop, error) {
 	if !dst.Addr().Is4() {
 		return Hop{}, fmt.Errorf("%s is not IPv4", dst.Addr())
@@ -171,6 +171,9 @@ func errqTransport(ctx context.Context, tp Transport, dst netip.AddrPort, ttl in
 		}
 	} else if err := unix.Sendto(fd, []byte("fyisp-tr"), 0, sa); err != nil {
 		return Hop{}, err
+	}
+	if tp == TCP {
+		timeout = min(timeout, 900*time.Millisecond) // before the SYN retransmit (1 s)
 	}
 	deadline := sent.Add(timeout)
 	buf, oob := make([]byte, 512), make([]byte, 512)
