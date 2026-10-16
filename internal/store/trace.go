@@ -864,7 +864,7 @@ func buildHopStats(ctx context.Context, accs map[uint8]*hopAcc, route model.Rout
 		}
 		out = append(out, st)
 	}
-	classifyLoss(out)
+	ClassifyLoss(out)
 	if len(lookup) > 0 && infos != nil {
 		m, err := infos(ctx, lookup)
 		if err != nil {
@@ -883,9 +883,10 @@ func buildHopStats(ctx context.Context, accs map[uint8]*hopAcc, route model.Rout
 	return out, nil
 }
 
-// classifyLoss sets LossContinues and RateLimited. The destination is the
-// highest TTL with probes in the range.
-func classifyLoss(hs []HopStat) {
+// ClassifyLoss sets LossContinues and RateLimited from N, Lost and Loss of
+// hs, which is sorted by Hop. The destination is the highest TTL with probes
+// in the range. Hops reuses it, and so does fyisp-webdev.
+func ClassifyLoss(hs []HopStat) {
 	dest := -1
 	for i := range hs {
 		if hs[i].N+hs[i].Lost > 0 {

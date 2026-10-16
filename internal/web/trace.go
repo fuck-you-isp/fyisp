@@ -40,9 +40,10 @@ type TraceSource interface {
 }
 
 // HopStat summarizes one hop address over a range. Times are milliseconds;
-// Loss is a fraction (0..1). LossContinues reports that the loss seen here
-// is also seen at every later hop up to the destination (real loss), as
-// opposed to a router that rate-limits its own ICMP replies.
+// Loss is a fraction (0..1). LossContinues and RateLimited are the store's
+// classification of the hop's loss (store.ClassifyLoss): real loss that
+// continues to the destination, or a router that rate-limits its own ICMP
+// replies. Both are false for loss below store.HopLossMin.
 type HopStat struct {
 	Hop           int
 	IP            netip.Addr // invalid: the hop did not answer
@@ -53,6 +54,7 @@ type HopStat struct {
 	Max, P95      float64
 	Jitter        float64
 	LossContinues bool
+	RateLimited   bool
 }
 
 // Trace limits.
@@ -182,6 +184,7 @@ type hopStatJSON struct {
 	P95           jf   `json:"p95"`
 	Jitter        jf   `json:"jitter"`
 	LossContinues bool `json:"loss_continues"`
+	RateLimited   bool `json:"rate_limited"`
 }
 
 type routeJSON struct {
@@ -345,7 +348,7 @@ func (s *server) trace(ctx context.Context, target string, p incidentParams, now
 	for _, h := range stats {
 		out.Hops = append(out.Hops, hopStatJSON{hopJSON: r.hop(h.Hop, h.IP), N: max(0, h.N), Lost: max(0, h.Lost),
 			Loss: jf(clamp01(h.Loss)), Min: jf(h.Min), Mean: jf(h.Mean), Max: jf(h.Max), P95: jf(h.P95), Jitter: jf(h.Jitter),
-			LossContinues: h.LossContinues})
+			LossContinues: h.LossContinues, RateLimited: h.RateLimited})
 	}
 	if hasRoute {
 		out.Route = &routeJSON{Since: route.Since.UTC(), Hops: r.hops(route.Hops)}

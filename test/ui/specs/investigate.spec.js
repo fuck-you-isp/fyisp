@@ -121,6 +121,37 @@ test('a pasted admin token starts the owner\'s trace and goes with it', async ({
   await expect(page.locator('dialog[open]')).toHaveCount(0);
 });
 
+/** The hops table's rows of hop n (fyisp-webdev: one address per hop). @param {import('@playwright/test').Page} page @param {number} n */
+function hopRow(page, n) {
+  return page.locator('#inv table.hops tbody tr').filter({ has: page.locator('td.hn', { hasText: new RegExp(`^${n}$`) }) });
+}
+
+// fyisp-webdev's steadyLoss: loss from hop 3 to the destination, hop 5
+// rate-limiting its replies. The labels come only from the server's flags.
+test('steady loss below the server\'s threshold gets no label, and the destination is not blamed', async ({ page }) => {
+  await page.goto('/#' + new URLSearchParams({ t: 'CDN-Cloudflare', r: '6h' }));
+  const sum = page.locator('#inv .inv-summary');
+  await expect(sum).toContainText('too little to tell where the loss starts');
+  await expect(sum).not.toContainText('no hop before it');
+  await expect(sum).toContainText('hop 5 (');
+  await expect(hopRow(page, 5).locator('.lnote')).toHaveText('not real — router rate-limiting');
+  for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]) {
+    await expect(hopRow(page, n)).toHaveCount(1);
+    await expect(hopRow(page, n).locator('.lnote, .lbadge')).toHaveCount(0);
+  }
+});
+
+test('steady loss above the server\'s threshold: real loss starts at hop 3', async ({ page }) => {
+  await page.goto('/#' + new URLSearchParams({ t: 'Google DNS 8.8.8.8', r: '6h' }));
+  await expect(page.locator('#inv .inv-summary .is-head')).toHaveText(/^Real loss starts at hop 3 \(AS64500 EXAMPLE-ISP, your ISP\) and continues to the destination/);
+  await expect(hopRow(page, 5).locator('.lnote')).toHaveText('not real — router rate-limiting');
+  for (const n of [3, 4, 6, 7, 8, 9, 10, 11, 12]) {
+    await expect(hopRow(page, n).locator('.lbadge.real')).toHaveCount(1);
+    await expect(hopRow(page, n).locator('.lnote')).toHaveCount(0);
+  }
+  for (const n of [1, 2]) await expect(hopRow(page, n).locator('.lnote, .lbadge')).toHaveCount(0);
+});
+
 test('Speed says why its controls are off', async ({ page }) => {
   await patchStatus(page, { controls: 'disabled', admin: false, can_control: false });
   await page.goto('/#v=speed');

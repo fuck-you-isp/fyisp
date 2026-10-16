@@ -61,3 +61,16 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 The dashboard posts by itself when Investigate opens only for the owner: when `/api/status` has `"can_control": true` (this request may use the speed-test controls, per request: false through a proxy on a token-less dashboard) or the browser holds an admin token pasted earlier, which it then sends as `X-FYISP-Admin`. Everyone else clicks *Trace*.
 
 `GET api/trace?target=` carries `"investigation": {…same object…}` while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
+
+## Hop loss flags
+
+Each hop in `GET api/trace`'s `hops` has two flags that say whether its loss is real. fyisp sets them over the requested range. The destination is the deepest hop with probes in the range.
+
+| Flag | Set when |
+|---|---|
+| `loss_continues` | the hop loses at least 5% of probes, and the destination loses at least half as much. Packets are really dropped at this hop or before it |
+| `rate_limited` | the hop loses at least 5% of probes, but the destination loses less than half as much. The router rate-limits its replies to trace probes, and forwarded traffic is not affected |
+
+Loss below 5% sets neither flag. The destination's own loss, when 5% or more, sets `loss_continues`.
+
+*Investigate* labels hops only from these flags: *real loss, continues to destination* for `loss_continues`, and *not real — router rate-limiting* for `rate_limited`. A hop with neither flag shows only its loss. The summary names the first hop before the destination with `loss_continues` as where real loss starts. It blames the destination only when the destination has `loss_continues` and no hop before it does. When no hop is flagged but the destination loses probes, it says there is too little loss to tell where it starts.

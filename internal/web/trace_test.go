@@ -102,7 +102,7 @@ func (f *fakeTrace) Hops(ctx context.Context, target string, from, to time.Time)
 			h.N, h.Lost, h.Loss = 0, 100, 1
 		}
 		if i == 4 {
-			h.Lost, h.Loss = 30, 0.3 // rate limiting
+			h.Lost, h.Loss, h.RateLimited = 30, 0.3, true // rate limiting
 		}
 		out = append(out, h)
 	}
@@ -236,8 +236,18 @@ func TestTraceShapeAndClamps(t *testing.T) {
 		}
 		last = n
 	}
+	// The store's loss classification is served as is.
+	for _, hp := range tr.Hops {
+		lim, ok := hp["rate_limited"].(bool)
+		if !ok {
+			t.Fatalf("hop without rate_limited: %v", hp)
+		}
+		if want := hp["hop"].(float64) == 5 && hp["ip"] == routeA[4].String(); lim != want {
+			t.Errorf("hop %v %v: rate_limited %v, want %v", hp["hop"], hp["ip"], lim, want)
+		}
+	}
 	body := w.Body.String()
-	for _, want := range []string{`"192.168.1.1"`, `"203.0.113.9"`, "edge1.springfield.isp.test", `"loss_continues":true`, `"no_reply":true`} {
+	for _, want := range []string{`"192.168.1.1"`, `"203.0.113.9"`, "edge1.springfield.isp.test", `"loss_continues":true`, `"rate_limited":true`, `"no_reply":true`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("local trace lacks %s", want)
 		}

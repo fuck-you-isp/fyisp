@@ -924,13 +924,13 @@ function incidentsAt(/** @type {number} */ from, /** @type {number} */ to) {
 // ---------- investigate (per-hop traces) ----------
 
 /** @typedef {{hop:number,ip?:string,no_reply?:boolean,private?:boolean,rdns?:string,asn?:number,owner?:string}} HopRef */
-/** @typedef {HopRef & {n:number,lost:number,loss:number,min:number|null,mean:number|null,max:number|null,p95:number|null,jitter:number|null,loss_continues:boolean}} HopRow */
+/** @typedef {HopRef & {n:number,lost:number,loss:number,min:number|null,mean:number|null,max:number|null,p95:number|null,jitter:number|null,loss_continues:boolean,rate_limited:boolean}} HopRow */
 /** @typedef {{id:number,target:string,at:string,first_diff:number,from:HopRef[],to:HopRef[]}} RouteChange */
 /** @typedef {{target:string,traced:boolean,from:number,to:number,now:number,isp_asn?:number,route:{since:string,hops:HopRef[]}|null,hops:HopRow[],changes:RouteChange[],investigation?:InvState}} TraceData */
 /** @typedef {{target:string,state:string,rounds_done:number,rounds_max:number,interval_ms:number,started_at:number,finished_at?:number}} InvState */
 
 const INV_REFRESH_MS = 5000;
-const REAL_LOSS = 0.01; // loss below 1% is noise
+const REAL_LOSS = 0.01; // loss below 1% is noise (colours only: the server labels a hop's loss)
 const INV_SYNC = 'fyisp-inv';
 
 let traceOn = false;
@@ -1122,7 +1122,7 @@ class Investigate {
         h('p', {}, h('b', { text: 'Loss that does not continue is not real. ' }),
           'Routers forward your traffic in hardware but answer trace probes in software, at low priority and often rate-limited. A middle hop that drops replies while the hops after it (and the destination) do not is just busy answering: your traffic passes through it fine.'),
         h('p', {}, h('b', { text: 'Real loss continues to the destination. ' }),
-          'When loss starts at one hop and every later hop shows at least as much, packets are really being dropped there, on that router or the link just before it. The first such hop is where to point the finger; if it is marked "your ISP", it is your ISP\'s network.'),
+          'When a hop loses 5% or more and the destination loses at least half as much, packets are really being dropped there, on that router or the link just before it. The first such hop is where to point the finger; if it is marked "your ISP", it is your ISP\'s network. Less loss than 5% shows only the number: too little to tell.'),
         h('p', { text: 'Latency works the same way: a spike at one middle hop that later hops do not show is the router being slow to reply, not slow to forward. The latency bar shows each hop\'s min–max range with a tick at the average.' })));
     new ResizeObserver(() => this.resize()).observe(this.rttEl);
   }
@@ -1281,11 +1281,11 @@ class Investigate {
     return d.hops.reduce((m, x) => Math.max(m, x.hop), 0);
   }
 
-  /** The first hop whose loss is real (continues to the destination). */
+  /** The first hop whose loss is real: the server says it continues to the destination. */
   realStart() {
     const d = this.data;
     if (!d) return null;
-    return d.hops.find((x) => x.loss_continues && x.loss >= REAL_LOSS) || null;
+    return d.hops.find((x) => x.loss_continues) || null;
   }
 
   async load() {
@@ -1360,16 +1360,19 @@ class Investigate {
     const destRows = d.hops.filter((x) => x.hop === dest);
     const destLoss = destRows.reduce((m, x) => Math.max(m, x.loss), 0);
     const destAvg = destRows.find((x) => x.mean != null)?.mean;
-    const fake = d.hops.filter((x) => !x.loss_continues && x.n > 0 && x.loss >= REAL_LOSS && x.hop !== dest);
+    // Only the server's flags say whether loss is real; loss below its threshold has neither flag.
+    const fake = d.hops.filter((x) => x.rate_limited && x.n > 0 && x.hop !== dest);
     let kind = 'ok', head;
-    if (rs) {
+    if (rs && rs.hop < dest) {
       const isp = !!(rs.asn && d.isp_asn && rs.asn === d.isp_asn);
       kind = isp ? 'isp' : 'upstream';
       const net = hopOwner(rs) || hopAddr(rs);
       head = `Real loss starts at hop ${rs.hop}${net ? ` (${net}${isp ? ', your ISP' : ''})` : ''} and continues to the destination: ${fmtPct(destLoss)} lost there.`;
-    } else if (destLoss >= REAL_LOSS) {
+    } else if (destRows.some((x) => x.loss_continues)) {
       kind = 'service';
-      head = `The destination itself drops ${fmtPct(destLoss)} of probes, but no hop before it loses packets.`;
+      head = `The destination itself drops ${fmtPct(destLoss)} of probes, but no hop before it shows real loss.`;
+    } else if (destLoss > 0) {
+      head = `The destination loses ${fmtPct(destLoss)} of probes, too little to tell where the loss starts.`;
     } else {
       head = 'No real packet loss on this path in this range.';
     }
@@ -1419,9 +1422,9 @@ class Investigate {
           : h('span', { class: 'lv' + (x.loss >= 0.05 ? ' bad' : x.loss >= REAL_LOSS ? ' warn' : ''), text: x.n + x.lost ? fmtPct(x.loss) : '—' }));
       if (silent) {
         // nothing more to say
-      } else if (x.loss > 0 && x.loss_continues && x.loss >= REAL_LOSS) {
-        lossCell.append(h('span', { class: 'lbadge real', title: 'Every later hop, up to the destination, loses at least as much: packets are really dropped here.', text: 'real loss, continues to destination' }));
-      } else if (x.loss > 0 && !x.loss_continues && x.hop !== dest && !x.no_reply) {
+      } else if (x.loss_continues) {
+        lossCell.append(h('span', { class: 'lbadge real', title: 'The destination loses at least half as much: packets are really dropped here or before.', text: 'real loss, continues to destination' }));
+      } else if (x.rate_limited && x.hop !== dest && !x.no_reply) {
         lossCell.append(h('span', { class: 'lnote', title: 'Later hops do not show this loss: the router only answers trace probes at a limited rate. Your traffic is not affected.', text: 'not real — router rate-limiting' }));
       }
       const bar = h('div', { class: 'lbar' });

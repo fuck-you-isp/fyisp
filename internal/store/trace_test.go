@@ -200,6 +200,8 @@ func TestClassifyLoss(t *testing.T) {
 		{"destination loses half", []hop{{100, 0}, {60, 40}, {80, 20}}, []bool{false, true, true}, []bool{false, false, false}},
 		{"destination loses less than half", []hop{{100, 0}, {60, 40}, {81, 19}}, []bool{false, false, true}, []bool{false, true, false}},
 		{"below 5 points ignored", []hop{{100, 0}, {96, 4}, {96, 4}}, []bool{false, false, false}, []bool{false, false, false}},
+		{"steady 3 points from hop 3, rate-limited hop 4", []hop{{100, 0}, {100, 0}, {97, 3}, {72, 28}, {97, 3}, {97, 3}},
+			[]bool{false, false, false, false, false, false}, []bool{false, false, false, true, false, false}},
 		{"exactly 5 points", []hop{{95, 5}, {95, 5}}, []bool{true, true}, []bool{false, false}},
 		{"destination only", []hop{{100, 0}, {100, 0}, {50, 50}}, []bool{false, false, true}, []bool{false, false, false}},
 		{"silent hop", []hop{{100, 0}, {0, 100}, {100, 0}}, []bool{false, false, false}, []bool{false, true, false}},
@@ -216,7 +218,7 @@ func TestClassifyLoss(t *testing.T) {
 				}
 				hs = append(hs, st)
 			}
-			classifyLoss(hs)
+			ClassifyLoss(hs)
 			for i := range hs {
 				if hs[i].LossContinues != c.continues[i] || hs[i].RateLimited != c.limited[i] {
 					t.Errorf("hop %d (loss %.2f): continues %v limited %v, want %v %v",
