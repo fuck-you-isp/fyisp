@@ -77,7 +77,7 @@ type overlapper interface {
 	Overlaps(from, to time.Time) bool
 }
 
-// speedWindows are stored speed tests' windows (store.SpeedTests). Like the
+// speedWindows are stored speed tests' windows (store.SpeedWindows). Like the
 // live speedtest.Windows they are extended by speedtest.MaskTail; a window
 // without an end is running.
 type speedWindows []speedtest.Window

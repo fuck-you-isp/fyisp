@@ -2,6 +2,7 @@ package speedtest
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -26,15 +27,39 @@ func (m *MemStore) SaveSpeedTest(_ context.Context, t *model.SpeedTest) error {
 
 // SpeedTests implements Store (in saving order).
 func (m *MemStore) SpeedTests(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+	return m.speedTests(from, to, false), nil
+}
+
+// SpeedWindows implements Store.
+func (m *MemStore) SpeedWindows(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+	return m.speedTests(from, to, true), nil
+}
+
+func (m *MemStore) speedTests(from, to time.Time, retired bool) []model.SpeedTest {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []model.SpeedTest
 	for _, t := range m.tests {
-		if !t.Start.Before(from) && !t.Start.After(to) {
+		if !t.Start.Before(from) && !t.Start.After(to) && (retired || t.Outcome != model.SpeedRemoved) {
 			out = append(out, t)
 		}
 	}
-	return out, nil
+	return out
+}
+
+// RetireSpeedTestServers implements Store.
+func (m *MemStore) RetireSpeedTestServers(_ context.Context, servers []string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for i, t := range m.tests {
+		if t.Server != "" && slices.Contains(servers, t.Server) {
+			m.tests[i] = model.SpeedTest{ID: t.ID, Start: t.Start, End: t.End, Trigger: t.Trigger, Outcome: model.SpeedRemoved,
+				FallbackLevel: "none", Bytes: t.Bytes}
+			n++
+		}
+	}
+	return n, nil
 }
 
 // BytesSince is the data the tests started since t used.

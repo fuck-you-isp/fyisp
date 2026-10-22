@@ -6,13 +6,13 @@ iperf3 speed tests over IPv4, on a schedule and on demand. Each test runs downlo
 
 Modes:
 - **`off`**, the default.
-- **`regions`**, the default once speed tests are on (`speedtest.DefaultMode`), hourly: the 9 default regions, each **once an hour**, one test at a time about 400 s apart. The order and the minute differ per install (a saved seed), and each hour's start has ±60 s of jitter. Each region lists same-metro servers from several providers. The first choice rotates per (region, hour of day) by day, so each hour is measured with every provider within N days. `extra` adds opt-in regions.
+- **`regions`**, the default once speed tests are on (`speedtest.DefaultMode`), hourly: the 15 default regions, each **once an hour**, one test at a time about 240 s apart. The order and the minute differ per install (a saved seed), and each hour's start has ±60 s of jitter. Each region lists same-metro servers from several providers. The first choice rotates per (region, hour of day) by day, so each hour is measured with every provider within N days. `extra` adds opt-in regions.
 - **`nearby`**: the nearest server of 3 different providers (same metro preferred), plus 1 automatic far region on a major route (Europe and South America → US East; North America, Africa and the Middle East → UK; Asia and Oceania → US West) and any `extra` far regions, each every 15 minutes. The picks are redone daily.
 - **`custom`**: the `--speedtest-server` list, each every 15 minutes. It is offered only with that flag.
 
 Intervals can be changed with `--speedtest=…,every=`. The floor is 15 minutes against public servers; with only the user's own servers on their own network (private, CGNAT, link-local or loopback addresses), 1 minute.
 
-The catalog (`internal/profile/catalog/iperf3/`: 45 servers in per-provider files, plus `regions.yml`) is built into the binary. It changes only with a release.
+The catalog (`internal/profile/catalog/iperf3/`: 47 servers in per-provider files, plus `regions.yml`) is built into the binary. It changes only with a release.
 
 The Go types live in `internal/web/speed.go`; keep this file in sync with them. Golden example: `internal/web/testdata/speed/local.json`.
 
@@ -41,7 +41,7 @@ In the JSON below, `|null` marks fields that are **always present and may be nul
 
 Servers have these names:
 - `id` is the catalog id, e.g. `Leaseweb-NewYork`. It is stable and URL-safe. The user's own servers (`--speedtest-server host:port`) have the id `host:port`, with the label "Your server" (or "Your server 2" and so on).
-- `label` is provider and city, e.g. "Leaseweb New York" or "InterServer Secaucus NJ".
+- `label` is provider and city, e.g. "Leaseweb New York" or "OVH Paris (CCH)".
 - `display` is "Region · Provider, City", e.g. "US East · Leaseweb, New York". It falls back to "Provider, City" for servers in no region.
 
 Regions have an `id` (`uk`, `eu-west`, …) and a `title` ("UK", "Western Europe", …).
@@ -76,18 +76,18 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "set_by_flag": false,           // a --speedtest flag chose the mode at start (the Details choice is overridden until restart)
   "configurable": true,           // may use config and cancel (controls allowed, with the admin token where one is set)
   "interval_s": 3600,             // each region or server is tested once per interval
-  "spacing_s": 400,               // between scheduled tests
-  "planned_share": 0.038,         // share of time the line is planned to be under test
+  "spacing_s": 240,               // between scheduled tests
+  "planned_share": 0.083,         // share of time the line is planned to be under test
   "warning": null,                // |null: a sentence when planned_share > 0.25
   "plans": [                      // every offered mode except off, for the mode picker
-    {"mode": "regions", "tests_per_hour": 9, "share": 0.038, "est_gb_month": 907.2}
+    {"mode": "regions", "tests_per_hour": 15, "share": 0.083, "est_gb_month": 1512}
   ],                              // est_gb_month: tests per hour × 720 × the median data of recent tests (150 MB before any)
-  "test_share_24h": 0.037,        // share of the last 24 h actually under test (each test plus 2 s)
+  "test_share_24h": 0.08,         // share of the last 24 h actually under test (each test plus 2 s)
   "bytes_month": 86580579678,
   "bytes_24h": 3120000000,        // the last 24 hours (bytes_month: data used by speed tests since the 1st of this month, UTC)
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
-  "sweep_bytes": 9200000000, "sweep_servers": 45, // "Test every server": its estimated data (each server's recent median, else this line's median rate both ways for 10 s) and the servers it tests
+  "sweep_bytes": 9200000000, "sweep_servers": 47, // "Test every server": its estimated data (each server's recent median, else this line's median rate both ways for 10 s) and the servers it tests
   "next_row": "uk",               // |null: its row id
   "running": { ...Running },      // |null
   "rows": [ ...Row ],             // the current mode's scheduled rows, in plan order (empty when off)
@@ -147,10 +147,10 @@ The queue's running entry in short (the full entry is in `part=queue`):
 ```jsonc
 {
   "id": "us-east", "title": "US East",
-  "servers": ["Leaseweb-NewYork", "InterServer-Secaucus", "Clouvider-NewYork"],   // same metro, rotated per hour and day
+  "servers": ["Leaseweb-NewYork", "Clouvider-NewYork"],   // same metro, rotated per hour and day
   "nearby": ["Leaseweb-Washington"],   // the nearby-city fallback, tried last
   "default": true,                // false: opt-in (extra)
-  "providers": ["Leaseweb", "InterServer", "Clouvider"]
+  "providers": ["Leaseweb", "Clouvider"]
 }
 ```
 
@@ -162,9 +162,8 @@ Only **scheduled** tests count in rows. Test now and sweeps are stored and liste
 {
   "id": "us-east", "kind": "region",   // "region" | "server"
   "label": "US East",             // region title, or server label
-  "why": "added",                 // omitempty: why it is scheduled ("added", "nearest Clouvider", "far: US East", …)
   "scheduled": true,              // a row of the current mode
-  "servers": ["Leaseweb-NewYork", "InterServer-Secaucus", "Clouvider-NewYork", "Leaseweb-Washington"],
+  "servers": ["Leaseweb-NewYork", "Clouvider-NewYork", "Leaseweb-Washington"],
   "latest_at": 1760104790000,     // |null
   "n": 96,                        // ok tests
   "busy": 2, "unreachable": 0, "failed": 1,
@@ -213,19 +212,19 @@ What the slowdown points to. It is computed in Go and reused by Details and Home
 
 ```jsonc
 {
-  "case": "isp",                  // "not_enough_data" | "nothing" | "mild" | "mixed" | "isp" | "provider" | "route" | "server" | "too_fast" (every server too fast to measure from here)
+  "case": "widespread",           // "not_enough_data" | "nothing" | "mild" | "mixed" | "widespread" | "provider" | "route" | "server" | "too_fast" (every server too fast to measure from here)
   "tier": "points_to",            // omitempty: "points_to" | "most_likely" | "early_sign" (how sure)
-  "text": "Every region slows from about 7 to 11 pm, with every provider: about 40% below normal. Your provider's first router also answers slower then (25 ms instead of 8 ms), so it's in its local network. That points to your internet provider's own network.",
+  "text": "Every region slows from about 7 to 11 pm, with every provider we could test: tests read about 40% below the same servers' usual results.",
   "evidence": "Based on 648 tests on 9 days between Tue 1 Sep and Wed 9 Sep; each evening hour was tested at least 9 times across 3 providers.",
   "coverage": "Tests ran on 5 of the last 7 days.", // omitted when every day of the window has tests; or "Speed tests started on Mon 6 Oct, so this covers 3 days, not 7."
-  "slowest": [{"server": "OVH-Singapore", "n": 9, "display": "Southeast Asia · OVH, Singapore", "pct": 52, "median_bps": 310000000, "usual_bps": 600000000}], // omitted when none: up to 3 servers slowest in the dip's hours (≥ 3 results there), nearest first in the isp and mild cases, else slowest first
+  "slowest": [{"server": "OVH-Singapore", "n": 9, "display": "Southeast Asia · OVH, Singapore", "pct": 52, "median_bps": 310000000, "usual_bps": 600000000}], // omitted when none: up to 3 servers slowest in the dip's hours (≥ 3 results there), nearest first in the widespread and mild cases, else slowest first
   "via": "DE-CIX",                // omitted when none: the internet exchange the slow tests' route crosses
   "caveat": "Wi-Fi, or other people at home using the internet at that time, can cause this too.",   // omitempty: on Wi-Fi, or when the router itself slows
   "hours": [19, 20, 21, 22], "regions": ["uk", "us-east"], "providers": ["Clouvider", "Leaseweb"],
   "servers": [],                  // case server: the server
   "network": "AS3356 LEVEL3",     // omitempty, local wording only: the first network past the ISP the slow tests share (handoff)
-  "regions_judged": 9, "providers_judged": 4,   // omitempty (isp): how many could tell; "Most regions (5 of 9)" unless all dipped
-  "far_regions": ["oceania"],     // omitempty (isp): regions too far to show the line's speed (p90 under 60% of the best region's), left out
+  "regions_judged": 15, "providers_judged": 4,  // omitempty (widespread): how many could tell; "Most regions (8 of 15)" unless all dipped
+  "far_regions": ["oceania"],     // omitempty (widespread): regions too far to show the line's speed (p90 under 60% of the best region's), left out
   "slow_days": 17, "day_count": 21,   // omitempty: the dip hours were slower on 17 of 21 days with tests
   "far_evening": false,           // omitempty (route, provider): the dip hours are evening at the far end too, so its own busy time fits as well
   "bridged": false,               // omitempty: most tests ran behind another router (container, VM): no "points to", and a caveat
@@ -235,7 +234,7 @@ What the slowdown points to. It is computed in Go and reused by Details and Home
 ```
 
 The cases:
-- `isp`: every region dips at the same hours with every provider (a provider that stays flat rules it out). The cross-destination comparison is the main signal; the ISP edge's idle RTT by local hour over 30 days (samples taken during tests count too) only supports it when it rises at those hours. A flat edge proves nothing: lines with active queue management keep it flat while congested.
+- `widespread`: most regions dip at the same hours with every provider (a provider that stays flat rules it out). It states the pattern and names no cause: speed tests alone can't tell your provider's network from your home's traffic or the far ends' busy hours. Whether your provider is at fault is the verdict's job, from latency and loss ([VERDICTS.md](VERDICTS.md)).
 - `provider`: only one provider's servers dip, in more than one region; or (`network` set, `providers` several) only the servers reached through one network past the ISP (the tests' `handoff`) dip, the others stay flat.
 - `route`: only one region dips, whichever provider.
 - `server`: only one server.
@@ -244,7 +243,7 @@ The cases:
 - `mixed`: some regions dip, but not in a pattern that points to one place.
 - `nothing`: no slowdown of 25% or more; the text gives the worst hour's actual distance from normal.
 
-Tiers: `points_to` needs 7 days, full coverage, a wired connection not behind another router, the dip on at least half the days, and in the ISP case a drop of at least 30% with the ISP edge rising too; `most_likely` 5 days and full coverage; `early_sign` otherwise. The ISP case always carries the household caveat (other people's traffic on the line looks the same). `not_enough_data` says how many of 3 days are in, or how many hours are covered.
+Tiers: `points_to` needs 7 days, full coverage, a wired connection not behind another router, and the dip on at least half the days; `most_likely` 5 days and full coverage; `early_sign` otherwise. The widespread case always carries the household caveat (other people's traffic on the line looks the same). `not_enough_data` says how many of 3 days are in, or how many hours are covered.
 
 ### UnderLoad
 
@@ -334,13 +333,13 @@ For compare, make one request per row (up to 4).
 {"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "owner"}]}
 ```
 
-`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples inside a window are stored as measured, so a test that loads the line shows up as a spike or loss. Home blames a problem that overlaps a window (or the 2 s after it) on the test (`cause_kind` `speedtest`).
+`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples inside a window are stored as measured, so a test that loads the line shows up as a spike or loss. Home blames a problem that overlaps a window (or the 2 s after it) on the test (`cause_kind` `speedtest`). The windows include tests of servers since removed from the catalog, whose results are gone from every other part of this API.
 
 ## The queue
 
 Every test goes through one process-wide queue, and exactly one runs at a time:
 - **Test now:** one server, a region's chain, or the nearest servers.
-- **Sweep:** every catalog server and the user's own servers, one test each, about 45.
+- **Sweep:** every catalog server and the user's own servers, one test each, about 47.
 - **Scheduled slots:** a slot is enqueued when it falls due. It is **dropped** if it is still waiting 10 minutes later, and a slot already waiting is never stacked.
 
 The order is by class, FIFO within each: the owner's entries (Test now, sweeps) first, then schedule slots. Nothing interrupts the running test.
@@ -377,7 +376,7 @@ In memory, so it is never cached (`Cache-Control: no-store`). It's cheap; poll e
   "finished_at": null,          // |null
   "est_start": 1760104790000,   // estimates at about 20 s per test; once finished, the real times
   "est_finish": 1760105690000,
-  "step": 3, "steps": 45,       // "server 3 of 45"; a single is 1 of 1
+  "step": 3, "steps": 47,       // "server 3 of 47"; a single is 1 of 1
   "server": {"id": "Leaseweb-NewYork", "label": "Leaseweb New York"},   // |null: running only
   "direction": "download",      // |null: running only ("picking" | "download" | "upload")
   "tests": [412, 413],          // the stored tests so far

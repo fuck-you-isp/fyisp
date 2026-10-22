@@ -10,26 +10,33 @@
 #            region a server belongs to (sweeps still test them).
 #   default: false for opt-in regions (--speedtest=regions,add=canada).
 #
+# removed: the IDs of servers taken out of the catalog. A server leaves by
+# moving its ID here, never by deleting it: at start fyisp drops its stored
+# results (keeping only each test's window, so the charts and Home still
+# explain it), and a flag naming it only warns.
+#
 # Ids are identities of the stored results: never rename. Servers are the
 # ids of the other files here.
 regions:
   - {id: uk, title: UK, servers: [Clouvider-London, Leaseweb-London, OVH-London]}
   - {id: eu-west, title: Western Europe, servers: [Scaleway-Paris, OVH-Paris-CCH], nearby: [OVH-Roubaix], others: [OVH-Paris-IEB, OVH-Paris-MR9, OVH-Gravelines, OVH-Strasbourg]}
   - {id: eu-central, title: Central Europe, servers: [Leaseweb-Frankfurt, Clouvider-Frankfurt]}
-  - {id: us-east, title: US East, servers: [Leaseweb-NewYork, InterServer-Secaucus, Clouvider-NewYork], nearby: [Leaseweb-Washington]}
-  - {id: us-central, title: US Central, servers: [Clouvider-Dallas, InterServer-Dallas, Leaseweb-Dallas]}
-  - {id: us-west, title: US West, servers: [Clouvider-LosAngeles, InterServer-LosAngeles, Leaseweb-LosAngeles], nearby: [Leaseweb-SanFrancisco]}
+  - {id: us-east, title: US East, servers: [Leaseweb-NewYork, Clouvider-NewYork], nearby: [Leaseweb-Washington]}
+  - {id: us-central, title: US Central, servers: [Clouvider-Dallas, Leaseweb-Dallas]}
+  - {id: us-west, title: US West, servers: [Clouvider-LosAngeles, Leaseweb-LosAngeles]}
+  - {id: us-northwest, title: US Northwest, servers: [OVH-Hillsboro], nearby: [Leaseweb-Seattle]}
+  - {id: us-bay-area, title: US West Bay Area, servers: [HE-Fremont, Leaseweb-SanFrancisco]}
+  - {id: us-southwest, title: US Southwest, servers: [Leaseweb-Phoenix, Clouvider-Phoenix]}
+  - {id: us-midwest, title: US Midwest, servers: [Leaseweb-Chicago, Clouvider-Chicago], nearby: [NOCIX-KansasCity]}
+  - {id: us-mid-atlantic, title: US Mid-Atlantic, servers: [Clouvider-Ashburn, OVH-VintHill]}
+  - {id: us-southeast, title: US Southeast, servers: [Leaseweb-Miami], nearby: [Clouvider-Atlanta]}
   - {id: asia-east, title: East Asia, servers: [Leaseweb-Tokyo], nearby: [Leaseweb-HongKong]}
   - {id: asia-southeast, title: Southeast Asia, servers: [OVH-Singapore, Leaseweb-Singapore]}
   - {id: oceania, title: Oceania, servers: [Leaseweb-Sydney, OVH-Sydney]}
   # Opt-in regions.
-  - {id: us-northwest, title: US Northwest, servers: [OVH-Hillsboro], default: false}
-  - {id: us-mid-atlantic, title: US Mid-Atlantic, servers: [Clouvider-Ashburn, OVH-VintHill], default: false}
-  - {id: us-midwest, title: US Midwest, servers: [Leaseweb-Chicago], default: false}
-  - {id: us-southeast, title: US Southeast, servers: [Leaseweb-Miami], nearby: [Clouvider-Atlanta], default: false}
   - {id: canada, title: Canada, servers: [Leaseweb-Montreal, OVH-Beauharnois], default: false}
-  - {id: us-bay-area, title: US West Bay Area, servers: [HE-Fremont, Leaseweb-SanFrancisco], default: false}
   - {id: south-america, title: South America, servers: [Edgoo-SaoPaulo], default: false}
   - {id: central-asia, title: Central Asia, servers: [Uztelecom-Tashkent], default: false}
   - {id: netherlands, title: Netherlands, servers: [Leaseweb-Amsterdam, Clouvider-Amsterdam, Eranium-Amsterdam, Leaseweb-Amsterdam2], default: false}
   - {id: uk-north, title: UK North, servers: [Clouvider-Manchester], default: false}
+removed: [InterServer-Dallas, InterServer-LosAngeles, InterServer-Secaucus]

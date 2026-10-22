@@ -96,6 +96,8 @@ var ErrMode = errors.New("unknown speed test mode")
 type Store interface {
 	SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error
 	SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+	SpeedWindows(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+	RetireSpeedTestServers(ctx context.Context, servers []string) (int64, error)
 	Setting(ctx context.Context, key string) (string, bool, error)
 	SetSetting(ctx context.Context, key, value string) error
 }
@@ -526,8 +528,15 @@ func (s *Scheduler) load(ctx context.Context) {
 		}
 	}
 	if v, ok, err := st.Setting(ctx, settingSkip); err == nil && ok {
+		var keep []string
 		for _, id := range splitIDs(v) {
-			s.skip[id] = true
+			if !s.o.Catalog.IsRemoved(id) {
+				s.skip[id] = true
+				keep = append(keep, id)
+			}
+		}
+		if len(keep) < len(splitIDs(v)) {
+			_ = st.SetSetting(ctx, settingSkip, strings.Join(keep, ","))
 		}
 	}
 }
@@ -557,8 +566,13 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	mode := s.mode
 	s.mu.Unlock()
 	if s.o.Store != nil {
+		if n, err := s.o.Store.RetireSpeedTestServers(ctx, s.o.Catalog.Removed); err != nil {
+			s.o.Log.Warn("speed tests: dropping removed servers' results", "err", err)
+		} else if n > 0 {
+			s.o.Log.Info("speed tests: dropped the results of servers removed from the catalog", "tests", n)
+		}
 		now := s.o.Now()
-		if ts, err := s.o.Store.SpeedTests(ctx, now.Add(-keepWindows), now); err == nil {
+		if ts, err := s.o.Store.SpeedWindows(ctx, now.Add(-keepWindows), now); err == nil {
 			for _, t := range ts {
 				s.o.Windows.Add(Window{Start: t.Start, End: t.End})
 			}
@@ -751,6 +765,15 @@ func (s *Scheduler) SpeedTests(ctx context.Context, from, to time.Time) ([]model
 		return nil, nil
 	}
 	return s.o.Store.SpeedTests(ctx, from, to)
+}
+
+// SpeedWindows reads every stored test's window, retired ones included
+// (oldest first).
+func (s *Scheduler) SpeedWindows(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+	if s.o.Store == nil {
+		return nil, nil
+	}
+	return s.o.Store.SpeedWindows(ctx, from, to)
 }
 
 func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }

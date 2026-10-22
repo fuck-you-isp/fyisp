@@ -63,7 +63,7 @@ func TestReplayReal(t *testing.T) {
 	}
 	end = end.Add(time.Minute).Truncate(tickEvery)
 	run := func() (*engine, time.Duration) {
-		src := Sources{Store: st, SpeedTests: st.SpeedTests, Incidents: st.Incidents,
+		src := Sources{Store: st, SpeedWindows: st.SpeedWindows, Incidents: st.Incidents,
 			Verdict: func() model.Verdict { return model.Verdict{Kind: model.VerdictOK} }}
 		if os.Getenv("FYISP_REPLAY_INCIDENTS") == "off" { // the tiles' own attribution only
 			src.Incidents = nil

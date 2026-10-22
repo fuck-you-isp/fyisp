@@ -68,3 +68,41 @@ func TestSpeedTests(t *testing.T) {
 		t.Errorf("after prune: %d tests", len(all))
 	}
 }
+
+// TestRetireSpeedTestServers: a removed server's tests become bare
+// windows: SpeedTests leaves them out, SpeedWindows and the data used keep
+// them.
+func TestRetireSpeedTestServers(t *testing.T) {
+	now := t0.Add(100 * 24 * time.Hour)
+	s := openT(t, t.TempDir(), Options{Now: func() time.Time { return now }})
+	defer s.Close()
+	down := 9e8
+	for i, sv := range []string{"Leaseweb-Dallas", "Gone-Dallas", "Gone-Dallas", "Gone-LosAngeles"} {
+		at := now.Add(-time.Hour + time.Duration(i)*time.Minute)
+		if err := s.SaveSpeedTest(ctx, &model.SpeedTest{Start: at, End: at.Add(20 * time.Second), Trigger: "schedule", Outcome: model.SpeedOK,
+			Region: "us-central", Server: sv, DownBps: &down, Bytes: 100, Conn: model.ConnWired}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.RetireSpeedTestServers(ctx, []string{"Gone-Dallas", "Gone-LosAngeles", "Gone-Nowhere"})
+	if err != nil || n != 3 {
+		t.Fatalf("retired %d %v", n, err)
+	}
+	if n, err := s.RetireSpeedTestServers(ctx, nil); n != 0 || err != nil {
+		t.Errorf("none: %d %v", n, err)
+	}
+	if all, _ := s.SpeedTests(ctx, time.Time{}, now); len(all) != 1 || all[0].Server != "Leaseweb-Dallas" {
+		t.Errorf("tests %+v", all)
+	}
+	ws, _ := s.SpeedWindows(ctx, time.Time{}, now)
+	if len(ws) != 4 {
+		t.Fatalf("windows %+v", ws)
+	}
+	if w := ws[1]; w.Outcome != model.SpeedRemoved || w.Server != "" || w.Region != "" || w.DownBps != nil || w.Conn != "" || w.Bytes != 100 ||
+		w.Trigger != "schedule" || w.End.Sub(w.Start) != 20*time.Second {
+		t.Errorf("retired %+v", w)
+	}
+	if b, err := s.BytesSince(ctx, now.Add(-2*time.Hour)); err != nil || b != 400 {
+		t.Errorf("bytes %d %v", b, err)
+	}
+}

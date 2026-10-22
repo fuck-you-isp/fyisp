@@ -39,6 +39,11 @@ import (
 //	    geo: na                       # na sa eu me af as oc
 //	    capacity_gbps: 10             # optional: the server's published link capacity
 //	    verified: {date: 2026-10-10, tcp: true, iperf3: true}
+//
+// regions.yml also lists the removed servers' IDs (removed:). A server
+// leaves the catalog by moving its ID there: at start, its stored tests
+// become bare windows (Store.RetireSpeedTestServers), and naming it in a
+// flag only warns.
 
 // Server is one public iperf3 server: one iperf3 instance per port of
 // PortMin..PortMax, each running one test at a time.
@@ -230,8 +235,13 @@ func (r Region) Chain(c *Catalog, t time.Time, seed uint32) []Step {
 type Catalog struct {
 	Servers []Server // by provider file, then file order
 	Regions []Region
+	// Removed are the IDs of servers removed from the catalog.
+	Removed []string
 	byID    map[string]int
 }
+
+// IsRemoved reports a server removed from the catalog.
+func (c *Catalog) IsRemoved(id string) bool { return slices.Contains(c.Removed, id) }
 
 // Server returns the server with this ID.
 func (c *Catalog) Server(id string) (Server, bool) {
@@ -271,6 +281,7 @@ type regionsFile struct {
 		Others  []string `yaml:"others"`
 		Default *bool    `yaml:"default"`
 	} `yaml:"regions"`
+	Removed []string `yaml:"removed"`
 }
 
 var (
@@ -389,6 +400,15 @@ func LoadCatalog(fsys fs.FS) (*Catalog, error) {
 			}
 			c.Regions = append(c.Regions, Region{ID: x.ID, Title: x.Title, Servers: x.Servers, Nearby: x.Nearby, Others: x.Others, Default: x.Default == nil || *x.Default})
 		}
+		for _, id := range rf.Removed {
+			switch {
+			case !serverIDRe.MatchString(id) || slices.Contains(c.Removed, id):
+				bad("regions.yml: removed %q: a unique server id", id)
+			case hasKey(c.byID, id):
+				bad("regions.yml: removed %q is still a server", id)
+			}
+			c.Removed = append(c.Removed, id)
+		}
 	}
 	if len(c.Servers) == 0 {
 		bad("no servers")
@@ -401,9 +421,11 @@ func Builtin() (*Catalog, error) { return LoadCatalog(profile.IperfCatalog()) }
 
 // Custom parses --speedtest-server: a comma-separated list of catalog
 // server IDs and host:port entries (one's own iperf3 server; private
-// addresses are fine).
+// addresses are fine). Removed catalog servers are left out (the caller
+// warns).
 func Custom(list string, c *Catalog) ([]Server, error) {
 	var out []Server
+	removed := false
 	for _, x := range strings.Split(list, ",") {
 		x = strings.TrimSpace(x)
 		if x == "" {
@@ -414,6 +436,10 @@ func Custom(list string, c *Catalog) ([]Server, error) {
 				out = append(out, s)
 				continue
 			}
+			if c.IsRemoved(x) {
+				removed = true
+				continue
+			}
 		}
 		host, port, err := net.SplitHostPort(x)
 		p, perr := strconv.Atoi(port)
@@ -422,6 +448,9 @@ func Custom(list string, c *Catalog) ([]Server, error) {
 		}
 		hp := net.JoinHostPort(host, port)
 		out = append(out, Server{ID: hp, Label: "Your server", Provider: "Your server", Host: host, PortMin: p, PortMax: p, Custom: true, LAN: onLAN(host)})
+	}
+	if len(out) == 0 && removed {
+		return nil, errors.New("--speedtest-server: every server listed was removed from the catalog")
 	}
 	if len(out) == 0 {
 		return nil, errors.New("--speedtest-server: no servers")
@@ -465,10 +494,11 @@ func hasKey[V any](m map[string]V, k string) bool {
 var metroZones = map[string]string{
 	"amsterdam": "Europe/Amsterdam", "atlanta": "America/New_York", "bay-area": "America/Los_Angeles", "chicago": "America/Chicago",
 	"dallas": "America/Chicago", "frankfurt": "Europe/Berlin", "gravelines": "Europe/Paris", "hong-kong": "Asia/Hong_Kong",
-	"lille": "Europe/Paris", "london": "Europe/London", "los-angeles": "America/Los_Angeles", "manchester": "Europe/London",
-	"miami": "America/New_York", "montreal": "America/Toronto", "new-york": "America/New_York", "paris": "Europe/Paris",
-	"portland": "America/Los_Angeles", "sao-paulo": "America/Sao_Paulo", "singapore": "Asia/Singapore", "strasbourg": "Europe/Paris",
-	"sydney": "Australia/Sydney", "tashkent": "Asia/Tashkent", "tokyo": "Asia/Tokyo", "washington": "America/New_York",
+	"kansas-city": "America/Chicago", "lille": "Europe/Paris", "london": "Europe/London", "los-angeles": "America/Los_Angeles",
+	"manchester": "Europe/London", "miami": "America/New_York", "montreal": "America/Toronto", "new-york": "America/New_York",
+	"paris": "Europe/Paris", "phoenix": "America/Phoenix", "portland": "America/Los_Angeles", "sao-paulo": "America/Sao_Paulo",
+	"seattle": "America/Los_Angeles", "singapore": "Asia/Singapore", "strasbourg": "Europe/Paris", "sydney": "Australia/Sydney",
+	"tashkent": "Asia/Tashkent", "tokyo": "Asia/Tokyo", "washington": "America/New_York",
 }
 
 // Zone is the server's local time zone (nil: unknown).

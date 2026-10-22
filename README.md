@@ -221,7 +221,7 @@ fyisp measures the UDP path that call audio and video take with tiny STUN reques
 
 ## Speed tests
 
-Speed tests are **off by default**. `--speedtest` (or a mode picked in Details → Speed) tests your download and upload speed against public iperf3 servers in 9 regions, each once an hour, so you can see whether your connection slows down at certain times of day, and whose network the slowdown is in. A test fills your line while it runs: on a 100 Mbit/s line that is about 650 GB to 1.8 TB a month, so leave speed tests off on metered or capped connections. Modes, data use, the servers and how they're treated: [Speed tests](docs/SPEED-TESTS.md).
+Speed tests are **off by default**. `--speedtest` (or a mode picked in Details → Speed) tests your download and upload speed against public iperf3 servers in 15 regions (9 of them in the US), each once an hour, so you can see whether your connection slows down at certain times of day, and whose network the slowdown is in. A test fills your line while it runs: on a 100 Mbit/s line that is about 1.1 to 3 TB a month, so leave speed tests off on metered or capped connections. Modes, data use, the servers and how they're treated: [Speed tests](docs/SPEED-TESTS.md).
 
 ## What to measure (profiles)
 

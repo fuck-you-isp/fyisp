@@ -310,15 +310,15 @@ func TestFastLineGuard(t *testing.T) {
 		lb   func(h int, r *rand.Rand) bool
 		want string
 	}{
-		{"0%", func(int, *rand.Rand) bool { return false }, CaseISP},
-		{"17%", func(h int, _ *rand.Rand) bool { return h >= 9 && h <= 12 }, CaseISP},
-		{"42%", func(h int, _ *rand.Rand) bool { return h%2 == 0 }, CaseISP},
+		{"0%", func(int, *rand.Rand) bool { return false }, CaseWidespread},
+		{"17%", func(h int, _ *rand.Rand) bool { return h >= 9 && h <= 12 }, CaseWidespread},
+		{"42%", func(h int, _ *rand.Rand) bool { return h%2 == 0 }, CaseWidespread},
 		{"83%", func(int, *rand.Rand) bool { return true }, CaseTooFast},
 	} {
 		ts := capFixture(c, 14, tc.lb, 0.85, 0.6)
 		f := FindFinding(FindingInput{Tests: ts, Catalog: c})
 		t.Logf("%s: %.0f%% lower bounds: %s, drop %.2f", tc.name, 100*lbShare(ts), f.Case, f.Drop)
-		if f.Case != tc.want || (tc.want == CaseISP && math.Abs(f.Drop-0.4) > 0.05) {
+		if f.Case != tc.want || (tc.want == CaseWidespread && math.Abs(f.Drop-0.4) > 0.05) {
 			t.Errorf("%s (%.0f%% lower bounds): %s %.2f: %s", tc.name, 100*lbShare(ts), f.Case, f.Drop, f.Text)
 		}
 		if tc.want == CaseTooFast {
@@ -343,7 +343,7 @@ func TestFastLineGuard(t *testing.T) {
 	ts := capFixture(c, 14, share(0.5), 0.85, 0.7)
 	f := FindFinding(FindingInput{Tests: ts, Catalog: c})
 	t.Logf("50%% at random: %.0f%% lower bounds: %s, drop %.2f", 100*lbShare(ts), f.Case, f.Drop)
-	if f.Case != CaseISP {
+	if f.Case != CaseWidespread {
 		t.Errorf("50%% at random (%.0f%%): %s: %s", 100*lbShare(ts), f.Case, f.Text)
 	}
 	// At 80% the few daytime results left can't cover the day: too fast.
@@ -359,7 +359,7 @@ func TestFastLineGuard(t *testing.T) {
 		ts := capFixtureEve(c, 14, share(0.5), 0.85, 0.6, eveLB)
 		f := FindFinding(FindingInput{Tests: ts, Catalog: c})
 		t.Logf("evening lower bounds %.0f%%: %s, drop %.2f", 100*eveLB, f.Case, f.Drop)
-		if f.Case != CaseISP || math.Abs(f.Drop-0.4) > 0.05 {
+		if f.Case != CaseWidespread || math.Abs(f.Drop-0.4) > 0.05 {
 			t.Errorf("evening lower bounds %.0f%%: %s %.2f: %s", 100*eveLB, f.Case, f.Drop, f.Text)
 		}
 	}
@@ -370,7 +370,7 @@ func TestFastLineGuard(t *testing.T) {
 			ts[i].Extra = `{"rate_method":["peak90",""],"lower_bound":[true,false]}`
 		}
 	}
-	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseISP || !strings.Contains(f.Evidence, "2 of 8 servers were too fast to measure from here and are left out.") {
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case != CaseWidespread || !strings.Contains(f.Evidence, "2 of 8 servers were too fast to measure from here and are left out.") {
 		t.Errorf("far out: %s: %s / %s", f.Case, f.Text, f.Evidence)
 	}
 }
