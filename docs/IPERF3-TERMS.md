@@ -64,6 +64,6 @@ Typical early-stopped tests are about 40% of these figures.
 
 fyisp uses only the hosts and ports these lists publish. Each server's ports were checked open with one TCP connect (2026-10-10; the Seattle, Phoenix, Chicago Clouvider and NOCIX servers 2026-10-22); see each file's `verified` field.
 
-## Owner decision (2026-10-10)
+## Owner decision (2026-10-10, extended 2026-10-22)
 
-The owner states that the operators' permission is in place, and decided that this project sends them no further notice. If an operator objects: remove the server in the next release, and tell users meanwhile to add it to `--speedtest-skip`. `docs/OPERATORS.md` tells operators how to ask.
+The owner states that the operators' permission is in place, including for the servers added on 2026-10-22 (NOCIX Kansas City, Leaseweb Seattle and Phoenix, Clouvider Chicago and Phoenix), and decided that this project sends them no further notice. If an operator objects: remove the server in the next release, and tell users meanwhile to add it to `--speedtest-skip`. `docs/OPERATORS.md` tells operators how to ask.
