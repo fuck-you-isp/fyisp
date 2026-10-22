@@ -59,12 +59,12 @@ func TestSpeedFlags(t *testing.T) {
 	if err != nil || tap == nil || w == nil {
 		t.Fatal(err)
 	}
-	if st := s.State(); len(st.Servers) != 45 || len(st.Regions) != 19 || len(st.Custom) != 0 {
+	if st := s.State(); len(st.Servers) != 47 || len(st.Regions) != 20 || len(st.Custom) != 0 {
 		t.Errorf("%d servers, %d regions", len(st.Servers), len(st.Regions))
 	}
 	cfg, _ = parseFlags([]string{"--speedtest-server", "iperf.example.net:5201"})
 	s, _, _, _ = newSpeed(cfg, nil, nil, newTestCollector(), noPath, nil)
-	if st := s.State(); len(st.Custom) != 1 || len(st.Servers) != 46 || len(st.Modes) != 4 {
+	if st := s.State(); len(st.Custom) != 1 || len(st.Servers) != 48 || len(st.Modes) != 4 {
 		t.Errorf("custom: %+v", st.Custom)
 	}
 }

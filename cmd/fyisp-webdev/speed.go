@@ -14,8 +14,8 @@ import (
 )
 
 // newFakeSpeed is the real speed test scheduler over a fake network and an
-// in-memory store with synthetic history in mode regions: the 9 default
-// regions once an hour (400 s apart, providers rotated) for the backfill
+// in-memory store with synthetic history in mode regions: the default
+// regions once an hour (spread over the hour, providers rotated) for the backfill
 // range (2 to 30 days). Speed falls with distance (Europe fastest), every
 // region is ~40% slower 19-23 local time with every provider, first
 // choices are busy now and then (a same-metro fallback, or busy), and the
@@ -32,14 +32,16 @@ func newFakeSpeed(ctx context.Context, now time.Time, bf time.Duration, log *slo
 	_ = st.SetSetting(ctx, "speedtest_seed", "7")
 	n := &fakeNet{cat: cat, r: rand.New(rand.NewPCG(3, 4))}
 	span := min(max(bf, 2*24*time.Hour), 30*24*time.Hour)
+	var defaults []speedtest.Region
+	for _, reg := range cat.Regions {
+		if reg.Default {
+			defaults = append(defaults, reg)
+		}
+	}
+	gap := time.Hour / time.Duration(len(defaults))
 	for hour := now.Add(-span).Truncate(time.Hour); hour.Before(now.Add(-time.Hour)); hour = hour.Add(time.Hour) {
-		i := 0
-		for _, reg := range cat.Regions {
-			if !reg.Default {
-				continue
-			}
-			at := hour.Add(time.Duration(i) * 400 * time.Second)
-			i++
+		for i, reg := range defaults {
+			at := hour.Add(time.Duration(i) * gap)
 			x := n.result(at, reg, reg.Chain(cat, at, seed))
 			_ = st.SaveSpeedTest(ctx, &x)
 		}
@@ -53,7 +55,7 @@ func newFakeSpeed(ctx context.Context, now time.Time, bf time.Duration, log *slo
 // vantage point.
 var handoffs = map[string]model.Handoff{
 	"Leaseweb": {ASN: 3356, Name: "LEVEL3", ISPASN: 3320}, "Clouvider": {ASN: 174, Name: "COGENT-174", ISPASN: 3320},
-	"InterServer": {ASN: 174, Name: "COGENT-174", ISPASN: 3320}, "OVH": {ASN: 16276, Name: "OVH", ISPASN: 3320},
+	"OVH": {ASN: 16276, Name: "OVH", ISPASN: 3320}, "Hurricane Electric": {ASN: 6939, Name: "HURRICANE", ISPASN: 3320},
 }
 
 // fakeNet fakes the network: speeds and RTTs by the server's area.

@@ -17,7 +17,6 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
-	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
 var speedNow = time.Date(2026, 10, 10, 18, 0, 0, 0, time.UTC)
@@ -257,7 +256,7 @@ func TestSpeedSummary(t *testing.T) {
 	if s.Pattern == nil || s.Pattern.Text != "Evenings are slower: about 40% below your daytime speed." || len(s.Pattern.Hours) != 4 || s.Pattern.Hours[0] != 19 {
 		t.Errorf("pattern %+v", s.Pattern)
 	}
-	if s.Finding.Case != speedtest.CaseISP || !strings.Contains(s.Finding.Text, "your internet provider") || s.Finding.Evidence == "" {
+	if s.Finding.Case != speedtest.CaseWidespread || strings.Contains(s.Finding.Text, "provider's own network") || s.Finding.Evidence == "" {
 		t.Errorf("finding %+v", s.Finding)
 	}
 	if s.Coverage[20].N < 30 || s.Coverage[20].Providers != 2 {
@@ -590,47 +589,6 @@ func TestHomeSpeedLine(t *testing.T) {
 	g.s.SetMode(context.Background(), speedtest.ModeOff, nil)
 	if sp := home(g); !sp.Available || strings.Contains(sp.EmptyText, "within the hour") {
 		t.Errorf("speed while off: %+v", sp)
-	}
-}
-
-// TestSpeedEdgeHours: edgeHours folds the ISP edge's stored RTT and loss
-// into local hours of day (the access network's control).
-func TestSpeedEdgeHours(t *testing.T) {
-	loc, d := speedHandlers(t, newSpeedRig(t, 5*time.Hour), LocalOptions{})
-	f := store.NewFake()
-	p := testProfile()
-	p.Targets = append(p.Targets, model.Target{Name: "ISP edge", Host: model.HostEdge, Group: p.Targets[0].Group, Layer: model.LayerEdge,
-		Kinds: []model.ProbeKind{model.KindICMP}, Interval: 3 * time.Second})
-	edge := model.SeriesKey{Target: "ISP edge", Kind: model.KindICMP}
-	for ts := speedNow.Add(-3 * 24 * time.Hour).Truncate(time.Hour); ts.Before(speedNow); ts = ts.Add(time.Minute) {
-		s := model.Sample{Key: edge, Slot: ts, RTT: 8 * time.Millisecond}
-		if h := ts.UTC().Hour(); h == 19 {
-			s.RTT = 30 * time.Millisecond // the evening: the access network is busy
-			if ts.Minute()%10 == 0 {
-				s.Lost, s.Reason, s.RTT = true, model.ReasonTimeout, 0
-			}
-		}
-		f.Observe(s)
-	}
-	d.Store, d.Profile = f, func() *model.Profile { return p }
-	loc = Local(d, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
-	loc.now = func() time.Time { return speedNow }
-	eh, err := loc.edgeHours(context.Background(), speedNow, time.FixedZone("", 2*3600))
-	if err != nil || len(eh) != 24 {
-		t.Fatalf("edge hours %+v %v", eh, err)
-	}
-	ev, day := eh[21], eh[10] // 19 UTC is 21 at UTC+2
-	if ev.N != 3 || ev.RTTms == nil || *ev.RTTms != 30 || ev.Loss == nil || *ev.Loss != 0.1 {
-		t.Errorf("evening %+v (rtt %v loss %v), want 3 days, 30 ms, 10%% loss", ev, ev.RTTms, ev.Loss)
-	}
-	if day.N < 2 || day.RTTms == nil || *day.RTTms != 8 || *day.Loss != 0 {
-		t.Errorf("daytime %+v", day)
-	}
-	// Without an ISP edge target: nil.
-	_, d2 := speedHandlers(t, newSpeedRig(t, 5*time.Hour), LocalOptions{})
-	l2 := Local(d2, LocalOptions{Addr: "127.0.0.1:3000"}).(*localHandler)
-	if eh, err := l2.edgeHours(context.Background(), speedNow, time.UTC); err != nil || eh != nil {
-		t.Errorf("edge hours without an edge target: %+v %v", eh, err)
 	}
 }
 

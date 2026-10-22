@@ -426,6 +426,11 @@ const (
 	// without speeds so its window stays explained (charts, Home);
 	// never counted as a result, busy or failed.
 	SpeedCancelled = "cancelled"
+	// SpeedRemoved: a test of a server since removed from the catalog,
+	// kept as a bare window (start, end, trigger, bytes) so the charts and
+	// Home still explain it. Store.SpeedTests leaves it out; only
+	// SpeedWindows and the data used see it.
+	SpeedRemoved = "removed"
 )
 
 // SpeedTest is one iperf3 speed test (download then upload). Start..End is

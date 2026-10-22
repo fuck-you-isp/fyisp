@@ -109,9 +109,9 @@ func (e *engine) inputs(ctx context.Context, now time.Time) inputs {
 			e.log.Warn("tiles: reading the incidents", "err", err)
 		}
 	}
-	if e.src.SpeedTests != nil && (e.storedAt.IsZero() || now.Sub(e.storedAt) >= speedEvery || now.Before(e.storedAt)) {
+	if e.src.SpeedWindows != nil && (e.storedAt.IsZero() || now.Sub(e.storedAt) >= speedEvery || now.Before(e.storedAt)) {
 		e.storedAt = now
-		xs, err := e.src.SpeedTests(ctx, now.Add(-keepFor-time.Hour), now)
+		xs, err := e.src.SpeedWindows(ctx, now.Add(-keepFor-time.Hour), now)
 		if err == nil {
 			in.speed, in.speedOK = xs, true
 		} else if ctx.Err() == nil {

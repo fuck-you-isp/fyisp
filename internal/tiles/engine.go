@@ -64,9 +64,10 @@ const nTiles = 11
 // optional.
 type Sources struct {
 	Store store.Reader // Raw, for the replay
-	// SpeedTests lists the stored speed tests (store.SQLite.SpeedTests):
-	// problems during one are labelled with it.
-	SpeedTests func(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+	// SpeedWindows lists the stored speed tests' windows, retired ones
+	// included (store.SQLite.SpeedWindows): problems during one are
+	// labelled with it.
+	SpeedWindows func(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
 	// Incidents are the verdict engine's (verdict.Engine.Incidents).
 	Incidents func(ctx context.Context, from, to time.Time) ([]model.Incident, error)
 	// Verdict and Layers are the verdict engine's current verdict and path

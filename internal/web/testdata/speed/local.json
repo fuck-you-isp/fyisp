@@ -133,7 +133,7 @@
  "enabled": true,
  "exclude_fallback": false,
  "finding": {
-  "case": "isp",
+  "case": "widespread",
   "caveat": "Wi-Fi, or other people at home using the internet heavily at those hours, can look the same.",
   "day_count": 24,
   "days": 31,
@@ -184,7 +184,7 @@
    }
   ],
   "tests": 279,
-  "text": "Every region slows from about 9 pm to 1 am, with every provider we could test: tests read about 40% below the same servers' usual results. That points to your internet provider's own network.",
+  "text": "Every region slows from about 9 pm to 1 am, with every provider we could test: tests read about 40% below the same servers' usual results.",
   "tier": "points_to",
   "up": false
  },

@@ -157,7 +157,7 @@ func parseFlags(args []string) (config, error) {
 	fs.Var(&c.geos, "geo", "with --profile: only targets in these `regions`: na, sa, eu, me, af, as, oc (or north-america, europe, ...)")
 	fs.BoolVar(&c.noPath, "no-path", false, "leave out the built-in Network path group (gateway, ISP edge, anycast resolvers)")
 	fs.BoolVar(&c.noUDP, "no-udp", false, "leave out every UDP (STUN) target: no call-path measurements")
-	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (9 regions, each hourly), --speedtest=nearby (3 nearby providers and 1 far region, every 15m), --speedtest=regions,add=canada, --speedtest=nearby,far=us-west, every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
+	fs.Var(&c.speed, "speedtest", "run iperf3 speed tests on a schedule: --speedtest (15 regions, each hourly), --speedtest=nearby (3 nearby providers and 1 far region, every 15m), --speedtest=regions,add=canada, --speedtest=nearby,far=us-west, every=30m, --speedtest=off (default: the Details setting); see the README's \"Speed tests\"")
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
@@ -328,7 +328,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	// The Home tiles: judged per minute from their targets' samples, the
 	// last 8 days replayed from the store at start.
 	tl := tiles.New(prof, profile.ResolveTiles(prof), tiles.Sources{
-		Store: st, SpeedTests: st.SpeedTests, Incidents: eng.Incidents, Verdict: eng.Current,
+		Store: st, SpeedWindows: st.SpeedWindows, Incidents: eng.Incidents, Verdict: eng.Current,
 		Layers: eng.Layers, SpeedWins: wins, PathChanges: ni.Subscribe,
 	}, tiles.Options{Log: log})
 	// Samples taken during a speed test are kept as measured: the chart

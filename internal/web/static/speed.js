@@ -405,7 +405,7 @@ function modeName(m) { return (MODES[/** @type {'regions'} */ (m)] || { name: m 
 function testsPerHour(d, m) {
   const plan = d.plans && d.plans.find((p) => p.mode === m);
   if (plan) return plan.tests_per_hour;
-  const per = m === 'regions' ? d.regions.length || 9
+  const per = m === 'regions' ? d.regions.filter((r) => r.default).length
     : m === 'nearby' ? 4
       : Math.max(1, d.servers.filter((s) => s.custom).length);
   return per * 3600 / (d.interval_s || 900);
@@ -420,7 +420,7 @@ function modeSentence(d, m) {
   const ev = every(d.interval_s || 900);
   if (m === 'regions') {
     // The default regions; each is tested once per (count ÷ tests an hour) hours.
-    const n = d.regions.filter((r) => r.default).length || d.regions.length || 9;
+    const n = d.regions.filter((r) => r.default).length;
     const tph = testsPerHour(d, m);
     return `${n} regions, each ${tph ? every(Math.round(3600 * n / tph)) : ev}. Best for telling your provider’s network apart from its links to other networks.`;
   }

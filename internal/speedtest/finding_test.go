@@ -1,7 +1,6 @@
 package speedtest
 
 import (
-	"math"
 	"math/rand/v2"
 	"strings"
 	"testing"
@@ -68,67 +67,53 @@ func evening(h int) bool { return h >= 19 && h <= 22 }
 
 func TestFinding(t *testing.T) {
 	c := findingCatalog(t)
-	nan := [24]float64{}
-	for i := range nan {
-		nan[i] = math.NaN()
-	}
-	edgeRise := nan
-	for h := range 24 {
-		edgeRise[h] = 8
-		if evening(h) {
-			edgeRise[h] = 25
-		}
-	}
 	cases := []struct {
 		name  string
 		days  int
 		score func(sv string, h int) float64
 		conn  string
-		edge  [24]float64
 		want  string // case
 		tier  string
 		text  []string
 	}{
-		{"isp", 9, func(_ string, h int) float64 {
+		{"widespread", 9, func(_ string, h int) float64 {
 			if evening(h) {
 				return 0.6
 			}
 			return 1
-		}, "wired", edgeRise, CaseISP, TierPointsTo, []string{
-			"Every region slows from about 7 to 11 pm, with every provider we could test: tests read about 40% below the same servers' usual results.",
-			"also answers slower then (25 ms instead of 8 ms), which fits congestion in its local network.",
-			"That points to your internet provider's own network."}},
-		{"isp on wifi, early", 4, func(_ string, h int) float64 {
+		}, "wired", CaseWidespread, TierPointsTo, []string{
+			"Every region slows from about 7 to 11 pm, with every provider we could test: tests read about 40% below the same servers' usual results."}},
+		{"widespread on wifi, early", 4, func(_ string, h int) float64 {
 			if evening(h) {
 				return 0.6
 			}
 			return 1
-		}, "wifi", nan, CaseISP, TierEarly, []string{"It may be your internet provider's own network. We'll know more in a few days."}},
+		}, "wifi", CaseWidespread, TierEarly, []string{"A few more days will show whether it holds."}},
 		{"one provider", 9, func(sv string, h int) float64 {
 			if evening(h) && (sv == "B1" || sv == "B2") {
 				return 0.5
 			}
 			return 1
-		}, "wired", nan, CaseProvider, TierPointsTo, []string{"Only B servers slow from about 7 to 11 pm (Region One and Region Two); other providers we could test there stay normal.",
+		}, "wired", CaseProvider, TierPointsTo, []string{"Only B servers slow from about 7 to 11 pm (Region One and Region Two); other providers we could test there stay normal.",
 			"That points to the link between your internet provider and B."}},
 		{"long-distance route", 9, func(sv string, h int) float64 {
 			if evening(h) && strings.HasSuffix(sv, "3") {
 				return 0.5
 			}
 			return 1
-		}, "wired", nan, CaseRoute, TierPointsTo, []string{"Only tests to Far Asia slow, from about 7 to 11 pm, whichever provider; the other regions stay normal.", "the long-distance route to Far Asia"}},
+		}, "wired", CaseRoute, TierPointsTo, []string{"Only tests to Far Asia slow, from about 7 to 11 pm, whichever provider; the other regions stay normal.", "the long-distance route to Far Asia"}},
 		{"one server", 9, func(sv string, h int) float64 {
 			if evening(h) && sv == "C1" {
 				return 0.4
 			}
 			return 1
-		}, "wired", nan, CaseServer, "", []string{"Only C one slows from about 7 to 11 pm. That's most likely that server's own busy time rather than your connection."}},
-		{"flat", 9, func(string, int) float64 { return 1 }, "wired", nan, CaseNothing, "", []string{"No slowdown of 25% or more stands out: every hour stays within about 10% of normal."}},
-		{"two days", 2, func(string, int) float64 { return 1 }, "wired", nan, CaseNotEnough, "", []string{"2 of 3 days so far."}},
+		}, "wired", CaseServer, "", []string{"Only C one slows from about 7 to 11 pm. That's most likely that server's own busy time rather than your connection."}},
+		{"flat", 9, func(string, int) float64 { return 1 }, "wired", CaseNothing, "", []string{"No slowdown of 25% or more stands out: every hour stays within about 10% of normal."}},
+		{"two days", 2, func(string, int) float64 { return 1 }, "wired", CaseNotEnough, "", []string{"2 of 3 days so far."}},
 	}
 	for _, tc := range cases {
 		ts := synth(c, tc.days, tc.score, tc.conn)
-		f := FindFinding(FindingInput{Tests: ts, Catalog: c, EdgeIdle: tc.edge})
+		f := FindFinding(FindingInput{Tests: ts, Catalog: c})
 		neutralEvidence(t, tc.name, f)
 		if f.Case != tc.want || (tc.tier != "" && f.Tier != tc.tier) {
 			t.Errorf("%s: case %s tier %s, want %s %s: %s", tc.name, f.Case, f.Tier, tc.want, tc.tier, f.Text)
@@ -215,7 +200,7 @@ func TestFinding(t *testing.T) {
 			ts[i].ScoreDown = &sc
 		}
 	}
-	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case == CaseISP {
+	if f := FindFinding(FindingInput{Tests: ts, Catalog: c}); f.Case == CaseWidespread {
 		t.Error("manual tests made a pattern")
 	}
 }
@@ -349,20 +334,20 @@ func TestFindingNetIsp(t *testing.T) {
 	// M3: a fast line's access dip shows in the near regions only.
 	f := FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), farSlow, 0), Catalog: c})
 	neutralEvidence(t, "net-isp", f)
-	if f.Case != CaseISP || !strings.Contains(f.Text, "All 2 regions close enough to show your line's speed slow") ||
+	if f.Case != CaseWidespread || !strings.Contains(f.Text, "All 2 regions close enough to show your line's speed slow") ||
 		!strings.Contains(f.Text, "Far Asia is too far away to show it.") || len(f.FarRegions) != 1 {
 		t.Errorf("near only: %s %s: %s", f.Case, f.Tier, f.Text)
 	}
 	// M1: 2 of 3 regions is "most", not "every".
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, near), flatBase, 0), Catalog: c})
 	neutralEvidence(t, "net-isp", f)
-	if f.Case != CaseISP || !strings.Contains(f.Text, "Most regions (2 of 3) slow") || strings.Contains(f.Text, "Every region") {
+	if f.Case != CaseWidespread || !strings.Contains(f.Text, "Most regions (2 of 3) slow") || strings.Contains(f.Text, "Every region") {
 		t.Errorf("2 of 3: %s: %s", f.Case, f.Text)
 	}
 	// S7: ±15% noise still finds it, and counts the evenings.
 	f = FindFinding(FindingInput{Tests: synthDown(c, 9, evening(0.4, all), flatBase, 0.15), Catalog: c})
 	neutralEvidence(t, "net-isp", f)
-	if f.Case != CaseISP || f.DayCount < 8 || 2*f.SlowDays < f.DayCount || !strings.Contains(f.Evidence, " evenings.") {
+	if f.Case != CaseWidespread || f.DayCount < 8 || 2*f.SlowDays < f.DayCount || !strings.Contains(f.Evidence, " evenings.") {
 		t.Errorf("noisy: %s %s %d/%d: %s / %s", f.Case, f.Tier, f.SlowDays, f.DayCount, f.Text, f.Evidence)
 	}
 	// M2: a 15% dip is "a little slower", never "within 10%".

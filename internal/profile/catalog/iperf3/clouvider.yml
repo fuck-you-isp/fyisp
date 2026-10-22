@@ -1,11 +1,15 @@
-# Clouvider's public speed-test servers: iperf3 on ports 5200-5209.
+# Clouvider's public speed-test servers: iperf3 on ports 5200-5209 (Chicago
+# 5201-5209).
 provider: clouvider
 display: Clouvider
 sources:
   - https://github.com/masonr/yet-another-bench-script/blob/master/yabs.sh
   - https://www.clouvider.com/looking-glass/
+  - https://iperf3serverlist.net/
 notes: >-
-  Ports checked open with one TCP connect each (team lead, 2026-10-10).
+  Ports checked open with one TCP connect each (team lead, 2026-10-10; Chicago and Phoenix 2026-10-22).
+  Chicago answers on 5201-5209, not 5200. Chicago and Phoenix are listed only on iperf3serverlist.net,
+  and both answered an iperf3 handshake.
   capacity_gbps is the link YABS's server list states (yabs.sh IPERF_LOCS labels), where it states one.
 servers:
   - {id: Clouvider-London, host: lon.speedtest.clouvider.net, ports: 5200-5209, city: London, country: GB, metro: london, capacity_gbps: 10, geo: eu, verified: {date: 2026-10-10, tcp: true}}
@@ -15,5 +19,7 @@ servers:
   - {id: Clouvider-NewYork, host: nyc.speedtest.clouvider.net, ports: 5200-5209, city: New York, country: US, metro: new-york, geo: na, verified: {date: 2026-10-10, tcp: true}}
   - {id: Clouvider-Ashburn, host: ash.speedtest.clouvider.net, ports: 5200-5209, city: Ashburn, country: US, metro: washington, geo: na, verified: {date: 2026-10-10, tcp: true}}
   - {id: Clouvider-Atlanta, host: atl.speedtest.clouvider.net, ports: 5200-5209, city: Atlanta, country: US, metro: atlanta, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Chicago, host: chi.speedtest.clouvider.net, ports: 5201-5209, city: Chicago, country: US, metro: chicago, geo: na, verified: {date: 2026-10-22, tcp: true, iperf3: true}}
   - {id: Clouvider-Dallas, host: dal.speedtest.clouvider.net, ports: 5200-5209, city: Dallas, country: US, metro: dallas, geo: na, verified: {date: 2026-10-10, tcp: true}}
   - {id: Clouvider-LosAngeles, host: la.speedtest.clouvider.net, ports: 5200-5209, city: Los Angeles, country: US, metro: los-angeles, capacity_gbps: 10, geo: na, verified: {date: 2026-10-10, tcp: true}}
+  - {id: Clouvider-Phoenix, host: phx.speedtest.clouvider.net, ports: 5200-5209, city: Phoenix, country: US, metro: phoenix, geo: na, verified: {date: 2026-10-22, tcp: true, iperf3: true}}

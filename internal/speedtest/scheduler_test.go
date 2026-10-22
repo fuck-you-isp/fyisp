@@ -7,6 +7,8 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/netip"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +50,7 @@ servers:
   - {id: home, title: Home, servers: [Near, Mid, Third], nearby: [Single]}
   - {id: away, title: Away, servers: [Dead, Far]}
   - {id: us-east, title: US East, servers: [Far], default: false}
+removed: [Gone-Dallas]
 `)},
 	})
 	if err != nil {
@@ -571,14 +574,52 @@ func TestBuiltinCatalog(t *testing.T) {
 			t.Errorf("%s: in no region", sv.ID)
 		}
 	}
-	for id, want := range map[string]string{"Leaseweb-HongKong": "asia-east", "Leaseweb-Washington": "us-east", "Leaseweb-SanFrancisco": "us-west",
-		"OVH-Roubaix": "eu-west", "OVH-Gravelines": "eu-west", "Clouvider-London": "uk"} {
+	for id, want := range map[string]string{"Leaseweb-HongKong": "asia-east", "Leaseweb-Washington": "us-east", "Leaseweb-SanFrancisco": "us-bay-area",
+		"OVH-Roubaix": "eu-west", "OVH-Gravelines": "eu-west", "Clouvider-London": "uk",
+		"Clouvider-Chicago": "us-midwest", "NOCIX-KansasCity": "us-midwest", "Leaseweb-Seattle": "us-northwest", "Clouvider-Phoenix": "us-southwest"} {
 		if got := c.RegionOf(id); got != want {
 			t.Errorf("%s: region %s, want %s", id, got, want)
 		}
 	}
-	if len(c.Servers) != 45 {
+	if len(c.Servers) != 47 {
 		t.Fatalf("%d servers", len(c.Servers))
+	}
+	// No server in two default regions: one install would test it twice
+	// within minutes (a region's fallback is another's server).
+	inDefault := map[string]string{}
+	for _, r := range c.Regions {
+		if !r.Default {
+			continue
+		}
+		for _, id := range append(slices.Clone(r.Servers), r.Nearby...) {
+			if prev, ok := inDefault[id]; ok {
+				t.Errorf("%s: in default regions %s and %s", id, prev, r.ID)
+			}
+			inDefault[id] = r.ID
+		}
+	}
+	// Every server ever shipped is still a server or listed as removed (a
+	// server leaves by moving to regions.yml's removed:), and every server
+	// is in the shipped list.
+	b, err := os.ReadFile("testdata/shipped-servers.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shipped []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			shipped = append(shipped, l)
+		}
+	}
+	for _, id := range shipped {
+		if _, ok := c.Server(id); !ok && !c.IsRemoved(id) {
+			t.Errorf("%s: shipped, but neither a server nor in removed:", id)
+		}
+	}
+	for _, sv := range c.Servers {
+		if !slices.Contains(shipped, sv.ID) {
+			t.Errorf("%s: add it to testdata/shipped-servers.txt", sv.ID)
+		}
 	}
 	var defaults []string
 	for _, r := range c.Regions {
@@ -586,7 +627,7 @@ func TestBuiltinCatalog(t *testing.T) {
 			defaults = append(defaults, r.ID)
 		}
 	}
-	if strings.Join(defaults, " ") != "uk eu-west eu-central us-east us-central us-west asia-east asia-southeast oceania" {
+	if strings.Join(defaults, " ") != "uk eu-west eu-central us-east us-central us-west us-northwest us-bay-area us-southwest us-midwest us-mid-atlantic us-southeast asia-east asia-southeast oceania" {
 		t.Errorf("default regions %v", defaults)
 	}
 	labels := map[string]string{}
@@ -597,10 +638,10 @@ func TestBuiltinCatalog(t *testing.T) {
 		labels[s.Label] = s.ID
 	}
 	us := c.Regions[3]
-	if us.ID != "us-east" || strings.Join(us.Servers, " ") != "Leaseweb-NewYork InterServer-Secaucus Clouvider-NewYork" || len(us.Providers(c)) != 3 {
+	if us.ID != "us-east" || strings.Join(us.Servers, " ") != "Leaseweb-NewYork Clouvider-NewYork" || len(us.Providers(c)) != 2 {
 		t.Errorf("%+v", us)
 	}
-	if s, _ := c.Server("InterServer-Secaucus"); s.Label != "InterServer Secaucus NJ" || s.Metro != "new-york" {
+	if s, _ := c.Server("OVH-VintHill"); s.Label != "OVH Vint Hill" || s.Metro != "washington" {
 		t.Errorf("%+v", s)
 	}
 	if s, _ := c.Server("HE-Fremont"); !s.SinglePort() || s.Host != "iperf.he.net" {
@@ -626,16 +667,18 @@ func TestBuiltinCatalog(t *testing.T) {
 func TestCatalogErrors(t *testing.T) {
 	good := "provider: p\ndisplay: P\nsources: [x]\nservers:\n  - {id: A, host: a.example, ports: 5201-5210, city: C, metro: c, country: GB, geo: eu, verified: {date: 2026-10-10}}\n  - {id: B, host: b.example, ports: \"5201\", city: D, metro: d, country: GB, geo: eu, verified: {date: 2026-10-10}}\n"
 	for want, files := range map[string]fstest.MapFS{
-		"want first-last": {"p.yml": {Data: []byte(strings.Replace(good, "5201-5210", "9-3", 1))}},
-		"private address": {"p.yml": {Data: []byte(strings.Replace(good, "a.example", "10.0.0.1", 1))}},
-		"duplicate id":    {"p.yml": {Data: []byte(good)}, "q.yml": {Data: []byte(good)}},
-		"sources":         {"p.yml": {Data: []byte(strings.Replace(good, "sources: [x]\n", "", 1))}},
-		"verified.date":   {"p.yml": {Data: []byte(strings.Replace(good, ", verified: {date: 2026-10-10}", "", 1))}},
-		"metro":           {"p.yml": {Data: []byte(strings.Replace(good, "metro: c, ", "", 1))}},
-		"geo \"xx\"":      {"p.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: xx", 1))}},
-		"no server \"Z\"": {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: [{id: r, title: R, servers: [A, Z]}]")}},
-		"use nearby":      {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: [{id: r, title: R, servers: [A, B]}]")}},
-		"field bogus":     {"p.yml": {Data: []byte(good + "bogus: 1\n")}},
+		"want first-last":  {"p.yml": {Data: []byte(strings.Replace(good, "5201-5210", "9-3", 1))}},
+		"private address":  {"p.yml": {Data: []byte(strings.Replace(good, "a.example", "10.0.0.1", 1))}},
+		"duplicate id":     {"p.yml": {Data: []byte(good)}, "q.yml": {Data: []byte(good)}},
+		"sources":          {"p.yml": {Data: []byte(strings.Replace(good, "sources: [x]\n", "", 1))}},
+		"verified.date":    {"p.yml": {Data: []byte(strings.Replace(good, ", verified: {date: 2026-10-10}", "", 1))}},
+		"metro":            {"p.yml": {Data: []byte(strings.Replace(good, "metro: c, ", "", 1))}},
+		"geo \"xx\"":       {"p.yml": {Data: []byte(strings.Replace(good, "geo: eu", "geo: xx", 1))}},
+		"no server \"Z\"":  {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: [{id: r, title: R, servers: [A, Z]}]")}},
+		"use nearby":       {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: [{id: r, title: R, servers: [A, B]}]")}},
+		"field bogus":      {"p.yml": {Data: []byte(good + "bogus: 1\n")}},
+		"still a server":   {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: []\nremoved: [A]")}},
+		"unique server id": {"p.yml": {Data: []byte(good)}, "regions.yml": {Data: []byte("regions: []\nremoved: [Z, Z]")}},
 	} {
 		if _, err := LoadCatalog(files); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v", want, err)

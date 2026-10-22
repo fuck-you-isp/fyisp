@@ -17,7 +17,7 @@ Speed tests are **off by default**. Once a user turns them on:
 
 | Mode | Tests a server gets from one install |
 |---|---|
-| `regions` (the default) | each region once an hour, rotating between the region's providers: one test every 2 to 3 hours per server in a 2- or 3-provider region, hourly for a single-server region (East Asia, and some opt-in regions) |
+| `regions` (the default) | each region once an hour, rotating between the region's providers: one test every 2 to 3 hours per server in a 2- or 3-provider region, hourly for a single-server region (East Asia, US Northwest, US Southeast, and some opt-in regions). No server is in two default regions |
 | `nearby` | 3 nearby servers and 1 far region, each every 15 minutes |
 | `custom` | the servers the user names, at most every 15 minutes (catalog servers) |
 | Test now / Test every server | on demand, by the install's owner only: one test, or one test of every server |
@@ -54,15 +54,15 @@ Typical early-stopped tests are about 40% of these figures.
 
 | Operator | Servers | Source of the server list | Notes |
 |---|---|---|---|
-| Leaseweb | 16 | https://speedtest.leaseweb.net/ | Public test servers. |
+| Leaseweb | 18 | https://speedtest.leaseweb.net/ (no longer resolves), https://iperf3serverlist.net/ | Public test servers. Seattle and Phoenix are listed only on iperf3serverlist.net. |
 | OVH | 12 | http://proof.ovh.net/, https://network.ovh.com/ | Link capacities from proof.ovh.net. |
-| Clouvider | 9 | https://www.clouvider.com/looking-glass/, YABS's list | |
-| InterServer | 3 | https://www.interserver.net/speedtest/ | Dallas, Los Angeles, Secaucus NJ. |
-| Hurricane Electric | 1 | https://www.he.net/ | `iperf.he.net`, a single port: never retried on other ports. |
+| Clouvider | 11 | https://www.clouvider.com/looking-glass/, YABS's list, https://iperf3serverlist.net/ | Chicago and Phoenix are listed only on iperf3serverlist.net. |
+| Hurricane Electric | 1 | https://www.he.net/ | `iperf.he.net`, a single port: never retried on other ports. In the default US Bay Area region, so a busy port falls back to Leaseweb San Francisco at once. |
+| NOCIX | 1 | https://iperf3serverlist.net/, http://speedtest.nocix.net/ | Kansas City. |
 | Scaleway (online.net) | 1 | http://ping.online.net/ | |
 | Eranium, Uztelecom, Edgoo | 1 each | YABS's list (https://github.com/masonr/yet-another-bench-script) | |
 
-fyisp uses only the hosts and ports these lists publish. Each server's ports were checked open with one TCP connect (2026-10-10); see each file's `verified` field.
+fyisp uses only the hosts and ports these lists publish. Each server's ports were checked open with one TCP connect (2026-10-10; the Seattle, Phoenix, Chicago Clouvider and NOCIX servers 2026-10-22); see each file's `verified` field.
 
 ## Owner decision (2026-10-10)
 

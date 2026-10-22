@@ -85,6 +85,11 @@ func checkSpeedFlags(c *config) error {
 	}
 	var custom []speedtest.Server
 	if c.speedServer != "" {
+		for _, id := range strings.Split(c.speedServer, ",") {
+			if id = strings.TrimSpace(id); cat.IsRemoved(id) {
+				slog.Warn("--speedtest-server: this server was removed from the catalog; ignored", "server", id)
+			}
+		}
 		if custom, err = speedtest.Custom(c.speedServer, cat); err != nil {
 			return err
 		}
@@ -99,7 +104,10 @@ func checkSpeedFlags(c *config) error {
 		return fmt.Errorf("--speedtest=custom needs --speedtest-server")
 	}
 	for _, id := range speedSkips(c) {
-		if _, ok := cat.Server(id); !ok {
+		switch _, ok := cat.Server(id); {
+		case cat.IsRemoved(id):
+			slog.Warn("--speedtest-skip: this server was removed from the catalog; ignored", "server", id)
+		case !ok:
 			return fmt.Errorf("--speedtest-skip: no catalog server %q (see the README's \"Speed tests\")", id)
 		}
 	}

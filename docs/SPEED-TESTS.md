@@ -3,8 +3,8 @@
 fyisp can measure your download and upload speed around the clock, so you can see whether your connection gets slower at certain times of day (the classic evening dip when everyone streams), and whose network the slowdown is in. **It is off by default.** Switch it on with `--speedtest`, or pick a mode in Details → Speed (the choice is saved). A `--speedtest` flag wins: Details then shows its mode but can't change it, and turning tests off there lasts only until the next restart. "Test now" (or *Test speed now* on Home) queues one test, and "Test every server" a sweep of every server, in any mode. Tests run one at a time from a single queue (scheduled ones included), and results you asked for are kept out of the time-of-day patterns.
 
 ```sh
-fyisp --speedtest                                  # mode regions: 9 regions, each once an hour
-fyisp --speedtest=regions,add=canada,us-northwest  # plus opt-in regions
+fyisp --speedtest                                  # mode regions: 15 regions, each once an hour
+fyisp --speedtest=regions,add=canada,netherlands   # plus opt-in regions
 fyisp --speedtest=nearby                           # 3 nearby providers and 1 far region, every 15 minutes
 fyisp --speedtest=nearby,far=us-west               # plus another far region
 fyisp --speedtest-server 192.168.1.20:5201 --speedtest=every=5m   # your own iperf3 server on your network: down to every=1m
@@ -12,10 +12,10 @@ fyisp --speedtest --speedtest-server Leaseweb-Tokyo,OVH-Sydney     # chosen cata
 ```
 
 **Modes:**
-- **`regions`**, the default once switched on: 9 regions (UK, Western Europe, Central Europe, US East, US Central, US West, East Asia, Southeast Asia and Oceania), each tested once an hour.
-  - Only one test runs at a time; the regions are spread over the hour, about 400 seconds apart, in an order and at minutes that differ per install, with a minute of jitter on each hour's start.
+- **`regions`**, the default once switched on: 15 regions (UK, Western Europe, Central Europe; in the US: East, Central, West, Northwest, Bay Area, Southwest, Midwest, Mid-Atlantic and Southeast; East Asia, Southeast Asia and Oceania), each tested once an hour.
+  - Only one test runs at a time; the regions are spread over the hour, about 240 seconds apart, in an order and at minutes that differ per install, with a minute of jitter on each hour's start.
   - Most regions have servers from several providers in the same city. The provider rotates by hour and day, so every hour of the day is measured with every provider within a few days.
-  - Opt-in regions (`add=`): US Northwest, US Mid-Atlantic, US Midwest, US Southeast, Canada, US Bay Area, South America, Central Asia, Netherlands and UK North.
+  - Opt-in regions (`add=`): Canada, South America, Central Asia, Netherlands and UK North.
   - Results show whether a dip is your line (every region and provider at once), one provider, one route or one server.
 - **`nearby`**: the nearest server of 3 different providers (same city preferred), plus one far region (US East from Europe, London from the US; `far=` adds more), each every 15 minutes. The nearby servers are picked again daily. It is lighter on distance, heavier on frequency.
 - **`custom`**: the servers you list with `--speedtest-server`, catalog ids or `host:port` of your own iperf3 server, each every 15 minutes.
@@ -27,20 +27,20 @@ fyisp --speedtest --speedtest-server Leaseweb-Tokyo,OVH-Sydney     # chosen cata
 - then 3 to 10 seconds are measured, stopping once the speed has levelled off and held steady for 3 seconds (a second within 5% of the one before): up to 10 seconds each way, whatever the data.
 - speeds are what TCP delivers (goodput): about 4–6% below the line rate your ISP sells, because of packet headers. A 1 Gbit/s plan reads about 940–960 Mbit/s at best.
 
-The servers are public iperf3 servers run by hosting companies and volunteers: Leaseweb (16), OVH (12), Clouvider (9), InterServer (3), Hurricane Electric, Scaleway, Eranium, Uztelecom and Edgoo. All 45 are listed with their sources in [`internal/profile/catalog/iperf3/`](../internal/profile/catalog/iperf3/), with the regions in `regions.yml`. The list is built into fyisp and changes only with a release. Like every probe target, they see your public IP address.
+The servers are public iperf3 servers run by hosting companies and volunteers: Leaseweb (18), OVH (12), Clouvider (11), Hurricane Electric, NOCIX, Scaleway, Eranium, Uztelecom and Edgoo. All 47 are listed with their sources in [`internal/profile/catalog/iperf3/`](../internal/profile/catalog/iperf3/), with the regions in `regions.yml`. The list is built into fyisp and changes only with a release. When a release removes a server, fyisp drops that server's stored results the first time it starts: they leave the Speed view, the patterns and `fyisp export`. Only each test's time and data used are kept, so the charts and Home still show those minutes as a speed test. Your own servers (`--speedtest-server`) are never affected. Like every probe target, they see your public IP address.
 
 **How much it costs your line.** A speed test fills the line while it runs, by design:
-- **Time under test:** mode `regions` keeps the line under test about 5% of the time (9 tests of 10 to 25 seconds an hour); `nearby` about 9%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
-- **Data:** a test moves your line's speed for 4 to 11 seconds each way; there is no byte cap. Mode `regions`, the default, runs 216 tests a day:
+- **Time under test:** mode `regions` keeps the line under test about 8% of the time (15 tests of 10 to 25 seconds an hour); `nearby` about 9%. Details shows the planned share for each mode. fyisp warns when your settings would exceed 25%.
+- **Data:** a test moves your line's speed for 4 to 11 seconds each way; there is no byte cap. Mode `regions`, the default, runs 360 tests a day:
 
   | Your line | Data a month (mode `regions`) |
   |---|---|
-  | 25 Mbit/s | about 150 to 450 GB |
-  | 100 Mbit/s | about 650 GB to 1.8 TB |
-  | 1 Gbit/s | about 6.5 to 18 TB |
+  | 25 Mbit/s | about 270 to 740 GB |
+  | 100 Mbit/s | about 1.1 to 3 TB |
+  | 1 Gbit/s | about 11 to 30 TB |
   | one "Test every server" sweep | Details estimates it from your recent tests |
 
-  Mode `nearby` uses about 1.8 times as much. Details shows the data used in the last 24 hours and this month, and an estimate for each mode.
+  Mode `nearby` runs about as many tests, to nearer servers, so it uses about as much or somewhat more. Details shows the data used in the last 24 hours and this month, and an estimate for each mode.
 - **Fast lines:** a test still speeding up when its 10 seconds end (a far server on a fast line) shows "≥": the speed was at least this. Speed tests show when your speed drops, not whether you get your plan's advertised speed.
 - **Metered lines:** leave speed tests off on metered or capped connections.
 
@@ -49,7 +49,7 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 - Then it moves to another provider in the same city, then to a nearby city. Single-port servers (Hurricane Electric) are never retried. If nothing answers, it records **"server busy"**, never a slow result.
 - No new port or server is tried after 25 seconds of a slot, and a slot never delays the next one.
 - A server that was busy 3 scheduled tests in a row rests for 6 hours.
-- `--speedtest-skip=<id,…>` (or the toggle per server in Details → Speed) never tests a server again: honour an operator's request without waiting for a release.
+- `--speedtest-skip=<id,…>` (or the toggle per server in Details → Speed) never tests a server again: honour an operator's request without waiting for a release. An id that has since been removed from the catalog is ignored with a warning in the log; any other unknown id is an error.
 
 **One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
@@ -70,7 +70,7 @@ Details → Speed shows:
 - a time series per region and server, a table, and compare;
 - a note when a region mostly used its fallback in the last day.
 
-Home shows your latest result against your usual speed (the median of the last 7 days' tests), e.g. *Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.* When every region and provider dips at the same time of day, Details → Speed says so, for example *Every region slows from about 7 to 11 pm … most likely your internet provider's own network.* Only scheduled tests count toward patterns: Test now and sweeps don't. `fyisp export --speedtests` writes every test as CSV.
+Home shows your latest result against your usual speed (the median of the last 7 days' tests), e.g. *Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.* When every region and provider dips at the same time of day, Details → Speed says so, for example *Every region slows from about 7 to 11 pm, with every provider we could test: tests read about 40% below the same servers' usual results.* It doesn't say whose network that is: speed tests alone can't tell your provider from your home's own traffic or the servers' busy hours. Whether your provider is at fault is decided from latency and loss ([Whose fault is it?](VERDICTS.md)). Only scheduled tests count toward patterns: Test now and sweeps don't. `fyisp export --speedtests` writes every test as CSV.
 
 **Probes keep running during a test.** Their results are stored as measured, so a test that slows your line shows up as a latency spike or loss, and can count toward the verdict. The "show speed tests" toggle under each chart (off by default) marks when tests ran, so a spike can be matched to a test. The 2 minutes before a test in *latency under load* come from these probes; during the test fyisp adds its own pings every 150 ms. `/api/speed` reports the share of the last 24 hours spent under test (`test_share_24h`).
 

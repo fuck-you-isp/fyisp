@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -651,5 +652,43 @@ func TestCancelledBy(t *testing.T) {
 		if len(ts) != 1 || ts[0].Outcome != model.SpeedCancelled || ParseExtra(ts[0].Extra).CancelledBy != c.want || ts[0].DownBps == nil {
 			t.Errorf("cause %v: %+v", c.cause, ts)
 		}
+	}
+}
+
+// TestRetireRemovedServers: at start, a removed server's tests lose
+// their results but keep their windows (chart shading, Home), and the
+// saved skip list forgets it; other servers' tests and skips stay.
+func TestRetireRemovedServers(t *testing.T) {
+	h := newHarness(t, Options{})
+	ctx, cancel := context.WithCancel(context.Background())
+	down := 9e8
+	for _, sv := range []string{"Near", "Gone-Dallas", "iperf.example.net:5201", "", "Gone-Dallas", "Unknown-Server"} {
+		h.st.SaveSpeedTest(ctx, &model.SpeedTest{Start: h.now.Add(-time.Hour), End: h.now.Add(-time.Hour + 20*time.Second), Trigger: "schedule",
+			Outcome: model.SpeedOK, Server: sv, Region: "home", DownBps: &down, Bytes: 100})
+	}
+	h.st.SetSetting(ctx, settingSkip, "Gone-Dallas,Mid")
+	done := make(chan struct{})
+	go func() { h.s.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	waitFor(t, func() bool { ts, _ := h.st.SpeedTests(ctx, time.Time{}, h.now); return len(ts) == 4 })
+	ts, _ := h.st.SpeedTests(ctx, time.Time{}, h.now)
+	var kept []string
+	for _, x := range ts {
+		kept = append(kept, x.Server)
+	}
+	if strings.Join(kept, ",") != "Near,iperf.example.net:5201,,Unknown-Server" {
+		t.Errorf("kept %q", kept)
+	}
+	ws, _ := h.st.SpeedWindows(ctx, time.Time{}, h.now)
+	if len(ws) != 6 || ws[1].Outcome != model.SpeedRemoved || ws[1].Server != "" || ws[1].DownBps != nil || ws[1].Bytes != 100 || ws[1].End.Sub(ws[1].Start) != 20*time.Second {
+		t.Errorf("windows %+v", ws)
+	}
+	if h.st.settings[settingSkip] != "Mid" {
+		t.Errorf("saved skips %q", h.st.settings[settingSkip])
+	}
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	if h.s.skip["Gone-Dallas"] || !h.s.skip["Mid"] {
+		t.Errorf("skips %v", h.s.skip)
 	}
 }

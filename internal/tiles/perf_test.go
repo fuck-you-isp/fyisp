@@ -99,7 +99,7 @@ func TestPerfEngineReplay(t *testing.T) {
 		defer pprof.StopCPUProfile()
 	}
 	a = time.Now()
-	e := newEngine(p, profile.ResolveTiles(p), Sources{Store: st, SpeedTests: st.SpeedTests, Incidents: st.Incidents}, Options{})
+	e := newEngine(p, profile.ResolveTiles(p), Sources{Store: st, SpeedWindows: st.SpeedWindows, Incidents: st.Incidents}, Options{})
 	if err := e.replay(ctx, end); err != nil {
 		t.Fatal(err)
 	}

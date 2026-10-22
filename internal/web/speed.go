@@ -18,7 +18,6 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
-	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
 // SpeedSource runs and keeps the speed tests (speedtest.Scheduler). See
@@ -26,6 +25,8 @@ import (
 type SpeedSource interface {
 	State() speedtest.State
 	SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+	// SpeedWindows adds the retired tests' bare windows (chart shading).
+	SpeedWindows(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
 	SetMode(ctx context.Context, m speedtest.Mode, extra []string) (time.Time, error)
 	// Queue is the speed-test queue (Test now, sweeps, schedule slots).
 	Queue() *speedtest.Queue
@@ -219,15 +220,6 @@ type speedJSON struct {
 	Finding         speedtest.Finding  `json:"finding"`
 	Coverage        []speedHour        `json:"coverage"`
 	UnderLoad       speedUnderLoad     `json:"under_load"`
-}
-
-// speedEdgeHour is one local hour of day of the ISP edge's idle RTT: the
-// median over days of that hour's mean RTT, and the loss over them.
-type speedEdgeHour struct {
-	Hour  int
-	N     int  // days with samples in that hour
-	RTTms *num // nil when N is 0
-	Loss  *num // nil when N is 0
 }
 
 type speedConnection struct {
@@ -485,7 +477,7 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 	configurable := s.canControlSpeed != nil && s.canControlSpeed(r)
 	s.runCached(w, r, "speed", func(ctx context.Context) (*cached, error) {
 		if p.part == "windows" {
-			ts, err := s.d.Speed.SpeedTests(ctx, p.from.Add(-speedtest.SlotCap), p.to)
+			ts, err := s.d.Speed.SpeedWindows(ctx, p.from.Add(-speedtest.SlotCap), p.to)
 			if err != nil {
 				return nil, err
 			}
@@ -691,11 +683,7 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		}
 	}
 	out.Pattern = speedtest.PooledPattern(all, tz)
-	eh, err := s.edgeHours(ctx, now, tz)
-	if err != nil {
-		return nil, err
-	}
-	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, Loc: tz, Catalog: cat, EdgeIdle: edgeIdle(eh), From: from, To: now})
+	out.Finding = speedtest.FindFinding(speedtest.FindingInput{Tests: all, Loc: tz, Catalog: cat, From: from, To: now})
 	for i, x := range out.Finding.Slowest {
 		var ref speedRef
 		ref, out.Finding.Slowest[i].Display, _, _ = names.server(x.Server)
@@ -703,73 +691,6 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 	}
 	out.Coverage = speedCoverage(span, tz, cat)
 	out.UnderLoad = speedUnderLoadOf(span)
-	return out, nil
-}
-
-// edgeIdle is the finding's access-network control: the ISP edge's idle
-// RTT per local hour (NaN with fewer than 3 days).
-func edgeIdle(eh []speedEdgeHour) [24]float64 {
-	var out [24]float64
-	for h := range out {
-		out[h] = math.NaN()
-	}
-	for _, x := range eh {
-		if x.N >= 3 && x.RTTms != nil {
-			out[x.Hour] = float64(*x.RTTms)
-		}
-	}
-	return out
-}
-
-// edgeHours is the access network's control: it reads the ISP edge's
-// hourly RTT over speedtest.PatternSpan and folds it into 24 local hours of
-// day (see speedEdgeHour); nil without an ISP edge target.
-func (s *server) edgeHours(ctx context.Context, now time.Time, tz *time.Location) ([]speedEdgeHour, error) {
-	var key model.SeriesKey
-	if p := s.d.Profile(); p != nil {
-		for _, t := range p.Targets {
-			if t.Layer == model.LayerEdge {
-				key = model.SeriesKey{Target: t.Name, Kind: model.KindICMP}
-			}
-		}
-	}
-	if key.Target == "" || s.d.Store == nil {
-		return nil, nil
-	}
-	to := now.Truncate(time.Hour)
-	from := to.Add(-speedtest.PatternSpan)
-	res, err := s.d.Store.Panel(ctx, store.PanelQuery{Keys: []model.SeriesKey{key}, From: from, To: to, MaxPoints: int(speedtest.PatternSpan / time.Hour)})
-	if err != nil {
-		return nil, err
-	}
-	rtts := make([][]float64, 24)
-	var ok, lost [24]float64
-	for _, c := range res.Series {
-		for i := range c.N {
-			n, l := float64(c.N[i]), float64(at(c.Lost, i))
-			if n+l == 0 {
-				continue
-			}
-			h := res.Start.Add(time.Duration(i) * res.Step).In(tz).Hour()
-			ok[h] += n
-			lost[h] += l
-			if n > 0 && i < len(c.Mean) && !math.IsNaN(float64(c.Mean[i])) {
-				rtts[h] = append(rtts[h], float64(c.Mean[i]))
-			}
-		}
-	}
-	out := make([]speedEdgeHour, 24)
-	for h := range out {
-		out[h] = speedEdgeHour{Hour: h, N: len(rtts[h])}
-		if ok[h]+lost[h] > 0 {
-			l := num(lost[h] / (ok[h] + lost[h]))
-			out[h].Loss = &l
-		}
-		if len(rtts[h]) > 0 {
-			r := num(callq.Median(rtts[h]))
-			out[h].RTTms = &r
-		}
-	}
 	return out, nil
 }
 

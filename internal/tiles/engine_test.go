@@ -177,7 +177,7 @@ func (s *eScene) sources(st store.Reader) Sources {
 	ok := true
 	return Sources{
 		Store: st,
-		SpeedTests: func(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+		SpeedWindows: func(_ context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 			return []model.SpeedTest{{ID: 1, Start: s.speed.from, End: s.speed.to, Outcome: model.SpeedOK}}, nil
 		},
 		Incidents: func(_ context.Context, from, to time.Time) ([]model.Incident, error) {

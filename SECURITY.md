@@ -34,7 +34,7 @@ never as text that could contain an address. `--no-udp` turns STUN off.
 
 Speed tests are off unless you switch them on (`--speedtest` or the Details
 choice). Then fyisp sends iperf3 traffic over IPv4 to public iperf3 servers in
-its catalog (Leaseweb, OVH, Clouvider, InterServer, Hurricane Electric,
+its catalog (Leaseweb, OVH, Clouvider, Hurricane Electric,
 Scaleway and others; [docs/SPEED-TESTS.md](docs/SPEED-TESTS.md) lists them) and to servers you name with
 `--speedtest-server`, and to no one else. The catalog is built into the
 binary and never fetched. Those servers see your public IP address. Each test

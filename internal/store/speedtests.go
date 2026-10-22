@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -56,12 +57,51 @@ func (s *SQLite) SaveSpeedTest(ctx context.Context, t *model.SpeedTest) error {
 	return nil
 }
 
-// SpeedTests returns the tests that started in [from, to], oldest first.
+// RetireSpeedTestServers turns the tests of servers removed from the
+// catalog into bare windows (model.SpeedRemoved): no server, region or
+// results. Start, end, trigger and bytes stay, so the charts and Home still
+// explain the window and the data used still counts it. It returns how
+// many tests it retired.
+func (s *SQLite) RetireSpeedTestServers(ctx context.Context, servers []string) (int64, error) {
+	if len(servers) == 0 {
+		return 0, nil
+	}
+	if s.lock == nil {
+		return 0, errors.New("store: read-only")
+	}
+	args := []any{model.SpeedRemoved}
+	for _, sv := range servers {
+		args = append(args, sv)
+	}
+	res, err := s.db.w.ExecContext(ctx, `UPDATE speedtests SET outcome = ?, region = '', server = '', fallback = 0, fallback_level = 'none',
+		capped_server = 0, down_s = 0, up_s = 0, score_down = NULL, score_up = NULL, extra = NULL, port = 0, attempts = 0,
+		down_bps = NULL, up_bps = NULL, down_retrans = NULL, up_retrans = NULL, latency_json = NULL, conn = '',
+		handoff_asn = NULL, handoff_name = NULL, isp_asn = NULL, handoff_ms = NULL
+		WHERE server IN (?`+strings.Repeat(", ?", len(servers)-1)+`)`, args...)
+	if err != nil {
+		return 0, fmt.Errorf("store: retire speed tests: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// SpeedTests returns the tests that started in [from, to], oldest first,
+// without retired ones (model.SpeedRemoved).
 func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+	return s.speedTests(ctx, from, to, false)
+}
+
+// SpeedWindows is SpeedTests with the retired tests: every window a test
+// loaded the line in (chart shading, Home attribution).
+func (s *SQLite) SpeedWindows(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
+	return s.speedTests(ctx, from, to, true)
+}
+
+func (s *SQLite) speedTests(ctx context.Context, from, to time.Time, retired bool) ([]model.SpeedTest, error) {
 	rows, err := s.db.r.QueryContext(ctx, `SELECT id, start_ms, end_ms, trigger, outcome, region, server, fallback, port, attempts,
 		down_bps, up_bps, down_retrans, up_retrans, latency_json, conn, handoff_asn, handoff_name, isp_asn, handoff_ms,
 		fallback_level, capped_server, down_s, up_s, bytes, score_down, score_up, coalesce(extra, '')
-		FROM speedtests WHERE start_ms >= ? AND start_ms <= ? ORDER BY start_ms, id`, from.UnixMilli(), to.UnixMilli())
+		FROM speedtests WHERE start_ms >= ? AND start_ms <= ? AND (? OR outcome <> ?) ORDER BY start_ms, id`,
+		from.UnixMilli(), to.UnixMilli(), retired, model.SpeedRemoved)
 	if err != nil {
 		return nil, err
 	}

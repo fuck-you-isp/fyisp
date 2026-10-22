@@ -37,12 +37,16 @@ import (
 const (
 	CaseNotEnough = "not_enough_data"
 	CaseNothing   = "nothing"
-	CaseISP       = "isp"      // your provider's own network
-	CaseProvider  = "provider" // the link to one provider
-	CaseRoute     = "route"    // the long-distance route to one region
-	CaseServer    = "server"   // one server's busy time
-	CaseMild      = "mild"     // a 10-25% dip: too small to point anywhere
-	CaseMixed     = "mixed"    // some rows dip, in no pattern that points anywhere
+	// CaseWidespread: most regions slow at the same hours, with every
+	// provider. Speed tests alone can't tell whose network that is (the
+	// line, the home, or the far ends' busy hours), so it names no one;
+	// the verdict blames the provider from latency and loss.
+	CaseWidespread = "widespread"
+	CaseProvider   = "provider" // the link to one provider
+	CaseRoute      = "route"    // the long-distance route to one region
+	CaseServer     = "server"   // one server's busy time
+	CaseMild       = "mild"     // a 10-25% dip: too small to point anywhere
+	CaseMixed      = "mixed"    // some rows dip, in no pattern that points anywhere
 	// CaseTooFast: every server is too fast to measure from here (the
 	// coverage guard): the tests can't compare times of day.
 	CaseTooFast = "too_fast"
@@ -86,7 +90,7 @@ type Finding struct {
 	// Slowest is the servers slowest in the dip's hours (see slowest);
 	// the caller sets their Display.
 	Slowest []SlowServer `json:"slowest,omitempty"`
-	// Case isp: how many regions and providers could tell (Regions and
+	// Case widespread: how many regions and providers could tell (Regions and
 	// Providers dipped), and the far regions left out (limited by
 	// distance, they can't show the line's speed).
 	RegionsJudged   int      `json:"regions_judged,omitempty"`
@@ -112,9 +116,6 @@ type FindingInput struct {
 	Tests   []model.SpeedTest // the span's tests (any trigger: only scheduled ones count)
 	Loc     *time.Location    // local hours (nil: UTC); DST-correct with an IANA zone
 	Catalog *Catalog
-	// EdgeIdle is the ISP edge's idle RTT median (ms) per local hour (NaN:
-	// unknown): the access-network control.
-	EdgeIdle [24]float64
 	// From and To are the window (zero From: no Coverage). When the tests
 	// cover fewer of its days, Coverage says why.
 	From, To time.Time
@@ -215,11 +216,11 @@ const MaxSlowest = 3
 
 // slowest lists up to MaxSlowest servers with at least MinPerHour
 // non-fallback scheduled results in the dip's hours (and outside them)
-// that read below their usual: in the isp and mild cases the fastest
+// that read below their usual: in the widespread and mild cases the fastest
 // (nearest) first, else the slowest first. Lower bounds are left out.
 func (f *Finding) slowest(in FindingInput, tests []model.SpeedTest) {
 	switch f.Case {
-	case CaseISP, CaseMild, CaseRoute, CaseProvider, CaseServer:
+	case CaseWidespread, CaseMild, CaseRoute, CaseProvider, CaseServer:
 	default:
 		return
 	}
@@ -263,7 +264,7 @@ func (f *Finding) slowest(in FindingInput, tests []model.SpeedTest) {
 		return strings.Compare(a.Server, b.Server)
 	})
 	list = list[:min(len(list), MaxSlowest)]
-	if f.Case == CaseISP || f.Case == CaseMild {
+	if f.Case == CaseWidespread || f.Case == CaseMild {
 		slices.SortStableFunc(list, func(a, b SlowServer) int { return cmp.Compare(b.UsualBps, a.UsualBps) })
 	}
 	f.Slowest = list
@@ -520,7 +521,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 	}
 	for _, p := range cands {
 		set := func(c string) { f.Case, f.Hours, f.Drop = c, p.Hours, p.Drop }
-		// Your ISP: over the near rows, every provider that can tell dips
+		// Widespread: over the near rows, every provider that can tell dips
 		// (at least 2) and none is flat, and at least half the rows that
 		// can tell dip.
 		// Judged over the near rows first when some are far (far rows can't
@@ -546,7 +547,7 @@ func (f *Finding) find(in FindingInput, tests []model.SpeedTest, up bool) bool {
 				continue
 			}
 			if len(np[stDips]) >= 2 && len(np[stFlat]) == 0 && len(nr[stDips]) > 0 && 2*len(nr[stDips]) >= judged {
-				set(CaseISP)
+				set(CaseWidespread)
 				f.Providers = np[stDips]
 				f.ProvidersJudged = len(np[stDips]) + len(np[stUnclear])
 				f.RegionsJudged = judged
@@ -874,13 +875,8 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 	full := minProv >= 2 && minTests >= MinPerHour
 	wired := connWired > 0 && connWifi == 0 && !f.Bridged
 	steady := f.DayCount > 0 && 2*f.SlowDays >= f.DayCount
-	ctl := ""
-	if f.Case == CaseISP && !f.Bridged {
-		ctl = edgeControl(in.EdgeIdle, f.Hours)
-	}
-	edgeRises := ctl != "" || (len(edgeRise) >= MinPerHour && callq.Median(edgeRise) >= 5)
 	switch {
-	case f.span >= 7 && full && wired && steady && (f.Case != CaseISP || (f.Drop >= 0.3 && edgeRises)):
+	case f.span >= 7 && full && wired && steady:
 		f.Tier = TierPointsTo
 	case f.span >= 5 && full:
 		f.Tier = TierMostLikely
@@ -888,10 +884,10 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 		f.Tier = TierEarly
 	}
 	// Caveats: Wi-Fi, the router's own delay rising, other people at home
-	// (always in the ISP case: their traffic shares the line and raises
-	// the edge's delay, and nothing here measures it), and a container.
+	// (always in the widespread case: their traffic shares the line, and
+	// nothing here measures it), and a container.
 	var caveats []string
-	household := connWifi > 0 || f.Case == CaseISP
+	household := connWifi > 0 || f.Case == CaseWidespread
 	if len(gwRise) >= MinPerHour {
 		gr, er := callq.Median(gwRise), callq.Median(edgeRise)
 		household = household || (er > 5 && gr >= 0.7*er)
@@ -905,7 +901,7 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 	f.Caveat = strings.Join(caveats, " ")
 	var claim, who string
 	switch f.Case {
-	case CaseISP:
+	case CaseWidespread:
 		what := "Every region"
 		switch {
 		case len(f.Regions) == f.RegionsJudged && len(f.FarRegions) == 0:
@@ -941,10 +937,13 @@ func (f *Finding) wording(in FindingInput, tests []model.SpeedTest) {
 				claim += fmt.Sprintf(" %d farther regions are too far away to show it.", n)
 			}
 		}
-		if ctl != "" {
-			claim += " " + ctl
+		// A pattern, not a cause: it names no network.
+		f.Text = claim
+		if f.Tier == TierEarly {
+			f.Text += " A few more days will show whether it holds."
 		}
-		who = "your internet provider's own network"
+		f.evidence(minTests, minProv)
+		return
 	case CaseProvider:
 		var regs []string
 		for _, r := range f.Regions {
@@ -1103,36 +1102,6 @@ func slowVerb1(up bool) string {
 		return "slows on uploads"
 	}
 	return "slows"
-}
-
-// edgeControl reads the ISP edge's idle RTT in the dip hours against the
-// other hours: rising (by 5 ms and 30%), it fits congestion in the
-// provider's local network (the household's own traffic can raise it too,
-// hence the ISP case's caveat).
-// It only supports the cross-destination comparison: a flat edge says
-// nothing on lines with active queue management (fq_codel, CAKE).
-func edgeControl(edge [24]float64, hours []int) string {
-	var in, out []float64
-	for h, v := range edge {
-		if math.IsNaN(v) {
-			continue
-		}
-		if slices.Contains(hours, h) {
-			in = append(in, v)
-		} else {
-			out = append(out, v)
-		}
-	}
-	if len(in) == 0 || len(out) < 6 {
-		return ""
-	}
-	a, b := callq.Median(in), callq.Median(out)
-	if a-b >= max(5, 0.3*b) { // smaller rises of ICMP to a BNG are noise
-		return fmt.Sprintf("Your provider's first router also answers slower then (%.0f ms instead of %.0f ms), which fits congestion in its local network.", a, b)
-	}
-	// Flat proves nothing: a line with active queue management keeps its
-	// delay flat while congested.
-	return ""
 }
 
 // hoursText is "8 to 11 pm" for local hours [first, last+1).

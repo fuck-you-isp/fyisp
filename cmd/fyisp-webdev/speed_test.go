@@ -23,7 +23,7 @@ func TestFakeSpeedFinding(t *testing.T) {
 		ts, _ := s.SpeedTests(ctx, now.Add(-30*24*time.Hour), now)
 		for _, loc := range []*time.Location{time.UTC, time.FixedZone("", 7200)} {
 			f := speedtest.FindFinding(speedtest.FindingInput{Tests: ts, Catalog: s.Catalog(), Loc: loc})
-			want := speedtest.CaseISP
+			want := speedtest.CaseWidespread
 			if days == 2 {
 				want = speedtest.CaseNotEnough
 			}
