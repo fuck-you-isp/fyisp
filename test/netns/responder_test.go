@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
+
+	"github.com/fuck-you-isp/fyisp/internal/s3test/s3fake"
 )
 
 // The responder runs in the "internet" namespace as a re-exec of the test
@@ -40,7 +42,8 @@ import (
 //     addresses of stunMore: a Binding Success carrying XOR-MAPPED-ADDRESS
 //     mappedAddr:mappedPort for every Binding Request (udp_test.go checks
 //     that fyisp never shows it);
-//   - iperf3 on iperfAddrs, ports iperfPorts (iperf_test.go).
+//   - iperf3 on iperfAddrs, ports iperfPorts (iperf_test.go);
+//   - a fake S3 on each of storageAddrs, port 443 (storage_test.go).
 //
 // ICMP echo is answered by the kernel.
 
@@ -173,8 +176,19 @@ func runResponder(dir string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// A fake S3 per storage address (storage_test.go), 204 everywhere else.
+	s3 := map[string]http.Handler{}
+	for _, a := range storageAddrs {
+		s3[a.String()] = s3fake.New(storageBucket).Handler()
+	}
 	srv := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if a, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok {
+				if h := s3[strings.Split(a.String(), ":")[0]]; h != nil {
+					h.ServeHTTP(w, r)
+					return
+				}
+			}
 			w.WriteHeader(http.StatusNoContent)
 		}),
 		TLSConfig: tc,

@@ -102,6 +102,10 @@ func (s *Server) StartTLS() *x509.CertPool {
 	return pool
 }
 
+// Handler serves the fake's S3 API, for a server the caller runs (the
+// netns lab's responder).
+func (s *Server) Handler() http.Handler { return http.HandlerFunc(s.serve) }
+
 // CertPEM is the TLS server's certificate as PEM (a target's private CA).
 func (s *Server) CertPEM() string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.srv.Certificate().Raw}))
