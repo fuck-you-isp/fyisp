@@ -68,7 +68,13 @@ func (e *Engine) Check(ctx context.Context, rt RoundTarget) CheckResult {
 	}
 	a.Op = "head"
 	out.Keys = "none"
-	if rt.keyed() {
+	if e.o.Fake != nil {
+		if rt.keyed() {
+			a.Op = "list"
+		}
+		*a = e.o.Fake(ctx, rt.Target, model.StoragePhaseCold, a.Op, rt.keyed())
+		a.Target, a.Phase = rt.ID, model.StoragePhaseCold
+	} else if rt.keyed() {
 		// A listing of fyisp's own prefix: its error body names a refusal
 		// (a HEAD's can't), and it needs no object.
 		_, *a = e.list(ctx, &rt, "fyisp-test/")

@@ -231,6 +231,10 @@ fyisp measures the UDP path that call audio and video take with tiny STUN reques
 
 Speed tests are **off by default**. `--speedtest` (or a mode picked in Details → Speed) tests your download and upload speed against public iperf3 servers in 15 regions (9 of them in the US), each once an hour, so you can see whether your connection slows down at certain times of day, and whose network the slowdown is in. A test fills your line while it runs: on a 100 Mbit/s line that is about 1.1 to 3 TB a month, so leave speed tests off on metered or capped connections. Modes, data use, the servers and how they're treated: [Speed tests](docs/SPEED-TESTS.md).
 
+## Storage tests
+
+In Details → Storage, fyisp checks the S3-compatible endpoints you add (any provider, or a server on your network): whether it can connect to each, how long the steps take, and what to fix when one refuses. Nothing is checked until you ask. Details: [Storage tests](docs/STORAGE-TESTS.md).
+
 ## What to measure (profiles)
 
 The default measures 28 targets for calls, work apps and websites. `--profile` adds any of about 1,400 more (clouds, CDNs, gaming, regions of the world), and `--config` loads your own file that adds, removes or changes targets. `fyisp profiles` lists the profiles. Details: [What to measure](docs/PROFILES.md).
@@ -380,7 +384,7 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 - [What to measure](docs/PROFILES.md): Home's tiles, the profiles, the Overview and the `--config` format
 - [How fyisp decides](docs/VERDICTS.md): Good, Slow, Choppy and Down, the verdicts, and Wi-Fi or router
-- [Call quality](docs/CALL-QUALITY.md) and [Speed tests](docs/SPEED-TESTS.md)
+- [Call quality](docs/CALL-QUALITY.md), [Speed tests](docs/SPEED-TESTS.md) and [Storage tests](docs/STORAGE-TESTS.md)
 - [API](docs/API.md): every route, the `/metrics` series and the `fyisp export` columns
 - [STUN servers' terms](docs/STUN-TERMS.md), [iperf3 servers' terms](docs/IPERF3-TERMS.md) and [a note for iperf3 operators](docs/OPERATORS.md)
 - [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md)

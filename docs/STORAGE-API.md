@@ -6,7 +6,7 @@ A target is any S3-compatible endpoint: a scheme, a host and an optional port (`
 
 The Go types live in `internal/web/storage.go` and `internal/storage`; keep this file in sync with them.
 
-Routes are relative like every other API. Unknown or repeated parameters return 400. Without a storage source (tests only) every route answers 404.
+Routes are relative like every other API. Unknown or repeated parameters return 400. Without a storage source (only `fyisp-webdev -storage none` and tests) every route answers 404 and `api/profile` has `features.storage: false`: hide Storage then. What the page shows is in [STORAGE-TESTS.md](STORAGE-TESTS.md).
 
 ## Where targets live
 

@@ -196,7 +196,7 @@ function readHash() {
   }
   fixKinds();
   const v = p.get('v');
-  state.view = v === 'o' || v === 'c' || v === 'calls' || v === 'speed' ? v : null;
+  state.view = v === 'o' || v === 'c' || v === 'calls' || v === 'speed' || v === 'storage' ? v : null;
   state.focus = p.get('f') || null;
   state.os = p.get('os') || '';
   state.oq = p.get('oq') || '';
@@ -1931,6 +1931,29 @@ function redrawCharts() {
 let speedOn = true;
 /** Details → Speed, when this fyisp has speed tests. @type {Speed|null} */
 let speed = null;
+// Details → Storage, when this fyisp has storage tests: loaded the first
+// time it is opened (storage.js), into its place in #panels.
+let storageOn = false;
+/** @type {import('./storage.js').Storage|null} */
+let storage = null;
+/** @type {Promise<void>|null} */
+let storageLoading = null;
+const storageSlot = h('div', { class: 'storage', hidden: true });
+/** Loads Storage (once; a failed load says so and is retried on the next open), then refreshes it. */
+function openStorage() {
+  if (storage) { storage.refresh(); return; }
+  if (storageLoading) return;
+  storageLoading = import('./storage.js').then((m) => {
+    storage = new m.Storage();
+    storageSlot.replaceWith(storage.el);
+    applyView();
+    storage.refresh();
+  }, () => {
+    storageLoading = null;
+    storageSlot.replaceChildren(h('p', { class: 'notice danger', role: 'alert', text: 'Couldn’t load the storage page. Reload to try again.' }));
+    storageSlot.hidden = currentView() !== 'storage';
+  });
+}
 
 /** @type {SpeedWindow[]} */
 let speedWins = [];
@@ -2104,18 +2127,20 @@ function currentView() {
   if (state.focus && focusPanel()) return 'c';
   if (state.view === 'calls' && !callsOn) return detailsView();
   if (state.view === 'speed' && !speed) return detailsView();
+  if (state.view === 'storage' && !storageOn) return detailsView();
   return state.view || 'h';
 }
 /** Details' own view: Calls when the profile has a call path or call apps, the Overview for big profiles, else the charts. */
 function detailsView() { return callsOn ? 'calls' : bigProfile ? 'o' : 'c'; }
 function overviewShown() { return !!ov && currentView() === 'o' && !(state.inv && inv); }
 function speedShown() { return !!speed && currentView() === 'speed' && !(state.inv && inv); }
+function storageShown() { return !!storage && currentView() === 'storage' && !(state.inv && inv); }
 /** The kind the Overview shows: the first selected of TCP, HTTPS, ICMP. */
 function ovKind() { return KINDS.find((k) => state.kinds.has(k)) || kindsOffered[0]; }
 function focusPanel() { return state.focus ? panels.find((p) => !p.isPath && p.targets.some((t) => t.name === state.focus)) || null : null; }
 /** Panels that are on screen and may load: the path panel always, the others per view and focus. */
 function panelShown(/** @type {Panel} */ p) {
-  if (currentView() === 'h' || currentView() === 'speed') return false; // Details loads its charts only when opened; Speed has none
+  if (currentView() === 'h' || currentView() === 'speed' || currentView() === 'storage') return false; // Details loads its charts only when opened; Speed and Storage have none
   if (p.isPath) return true;
   if (currentView() !== 'c') return false;
   const fp = focusPanel();
@@ -3328,7 +3353,8 @@ function setView(/** @type {string} */ v) {
   state.focus = null;
   writeHash();
   applyView();
-  if (v === 'o') ov?.load(); else if (v === 'calls') calls?.refresh(); else if (v === 'speed') speed?.refresh(); else loadStale();
+  if (v === 'o') ov?.load(); else if (v === 'calls') calls?.refresh(); else if (v === 'speed') speed?.refresh();
+  else if (v === 'storage') storage?.refresh(); else loadStale(); // applyView loads Storage the first time
 }
 
 function renderViewBar() {
@@ -3337,10 +3363,12 @@ function renderViewBar() {
     callsOn ? h('button', { type: 'button', text: 'Calls', 'aria-pressed': String(v === 'calls'), title: 'Is your connection good for calls?', onclick: () => setView('calls') }) : null,
     h('button', { type: 'button', text: 'Overview', 'aria-pressed': String(v === 'o'), title: 'Every target in one table and heatmap', onclick: () => setView('o') }),
     h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }),
-    speed ? h('button', { type: 'button', text: 'Speed', 'aria-pressed': String(v === 'speed'), title: 'Download and upload speed through the day', onclick: () => setView('speed') }) : null);
+    speed ? h('button', { type: 'button', text: 'Speed', 'aria-pressed': String(v === 'speed'), title: 'Download and upload speed through the day', onclick: () => setView('speed') }) : null,
+    storageOn ? h('button', { type: 'button', text: 'Storage', 'aria-pressed': String(v === 'storage'), title: 'Connections and transfers to your S3 storage', onclick: () => setView('storage') }) : null);
   const hint = /** @type {HTMLElement} */ (viewBar.lastElementChild);
   const n = panels.filter((p) => !p.isPath).length;
   hint.textContent = v === 'speed' ? 'Measured with short download and upload tests to public test servers'
+    : v === 'storage' ? 'Measured with fresh connections, downloads and uploads to storage endpoints you add'
     : v === 'calls' ? 'Measured with tiny STUN tests over UDP, the path call audio and video take'
     : v === 'o' ? `${fmtInt(allTargets.filter((t) => !t.layer).length)} targets; click a row to see its chart` : `${n} chart panel${n === 1 ? '' : 's'}`;
 }
@@ -3357,8 +3385,14 @@ function applyView() {
   document.body.classList.toggle('ov-on', v === 'o');
   document.body.classList.toggle('calls-on', v === 'calls');
   document.body.classList.toggle('speed-on', v === 'speed');
+  document.body.classList.toggle('storage-on', v === 'storage');
   if (ov) ov.el.hidden = v !== 'o';
   if (speed) speed.el.hidden = v !== 'speed';
+  if (storage) storage.el.hidden = v !== 'storage';
+  else {
+    storageSlot.hidden = v !== 'storage' || !storageSlot.firstChild;
+    if (v === 'storage') openStorage();
+  }
   if (calls) calls.el.hidden = v !== 'calls';
   const fp = focusPanel();
   for (const p of panels) {
@@ -3462,6 +3496,7 @@ async function refreshAll() {
       await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadSpeedWindows(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
         callsShown() ? /** @type {Calls} */ (calls).refresh() : null,
         speedShown() ? /** @type {Speed} */ (speed).refresh() : null,
+        storageShown() ? /** @type {import('./storage.js').Storage} */ (storage).refresh() : null,
         ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
     }
   } finally {
@@ -3846,7 +3881,8 @@ async function main() {
   }) : null;
   // The view switch, then Calls, the network path, the Overview or the charts: DOM order is visual order.
   const path = panels.filter((p) => p.isPath).map((p) => p.el);
-  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', speed ? speed.el : '', ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
+  storageOn = !!(prof.features && prof.features.storage);
+  $('#panels').replaceChildren(viewBar, focusBar, calls ? calls.el : '', speed ? speed.el : '', storageSlot, ...path, ov.el, ...panels.filter((p) => !p.isPath).map((p) => p.el));
   if (panels.length > LAZY_PANELS && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {

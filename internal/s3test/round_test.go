@@ -519,3 +519,27 @@ func TestClassGroups(t *testing.T) {
 		t.Error("wrapping")
 	}
 }
+
+// TestCheckFake: with Options.Fake, a check asks it instead of the network
+// (fyisp-webdev), and reads keys from its answer as from a server's.
+func TestCheckFake(t *testing.T) {
+	var got []string
+	e := New(Options{Fake: func(_ context.Context, tg Target, phase, op string, signed bool) model.StorageAttempt {
+		got = append(got, fmt.Sprintf("%s %s %s %v", tg.ID, phase, op, signed))
+		if signed {
+			return model.StorageAttempt{Class: string(ClassHTTPAuth), HTTPStatus: 403}
+		}
+		return model.StorageAttempt{Class: string(ClassOK), HTTPStatus: 200}
+	}})
+	ep, _ := url.Parse("https://s3.test")
+	tg := Target{ID: "t_1", Endpoint: ep, Region: "us-east-1", Bucket: "bkt"}
+	if r := e.Check(context.Background(), RoundTarget{Target: tg}); r.Keys != "none" || r.Attempt.Class != "ok" || r.Attempt.Target != "t_1" {
+		t.Errorf("unsigned: %+v", r)
+	}
+	if r := e.Check(context.Background(), RoundTarget{Target: tg, Creds: NewCreds("AK", "s", "")}); r.Keys != "refused" || r.Attempt.Phase != model.StoragePhaseCold {
+		t.Errorf("signed: %+v", r)
+	}
+	if want := []string{"t_1 cold head false", "t_1 cold list true"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("asked %q, want %q", got, want)
+	}
+}

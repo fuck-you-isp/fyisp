@@ -187,6 +187,7 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		pj := buildProfile(s.d.Profile())
 		pj.Features.Baselines = s.d.Baselines != nil
 		pj.Features.Speed = s.d.Speed != nil
+		pj.Features.Storage = s.d.Storage != nil
 		if s.d.Trace != nil {
 			pj.Features.Trace = true
 			tr := s.traced()

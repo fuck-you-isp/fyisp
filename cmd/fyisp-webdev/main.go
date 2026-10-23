@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -161,6 +162,7 @@ func main() {
 	noTrace := flag.Bool("no-trace", false, "run without a trace source (Investigate view hidden)")
 	noBaselines := flag.Bool("no-baselines", false, "run without baselines (no \"normal\" badges, band or slow line)")
 	noSpeed := flag.Bool("no-speed", false, "run without speed tests (Speed hidden)")
+	storageScen := flag.String("storage", storageTargets, "storage tests: none (Storage hidden), empty (no targets) or targets")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
 	home := flag.String("home", "", "a Home scenario served by /api/home (the rest stays fake probes): "+strings.Join(homescen.Names, ", "))
@@ -175,7 +177,7 @@ func main() {
 		log.Error("-admin-token: the dashboard needs one")
 		os.Exit(2)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM) // SIGTERM: docker stop (the storage dir is removed)
 	defer stop()
 
 	p, err := devProfile()
@@ -304,6 +306,17 @@ func main() {
 	}
 	if !*noSpeed {
 		d.Speed = newFakeSpeed(ctx, now, *bf, log)
+	}
+	switch *storageScen {
+	case storageNone, storageEmpty, storageTargets:
+	default:
+		fmt.Fprintf(os.Stderr, "-storage %q: want none, empty or targets\n", *storageScen)
+		os.Exit(2)
+	}
+	if *storageScen != storageNone {
+		ss, cleanup := newFakeStorage(ctx, *storageScen, log)
+		defer cleanup()
+		d.Storage = ss
 	}
 	if !*noBaselines {
 		fb := newFakeBaselines(ctx, st, p, now, *bf)
