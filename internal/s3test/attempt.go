@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
+	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/tcpinfo"
 )
@@ -147,8 +148,12 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 			res.cancelled = true
 			a.Class = ""
 		} else {
-			if st == stepWait && cn != nil && reused && cn.readN == 0 && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
-				err = errConnClosed // the server dropped the kept connection without a word
+			// The server dropped the kept connection without a word: the
+			// next read sees its close (Linux), or a reset when the request
+			// reached a socket already closed (macOS, Windows).
+			if (st == stepWait || st == stepWrite) && cn != nil && reused && cn.readN == 0 &&
+				(errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || probe.Classify(err) == model.ReasonReset) {
+				err = errConnClosed
 			}
 			a.Class = string(classifyErr(st, err))
 		}
@@ -166,10 +171,10 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 		if d.addr.IsValid() && !e.o.IsSelf(d.addr) {
 			a.EdgeIP, a.EdgePrefix = d.addr, prefix24(d.addr)
 		}
-		if d.dial > 0 {
+		if d.st >= stepDial && !errors.Is(err, errAddrRefused) {
 			a.Connectms = ms(d.dial)
 		}
-		if d.handshake > 0 {
+		if d.st >= stepTLS {
 			a.TLSms = ms(d.handshake)
 		}
 		a.TLSVersion, a.Resumed = d.tlsVersion, d.resumed

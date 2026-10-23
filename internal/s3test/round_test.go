@@ -16,7 +16,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -308,7 +307,7 @@ func TestRoundNetworkFailures(t *testing.T) {
 	// slow to refuse on Windows).
 	l := newLab(t, false)
 	l.e.o.Dial = func(context.Context, string, string) (net.Conn, error) {
-		return nil, &net.OpError{Op: "dial", Net: "tcp4", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}
+		return nil, &net.OpError{Op: "dial", Net: "tcp4", Err: os.NewSyscallError("connect", errRefused)}
 	}
 	l.rt.Creds = nil // connection checks only
 	if r := l.round(Phases{Cold: 1}); len(r.Attempts) != 1 || r.Attempts[0].Class != string(ClassConnectRefused) || r.Attempts[0].Connectms == nil {
