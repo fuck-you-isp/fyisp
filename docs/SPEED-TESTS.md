@@ -53,6 +53,8 @@ The servers are public iperf3 servers run by hosting companies and volunteers: L
 
 **One test at a time.** Scheduled tests, Test now and sweeps share one queue: your own requests first, then scheduled ones. A running test is never interrupted, except when you cancel it. A scheduled test that waited more than 10 minutes is dropped. Details shows the queue with estimated start times.
 
+**Pause schedule…** in Details → Speed skips scheduled tests for an hour, two hours, until a time you pick, or until you resume them (*Resume schedule*), for example while you run tests of your own. Skipped slots aren't made up afterwards. Test now and *Test every server* still work while paused, and the pause survives a restart.
+
 Please don't run modes more often than every 15 minutes against these servers. For more frequent tests, run your own iperf3 server on your own network (`iperf3 -s` on a NAS or another computer), then `--speedtest-server 192.168.1.20:5201`: servers on your own network may be tested as often as every minute. Your own servers elsewhere (a VPS) keep the 15-minute minimum.
 
 **What you get.** For each test:

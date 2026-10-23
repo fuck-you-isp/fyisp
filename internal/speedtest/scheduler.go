@@ -2,6 +2,7 @@ package speedtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -107,7 +108,31 @@ const (
 	SettingKey   = "speedtest_mode"
 	settingExtra = "speedtest_extra"
 	settingSeed  = "speedtest_seed"
+	settingPause = "speedtest_pause"
 )
+
+// Pause bounds: an end time must be at least MinPause and at most MaxPause
+// away.
+const (
+	MinPause = time.Minute
+	MaxPause = 30 * 24 * time.Hour
+)
+
+// ErrPause is a pause end time out of bounds.
+var ErrPause = errors.New("the pause must end between 1 minute and 30 days from now")
+
+// Pause is the owner's pause of the schedule: scheduled slots are skipped
+// (the grid moves on, so nothing piles up for later); tests asked for on
+// demand, sweeps and other queue entries still run.
+type Pause struct {
+	Since time.Time
+	Until time.Time // zero: until resumed
+}
+
+type pauseJSON struct {
+	Since int64 `json:"since"`
+	Until int64 `json:"until"` // 0: until resumed
+}
 
 // Options configure a Scheduler.
 type Options struct {
@@ -210,6 +235,11 @@ type Scheduler struct {
 	pickedAt     time.Time
 	rtts         map[string]time.Duration
 	vias         map[string]model.Handoff // server -> latest handoff with a Via
+	held         *Pause                   // the owner's pause of the schedule; nil: none
+	// heldEnd is when the last pause ended (its end time, or the resume):
+	// a slot due before it, taken late (a suspend, a clock step), is skipped.
+	heldEnd time.Time
+	pauseMu sync.Mutex // serializes the pause's saves (SetPause, its expiry)
 }
 
 // Row is a scheduled row of the current mode (a region or a server).
@@ -259,6 +289,8 @@ type State struct {
 	// Vias is each server's latest handoff that crossed an internet
 	// exchange (Handoff.Via; in memory only, local only).
 	Vias map[string]model.Handoff
+	// Pause is the owner's pause of the schedule (nil: none).
+	Pause *Pause
 }
 
 // New returns a Scheduler; Run drives it.
@@ -527,6 +559,18 @@ func (s *Scheduler) load(ctx context.Context) {
 			s.extra = splitIDs(v)
 		}
 	}
+	if v, ok, err := st.Setting(ctx, settingPause); err == nil && ok && v != "" {
+		var p pauseJSON
+		if json.Unmarshal([]byte(v), &p) == nil && p.Since > 0 {
+			s.held = &Pause{Since: time.UnixMilli(p.Since)}
+			if p.Until > 0 {
+				s.held.Until = time.UnixMilli(p.Until)
+			}
+		}
+		if s.held == nil || s.pauseEndedLocked(s.o.Now()) {
+			_ = st.SetSetting(ctx, settingPause, "") // unreadable, or ended while fyisp was stopped
+		}
+	}
 	if v, ok, err := st.Setting(ctx, settingSkip); err == nil && ok {
 		var keep []string
 		for _, id := range splitIDs(v) {
@@ -587,10 +631,28 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	defer func() { <-qdone }()
 	for {
 		s.mu.Lock()
-		tg, wait := s.dueLocked(s.o.Now())
+		now := s.o.Now()
+		ended := s.pauseEndedLocked(now)
+		tg, wait := s.dueLocked(now)
+		paused := s.held != nil
+		if paused && !s.held.Until.IsZero() {
+			wait = min(wait, s.held.Until.Sub(now))
+		}
+		skip := paused || (tg != nil && tg.at.Before(s.heldEnd))
 		s.mu.Unlock()
-		if tg != nil {
+		if ended {
+			s.clearEndedPause(ctx)
+			s.o.Log.Info("speed tests: the schedule's pause ended")
+		}
+		if tg != nil && !skip {
 			s.q.EnqueueScheduled(s.slotJob(*tg))
+			// A pause set since the check above never leaves a slot queued.
+			s.mu.Lock()
+			paused = s.held != nil
+			s.mu.Unlock()
+			if paused {
+				s.q.DropScheduled()
+			}
 		}
 		if wait <= 0 {
 			continue
@@ -673,6 +735,93 @@ func (s *Scheduler) SetMode(ctx context.Context, m Mode, extra []string) (time.T
 	return next, nil
 }
 
+// SetPause pauses the schedule (until a time, or until resumed when until
+// is zero) or resumes it, and saves the choice. Pausing drops the slot
+// waiting in the queue; a test already running finishes.
+func (s *Scheduler) SetPause(ctx context.Context, on bool, until time.Time) error {
+	s.pauseMu.Lock()
+	defer s.pauseMu.Unlock()
+	now := s.o.Now()
+	var p *Pause
+	if on {
+		if err := s.CheckPause(until); err != nil {
+			return err
+		}
+		p = &Pause{Since: now, Until: until}
+		s.mu.Lock()
+		if s.held != nil {
+			p.Since = s.held.Since // changing the end time keeps the start
+		}
+		s.mu.Unlock()
+	}
+	if err := s.savePause(ctx, p); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if p == nil && s.held != nil {
+		s.heldEnd = now
+	}
+	s.held = p
+	s.mu.Unlock()
+	if on {
+		s.q.DropScheduled()
+	}
+	s.poke()
+	return nil
+}
+
+// CheckPause reports whether until is an acceptable end for a pause (zero:
+// until resumed).
+func (s *Scheduler) CheckPause(until time.Time) error {
+	now := s.o.Now()
+	if !until.IsZero() && (until.Before(now.Add(MinPause)) || until.After(now.Add(MaxPause))) {
+		return ErrPause
+	}
+	return nil
+}
+
+// pauseEndedLocked ends a pause whose time is up, and reports it.
+func (s *Scheduler) pauseEndedLocked(now time.Time) bool {
+	if s.held == nil || s.held.Until.IsZero() || now.Before(s.held.Until) {
+		return false
+	}
+	s.heldEnd = s.held.Until
+	s.held = nil
+	return true
+}
+
+// clearEndedPause clears the saved pause once it ended, unless a new one
+// was set meanwhile.
+func (s *Scheduler) clearEndedPause(ctx context.Context) {
+	s.pauseMu.Lock()
+	defer s.pauseMu.Unlock()
+	s.mu.Lock()
+	none := s.held == nil
+	s.mu.Unlock()
+	if none {
+		if err := s.savePause(ctx, nil); err != nil {
+			s.o.Log.Warn("speed tests: clearing the ended pause", "err", err) // cleared at the next start
+		}
+	}
+}
+
+// savePause stores p (nil: not paused).
+func (s *Scheduler) savePause(ctx context.Context, p *Pause) error {
+	if s.o.Store == nil {
+		return nil
+	}
+	v := ""
+	if p != nil {
+		j := pauseJSON{Since: p.Since.UnixMilli()}
+		if !p.Until.IsZero() {
+			j.Until = p.Until.UnixMilli()
+		}
+		b, _ := json.Marshal(j)
+		v = string(b)
+	}
+	return s.o.Store.SetSetting(ctx, settingPause, v)
+}
+
 // State reports the schedule, the rows and the servers.
 func (s *Scheduler) State() State {
 	s.mu.Lock()
@@ -681,6 +830,10 @@ func (s *Scheduler) State() State {
 	st := State{Mode: s.mode, Modes: s.Modes(), SetByFlag: s.setByFlag, Extra: slices.Clone(s.extra),
 		Interval: s.IntervalFor(s.mode), Spacing: s.spacingLocked(s.mode), PlannedShare: load.Share,
 		Regions: s.o.Catalog.Regions, Next: s.next, Vias: maps.Clone(s.vias)}
+	if s.held != nil && (s.held.Until.IsZero() || s.o.Now().Before(s.held.Until)) {
+		p := *s.held
+		st.Pause = &p
+	}
 	if s.mode == ModeOff {
 		st.PlannedShare = 0
 	}

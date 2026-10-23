@@ -72,7 +72,8 @@ func parseHome(q url.Values, now time.Time) (homeParams, error) {
 // homeSpeedSource is what Home's speed block reads: s.d.Speed, or a test's
 // stand-in.
 type homeSpeedSource interface {
-	// On reports scheduled tests (the first one runs within the hour).
+	// On reports scheduled tests, not paused (the first one runs within
+	// the hour).
 	On() bool
 	Tests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
 	Running() *speedtest.Entry
@@ -80,7 +81,10 @@ type homeSpeedSource interface {
 
 type speedOf struct{ SpeedSource }
 
-func (s speedOf) On() bool { return s.State().Mode != speedtest.ModeOff }
+func (s speedOf) On() bool {
+	st := s.State()
+	return st.Mode != speedtest.ModeOff && st.Pause == nil
+}
 func (s speedOf) Tests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 	return s.SpeedTests(ctx, from, to)
 }

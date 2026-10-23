@@ -86,9 +86,10 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "bytes_month": 86580579678,
   "bytes_24h": 3120000000,        // the last 24 hours (bytes_month: data used by speed tests since the 1st of this month, UTC)
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
-  "next_at": 1760104860000,       // |null: the next scheduled slot; null when off
+  "next_at": 1760104860000,       // |null: the next scheduled slot; null when off or paused
   "sweep_bytes": 9200000000, "sweep_servers": 47, // "Test every server": its estimated data (each server's recent median, else this line's median rate both ways for 10 s) and the servers it tests
   "next_row": "uk",               // |null: its row id
+  "pause": {"paused": false, "since": null, "until": null},   // the owner's pause of the schedule: since and until (null: until resumed) are unix ms
   "running": { ...Running },      // |null
   "rows": [ ...Row ],             // the current mode's scheduled rows, in plan order (empty when off)
   "per_region": [ ...Row ],       // every default region, plus scheduled or tested opt-in regions, catalog order
@@ -426,10 +427,13 @@ The same write checks as `run`. It cancels a waiting entry, or the running one, 
 POST api/speed/config
 {"mode": "regions", "extra": ["canada"]}   // and/or
 {"skip": ["Leaseweb-Tokyo"]}   // servers never to test (replaces the saved list; --speedtest-skip adds to it)
+{"pause": true, "pause_until": 1760112000000}   // pause the schedule (pause_until null: until resumed); {"pause": false} resumes
 ```
 
-- `200 {"mode": "regions", "next_at": 1760104920000}`, with the fields it changed; `next_at` is null for `off`.
-- `400` for a mode not in `modes`, an unknown region in `extra` (or `extra` without `mode`), for neither field, or for any other field.
+- `200 {"mode": "regions", "next_at": 1760104920000}`, with the fields it changed; `next_at` is null for `off`. A pause answers `{"pause": {...}, "next_at": ...}`, `next_at` null while paused.
+- `400` for a mode not in `modes`, an unknown region in `extra` (or `extra` without `mode`), for none of `mode`, `skip` and `pause`, for `pause_until` without `"pause": true` or less than 1 minute or more than 30 days away, or for any other field.
+
+**Pause.** While the schedule is paused, every scheduled slot is skipped: the slots keep their times, so nothing piles up for when it ends (a slot due during the pause is skipped even when fyisp only gets to it afterwards, after a suspend). Changing the end time keeps `since`. Pausing drops a slot waiting in the queue; a test already running finishes. Test now and "Test every server" still run. A pause with `pause_until` ends by itself (also when fyisp was stopped at that time); either way it is saved and survives restarts, independently of the mode.
 
 `extra` is the opt-in regions (mode `regions`) or extra far regions (mode `nearby`). The choices are saved and survive restarts. A `--speedtest…` flag on the command line overrides them at start (`set_by_flag`). Switching to a mode schedules the first test about 2 minutes later.
 

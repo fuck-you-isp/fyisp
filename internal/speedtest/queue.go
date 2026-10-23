@@ -296,6 +296,21 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 	return Entry{}, ErrNoEntry
 }
 
+// DropScheduled drops the schedule slot waiting in the queue, if any (the
+// schedule was paused). A slot already running finishes.
+func (q *Queue) DropScheduled() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
+	q.waiting = slices.DeleteFunc(q.waiting, func(e *qentry) bool {
+		if e.Kind == KindScheduled {
+			q.finishLocked(e, StateDropped, now)
+			return true
+		}
+		return false
+	})
+}
+
 // dropStaleLocked drops scheduled slots that waited ScheduledStale.
 func (q *Queue) dropStaleLocked(now time.Time) {
 	q.waiting = slices.DeleteFunc(q.waiting, func(e *qentry) bool {

@@ -11,6 +11,7 @@
 import { h, fetchShared, fmtMbps, apiWrite, dialog, tzParam, clock } from './core.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
+import { askPause, pauseWords, activePause } from './speedpause.js';
 
 /** @typedef {{id:string,label:string,display?:string,provider:string,city:string,country:string,geo:string,area?:string,region:string|null,rtt_ms:number|null,picked:boolean,custom:boolean,capacity_mbps?:number,skipped?:boolean,skip_locked?:boolean,rest_until?:number|null}} SpeedServer */
 /** @typedef {{hour:number,n:number,n_fallback:number,n_failed:number,n_capped:number,down_median_bps:number|null,up_median_bps:number|null,score_median:number|null,up_score_median:number|null,servers:Object<string,number>}} SpeedHour */
@@ -20,7 +21,7 @@ import { SpeedQueue } from './speedqueue.js';
 /** @typedef {{id:number,start:number,end:number,trigger:string,on_demand?:boolean,outcome:string,region:string|null,server:string,label:string,display?:string,provider?:string,city?:string,fallback:boolean,fallback_level?:string,attempts:number,down_bps:number|null,up_bps:number|null,down_s?:number,up_s?:number,capped_by_server?:boolean,score?:number|null,up_score?:number|null,bytes?:number,down_retrans:number|null,up_retrans:number|null,conn?:string,handoff?:{asn:number,name:string,isp_asn:number},latency?:{edge?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat},gateway?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat}},port?:number}} SpeedTest */
 /** @typedef {{case:string,tier?:string,text:string,evidence:string,caveat?:string,hours:number[],drop:number,days:number,tests:number,regions:string[],providers:string[],network?:string,regions_judged?:number,providers_judged?:number,far_regions?:string[],slow_days?:number,day_count?:number,far_evening?:boolean,bridged?:boolean}} SpeedFinding */
 /** @typedef {{entry?:number,kind?:string,started:number,direction:string,server:{id:string,label:string}|null,step?:number,steps?:number}} SpeedRunning */
-/** @typedef {{at:number,tz:number,tz_name?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,test_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{text:string[]}|null}} SpeedSummary */
+/** @typedef {{at:number,tz:number,tz_name?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,test_share_24h:number,next_at:number|null,next_row?:string|null,pause?:import('./speedpause.js').SpeedPauseState,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{text:string[]}|null}} SpeedSummary */
 
 // Seconds a typical test fills the line in each direction (a ramp-up of up to 1 s, then 3 to 10 s), and a whole test with its pauses.
 const DIR_S = 6, TEST_S = 15;
@@ -168,7 +169,8 @@ export class Speed {
     }
     this.headEl.onkeydown = null;
     const flag = d.set_by_flag ? h('p', { class: 'muted small', text: 'Turned on by a start-up setting. If you turn it off here, it comes back on the next restart.' }) : null;
-    const next = this.queue.q?.running || d.running ? 'testing now' : d.next_at ? `next test ${clock(d.next_at)}` : '';
+    const paused = activePause(d.pause);
+    const next = this.queue.q?.running || d.running ? 'testing now' : paused ? `scheduled tests ${pauseWords(paused)}` : d.next_at ? `next test ${clock(d.next_at)}` : '';
     fill(this.headEl, [
       h('div', { class: 'sp-on' },
         h('p', { class: 'sp-state' }, h('b', { text: 'Speed tests: On' }), ` · ${modeName(d.mode)}${next ? ' · ' + next : ''}`,
@@ -178,6 +180,9 @@ export class Speed {
             h('button', { class: 'btn primary', type: 'button', text: 'Test now', onclick: () => this.run('') }),
             h('button', { class: 'btn primary sp-more', type: 'button', 'aria-label': 'Choose a server to test', title: 'Choose a server', 'aria-haspopup': 'dialog', text: '▾', onclick: () => this.pick() })),
           h('button', { class: 'btn', type: 'button', text: 'Change…', disabled: !!d.set_by_flag, onclick: () => { this.panel = 'setup'; this.pickMode = d.mode; this.note = this.result = ''; this.renderAll(); /** @type {HTMLElement|null} */ (this.headEl.querySelector('h2'))?.focus(); } }),
+          paused
+            ? h('button', { class: 'btn', type: 'button', text: 'Resume schedule', onclick: () => this.setPause(false) })
+            : h('button', { class: 'btn', type: 'button', text: 'Pause schedule…', 'aria-haspopup': 'dialog', onclick: () => this.setPause(true) }),
           h('button', { class: 'btn ghost', type: 'button', text: 'Turn off', onclick: () => this.setMode('off') }))),
       flag,
       d.warning ? h('p', { class: 'notice warn', text: d.warning }) : null,
@@ -253,7 +258,9 @@ export class Speed {
       d.next_at = r.next_at;
       this.panel = 'idle';
       this.result = '';
-      this.note = mode === 'off' ? 'Off. Results so far are kept.' : `On: ${modeName(r.mode)}. ${firstTest(r.next_at, false)}`;
+      const paused = activePause(d.pause);
+      this.note = mode === 'off' ? 'Off. Results so far are kept.'
+        : `On: ${modeName(r.mode)}. ${paused ? `Scheduled tests are ${pauseWords(paused)}.` : firstTest(r.next_at, false)}`;
     } catch (e) {
       this.note = speedError(e);
     }
@@ -262,6 +269,30 @@ export class Speed {
     // The button that was pressed is gone: keep the keyboard on the page.
     /** @type {HTMLElement|null} */ (this.headEl.querySelector('.sp-acts .btn, .sp-go'))?.focus();
     this.refresh();
+  }
+
+  /** Pauses (asking how long) or resumes the schedule. @param {boolean} on */
+  async setPause(on) {
+    const d = this.d;
+    if (!d) return;
+    const body = on ? await askPause() : { pause: false };
+    if (!body) {
+      /** @type {HTMLElement|null} */ ([...this.headEl.querySelectorAll('button')].find((b) => b.textContent === 'Pause schedule…') || null)?.focus();
+      return;
+    }
+    try {
+      const r = await apiWrite('POST', 'api/speed/config', body);
+      d.pause = r.pause;
+      d.next_at = r.next_at;
+      this.note = r.pause.paused ? `Scheduled tests ${pauseWords(r.pause)}.` : `Scheduled tests resumed.${r.next_at ? ` Next test at about ${clock(r.next_at)}.` : ''}`;
+    } catch (e) {
+      this.note = speedError(e);
+    }
+    this.say.textContent = this.note;
+    this.renderAll();
+    await this.refresh();
+    // The button that was pressed is gone: keep the keyboard on its replacement.
+    /** @type {HTMLElement|null} */ ([...this.headEl.querySelectorAll('button')].find((b) => /schedule/.test(b.textContent || '')) || null)?.focus();
   }
 
   // ---------- Test now, the picker, progress ----------

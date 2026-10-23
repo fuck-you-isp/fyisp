@@ -86,7 +86,7 @@ Abridged from the golden `internal/web/testdata/home/zoom.now.json`:
  "latest": {"at": 1791547200000,
             "text": "Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.",
             "note": "Today 8:00 am"},              // ", during the problem" when it ran during the card's bad problem; null: none in 7 days
- "empty_text": "No speed test yet. The first one runs within the hour.",   // "No speed test yet." while speed tests are off
+ "empty_text": "No speed test yet. The first one runs within the hour.",   // "No speed test yet." while speed tests are off or their schedule is paused
  "running": null}                                  // or {"entry": 12}: a test running now, from any source
 ```
 
