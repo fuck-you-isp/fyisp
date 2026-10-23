@@ -49,6 +49,7 @@ type gapReader struct {
 	now  func() time.Time
 	last time.Time
 	max  time.Duration
+	n    int64 // bytes read (sent)
 }
 
 func (g *gapReader) Read(b []byte) (int, error) {
@@ -58,5 +59,6 @@ func (g *gapReader) Read(b []byte) (int, error) {
 	}
 	n, err := g.r.Read(b)
 	g.last = g.now()
+	g.n += int64(n)
 	return n, err
 }

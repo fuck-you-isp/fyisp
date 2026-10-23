@@ -73,7 +73,8 @@ func TestStoragePrivacyEndToEnd(t *testing.T) {
 	lookup := func(context.Context, string, string) ([]netip.Addr, error) {
 		return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
 	}
-	e := s3test.New(s3test.Options{Lookup: lookup, IsSelf: storage.IsSelf})
+	e := s3test.New(s3test.Options{Lookup: lookup, IsSelf: storage.IsSelf,
+		Sleep: func(ctx context.Context, _ time.Duration) bool { return ctx.Err() == nil }}) // no second between requests
 	svc := storage.Open(storage.Options{Dir: dir, Engine: e, Lookup: lookup})
 	q := speedtest.NewQueue(speedtest.QueueOptions{})
 	mc := metrics.New(func() *model.Profile { return &model.Profile{} })

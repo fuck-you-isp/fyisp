@@ -197,6 +197,7 @@ type conn struct {
 	firstRead time.Time
 	readN     int64
 	wire      atomic.Int64 // bytes read and written above TLS (wire totals are an estimate)
+	headLeft  int64        // > 0: reads allowed before errHeadLarge (reading a response's head)
 	reused    bool         // a request has already been sent on it
 	now       func() time.Time
 }
@@ -222,8 +223,19 @@ func (c *conn) stopAt(t time.Time) {
 func (c *conn) armFirst() { c.firstRead, c.readN = time.Time{}, 0 }
 
 func (c *conn) Read(p []byte) (int, error) {
+	if c.headLeft < 0 {
+		return 0, errHeadLarge
+	}
+	if c.headLeft > 0 && int64(len(p)) > c.headLeft {
+		p = p[:c.headLeft]
+	}
 	_ = c.nc.SetReadDeadline(c.deadline(c.readTimeout))
 	n, err := c.nc.Read(p)
+	if c.headLeft > 0 {
+		if c.headLeft -= int64(n); c.headLeft == 0 {
+			c.headLeft = -1
+		}
+	}
 	if n > 0 {
 		if c.firstRead.IsZero() {
 			c.firstRead = c.now()

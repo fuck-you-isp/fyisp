@@ -40,6 +40,7 @@ const (
 	slowStall                = 2 * time.Second // a transfer that stalled this long makes its round slow
 	storeTimeout             = 10 * time.Second
 	settingInstall           = "storage_install"
+	settingAlive             = "storage_alive" // when fyisp last ran a live campaign (unix ms): a restart's gap starts there
 )
 
 // Store is what campaigns keep in the database (store.SQLite).
@@ -49,8 +50,6 @@ type Store interface {
 	StorageCampaigns(ctx context.Context, before int64, limit int, live bool) ([]model.StorageCampaign, error)
 	SaveStorageRound(ctx context.Context, r *model.StorageRound, attempts []model.StorageAttempt) error
 	StorageRoundsTail(ctx context.Context, campaign int64) (maxSeq int, last time.Time, err error)
-	AddStorageLeftovers(ctx context.Context, target string, objects []string, at time.Time) error
-	ClearStorageLeftovers(ctx context.Context, target string) error
 	SaveStorageTrace(ctx context.Context, t *model.StorageTrace) error
 	StorageTraces(ctx context.Context, campaign int64) ([]model.StorageTrace, error)
 	Setting(ctx context.Context, key string) (string, bool, error)
@@ -71,8 +70,12 @@ type CampaignOptions struct {
 	Line func(from, to time.Time) (gw, edge *model.LoadStats)
 	// Trace, when set, traceroutes a provider's edge address (blocking,
 	// a minute or two) and returns the route's hops and the first network
-	// past this connection's provider (0: unknown); false when it couldn't.
+	// past this connection's provider (0: unknown); no hops when nothing
+	// answered; false when it couldn't trace (no probe sent, or stopped).
 	Trace func(ctx context.Context, ip netip.Addr) (hops []model.StorageHop, handoff uint32, ok bool)
+	// Recent, when set, is the line's recent download and upload speeds
+	// (bits/s, 0: unknown) for the transfers' time bounds and estimates.
+	Recent func() [2]float64
 	// OnRound, when set, is told every round stored (metrics).
 	OnRound func(c model.StorageCampaign, r model.StorageRound, attempts []model.StorageAttempt)
 }
@@ -97,8 +100,8 @@ type CampaignSpec struct {
 	Count    int
 	Duration time.Duration
 	// Recurring: weekdays (bit 0 Monday ... bit 6 Sunday), the window in
-	// minutes after midnight (an end at or before the start crosses
-	// midnight), its IANA zone, and the last moment (zero: until removed).
+	// minutes after midnight (an end before the start crosses midnight),
+	// its IANA zone, and the last moment (zero: until removed).
 	Days    uint8
 	FromMin int
 	ToMin   int
@@ -159,6 +162,7 @@ type Campaigns struct {
 	started map[string]bool               // campaign/target: its first route was traced
 	closing bool                          // Run is stopping: no new traces
 	install string
+	alive   time.Time // settingAlive last written
 	rev     int64
 	notices []Notice
 }
@@ -426,9 +430,14 @@ func (c *Campaigns) MinInterval(n, keyed int, p s3test.Phases) time.Duration {
 	return max(MinInterval, (est+time.Minute-1)/time.Minute*time.Minute)
 }
 
-// recent is the line's recent speeds for the transfers' time bounds:
-// unknown (the engine's defaults).
-func (c *Campaigns) recent() [2]float64 { return [2]float64{} }
+// recent is the line's recent speeds (o.Recent; unknown without it: the
+// engine's defaults).
+func (c *Campaigns) recent() [2]float64 {
+	if c.o.Recent == nil {
+		return [2]float64{}
+	}
+	return c.o.Recent()
+}
 
 // checkKeys asks each target once with its keys (at the same time) and
 // returns the targets whose keys were refused; another key check running
@@ -485,11 +494,7 @@ func (c *Campaigns) RunOnce(ctx context.Context, targets []string, keys map[stri
 	if len(keys) > 0 {
 		s.Down, s.Up = DefaultDown, DefaultUp
 	}
-	keyed := 0
-	for range keys {
-		keyed++
-	}
-	s.Interval = c.MinInterval(len(targets), keyed, s3test.Phases{Cold: s.Cold, Warm: s.Warm, Down: s.Down, Up: s.Up})
+	s.Interval = c.MinInterval(len(targets), len(keys), s3test.Phases{Cold: s.Cold, Warm: s.Warm, Down: s.Down, Up: s.Up})
 	return c.start(ctx, s, keys, true)
 }
 
@@ -524,6 +529,7 @@ func (c *Campaigns) start(ctx context.Context, s CampaignSpec, keys map[string]*
 	sctx, cancel := storeCtx(ctx)
 	defer cancel()
 	if err := c.o.Store.SaveStorageCampaign(sctx, &mc); err != nil {
+		c.changedLocked()
 		return mc, err
 	}
 	if len(keys) > 0 {
@@ -535,6 +541,7 @@ func (c *Campaigns) start(ctx context.Context, s CampaignSpec, keys map[string]*
 		if err != nil {
 			mc.State, mc.Stopped, mc.End, mc.KeysSaved = model.StorageStopped, model.StopOwner, now, false
 			_ = c.o.Store.SaveStorageCampaign(sctx, &mc)
+			c.changedLocked()
 			return mc, err
 		}
 	}
@@ -606,6 +613,9 @@ func (c *Campaigns) Run(ctx context.Context) {
 				next = r.next
 			}
 		}
+		if len(c.live) > 0 && now.Sub(c.alive) >= time.Minute {
+			c.saveAliveLocked(ctx, now)
+		}
 		c.mu.Unlock()
 		wait := time.Minute // a clock step is noticed within a minute
 		if !next.IsZero() {
@@ -617,6 +627,9 @@ func (c *Campaigns) Run(ctx context.Context) {
 			t.Stop()
 			c.mu.Lock()
 			c.closing = true
+			if len(c.live) > 0 {
+				c.saveAliveLocked(ctx, c.o.Now())
+			}
 			c.mu.Unlock()
 			c.wg.Wait()
 			c.shutdown()
@@ -633,7 +646,9 @@ func (c *Campaigns) Run(ctx context.Context) {
 func (c *Campaigns) fireLocked(ctx context.Context, r *run, now time.Time) {
 	due, seq := r.next, r.seq
 	if r.c.Shape == model.StorageOnDemand {
-		seq = int(due.Sub(r.c.Start) / r.c.Interval) // its slot: missed ones leave their numbers out
+		// Its slot: missed ones leave their numbers out (never one already
+		// used, after a clock set back).
+		seq = max(seq, int(due.Sub(r.c.Start)/r.c.Interval))
 	}
 	r.seq = seq + 1
 	r.lastDue = due
@@ -700,6 +715,9 @@ func (c *Campaigns) unrun(ctx context.Context, id int64, entry uint64, seq int, 
 		return // stopped, or long since replaced
 	}
 	r.entry = 0
+	if c.closing {
+		return // the queue stopping: the restart's gap covers it
+	}
 	if stale {
 		c.saveSkipLocked(ctx, id, seq, due, model.SkipStale)
 		return
@@ -780,6 +798,17 @@ func (c *Campaigns) saveSkipLocked(ctx context.Context, id int64, seq int, due t
 	c.changedLocked()
 }
 
+// saveAliveLocked records that fyisp ran at now (settingAlive).
+func (c *Campaigns) saveAliveLocked(ctx context.Context, now time.Time) {
+	sctx, cancel := storeCtx(ctx)
+	defer cancel()
+	if err := c.o.Store.SetSetting(sctx, settingAlive, strconv.FormatInt(now.UnixMilli(), 10)); err != nil {
+		c.o.Log.Warn("storage tests: saving when fyisp last ran", "err", err)
+		return
+	}
+	c.alive = now
+}
+
 func (c *Campaigns) saveCampaignLocked(ctx context.Context, r *run) {
 	sctx, cancel := storeCtx(ctx)
 	defer cancel()
@@ -801,6 +830,7 @@ func (c *Campaigns) runRound(ctx context.Context, id int64, seq int, due time.Ti
 	mc := r.c
 	install := c.install
 	if mc.State == model.StoragePaused { // paused while it waited
+		r.entry = 0
 		c.saveSkipLocked(ctx, id, seq, due, model.SkipPaused)
 		c.mu.Unlock()
 		return 0, false
@@ -877,7 +907,7 @@ func (c *Campaigns) runRound(ctx context.Context, id int64, seq int, due time.Ti
 		skips[k] = v
 	}
 	rr := &model.StorageRound{Campaign: id, Seq: &seq, Due: due, Start: res.Start, End: res.End, Skips: skips,
-		Outcome: outcome(res), BytesDown: res.Down, BytesUp: res.Up, Wire: res.Down + res.Up}
+		Outcome: outcome(res), BytesDown: res.Down, BytesUp: res.Up}
 	if c.o.Line != nil && !res.Cancelled {
 		gw, edge := c.o.Line(res.Start, res.End)
 		if gw != nil {
@@ -899,24 +929,20 @@ func (c *Campaigns) runRound(ctx context.Context, id int64, seq int, due time.Ti
 	if c.o.OnRound != nil {
 		c.o.OnRound(mc, *rr, res.Attempts)
 	}
-	byTarget := map[string][]string{}
-	for _, l := range res.Leftovers { // "<campaign>/<round>-<target>"
-		for _, t := range mc.Targets {
-			if strings.HasSuffix(l, "-"+t.ID) {
-				byTarget[t.ID] = append(byTarget[t.ID], l)
-			}
-		}
-	}
-	for t, objs := range byTarget {
-		if err := c.o.Store.AddStorageLeftovers(sctx, t, objs, res.End); err != nil {
-			c.o.Log.Warn("storage tests: saving leftovers", "err", err)
-		}
-	}
 	c.mu.Lock()
 	if r := c.live[id]; r != nil {
-		r.c.RoundsDone++
-		r.c.BytesDown += res.Down
-		r.c.BytesUp += res.Up
+		if !rr.Start.IsZero() { // as the store counts it
+			r.c.RoundsDone++
+			r.c.BytesDown += res.Down
+			r.c.BytesUp += res.Up
+		}
+		for _, l := range res.Leftovers { // "<campaign>/<round>-<target>": the next round sweeps again
+			for _, t := range mc.Targets {
+				if strings.HasSuffix(l, "-"+t.ID) {
+					delete(r.swept, t.ID)
+				}
+			}
+		}
 	}
 	c.mu.Unlock()
 	c.traceAfter(ctx, mc, res)
@@ -984,6 +1010,10 @@ func (c *Campaigns) traceAfter(ctx context.Context, mc model.StorageCampaign, re
 				c.mu.Unlock()
 				return
 			}
+			if len(hops) == 0 {
+				c.mu.Unlock()
+				return // traced, nothing answered: not again before traceGap
+			}
 			c.started[fmt.Sprintf("%d/%s", mc.ID, t.ID)] = true
 			last, had := c.routes[key]
 			if !had {
@@ -1048,21 +1078,14 @@ func edgePrefix(a netip.Addr) string {
 }
 
 // sweep deletes what fyisp left under the install's prefix in a target's
-// bucket (a crash's uploads), keeping the seeds, and reports whether it
-// worked; then the target's leftovers are forgotten. It runs before the
-// round, bounded on its own (one listing of at most 1000 objects).
+// bucket (a crash's uploads, or a round's it couldn't delete), keeping the
+// seeds, and reports whether it worked. It runs before the round, bounded
+// on its own (one listing of at most 1000 objects).
 func (c *Campaigns) sweep(ctx context.Context, rt s3test.RoundTarget, install string) bool {
 	sctx, cancel := context.WithTimeout(ctx, s3test.RoundCap)
 	defer cancel()
-	if _, class := c.o.Engine.Sweep(sctx, rt, install, true); class != s3test.ClassOK {
-		return false
-	}
-	stx, cancel2 := storeCtx(ctx)
-	defer cancel2()
-	if err := c.o.Store.ClearStorageLeftovers(stx, rt.ID); err != nil {
-		c.o.Log.Warn("storage tests: clearing leftovers", "err", err)
-	}
-	return true
+	_, class := c.o.Engine.Sweep(sctx, rt, install, true)
+	return class == s3test.ClassOK
 }
 
 // outcome is a round's result: cancelled, failed (a network or provider
@@ -1273,6 +1296,12 @@ func (c *Campaigns) restart(ctx context.Context) {
 		c.o.Log.Warn("storage tests: loading the campaigns; none run until fyisp restarts", "err", err)
 		return
 	}
+	var alive time.Time // when fyisp last ran (zero: unknown)
+	if v, ok, err := c.o.Store.Setting(sctx, settingAlive); err == nil && ok {
+		if ms, err := strconv.ParseInt(v, 10, 64); err == nil && ms > 0 && ms < now.UnixMilli() {
+			alive = time.UnixMilli(ms)
+		}
+	}
 	keep := map[int64]bool{} // the campaigns whose keys stay
 	for _, mc := range cs {
 		keep[mc.ID] = true
@@ -1288,7 +1317,7 @@ func (c *Campaigns) restart(ctx context.Context) {
 			continue
 		}
 		r.seq = maxSeq + 1
-		for _, t := range []time.Time{mc.Start, mc.Created} {
+		for _, t := range []time.Time{mc.Start, mc.Created, alive} {
 			if last.IsZero() || t.After(last) && t.Before(now) {
 				last = t
 			}

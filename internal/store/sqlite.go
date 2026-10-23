@@ -222,7 +222,6 @@ CREATE TABLE storage_rounds(
 	edge_rtt_ms   REAL,
 	bytes_down    INT  NOT NULL DEFAULT 0,
 	bytes_up      INT  NOT NULL DEFAULT 0,
-	wire_bytes    INT  NOT NULL DEFAULT 0,
 	UNIQUE(campaign, seq)
 );
 CREATE INDEX storage_rounds_due ON storage_rounds(due_ms);
@@ -255,33 +254,11 @@ CREATE TABLE storage_attempts(
 	tcp_rtt_ms        REAL,
 	retrans           INT,
 	mss               INT,
-	skew_s            INT,
-	trace             INT -- storage_traces.id
+	skew_s            INT
 );
 CREATE INDEX storage_attempts_round ON storage_attempts(round);
 CREATE INDEX storage_attempts_at ON storage_attempts(at_ms);
-CREATE INDEX storage_attempts_fail ON storage_attempts(at_ms) WHERE class <> 'ok';
--- Objects fyisp put and could not delete yet: the key under
--- fyisp-test/<install>/ only (no host, no bucket).
-CREATE TABLE storage_leftovers(
-	target TEXT NOT NULL,
-	object TEXT NOT NULL,
-	at_ms  INT  NOT NULL,
-	PRIMARY KEY(target, object)
-) WITHOUT ROWID;
--- Connection checks per minute and target; classes is JSON {class: n}.
-CREATE TABLE storage_connects(
-	campaign    INT  NOT NULL,
-	target      TEXT NOT NULL,
-	minute_ms   INT  NOT NULL,
-	n           INT  NOT NULL,
-	failed      INT  NOT NULL,
-	classes     TEXT,
-	p50_ms      REAL,
-	during_test INT  NOT NULL DEFAULT 0,
-	PRIMARY KEY(campaign, target, minute_ms)
-) WITHOUT ROWID;
-CREATE INDEX storage_connects_at ON storage_connects(minute_ms);
+CREATE INDEX storage_attempts_fail ON storage_attempts(round) WHERE class <> 'ok';
 -- Traceroutes to a target's edge: hops is a JSON array as in routes.
 CREATE TABLE storage_traces(
 	id             INTEGER PRIMARY KEY,
@@ -532,7 +509,7 @@ func classify(ctx context.Context, path string) (dbState, int, error) {
 
 // tables are the schema's tables, which a current file must all have.
 var tables = []string{"series", "samples", "summary_1h", "meta", "incidents", "hop_info", "route_changes", "routes", "speedtests",
-	"storage_campaigns", "storage_rounds", "storage_attempts", "storage_leftovers", "storage_connects", "storage_traces"}
+	"storage_campaigns", "storage_rounds", "storage_attempts", "storage_traces"}
 
 // inspect reads the schema version and the table names of the database at
 // path over a read-only connection (mode=ro): it writes nothing, and its

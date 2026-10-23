@@ -36,9 +36,11 @@ type Options struct {
 	// (fyisp-webdev): the attempt for target t's request op in phase,
 	// with signed reporting keys. A round asks it once per attempt, a
 	// second apart (sweeps aren't faked).
-	Fake  func(ctx context.Context, t Target, phase, op string, signed bool) model.StorageAttempt
-	sleep func(ctx context.Context, d time.Duration) bool // tests
-	lim   limits                                          // tests; zero: the defaults
+	Fake func(ctx context.Context, t Target, phase, op string, signed bool) model.StorageAttempt
+	// Sleep waits d between a round's requests, false when ctx ended
+	// first (tests skip the waits; nil: a timer).
+	Sleep func(ctx context.Context, d time.Duration) bool
+	lim   limits // tests; zero: the defaults
 }
 
 // limits are the per-step bounds (tests shorten them).
@@ -79,8 +81,8 @@ func New(o Options) *Engine {
 	if o.IsSelf == nil {
 		o.IsSelf = func(netip.Addr) bool { return true }
 	}
-	if o.sleep == nil {
-		o.sleep = func(ctx context.Context, d time.Duration) bool {
+	if o.Sleep == nil {
+		o.Sleep = func(ctx context.Context, d time.Duration) bool {
 			t := time.NewTimer(d)
 			defer t.Stop()
 			select {
@@ -240,6 +242,9 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 	c.armFirst()
 	werr := req.Write(c)
 	wrote := e.o.Now()
+	if up != nil {
+		a.Bytes = up.n // sent, even if it failed
+	}
 	c.writeTimeout = 0
 	c.reused = true
 	if werr != nil {
@@ -249,7 +254,7 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 		// A server may refuse an upload early (403, then a close): read its
 		// answer if it sent one, else the write's failure stands.
 		c.readTimeout = time.Second
-		if resp, err := http.ReadResponse(c.br, req); err == nil {
+		if resp, err := readResponse(c, req); err == nil {
 			_ = resp.Body.Close()
 			a.HTTPStatus, a.TTFBms = resp.StatusCode, ms(0)
 			a.Class = string(classifyStatus(resp.StatusCode, "", r.creds != nil, skewOf(resp.Header, e.o.Now()), resp.Header.Get("Retry-After") != ""))
@@ -272,7 +277,7 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 		c.readTimeout = e.o.lim.ttfbUpload
 	}
 	c.armFirst()
-	resp, err := http.ReadResponse(c.br, req)
+	resp, err := readResponse(c, req)
 	if err != nil {
 		return fail(stepWait, err, c)
 	}
@@ -295,7 +300,10 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 		if sink == nil {
 			sink = io.Discard
 		}
-		n, gap, bodyFirst, err = e.copyBody(sink, resp.Body)
+		// No more than asked for: a server that sends on is cut off
+		// (a long body counts as short_body).
+		n, gap, bodyFirst, err = e.copyBody(sink, io.LimitReader(resp.Body, r.want+1))
+		large = n > r.want
 	} else {
 		limit := int64(errBodyMax)
 		if r.keep > 0 && resp.StatusCode/100 == 2 {
@@ -315,7 +323,9 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 	}
 	_ = resp.Body.Close()
 	end := e.o.Now()
-	a.Bytes = n
+	if up == nil {
+		a.Bytes = n
+	}
 	if err != nil {
 		if isTimeout(err) && !errors.Is(cause(err), errTotal) {
 			err = errStall
@@ -352,6 +362,19 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 		return nil, res
 	}
 	return c, res
+}
+
+// headMax bounds a response's status line and headers (net/http's
+// ReadResponse has no limit of its own): a server that sends headers
+// without end fails the attempt instead of filling memory.
+const headMax = 64 << 10
+
+// readResponse reads a response's head from c, at most headMax bytes past
+// what c's buffer already holds.
+func readResponse(c *conn, req *http.Request) (*http.Response, error) {
+	c.headLeft = headMax
+	defer func() { c.headLeft = 0 }()
+	return http.ReadResponse(c.br, req)
 }
 
 // copyBody copies a download to w, timing it: the longest gap between

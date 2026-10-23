@@ -120,7 +120,13 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 	for _, rt := range targets {
 		if rt.keyed() && live(rt) {
 			s.phase(model.StoragePhaseSeed, rt.ID)
+			n := len(res.Attempts)
 			e.seed(rctx, rt, s.Install, s.Phases.Down, s.RecentBps[1], add)
+			for _, a := range res.Attempts[n:] {
+				if a.Op == "put" {
+					res.Up += a.Bytes // a seed's upload costs data too
+				}
+			}
 		}
 	}
 	// Cold: a fresh lookup, connection and handshake per request, the
@@ -140,7 +146,7 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 			add(rt, a)
 		}
 		if i < s.Phases.Cold-1 {
-			if wait := time.Second - e.o.Now().Sub(start); wait > 0 && !e.o.sleep(rctx, wait) {
+			if wait := time.Second - e.o.Now().Sub(start); wait > 0 && !e.o.Sleep(rctx, wait) {
 				break
 			}
 		}
@@ -154,7 +160,7 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 			s.phase(model.StoragePhaseWarm, rt.ID)
 		}
 		for i := 0; i < s.Phases.Warm && live(rt); i++ {
-			if i > 0 && !e.o.sleep(rctx, time.Second) {
+			if i > 0 && !e.o.Sleep(rctx, time.Second) {
 				break
 			}
 			var a model.StorageAttempt
@@ -195,9 +201,7 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 			s.phase(model.StoragePhaseUp, rt.ID)
 			key := installPrefix(s.Install) + strconv.FormatInt(s.Campaign, 10) + "/" + strconv.Itoa(s.Round) + "-" + rt.ID
 			up, del := e.upload(rctx, rt, key, s.Phases.Up, s.RecentBps[1])
-			if up.Class == string(ClassOK) {
-				res.Up += up.Bytes
-			}
+			res.Up += up.Bytes // what was sent, even when it failed
 			add(rt, up)
 			add(rt, del)
 			if del.Class != string(ClassOK) {

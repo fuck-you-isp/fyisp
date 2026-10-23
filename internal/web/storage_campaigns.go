@@ -201,7 +201,7 @@ func (s *server) serveStoragePart(w http.ResponseWriter, r *http.Request, part s
 		return
 	}
 	if s.d.Campaigns == nil || s.d.StorageData == nil {
-		notFound(w, r)
+		s.noCampaigns(w, r)
 		return
 	}
 	ctx := r.Context()
@@ -313,14 +313,17 @@ type storageRoundJSON struct {
 	SkipReason  *string           `json:"skip_reason"`
 	Skips       map[string]string `json:"skips"`
 	GwLoss      *float64          `json:"gw_loss"`
+	GwRTTms     *float64          `json:"gw_rtt_ms"`
 	EdgeLoss    *float64          `json:"edge_loss"`
+	EdgeRTTms   *float64          `json:"edge_rtt_ms"`
 	BytesDown   int64             `json:"bytes_down"`
 	BytesUp     int64             `json:"bytes_up"`
 }
 
 func storageRound(r model.StorageRound) storageRoundJSON {
 	j := storageRoundJSON{ID: r.ID, Seq: r.Seq, Due: r.Due.UnixMilli(), Start: msPtr(r.Start), End: msPtr(r.End), Outcome: r.Outcome,
-		SkipReason: strOrNil(r.SkipReason), Skips: r.Skips, GwLoss: r.GwLoss, EdgeLoss: r.EdgeLoss, BytesDown: r.BytesDown, BytesUp: r.BytesUp}
+		SkipReason: strOrNil(r.SkipReason), Skips: r.Skips, GwLoss: r.GwLoss, GwRTTms: r.GwRTTms,
+		EdgeLoss: r.EdgeLoss, EdgeRTTms: r.EdgeRTTms, BytesDown: r.BytesDown, BytesUp: r.BytesUp}
 	if j.Skips == nil {
 		j.Skips = map[string]string{}
 	}
@@ -900,7 +903,7 @@ func (h *localHandler) serveCampaignWrite(w http.ResponseWriter, r *http.Request
 	}
 	cs := h.d.Campaigns
 	if cs == nil {
-		notFound(w, r)
+		h.noCampaigns(w, r)
 		return
 	}
 	ctx := r.Context()

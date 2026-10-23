@@ -25,13 +25,12 @@ type memStore struct {
 	camps    map[int64]model.StorageCampaign
 	rounds   []model.StorageRound
 	attempts map[int64][]model.StorageAttempt
-	left     map[string][]string
 	settings map[string]string
 	traces   []model.StorageTrace
 }
 
 func newMemStore() *memStore {
-	return &memStore{camps: map[int64]model.StorageCampaign{}, attempts: map[int64][]model.StorageAttempt{}, left: map[string][]string{}, settings: map[string]string{}}
+	return &memStore{camps: map[int64]model.StorageCampaign{}, attempts: map[int64][]model.StorageAttempt{}, settings: map[string]string{}}
 }
 
 func (m *memStore) SaveStorageCampaign(_ context.Context, c *model.StorageCampaign) error {
@@ -103,20 +102,6 @@ func (m *memStore) StorageRoundsTail(_ context.Context, campaign int64) (int, ti
 		}
 	}
 	return seq, last, nil
-}
-
-func (m *memStore) AddStorageLeftovers(_ context.Context, target string, objects []string, _ time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.left[target] = append(m.left[target], objects...)
-	return nil
-}
-
-func (m *memStore) ClearStorageLeftovers(_ context.Context, target string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.left, target)
-	return nil
 }
 
 func (m *memStore) SaveStorageTrace(_ context.Context, t *model.StorageTrace) error {
@@ -377,6 +362,42 @@ func TestCampaignBusy(t *testing.T) {
 	})
 }
 
+// TestCampaignPausedWhileWaiting: a round paused while it waits behind a
+// speed test is skipped (paused) when its turn comes, and the campaign runs
+// on after Resume, then finishes.
+func TestCampaignPausedWhileWaiting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := newCamLab(t, newMemStore(), t.TempDir())
+		defer l.close()
+		a := l.target("A", "https://a.example", "")
+		if _, _, err := l.q.Enqueue(speedtest.Request{Kind: speedtest.KindSingle}); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		c := l.start(CampaignSpec{Targets: []string{a}, Shape: model.StorageOnDemand, Interval: 4 * time.Minute, Count: 5, Cold: 1}, nil)
+		time.Sleep(time.Minute)
+		if _, err := l.c.Pause(context.Background(), c.ID); err != nil {
+			t.Fatal(err)
+		}
+		close(l.block)
+		time.Sleep(time.Minute)
+		if _, err := l.c.Resume(context.Background(), c.ID); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(20 * time.Minute)
+		synctest.Wait()
+		if got := l.st.roundsOf(c.ID); !slices.Equal(got, []string{"0:skip:paused", "1:ok", "2:ok", "3:ok", "4:ok"}) {
+			t.Errorf("rounds %v", got)
+		}
+		if got := l.campaign(c.ID); got.State != model.StorageDone {
+			t.Errorf("campaign %+v", got)
+		}
+		if len(l.c.State()) != 0 {
+			t.Errorf("still live: %+v", l.c.State())
+		}
+	})
+}
+
 // TestCampaignKeys: keys refused are refused at Start; a second on-demand
 // campaign or schedule is refused; an interval shorter than a round is.
 func TestCampaignKeys(t *testing.T) {
@@ -546,6 +567,11 @@ func TestCampaignRestart(t *testing.T) {
 		}
 		st.mu.Lock()
 		after := st.rounds[len(st.rounds)-2:]
+		for _, r := range st.rounds {
+			if r.Campaign == od.ID && r.Outcome == model.RoundGap && !r.Due.Equal(od.Start.Add(6*time.Minute)) {
+				t.Errorf("the gap starts at %v, not when fyisp stopped", r.Due) // not at the last round (0:05)
+			}
+		}
 		st.mu.Unlock()
 		if after[0].Skips[a] != model.SkipNoKeys || after[0].BytesDown != 0 || after[1].BytesDown != 1<<20 || len(after[1].Skips) != 0 {
 			t.Errorf("the rounds after the restart: %+v", after)

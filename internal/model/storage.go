@@ -141,7 +141,6 @@ type StorageRound struct {
 	EdgeRTTms  *float64
 	BytesDown  int64
 	BytesUp    int64
-	Wire       int64
 }
 
 // Round outcomes, and why a round or a target in it was skipped.

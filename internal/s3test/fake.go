@@ -24,8 +24,8 @@ func (e *Engine) fakeRound(ctx context.Context, s RoundSpec) RoundResult {
 		return a
 	}
 	pause := func() bool {
-		if e.o.sleep != nil {
-			return e.o.sleep(ctx, time.Second)
+		if e.o.Sleep != nil {
+			return e.o.Sleep(ctx, time.Second)
 		}
 		select {
 		case <-ctx.Done():

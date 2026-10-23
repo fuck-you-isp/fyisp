@@ -66,6 +66,7 @@ type SQLite struct {
 	o    Options
 
 	flushMu  sync.Mutex   // one Flush/Prune at a time
+	cells    cellCache    // StorageCells' last campaign
 	commitMu sync.RWMutex // write: commit + memory update; read: memory snapshot + first query step
 
 	mu        sync.Mutex // guards everything below

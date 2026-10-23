@@ -174,7 +174,7 @@ func explain(c model.StorageCampaign, rounds []model.StorageRound, counts []Atte
 	}
 	clean := lossy == 0 && measured == nf
 	if clean {
-		ev = append(ev, "Your line showed no packet loss in the rounds with failures.")
+		ev = append(ev, fmt.Sprintf("Your line lost under %d%% of its packets in every round with failures.", int(LineLoss*100)))
 	}
 	while := " while your line was clean"
 	if !clean {

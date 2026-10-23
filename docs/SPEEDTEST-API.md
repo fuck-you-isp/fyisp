@@ -88,9 +88,9 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "connection": {"type": "wired", "source": "detected"},   // type: "wired" | "wifi" | "unknown", from the newest test that knows
   "next_at": 1760104860000,       // |null: the next scheduled slot; null when off or paused
   "sweep_bytes": 9200000000, "sweep_servers": 47, // "Test every server": its estimated data (each server's recent median, else this line's median rate both ways for 10 s) and the servers it tests
-  "next_row": "uk",               // |null: its row id
+  "next_row": "uk",               // |null: its row id; null when off or paused
   "pause": {"paused": false, "since": null, "until": null},   // the owner's pause of the schedule: since and until (null: until resumed) are unix ms
-  "running": { ...Running },      // |null
+  "running": { ...Running },      // |null; null while a storage-test round runs (the queue shows it)
   "rows": [ ...Row ],             // the current mode's scheduled rows, in plan order (empty when off)
   "per_region": [ ...Row ],       // every default region, plus scheduled or tested opt-in regions, catalog order
   "per_server": [ ...Row ],       // servers that are scheduled or have tests in the span
@@ -366,11 +366,11 @@ In memory, so it is never cached (`Cache-Control: no-store`). It's cheap; poll e
 ```jsonc
 {
   "id": 17,
-  "kind": "sweep",              // "single" | "sweep" | "scheduled"
-  "who": "you",                 // "you" | "scheduled"
+  "kind": "sweep",              // "single" | "sweep" | "scheduled" | "campaign" (a storage-test round)
+  "who": "you",                 // "you" | "scheduled" (a scheduled test, or a recurring storage schedule's round)
   "origin": "owner",            // "owner" | "scheduled"
   "state": "running",           // "waiting" | "running" | "done" | "cancelled" | "dropped"
-  "target": {"id": "us-east", "label": "US East"},   // |null: the nearest servers, a sweep, or a slot
+  "target": {"id": "us-east", "label": "US East"},   // |null: the nearest servers, a sweep, or a slot; a storage round's campaign id and label
   "position": 0,                // waiting: 1 is next; otherwise 0
   "enqueued_at": 1760104700000,
   "started_at": 1760104790000,  // |null

@@ -295,9 +295,10 @@ func (s *Service) Delete(id string) error {
 }
 
 // Check tests a target once, signed with creds (nil: the keys a campaign
-// holds for it, else unsigned), and keeps the result as its last check. One check runs at a time (ErrBusy). A
-// check whose ctx ends first returns ctx's error and keeps nothing; a
-// session token for an http:// endpoint is a FieldError of "keys".
+// holds for it, else unsigned), and keeps the result as its last check.
+// One check runs at a time (ErrBusy). A check whose ctx ends first returns
+// ctx's error and keeps nothing; a session token for an http:// endpoint
+// is a FieldError of "keys".
 func (s *Service) Check(ctx context.Context, id string, creds *s3test.Creds) (Check, error) {
 	if !s.checking.TryLock() {
 		return Check{}, ErrBusy

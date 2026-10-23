@@ -50,7 +50,8 @@ func newStorageLab(t *testing.T, o LocalOptions) *storageLab {
 	t.Cleanup(l.srv.Close)
 	_, l.port, _ = net.SplitHostPort(l.srv.Addr())
 	_, d := fixture(t, time.Now())
-	e := s3test.New(s3test.Options{Lookup: storageLookup, IsSelf: func(netip.Addr) bool { return false }})
+	e := s3test.New(s3test.Options{Lookup: storageLookup, IsSelf: func(netip.Addr) bool { return false },
+		Sleep: func(ctx context.Context, _ time.Duration) bool { return ctx.Err() == nil }}) // no second between requests
 	d.Storage = storage.Open(storage.Options{Dir: l.dir, Engine: e, Lookup: storageLookup})
 	// Campaigns over a database of their own and a queue of their own.
 	db, err := store.Open(t.TempDir(), store.Options{})
@@ -286,6 +287,14 @@ func TestStorageFileBroken(t *testing.T) {
 	}
 	if w := doBody(h, "POST", "/api/storage/target/add", `{"name":"a","endpoint":"https://s3.test"}`, goodHdr); w.Code != 503 {
 		t.Errorf("add = %d %s", w.Code, w.Body)
+	}
+	for _, p := range []string{"/api/storage?part=live", "/api/storage?part=campaigns", "/api/storage/report?campaign=1&format=md"} {
+		if w := do(h, "GET", p, goodHdr); w.Code != 503 || !strings.Contains(w.Body.String(), `"code":"storage_file"`) {
+			t.Errorf("GET %s = %d %s", p, w.Code, w.Body)
+		}
+	}
+	if w := doBody(h, "POST", "/api/storage/campaign/stop?id=1", `{}`, goodHdr); w.Code != 503 {
+		t.Errorf("stop = %d %s", w.Code, w.Body)
 	}
 	if b, _ := os.ReadFile(path); string(b) != "{broken" {
 		t.Errorf("file now %q", b)

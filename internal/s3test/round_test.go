@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,7 +67,7 @@ func newLab(t *testing.T, tlsOn bool) *lab {
 			defer l.mu.Unlock()
 			return time.Now().Add(l.now)
 		},
-		Masker: l.mask, IsSelf: func(netip.Addr) bool { return false }, sleep: func(context.Context, time.Duration) bool { return true },
+		Masker: l.mask, IsSelf: func(netip.Addr) bool { return false }, Sleep: func(context.Context, time.Duration) bool { return true },
 		lim: limits{dns: time.Second, connect: time.Second, handshake: time.Second, write: time.Second,
 			ttfb: 300 * time.Millisecond, ttfbUpload: time.Second, stall: 300 * time.Millisecond},
 	})
@@ -123,7 +124,7 @@ func TestRoundKeyed(t *testing.T) {
 			if got := classes(r.Attempts); strings.Join(got, " ") != strings.Join(want, " ") {
 				t.Fatalf("attempts %v", got)
 			}
-			if r.Down != 1<<20 || r.Up != 512<<10 || len(r.Skips) != 0 || len(r.Leftovers) != 0 || r.Cancelled {
+			if r.Down != 1<<20 || r.Up != 1<<10+1<<20+512<<10 || len(r.Skips) != 0 || len(r.Leftovers) != 0 || r.Cancelled {
 				t.Errorf("result %+v", r)
 			}
 			if objs := l.srv.Objects("bkt"); len(objs) != 2 || objs["fyisp-test/inst/seed/1024"] != 1024 || objs["fyisp-test/inst/seed/1048576"] != 1<<20 {
@@ -541,5 +542,49 @@ func TestCheckFake(t *testing.T) {
 	}
 	if want := []string{"t_1 cold head false", "t_1 cold list true"}; fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("asked %q, want %q", got, want)
+	}
+}
+
+// TestEndlessHeaders: a server that sends headers without end fails the
+// attempt once headMax is read, without filling memory or waiting out the
+// check's bound.
+func TestEndlessHeaders(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	var sent atomic.Int64
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		go io.Copy(io.Discard, c)
+		line := []byte("X-Pad: " + strings.Repeat("a", 1000) + "\r\n")
+		if _, err := c.Write([]byte("HTTP/1.1 200 OK\r\n")); err != nil {
+			return
+		}
+		for sent.Load() < 64<<20 {
+			n, err := c.Write(line)
+			sent.Add(int64(n))
+			if err != nil {
+				return
+			}
+		}
+	}()
+	l := newLab(t, false)
+	l.rt.Creds = nil
+	l.e.o.Dial = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, network, ln.Addr().String())
+	}
+	c := l.e.Check(context.Background(), l.rt)
+	if c.Attempt.Class != string(ClassResetBeforeResponse) {
+		t.Errorf("class %q", c.Attempt.Class)
+	}
+	if n := sent.Load(); n >= 64<<20 {
+		t.Errorf("read the whole %d bytes", n)
 	}
 }

@@ -521,7 +521,7 @@ func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
 
 func (s *server) speedRunning(names speedNames) *speedRunning {
 	e := s.d.Speed.Queue().State().Running
-	if e == nil {
+	if e == nil || e.Kind == speedtest.KindCampaign { // a storage round: the queue shows it
 		return nil
 	}
 	r := &speedRunning{Entry: e.ID, Kind: string(e.Kind), Started: e.Started.UnixMilli(),

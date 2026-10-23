@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -102,8 +103,17 @@ func attemptRecord(campaign int64, names map[string]string, a store.StorageAttem
 	if a.HTTPStatus != 0 {
 		status = strconv.Itoa(a.HTTPStatus)
 	}
-	return []string{strconv.FormatInt(campaign, 10), strconv.FormatInt(a.Round, 10), a.Target, names[a.Target], a.Phase, a.Op, strconv.Itoa(a.N),
-		a.At.UTC().Format(TimeFormat), a.Class, s3test.Class(a.Class).Group(), status, a.S3Code, a.RequestID, a.HostID,
+	return []string{strconv.FormatInt(campaign, 10), strconv.FormatInt(a.Round, 10), a.Target, textCell(names[a.Target]), a.Phase, a.Op, strconv.Itoa(a.N),
+		a.At.UTC().Format(TimeFormat), a.Class, s3test.Class(a.Class).Group(), status, a.S3Code, textCell(a.RequestID), textCell(a.HostID),
 		f(a.DNSms), f(a.Connectms), f(a.TLSms), f(a.TTFBms), f(a.Totalms), strconv.FormatInt(a.Bytes, 10), f(a.GoodputBps), f(a.Stallms),
 		a.EdgePrefix, a.TLSVersion, f(a.TCPRTTms), i(a.Retrans), i(a.MSS), i(a.SkewS)}
+}
+
+// textCell keeps text a spreadsheet would read as a formula (a provider's
+// request ID, a target's name) as text: a leading ' before = + - @.
+func textCell(v string) string {
+	if v != "" && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
+		return "'" + v
+	}
+	return v
 }

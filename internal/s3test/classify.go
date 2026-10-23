@@ -116,6 +116,7 @@ var (
 	errTotal      = errors.New("transfer took too long")
 	errConnClosed = errors.New("connection closed")
 	errCancelled  = errors.New("cancelled")
+	errHeadLarge  = errors.New("response head too large")
 )
 
 // classifyErr maps a failed attempt's error, by the step it failed at.

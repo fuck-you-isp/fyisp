@@ -24,8 +24,8 @@ const storageReportFailures = 50
 // --storage's columns). Target names only; hosts=1 adds each target's host
 // and bucket to the Markdown. Never this machine's or its public address.
 func (s *server) serveStorageReport(w http.ResponseWriter, r *http.Request) {
-	if s.d.Storage == nil || s.d.StorageData == nil {
-		notFound(w, r)
+	if s.d.Storage == nil || s.d.StorageData == nil || s.d.Campaigns == nil {
+		s.noCampaigns(w, r)
 		return
 	}
 	q := r.URL.Query()

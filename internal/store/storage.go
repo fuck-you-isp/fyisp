@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/model"
@@ -145,9 +147,9 @@ func (s *SQLite) SaveStorageRound(ctx context.Context, r *model.StorageRound, at
 		wait = r.QueueWait.Milliseconds()
 	}
 	res, err := tx.ExecContext(ctx, `INSERT INTO storage_rounds(campaign, seq, due_ms, start_ms, end_ms, queue_wait_ms, outcome, skip_reason, skips,
-		gw_loss, gw_rtt_ms, edge_loss, edge_rtt_ms, bytes_down, bytes_up, wire_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		gw_loss, gw_rtt_ms, edge_loss, edge_rtt_ms, bytes_down, bytes_up) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.Campaign, seq, r.Due.UnixMilli(), nullMs(r.Start), nullMs(r.End), wait, r.Outcome, nullStr(r.SkipReason), skips,
-		r.GwLoss, r.GwRTTms, r.EdgeLoss, r.EdgeRTTms, r.BytesDown, r.BytesUp, r.Wire)
+		r.GwLoss, r.GwRTTms, r.EdgeLoss, r.EdgeRTTms, r.BytesDown, r.BytesUp)
 	if err != nil {
 		return err
 	}
@@ -174,7 +176,7 @@ func (s *SQLite) SaveStorageRound(ctx context.Context, r *model.StorageRound, at
 			}
 		}
 	}
-	if r.Seq != nil && r.Outcome != model.RoundSkipped {
+	if r.Seq != nil && !r.Start.IsZero() { // a round that ran (not skipped, or cancelled in the queue)
 		if _, err := tx.ExecContext(ctx, `UPDATE storage_campaigns SET rounds_done = rounds_done + 1, bytes_down = bytes_down + ?,
 			bytes_up = bytes_up + ? WHERE id = ?`, r.BytesDown, r.BytesUp, r.Campaign); err != nil {
 			return err
@@ -184,7 +186,7 @@ func (s *SQLite) SaveStorageRound(ctx context.Context, r *model.StorageRound, at
 }
 
 const roundCols = `id, campaign, seq, due_ms, start_ms, end_ms, queue_wait_ms, outcome, coalesce(skip_reason, ''), coalesce(skips, ''),
-	gw_loss, gw_rtt_ms, edge_loss, edge_rtt_ms, bytes_down, bytes_up, wire_bytes`
+	gw_loss, gw_rtt_ms, edge_loss, edge_rtt_ms, bytes_down, bytes_up`
 
 func scanRound(sc interface{ Scan(...any) error }) (model.StorageRound, error) {
 	var r model.StorageRound
@@ -193,7 +195,7 @@ func scanRound(sc interface{ Scan(...any) error }) (model.StorageRound, error) {
 	var skips string
 	var gl, gr, el, er sql.NullFloat64
 	if err := sc.Scan(&r.ID, &r.Campaign, &seq, &due, &start, &end, &wait, &r.Outcome, &r.SkipReason, &skips,
-		&gl, &gr, &el, &er, &r.BytesDown, &r.BytesUp, &r.Wire); err != nil {
+		&gl, &gr, &el, &er, &r.BytesDown, &r.BytesUp); err != nil {
 		return r, err
 	}
 	if seq.Valid {
@@ -356,43 +358,6 @@ func (s *SQLite) StorageAttempts(ctx context.Context, f StorageAttemptFilter) ([
 	return out, total, rows.Err()
 }
 
-// AddStorageLeftovers records objects (keys under the install's prefix)
-// that a round put and could not delete.
-func (s *SQLite) AddStorageLeftovers(ctx context.Context, target string, objects []string, at time.Time) error {
-	for _, o := range objects {
-		if _, err := s.db.w.ExecContext(ctx, `INSERT OR REPLACE INTO storage_leftovers(target, object, at_ms) VALUES (?, ?, ?)`,
-			target, o, at.UnixMilli()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// StorageLeftovers lists a target's leftover objects.
-func (s *SQLite) StorageLeftovers(ctx context.Context, target string) ([]string, error) {
-	rows, err := s.db.r.QueryContext(ctx, `SELECT object FROM storage_leftovers WHERE target = ? ORDER BY object`, target)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var o string
-		if err := rows.Scan(&o); err != nil {
-			return nil, err
-		}
-		out = append(out, o)
-	}
-	return out, rows.Err()
-}
-
-// ClearStorageLeftovers forgets a target's leftovers: all of them (a sweep
-// found the prefix empty), or none.
-func (s *SQLite) ClearStorageLeftovers(ctx context.Context, target string) error {
-	_, err := s.db.w.ExecContext(ctx, `DELETE FROM storage_leftovers WHERE target = ?`, target)
-	return err
-}
-
 // s3MaxTransfer bounds how long before from a transfer that reaches into
 // [from, to] can have started (s3test's longest).
 const s3MaxTransfer = 10 * time.Minute
@@ -422,15 +387,13 @@ func (s *SQLite) storageWindows(ctx context.Context, from, to time.Time) ([]mode
 }
 
 // pruneStorage deletes the storage tests' rows before cut (unix ms): rounds
-// due before it with their attempts, traces and connection checks, and the
-// campaigns that ended before it with no round left. Leftover objects are
-// kept until they are deleted from the bucket.
+// due before it with their attempts, traces, and the campaigns that ended
+// before it with no round left.
 func pruneStorage(ctx context.Context, tx *sql.Tx, cut int64) error {
 	for _, q := range []string{
 		`DELETE FROM storage_attempts WHERE round IN (SELECT id FROM storage_rounds WHERE due_ms < ?1) OR at_ms < ?1`,
 		`DELETE FROM storage_rounds WHERE due_ms < ?1`,
 		`DELETE FROM storage_traces WHERE at_ms < ?1`,
-		`DELETE FROM storage_connects WHERE minute_ms < ?1`,
 		`DELETE FROM storage_campaigns WHERE state IN ('done', 'stopped') AND end_ms IS NOT NULL AND end_ms < ?1
 			AND NOT EXISTS (SELECT 1 FROM storage_rounds WHERE campaign = storage_campaigns.id)`,
 	} {
@@ -462,28 +425,60 @@ type StorageCellRow struct {
 	HTTPStatus, S3Code string // the first failure's (status as text)
 }
 
+// cellCache keeps the last campaign's StorageCells rows: a round's are
+// written once with it, so a later call reads only the newer rounds (a
+// schedule kept for 90 days has millions of attempts).
+type cellCache struct {
+	mu       sync.Mutex
+	campaign int64
+	last     int64 // the newest round read
+	rows     []StorageCellRow
+}
+
 // StorageCells groups a campaign's attempts by round, target, phase and
 // class, oldest round first.
 func (s *SQLite) StorageCells(ctx context.Context, campaign int64) ([]StorageCellRow, error) {
+	c := &s.cells
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.campaign != campaign {
+		c.campaign, c.last, c.rows = campaign, 0, nil
+	}
+	var first sql.NullInt64 // the oldest round kept: pruning drops older ones
+	if err := s.db.r.QueryRowContext(ctx, `SELECT min(id) FROM storage_rounds WHERE campaign = ?`, campaign).Scan(&first); err != nil {
+		return nil, err
+	}
+	if i := slices.IndexFunc(c.rows, func(r StorageCellRow) bool { return r.Round >= first.Int64 }); i > 0 {
+		c.rows = slices.Delete(c.rows, 0, i)
+	} else if i < 0 {
+		c.rows = c.rows[:0]
+	}
 	rows, err := s.db.r.QueryContext(ctx, `SELECT a.round, a.target, a.phase, a.class, coalesce(a.edge_prefix, ''), count(*), max(coalesce(a.stall_ms, 0)),
 		avg(a.goodput_bps), coalesce(min(CAST(a.http_status AS TEXT)), ''), coalesce(min(a.s3_code), '')
-		FROM storage_attempts a JOIN storage_rounds r ON r.id = a.round WHERE r.campaign = ?
-		GROUP BY a.round, a.target, a.phase, a.class, a.edge_prefix ORDER BY a.round, a.target, a.phase, a.class`, campaign)
+		FROM storage_attempts a JOIN storage_rounds r ON r.id = a.round WHERE r.campaign = ? AND r.id > ?
+		GROUP BY a.round, a.target, a.phase, a.class, a.edge_prefix ORDER BY a.round, a.target, a.phase, a.class`, campaign, c.last)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []StorageCellRow
+	var add []StorageCellRow
 	for rows.Next() {
-		var c StorageCellRow
+		var r StorageCellRow
 		var g sql.NullFloat64
-		if err := rows.Scan(&c.Round, &c.Target, &c.Phase, &c.Class, &c.EdgePrefix, &c.N, &c.MaxStallMs, &g, &c.HTTPStatus, &c.S3Code); err != nil {
+		if err := rows.Scan(&r.Round, &r.Target, &r.Phase, &r.Class, &r.EdgePrefix, &r.N, &r.MaxStallMs, &g, &r.HTTPStatus, &r.S3Code); err != nil {
 			return nil, err
 		}
-		c.GoodputBps = ptrF(g)
-		out = append(out, c)
+		r.GoodputBps = ptrF(g)
+		add = append(add, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	c.rows = append(c.rows, add...)
+	if len(c.rows) > 0 {
+		c.last = c.rows[len(c.rows)-1].Round
+	}
+	return slices.Clone(c.rows), nil
 }
 
 // SaveStorageTrace stores a traceroute snapshot (t.ID is set).

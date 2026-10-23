@@ -81,14 +81,13 @@ func countRows(t *testing.T, path, table string) int {
 var wantSchema = []string{
 	"index incidents_start", "index route_changes_at", "index speedtests_start",
 	"index storage_attempts_at", "index storage_attempts_fail", "index storage_attempts_round",
-	"index storage_campaigns_end", "index storage_connects_at", "index storage_rounds_due", "index storage_traces_at", "index storage_traces_campaign",
+	"index storage_campaigns_end", "index storage_rounds_due", "index storage_traces_at", "index storage_traces_campaign",
 	"table hop_info", "table incidents", "table meta", "table route_changes", "table routes",
 	"table samples", "table series", "table speedtests",
-	"table storage_attempts", "table storage_campaigns", "table storage_connects", "table storage_leftovers",
-	"table storage_rounds", "table storage_traces", "table summary_1h",
+	"table storage_attempts", "table storage_campaigns", "table storage_rounds", "table storage_traces", "table summary_1h",
 }
 
-// TestFreshSchema: a new file gets schema v8 in one go: exactly the
+// TestFreshSchema: a new file gets schema v9 in one go: exactly the
 // objects in wantSchema, no free pages, the creation stamp.
 func TestFreshSchema(t *testing.T) {
 	dir := t.TempDir()

@@ -88,7 +88,14 @@ func (s speedOf) On() bool {
 func (s speedOf) Tests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
 	return s.SpeedTests(ctx, from, to)
 }
-func (s speedOf) Running() *speedtest.Entry { return s.Queue().State().Running }
+
+// Running is the speed test running: a storage round isn't one.
+func (s speedOf) Running() *speedtest.Entry {
+	if e := s.Queue().State().Running; e != nil && e.Kind != speedtest.KindCampaign {
+		return e
+	}
+	return nil
+}
 
 // homeCache keeps what part=now and part=tile may reuse.
 type homeCache struct {

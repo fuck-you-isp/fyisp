@@ -121,7 +121,7 @@ Every series (`internal/metrics`):
 | `fyisp_speed_loaded_rtt_seconds` | `region`, `server`, `layer` (`edge`, `gateway`), `load` (`idle`, `download`, `upload`) | gauge: the median RTT to your provider's first router or your gateway, before the test and during each direction; a lost probe counts as 1 s |
 | `fyisp_speed_tests_total` | `region`, `server`, `outcome` (`ok`, `busy`, `unreachable`, `failed`, `cancelled`) | counter: tests by outcome |
 | `fyisp_storage_rounds_total` | `outcome` (`ok`, `slow`, `failed`, `config`, `cancelled`, `skipped`, `gap`) | counter: storage test rounds since start |
-| `fyisp_storage_attempts_total` | `target` (its name: a rename starts a new series, two targets of one name share one), `phase` (`seed`, `cold`, `warm`, `down`, `up`), `class` | counter: storage test attempts since start ([STORAGE-API.md](STORAGE-API.md#check) lists the classes) |
+| `fyisp_storage_attempts_total` | `target` (its name as the campaign started: a renamed target gets a new series from its next campaign; two targets of one name share one), `phase` (`seed`, `cold`, `warm`, `down`, `up`), `class` | counter: storage test attempts since start ([STORAGE-API.md](STORAGE-API.md#check) lists the classes) |
 | `fyisp_storage_bytes_total` | `direction` (`down`, `up`) | counter: payload bytes storage rounds moved since start |
 | `fyisp_storage_goodput_bits_per_second` | `target`, `direction` | gauge: the latest storage transfer that worked |
 
@@ -149,10 +149,10 @@ id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts
 
 `start` and `end` are in the samples' time format; `outcome` is `ok`, `busy` (the server ran another test: not a slow result), `unreachable`, `failed` or `cancelled`. Speeds are in bits per second, durations in seconds, latencies in milliseconds (lost probes count as 1 s), losses as a fraction, and a column is empty when it wasn't measured. The `edge_*` and `gw_*` columns are [latency under load](SPEED-TESTS.md) to your provider's first router and your own router. The meaning of each field is in [SPEEDTEST-API.md](SPEEDTEST-API.md#test).
 
-**Storage tests** (`--storage`), one row per attempt, oldest first (the same columns as the Storage page's *Download CSV*):
+**Storage tests** (`--storage`), one row per attempt, campaign by campaign (oldest campaign first) and oldest first within each (the same columns as the Storage page's *Download CSV*):
 
 ```
 campaign,round,target,target_name,phase,op,n,at,class,group,http_status,s3_code,request_id,host_id,dns_ms,connect_ms,tls_ms,ttfb_ms,total_ms,bytes,goodput_bps,stall_ms,edge_prefix,tls_version,tcp_rtt_ms,retrans,mss,skew_s
 ```
 
-`target` is the target's id and `target_name` its name as the campaign started; the export never opens the targets file, so it has no hosts, buckets or keys. `edge_prefix` is the provider address's /24. The fields are the Attempt's in [STORAGE-API.md](STORAGE-API.md#campaign-reads).
+`target` is the target's id and `target_name` its name as the campaign started; the export never opens the targets file, so it has no hosts, buckets or keys. `edge_prefix` is the provider address's /24. A `target_name`, `request_id` or `host_id` that starts with `=`, `+`, `-` or `@` gets a leading `'`, so a spreadsheet reads it as text. The fields are the Attempt's in [STORAGE-API.md](STORAGE-API.md#campaign-reads).

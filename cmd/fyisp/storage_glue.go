@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
@@ -25,7 +26,7 @@ import (
 // its timings may be high.
 // A round's line context comes from tap (outside fyisp's own transfers),
 // and a failure's traceroute from tr.
-func newStorage(dir string, q *speedtest.Queue, st storage.Store, wins *speedtest.Windows, tap *speedtest.LoadTap, tr trace.Tracer,
+func newStorage(dir string, q *speedtest.Queue, st storageDB, wins *speedtest.Windows, tap *speedtest.LoadTap, tr trace.Tracer,
 	mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*storage.Service, *storage.Campaigns) {
 	e := s3test.New(s3test.Options{UserAgent: "fyisp/" + version, Masker: wins, IsSelf: notEdge(path)})
 	s := storage.Open(storage.Options{Dir: dir, Engine: e, Busy: func() bool { return q.State().Running != nil }})
@@ -45,7 +46,47 @@ func newStorage(dir string, q *speedtest.Queue, st storage.Store, wins *speedtes
 			}
 			return enough(tap.Stats(speedtest.LayerGateway, from, to, wins)), enough(tap.Stats(speedtest.LayerEdge, from, to, wins))
 		},
-		Trace: storageTrace(tr, path)})
+		Trace:  storageTrace(tr, path),
+		Recent: recentSpeeds(st)})
+}
+
+// storageDB is what the storage tests read and write in the database
+// (*store.SQLite): the campaigns, and the speed tests' recent results.
+type storageDB interface {
+	storage.Store
+	SpeedTests(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error)
+}
+
+// recentSpeeds is the scheduled speed tests' median download and upload
+// over the last week (0: none), read at most every 10 minutes.
+func recentSpeeds(sp storageDB) func() [2]float64 {
+	var mu sync.Mutex
+	var at time.Time
+	var last [2]float64
+	return func() [2]float64 {
+		mu.Lock()
+		defer mu.Unlock()
+		now := time.Now()
+		if !at.IsZero() && now.Sub(at) < 10*time.Minute {
+			return last
+		}
+		at = now
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ts, err := sp.SpeedTests(ctx, now.Add(-7*24*time.Hour), now)
+		if err != nil {
+			return last
+		}
+		s := speedtest.Summarize(ts, nil)
+		last = [2]float64{}
+		if s.DownMedian != nil {
+			last[0] = *s.DownMedian
+		}
+		if s.UpMedian != nil {
+			last[1] = *s.UpMedian
+		}
+		return last
+	}
 }
 
 // storageTraceRounds is a storage traceroute's length (2.5 s a round).
@@ -91,7 +132,7 @@ func storageTrace(tr trace.Tracer, path func() netinfo.Path) func(ctx context.Co
 		}
 		route, ok := tr.Route(target, mode)
 		if !ok || len(route.Hops) == 0 {
-			return nil, 0, false
+			return nil, 0, true // probes went out, nothing answered
 		}
 		isp := uint32(0)
 		if p := path(); p.Edge.IsValid() {

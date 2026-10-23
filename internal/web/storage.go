@@ -151,6 +151,18 @@ func (s *server) storageRev() int64 {
 	return rev
 }
 
+// noCampaigns answers a campaign route when there are no campaigns: the
+// targets file's error (503 storage_file) when it can't be used, else 404.
+func (s *server) noCampaigns(w http.ResponseWriter, r *http.Request) {
+	if s.d.Storage != nil {
+		if _, err := s.d.Storage.Targets(); err != nil {
+			storageErr(w, r, err)
+			return
+		}
+	}
+	notFound(w, r)
+}
+
 // storageErr answers a storage error with its status and code.
 func storageErr(w http.ResponseWriter, r *http.Request, err error) {
 	var fe *storage.FieldError

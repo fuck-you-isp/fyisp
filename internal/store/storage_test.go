@@ -9,8 +9,8 @@ import (
 )
 
 // TestPruneStorage: rounds due before the cut go with their attempts (even
-// one after the cut), as do old traces and connection checks; a campaign
-// goes once it ended before the cut and has no round left. Leftovers stay.
+// one after the cut), as do old traces; a campaign goes once it ended
+// before the cut and has no round left.
 func TestPruneStorage(t *testing.T) {
 	now := t0.Add(100 * 24 * time.Hour)
 	s := openT(t, t.TempDir(), Options{Now: func() time.Time { return now }})
@@ -37,8 +37,6 @@ func TestPruneStorage(t *testing.T) {
 		{`INSERT INTO storage_attempts(round, target, phase, op, n, at_ms, class) VALUES (10, 't', 'cold', 'head', 0, ?1, 'ok'),
 			(10, 't', 'up', 'put', 0, ?2, 'ok'), (11, 't', 'cold', 'head', 0, ?2, 'ok')`, []any{old, recent}},
 		{`INSERT INTO storage_traces(campaign, target, at_ms, trigger, hops) VALUES (1, 't', ?1, 'start', '[]'), (2, 't', ?2, 'start', '[]')`, []any{old, recent}},
-		{`INSERT INTO storage_connects(campaign, target, minute_ms, n, failed) VALUES (1, 't', ?1, 1, 0), (2, 't', ?2, 1, 0)`, []any{old, recent}},
-		{`INSERT INTO storage_leftovers(target, object, at_ms) VALUES ('t', 'up/1', ?)`, []any{old}},
 	} {
 		if _, err := s.db.w.Exec(q.sql, q.args...); err != nil {
 			t.Fatal(err)
@@ -55,8 +53,6 @@ func TestPruneStorage(t *testing.T) {
 		{`SELECT group_concat(id) FROM (SELECT id FROM storage_rounds ORDER BY id)`, "11,13"},
 		{`SELECT group_concat(round) FROM storage_attempts`, "11"},
 		{`SELECT group_concat(campaign) FROM storage_traces`, "2"},
-		{`SELECT group_concat(campaign) FROM storage_connects`, "2"},
-		{`SELECT group_concat(object) FROM storage_leftovers`, "up/1"},
 	} {
 		var got string
 		if err := s.db.r.QueryRow(c.q).Scan(&got); err != nil {
@@ -70,7 +66,7 @@ func TestPruneStorage(t *testing.T) {
 
 // TestStorageRoundTrip: a campaign, a round with its attempts, a skip and
 // a gap read back as saved; the round counts toward its campaign; attempts
-// page and filter; the transfers are speed-test windows; leftovers.
+// page and filter; the transfers are speed-test windows.
 func TestStorageRoundTrip(t *testing.T) {
 	s := openT(t, t.TempDir(), Options{Now: func() time.Time { return t0 }})
 	defer s.Close()
@@ -84,7 +80,7 @@ func TestStorageRoundTrip(t *testing.T) {
 	n := func(v int) *int { return &v }
 	seq := 0
 	r := &model.StorageRound{Campaign: c.ID, Seq: &seq, Due: t0, Start: t0.Add(time.Second), End: t0.Add(40 * time.Second), QueueWait: time.Second,
-		Outcome: model.RoundFailed, Skips: map[string]string{"t_00000002": model.SkipNoKeys}, GwLoss: f(0.01), BytesDown: 1 << 20, BytesUp: 1 << 19, Wire: 2 << 20}
+		Outcome: model.RoundFailed, Skips: map[string]string{"t_00000002": model.SkipNoKeys}, GwLoss: f(0.01), BytesDown: 1 << 20, BytesUp: 1 << 19}
 	at := t0.Add(2 * time.Second)
 	atts := []model.StorageAttempt{
 		{Target: "t_00000001", Phase: model.StoragePhaseCold, Op: "head", At: at, Class: "ok", HTTPStatus: 200, DNSms: f(3), Totalms: f(40), EdgePrefix: "52.216.1.0/24"},
@@ -136,18 +132,6 @@ func TestStorageRoundTrip(t *testing.T) {
 	}
 	if ts, _ := s.SpeedTests(ctx, t0, t0.Add(time.Hour)); len(ts) != 0 {
 		t.Errorf("rounds aren't speed tests: %+v", ts)
-	}
-	if err := s.AddStorageLeftovers(ctx, "t_00000001", []string{"fyisp-test/i/up/1", "fyisp-test/i/up/2"}, t0); err != nil {
-		t.Fatal(err)
-	}
-	if l, _ := s.StorageLeftovers(ctx, "t_00000001"); len(l) != 2 {
-		t.Errorf("leftovers %v", l)
-	}
-	if err := s.ClearStorageLeftovers(ctx, "t_00000001"); err != nil {
-		t.Fatal(err)
-	}
-	if l, _ := s.StorageLeftovers(ctx, "t_00000001"); len(l) != 0 {
-		t.Errorf("after clear %v", l)
 	}
 	cs, err := s.StorageCampaigns(ctx, 0, 10, true)
 	if err != nil || len(cs) != 1 {
