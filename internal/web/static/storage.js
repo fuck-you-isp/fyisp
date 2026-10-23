@@ -14,6 +14,7 @@ import { CampaignForm, runOnce, enterKeys, campaignError, size } from './storage
 import { StorageGrid } from './storagegrid.js';
 import { FailureLog, historyTable, day } from './storagelog.js';
 import { askPause, activePause, pauseWords } from './speedpause.js';
+import { findingSection, cardsSection, tracesSection, reportSection } from './storageevidence.js';
 
 /** @typedef {{sel:()=>number, setSel:(id:number)=>void, speedOn:()=>boolean}} StorageHost */
 
@@ -343,7 +344,17 @@ export class Storage {
     this.resEl.replaceChildren(
       h('div', { class: 'st-res-head' }, h('h2', { id: 'st-res-h', tabindex: '-1', text: 'Results' }), h('p', { class: 'muted', text: title }),
         latest && latest !== this.shown ? h('button', { type: 'button', class: 'btn sm', text: 'Show the latest campaign', onclick: () => this.showCampaign(0) }) : null),
-      this.grid.el, this.grid.detail, this.log.el);
+      c.finding ? findingSection(c.finding) : '',
+      c.cards ? cardsSection(c.cards, (id) => this.name(id), k.targets) : '',
+      this.grid.el, this.grid.detail, this.log.el,
+      tracesSection(c.traces || [], (id) => this.name(id)) || '',
+      this.report(k.id));
+  }
+
+  /** The report panel of campaign id, kept across redraws (open, ticked). @param {number} id */
+  report(id) {
+    if (this.reportFor !== id) { this.reportFor = id; this.reportEl = reportSection(id, this.say); }
+    return /** @type {HTMLElement} */ (this.reportEl);
   }
 
   /** Shows a past campaign (0: the latest). @param {number} id */

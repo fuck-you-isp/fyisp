@@ -124,7 +124,7 @@ export class StorageGrid {
     h('thead', {}, head), h('tbody', {}, ...rows));
     this.wrap.replaceChildren(table);
     this.el.replaceChildren(...[
-      h('div', { class: 'sp-sec-head' }, h('h2', { id: 'st-tl-h', text: 'Rounds' }),
+      h('div', { class: 'sp-sec-head' }, h('h3', { id: 'st-tl-h', text: 'Rounds' }),
         h('button', { type: 'button', class: 'btn sm st-astable', 'aria-pressed': String(this.asTable), text: 'Show as table', onclick: () => { this.asTable = !this.asTable; this.render(); } })),
       h('p', { class: 'muted small', id: 'st-tl-what', text: 'One column per round, one row per target. Each cell shows the worst thing in that round. Arrow keys move; Enter shows its attempts.' }),
       d.rounds.length ? null : h('p', { class: 'muted', text: 'No rounds yet.' }),
@@ -214,7 +214,7 @@ export class StorageGrid {
       h('button', { type: 'button', class: 'btn sm', text: 'Previous round', disabled: i === 0, onclick: () => this.step(-1) }),
       h('button', { type: 'button', class: 'btn sm', text: 'Next round', disabled: i >= d.rounds.length - 1, onclick: () => this.step(1) }),
       h('button', { type: 'button', class: 'btn sm ghost', text: 'Close', onclick: () => { this.open = null; this.shownDetail = ''; this.detail.hidden = true; this.move(this.cur[0], this.cur[1]); } }));
-    const head = h('h2', { id: 'st-detail-h', tabindex: '-1', text: title });
+    const head = h('h3', { id: 'st-detail-h', tabindex: '-1', text: title });
     this.detail.hidden = false;
     /** @type {Node[]} */
     let body;

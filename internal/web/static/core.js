@@ -384,3 +384,24 @@ export function toLocalInput(/** @type {number} */ ms) {
 
 export function fromLocalInput(/** @type {string} */ s) { const t = s ? new Date(s).getTime() : NaN; return isFinite(t) ? t : NaN; }
 
+// ---------- copy ----------
+
+/**
+ * Copies text to the clipboard; without clipboard access, selects the
+ * read-only textarea that holds it so the reader can copy it.
+ * @param {string} text @param {HTMLTextAreaElement} ta @param {HTMLElement} say
+ */
+export async function copyText(text, ta, say) {
+  try {
+    if (!navigator.clipboard) throw new Error('no clipboard');
+    await navigator.clipboard.writeText(text);
+    ta.hidden = true; // a fallback shown before is stale now
+    say.textContent = 'Copied.';
+  } catch {
+    ta.hidden = false;
+    ta.value = text;
+    ta.focus();
+    ta.select();
+    say.textContent = 'Selected: press Ctrl+C (⌘C on a Mac) to copy.';
+  }
+}

@@ -1274,7 +1274,8 @@ body.home-on #viewnav { display: none !important; }
 .st-notices { display: flex; flex-direction: column; gap: 8px; }
 .st-notices:empty { display: none; }
 .st-notices .notice .btn { margin-left: 6px; }
-.st-panel h2, .st-res-head h2, .st-grid h2, .st-detail h2, .st-log h2, .st-hist h2 { margin: 0 0 6px; font-size: 16px; }
+.st-panel h2, .st-res-head h2, .st-grid h3, .st-detail h3, .st-log h3, .st-hist h2, .st-found h3, .st-traces h3 { margin: 0 0 6px; font-size: 16px; }
+.st-detail h3:focus { outline: none; }
 .st-panel h2:focus, .st-res-head h2:focus, .st-detail h2:focus { outline: none; }
 .st-res { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .st-res:empty { display: none; }
@@ -1328,3 +1329,12 @@ body.home-on #viewnav { display: none !important; }
   .st-tl .st-tl-name { min-width: 84px; max-width: 84px; }
   .sp-acts .btn { min-height: 40px; }
 }
+.st-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.st-card p { margin: 3px 0; font-size: 13px; }
+.st-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.st-card-head h4 { margin: 0 0 4px; font-size: 15px; }
+.st-trace-list { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.st-trace-list .pill { margin-left: 6px; }
+.st-hops { margin: 4px 0 0; padding-left: 22px; color: var(--ink-2); font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.st-rep-text { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; margin-top: 8px; }
+.st-report .sp-acts { margin-top: 6px; }

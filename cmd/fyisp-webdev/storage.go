@@ -61,7 +61,24 @@ func newFakeStorage(ctx context.Context, scenario string, q *speedtest.Queue, lo
 			}
 		}
 	}
-	c := storage.NewCampaigns(storage.CampaignOptions{Store: db, Queue: q, Engine: e, Targets: s, Log: log})
+	c := storage.NewCampaigns(storage.CampaignOptions{Store: db, Queue: q, Engine: e, Targets: s, Log: log,
+		// The line: a little loss at the provider's first router in the evening.
+		Line: func(from, to time.Time) (*model.LoadStats, *model.LoadStats) {
+			edge := &model.LoadStats{N: 60, P50Ms: 9.5}
+			if h := from.Hour(); h >= 19 && h < 23 {
+				edge.Lost, edge.Loss = 2, 2.0/60
+			}
+			return &model.LoadStats{N: 60, P50Ms: 1.2}, edge
+		},
+		Trace: func(ctx context.Context, ip netip.Addr) ([]model.StorageHop, uint32, bool) {
+			select {
+			case <-ctx.Done():
+				return nil, 0, false
+			case <-time.After(2 * time.Second):
+			}
+			return []model.StorageHop{{IP: "192.168.1.1"}, {IP: "100.64.0.1"}, {IP: "203.0.113.9", ASN: 64500, Owner: "EXAMPLE-ISP"},
+				{IP: ""}, {IP: "198.51.100.20", ASN: 64510, Owner: "EXAMPLE-TRANSIT"}, {IP: ip.String(), ASN: 64520, Owner: "EXAMPLE-STORAGE"}}, 64510, true
+		}})
 	done := make(chan struct{})
 	go func() { defer close(done); c.Run(ctx) }()
 	// After ctx ends: the campaigns stop before the database closes (a
@@ -75,6 +92,14 @@ func newFakeStorage(ctx context.Context, scenario string, q *speedtest.Queue, lo
 func fakeAttempt(ctx context.Context, t s3test.Target, phase, op string, signed bool) model.StorageAttempt {
 	f := func(v float64) *float64 { return &v }
 	a := model.StorageAttempt{Phase: phase, Op: op, At: time.Now(), DNSms: f(3.2)}
+	if h := t.Endpoint.Hostname(); !strings.HasSuffix(h, ".lan") && !strings.HasSuffix(h, ".local") {
+		// The provider's address as a public target's round keeps it.
+		a.EdgeIP = netip.MustParseAddr("52.216.10.10")
+		if strings.Contains(h, "down") {
+			a.EdgeIP = netip.MustParseAddr("52.216.20.20")
+		}
+		a.EdgePrefix = edgePrefixOf(a.EdgeIP)
+	}
 	select {
 	case <-ctx.Done():
 		return model.StorageAttempt{} // cut off: no class
@@ -105,3 +130,5 @@ func fakeAttempt(ctx context.Context, t s3test.Target, phase, op string, signed 
 	}
 	return a
 }
+
+func edgePrefixOf(a netip.Addr) string { p, _ := a.Prefix(24); return p.String() }

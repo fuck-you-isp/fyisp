@@ -72,7 +72,7 @@ export class FailureLog {
       ...[{ id: '', name: 'All targets' }, ...this.targets].map((t) => h('button', { type: 'button', text: t.name, 'aria-pressed': String(this.target === t.id),
         onclick: () => { this.target = t.id; this.items = []; this.load(this.campaign, this.targets, this.spanMs).then(() => /** @type {HTMLElement|null} */ (this.el.querySelector('.seg button[aria-pressed="true"]'))?.focus()); } }))) : null;
     this.el.replaceChildren(...[
-      h('div', { class: 'sp-sec-head' }, h('h2', { id: 'st-log-h', text: 'Failures' }), filter),
+      h('div', { class: 'sp-sec-head' }, h('h3', { id: 'st-log-h', text: 'Failures' }), filter),
       this.err ? h('p', { class: 'notice danger', text: this.err }) : null,
       !this.items.length && !this.err ? h('p', { class: 'muted', text: 'No failures in this campaign.' }) : null,
       this.items.length ? h('div', { class: 'st-scroll' }, h('table', { class: 'sp-st' },

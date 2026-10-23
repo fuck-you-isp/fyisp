@@ -52,6 +52,12 @@ const (
 	StoragePhaseUp   = "up"   // an upload, then its delete
 )
 
+// Owners of hops kept without their address (StorageHop).
+const (
+	HopYourNetwork  = "your network"
+	HopYourProvider = "your provider"
+)
+
 // StorageCampaign is a storage test campaign: rounds every Interval, on
 // demand (from Start, Count rounds or until End) or recurring (inside a
 // weekly window in TZ, until Until).
@@ -158,3 +164,28 @@ const (
 // TriggerStorage is the trigger of a storage round's transfer window in
 // SpeedWindows (charts and Home explain probes during it).
 const TriggerStorage = "storage"
+
+// StorageTrace is a traceroute to a target's edge, taken at a campaign's
+// first round with it (trigger "start") or after a failure ("failure"):
+// the route's hops as seen then (ad-hoc traces are kept in memory only,
+// so this is the record).
+type StorageTrace struct {
+	ID           int64
+	Campaign     int64
+	Target       string
+	At           time.Time
+	Trigger      string
+	EdgePrefix   string
+	Hops         []StorageHop
+	HandoffASN   uint32 // the first network past this connection's provider (0: unknown)
+	RouteChanged bool   // the route differs from the campaign's last one to this /24
+}
+
+// StorageHop is one hop of a StorageTrace. Hops on the user's network or
+// in their provider's network have no IP, only Owner HopYourNetwork or
+// HopYourProvider; a hop that didn't answer has neither.
+type StorageHop struct {
+	IP    string `json:"ip"`
+	ASN   uint32 `json:"asn,omitempty"`
+	Owner string `json:"owner,omitempty"`
+}

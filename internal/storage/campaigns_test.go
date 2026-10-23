@@ -27,6 +27,7 @@ type memStore struct {
 	attempts map[int64][]model.StorageAttempt
 	left     map[string][]string
 	settings map[string]string
+	traces   []model.StorageTrace
 }
 
 func newMemStore() *memStore {
@@ -118,6 +119,26 @@ func (m *memStore) ClearStorageLeftovers(_ context.Context, target string) error
 	return nil
 }
 
+func (m *memStore) SaveStorageTrace(_ context.Context, t *model.StorageTrace) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.traces = append(m.traces, *t)
+	t.ID = int64(len(m.traces))
+	return nil
+}
+
+func (m *memStore) StorageTraces(_ context.Context, campaign int64) ([]model.StorageTrace, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []model.StorageTrace
+	for _, t := range m.traces {
+		if t.Campaign == campaign {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (m *memStore) Setting(_ context.Context, k string) (string, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -181,13 +202,14 @@ func newCamLab(t *testing.T, st *memStore, dir string) *camLab {
 				l.signed.Store(tg.ID, true)
 			}
 			host := tg.Endpoint.Hostname()
+			edge := netip.MustParseAddr("52.216.10.10")
 			switch {
 			case strings.Contains(host, "auth") && signed:
 				return model.StorageAttempt{At: time.Now(), Class: string(s3test.ClassHTTPAuth), HTTPStatus: 403}
 			case strings.Contains(host, "down"):
-				return model.StorageAttempt{At: time.Now(), Class: string(s3test.ClassConnectTimeout)}
+				return model.StorageAttempt{At: time.Now(), Class: string(s3test.ClassConnectTimeout), EdgeIP: netip.MustParseAddr("52.216.20.20")}
 			}
-			return model.StorageAttempt{At: time.Now(), Class: string(s3test.ClassOK), HTTPStatus: 200}
+			return model.StorageAttempt{At: time.Now(), Class: string(s3test.ClassOK), HTTPStatus: 200, EdgeIP: edge}
 		}})
 	l.svc = Open(Options{Dir: dir, Engine: e, Lookup: lookup})
 	l.q = speedtest.NewQueue(speedtest.QueueOptions{
@@ -596,4 +618,63 @@ func TestCampaignClockJump(t *testing.T) {
 			t.Errorf("rounds after a 3 h jump (%v from %v): %v", jump, now, got)
 		}
 	})
+}
+
+// TestCampaignLineAndTraces: a round stores the line's loss and RTT; the
+// first round traces each public target's edge ("start"), a failure
+// traces it again ("failure") once the /24's gap has passed, one trace at
+// a time; a route that changed is flagged.
+func TestCampaignLineAndTraces(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := newCamLab(t, newMemStore(), t.TempDir())
+		defer l.close()
+		var traced []string
+		var mu sync.Mutex
+		hop := "62.115.1.1"
+		l.c.o.Line = func(from, to time.Time) (*model.LoadStats, *model.LoadStats) {
+			return &model.LoadStats{N: 10, Loss: 0.1, P50Ms: 2}, nil
+		}
+		l.c.o.Trace = func(ctx context.Context, ip netip.Addr) ([]model.StorageHop, uint32, bool) {
+			if ctx.Err() != nil {
+				return nil, 0, false // the round's context must not end the trace
+			}
+			mu.Lock()
+			traced = append(traced, ip.String())
+			mu.Unlock()
+			time.Sleep(time.Minute) // a trace takes a while
+			mu.Lock()
+			defer mu.Unlock()
+			return []model.StorageHop{{IP: "192.168.1.1"}, {IP: hop, ASN: 1299}}, 1299, true
+		}
+		a := l.target("A", "https://a.example", "")
+		d := l.target("D", "https://down.example", "")
+		c := l.start(CampaignSpec{Targets: []string{a, d}, Shape: model.StorageOnDemand, Interval: 4 * time.Minute, Count: 5, Cold: 1}, nil)
+		time.Sleep(7 * time.Minute) // D's first trace (round 1, at 4 min) is done
+		synctest.Wait()
+		mu.Lock()
+		hop = "62.115.9.9"
+		mu.Unlock()
+		time.Sleep(10 * time.Minute)
+		synctest.Wait()
+		if r := l.st.rounds[0]; r.GwLoss == nil || *r.GwLoss != 0.1 || *r.GwRTTms != 2 || r.EdgeLoss != nil {
+			t.Errorf("line context %+v", r)
+		}
+		var got []string
+		mu.Lock()
+		defer mu.Unlock()
+		for _, tr := range l.st.traces {
+			got = append(got, fmt.Sprintf("%s:%s:%s:%v", l.name(tr.Target), tr.Trigger, tr.EdgePrefix, tr.RouteChanged))
+		}
+		// Round 0 traces A at start (one at a time: D waits); round 1, D
+		// fails (start); round 3, D fails again 10 min after: failure, the route changed.
+		want := []string{"A:start:52.216.10.0/24:false", "D:failure:52.216.20.0/24:false", "D:failure:52.216.20.0/24:true"}
+		if !slices.Equal(got, want) || c.ID == 0 {
+			t.Errorf("traces %v (asked %v), want %v", got, traced, want)
+		}
+	})
+}
+
+func (l *camLab) name(id string) string {
+	ts, _ := l.svc.Target(id)
+	return ts.Name
 }

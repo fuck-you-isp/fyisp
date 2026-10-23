@@ -81,7 +81,7 @@ func countRows(t *testing.T, path, table string) int {
 var wantSchema = []string{
 	"index incidents_start", "index route_changes_at", "index speedtests_start",
 	"index storage_attempts_at", "index storage_attempts_fail", "index storage_attempts_round",
-	"index storage_campaigns_end", "index storage_connects_at", "index storage_rounds_due", "index storage_traces_at",
+	"index storage_campaigns_end", "index storage_connects_at", "index storage_rounds_due", "index storage_traces_at", "index storage_traces_campaign",
 	"table hop_info", "table incidents", "table meta", "table route_changes", "table routes",
 	"table samples", "table series", "table speedtests",
 	"table storage_attempts", "table storage_campaigns", "table storage_connects", "table storage_leftovers",

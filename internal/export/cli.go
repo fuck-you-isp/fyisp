@@ -16,6 +16,7 @@ import (
 //
 //	--from T  --to T  --target NAME[,NAME]  --kind https,tcp,icmp,trace
 //	--output FILE (-o)  --speedtests (the speed tests instead of samples)
+//	--storage (the storage tests' attempts instead of samples)
 //
 // T is RFC 3339 ("2026-09-26T12:00:00Z"), a date ("2026-09-26", UTC
 // midnight), "now", or an age such as "24h", "90m", "7d" (that long ago).
@@ -27,10 +28,14 @@ func Flags(fs *flag.FlagSet) func(now time.Time) (Options, error) {
 	fs.Var(&targets, "target", "target name to export (repeatable or comma-separated; default all)")
 	fs.Var(&kinds, "kind", "probe kind: https, tcp, icmp, trace (traceroute hops), udp, udp_jitter, udp_loss (repeatable or comma-separated; default all)")
 	speed := fs.Bool("speedtests", false, "export the speed tests (CSV: id,start,end,trigger,outcome,server,...) instead of samples")
+	storage := fs.Bool("storage", false, "export the storage tests' attempts (CSV: campaign,round,target,target_name,phase,...) instead of samples")
 	out := fs.String("output", "", "output file, created with mode 0600 (default stdout)")
 	fs.StringVar(out, "o", "", "shorthand for --output")
 	return func(now time.Time) (Options, error) {
-		o := Options{Targets: targets, Output: *out, SpeedTests: *speed}
+		o := Options{Targets: targets, Output: *out, SpeedTests: *speed, Storage: *storage}
+		if o.SpeedTests && o.Storage {
+			return o, fmt.Errorf("--speedtests and --storage: one at a time")
+		}
 		for _, k := range kinds {
 			pk, err := ParseKind(k)
 			if err != nil {

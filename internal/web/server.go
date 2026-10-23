@@ -126,6 +126,7 @@ const (
 	routeHome
 	routeSpeed
 	routeStorage
+	routeStorageReport
 )
 
 func lookup(rel string) route {
@@ -160,6 +161,8 @@ func lookup(rel string) route {
 		return routeSpeed
 	case "api/storage":
 		return routeStorage
+	case "api/storage/report":
+		return routeStorageReport
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -214,6 +217,8 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveSpeed(w, r)
 	case routeStorage:
 		s.serveStorage(w, r)
+	case routeStorageReport:
+		s.serveStorageReport(w, r)
 	case routeTrace, routeTracePanel:
 		switch {
 		case s.d.Trace == nil:

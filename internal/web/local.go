@@ -202,7 +202,7 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveSpeedCancel(w, r)
 		return
 	}
-	if strings.HasPrefix(p, "/api/storage/") {
+	if strings.HasPrefix(p, "/api/storage/") && p != "/api/storage/report" {
 		h.serveStorageWrite(w, r)
 		return
 	}

@@ -272,7 +272,10 @@ type StorageAttemptFilter struct {
 	Phase           string
 	Failed          bool // class <> 'ok'
 	Before          int64
-	Limit           int
+	// Oldest reads oldest first, from the attempt ids above After.
+	Oldest bool
+	After  int64
+	Limit  int
 }
 
 // StorageAttempt is a stored attempt with its id and round.
@@ -309,13 +312,16 @@ func (s *SQLite) StorageAttempts(ctx context.Context, f StorageAttemptFilter) ([
 		return nil, 0, err
 	}
 	order := "a.id DESC"
-	if f.Round != 0 && f.Campaign == 0 {
+	if (f.Round != 0 && f.Campaign == 0) || f.Oldest {
 		order = "a.id"
 	}
 	page := cond
 	pargs := args
-	if f.Before > 0 {
+	switch {
+	case f.Before > 0:
 		page, pargs = cond+" AND a.id < ?", append(append([]any{}, args...), f.Before)
+	case f.Oldest && f.After > 0:
+		page, pargs = cond+" AND a.id > ?", append(append([]any{}, args...), f.After)
 	}
 	limit := f.Limit
 	if limit <= 0 {
@@ -449,6 +455,7 @@ type StorageCellRow struct {
 	Round              int64
 	Target, Phase      string
 	Class              string
+	EdgePrefix         string // "" unknown
 	N                  int
 	MaxStallMs         float64
 	GoodputBps         *float64
@@ -458,10 +465,10 @@ type StorageCellRow struct {
 // StorageCells groups a campaign's attempts by round, target, phase and
 // class, oldest round first.
 func (s *SQLite) StorageCells(ctx context.Context, campaign int64) ([]StorageCellRow, error) {
-	rows, err := s.db.r.QueryContext(ctx, `SELECT a.round, a.target, a.phase, a.class, count(*), max(coalesce(a.stall_ms, 0)), avg(a.goodput_bps),
-		coalesce(min(CAST(a.http_status AS TEXT)), ''), coalesce(min(a.s3_code), '')
+	rows, err := s.db.r.QueryContext(ctx, `SELECT a.round, a.target, a.phase, a.class, coalesce(a.edge_prefix, ''), count(*), max(coalesce(a.stall_ms, 0)),
+		avg(a.goodput_bps), coalesce(min(CAST(a.http_status AS TEXT)), ''), coalesce(min(a.s3_code), '')
 		FROM storage_attempts a JOIN storage_rounds r ON r.id = a.round WHERE r.campaign = ?
-		GROUP BY a.round, a.target, a.phase, a.class ORDER BY a.round, a.target, a.phase, a.class`, campaign)
+		GROUP BY a.round, a.target, a.phase, a.class, a.edge_prefix ORDER BY a.round, a.target, a.phase, a.class`, campaign)
 	if err != nil {
 		return nil, err
 	}
@@ -470,11 +477,85 @@ func (s *SQLite) StorageCells(ctx context.Context, campaign int64) ([]StorageCel
 	for rows.Next() {
 		var c StorageCellRow
 		var g sql.NullFloat64
-		if err := rows.Scan(&c.Round, &c.Target, &c.Phase, &c.Class, &c.N, &c.MaxStallMs, &g, &c.HTTPStatus, &c.S3Code); err != nil {
+		if err := rows.Scan(&c.Round, &c.Target, &c.Phase, &c.Class, &c.EdgePrefix, &c.N, &c.MaxStallMs, &g, &c.HTTPStatus, &c.S3Code); err != nil {
 			return nil, err
 		}
 		c.GoodputBps = ptrF(g)
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// SaveStorageTrace stores a traceroute snapshot (t.ID is set).
+func (s *SQLite) SaveStorageTrace(ctx context.Context, t *model.StorageTrace) error {
+	if s.lock == nil {
+		return errors.New("store: read-only")
+	}
+	hops, _ := json.Marshal(t.Hops)
+	var asn any
+	if t.HandoffASN != 0 {
+		asn = int64(t.HandoffASN)
+	}
+	r, err := s.db.w.ExecContext(ctx, `INSERT INTO storage_traces(campaign, target, at_ms, trigger, edge_prefix, hops, handoff_asn, route_changed)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, t.Campaign, t.Target, t.At.UnixMilli(), t.Trigger, nullStr(t.EdgePrefix), string(hops), asn, t.RouteChanged)
+	if err != nil {
+		return err
+	}
+	t.ID, err = r.LastInsertId()
+	return err
+}
+
+// StorageTraces lists a campaign's traceroutes, oldest first.
+func (s *SQLite) StorageTraces(ctx context.Context, campaign int64) ([]model.StorageTrace, error) {
+	rows, err := s.db.r.QueryContext(ctx, `SELECT id, campaign, target, at_ms, trigger, coalesce(edge_prefix, ''), hops, coalesce(handoff_asn, 0), route_changed
+		FROM storage_traces WHERE campaign = ? ORDER BY at_ms, id`, campaign)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.StorageTrace
+	for rows.Next() {
+		var t model.StorageTrace
+		var at int64
+		var hops string
+		if err := rows.Scan(&t.ID, &t.Campaign, &t.Target, &at, &t.Trigger, &t.EdgePrefix, &hops, &t.HandoffASN, &t.RouteChanged); err != nil {
+			return nil, err
+		}
+		t.At = msTime(at)
+		_ = json.Unmarshal([]byte(hops), &t.Hops)
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// StorageTiming is one attempt's timings, for a campaign's percentiles.
+type StorageTiming struct {
+	Target, Phase, Op, Class, EdgePrefix string
+	Connectms, TLSms, TTFBms             *float64
+	GoodputBps                           *float64
+}
+
+// StorageTimingsMax bounds StorageTimings: the newest attempts only.
+const StorageTimingsMax = 50000
+
+// StorageTimings lists the timings (no other columns) of a campaign's
+// newest StorageTimingsMax attempts.
+func (s *SQLite) StorageTimings(ctx context.Context, campaign int64) ([]StorageTiming, error) {
+	rows, err := s.db.r.QueryContext(ctx, `SELECT a.target, a.phase, a.op, a.class, coalesce(a.edge_prefix, ''), a.connect_ms, a.tls_ms, a.ttfb_ms, a.goodput_bps
+		FROM storage_attempts a WHERE a.round IN (SELECT id FROM storage_rounds WHERE campaign = ?) ORDER BY a.id DESC LIMIT ?`, campaign, StorageTimingsMax)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StorageTiming
+	for rows.Next() {
+		var t StorageTiming
+		var c, tl, tt, g sql.NullFloat64
+		if err := rows.Scan(&t.Target, &t.Phase, &t.Op, &t.Class, &t.EdgePrefix, &c, &tl, &tt, &g); err != nil {
+			return nil, err
+		}
+		t.Connectms, t.TLSms, t.TTFBms, t.GoodputBps = ptrF(c), ptrF(tl), ptrF(tt), ptrF(g)
+		out = append(out, t)
 	}
 	return out, rows.Err()
 }

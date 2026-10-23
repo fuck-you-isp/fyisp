@@ -437,3 +437,47 @@ func TestStorageCampaignAPI(t *testing.T) {
 		t.Errorf("unknown campaign = %d", w.Code)
 	}
 }
+
+// TestStorageReport: a campaign's report as Markdown (with its finding,
+// and hosts only when asked) and as CSV; never the endpoint's address.
+func TestStorageReport(t *testing.T) {
+	l := newStorageLab(t, LocalOptions{})
+	_, out, _ := l.post("/api/storage/target/add", l.addBody())
+	id := out["target"].(map[string]any)["id"].(string)
+	code, out, raw := l.post("/api/storage/run", `{"targets":["`+id+`"]}`)
+	if code != 202 {
+		t.Fatalf("run = %d %s", code, raw)
+	}
+	camp := int64(out["campaign"].(map[string]any)["id"].(float64))
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if len(l.get(t, "/api/storage")["live"].([]any)) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the round didn't finish")
+		}
+	}
+	c := l.get(t, fmt.Sprintf("/api/storage?part=campaign&id=%d", camp))
+	if f := c["finding"].(map[string]any); f["kicker"] != "early" || c["cards"].([]any)[0].(map[string]any)["cold_n"] != float64(storage.DefaultCold) {
+		t.Errorf("finding %v, cards %v", f, c["cards"])
+	}
+	md := do(l.h, "GET", fmt.Sprintf("/api/storage/report?campaign=%d&format=md", camp), goodHdr)
+	body := md.Body.String()
+	if md.Code != 200 || !strings.HasPrefix(md.Header().Get("Content-Type"), "text/markdown") || !strings.Contains(body, "## Finding") ||
+		!strings.Contains(body, "| Lab |") || strings.Contains(body, "s3.test") || strings.Contains(body, "127.0.0.1") {
+		t.Errorf("md %d %q", md.Code, body)
+	}
+	hosts := do(l.h, "GET", fmt.Sprintf("/api/storage/report?campaign=%d&format=md&hosts=1", camp), goodHdr).Body.String()
+	if !strings.Contains(hosts, "| s3.test/bkt |") {
+		t.Errorf("hosts=1: %q", hosts)
+	}
+	csvw := do(l.h, "GET", fmt.Sprintf("/api/storage/report?campaign=%d&format=csv", camp), goodHdr)
+	if csvw.Code != 200 || !strings.Contains(csvw.Header().Get("Content-Disposition"), "attachment") || strings.Count(csvw.Body.String(), "\n") != storage.DefaultCold+storage.DefaultWarm+1 {
+		t.Errorf("csv %d %q", csvw.Code, csvw.Body)
+	}
+	for _, p := range []string{"/api/storage/report?campaign=999&format=md", "/api/storage/report?campaign=1&format=pdf", "/api/storage/report?format=md"} {
+		if w := do(l.h, "GET", p, goodHdr); w.Code != 404 && w.Code != 400 {
+			t.Errorf("%s = %d", p, w.Code)
+		}
+	}
+}

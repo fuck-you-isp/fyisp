@@ -295,6 +295,7 @@ CREATE TABLE storage_traces(
 	route_changed  INT  NOT NULL DEFAULT 0
 );
 CREATE INDEX storage_traces_at ON storage_traces(at_ms);
+CREATE INDEX storage_traces_campaign ON storage_traces(campaign);
 `
 
 // SchemaVersion is the schema version this build writes.

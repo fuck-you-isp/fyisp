@@ -28,6 +28,8 @@ type StorageReader interface {
 	StorageRound(ctx context.Context, id int64) (model.StorageRound, bool, error)
 	StorageAttempts(ctx context.Context, f store.StorageAttemptFilter) ([]store.StorageAttempt, int, error)
 	StorageCells(ctx context.Context, campaign int64) ([]store.StorageCellRow, error)
+	StorageTraces(ctx context.Context, campaign int64) ([]model.StorageTrace, error)
+	StorageTimings(ctx context.Context, campaign int64) ([]store.StorageTiming, error)
 }
 
 // Limits of the campaign reads.
@@ -525,7 +527,185 @@ func (s *server) serveCampaign(w http.ResponseWriter, r *http.Request, id int64)
 		cj[id] = string(b)
 	}
 	out["rounds"], out["cells"], out["notes"], out["throughput"] = rj, cj, notes, series
+	counts := make([]storage.AttemptCount, len(rows))
+	for i, row := range rows {
+		counts[i] = storage.AttemptCount{Round: row.Round, Target: row.Target, Phase: row.Phase, Class: row.Class, EdgePrefix: row.EdgePrefix, N: row.N}
+	}
+	fd := storage.Explain(c, rounds, counts, c.Live())
+	out["finding"] = map[string]any{"kicker": fd.Kicker, "text": fd.Text, "evidence": orEmpty(fd.Evidence)}
+	traces, err := s.d.StorageData.StorageTraces(ctx, id)
+	if err != nil {
+		s.storeFailed(w, r, err)
+		return
+	}
+	tj := []map[string]any{}
+	for _, t := range traces {
+		hops := t.Hops
+		if hops == nil {
+			hops = []model.StorageHop{}
+		}
+		var handoff *uint32
+		if t.HandoffASN != 0 {
+			handoff = &t.HandoffASN
+		}
+		tj = append(tj, map[string]any{"id": t.ID, "target": t.Target, "at": t.At.UnixMilli(), "trigger": t.Trigger, "edge_prefix": strOrNil(t.EdgePrefix),
+			"hops": hops, "handoff_asn": handoff, "route_changed": t.RouteChanged})
+	}
+	out["traces"] = tj
+	timings, err := s.d.StorageData.StorageTimings(ctx, id)
+	if err != nil {
+		s.storeFailed(w, r, err)
+		return
+	}
+	out["cards"] = storageCards(c, timings)
 	writeJSON(w, r, http.StatusOK, out)
+}
+
+type storagePctJSON struct {
+	P50 *float64 `json:"p50"`
+	P95 *float64 `json:"p95"`
+}
+
+type storageRateJSON struct {
+	MedianBps *float64 `json:"median_bps"`
+	P10Bps    *float64 `json:"p10_bps"`
+	OK        int      `json:"ok"`
+	N         int      `json:"n"`
+}
+
+type storagePrefixJSON struct {
+	Prefix string `json:"prefix"`
+	N      int    `json:"n"`
+	Failed int    `json:"failed"`
+}
+
+// storageCardJSON is one target's summary over a campaign.
+type storageCardJSON struct {
+	Target     string              `json:"target"`
+	ColdN      int                 `json:"cold_n"`
+	ColdFailed int                 `json:"cold_failed"`
+	Failed     int                 `json:"failed"` // every phase, network and provider
+	Config     int                 `json:"config"`
+	Classes    map[string]int      `json:"classes"`
+	Connectms  storagePctJSON      `json:"connect_ms"`
+	TLSms      storagePctJSON      `json:"tls_ms"`
+	TTFBms     storagePctJSON      `json:"ttfb_ms"`
+	Down       *storageRateJSON    `json:"down"`
+	Up         *storageRateJSON    `json:"up"`
+	Prefixes   []storagePrefixJSON `json:"prefixes"`     // the 5 with the most failures, then attempts
+	PrefixN    int                 `json:"prefix_count"` // all of them
+}
+
+// pct is the q-quantile of vs (nearest rank; nil for none).
+func pct(vs []float64, q float64) *float64 {
+	if len(vs) == 0 {
+		return nil
+	}
+	s := slices.Clone(vs)
+	slices.Sort(s)
+	i := int(q*float64(len(s)-1) + 0.5)
+	v := s[i]
+	return &v
+}
+
+// storageCards summarises each target's attempts: fresh connections and
+// their failures by class, the timings of the ones that worked, the
+// transfers' speeds, and the provider address ranges with their failures.
+func storageCards(c model.StorageCampaign, ts []store.StorageTiming) []storageCardJSON {
+	type acc struct {
+		card            storageCardJSON
+		conn, tls, ttfb []float64
+		down, up        []float64
+		downN, upN      int
+		prefixes        map[string]*storagePrefixJSON
+	}
+	per := map[string]*acc{}
+	for _, t := range c.Targets {
+		per[t.ID] = &acc{card: storageCardJSON{Target: t.ID, Classes: map[string]int{}, Prefixes: []storagePrefixJSON{}}, prefixes: map[string]*storagePrefixJSON{}}
+	}
+	for _, t := range ts {
+		a := per[t.Target]
+		if a == nil {
+			continue
+		}
+		g := s3test.Class(t.Class).Group()
+		bad := g == s3test.GroupNetwork || g == s3test.GroupProvider
+		if t.Phase == model.StoragePhaseCold {
+			a.card.ColdN++
+			if bad {
+				a.card.ColdFailed++
+			}
+		}
+		if bad {
+			a.card.Failed++
+			a.card.Classes[t.Class]++
+		} else if g == s3test.GroupConfig {
+			a.card.Config++
+			a.card.Classes[t.Class]++
+		}
+		if t.Class == string(s3test.ClassOK) && (t.Phase == model.StoragePhaseCold || t.Phase == model.StoragePhaseWarm) {
+			for _, x := range []struct {
+				v   *float64
+				dst *[]float64
+			}{{t.Connectms, &a.conn}, {t.TLSms, &a.tls}, {t.TTFBms, &a.ttfb}} {
+				if x.v != nil && (x.dst != &a.conn || t.Phase == model.StoragePhaseCold) {
+					*x.dst = append(*x.dst, *x.v)
+				}
+			}
+		}
+		switch {
+		case t.Phase == model.StoragePhaseDown:
+			a.downN++
+			if t.Class == string(s3test.ClassOK) && t.GoodputBps != nil {
+				a.down = append(a.down, *t.GoodputBps)
+			}
+		case t.Phase == model.StoragePhaseUp && t.Op == "put":
+			a.upN++
+			if t.Class == string(s3test.ClassOK) && t.GoodputBps != nil {
+				a.up = append(a.up, *t.GoodputBps)
+			}
+		}
+		if t.EdgePrefix != "" {
+			p := a.prefixes[t.EdgePrefix]
+			if p == nil {
+				p = &storagePrefixJSON{Prefix: t.EdgePrefix}
+				a.prefixes[t.EdgePrefix] = p
+			}
+			p.N++
+			if bad {
+				p.Failed++
+			}
+		}
+	}
+	out := []storageCardJSON{}
+	for _, t := range c.Targets {
+		a := per[t.ID]
+		a.card.Connectms = storagePctJSON{pct(a.conn, 0.5), pct(a.conn, 0.95)}
+		a.card.TLSms = storagePctJSON{pct(a.tls, 0.5), pct(a.tls, 0.95)}
+		a.card.TTFBms = storagePctJSON{pct(a.ttfb, 0.5), pct(a.ttfb, 0.95)}
+		if a.downN > 0 {
+			a.card.Down = &storageRateJSON{MedianBps: pct(a.down, 0.5), P10Bps: pct(a.down, 0.1), OK: len(a.down), N: a.downN}
+		}
+		if a.upN > 0 {
+			a.card.Up = &storageRateJSON{MedianBps: pct(a.up, 0.5), P10Bps: pct(a.up, 0.1), OK: len(a.up), N: a.upN}
+		}
+		for _, p := range a.prefixes {
+			a.card.Prefixes = append(a.card.Prefixes, *p)
+		}
+		slices.SortFunc(a.card.Prefixes, func(x, y storagePrefixJSON) int {
+			if x.Failed != y.Failed {
+				return y.Failed - x.Failed
+			}
+			if x.N != y.N {
+				return y.N - x.N
+			}
+			return strings.Compare(x.Prefix, y.Prefix)
+		})
+		a.card.PrefixN = len(a.card.Prefixes)
+		a.card.Prefixes = a.card.Prefixes[:min(len(a.card.Prefixes), 5)]
+		out = append(out, a.card)
+	}
+	return out
 }
 
 var (

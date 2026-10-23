@@ -64,6 +64,13 @@ test('one round now: the grid, a failed cell and its attempts', async ({ page })
     await expect(detail).toBeFocused();
     await expect(page.locator('.st-detail')).toContainText('No answer');
     await expect(page.locator('.st-log')).toContainText('No answer');
+    // The evidence: a finding (too early after one round), each target's card,
+    // the routes traced after the first round, and the report.
+    await expect(page.locator('.st-found')).toContainText('Too early to tell');
+    await expect(page.locator('.st-card', { hasText: 'Flaky edge' })).toContainText('failed');
+    await expect(page.locator('.st-traces')).toContainText('first round', { timeout: 20e3 });
+    await page.locator('.st-report summary').click();
+    await expect(page.getByRole('link', { name: 'Download CSV' })).toHaveAttribute('href', /format=csv/);
     await page.screenshot({ path: 'out/shots/storage-round.png', fullPage: true });
   } finally {
     proc.kill();

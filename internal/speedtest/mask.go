@@ -175,8 +175,8 @@ type tapSample struct {
 }
 
 // tapKeep is how long samples are kept: the idle window before a test plus
-// the longest test.
-const tapKeep = idleWindow + 2*time.Minute
+// the longest test, and a storage round's longest (its line context).
+const tapKeep = 12 * time.Minute
 
 // idleWindow is the span before a test whose RTTs are "idle".
 const idleWindow = 2 * time.Minute

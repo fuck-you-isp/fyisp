@@ -387,7 +387,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed
 	var camps *storage.Campaigns
-	deps.Storage, camps = newStorage(dir, speed.Queue(), st, wins, ni.Current, log)
+	deps.Storage, camps = newStorage(dir, speed.Queue(), st, wins, tap, tr, mc, ni.Current, log)
 	if camps != nil {
 		deps.Campaigns, deps.StorageData = camps, st
 	}

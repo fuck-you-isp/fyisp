@@ -15,7 +15,7 @@ import {
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
   hideTip, whyButton, toLocalInput, fromLocalInput, adminSession, signIn, markSignedIn, bootSignedOut, noCookie,
-  hatch, resetHatch, smooth,
+  hatch, resetHatch, smooth, copyText,
 } from './core.js';
 import { Home, firstHome } from './home.js';
 import { Speed } from './speed.js';
@@ -975,25 +975,6 @@ function modeNote(m) {
 }
 const MORE_COLS = [['P95', 'num', '95th percentile round-trip time (ms)'], ['Javg', 'num', 'Jitter: average difference between consecutive round-trip times (ms)'],
   ['Jmax', 'num', 'Largest difference between consecutive round-trip times (ms)']];
-
-/**
- * Copies text to the clipboard; without clipboard access, selects the
- * read-only textarea that holds it so the reader can copy it.
- * @param {string} text @param {HTMLTextAreaElement} ta @param {HTMLElement} say
- */
-async function copyText(text, ta, say) {
-  try {
-    if (!navigator.clipboard) throw new Error('no clipboard');
-    await navigator.clipboard.writeText(text);
-    say.textContent = 'Copied.';
-  } catch {
-    ta.hidden = false;
-    ta.value = text;
-    ta.focus();
-    ta.select();
-    say.textContent = 'Selected: press Ctrl+C (⌘C on a Mac) to copy.';
-  }
-}
 
 let traceOn = false;
 /** @type {TargetInfo[]} */

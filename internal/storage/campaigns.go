@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,6 +51,8 @@ type Store interface {
 	StorageRoundsTail(ctx context.Context, campaign int64) (maxSeq int, last time.Time, err error)
 	AddStorageLeftovers(ctx context.Context, target string, objects []string, at time.Time) error
 	ClearStorageLeftovers(ctx context.Context, target string) error
+	SaveStorageTrace(ctx context.Context, t *model.StorageTrace) error
+	StorageTraces(ctx context.Context, campaign int64) ([]model.StorageTrace, error)
 	Setting(ctx context.Context, key string) (string, bool, error)
 	SetSetting(ctx context.Context, key, value string) error
 }
@@ -62,7 +65,24 @@ type CampaignOptions struct {
 	Targets *Service
 	Now     func() time.Time
 	Log     *slog.Logger
+	// Line, when set, is the line in a span: the gateway's and the
+	// provider's first router's loss and median RTT, outside fyisp's own
+	// transfers (nil: unknown). A round stores it.
+	Line func(from, to time.Time) (gw, edge *model.LoadStats)
+	// Trace, when set, traceroutes a provider's edge address (blocking,
+	// a minute or two) and returns the route's hops and the first network
+	// past this connection's provider (0: unknown); false when it couldn't.
+	Trace func(ctx context.Context, ip netip.Addr) (hops []model.StorageHop, handoff uint32, ok bool)
+	// OnRound, when set, is told every round stored (metrics).
+	OnRound func(c model.StorageCampaign, r model.StorageRound, attempts []model.StorageAttempt)
 }
+
+// Trace limits: one at a time, one per edge /24 per traceGap, each at
+// most traceMax.
+const (
+	traceGap = 10 * time.Minute
+	traceMax = 3 * time.Minute
+)
 
 // CampaignSpec is a new campaign as asked for.
 type CampaignSpec struct {
@@ -128,8 +148,16 @@ type Campaigns struct {
 
 	checking sync.Mutex // one key check at a time (ErrBusy)
 
+	traceBusy atomic.Bool
+	wg        sync.WaitGroup                  // traces in flight (Run waits for them)
+	runCtx    atomic.Pointer[context.Context] // Run's: traces outlive their round, not Run
+
 	mu      sync.Mutex
 	live    map[int64]*run
+	traced  map[string]time.Time          // edge /24 -> last trace
+	routes  map[string][]model.StorageHop // campaign/target/prefix -> its last route
+	started map[string]bool               // campaign/target: its first route was traced
+	closing bool                          // Run is stopping: no new traces
 	install string
 	rev     int64
 	notices []Notice
@@ -157,7 +185,8 @@ func NewCampaigns(o CampaignOptions) *Campaigns {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	c := &Campaigns{o: o, wake: make(chan struct{}, 1), live: map[int64]*run{}, rev: o.Now().UnixMilli()}
+	c := &Campaigns{o: o, wake: make(chan struct{}, 1), live: map[int64]*run{}, rev: o.Now().UnixMilli(),
+		traced: map[string]time.Time{}, routes: map[string][]model.StorageHop{}, started: map[string]bool{}}
 	empty := map[string]int64{}
 	c.inUse.Store(&empty)
 	o.Targets.SetInUse(c.InUse)
@@ -544,6 +573,7 @@ func (c *Campaigns) conflictLocked(mc model.StorageCampaign, now time.Time) erro
 // Run handles a restart (ended schedules, gaps, lost keys), then fires
 // each campaign's rounds as they fall due until ctx ends.
 func (c *Campaigns) Run(ctx context.Context) {
+	c.runCtx.Store(&ctx)
 	c.restart(ctx)
 	for {
 		now := c.o.Now()
@@ -585,6 +615,10 @@ func (c *Campaigns) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			t.Stop()
+			c.mu.Lock()
+			c.closing = true
+			c.mu.Unlock()
+			c.wg.Wait()
 			c.shutdown()
 			return
 		case <-c.wake:
@@ -610,6 +644,8 @@ func (c *Campaigns) fireLocked(ctx context.Context, r *run, now time.Time) {
 		sctx, cancel := storeCtx(ctx)
 		if err := c.o.Store.SaveStorageRound(sctx, gap, nil); err != nil {
 			c.o.Log.Warn("storage tests: saving a gap", "err", err)
+		} else if c.o.OnRound != nil {
+			c.o.OnRound(r.c, *gap, nil)
 		}
 		cancel()
 		r.next, _ = r.nextSlot(now)
@@ -673,6 +709,8 @@ func (c *Campaigns) unrun(ctx context.Context, id int64, entry uint64, seq int, 
 	rr := &model.StorageRound{Campaign: id, Seq: &seq, Due: due, Outcome: model.RoundCancelled}
 	if err := c.o.Store.SaveStorageRound(sctx, rr, nil); err != nil {
 		c.o.Log.Warn("storage tests: saving a cancelled round", "err", err)
+	} else if c.o.OnRound != nil {
+		c.o.OnRound(r.c, *rr, nil)
 	}
 	c.changedLocked()
 }
@@ -736,6 +774,8 @@ func (c *Campaigns) saveSkipLocked(ctx context.Context, id int64, seq int, due t
 	rr := &model.StorageRound{Campaign: id, Seq: &seq, Due: due, Outcome: model.RoundSkipped, SkipReason: why}
 	if err := c.o.Store.SaveStorageRound(sctx, rr, nil); err != nil {
 		c.o.Log.Warn("storage tests: saving a skipped round", "err", err)
+	} else if r := c.live[id]; r != nil && c.o.OnRound != nil {
+		c.o.OnRound(r.c, *rr, nil)
 	}
 	c.changedLocked()
 }
@@ -838,6 +878,15 @@ func (c *Campaigns) runRound(ctx context.Context, id int64, seq int, due time.Ti
 	}
 	rr := &model.StorageRound{Campaign: id, Seq: &seq, Due: due, Start: res.Start, End: res.End, Skips: skips,
 		Outcome: outcome(res), BytesDown: res.Down, BytesUp: res.Up, Wire: res.Down + res.Up}
+	if c.o.Line != nil && !res.Cancelled {
+		gw, edge := c.o.Line(res.Start, res.End)
+		if gw != nil {
+			rr.GwLoss, rr.GwRTTms = &gw.Loss, &gw.P50Ms
+		}
+		if edge != nil {
+			rr.EdgeLoss, rr.EdgeRTTms = &edge.Loss, &edge.P50Ms
+		}
+	}
 	if res.Start.After(due) {
 		rr.QueueWait = res.Start.Sub(due)
 	}
@@ -846,6 +895,9 @@ func (c *Campaigns) runRound(ctx context.Context, id int64, seq int, due time.Ti
 	if err := c.o.Store.SaveStorageRound(sctx, rr, res.Attempts); err != nil {
 		c.o.Log.Warn("storage tests: saving a round", "err", err)
 		return 0, false
+	}
+	if c.o.OnRound != nil {
+		c.o.OnRound(mc, *rr, res.Attempts)
 	}
 	byTarget := map[string][]string{}
 	for _, l := range res.Leftovers { // "<campaign>/<round>-<target>"
@@ -867,7 +919,132 @@ func (c *Campaigns) runRound(ctx context.Context, id int64, seq int, due time.Ti
 		r.c.BytesUp += res.Up
 	}
 	c.mu.Unlock()
+	c.traceAfter(ctx, mc, res)
 	return rr.ID, true
+}
+
+// traceAfter traceroutes a target's edge after its first round in a
+// campaign ("start") or a network failure ("failure"), in the background:
+// public targets only, one trace at a time, one per edge /24 per traceGap.
+func (c *Campaigns) traceAfter(ctx context.Context, mc model.StorageCampaign, res s3test.RoundResult) {
+	if c.o.Trace == nil || res.Cancelled {
+		return
+	}
+	for _, t := range mc.Targets {
+		ts, err := c.o.Targets.Target(t.ID)
+		if err != nil || ts.Network != "public" {
+			continue
+		}
+		var ip netip.Addr
+		trigger := ""
+		for _, a := range res.Attempts {
+			if a.Target != t.ID || !a.EdgeIP.IsValid() {
+				continue
+			}
+			if g := s3test.Class(a.Class).Group(); g == s3test.GroupNetwork {
+				ip, trigger = a.EdgeIP, "failure"
+				break
+			}
+			if !ip.IsValid() {
+				ip = a.EdgeIP
+			}
+		}
+		prefix := edgePrefix(ip)
+		key := fmt.Sprintf("%d/%s/%s", mc.ID, t.ID, prefix) // a target's route to one /24
+		c.mu.Lock()
+		if c.closing {
+			c.mu.Unlock()
+			return
+		}
+		if trigger == "" && !c.started[fmt.Sprintf("%d/%s", mc.ID, t.ID)] && ip.IsValid() {
+			trigger = "start"
+		}
+		if trigger == "" || c.o.Now().Sub(c.traced[prefix]) < traceGap || !c.traceBusy.CompareAndSwap(false, true) {
+			c.mu.Unlock()
+			continue
+		}
+		c.traced[prefix] = c.o.Now()
+		c.wg.Add(1)
+		c.mu.Unlock()
+		// The round's ctx ends with its turn in the queue: the trace runs
+		// under Run's, bounded.
+		if p := c.runCtx.Load(); p != nil {
+			ctx = *p
+		}
+		go func() {
+			defer c.wg.Done()
+			defer c.traceBusy.Store(false)
+			at := c.o.Now()
+			tctx, cancel := context.WithTimeout(ctx, traceMax)
+			defer cancel()
+			hops, handoff, ok := c.o.Trace(tctx, ip)
+			c.mu.Lock()
+			if !ok {
+				delete(c.traced, prefix) // tried again with the next round
+				c.mu.Unlock()
+				return
+			}
+			c.started[fmt.Sprintf("%d/%s", mc.ID, t.ID)] = true
+			last, had := c.routes[key]
+			if !had {
+				last, had = c.lastRouteLocked(ctx, mc.ID, t.ID, prefix)
+			}
+			c.routes[key] = hops
+			c.mu.Unlock()
+			tr := &model.StorageTrace{Campaign: mc.ID, Target: t.ID, At: at, Trigger: trigger, EdgePrefix: prefix, Hops: hops,
+				HandoffASN: handoff, RouteChanged: had && routeDiffers(last, hops)}
+			sctx, cancel := storeCtx(ctx)
+			defer cancel()
+			if err := c.o.Store.SaveStorageTrace(sctx, tr); err != nil {
+				c.o.Log.Warn("storage tests: saving a traceroute", "err", err)
+			}
+			c.mu.Lock()
+			c.rev++
+			c.mu.Unlock()
+		}()
+		return // one at a time
+	}
+}
+
+// lastRouteLocked is the campaign's last stored route of target to prefix
+// (after a restart, when none is in memory).
+func (c *Campaigns) lastRouteLocked(ctx context.Context, campaign int64, target, prefix string) ([]model.StorageHop, bool) {
+	sctx, cancel := storeCtx(ctx)
+	defer cancel()
+	ts, err := c.o.Store.StorageTraces(sctx, campaign)
+	if err != nil {
+		return nil, false
+	}
+	for i := len(ts) - 1; i >= 0; i-- {
+		if ts[i].Target == target && ts[i].EdgePrefix == prefix {
+			return ts[i].Hops, true
+		}
+	}
+	return nil, false
+}
+
+// routeDiffers reports two routes that differ where both hops answered
+// (a silent hop matches anything), or in their length.
+func routeDiffers(a, b []model.StorageHop) bool {
+	if len(a) != len(b) {
+		return true
+	}
+	silent := func(h model.StorageHop) bool { return h.IP == "" && h.Owner == "" }
+	for i := range a {
+		if !silent(a[i]) && !silent(b[i]) && a[i] != b[i] {
+			return true
+		}
+	}
+	return false
+}
+
+// edgePrefix is a's /24 ("" for none).
+func edgePrefix(a netip.Addr) string {
+	if !a.IsValid() {
+		return ""
+	}
+	p, _ := a.Prefix(24)
+	return p.String()
 }
 
 // sweep deletes what fyisp left under the install's prefix in a target's
@@ -1122,6 +1299,8 @@ func (c *Campaigns) restart(ctx context.Context) {
 			gap := &model.StorageRound{Campaign: mc.ID, Due: last, End: now, Outcome: model.RoundGap}
 			if err := c.o.Store.SaveStorageRound(sctx, gap, nil); err != nil {
 				c.o.Log.Warn("storage tests: saving a gap", "err", err)
+			} else if c.o.OnRound != nil {
+				c.o.OnRound(mc, *gap, nil)
 			}
 		}
 		if _, ok := r.nextSlot(now); (!mc.Until.IsZero() && !now.Before(mc.Until)) || (!ok && mc.Shape == model.StorageOnDemand) {

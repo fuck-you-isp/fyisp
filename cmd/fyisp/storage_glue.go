@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/netip"
+	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/asn"
+	"github.com/fuck-you-isp/fyisp/internal/metrics"
+	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
+	"github.com/fuck-you-isp/fyisp/internal/netinfo/hops"
 	"github.com/fuck-you-isp/fyisp/internal/s3test"
 	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/storage"
+	"github.com/fuck-you-isp/fyisp/internal/trace"
 )
 
 // newStorage opens the storage-test targets in dir and the campaigns that
@@ -17,14 +23,109 @@ import (
 // answers 503, no campaign runs) and is left as it is. Transfers are
 // marked in wins, as speed tests are; a check during a queued test says
 // its timings may be high.
-func newStorage(dir string, q *speedtest.Queue, st storage.Store, wins *speedtest.Windows, path func() netinfo.Path, log *slog.Logger) (*storage.Service, *storage.Campaigns) {
+// A round's line context comes from tap (outside fyisp's own transfers),
+// and a failure's traceroute from tr.
+func newStorage(dir string, q *speedtest.Queue, st storage.Store, wins *speedtest.Windows, tap *speedtest.LoadTap, tr trace.Tracer,
+	mc *metrics.Collector, path func() netinfo.Path, log *slog.Logger) (*storage.Service, *storage.Campaigns) {
 	e := s3test.New(s3test.Options{UserAgent: "fyisp/" + version, Masker: wins, IsSelf: notEdge(path)})
 	s := storage.Open(storage.Options{Dir: dir, Engine: e, Busy: func() bool { return q.State().Running != nil }})
 	if err := s.Err(); err != nil {
 		log.Warn("storage tests are off", "err", err)
 		return s, nil
 	}
-	return s, storage.NewCampaigns(storage.CampaignOptions{Store: st, Queue: q, Engine: e, Targets: s, Log: log})
+	sm := metrics.NewStorage()
+	mc.Register(sm)
+	return s, storage.NewCampaigns(storage.CampaignOptions{Store: st, Queue: q, Engine: e, Targets: s, Log: log, OnRound: sm.Observe,
+		Line: func(from, to time.Time) (gw, edge *model.LoadStats) {
+			enough := func(s *model.LoadStats) *model.LoadStats {
+				if s == nil || s.N < lineSamples {
+					return nil // a lost probe or two of a handful says nothing
+				}
+				return s
+			}
+			return enough(tap.Stats(speedtest.LayerGateway, from, to, wins)), enough(tap.Stats(speedtest.LayerEdge, from, to, wins))
+		},
+		Trace: storageTrace(tr, path)})
+}
+
+// storageTraceRounds is a storage traceroute's length (2.5 s a round).
+const storageTraceRounds = 24
+
+// lineSamples is the probes a round's line context needs (else unknown).
+const lineSamples = 20
+
+// storageTrace traceroutes a provider's edge address as Investigate does
+// a host (TCP to 443 where this OS can, else ICMP), waits for it, and
+// returns its route's hops with their networks and the first network
+// past this connection's provider. Hops on this network (private, CGNAT)
+// and in this connection's provider's network keep no address (one could
+// be the user's public address): only "your network", "your provider".
+// The last hop, the traced address itself, is left out (the round keeps
+// its /24).
+func storageTrace(tr trace.Tracer, path func() netinfo.Path) func(ctx context.Context, ip netip.Addr) ([]model.StorageHop, uint32, bool) {
+	return func(ctx context.Context, ip netip.Addr) ([]model.StorageHop, uint32, bool) {
+		if !netinfo.Traceable(ip) || !tr.Running() {
+			return nil, 0, false
+		}
+		target := model.HostTarget(ip.String())
+		mode := model.TraceTCP
+		if !hops.Supported().TCP {
+			mode = model.TraceICMP
+		}
+		inv, err := tr.Investigate(target, mode, storageTraceRounds)
+		if err != nil {
+			return nil, 0, false
+		}
+		defer inv.Stop()
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			if _, ended := inv.Progress(); !ended.IsZero() {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return nil, 0, false
+			case <-t.C:
+			}
+		}
+		route, ok := tr.Route(target, mode)
+		if !ok || len(route.Hops) == 0 {
+			return nil, 0, false
+		}
+		isp := uint32(0)
+		if p := path(); p.Edge.IsValid() {
+			isp = asn.Lookup(p.Edge).ASN
+		}
+		hs := route.Hops
+		if n := len(hs); n > 0 && hs[n-1] == ip {
+			hs = hs[:n-1]
+		}
+		var out []model.StorageHop
+		var handoff uint32
+		seenISP := false
+		for _, h := range hs {
+			if !h.IsValid() {
+				out = append(out, model.StorageHop{}) // no answer
+				continue
+			}
+			info := asn.Lookup(h)
+			switch {
+			case !netinfo.Traceable(h) || storage.IsSelf(h):
+				out = append(out, model.StorageHop{Owner: model.HopYourNetwork})
+			case isp == 0 || info.ASN == isp:
+				// The provider's own routers (or an unknown provider: maybe yours).
+				seenISP = true
+				out = append(out, model.StorageHop{ASN: info.ASN, Owner: model.HopYourProvider})
+			default:
+				if seenISP && handoff == 0 && info.ASN != 0 {
+					handoff = info.ASN
+				}
+				out = append(out, model.StorageHop{IP: h.String(), ASN: info.ASN, Owner: info.Owner})
+			}
+		}
+		return out, handoff, true
+	}
 }
 
 // notEdge reports an address never kept as a provider's edge: this

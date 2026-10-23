@@ -66,7 +66,15 @@ upload of up to 1 GiB each, to and from the owner's bucket under
 `fyisp-test/<install>/` only (uploads are deleted at once; a 1 KiB object
 and one of each download size stay for later rounds). Before a campaign
 starts, each target's keys are tried once (a signed listing; one set of
-tries at a time). The endpoint sees your public IP address, the request and
+tries at a time). After a campaign's first round, and after a network
+failure, fyisp traceroutes the provider address the round used, as
+*Investigate* traces a host (below; TCP to 443 where it can, about a
+minute; one at a time, one per /24 every 10 minutes, only public
+addresses outside your own provider's network) and keeps that route with
+the campaign: routers on your network and your provider's are kept by name
+only, without their addresses; routers past your provider with theirs. As
+for any traced host, the provider address's hop series are stored under
+its name (`host:<address>`, a provider's, never yours). The endpoint sees your public IP address, the request and
 `User-Agent: fyisp/<version>`. fyisp never connects to a link-local
 (cloud metadata), multicast, reserved, benchmarking or documentation
 address; it fixes whether an

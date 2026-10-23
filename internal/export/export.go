@@ -58,6 +58,9 @@ type Options struct {
 	// (SpeedTestHeader) instead of samples. The reader must also be a
 	// SpeedTestReader.
 	SpeedTests bool
+	// Storage exports the storage tests' attempts made in [From, To] as CSV
+	// (StorageHeader). The reader must also be a StorageReader.
+	Storage bool
 }
 
 // SpeedTestReader reads stored speed tests (*store.SQLite).
@@ -87,6 +90,13 @@ func Run(ctx context.Context, r store.Reader, o Options, stdout io.Writer) error
 
 // Write writes CSV to w.
 func Write(ctx context.Context, r store.Reader, w io.Writer, o Options) error {
+	if o.Storage {
+		sr, ok := r.(StorageReader)
+		if !ok {
+			return errors.New("export: this store has no storage tests")
+		}
+		return WriteStorage(ctx, sr, w, 0, o.From, o.To)
+	}
 	if o.SpeedTests {
 		sr, ok := r.(SpeedTestReader)
 		if !ok {
