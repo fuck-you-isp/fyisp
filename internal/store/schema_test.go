@@ -76,12 +76,16 @@ func countRows(t *testing.T, path, table string) int {
 	return n
 }
 
-// wantSchema is every table and index of schema v8: only what the code
+// wantSchema is every table and index of schema v9: only what the code
 // reads and writes.
 var wantSchema = []string{
 	"index incidents_start", "index route_changes_at", "index speedtests_start",
+	"index storage_attempts_at", "index storage_attempts_fail", "index storage_attempts_round",
+	"index storage_campaigns_end", "index storage_connects_at", "index storage_rounds_due", "index storage_traces_at",
 	"table hop_info", "table incidents", "table meta", "table route_changes", "table routes",
-	"table samples", "table series", "table speedtests", "table summary_1h",
+	"table samples", "table series", "table speedtests",
+	"table storage_attempts", "table storage_campaigns", "table storage_connects", "table storage_leftovers",
+	"table storage_rounds", "table storage_traces", "table summary_1h",
 }
 
 // TestFreshSchema: a new file gets schema v8 in one go: exactly the
@@ -93,7 +97,7 @@ func TestFreshSchema(t *testing.T) {
 	if got := schemaObjects(t, s.db.r); !slices.Equal(got, wantSchema) {
 		t.Errorf("schema objects\n%q\nwant\n%q", got, wantSchema)
 	}
-	if v := pragmaInt(t, s.db.w, "user_version"); v != 8 || SchemaVersion() != 8 {
+	if v := pragmaInt(t, s.db.w, "user_version"); v != 9 || SchemaVersion() != 9 {
 		t.Errorf("user_version %d, SchemaVersion %d", v, SchemaVersion())
 	}
 	if free := pragmaInt(t, s.db.w, "freelist_count"); free != 0 {

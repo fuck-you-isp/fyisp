@@ -27,6 +27,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/tiles"
 	"github.com/fuck-you-isp/fyisp/internal/web"
@@ -314,9 +315,19 @@ func main() {
 		os.Exit(2)
 	}
 	if *storageScen != storageNone {
-		ss, cleanup := newFakeStorage(ctx, *storageScen, log)
+		var q *speedtest.Queue
+		if sp, ok := d.Speed.(*speedtest.Scheduler); ok {
+			q = sp.Queue()
+		} else {
+			q = speedtest.NewQueue(speedtest.QueueOptions{})
+			go q.Run(ctx)
+		}
+		ss, camps, db, cleanup := newFakeStorage(ctx, *storageScen, q, log)
 		defer cleanup()
 		d.Storage = ss
+		if camps != nil {
+			d.Campaigns, d.StorageData = camps, db
+		}
 	}
 	if !*noBaselines {
 		fb := newFakeBaselines(ctx, st, p, now, *bf)

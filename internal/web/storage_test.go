@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,7 +18,9 @@ import (
 
 	"github.com/fuck-you-isp/fyisp/internal/s3test"
 	"github.com/fuck-you-isp/fyisp/internal/s3test/s3fake"
+	"github.com/fuck-you-isp/fyisp/internal/speedtest"
 	"github.com/fuck-you-isp/fyisp/internal/storage"
+	"github.com/fuck-you-isp/fyisp/internal/store"
 )
 
 // storageLab is a Local with storage over a fake S3 server reached as
@@ -26,6 +30,7 @@ type storageLab struct {
 	srv  *s3fake.Server
 	dir  string
 	port string
+	db   *store.SQLite
 }
 
 func storageLookup(_ context.Context, _, host string) ([]netip.Addr, error) {
@@ -47,6 +52,20 @@ func newStorageLab(t *testing.T, o LocalOptions) *storageLab {
 	_, d := fixture(t, time.Now())
 	e := s3test.New(s3test.Options{Lookup: storageLookup, IsSelf: func(netip.Addr) bool { return false }})
 	d.Storage = storage.Open(storage.Options{Dir: l.dir, Engine: e, Lookup: storageLookup})
+	// Campaigns over a database of their own and a queue of their own.
+	db, err := store.Open(t.TempDir(), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.db = db
+	q := speedtest.NewQueue(speedtest.QueueOptions{})
+	cs := storage.NewCampaigns(storage.CampaignOptions{Store: db, Queue: q, Engine: e, Targets: d.Storage})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{}, 2)
+	go func() { q.Run(ctx); done <- struct{}{} }()
+	go func() { cs.Run(ctx); done <- struct{}{} }()
+	t.Cleanup(func() { cancel(); <-done; <-done; db.Close() })
+	d.Campaigns, d.StorageData = cs, db
 	o.Addr, o.CSRFToken = "127.0.0.1:3000", "tok123"
 	l.h = Local(d, o)
 	return l
@@ -64,7 +83,8 @@ func (l *storageLab) addBody() string {
 }
 
 var storagePOSTs = []string{"/api/storage/target/add", "/api/storage/target/update?id=t_1", "/api/storage/target/delete?id=t_1",
-	"/api/storage/check?id=t_1"}
+	"/api/storage/target/forget-keys?id=t_1", "/api/storage/check?id=t_1", "/api/storage/run", "/api/storage/campaign/start",
+	"/api/storage/campaign/stop?id=1", "/api/storage/campaign/pause?id=1", "/api/storage/campaign/resume?id=1", "/api/storage/campaign/keys?id=1"}
 
 // TestStorageWritesGuarded: every storage write needs the admin token, the
 // write checks and POST; a body must be JSON.
@@ -269,5 +289,151 @@ func TestStorageFileBroken(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(path); string(b) != "{broken" {
 		t.Errorf("file now %q", b)
+	}
+}
+
+func (l *storageLab) get(t *testing.T, path string) map[string]any {
+	t.Helper()
+	w := do(l.h, "GET", path, goodHdr)
+	if w.Code != 200 {
+		t.Fatalf("GET %s = %d %s", path, w.Code, w.Body)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestStorageCampaignAPI: one round now with keys against the fake S3
+// (seed, checks, transfers), read back as a campaign, a round and its
+// attempts; the keys are dropped when it ends and never served. Then a
+// schedule: its keys are saved, its target can't be deleted, and
+// removing it deletes the keys.
+func TestStorageCampaignAPI(t *testing.T) {
+	l := newStorageLab(t, LocalOptions{})
+	code, out, raw := l.post("/api/storage/target/add", l.addBody())
+	if code != 201 {
+		t.Fatalf("add = %d %s", code, raw)
+	}
+	id := out["target"].(map[string]any)["id"].(string)
+	keys := `{"` + id + `":{"access_key":"` + l.srv.AccessKey + `","secret":"` + l.srv.Secret + `"}}`
+	code, out, raw = l.post("/api/storage/run", `{"targets":["`+id+`"],"keys":`+keys+`}`)
+	if code != 202 {
+		t.Fatalf("run = %d %s", code, raw)
+	}
+	camp := int64(out["campaign"].(map[string]any)["id"].(float64))
+	deadline := time.Now().Add(30 * time.Second)
+	var sum map[string]any
+	for {
+		sum = l.get(t, "/api/storage")
+		if len(sum["live"].([]any)) == 0 && len(sum["history"].([]any)) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the round didn't finish: %v", sum)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	h := sum["history"].([]any)[0].(map[string]any)
+	if h["state"] != "done" || h["stop_reason"] != "finished" || h["rounds_done"] != float64(1) || h["bytes_down"].(float64) == 0 {
+		t.Errorf("history %v", h)
+	}
+	if k := sum["targets"].([]any)[0].(map[string]any)["keys"].(map[string]any); k["state"] != "none" {
+		t.Errorf("keys after the round: %v", k)
+	}
+	c := l.get(t, fmt.Sprintf("/api/storage?part=campaign&id=%d", camp))
+	rounds := c["rounds"].([]any)
+	if len(rounds) != 1 || c["cells"].(map[string]any)[id] != "o" {
+		t.Fatalf("campaign %v", c)
+	}
+	if tp := c["throughput"].(map[string]any)[id].(map[string]any); len(tp["down_bps"].([]any)) != 1 || tp["down_bps"].([]any)[0] == nil {
+		t.Errorf("throughput %v", tp)
+	}
+	rid := int64(rounds[0].(map[string]any)["id"].(float64))
+	rd := l.get(t, fmt.Sprintf("/api/storage?part=round&id=%d", rid))
+	var phases []string
+	for _, a := range rd["attempts"].(map[string]any)[id].([]any) {
+		phases = append(phases, a.(map[string]any)["phase"].(string))
+	}
+	if !slices.Contains(phases, "seed") || !slices.Contains(phases, "cold") || !slices.Contains(phases, "down") || !slices.Contains(phases, "up") {
+		t.Errorf("phases %v", phases)
+	}
+	at := l.get(t, fmt.Sprintf("/api/storage?part=attempts&campaign=%d&phase=cold&limit=2", camp))
+	if at["total"] != float64(storage.DefaultCold) || len(at["items"].([]any)) != 2 || at["next_before"] == nil {
+		t.Errorf("attempts %v", at)
+	}
+	for _, p := range []string{"/api/storage", fmt.Sprintf("/api/storage?part=campaign&id=%d", camp), fmt.Sprintf("/api/storage?part=round&id=%d", rid),
+		fmt.Sprintf("/api/storage?part=attempts&campaign=%d", camp), "/api/storage?part=campaigns", "/api/storage?part=live"} {
+		if b := do(l.h, "GET", p, goodHdr).Body.String(); strings.Contains(b, l.srv.Secret) || strings.Contains(b, l.srv.AccessKey) {
+			t.Errorf("%s serves the keys: %s", p, b)
+		}
+	}
+
+	// A schedule saves its keys; its target is in use; removing it deletes them.
+	code, out, raw = l.post("/api/storage/campaign/start", `{"targets":["`+id+`"],"shape":"recurring","interval_s":600,"cold":1,
+		"days":[1,2,3,4,5,6,7],"from":"00:00","to":"23:59","tz":"America/New_York","keys":`+keys+`}`)
+	if code != 201 {
+		t.Fatalf("start = %d %s", code, raw)
+	}
+	rec := int64(out["campaign"].(map[string]any)["id"].(float64))
+	if sc := out["campaign"].(map[string]any)["schedule"].(map[string]any); sc["from"] != "00:00" || len(sc["days"].([]any)) != 7 || sc["keys_saved"] != true {
+		t.Errorf("schedule %v", sc)
+	}
+	if code, out, _ := l.post("/api/storage/campaign/start", `{"targets":["`+id+`"],"shape":"recurring","interval_s":600,"cold":1,
+		"days":[1],"from":"19:00","to":"20:00","tz":"UTC"}`); code != 409 || out["code"] != "schedule_exists" {
+		t.Errorf("second schedule = %d %v", code, out)
+	}
+	tg := l.get(t, "/api/storage")["targets"].([]any)[0].(map[string]any)
+	if k := tg["keys"].(map[string]any); k["state"] != "saved" || k["campaign"] != float64(rec) || tg["in_use_by"] != float64(rec) {
+		t.Errorf("target %v", tg)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(l.dir, storage.FileName)); !strings.Contains(string(raw), l.srv.Secret) {
+		t.Errorf("the schedule's keys aren't saved")
+	}
+	if code, out, _ := l.post("/api/storage/target/delete?id="+id, ``); code != 409 || out["code"] != "in_use" {
+		t.Errorf("delete in use = %d %v", code, out)
+	}
+	if code, out, raw := l.post(fmt.Sprintf("/api/storage/campaign/pause?id=%d", rec), ``); code != 200 || out["campaign"].(map[string]any)["state"] != "paused" {
+		t.Errorf("pause = %d %s", code, raw)
+	}
+	if code, out, _ := l.post(fmt.Sprintf("/api/storage/campaign/pause?id=%d", rec), ``); code != 409 || out["code"] != "bad_state" {
+		t.Errorf("pause twice = %d %v", code, out)
+	}
+	if code, out, raw := l.post(fmt.Sprintf("/api/storage/campaign/stop?id=%d", rec), ``); code != 200 || out["campaign"].(map[string]any)["stop_reason"] != "removed" {
+		t.Errorf("stop = %d %s", code, raw)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(l.dir, storage.FileName)); strings.Contains(string(raw), l.srv.Secret) {
+		t.Errorf("the removed schedule's keys are still saved")
+	}
+	if code, out, _ := l.post(fmt.Sprintf("/api/storage/campaign/stop?id=%d", rec), ``); code != 404 || out["code"] != "not_found" {
+		t.Errorf("stop twice = %d %v", code, out)
+	}
+	for _, c := range []struct {
+		path, body, code string
+	}{
+		{"/api/storage/campaign/start", `{"targets":["` + id + `"],"shape":"on_demand","interval_s":60,"cold":20,"down_bytes":1073741824,"count":2,"keys":` + keys + `}`, "interval_too_short"},
+		{"/api/storage/campaign/start", `{"targets":["` + id + `"],"shape":"weekly","interval_s":600,"cold":1}`, "bad_request"},
+		{"/api/storage/campaign/start", `{"targets":["` + id + `"],"shape":"recurring","interval_s":600,"cold":1,"days":[8],"from":"19:00","to":"20:00","tz":"UTC"}`, "bad_request"},
+		{"/api/storage/run", `{"targets":["` + id + `"],"keys":{"` + id + `":{"access_key":"AKIA","secret":"wrong-hunter2"}}}`, "keys_refused"},
+		{"/api/storage/campaign/keys?id=999", `{"keys":` + keys + `}`, "not_found"},
+	} {
+		code, out, raw := l.post(c.path, c.body)
+		if out["code"] != c.code || strings.Contains(raw, "hunter2") || strings.Contains(raw, l.srv.Secret) {
+			t.Errorf("%s %.80s = %d %s, want %s", c.path, c.body, code, raw, c.code)
+		}
+	}
+	est := l.get(t, "/api/storage?part=estimate&targets="+id+"&keyed="+id+"&shape=recurring&interval_s=600&cold=2&down_bytes=1048576&days=1,2&from=19:00&to=21:00")
+	if est["rounds"] != float64(12) || est["per_window"].(map[string]any)["down"].(float64) < 12<<20 || est["per_30d"] == nil {
+		t.Errorf("estimate %v", est)
+	}
+	for _, p := range []string{"/api/storage?part=nope", "/api/storage?part=campaign", "/api/storage?part=campaign&id=x", "/api/storage?part=attempts&campaign=1&class=a%20b",
+		"/api/storage?part=estimate&targets=" + id + "&shape=on_demand&cold=99", "/api/storage?part=round&id=1&x=1"} {
+		if w := do(l.h, "GET", p, goodHdr); w.Code != 400 {
+			t.Errorf("GET %s = %d", p, w.Code)
+		}
+	}
+	if w := do(l.h, "GET", "/api/storage?part=campaign&id=999", goodHdr); w.Code != 404 {
+		t.Errorf("unknown campaign = %d", w.Code)
 	}
 }

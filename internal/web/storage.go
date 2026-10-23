@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fuck-you-isp/fyisp/internal/s3test"
 	"github.com/fuck-you-isp/fyisp/internal/storage"
@@ -37,9 +38,18 @@ type storageTargetJSON struct {
 	Addressing string            `json:"addressing"`
 	HasCA      bool              `json:"has_ca"`
 	Network    string            `json:"network"`
+	Keys       storageKeysJSON   `json:"keys"`
+	InUseBy    *int64            `json:"in_use_by"` // the live campaign using it
 	LastCheck  *storageCheckJSON `json:"last_check"`
 	CreatedMs  int64             `json:"created"`
 	UpdatedMs  int64             `json:"updated"`
+}
+
+type storageKeysJSON struct {
+	State        string  `json:"state"` // "none" | "memory" | "saved"
+	Last4        *string `json:"access_key_last4"`
+	SessionToken bool    `json:"session_token"`
+	Campaign     *int64  `json:"campaign"`
 }
 
 type storageCheckJSON struct {
@@ -64,12 +74,21 @@ func strOrNil(s string) *string {
 	return &s
 }
 
-func storageTarget(ts storage.TargetState) storageTargetJSON {
+func (s *server) storageTarget(ts storage.TargetState) storageTargetJSON {
 	t := ts.Target
 	port, _ := strconv.Atoi(t.Port())
 	out := storageTargetJSON{ID: t.ID, Name: t.Name, Endpoint: t.Endpoint, Scheme: t.Scheme(), Host: t.Host(), Port: port,
 		Region: t.Region, Bucket: t.Bucket, Addressing: t.Addressing, HasCA: t.CAPEM != "", Network: t.Network,
-		CreatedMs: t.CreatedMs, UpdatedMs: t.UpdatedMs}
+		CreatedMs: t.CreatedMs, UpdatedMs: t.UpdatedMs,
+		Keys: storageKeysJSON{State: ts.Keys.State, Last4: strOrNil(ts.Keys.Last4), SessionToken: ts.Keys.Token}}
+	if ts.Keys.Campaign != 0 {
+		out.Keys.Campaign = &ts.Keys.Campaign
+	}
+	if s.d.Campaigns != nil {
+		if id := s.d.Campaigns.InUse(t.ID); id != 0 {
+			out.InUseBy = &id
+		}
+	}
 	if c := ts.Check; c != nil {
 		out.LastCheck = storageCheck(*c)
 	}
@@ -85,32 +104,57 @@ func storageCheck(c storage.Check) *storageCheckJSON {
 	return out
 }
 
-// serveStorage answers GET api/storage: the targets.
+// serveStorage answers GET api/storage[?part=...]: the summary (the
+// targets, and with campaigns the live ones, the history and notices), or
+// one part (storage_campaigns.go).
 func (s *server) serveStorage(w http.ResponseWriter, r *http.Request) {
 	if s.d.Storage == nil {
 		notFound(w, r)
+		return
+	}
+	if part := r.URL.Query().Get("part"); part != "" {
+		s.serveStoragePart(w, r, part)
 		return
 	}
 	if err := checkParams(r.URL.Query()); err != nil {
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	rev := s.d.Storage.Rev()
+	rev := s.storageRev()
 	ts, err := s.d.Storage.Targets()
 	if err != nil {
 		storageErr(w, r, err)
 		return
 	}
-	out := make([]storageTargetJSON, len(ts))
+	out := map[string]any{"at": s.now().UnixMilli(), "rev": rev}
+	tj := make([]storageTargetJSON, len(ts))
 	for i, t := range ts {
-		out[i] = storageTarget(t)
+		tj[i] = s.storageTarget(t)
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"at": s.now().UnixMilli(), "rev": rev, "targets": out})
+	out["targets"] = tj
+	if s.d.Campaigns != nil {
+		if err := s.storageCampaignsSummary(r.Context(), out); err != nil {
+			s.storeFailed(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, r, http.StatusOK, out)
+}
+
+// storageRev is the targets' and the campaigns' revisions together (both
+// only grow, from the clock at start).
+func (s *server) storageRev() int64 {
+	rev := s.d.Storage.Rev()
+	if s.d.Campaigns != nil {
+		rev += s.d.Campaigns.Rev()
+	}
+	return rev
 }
 
 // storageErr answers a storage error with its status and code.
 func storageErr(w http.ResponseWriter, r *http.Request, err error) {
 	var fe *storage.FieldError
+	var ce *storage.CampaignError
 	switch {
 	case errors.As(err, &fe):
 		writeJSON(w, r, http.StatusBadRequest, map[string]string{"error": fe.Error(), "code": fe.Code, "field": fe.Field})
@@ -124,6 +168,27 @@ func storageErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeErrCode(w, r, http.StatusConflict, "changed", err.Error())
 	case errors.Is(err, storage.ErrBusy):
 		writeErrCode(w, r, http.StatusTooManyRequests, "busy", err.Error())
+	case errors.Is(err, storage.ErrInUse):
+		writeErrCode(w, r, http.StatusConflict, "in_use", err.Error())
+	case errors.Is(err, storage.ErrNoCampaign):
+		writeErrCode(w, r, http.StatusNotFound, "not_found", err.Error())
+	case errors.As(err, &ce):
+		status := http.StatusBadRequest
+		switch ce.Code {
+		case "active_campaign", "schedule_exists", "not_waiting", "bad_state":
+			status = http.StatusConflict
+		}
+		out := map[string]any{"error": ce.Msg, "code": ce.Code}
+		if ce.Field != "" {
+			out["field"] = ce.Field
+		}
+		if ce.Targets != nil {
+			out["targets"] = ce.Targets
+		}
+		if ce.Min > 0 {
+			out["min_interval_s"] = int64(ce.Min / time.Second)
+		}
+		writeJSON(w, r, status, out)
 	case errors.Is(err, storage.ErrFile):
 		writeErrCode(w, r, http.StatusServiceUnavailable, "storage_file",
 			err.Error()+"; fix or move it and restart fyisp (it is never overwritten)")
@@ -136,7 +201,10 @@ func storageErr(w http.ResponseWriter, r *http.Request, err error) {
 func (h *localHandler) serveStorageWrite(w http.ResponseWriter, r *http.Request) {
 	route := strings.TrimPrefix(r.URL.Path, "/api/storage/")
 	switch route {
-	case "target/add", "target/update", "target/delete", "check":
+	case "target/add", "target/update", "target/delete", "target/forget-keys", "check":
+	case "run", "campaign/start", "campaign/stop", "campaign/pause", "campaign/resume", "campaign/keys":
+		h.serveCampaignWrite(w, r, route)
+		return
 	default:
 		notFound(w, r)
 		return
@@ -176,18 +244,18 @@ func (h *localHandler) serveStorageWrite(w http.ResponseWriter, r *http.Request)
 			storageErr(w, r, err)
 			return
 		}
-		writeJSON(w, r, http.StatusCreated, map[string]any{"target": storageTarget(ts)})
+		writeJSON(w, r, http.StatusCreated, map[string]any{"target": h.storageTarget(ts)})
 	case "target/update":
 		var body storageSpecJSON
 		if !decodeStorage(w, r, storageTargetBody, &body, true) {
 			return
 		}
-		ts, err := st.Update(ctx, id, storage.Patch(body))
+		ts, cleared, err := st.Update(ctx, id, storage.Patch(body))
 		if err != nil {
 			storageErr(w, r, err)
 			return
 		}
-		writeJSON(w, r, http.StatusOK, map[string]any{"target": storageTarget(ts)})
+		writeJSON(w, r, http.StatusOK, map[string]any{"target": h.storageTarget(ts), "keys_cleared": cleared})
 	case "target/delete":
 		if !decodeStorage(w, r, storageBody, nil, false) {
 			return
@@ -197,6 +265,16 @@ func (h *localHandler) serveStorageWrite(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeJSON(w, r, http.StatusOK, map[string]any{})
+	case "target/forget-keys":
+		if !decodeStorage(w, r, storageBody, nil, false) {
+			return
+		}
+		ts, err := st.ForgetKeys(id)
+		if err != nil {
+			storageErr(w, r, err)
+			return
+		}
+		writeJSON(w, r, http.StatusOK, map[string]any{"target": h.storageTarget(ts)})
 	case "check":
 		var body struct {
 			Keys *storageKeysIn `json:"keys"`
@@ -329,7 +407,9 @@ func decodeStorage(w http.ResponseWriter, r *http.Request, limit int64, v any, n
 	if err := d.Decode(v); err != nil || d.More() {
 		var ute *json.UnmarshalTypeError
 		msg := "the body is not the expected JSON object"
-		if errors.As(err, &ute) && ute.Field != "" {
+		if errors.As(err, &ute) && strings.HasPrefix(ute.Field, "keys") {
+			msg = "wrong type in keys" // the field path holds a map key: maybe a key pasted there
+		} else if errors.As(err, &ute) && ute.Field != "" {
 			msg = "wrong type for " + ute.Field
 		} else if f, ok := strings.CutPrefix(fmt.Sprint(err), "json: unknown field "); ok && fieldNameRe.MatchString(f) {
 			msg = "unknown field " + f // not a key pasted as a name

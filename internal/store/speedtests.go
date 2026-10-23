@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -90,10 +91,24 @@ func (s *SQLite) SpeedTests(ctx context.Context, from, to time.Time) ([]model.Sp
 	return s.speedTests(ctx, from, to, false)
 }
 
-// SpeedWindows is SpeedTests with the retired tests: every window a test
+// SpeedWindows is SpeedTests with the retired tests and the storage
+// rounds' transfers (trigger model.TriggerStorage): every window a test
 // loaded the line in (chart shading, Home attribution).
 func (s *SQLite) SpeedWindows(ctx context.Context, from, to time.Time) ([]model.SpeedTest, error) {
-	return s.speedTests(ctx, from, to, true)
+	ts, err := s.speedTests(ctx, from, to, true)
+	if err != nil {
+		return nil, err
+	}
+	ws, err := s.storageWindows(ctx, from, to)
+	if err != nil {
+		return nil, err
+	}
+	if len(ws) == 0 {
+		return ts, nil
+	}
+	out := append(ts, ws...)
+	slices.SortStableFunc(out, func(a, b model.SpeedTest) int { return a.Start.Compare(b.Start) })
+	return out, nil
 }
 
 func (s *SQLite) speedTests(ctx context.Context, from, to time.Time, retired bool) ([]model.SpeedTest, error) {

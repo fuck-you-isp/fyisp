@@ -167,13 +167,141 @@ CREATE TABLE speedtests(
 	handoff_ms      INT
 );
 CREATE INDEX speedtests_start ON speedtests(start_ms);
+` + storageDDL
+
+// storageDDL is the storage tests' tables (schema v9). They never hold an
+// endpoint's host, a bucket, a CA, a key, the install id (meta has it), the
+// local address, the public address, a full edge address (only its /24),
+// a raw body or header, or an error's text.
+const storageDDL = `
+-- A campaign: its shape and settings, and a snapshot of its targets (JSON
+-- [{id, name, mode}], mode 'conn' or 'bucket').
+CREATE TABLE storage_campaigns(
+	id           INTEGER PRIMARY KEY,
+	created_ms   INT  NOT NULL,
+	updated_ms   INT  NOT NULL,
+	shape        TEXT NOT NULL, -- 'on_demand' | 'recurring'
+	state        TEXT NOT NULL, -- 'scheduled' | 'running' | 'paused' | 'done' | 'stopped'
+	stop_reason  TEXT,          -- 'owner' | 'finished' | 'until' | 'removed'
+	targets      TEXT NOT NULL,
+	cold         INT  NOT NULL,
+	warm         INT  NOT NULL,
+	down_bytes   INT  NOT NULL,
+	up_bytes     INT  NOT NULL,
+	interval_s   INT  NOT NULL,
+	start_ms     INT,
+	count        INT,
+	end_ms       INT, -- set when any campaign ends
+	days         INT, -- recurring: a bitmask of weekdays, Monday = 1
+	win_from_min INT,
+	win_to_min   INT,
+	tz           TEXT,
+	until_ms     INT,
+	keys_saved   INT  NOT NULL DEFAULT 0,
+	rounds_done  INT  NOT NULL DEFAULT 0,
+	bytes_down   INT  NOT NULL DEFAULT 0,
+	bytes_up     INT  NOT NULL DEFAULT 0
+);
+CREATE INDEX storage_campaigns_end ON storage_campaigns(end_ms);
+-- A campaign's rounds, skipped rounds and gaps (seq NULL: fyisp wasn't
+-- running). skips is JSON {target: why} for targets the round left out.
+CREATE TABLE storage_rounds(
+	id            INTEGER PRIMARY KEY,
+	campaign      INT  NOT NULL,
+	seq           INT,
+	due_ms        INT  NOT NULL,
+	start_ms      INT,
+	end_ms        INT,
+	queue_wait_ms INT,
+	outcome       TEXT NOT NULL, -- 'ok' | 'slow' | 'failed' | 'config' | 'cancelled' | 'skipped' | 'gap'
+	skip_reason   TEXT,          -- 'busy' | 'stale' | 'paused' | 'no_keys' | 'other_campaign'
+	skips         TEXT,
+	gw_loss       REAL,
+	gw_rtt_ms     REAL,
+	edge_loss     REAL,
+	edge_rtt_ms   REAL,
+	bytes_down    INT  NOT NULL DEFAULT 0,
+	bytes_up      INT  NOT NULL DEFAULT 0,
+	wire_bytes    INT  NOT NULL DEFAULT 0,
+	UNIQUE(campaign, seq)
+);
+CREATE INDEX storage_rounds_due ON storage_rounds(due_ms);
+-- One request of a round (model.StorageAttempt).
+CREATE TABLE storage_attempts(
+	id                INTEGER PRIMARY KEY,
+	round             INT  NOT NULL,
+	target            TEXT NOT NULL,
+	phase             TEXT NOT NULL,
+	op                TEXT NOT NULL,
+	n                 INT  NOT NULL,
+	at_ms             INT  NOT NULL,
+	class             TEXT NOT NULL,
+	http_status       INT,
+	s3_code           TEXT,
+	request_id        TEXT,
+	host_id           TEXT,
+	request_id_header TEXT,
+	dns_ms            REAL,
+	connect_ms        REAL,
+	tls_ms            REAL,
+	ttfb_ms           REAL,
+	total_ms          REAL,
+	bytes             INT,
+	goodput_bps       REAL,
+	stall_ms          REAL,
+	edge_prefix       TEXT, -- the provider address's /24
+	tls_version       TEXT,
+	resumed           INT,
+	tcp_rtt_ms        REAL,
+	retrans           INT,
+	mss               INT,
+	skew_s            INT,
+	trace             INT -- storage_traces.id
+);
+CREATE INDEX storage_attempts_round ON storage_attempts(round);
+CREATE INDEX storage_attempts_at ON storage_attempts(at_ms);
+CREATE INDEX storage_attempts_fail ON storage_attempts(at_ms) WHERE class <> 'ok';
+-- Objects fyisp put and could not delete yet: the key under
+-- fyisp-test/<install>/ only (no host, no bucket).
+CREATE TABLE storage_leftovers(
+	target TEXT NOT NULL,
+	object TEXT NOT NULL,
+	at_ms  INT  NOT NULL,
+	PRIMARY KEY(target, object)
+) WITHOUT ROWID;
+-- Connection checks per minute and target; classes is JSON {class: n}.
+CREATE TABLE storage_connects(
+	campaign    INT  NOT NULL,
+	target      TEXT NOT NULL,
+	minute_ms   INT  NOT NULL,
+	n           INT  NOT NULL,
+	failed      INT  NOT NULL,
+	classes     TEXT,
+	p50_ms      REAL,
+	during_test INT  NOT NULL DEFAULT 0,
+	PRIMARY KEY(campaign, target, minute_ms)
+) WITHOUT ROWID;
+CREATE INDEX storage_connects_at ON storage_connects(minute_ms);
+-- Traceroutes to a target's edge: hops is a JSON array as in routes.
+CREATE TABLE storage_traces(
+	id             INTEGER PRIMARY KEY,
+	campaign       INT  NOT NULL,
+	target         TEXT NOT NULL,
+	at_ms          INT  NOT NULL,
+	trigger        TEXT NOT NULL, -- 'start' | 'failure'
+	edge_prefix    TEXT,
+	hops           TEXT NOT NULL,
+	handoff_asn    INT,
+	route_changed  INT  NOT NULL DEFAULT 0
+);
+CREATE INDEX storage_traces_at ON storage_traces(at_ms);
 `
 
 // SchemaVersion is the schema version this build writes.
 func SchemaVersion() int { return schemaVersion }
 
 // schemaVersion is SchemaVersion (a variable for the migration tests).
-var schemaVersion = 8
+var schemaVersion = 9
 
 // oldestUpgradable is the oldest schema upgraded in place: fyisp v0.11.0's.
 // A file with an older schema is replaced with a new empty one.
@@ -187,7 +315,17 @@ type migration struct {
 
 // migrations upgrade every schema from oldestUpgradable to SchemaVersion,
 // one step per version, oldest first.
-var migrations = []migration{}
+var migrations = []migration{
+	{from: 8, up: execDDL(storageDDL)}, // storage tests
+}
+
+// execDDL is a step that runs additive DDL.
+func execDDL(ddl string) func(ctx context.Context, tx *sql.Tx) error {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, ddl)
+		return err
+	}
+}
 
 // migrationsFrom returns the steps from schema ver to SchemaVersion, or an
 // error naming the first missing one.
@@ -392,7 +530,8 @@ func classify(ctx context.Context, path string) (dbState, int, error) {
 }
 
 // tables are the schema's tables, which a current file must all have.
-var tables = []string{"series", "samples", "summary_1h", "meta", "incidents", "hop_info", "route_changes", "routes", "speedtests"}
+var tables = []string{"series", "samples", "summary_1h", "meta", "incidents", "hop_info", "route_changes", "routes", "speedtests",
+	"storage_campaigns", "storage_rounds", "storage_attempts", "storage_leftovers", "storage_connects", "storage_traces"}
 
 // inspect reads the schema version and the table names of the database at
 // path over a read-only connection (mode=ro): it writes nothing, and its

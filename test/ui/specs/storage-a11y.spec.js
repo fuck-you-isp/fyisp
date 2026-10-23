@@ -41,7 +41,7 @@ for (const [i, scenario] of ['empty', 'targets'].entries()) {
       await page.goto(`http://127.0.0.1:${port}/#v=storage`);
       await expect(page.locator('.st-head h2, .st-head .sp-state').first()).toBeVisible();
       if (scenario === 'targets') {
-        await expect(page.locator('.st-list tbody tr[data-id]')).toHaveCount(4);
+        await expect(page.locator('.st-list tbody tr[data-id]')).toHaveCount(5);
         for (const name of ['AWS Virginia', 'Flaky edge']) {
           await page.getByRole('button', { name: `Check ${name}` }).click();
           await expect(page.getByRole('button', { name: `Check ${name}` })).toHaveText('Check');

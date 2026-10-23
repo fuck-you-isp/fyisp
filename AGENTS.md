@@ -17,7 +17,7 @@ fyisp is one static Go binary (`./cmd/fyisp`). It probes services with TCP conne
 | `internal/speedtest` | Pure-Go iperf3 client and scheduler. Servers are in `internal/profile/catalog/iperf3/` |
 | `internal/web` | HTTP handler, JSON API, embedded UI (`static/`), goldens (`testdata/`) |
 | `internal/metrics`, `export`, `asn` | `/metrics`, `fyisp export`, the built-in IP → AS table |
-| `internal/storage` | Storage-test targets in `storage-targets.json` (atomic, owner-only), and checks |
+| `internal/storage` | Storage tests: targets and saved keys in `storage-targets.json` (atomic, owner-only), checks, campaigns (rounds in the speed-test queue) |
 | `internal/s3test` | Storage tests: a SigV4 signer and its own HTTP/1.1 client, a round's phases, error classes; `s3fake` is a fake S3 for tests |
 | `internal/tcpinfo` | TCP_INFO (Linux): RTT, retransmits, MSS, bytes acked |
 | `internal/tunnel` | `--tunnel`: a Cloudflare quick tunnel run in-process (cloudflared linked in). Imports nothing from fyisp |

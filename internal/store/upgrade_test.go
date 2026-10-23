@@ -194,6 +194,7 @@ func schemaShape(t *testing.T, db *sql.DB) map[string]string {
 
 // TestUpgradeFromLastRelease: the database the last release wrote opens
 // with this build and keeps everything: no table loses or gains a row, the
+// tables the upgrade added are empty, the schema is a new file's, the
 // creation stamp is the release's, and the Reader API returns the values
 // the generator wrote (raw and hourly tiers, incidents, the route, the
 // route change, hop info, the speed test and a setting).
@@ -213,8 +214,18 @@ func TestUpgradeFromLastRelease(t *testing.T) {
 	if l := logs.String(); strings.Contains(l, "replaced") {
 		t.Fatalf("the %s database was replaced:\n%s", lastRelease, l)
 	}
-	if after := tableCounts(t, s.db.r); !maps.Equal(after, before) {
+	// Every row is kept; the tables the upgrade added are empty.
+	after := tableCounts(t, s.db.r)
+	for tbl, n := range after {
+		if _, old := before[tbl]; !old && n == 0 {
+			delete(after, tbl)
+		}
+	}
+	if !maps.Equal(after, before) {
 		t.Errorf("row counts\n%v\nwant\n%v", after, before)
+	}
+	if got := schemaObjects(t, s.db.r); !slices.Equal(got, wantSchema) {
+		t.Errorf("schema objects after the upgrade\n%q\nwant\n%q", got, wantSchema)
 	}
 	if v := pragmaInt(t, s.db.w, "user_version"); v != int64(SchemaVersion()) {
 		t.Errorf("user_version %d, want %d", v, SchemaVersion())

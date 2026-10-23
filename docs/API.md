@@ -34,8 +34,9 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 | POST | `api/investigate` | start an on-demand trace of a profile target or any public host | [TRACE-API.md](TRACE-API.md) |
 | GET | `api/speed` | speed tests: summary, rows, windows, queue, running test | [SPEEDTEST-API.md](SPEEDTEST-API.md) |
 | POST | `api/speed/run`, `api/speed/cancel`, `api/speed/config` | the speed-test controls | [SPEEDTEST-API.md](SPEEDTEST-API.md) |
-| GET | `api/storage` | storage tests: the targets and their last checks | [STORAGE-API.md](STORAGE-API.md) |
-| POST | `api/storage/target/add`, `…/update`, `…/delete`, `api/storage/check` | add, change and remove storage targets; check one | [STORAGE-API.md](STORAGE-API.md) |
+| GET | `api/storage` | storage tests: the targets, their keys' state and last checks, the live campaigns, history and notices; `?part=` live, campaigns, campaign, round, attempts, estimate | [STORAGE-API.md](STORAGE-API.md) |
+| POST | `api/storage/target/add`, `…/update`, `…/delete`, `…/forget-keys`, `api/storage/check` | add, change and remove storage targets; check one | [STORAGE-API.md](STORAGE-API.md) |
+| POST | `api/storage/run`, `api/storage/campaign/start`, `…/stop`, `…/pause`, `…/resume`, `…/keys` | storage campaigns | [STORAGE-API.md](STORAGE-API.md) |
 | POST, DELETE | `api/admin/session` | swap the admin token for a cookie, or sign out | [below](#post-and-delete-apiadminsession) |
 | GET | `/metrics` | Prometheus metrics | [below](#metrics) |
 

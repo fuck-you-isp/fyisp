@@ -32,9 +32,10 @@ type Options struct {
 	// never stored as an edge address. Nil: every address is (none stored).
 	IsSelf    func(netip.Addr) bool
 	UserAgent string
-	// Fake, when set, answers a Check's request instead of the network
+	// Fake, when set, answers checks and rounds instead of the network
 	// (fyisp-webdev): the attempt for target t's request op in phase,
-	// with signed reporting keys.
+	// with signed reporting keys. A round asks it once per attempt, a
+	// second apart (sweeps aren't faked).
 	Fake  func(ctx context.Context, t Target, phase, op string, signed bool) model.StorageAttempt
 	sleep func(ctx context.Context, d time.Duration) bool // tests
 	lim   limits                                          // tests; zero: the defaults

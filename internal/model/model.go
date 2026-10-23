@@ -539,9 +539,13 @@ func (t SpeedTest) OnDemand() bool {
 	return false
 }
 
-// Origin is who asked for the test: "scheduled" or "owner".
+// Origin is who asked for the test: "scheduled", "owner", or "storage" (a
+// storage round's transfers, SpeedWindows only).
 func (t SpeedTest) Origin() string {
-	if t.OnDemand() {
+	switch {
+	case t.Trigger == TriggerStorage:
+		return "storage"
+	case t.OnDemand():
 		return "owner"
 	}
 	return "scheduled"

@@ -50,6 +50,15 @@ type RoundSpec struct {
 	Targets   []RoundTarget
 	Phases    Phases
 	RecentBps [2]float64 // download, upload
+	// OnPhase, when set, is told each phase as it starts, with its target
+	// ("" for the cold phase, which interleaves them).
+	OnPhase func(phase, target string)
+}
+
+func (s *RoundSpec) phase(p, target string) {
+	if s.OnPhase != nil {
+		s.OnPhase(p, target)
+	}
 }
 
 // RoundResult is what a round did.
@@ -75,6 +84,9 @@ func seedKey(install string, n int64) string {
 // failures included. A target whose keys, clock or settings are refused
 // leaves the round; the others go on.
 func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
+	if e.o.Fake != nil {
+		return e.fakeRound(ctx, s)
+	}
 	res := RoundResult{Start: e.o.Now(), Skips: map[string]string{}}
 	est := EstimateRound(len(s.Targets), countKeyed(s.Targets), s.Phases, s.RecentBps)
 	rctx, cancel := context.WithTimeout(ctx, min(max(2*est, est+capSlack), RoundCap))
@@ -107,11 +119,15 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 	// Seed: the objects the checks and the download read, put once.
 	for _, rt := range targets {
 		if rt.keyed() && live(rt) {
+			s.phase(model.StoragePhaseSeed, rt.ID)
 			e.seed(rctx, rt, s.Install, s.Phases.Down, s.RecentBps[1], add)
 		}
 	}
 	// Cold: a fresh lookup, connection and handshake per request, the
 	// targets interleaved, each at most once a second.
+	if s.Phases.Cold > 0 {
+		s.phase(model.StoragePhaseCold, "")
+	}
 	for i := 0; i < s.Phases.Cold && rctx.Err() == nil; i++ {
 		start := e.o.Now()
 		for _, rt := range targets {
@@ -134,6 +150,9 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 	// gone the phase ends: never redial (that hides the failure).
 	for _, rt := range targets {
 		var c *conn
+		if s.Phases.Warm > 0 && live(rt) {
+			s.phase(model.StoragePhaseWarm, rt.ID)
+		}
 		for i := 0; i < s.Phases.Warm && live(rt); i++ {
 			if i > 0 && !e.o.sleep(rctx, time.Second) {
 				break
@@ -167,11 +186,13 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 			continue
 		}
 		if s.Phases.Down > 0 && live(rt) {
+			s.phase(model.StoragePhaseDown, rt.ID)
 			a := e.download(rctx, rt, s.Install, s.Phases.Down, s.RecentBps[0])
 			res.Down += a.Bytes
 			add(rt, a)
 		}
 		if s.Phases.Up > 0 && live(rt) {
+			s.phase(model.StoragePhaseUp, rt.ID)
 			key := installPrefix(s.Install) + strconv.FormatInt(s.Campaign, 10) + "/" + strconv.Itoa(s.Round) + "-" + rt.ID
 			up, del := e.upload(rctx, rt, key, s.Phases.Up, s.RecentBps[1])
 			if up.Class == string(ClassOK) {

@@ -58,7 +58,15 @@ HTTP/1.1 client: no proxy, no redirects followed, no retries, no
 compression. Saving a target looks its name up with your DNS resolver; a
 check looks it up again and sends one request (an unsigned `HEAD`, or with
 keys a signed listing of the bucket's `fyisp-test/` prefix), only when the
-owner asks. The endpoint sees your public IP address, the request and
+owner asks. A campaign, which the owner starts (on demand, or a weekly
+schedule), sends rounds every interval (at least a minute): up to 20
+requests on fresh connections (each after its own name lookup) and 10 on
+one kept connection per target, and with keys one download and one
+upload of up to 1 GiB each, to and from the owner's bucket under
+`fyisp-test/<install>/` only (uploads are deleted at once; a 1 KiB object
+and one of each download size stay for later rounds). Before a campaign
+starts, each target's keys are tried once (a signed listing; one set of
+tries at a time). The endpoint sees your public IP address, the request and
 `User-Agent: fyisp/<version>`. fyisp never connects to a link-local
 (cloud metadata), multicast, reserved, benchmarking or documentation
 address; it fixes whether an
@@ -70,14 +78,28 @@ over `http://`. Targets are saved in `storage-targets.json` in the data
 directory, readable by fyisp's user only (`0600`, or a protected DACL on
 Windows), never in the database.
 
-Storage keys are write-only: entered for a check, never returned by the
-API, logged, put in an error, exported or written to a file or the
-database, and dropped when the check returns. Through `--tunnel`, keys
+Storage keys are write-only: entered for a check or a campaign, never
+returned by the API, logged, put in an error, exported or written to the
+database. A check's keys are dropped when it returns, an on-demand
+campaign's are held in memory until it ends (a restart loses them: the
+campaign waits for them again), and a recurring schedule's are saved in
+the targets file until its end date passes or it is removed. Saved keys
+are bound to the target's endpoint, region, bucket, addressing and CA: a
+change to any of these, or *forget keys*, deletes them. Every set of keys
+is tried once before a campaign starts. Go can't promise to wipe memory:
+copies may linger in freed memory, swap or a core dump. Through `--tunnel`, keys
 typed in the dashboard pass through Cloudflare, which terminates HTTPS
 (below): use keys scoped to the test bucket, or short-lived session
 credentials. Whoever has the admin token can save a target on your LAN
 (any private address and port) and check it: the check's class and HTTP
 status show whether something answers there, as a port check would.
+A round stores, per attempt, its timings, class, HTTP status, S3 error
+code, the provider's request ID (refused when it looks like a dotted
+address) and the /24 of the provider's address: never a full address, an
+address of this machine, or one in your own internet provider's network
+or of no network fyisp's built-in table knows (it could be your public
+address). That last rule is best effort: a provider that gives you an
+address from another of its networks isn't recognised.
 
 With `--tunnel` (off by default) fyisp runs Cloudflare's tunnel code
 (cloudflared, linked in) to publish the dashboard at a random
@@ -151,7 +173,7 @@ The dashboard's controls:
 | GET `/api/*`, `/metrics` | yes | yes (401 without) | - | read-only |
 | POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes | one queue, one test at a time |
 | POST `/api/investigate` (`target=` or `host=`, optional `mode=`) | yes | yes | yes | the safeguards above: public hosts only, fixed ports, 4 at once, 250 rounds |
-| POST `/api/storage/target/*`, `/api/storage/check` | yes | yes | yes | `application/json` bodies only; the address rules above; one check at a time, 20 s each; keys never returned |
+| POST `/api/storage/target/*`, `/api/storage/check`, `/api/storage/run`, `/api/storage/campaign/*` | yes | yes | yes | `application/json` bodies only; the address rules above; one check (or set of key tries) at a time, 20 s each; rounds wait in the speed-test queue; keys tried first, never returned |
 | POST/DELETE `/api/admin/session` | yes | POST exchanges it for the cookie | `Sec-Fetch-Site` only (the token header and DELETE need a CORS preflight, never granted) | - |
 
 The admin token is `--admin-token` or `$FYISP_ADMIN_TOKEN` (at least 32

@@ -73,6 +73,10 @@ type Deps struct {
 	// Storage keeps the storage-test targets and runs checks; nil: the
 	// storage routes answer 404.
 	Storage *storage.Service
+	// Campaigns runs the storage campaigns and StorageData reads what they
+	// stored; nil: only targets and checks.
+	Campaigns   *storage.Campaigns
+	StorageData StorageReader
 	// Path is the current network path of this machine (netinfo.Watcher's
 	// Current), including how it connects (Path.Conn); may be nil.
 	Path func() netinfo.Path

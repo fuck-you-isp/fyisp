@@ -139,7 +139,7 @@ test('a failed check says why; the hash and the view bar', async ({ page }) => {
     await page.getByRole('button', { name: 'Storage' }).click();
     await expect(page).toHaveURL(/v=storage/);
     await expect(page.locator('#ranges')).toBeHidden();
-    await expect(page.locator('.st-list tbody tr[data-id]')).toHaveCount(4);
+    await expect(page.locator('.st-list tbody tr[data-id]')).toHaveCount(5);
     await expect(page.locator('#storage')).not.toContainText('null');
     await page.getByRole('button', { name: 'Check Flaky edge' }).click();
     const bad = page.locator('.st-check.bad');

@@ -42,6 +42,8 @@ type Service struct {
 	err    error // the file can't be used: storage is off
 	rev    int64
 	checks map[string]Check
+	mem    map[string]memKey         // target -> an on-demand campaign's keys
+	inUse  func(target string) int64 // SetInUse
 
 	checking sync.Mutex // one check at a time
 }
@@ -58,9 +60,10 @@ type Check struct {
 	DuringTest                      bool
 }
 
-// TargetState is a target with its last check.
+// TargetState is a target with where its keys are and its last check.
 type TargetState struct {
 	Target
+	Keys  KeyState
 	Check *Check
 }
 
@@ -74,7 +77,9 @@ var (
 )
 
 // Open reads the targets file in o.Dir. A file it can't use turns storage
-// off (Err) and is left as it is.
+// off (Err) and is left as it is. Saved keys whose target is gone or
+// changed (a file edited by hand) are deleted.
+
 func Open(o Options) *Service {
 	if o.Now == nil {
 		o.Now = time.Now
@@ -83,8 +88,17 @@ func Open(o Options) *Service {
 		o.Lookup = net.DefaultResolver.LookupNetIP
 	}
 	// rev starts at the clock, so it doesn't repeat across restarts.
-	s := &Service{o: o, path: filepath.Join(o.Dir, FileName), checks: map[string]Check{}, rev: o.Now().UnixMilli()}
+	s := &Service{o: o, path: filepath.Join(o.Dir, FileName), checks: map[string]Check{}, mem: map[string]memKey{}, rev: o.Now().UnixMilli()}
 	s.f, s.err = loadFile(s.path)
+	if s.err == nil {
+		keys := slices.DeleteFunc(slices.Clone(s.f.Keys), func(k SavedKey) bool {
+			i := s.index(k.Target)
+			return i < 0 || s.f.Targets[i].binding() != k.Binding
+		})
+		if len(keys) != len(s.f.Keys) {
+			_ = s.commitLocked(s.f.Targets, keys) // unused anyway (bound to other settings); the next save retries
+		}
+	}
 	return s
 }
 
@@ -135,16 +149,17 @@ func (s *Service) Target(id string) (TargetState, error) {
 }
 
 func (s *Service) stateLocked(t Target) TargetState {
-	ts := TargetState{Target: t}
+	ts := TargetState{Target: t, Keys: s.keyStateLocked(t)}
 	if c, ok := s.checks[t.ID]; ok {
 		ts.Check = &c
 	}
 	return ts
 }
 
-// commitLocked saves targets as the file; on failure nothing changes.
-func (s *Service) commitLocked(targets []Target) error {
-	next := &file{Version: fileVersion, Targets: targets}
+// commitLocked saves targets and keys as the file; on failure nothing
+// changes.
+func (s *Service) commitLocked(targets []Target, keys []SavedKey) error {
+	next := &file{Version: fileVersion, Targets: targets, Keys: keys}
 	if err := saveFile(s.path, next); err != nil {
 		return err
 	}
@@ -183,19 +198,20 @@ func (s *Service) Add(ctx context.Context, sp Spec) (TargetState, error) {
 	for s.index(t.ID) >= 0 {
 		t.ID = newID()
 	}
-	if err := s.commitLocked(append(slices.Clone(s.f.Targets), t)); err != nil {
+	if err := s.commitLocked(append(slices.Clone(s.f.Targets), t), s.f.Keys); err != nil {
 		return TargetState{}, err
 	}
 	return s.stateLocked(t), nil
 }
 
 // Update changes a target's settings. A change to its endpoint, region,
-// bucket, addressing or CA drops its last check. A target another request
-// changed while the new endpoint resolved is ErrChanged.
-func (s *Service) Update(ctx context.Context, id string, p Patch) (TargetState, error) {
+// bucket, addressing or CA deletes the keys campaigns hold for it
+// (keysCleared) and drops its last check. A target another request changed
+// while the new endpoint resolved is ErrChanged.
+func (s *Service) Update(ctx context.Context, id string, p Patch) (ts TargetState, keysCleared bool, err error) {
 	old, err := s.Target(id)
 	if err != nil {
-		return TargetState{}, err
+		return TargetState{}, false, err
 	}
 	sp := Spec{Name: old.Name, Endpoint: old.Endpoint, Region: old.Region, Bucket: old.Bucket, Addressing: old.Addressing, CAPEM: old.CAPEM}
 	for _, f := range []struct{ dst, src *string }{{&sp.Name, p.Name}, {&sp.Endpoint, p.Endpoint}, {&sp.Region, p.Region},
@@ -205,12 +221,12 @@ func (s *Service) Update(ctx context.Context, id string, p Patch) (TargetState, 
 		}
 	}
 	if err := sp.normalize(); err != nil {
-		return TargetState{}, err
+		return TargetState{}, false, err
 	}
 	nw := old.Network
 	if sp.Endpoint != old.Endpoint {
 		if nw, err = network(ctx, s.o.Lookup, sp.Endpoint); err != nil {
-			return TargetState{}, err
+			return TargetState{}, false, err
 		}
 	}
 
@@ -219,28 +235,40 @@ func (s *Service) Update(ctx context.Context, id string, p Patch) (TargetState, 
 	i := s.index(id)
 	switch {
 	case i < 0 || s.f.Targets[i] != old.Target:
-		return TargetState{}, ErrChanged
+		return TargetState{}, false, ErrChanged
 	case s.nameTakenLocked(sp.Name, id):
-		return TargetState{}, ErrNameTaken
+		return TargetState{}, false, ErrNameTaken
 	}
 	t := old.Target
 	t.Name, t.Endpoint, t.Region, t.Bucket, t.Addressing, t.CAPEM, t.Network = sp.Name, sp.Endpoint, sp.Region, sp.Bucket, sp.Addressing, sp.CAPEM, nw
 	if t == old.Target {
-		return s.stateLocked(t), nil
+		return s.stateLocked(t), false, nil
 	}
 	t.UpdatedMs = s.o.Now().UnixMilli()
 	targets := slices.Clone(s.f.Targets)
 	targets[i] = t
-	if err := s.commitLocked(targets); err != nil {
-		return TargetState{}, err
+	keys := s.f.Keys
+	rebound := t.binding() != old.binding()
+	if rebound {
+		keys = slices.DeleteFunc(slices.Clone(keys), func(k SavedKey) bool { return k.Target == id })
+		_, held := s.mem[id]
+		keysCleared = held || len(keys) != len(s.f.Keys)
 	}
-	if t.binding() != old.binding() {
+	if err := s.commitLocked(targets, keys); err != nil {
+		return TargetState{}, false, err
+	}
+	if rebound {
+		if m, ok := s.mem[id]; ok {
+			m.creds.Zero()
+			delete(s.mem, id)
+		}
 		delete(s.checks, id)
 	}
-	return s.stateLocked(t), nil
+	return s.stateLocked(t), keysCleared, nil
 }
 
-// Delete removes a target and its last check.
+// Delete removes a target, its keys and its last check; a live campaign's
+// target is ErrInUse.
 func (s *Service) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -251,15 +279,23 @@ func (s *Service) Delete(id string) error {
 	if i < 0 {
 		return ErrNotFound
 	}
-	if err := s.commitLocked(slices.Delete(slices.Clone(s.f.Targets), i, i+1)); err != nil {
+	if s.inUse != nil && s.inUse(id) != 0 {
+		return ErrInUse
+	}
+	keys := slices.DeleteFunc(slices.Clone(s.f.Keys), func(k SavedKey) bool { return k.Target == id })
+	if err := s.commitLocked(slices.Delete(slices.Clone(s.f.Targets), i, i+1), keys); err != nil {
 		return err
+	}
+	if m, ok := s.mem[id]; ok {
+		m.creds.Zero()
+		delete(s.mem, id)
 	}
 	delete(s.checks, id)
 	return nil
 }
 
-// Check tests a target once, signed with creds (nil: unsigned), and keeps
-// the result as its last check. One check runs at a time (ErrBusy). A
+// Check tests a target once, signed with creds (nil: the keys a campaign
+// holds for it, else unsigned), and keeps the result as its last check. One check runs at a time (ErrBusy). A
 // check whose ctx ends first returns ctx's error and keeps nothing; a
 // session token for an http:// endpoint is a FieldError of "keys".
 func (s *Service) Check(ctx context.Context, id string, creds *s3test.Creds) (Check, error) {
@@ -274,6 +310,12 @@ func (s *Service) Check(ctx context.Context, id string, creds *s3test.Creds) (Ch
 	et, err := ts.Engine()
 	if err != nil {
 		return Check{}, err
+	}
+	if creds == nil {
+		if held, ok := s.Keys(id, 0); ok {
+			creds = held
+			defer held.Zero()
+		}
 	}
 	if creds != nil && creds.HasToken() && et.Endpoint.Scheme != "https" {
 		return Check{}, &FieldError{Field: "keys", Msg: "a session token is only sent over https", Code: "bad_request"}

@@ -180,26 +180,26 @@ func TestUpdate(t *testing.T) {
 	}
 	check()
 	rev := l.s.Rev()
-	ts, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("renamed")})
+	ts, _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("renamed")})
 	if err != nil || ts.Name != "renamed" || ts.Check == nil || l.s.Rev() <= rev {
 		t.Fatalf("rename: %+v %v", ts, err)
 	}
-	if _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("B")}); !errors.Is(err, ErrNameTaken) {
+	if _, _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("B")}); !errors.Is(err, ErrNameTaken) {
 		t.Errorf("rename to b: %v", err)
 	}
-	if ts, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("renamed")}); err != nil || ts.UpdatedMs != mustTarget(t, l.s, a.ID).UpdatedMs {
+	if ts, _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("renamed")}); err != nil || ts.UpdatedMs != mustTarget(t, l.s, a.ID).UpdatedMs {
 		t.Errorf("no change: %+v %v", ts, err)
 	}
 	for _, p := range []Patch{{Region: ptr("eu-west-1")}, {Bucket: ptr("other")}, {Addressing: ptr("path")}, {Endpoint: ptr("http://bkt.s3.test:" + l.port)}} {
 		check()
-		if ts, err := l.s.Update(ctx, a.ID, p); err != nil || ts.Check != nil {
+		if ts, _, err := l.s.Update(ctx, a.ID, p); err != nil || ts.Check != nil {
 			t.Errorf("%+v: %+v %v", p, ts, err)
 		}
 	}
-	if _, err := l.s.Update(ctx, "t_00000000", Patch{Name: ptr("x")}); !errors.Is(err, ErrNotFound) {
+	if _, _, err := l.s.Update(ctx, "t_00000000", Patch{Name: ptr("x")}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown: %v", err)
 	}
-	if _, err := l.s.Update(ctx, a.ID, Patch{Endpoint: ptr("https://169.254.1.1")}); err == nil {
+	if _, _, err := l.s.Update(ctx, a.ID, Patch{Endpoint: ptr("https://169.254.1.1")}); err == nil {
 		t.Error("a link-local endpoint was saved")
 	}
 }
@@ -210,12 +210,12 @@ func TestUpdateChanged(t *testing.T) {
 	l := newLab(t, false)
 	a := l.add(t, Spec{Name: "a", Endpoint: l.endpoint("http"), Bucket: "bkt"})
 	l.s.o.Lookup = func(ctx context.Context, network, host string) ([]netip.Addr, error) {
-		if _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("meanwhile")}); err != nil {
+		if _, _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("meanwhile")}); err != nil {
 			t.Error(err)
 		}
 		return l.lookup(ctx, network, host)
 	}
-	if _, err := l.s.Update(ctx, a.ID, Patch{Endpoint: ptr("http://other.s3.test:" + l.port)}); !errors.Is(err, ErrChanged) {
+	if _, _, err := l.s.Update(ctx, a.ID, Patch{Endpoint: ptr("http://other.s3.test:" + l.port)}); !errors.Is(err, ErrChanged) {
 		t.Errorf("update: %v", err)
 	}
 	if got := mustTarget(t, l.s, a.ID); got.Name != "meanwhile" || got.Endpoint != a.Endpoint {
@@ -234,7 +234,7 @@ func TestSaveFails(t *testing.T) {
 	if _, err := l.s.Add(ctx, Spec{Name: "b", Endpoint: l.endpoint("http")}); err == nil {
 		t.Error("Add saved without a directory")
 	}
-	if _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("c")}); err == nil {
+	if _, _, err := l.s.Update(ctx, a.ID, Patch{Name: ptr("c")}); err == nil {
 		t.Error("Update saved without a directory")
 	}
 	if err := l.s.Delete(a.ID); err == nil {

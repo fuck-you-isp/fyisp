@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,11 +22,30 @@ const fileVersion = 1
 
 const maxFile = 1 << 20
 
-// file is the targets file. Only fyisp's user can read it.
+// file is the targets file: the targets, and the keys recurring campaigns
+// keep (deleted when their schedule ends). Only fyisp's user can read it.
 type file struct {
-	Version int      `json:"version"`
-	Targets []Target `json:"targets"`
+	Version int        `json:"version"`
+	Targets []Target   `json:"targets"`
+	Keys    []SavedKey `json:"keys"`
 }
+
+// SavedKey is a recurring campaign's keys for one target, bound to the
+// target's settings when saved (a change to them deletes the keys).
+type SavedKey struct {
+	Target       string `json:"target"`
+	Campaign     int64  `json:"campaign"`
+	Binding      string `json:"binding"`
+	AccessKey    string `json:"access_key"`
+	Secret       string `json:"secret"`
+	SessionToken string `json:"session_token"`
+	SavedMs      int64  `json:"saved_ms"`
+}
+
+// SavedKey prints as [redacted] in every fmt verb and in logs (only the
+// targets file holds its secret).
+func (SavedKey) Format(f fmt.State, verb rune) { _, _ = f.Write([]byte("[redacted]")) }
+func (SavedKey) LogValue() slog.Value          { return slog.StringValue("[redacted]") }
 
 // ErrFile is a targets file fyisp won't use (and never overwrites): it is
 // unreadable, not JSON, of an unknown version, a symlink, too large,

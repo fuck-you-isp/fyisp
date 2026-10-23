@@ -3,6 +3,7 @@ package s3test
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 )
 
 // Creds are an S3 access key, its secret and an optional session token.
@@ -26,6 +27,18 @@ func (c *Creds) AccessKeyLast4() string {
 		return ""
 	}
 	return c.accessKey[len(c.accessKey)-4:]
+}
+
+// Clone copies c (its secret and token as new byte slices).
+func (c *Creds) Clone() *Creds {
+	return &Creds{accessKey: c.accessKey, secret: slices.Clone(c.secret), token: slices.Clone(c.token)}
+}
+
+// Material is the key material as strings (which can't be zeroed), for the
+// one place that writes it out: the storage targets file, for a recurring
+// schedule's keys.
+func (c *Creds) Material() (accessKey, secret, token string) {
+	return c.accessKey, string(c.secret), string(c.token)
 }
 
 // HasToken reports a session token.

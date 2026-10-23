@@ -51,3 +51,110 @@ const (
 	StoragePhaseDown = "down" // a ranged download
 	StoragePhaseUp   = "up"   // an upload, then its delete
 )
+
+// StorageCampaign is a storage test campaign: rounds every Interval, on
+// demand (from Start, Count rounds or until End) or recurring (inside a
+// weekly window in TZ, until Until).
+type StorageCampaign struct {
+	ID       int64
+	Created  time.Time
+	Updated  time.Time
+	Shape    string // StorageOnDemand, StorageRecurring
+	State    string // StorageScheduled ... StorageStopped
+	Stopped  string // why it ended: StopOwner, StopFinished, StopUntil, StopRemoved
+	Targets  []StorageCampaignTarget
+	Cold     int
+	Warm     int
+	Down, Up int64 // bytes per transfer
+	Interval time.Duration
+	// On demand: the first round, and Count rounds or until End.
+	Start time.Time
+	Count int
+	// End is when it ends (planned, by duration) or ended.
+	End time.Time
+	// Recurring: weekdays (bit 0 Monday ... bit 6 Sunday), the window's
+	// start and end in minutes after midnight (an end at or before the
+	// start crosses midnight), its zone, and when the schedule ends (zero:
+	// never).
+	Days       uint8
+	FromMin    int
+	ToMin      int
+	TZ         string
+	Until      time.Time
+	KeysSaved  bool
+	RoundsDone int
+	BytesDown  int64
+	BytesUp    int64
+}
+
+// StorageCampaignTarget is a target as the campaign started with it.
+type StorageCampaignTarget struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Mode string `json:"mode"` // "conn" (connection checks only) or "bucket"
+}
+
+// Live reports a campaign that hasn't ended.
+func (c StorageCampaign) Live() bool {
+	return c.State == StorageScheduled || c.State == StorageRunning || c.State == StoragePaused
+}
+
+// Campaign shapes, states and why one stopped.
+const (
+	StorageOnDemand  = "on_demand"
+	StorageRecurring = "recurring"
+
+	StorageScheduled = "scheduled"
+	StorageRunning   = "running"
+	StoragePaused    = "paused"
+	StorageDone      = "done"
+	StorageStopped   = "stopped"
+
+	StopOwner    = "owner"    // the owner stopped it
+	StopFinished = "finished" // it ran its rounds or its time
+	StopUntil    = "until"    // a recurring schedule's end date passed
+	StopRemoved  = "removed"  // the owner removed the schedule
+)
+
+// StorageRound is one due round of a campaign: it ran (Seq set, the
+// attempts stored with it), was skipped (Outcome RoundSkipped, SkipReason),
+// or is a gap while fyisp wasn't running (Seq nil, Due..End).
+type StorageRound struct {
+	ID         int64
+	Campaign   int64
+	Seq        *int
+	Due        time.Time
+	Start, End time.Time // zero when it didn't run (End: a gap's end)
+	QueueWait  time.Duration
+	Outcome    string            // Round*
+	SkipReason string            // Skip*, for RoundSkipped
+	Skips      map[string]string // target -> why the round left it out
+	GwLoss     *float64
+	GwRTTms    *float64
+	EdgeLoss   *float64
+	EdgeRTTms  *float64
+	BytesDown  int64
+	BytesUp    int64
+	Wire       int64
+}
+
+// Round outcomes, and why a round or a target in it was skipped.
+const (
+	RoundOK        = "ok"
+	RoundSlow      = "slow"
+	RoundFailed    = "failed"
+	RoundConfig    = "config"
+	RoundCancelled = "cancelled"
+	RoundSkipped   = "skipped"
+	RoundGap       = "gap"
+
+	SkipBusy          = "busy"           // a round of the campaign was still waiting
+	SkipStale         = "stale"          // it waited too long in the queue
+	SkipPaused        = "paused"         // the campaign was paused
+	SkipNoKeys        = "no_keys"        // keys are missing (a target, or every one)
+	SkipOtherCampaign = "other_campaign" // another campaign was running
+)
+
+// TriggerStorage is the trigger of a storage round's transfer window in
+// SpeedWindows (charts and Home explain probes during it).
+const TriggerStorage = "storage"

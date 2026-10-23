@@ -39,6 +39,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
 	"github.com/fuck-you-isp/fyisp/internal/profile"
+	"github.com/fuck-you-isp/fyisp/internal/storage"
 	"github.com/fuck-you-isp/fyisp/internal/tiles"
 	"github.com/fuck-you-isp/fyisp/internal/trace"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
@@ -385,7 +386,11 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed
-	deps.Storage = newStorage(dir, speed.Queue(), log)
+	var camps *storage.Campaigns
+	deps.Storage, camps = newStorage(dir, speed.Queue(), st, wins, ni.Current, log)
+	if camps != nil {
+		deps.Campaigns, deps.StorageData = camps, st
+	}
 	localAddr := localLn.Addr().String()
 	adminTok, adminGenerated, err := resolveAdminToken(c.adminToken)
 	if err != nil {
@@ -461,6 +466,13 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 			log.Warn("speed tests stopped", "err", err)
 		}
 	}()
+	campsDone := make(chan struct{})
+	go func() {
+		defer close(campsDone)
+		if camps != nil {
+			camps.Run(ctx)
+		}
+	}()
 	go func() {
 		if err := bs.Run(ctx); err != nil && ctx.Err() == nil {
 			log.Warn("baselines stopped", "err", err)
@@ -498,6 +510,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	<-verdictDone // saves the open incident
 	<-traceDone
 	<-speedDone // a test is abandoned, not saved, on shutdown
+	<-campsDone // after the queue (speedDone): a running round was cancelled and saved
 	flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := st.Flush(flushCtx); err != nil {
