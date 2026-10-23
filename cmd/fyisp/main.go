@@ -99,6 +99,7 @@ type config struct {
 	openBrowser bool
 	adminToken  string
 	allowHosts  hostList
+	tunnel      bool
 	pprofAddr   string
 	logFormat   string
 	logLevel    string
@@ -161,7 +162,8 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", "", "token required for speed-test controls (Test speed now, cancel, the schedule, skipped servers) when --listen is not loopback or --allow-host is set; by default one is generated, kept in the data directory and shown as a link in the log; off turns the speed-test controls off (traces stay open to any viewer)")
+	fs.StringVar(&c.adminToken, "admin-token", "", "token required for speed-test controls (Test speed now, cancel, the schedule, skipped servers) when --listen is not loopback, --allow-host is set or --tunnel is on; by default one is generated, kept in the data directory and shown as a link in the log; off turns the speed-test controls off (traces stay open to any viewer)")
+	fs.BoolVar(&c.tunnel, "tunnel", envBool("FYISP_TUNNEL"), "also serve the dashboard over HTTPS on a Cloudflare quick tunnel (https://<random>.trycloudflare.com; anyone with the link can open it); turns the admin token on like --allow-host (default: $FYISP_TUNNEL, else false)")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
@@ -191,8 +193,24 @@ func parseFlags(args []string) (config, error) {
 	if err := checkSpeedFlags(&c); err != nil {
 		return c, err
 	}
+	if v := os.Getenv("FYISP_TUNNEL"); v != "" {
+		if _, err := strconv.ParseBool(v); err != nil {
+			return c, fmt.Errorf("FYISP_TUNNEL=%q: want 1, true, 0 or false", v)
+		}
+	}
 	envProfiles(&c.profiles, c.configPath)
 	return c, nil
+}
+
+// reachedByName reports a dashboard reached through a name (--allow-host,
+// or the tunnel's): it gets an admin token even on a loopback listener.
+func reachedByName(c config) bool { return len(c.allowHosts) > 0 || c.tunnel }
+
+// envBool is an environment variable's boolean (unset or not a boolean:
+// false), for flags a container or NAS template sets more easily that way.
+func envBool(name string) bool {
+	b, _ := strconv.ParseBool(os.Getenv(name))
+	return b
 }
 
 // envProfiles fills in profiles from FYISP_PROFILE (for container and NAS
@@ -361,14 +379,21 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed
 	localAddr := localLn.Addr().String()
-	adminTok, adminStored, err := resolveAdminToken(c.adminToken, localAddr, c.allowHosts, dir)
+	named := reachedByName(c)
+	adminTok, adminStored, err := resolveAdminToken(c.adminToken, localAddr, named, dir)
 	if err != nil {
 		return err
 	}
-	if c.adminToken == adminTokenOff && len(c.allowHosts) > 0 && isLoopbackAddr(localAddr) {
-		log.Warn("--admin-token=off with --allow-host: speed-test controls are disabled for every browser, this one included")
+	if c.adminToken == adminTokenOff && named && isLoopbackAddr(localAddr) {
+		log.Warn("--admin-token=off with --allow-host or --tunnel: speed-test controls are disabled for every browser, this one included")
 	}
-	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}))
+	lo := web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}
+	var tun *dashTunnel
+	if c.tunnel {
+		tun = newDashTunnel()
+		lo.TunnelHost = tun.Host
+	}
+	localSrv := newServer(web.Local(deps, lo))
 	serve := func(name string, s *http.Server, ln net.Listener) {
 		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("http server failed", "server", name, "err", err)
@@ -402,6 +427,12 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {
 		openBrowser(openURL)
+	}
+	if tun != nil {
+		if err := tun.start(ctx, localAddr, adminTok, adminStored, log); err != nil {
+			return err
+		}
+		log.Info("starting the HTTPS tunnel; its link follows once Cloudflare has assigned one")
 	}
 
 	// Probing, persistence and retention.
@@ -451,6 +482,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 
 	<-ctx.Done()
 	log.Info("shutting down")
+	tunnelStop := time.NewTimer(10 * time.Second) // the tunnel stops from now on, alongside the rest
+	defer tunnelStop.Stop()
 	stop() // restore default signal handling: a second Ctrl-C exits at once
 	<-probeDone
 	<-verdictDone // saves the open incident
@@ -464,6 +497,15 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	shutCtx, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel2()
 	_ = localSrv.Shutdown(shutCtx)
+	if tun != nil {
+		// Stopping since ctx ended, alongside the save (a graceful
+		// unregister of about a second), so this rarely waits.
+		select {
+		case <-tun.Done():
+		case <-tunnelStop.C:
+			log.Warn("the HTTPS tunnel did not stop in time")
+		}
+	}
 	return nil
 }
 

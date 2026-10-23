@@ -21,6 +21,11 @@ type LocalOptions struct {
 	// tunnel), whatever Addr is: without AdminToken the speed-test
 	// controls are then disabled.
 	ExtraHosts []string
+	// TunnelHost, if set, is the current host name of a tunnel to this
+	// dashboard ("" while it is down), allowed like ExtraHosts. A quick
+	// tunnel gets a new random name each time it starts. Setting it means
+	// the dashboard is reached from elsewhere, as with ExtraHosts.
+	TunnelHost func() string
 	// PublicBind reports that the listener accepts non-loopback clients
 	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an Addr whose
 	// host is unspecified or a non-loopback IP (--listen 192.168.1.10:3000).
@@ -92,7 +97,7 @@ func Local(d Deps, o LocalOptions) http.Handler {
 	switch {
 	case o.AdminToken != "":
 		h.controls = "admin"
-	case h.opts.PublicBind || len(o.ExtraHosts) > 0:
+	case h.opts.PublicBind || len(o.ExtraHosts) > 0 || o.TunnelHost != nil:
 		// Reachable from elsewhere, and no token (--admin-token=off):
 		// a tunnel or forwarder need not set any proxy header.
 		h.controls = "disabled"
@@ -123,6 +128,9 @@ func (h *localHandler) hostAllowed(hostport string) bool {
 	if h.extra[host] {
 		return true
 	}
+	if h.tunnelHostport(hostport) {
+		return true
+	}
 	portOK := h.opts.PublicBind || h.port == "" || h.port == "0" || port == h.port
 	switch host {
 	case "127.0.0.1", "localhost", "::1":
@@ -134,6 +142,23 @@ func (h *localHandler) hostAllowed(hostport string) bool {
 	// IP literals cannot be DNS-rebound; allow them when LAN access is on.
 	return h.opts.PublicBind && net.ParseIP(host) != nil
 }
+
+// tunnelHostport reports a Host that is the tunnel's current name
+// (TunnelHost), with no port (as cloudflared passes it) or the HTTPS port.
+func (h *localHandler) tunnelHostport(hostport string) bool {
+	if h.opts.TunnelHost == nil {
+		return false
+	}
+	host, port, err := net.SplitHostPort(strings.ToLower(hostport))
+	if err != nil {
+		host, port = strings.ToLower(hostport), "443"
+	}
+	th := h.opts.TunnelHost()
+	return th != "" && port == "443" && host == strings.ToLower(th)
+}
+
+// viaTunnel reports a request by the tunnel's name.
+func (h *localHandler) viaTunnel(r *http.Request) bool { return h.tunnelHostport(r.Host) }
 
 func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(w.Header())
@@ -281,7 +306,7 @@ func tokenEqual(got, want string) bool {
 // and returns false.
 func (h *localHandler) speedControlAllowed(w http.ResponseWriter, r *http.Request) bool {
 	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, "speed-test controls are disabled: the dashboard is reachable from elsewhere (--listen or --allow-host) and fyisp was started with --admin-token=off")
+		writeErr(w, r, http.StatusForbidden, "speed-test controls are disabled: the dashboard is reachable from elsewhere (--listen, --allow-host or --tunnel) and fyisp was started with --admin-token=off")
 		return false
 	}
 	if h.controls == "enabled" && proxied(r) {
@@ -348,7 +373,9 @@ func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
 		return
 	}
-	c := &http.Cookie{Name: h.adminCookie(), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode}
+	// Through the tunnel the page is HTTPS: never send the token back over
+	// plain HTTP.
+	c := &http.Cookie{Name: h.adminCookie(), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.viaTunnel(r)}
 	if r.Method == http.MethodDelete {
 		c.MaxAge = -1
 		http.SetCookie(w, c)

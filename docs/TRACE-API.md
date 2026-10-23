@@ -83,7 +83,7 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 | 404 | `unresolved` | `host` could not be resolved to an IPv4 address (no address, a lookup failure or a timeout) |
 | 404 | `unavailable` | tracing is not available |
 | 405 | `method_not_allowed` | not POST |
-| 421 | `unknown_host` | the `Host` isn't allowed (open the dashboard's own address, or add `--allow-host`) |
+| 421 | `unknown_host` | the `Host` isn't allowed (open the dashboard's own address or its `--tunnel` link, or add `--allow-host`) |
 | 429 | `busy` | no free slot (4 in all; `retry_after`) |
 | 429 | `rate_limited` | 12 traces started in the last hour (`retry_after`: until the oldest leaves the hour) |
 | 500 | `failed` | the tracer failed (with the reason) |

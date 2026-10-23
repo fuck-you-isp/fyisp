@@ -17,11 +17,12 @@ Only the latest release receives security fixes.
 
 ## What leaves your machine
 
-fyisp has no telemetry and no share link: it talks only to its probe
-targets (and, by traceroute, the routers on the way to them), public hosts
-a dashboard viewer asks *Investigate* to trace (below), your DNS
-resolver and, if you turn speed tests on, iperf3 servers. Every probe target, TCP or UDP, sees
-your public IP address, as any website you visit does.
+fyisp has no telemetry: it talks only to its probe targets (and, by
+traceroute, the routers on the way to them), public hosts a dashboard
+viewer asks *Investigate* to trace (below), your DNS resolver, if you turn
+speed tests on, iperf3 servers, and, with `--tunnel`, Cloudflare (below).
+Every probe target, TCP or UDP, sees your public IP address, as any
+website you visit does.
 
 The STUN servers fyisp measures calls with (listed in
 [docs/CALL-QUALITY.md](docs/CALL-QUALITY.md#stun-servers)) are no different: they see your
@@ -49,6 +50,32 @@ the speed-test controls: write actions behind the same origin, the CSRF
 token and, where the dashboard has one, the admin token. Every
 test waits in one queue and exactly one runs at a time: the owner's tests
 first, then scheduled ones.
+
+With `--tunnel` (off by default) fyisp runs Cloudflare's tunnel code
+(cloudflared, linked in) to publish the dashboard at a random
+`https://<name>.trycloudflare.com` address. It asks `api.trycloudflare.com`
+for a tunnel, looks up Cloudflare's edge servers in DNS
+(`_v2-origintunneld._tcp.argotunnel.com` and the servers it names, falling
+back to DNS over TLS at 1.1.1.1; and `cfd-features.argotunnel.com`, again
+every hour) and keeps a connection to them on port 7844 (QUIC over UDP, or
+HTTP/2 over TCP). Cloudflare sees your public IP address and, when the
+tunnel registers, the machine's local address, the cloudflared version,
+the operating system and a random connector ID; if Cloudflare asks for a
+trace of a request, cloudflared also sends it the machine's host name. It
+terminates HTTPS, so it sees the dashboard's traffic, the admin token
+included (in the session cookie, and in the link when you open it). The
+tunnel publishes the dashboard only: cloudflared's private-network
+routing (connections to other addresses the edge could ask for) is
+refused, so it never reaches your LAN. Anyone with the link can open the
+dashboard, and with *Investigate* can make your connection trace a host
+they run, which shows them your public IP address.
+cloudflared's own logs are capped at its info level and stripped of
+headers and IP addresses before they reach fyisp's log (at debug it logs
+every request with its headers, which carry the visitor's address);
+addresses are also masked in what cloudflared's HTTP/2 server and quic-go
+write through Go's standard log, and in the tunnel's own errors. Nothing
+else of cloudflared runs: no metrics, management or diagnostics server,
+no updater, no error reporting.
 
 On-demand traces (*Investigate*) are open to anyone who can open the
 dashboard, behind the same origin and the CSRF token: no admin token, on
@@ -114,6 +141,13 @@ measure; traceroute rows give the hop number, not its address). If you put a tun
 the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
 `--allow-host`: any `--allow-host` turns the admin token on, even on a
 loopback listener, and the token then guards the speed-test controls.
+`--tunnel` does the same for its quick tunnel: the dashboard accepts the
+tunnel's random name (over HTTPS only; after a replacement tunnel, its new
+name), and the admin token is on (the session cookie set through the
+tunnel is `Secure`). The link is printed,
+and logged, once the tunnel has connected and again for each replacement
+tunnel, so whoever can read the logs (`journalctl`, `docker logs`) can
+open the dashboard.
 A generated token is kept in the data directory (`admin-token`, mode 0600)
 and printed in fyisp's log at every start as the "open this link" URL, so
 anyone who can read the logs (`journalctl`, `docker logs`) can use the

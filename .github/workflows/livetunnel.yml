@@ -1,0 +1,26 @@
+name: live tunnel
+# --tunnel against the real trycloudflare.com service (internal/tunnel's
+# live tests): QUIC, HTTP/2, a second tunnel in one process, the Host and
+# headers the dashboard relies on, and the fast HTTP/2 fallback with UDP
+# blocked. The service rate-limits quick tunnels, so on demand only.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: livetunnel
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: build
+        run: docker buildx build --target livetest --load -t fyisp-livetest .
+      - name: QUIC, HTTP/2, reprovision, same origin
+        run: docker run --rm -e FYISP_LIVE_TUNNEL=1 fyisp-livetest -test.run 'Live(QUIC|HTTP2|Reprovision|SameOrigin)' -test.v
+      - name: auto falls back to HTTP/2 with UDP blocked
+        run: docker run --rm --cap-add NET_ADMIN -e FYISP_LIVE_TUNNEL=1 -e FYISP_BLOCK_UDP=input -e FYISP_EXPECT_PROTOCOL=http2 fyisp-livetest -test.run LiveAuto -test.v

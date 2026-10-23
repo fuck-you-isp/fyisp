@@ -3768,7 +3768,7 @@ function renderNotices() {
   if (!status) { el.replaceChildren(); return; }
   if (adminLinkErr) out.push(h('div', { class: 'notice danger' }, adminLinkErr));
   if (status.controls === 'disabled') {
-    out.push(h('div', { class: 'notice' }, 'Speed-test controls are off: the dashboard is reachable from your network and fyisp was started with --admin-token=off.'));
+    out.push(h('div', { class: 'notice' }, 'Speed-test controls are off: the dashboard is reachable from elsewhere (your network, a proxy or the tunnel) and fyisp was started with --admin-token=off.'));
   }
   if (status.targets && status.ready < status.targets) {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));

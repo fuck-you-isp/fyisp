@@ -28,7 +28,7 @@ func TestResolveAdminToken(t *testing.T) {
 		{"", "[::1]:3000", nil, ""},
 		{"", "localhost:3000", nil, ""},
 	} {
-		tok, stored, err := resolveAdminToken(c.flag, c.addr, c.hosts, dir)
+		tok, stored, err := resolveAdminToken(c.flag, c.addr, len(c.hosts) > 0, dir)
 		if err != nil || tok != c.want || stored {
 			t.Errorf("%q on %s = %q, %v, %v; want %q", c.flag, c.addr, tok, stored, err, c.want)
 		}
@@ -38,7 +38,7 @@ func TestResolveAdminToken(t *testing.T) {
 	}
 
 	// A network listener without --admin-token: generated once, then reused.
-	tok, stored, err := resolveAdminToken("", "0.0.0.0:3000", nil, dir)
+	tok, stored, err := resolveAdminToken("", "0.0.0.0:3000", false, dir)
 	if err != nil || !stored || len(tok) != 32 {
 		t.Fatalf("generated = %q, %v, %v", tok, stored, err)
 	}
@@ -50,7 +50,7 @@ func TestResolveAdminToken(t *testing.T) {
 		t.Errorf("token file mode %v, want 0600", fi.Mode().Perm())
 	}
 	for _, addr := range []string{"0.0.0.0:3000", "192.168.1.10:3000", "[::]:3000"} {
-		again, stored, err := resolveAdminToken("", addr, nil, dir)
+		again, stored, err := resolveAdminToken("", addr, false, dir)
 		if err != nil || !stored || again != tok {
 			t.Errorf("%s: reread = %q, %v, %v; want %q", addr, again, stored, err, tok)
 		}
@@ -58,7 +58,7 @@ func TestResolveAdminToken(t *testing.T) {
 	// A loopback listener with any --allow-host (a tunnel or reverse proxy
 	// in front of it, name or IP) needs the token too.
 	for _, hosts := range [][]string{{"fyisp.example.com"}, {"100.64.0.7"}} {
-		again, stored, err := resolveAdminToken("", "127.0.0.1:3000", hosts, dir)
+		again, stored, err := resolveAdminToken("", "127.0.0.1:3000", len(hosts) > 0, dir)
 		if err != nil || !stored || again != tok {
 			t.Errorf("loopback with --allow-host %q = %q, %v, %v; want %q", hosts, again, stored, err, tok)
 		}
@@ -71,7 +71,7 @@ func TestResolveAdminToken(t *testing.T) {
 	// silently new token.
 	if runtime.GOOS != "windows" {
 		_ = os.Chmod(file, 0o644)
-		if _, _, err := resolveAdminToken("", "0.0.0.0:3000", nil, dir); err != nil {
+		if _, _, err := resolveAdminToken("", "0.0.0.0:3000", false, dir); err != nil {
 			t.Fatal(err)
 		}
 		if fi, _ := os.Stat(file); fi.Mode().Perm() != 0o600 {
@@ -80,7 +80,7 @@ func TestResolveAdminToken(t *testing.T) {
 	}
 	for _, bad := range []string{"", "short", strings.Repeat("a", 31), strings.Repeat("a", 20) + " " + strings.Repeat("b", 20)} {
 		_ = os.WriteFile(file, []byte(bad), 0o600)
-		if tok, _, err := resolveAdminToken("", "0.0.0.0:3000", nil, dir); err == nil {
+		if tok, _, err := resolveAdminToken("", "0.0.0.0:3000", false, dir); err == nil {
 			t.Errorf("file %q accepted as %q", bad, tok)
 		}
 	}

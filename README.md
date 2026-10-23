@@ -19,7 +19,7 @@ fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It
 - **Every app at a glance.** 11 tiles (Zoom, Microsoft Teams, Google Meet, Slack, Microsoft 365, Google Workspace, GitHub, Dropbox, OneDrive, YouTube and Netflix), each *Good*, *Slow* (*Choppy* for calls) or *Down*, with the last 2 hours in 5-minute bars. Drops of 30 seconds or more always show.
 - **When it was bad.** The problems of the last 7 days, each with a *likely cause*: your home router (or Wi-Fi), your internet provider, the internet beyond your provider, or the app itself.
 - **Evidence for your provider.** Home lists every problem of the last 7 days with its time, length and likely cause, and has no addresses on it, so a screenshot is safe to send. Technical details keeps 90 days of charts, and `fyisp export` writes the raw numbers as CSV (target names, times and results; traceroute rows give the hop number, not its address).
-- **Private.** No account, no telemetry, nothing to install to try it. fyisp only talks to the services it checks and your DNS resolver. Its data stays on your machine.
+- **Private.** No account, no telemetry, nothing to install to try it. fyisp only talks to the services it checks and your DNS resolver (plus speed-test servers and Cloudflare, if you turn those on; see [Privacy](#privacy)). Its data stays on your machine.
 
 Technical users get every number under **Technical details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, CSV export, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](docs/PROFILES.md).
 
@@ -244,6 +244,7 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
 - **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists the names fyisp looks up (Google Meet's TCP check goes to `meet.google.com`).
 - **Hosts traced on request.** *Investigate* traces any public host someone who can open your dashboard types in (within its limits: 4 at once, 12 new traces an hour, about 10 minutes each). That host and the routers on the way see probes from your public IP address, and your DNS resolver sees the name looked up, about once a minute while the trace runs. Its hop numbers age out with the rest of the data, but the host's name stays in the database's index of series. No other service is involved.
 - **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine, which is never stored, logged or returned (see [Wi-Fi or router?](docs/VERDICTS.md#wi-fi-or-router)). The connection type itself is in fyisp's log and in speed-test results.
+- **`--tunnel`** (off by default) connects to Cloudflare to publish the dashboard at a random `https://….trycloudflare.com` address (see [Remote access](#remote-access)). Cloudflare sees your public IP address and your machine's local address, and it decrypts the dashboard's traffic at its edge. **Anyone with the link can open the dashboard**, and with *Investigate* can make your connection trace a host they run, which shows them your public IP address.
 - **A screenshot or export you send** shows what it says. Home and *What happened at …?* show no addresses; the Details charts, traceroutes and `fyisp export` include your router's and your provider's addresses.
 
 ## ICMP permissions
@@ -260,20 +261,29 @@ or carry on without ICMP: the services and the anycast resolvers are still measu
 
 To show someone what happened, send a screenshot of Home; for raw data, `fyisp export` (review it first: it lists the targets you measure).
 
-**Live access** (to let your IT team watch the dashboard, say) is up to you: run a tunnel or a reverse proxy to the local dashboard, for example a [cloudflared named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel run`, with a host name you choose) or `tailscale serve 3000`, and add its host name with `--allow-host`. A quick tunnel (`cloudflared tunnel --url …`) gets a new random name on every run, so it can't be named ahead of time:
+**Over HTTPS from anywhere** (your phone, or your IT team watching the dashboard): start fyisp with `--tunnel` (or set `FYISP_TUNNEL=1`). It opens a Cloudflare quick tunnel from inside fyisp, with nothing to install and no Cloudflare account, and prints the link once it is up:
+
+```sh
+fyisp --tunnel
+#   Dashboard over HTTPS:  https://calm-river-words-1234.trycloudflare.com/
+```
+
+Under Docker, add `--tunnel` after the image name and read the link from the log: `docker logs fyisp 2>&1 | grep trycloudflare`. The name is random and lives as long as fyisp keeps the tunnel: if the tunnel stays down for 5 minutes, fyisp opens a new one and prints its new link, and the link stops working when fyisp stops. fyisp uses QUIC and switches to HTTP/2 by itself when a network blocks UDP. With a generated admin token, fyisp also prints a private link that turns the speed-test controls on in that browser. Quick tunnels are Cloudflare's free service for testing and demos, without an uptime guarantee.
+
+For a name of your own, run a tunnel or a reverse proxy yourself, for example a [cloudflared named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel run`) or `tailscale serve 3000`, and add its host name with `--allow-host`:
 
 ```sh
 fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 ```
 
 - Anyone who can open that address sees the **whole dashboard as you do**: every address and host name. For people outside your household, send a screenshot of Home instead.
-- Any `--allow-host` turns the **admin token** on, even when fyisp listens on 127.0.0.1 only: fyisp logs an "open this link" URL with it at every start (see [Admin token](#admin-token)), and only speed-test controls need the token. That includes you on this machine, through `127.0.0.1` too: open the link once per browser. With `--admin-token=off` as well, speed-test controls are off for everyone.
+- Any `--allow-host`, and `--tunnel`, turns the **admin token** on, even when fyisp listens on 127.0.0.1 only: fyisp logs an "open this link" URL with it at every start (see [Admin token](#admin-token)), and only speed-test controls need the token. That includes you on this machine, through `127.0.0.1` too: open the link once per browser. With `--admin-token=off` as well, speed-test controls are off for everyone.
 - Anyone who can open the dashboard can start traces (*Investigate*), to profile targets or any public host, within the limits under [Admin token](#admin-token). Those limits, and fyisp's cap on probes per router, are all that bound a visitor or a script behind your tunnel.
-- A dashboard without an admin token (loopback `--listen`, no `--allow-host`) refuses speed-test controls that come through a proxy or tunnel (requests with `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`): set `--allow-host` or `--admin-token` for one that rewrites the `Host` header to `127.0.0.1`.
+- A dashboard without an admin token (loopback `--listen`, no `--allow-host` or `--tunnel`) refuses speed-test controls that come through a proxy or tunnel (requests with `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`): set `--allow-host` or `--admin-token` for one that rewrites the `Host` header to `127.0.0.1`.
 
 ## Admin token
 
-The speed-test controls (*Test speed now*, *Test every server*, cancel, the schedule and skipped servers) need an admin token whenever the dashboard can be reached from elsewhere: under Docker (inside a container fyisp listens on all interfaces), with a `--listen` address that isn't loopback, or with any `--allow-host`. Looking at the dashboard needs no token. On first start fyisp generates one, keeps it in the data directory (`admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
+The speed-test controls (*Test speed now*, *Test every server*, cancel, the schedule and skipped servers) need an admin token whenever the dashboard can be reached from elsewhere: under Docker (inside a container fyisp listens on all interfaces), with a `--listen` address that isn't loopback, with any `--allow-host`, or with `--tunnel`. Looking at the dashboard needs no token. On first start fyisp generates one, keeps it in the data directory (`admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
 
 - Open the link once per browser. The page swaps the token for a cookie that only this dashboard sees and removes it from the address bar. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers.
 - Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`.

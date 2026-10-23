@@ -20,6 +20,10 @@
 #   [Service]
 #   ExecStart=
 #   ExecStart=/usr/local/bin/fyisp --data-dir=${STATE_DIRECTORY} --listen=127.0.0.1:3000 --speedtest
+#
+# For an HTTPS link through a Cloudflare quick tunnel (see the README's
+# "Remote access"), a drop-in can set Environment=FYISP_TUNNEL=1 instead;
+# the link is in the journal: sudo journalctl -u fyisp | grep trycloudflare
 
 [Unit]
 Description=fyisp internet quality monitor

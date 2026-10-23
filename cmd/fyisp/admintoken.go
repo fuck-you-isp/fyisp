@@ -25,21 +25,22 @@ const adminTokenOff = "off"
 // given with --admin-token:
 //   - "off": none;
 //   - an explicit token: that token;
-//   - a loopback listener without --allow-host: none (speed-test controls
-//     need no token there);
+//   - a loopback listener not reached by name (no --allow-host or
+//     --tunnel, the named argument): none (speed-test controls need no
+//     token there);
 //   - otherwise the token in dir/admin-token, created on first use.
 //
-// Any --allow-host counts as exposed: the extra name is how a reverse
+// Any --allow-host or --tunnel counts as exposed: the name is how a reverse
 // proxy or a tunnel (cloudflared, Tailscale) reaches a loopback listener,
 // and everyone behind it would otherwise get the owner's speed-test
 // controls.
-func resolveAdminToken(flagVal, addr string, extraHosts []string, dir string) (tok string, stored bool, err error) {
+func resolveAdminToken(flagVal, addr string, named bool, dir string) (tok string, stored bool, err error) {
 	switch {
 	case flagVal == adminTokenOff:
 		return "", false, nil
 	case flagVal != "":
 		return flagVal, false, nil
-	case isLoopbackAddr(addr) && len(extraHosts) == 0:
+	case isLoopbackAddr(addr) && !named:
 		return "", false, nil
 	}
 	p := filepath.Join(dir, adminTokenFile)

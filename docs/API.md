@@ -5,7 +5,7 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 ## Conventions
 
 - **Paths are relative** to the dashboard's address (`api/status`, not `/api/status`), as the UI calls them.
-- **Hosts.** A request whose `Host` is not the dashboard's own address or an `--allow-host` name gets 421 `unknown_host`, on every route.
+- **Hosts.** A request whose `Host` is not the dashboard's own address, an `--allow-host` name or the current `--tunnel` name gets 421 `unknown_host`, on every route.
 - **Parameters.** Unknown or repeated parameters return 400, on every route except `/`, which ignores them.
 - **`from` and `to`** take `now`, `now-<n><s|m|h|d>` (e.g. `now-6h`) or unix milliseconds. `to` is clamped to now, and a span longer than the route's limit is shortened from the start.
 - **Times in responses** are unix milliseconds, except RFC 3339 in `api/status`, `api/verdict`, `api/incidents` and `api/trace`'s `route.since` and `changes[].at`.
@@ -84,7 +84,7 @@ Both answer 404 when tracing is off or the target is neither a profile target no
 
 ### POST and DELETE `api/admin/session`
 
-No parameters and no body. `POST` with the admin token in `X-FYISP-Admin` sets an HttpOnly cookie that carries it from then on; `DELETE` clears the cookie. Both return `{"admin": true|false}`, and 404 when the dashboard has no admin token.
+No parameters and no body. `POST` with the admin token in `X-FYISP-Admin` sets an HttpOnly, SameSite=Strict cookie that carries it from then on (also `Secure` when the request came through `--tunnel`); `DELETE` clears the cookie. Both return `{"admin": true|false}`, and 404 when the dashboard has no admin token.
 
 ## Metrics
 

@@ -9,8 +9,9 @@
 #   docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
 #   docker build --target imagetest .                               # runtime image smoke test (--ephemeral)
+#   docker build --target livetest -t fyisp-livetest .              # live --tunnel tests: see internal/tunnel/live_test.go
 
-ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
+ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5
 # The browser image for the UI tests; its Playwright must match test/ui/package.json.
 ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
 
@@ -89,6 +90,20 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go run ./cmd/genfixture -out /gen && mkdir /out && cp /gen/fyisp.db /out/${RELEASE}.db && ls -l /out
 FROM scratch AS dbfixture
 COPY --from=dbfixture-gen /out/ /internal/store/testdata/
+
+# Live tunnel tests (need network; they open quick tunnels on
+# trycloudflare.com, which rate-limits them: run by hand or through the
+# manual "live tunnel" workflow). See internal/tunnel/live_test.go.
+#   docker build --target livetest -t fyisp-livetest .
+#   docker run --rm -e FYISP_LIVE_TUNNEL=1 fyisp-livetest -test.run Live -test.v
+FROM source AS livetest-build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go test -c -race -o /tunnel.test ./internal/tunnel
+FROM debian:stable-slim AS livetest
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables && rm -rf /var/lib/apt/lists/*
+COPY --from=livetest-build /tunnel.test /tunnel.test
+ENTRYPOINT ["/tunnel.test"]
 
 # License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
 # fyisp on any release platform, for the release assets and the image.
