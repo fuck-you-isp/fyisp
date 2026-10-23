@@ -278,7 +278,7 @@ func TestLab(t *testing.T) {
 						t.Errorf("%s path=%v: %s/%s %s %d %s", s.name, path, a.Phase, a.Op, a.Class, a.HTTPStatus, a.S3Code)
 					}
 				}
-				if r.Down != 4<<20 || r.Up != 2<<20 || len(r.Leftovers) != 0 || len(r.Skips) != 0 {
+				if r.Down != 4<<20 || r.Up != 1<<10+4<<20+2<<20 || len(r.Leftovers) != 0 || len(r.Skips) != 0 {
 					t.Errorf("%s path=%v: %+v", s.name, path, r)
 				}
 				t.Logf("%s path=%v: %d attempts, %v", s.name, path, len(r.Attempts), r.End.Sub(r.Start).Round(time.Millisecond))
