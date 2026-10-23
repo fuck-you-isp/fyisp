@@ -1,6 +1,6 @@
 # For operators
 
-What fyisp sends to servers it does not run: [iperf3 servers](#for-iperf3-server-operators) and [traced hosts and routers](#for-operators-of-traced-hosts-and-routers). STUN servers are in [STUN-TERMS.md](STUN-TERMS.md).
+What fyisp sends to servers it does not run: [iperf3 servers](#for-iperf3-server-operators), [storage endpoints](#for-storage-providers) and [traced hosts and routers](#for-operators-of-traced-hosts-and-routers). STUN servers are in [STUN-TERMS.md](STUN-TERMS.md).
 
 ## For iperf3 server operators
 
@@ -19,6 +19,10 @@ fyisp is a home internet monitor. If a user turns its speed tests on (they are o
 **When your server is busy** (ACCESS_DENIED, or refusing), fyisp tries at most 2 other ports, then another provider. After 3 busy scheduled tests in a row it leaves your server alone for 6 hours.
 
 **To have your server removed:** open an issue at https://github.com/fuck-you-isp/fyisp/issues, or, to ask privately, use GitHub's private reporting on the Security tab (see [SECURITY.md](../SECURITY.md)). Removal ships in the next release, which also drops the server's past results on each install; until then users can stop testing it with `--speedtest-skip=<server id>` (the ids are in [`internal/profile/catalog/iperf3/`](../internal/profile/catalog/iperf3/)). The list of operators and what fyisp sends is in [`IPERF3-TERMS.md`](IPERF3-TERMS.md).
+
+## For storage providers
+
+fyisp's storage tests reach only S3-compatible endpoints that a user saved themselves, with their own account's keys or none: no endpoint is built in. A check, which the user starts by hand, is one request over IPv4 from their home connection: an unsigned `HEAD` of the bucket (or of the endpoint's root), or, with keys, a SigV4-signed `GET ?list-type=2&prefix=fyisp-test/&max-keys=1000` of the bucket (fyisp's own prefix). It sends `User-Agent: fyisp/<version>`, follows no redirect and doesn't retry. One check runs at a time per install.
 
 ## For operators of traced hosts and routers
 

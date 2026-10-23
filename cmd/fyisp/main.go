@@ -385,6 +385,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed
+	deps.Storage = newStorage(dir, speed.Queue(), log)
 	localAddr := localLn.Addr().String()
 	adminTok, adminGenerated, err := resolveAdminToken(c.adminToken)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"encoding/pem"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -99,6 +100,11 @@ func (s *Server) StartTLS() *x509.CertPool {
 	pool := x509.NewCertPool()
 	pool.AddCert(s.srv.Certificate())
 	return pool
+}
+
+// CertPEM is the TLS server's certificate as PEM (a target's private CA).
+func (s *Server) CertPEM() string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.srv.Certificate().Raw}))
 }
 
 // Close stops the server.

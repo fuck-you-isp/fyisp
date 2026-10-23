@@ -20,7 +20,8 @@ Only the latest release receives security fixes.
 fyisp has no telemetry: it talks only to its probe targets (and, by
 traceroute, the routers on the way to them), public hosts a signed-in
 viewer asks *Investigate* to trace (below), your DNS resolver, if you turn
-speed tests on, iperf3 servers, and, with `--tunnel`, Cloudflare (below).
+speed tests on, iperf3 servers, the storage endpoints the owner saves
+(below), and, with `--tunnel`, Cloudflare (below).
 Every probe target, TCP or UDP, sees your public IP address, as any
 website you visit does.
 
@@ -50,6 +51,33 @@ the speed-test controls: write actions behind the admin token, the same
 origin and the CSRF token. Every
 test waits in one queue and exactly one runs at a time: the owner's tests
 first, then scheduled ones.
+
+Storage tests connect only to S3-compatible endpoints the owner saves as
+targets (any vendor, or a server on the LAN), over IPv4, with fyisp's own
+HTTP/1.1 client: no proxy, no redirects followed, no retries, no
+compression. Saving a target looks its name up with your DNS resolver; a
+check looks it up again and sends one request (an unsigned `HEAD`, or with
+keys a signed listing of the bucket's `fyisp-test/` prefix), only when the
+owner asks. The endpoint sees your public IP address, the request and
+`User-Agent: fyisp/<version>`. fyisp never connects to a link-local
+(cloud metadata), multicast, reserved, benchmarking or documentation
+address; it fixes whether an
+endpoint is on your network or the internet when it is saved and refuses
+any later address of the other kind (DNS rebinding); and it allows plain
+`http://` only to an address on the LAN itself (RFC 1918 or loopback), so
+keys are signed over TLS everywhere else. A session token is never sent
+over `http://`. Targets are saved in `storage-targets.json` in the data
+directory, readable by fyisp's user only (`0600`, or a protected DACL on
+Windows), never in the database.
+
+Storage keys are write-only: entered for a check, never returned by the
+API, logged, put in an error, exported or written to a file or the
+database, and dropped when the check returns. Through `--tunnel`, keys
+typed in the dashboard pass through Cloudflare, which terminates HTTPS
+(below): use keys scoped to the test bucket, or short-lived session
+credentials. Whoever has the admin token can save a target on your LAN
+(any private address and port) and check it: the check's class and HTTP
+status show whether something answers there, as a port check would.
 
 With `--tunnel` (off by default) fyisp runs Cloudflare's tunnel code
 (cloudflared, linked in) to publish the dashboard at a random
@@ -123,6 +151,7 @@ The dashboard's controls:
 | GET `/api/*`, `/metrics` | yes | yes (401 without) | - | read-only |
 | POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes | one queue, one test at a time |
 | POST `/api/investigate` (`target=` or `host=`, optional `mode=`) | yes | yes | yes | the safeguards above: public hosts only, fixed ports, 4 at once, 250 rounds |
+| POST `/api/storage/target/*`, `/api/storage/check` | yes | yes | yes | `application/json` bodies only; the address rules above; one check at a time, 20 s each; keys never returned |
 | POST/DELETE `/api/admin/session` | yes | POST exchanges it for the cookie | `Sec-Fetch-Site` only (the token header and DELETE need a CORS preflight, never granted) | - |
 
 The admin token is `--admin-token` or `$FYISP_ADMIN_TOKEN` (at least 32

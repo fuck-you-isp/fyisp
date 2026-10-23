@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 )
 
 // Per-step bounds (an attempt's class says which one was hit).
@@ -131,20 +133,27 @@ func portOK(p string) bool {
 	return err == nil && n > 0 && n < 65536
 }
 
-// addrClass is an address's network for the address policy.
+// addrClass is an address's network for the address policy: private (RFC
+// 1918, loopback, carrier-grade NAT), public (netinfo.Traceable, as
+// Investigate's hosts), or refused: IPv6, link-local (cloud metadata),
+// multicast, reserved, "this network", the IETF block, benchmarking and
+// documentation space, and the metadata address some clouds put in
+// carrier-grade NAT space.
 func addrClass(a netip.Addr) (private, refused bool) {
 	a = a.Unmap()
 	switch {
-	case !a.Is4(): // IPv4 only
-		return false, true
-	case a.IsLinkLocalUnicast(), a.IsUnspecified(), a.IsMulticast(), a.IsLinkLocalMulticast(),
-		netip.MustParsePrefix("0.0.0.0/8").Contains(a), netip.MustParsePrefix("240.0.0.0/4").Contains(a):
+	case !a.Is4() || a == cloudMetadata: // IPv4 only
 		return false, true
 	case a.IsPrivate(), a.IsLoopback(), cgnat.Contains(a):
 		return true, false
+	case netinfo.Traceable(a):
+		return false, false
 	}
-	return false, false
+	return false, true
 }
+
+// cloudMetadata is Alibaba Cloud's metadata service (others use 169.254/16).
+var cloudMetadata = netip.MustParseAddr("100.100.100.200")
 
 // allowed is the address policy, checked on every dial: never link-local
 // (cloud metadata), unspecified, multicast or reserved; the address's
