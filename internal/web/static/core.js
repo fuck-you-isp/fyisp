@@ -211,7 +211,9 @@ export async function fetchJSON(url, init, tries = 3) {
       continue;
     }
     const body = await res.json().catch(() => ({}));
-    if (res.status === 401) void signIn();
+    // Signed out (fyisp restarted with a new admin token): reload, which
+    // also fetches the new page's CSRF token, into the sign-in dialog.
+    if (res.status === 401 && signedIn) reloadToSignIn();
     if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, body, retryAfter: Number(res.headers.get('Retry-After')) || 0 });
     return body;
   }
@@ -308,39 +310,48 @@ export async function adminSession(t) {
   throw new Error(`HTTP ${res.status}`);
 }
 
-/** @type {Promise<void>|null} */
-let signingIn = null;
+/** Set once the page has signed in: a later 401 reloads it (see fetchJSON). */
+let signedIn = false;
+/** The page booted signed in. */
+export function markSignedIn() { signedIn = true; }
+
+/** Reloads the page into the sign-in dialog, at most once a minute (no loop if a route keeps answering 401). */
+function reloadToSignIn() {
+  try {
+    const last = Number(sessionStorage.getItem('fyisp-reload-401')) || 0;
+    if (Date.now() - last < 60e3) return;
+    sessionStorage.setItem('fyisp-reload-401', String(Date.now()));
+  } catch { /* no storage: reload anyway */ }
+  signedIn = false;
+  location.reload();
+}
+
 /**
- * Asks for the admin token once the dashboard answered 401 (no session yet,
- * or fyisp restarted with a new token), then reloads the page signed in.
- * Calls while the dialog is open share it. Escape closes it, unless stay
- * (the page has nothing to show without it); the next 401 asks again.
- * @param {string} [why] its first line @param {boolean} [stay]
+ * The page's only content without a session: asks for the admin token
+ * until the dashboard takes it, then reloads the page signed in. Escape
+ * doesn't close it (there is nothing behind it).
+ * @param {string} [why] its message
  */
-export function signIn(why = '', stay = false) {
-  signingIn ||= (async () => {
-    let text = why || 'This dashboard needs its admin token. Open the link fyisp printed when it started, or paste the token here.';
-    for (;;) {
-      const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
-      const v = await dialog({
-        title: 'Sign in',
-        text,
-        fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
-        buttons: [{ label: 'Sign in', value: 'ok', primary: true }],
-        focus: input,
-      });
-      const t = input.value.trim();
-      if (v !== 'ok' && !stay) { signingIn = null; return; }
-      if (!t) continue;
-      try {
-        if (await adminSession(t)) { location.reload(); return; }
-        text = 'That is not this dashboard’s admin token. Paste the token fyisp was started with, or open the newest link from its log.';
-      } catch (e) {
-        text = 'Could not sign in: ' + /** @type {any} */ (e).message + '. Try again.';
-      }
+export async function signIn(why = '') {
+  let text = why || 'This dashboard needs its admin token. Open the link fyisp printed when it started, or paste the token here.';
+  for (;;) {
+    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
+    const v = await dialog({
+      title: 'Sign in',
+      body: [h('p', { text })],
+      fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
+      buttons: [{ label: 'Sign in', value: 'ok', primary: true }],
+      focus: input,
+    });
+    const t = input.value.trim();
+    if (v !== 'ok' || !t) continue;
+    try {
+      if (await adminSession(t)) { location.reload(); return; }
+      text = 'That is not this dashboard’s admin token. Paste the token fyisp was started with, or open the newest link from its log.';
+    } catch (e) {
+      text = 'Could not sign in: ' + /** @type {any} */ (e).message + '. Try again.';
     }
-  })();
-  return signingIn;
+  }
 }
 
 /** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */

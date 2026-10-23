@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
 )
@@ -58,5 +60,21 @@ func TestTunnelEnv(t *testing.T) {
 	t.Setenv("FYISP_TUNNEL", "yes")
 	if _, err := parseFlags(nil); err == nil {
 		t.Error("FYISP_TUNNEL=yes accepted")
+	}
+}
+
+func TestLoopbackHostOnly(t *testing.T) {
+	h := loopbackHostOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	for host, code := range map[string]int{
+		"127.0.0.1:6060": 200, "localhost:6060": 200, "LOCALHOST": 200, "[::1]:6060": 200,
+		"evil.example:6060": 421, "rebind.evil.example": 421, "192.168.1.5:6060": 421, "": 421,
+	} {
+		r := httptest.NewRequest("GET", "/debug/pprof/", nil)
+		r.Host = host
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != code {
+			t.Errorf("Host %q = %d, want %d", host, w.Code, code)
+		}
 	}
 }

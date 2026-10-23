@@ -33,11 +33,37 @@ test('without the token, only the sign-in dialog; a pasted token signs in', asyn
   expect(c && c.httpOnly && c.sameSite === 'Strict').toBeTruthy();
 });
 
-test('the link signs in and leaves the address bar', async ({ page }) => {
-  await page.goto('/#admin=' + DEV_ADMIN);
+test('the link signs in, keeps the rest of the hash and leaves the address bar', async ({ page }) => {
+  await page.goto('/#admin=' + DEV_ADMIN + '&v=speed');
+  await expect(page.locator('#speed')).toBeVisible();
+  await expect(page).not.toHaveURL(/admin=/);
+  await expect(page).toHaveURL(/v=speed/);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+});
+
+test('the link opened in a tab already showing the sign-in dialog signs in', async ({ page, failOk }) => {
+  failOk.push(/\/api\//, /status of 401/);
+  await page.goto('/');
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toBeVisible();
+  await page.evaluate((t) => { location.hash = 'admin=' + t; }, DEV_ADMIN);
   await expect(page.locator('#home.hp')).toBeVisible();
   await expect(page).not.toHaveURL(/admin=/);
-  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toHaveCount(0);
+});
+
+test('signed out mid-session (a new admin token): the page reloads into the sign-in dialog, and signing in works', async ({ page, context, failOk }) => {
+  failOk.push(/\/api\//, /status of 401/);
+  await page.goto('/#admin=' + DEV_ADMIN);
+  await expect(page.locator('#home.hp')).toBeVisible();
+  // What a restart with a new token does to this browser's session.
+  await context.clearCookies();
+  await page.evaluate(() => { location.hash = 'v=speed'; }); // any request now gets 401
+  const dlg = page.getByRole('dialog', { name: 'Sign in' });
+  await expect(dlg).toBeVisible();
+  await dlg.getByLabel('Admin token').fill(DEV_ADMIN);
+  await dlg.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.locator('#speed')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Sign in' })).toHaveCount(0);
 });
 
 test('an old link says so in the sign-in dialog', async ({ page, failOk }) => {

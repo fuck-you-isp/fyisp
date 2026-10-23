@@ -291,7 +291,7 @@ for i in $(seq 1 100); do
   sleep 0.2
 done
 if [ $ok = 1 ]; then
-  code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/status)
+  code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/status || :)
   [ "$code" = 401 ] || { echo "/api/status without the admin token: $code, want 401"; ok=2; }
   kill -TERM $pid
 else kill -KILL $pid 2>/dev/null || :; fi

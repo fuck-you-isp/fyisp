@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -183,5 +184,27 @@ func TestInvestigateLongHost(t *testing.T) {
 	}
 	if w := do(h, "GET", "/api/trace?target=host:"+long, good); w.Code != 200 {
 		t.Errorf("GET = %d %s", w.Code, w.Body)
+	}
+}
+
+// A host trace refused for want of a slot is refused before any DNS lookup.
+func TestInvestigateHostBusyNoLookup(t *testing.T) {
+	d, _, _ := traceFixture(t)
+	p := d.Profile()
+	for i := range MaxInvestigations {
+		p.Targets = append(p.Targets, model.Target{Name: "S" + strconv.Itoa(i), Group: "common"})
+	}
+	dns := newFakeDNS()
+	d.Resolve = dns.resolve
+	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
+	good := sameOriginHdr("127.0.0.1:3000")
+	for i := range MaxInvestigations {
+		if w := do(h, "POST", "/api/investigate?target=S"+strconv.Itoa(i), good); w.Code != 200 {
+			t.Fatalf("start S%d = %d %s", i, w.Code, w.Body)
+		}
+	}
+	w := do(h, "POST", "/api/investigate?host=example.com", good)
+	if w.Code != 429 || !strings.Contains(w.Body.String(), `"busy"`) || dns.lookups() != 0 {
+		t.Errorf("busy host = %d %s, %d lookups", w.Code, w.Body, dns.lookups())
 	}
 }

@@ -79,10 +79,10 @@ Code signing is planned: free Windows signing through the [SignPath Foundation](
 
 ```sh
 docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
-docker logs fyisp 2>&1 | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1
+sleep 5; docker logs fyisp 2>&1 | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1
 ```
 
-Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`) once in your browser: the dashboard needs its admin token. That token is new at every start of the container, which signs every browser out; to keep one, pass your own (below, and [Admin token](#admin-token)).
+Open the link that the second command prints (if it prints nothing, fyisp is still starting: run it again) (`http://127.0.0.1:3000/#admin=…`) once in your browser: the dashboard needs its admin token. That token is new at every start of the container, which signs every browser out; to keep one, pass your own (below, and [Admin token](#admin-token)).
 
 **On Linux, use host networking for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
 
@@ -213,7 +213,7 @@ sudo curl --proto '=https' --tlsv1.2 -fsSL -o /etc/systemd/system/fyisp.service 
 sudo systemctl daemon-reload && sudo systemctl enable --now fyisp
 ```
 
-fyisp now runs whenever the machine is on, from boot. [`packaging/fyisp.service`](packaging/fyisp.service) runs it as a transient unprivileged user (`DynamicUser`) with a read-only system, no access to home directories and a system-call filter; data lives in `/var/lib/fyisp`. Options go in a drop-in (`sudo systemctl edit fyisp`), e.g. `Environment=FYISP_PROFILE=default,streaming`; the comments in the unit show how to pass other flags (e.g. `--speedtest`), keep one admin token across restarts, or grant `CAP_NET_RAW`. The sign-in link of the current run is in the journal: `sudo journalctl -u fyisp | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1`.
+fyisp now runs whenever the machine is on, from boot. [`packaging/fyisp.service`](packaging/fyisp.service) runs it as a transient unprivileged user (`DynamicUser`) with a read-only system, no access to home directories and a system-call filter; data lives in `/var/lib/fyisp`. Options go in a drop-in (`sudo systemctl edit fyisp`), e.g. `Environment=FYISP_PROFILE=default,streaming`; the comments in the unit show how to pass other flags (e.g. `--speedtest`), keep one admin token across restarts, or grant `CAP_NET_RAW`. With a generated token, the sign-in link of the current run is in the journal: `sudo journalctl -u fyisp | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1`; with your own, it is `http://127.0.0.1:3000/#admin=<token>`.
 
 ### Docker, NAS and Raspberry Pi
 
@@ -248,7 +248,7 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
 - **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists the names fyisp looks up (Google Meet's TCP check goes to `meet.google.com`).
 - **Hosts traced on request.** *Investigate* traces any public host someone signed in to your dashboard types in (within its limits: 4 at once, about 10 minutes each). That host and the routers on the way see probes from your public IP address, and your DNS resolver sees the name looked up, about once a minute while the trace runs. Its hop numbers age out with the rest of the data, but the host's name stays in the database's index of series. No other service is involved.
 - **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine, which is never stored, logged or returned (see [Wi-Fi or router?](docs/VERDICTS.md#wi-fi-or-router)). The connection type itself is in fyisp's log and in speed-test results.
-- **`--tunnel`** (off by default) connects to Cloudflare to publish the dashboard at a random `https://….trycloudflare.com` address (see [Remote access](#remote-access)). Cloudflare sees your public IP address and your machine's local address, and it decrypts the dashboard's traffic at its edge, the admin token included. The dashboard there needs the admin token, as everywhere.
+- **`--tunnel`** (off by default) connects to Cloudflare to publish the dashboard at a random `https://….trycloudflare.com` address (see [Remote access](#remote-access)). Cloudflare sees your public IP address and your machine's local address, and it decrypts the dashboard's traffic at its edge, the admin token included. Your DNS resolver sees the lookups of Cloudflare's `argotunnel.com` names (or fyisp asks 1.1.1.1 over TLS). The dashboard there needs the admin token, as everywhere. [SECURITY.md](SECURITY.md#what-leaves-your-machine) lists everything the tunnel sends.
 - **A screenshot or export you send** shows what it says. Home and *What happened at …?* show no addresses; the Details charts, traceroutes and `fyisp export` include your router's and your provider's addresses.
 
 ## ICMP permissions
@@ -272,7 +272,7 @@ fyisp --tunnel
 #   Dashboard over HTTPS:  https://calm-river-words-1234.trycloudflare.com/
 ```
 
-Under Docker, add `--tunnel` after the image name and read the link from the log: `docker logs fyisp 2>&1 | grep trycloudflare`. The name is random and lives as long as fyisp keeps the tunnel: if the tunnel stays down for 5 minutes, fyisp opens a new one and prints its new link, and the link stops working when fyisp stops. fyisp uses QUIC and switches to HTTP/2 by itself when a network blocks UDP. With a generated admin token, fyisp also prints the private sign-in link for that address. Quick tunnels are Cloudflare's free service for testing and demos, without an uptime guarantee.
+Under Docker, add `--tunnel` after the image name and read the link from the log: `docker logs fyisp 2>&1 | grep trycloudflare`. The name is random and lives as long as fyisp keeps the tunnel: if the tunnel stays down for 5 minutes, fyisp opens a new one and prints its new link, and the link stops working when fyisp stops. fyisp uses QUIC and switches to HTTP/2 by itself when a network blocks UDP. With a generated admin token, fyisp also prints (not logs) the private sign-in link for that address; with your own, open `https://<name>.trycloudflare.com/#admin=<token>` or paste the token into the sign-in box. Quick tunnels are Cloudflare's free service for testing and demos, without an uptime guarantee.
 
 For a name of your own, run a tunnel or a reverse proxy yourself, for example a [cloudflared named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel run`) or `tailscale serve 3000`, and add its host name with `--allow-host`:
 
@@ -287,10 +287,10 @@ fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 
 Everything fyisp serves except the page itself needs the admin token: the dashboard, its API and `/metrics`, on this machine as much as from your network or through a tunnel. Pass your own with `--admin-token` or `FYISP_ADMIN_TOKEN` (at least 32 letters, digits or `- . _ ~`, e.g. from `openssl rand -hex 16`). Without one, fyisp makes a new random token at every start and logs an "open this link" URL with it, like Jupyter; started from a terminal, it opens that link in your browser.
 
-- Open the link once per browser. The page swaps the token for a cookie that only this dashboard sees and removes it from the address bar. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers.
+- Open the link once per browser. The page swaps the token for an HttpOnly cookie and removes it from the address bar. The cookie holds a value derived from the token, not the token; browsers send it to every port of that host name, so other web apps on the same host see it, but can't use it as the token. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers.
 - Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`. A browser without the cookie asks for the token instead.
 - To sign every browser out, restart fyisp with a new token. A generated token is new at every start, so a restart always signs everyone out: for a service that restarts (Docker, systemd, a NAS), pass your own.
-- Under systemd, keep the token out of the unit, which any user can read: put `FYISP_ADMIN_TOKEN=<token>` in a file only root can read and load it with `EnvironmentFile=` (see the comments in [`packaging/fyisp.service`](packaging/fyisp.service)). On any system, `--admin-token` on the command line is visible to other users of the machine (`ps`), and `FYISP_ADMIN_TOKEN` is not.
+- Under systemd, keep the token out of the unit, which any user can read: put `FYISP_ADMIN_TOKEN=<token>` in a file only root can read and load it with `EnvironmentFile=` (see the comments in [`packaging/fyisp.service`](packaging/fyisp.service)). On Linux and macOS, `--admin-token` on the command line is visible to other users of the machine (`ps`), and `FYISP_ADMIN_TOKEN` is not; fyisp never prints either one, `-h` included.
 - Scripts and Prometheus send it as `Authorization: Bearer <token>` (or `X-FYISP-Admin: <token>`); see [Prometheus metrics](#prometheus-metrics).
 - The dashboard is plain HTTP: someone who can watch your network traffic could copy the token or the cookie, as with any HTTP login. Keep it on a network you trust, use `-p 127.0.0.1:3000:3000`, or reach it through `--tunnel` (HTTPS).
 
@@ -322,10 +322,12 @@ The dashboard serves `/metrics`: network_exporter-compatible `ping_*` series for
 scrape_configs:
   - job_name: fyisp
     authorization:
-      credentials: <your --admin-token>
+      credentials_file: /etc/prometheus/fyisp-token   # the token alone, readable by Prometheus
     static_configs:
       - targets: ['127.0.0.1:3000']
 ```
+
+Scraping from another machine by host name also needs that name in `--allow-host`.
 
 ## Where data lives, and uninstalling
 

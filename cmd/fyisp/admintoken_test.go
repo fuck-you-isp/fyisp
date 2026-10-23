@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -42,6 +44,20 @@ func TestAdminTokenEnv(t *testing.T) {
 	}
 	if c, err := parseFlags([]string{"--admin-token", strings.Repeat("f", 32)}); err != nil || c.adminToken != strings.Repeat("f", 32) {
 		t.Errorf("--admin-token over FYISP_ADMIN_TOKEN: %q, %v", c.adminToken, err)
+	}
+	// The usage text (-h, or any bad flag) never shows the token.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := os.Stderr
+	os.Stderr = w
+	_, perr := parseFlags([]string{"--no-such-flag"})
+	os.Stderr = stderr
+	w.Close()
+	usage, _ := io.ReadAll(r)
+	if perr == nil || !strings.Contains(string(usage), "-admin-token") || strings.Contains(string(usage), tok) {
+		t.Errorf("usage text (%v) shows FYISP_ADMIN_TOKEN or no flags:\n%s", perr, usage)
 	}
 }
 

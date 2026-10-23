@@ -14,7 +14,7 @@ import {
   meta, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, toLocalInput, fromLocalInput, adminSession, signIn,
+  hideTip, whyButton, toLocalInput, fromLocalInput, adminSession, signIn, markSignedIn,
   hatch, resetHatch, smooth,
 } from './core.js';
 import { Home, firstHome } from './home.js';
@@ -1071,6 +1071,7 @@ function invWait(e) {
  * @param {any} e
  */
 function invError(e) {
+  if (e.status === 401) return ''; // the page reloads to sign in
   const b = e.body || {};
   switch (b.code) {
     case 'busy': return 'Four traces are already running, which is the most at once. Try again in a few minutes.';
@@ -1121,10 +1122,8 @@ class Investigate {
     this.ctl = null;
     this.poking = false;
     this.invErr = '';
-    // Calm states, no error: none started (click Trace), or the hourly
-    // budget was used up when the view opened.
+    // A calm state, no error: none started (click Trace).
     this.invIdle = false;
-    this.invNote = '';
     /** @type {InvState|null} the on-demand trace of this target (running, or finished within the hour) */
     this.invState = null;
     // Start one on open, once the first load shows none is running.
@@ -1236,7 +1235,6 @@ class Investigate {
       this.sel = new Set();
       this.userSel = false;
       this.invErr = '';
-      this.invNote = '';
       this.invState = null;
       this.sessionRange = true;
       this.tbody.replaceChildren();
@@ -1345,7 +1343,6 @@ class Investigate {
     }
     this.poking = true;
     this.invIdle = false;
-    this.invNote = '';
     let started = false;
     try {
       /** @type {InvState} */
@@ -1449,8 +1446,8 @@ class Investigate {
     } else if (v && v.state === 'finished') {
       kids.push(h('span', { class: 'pill', text: `Finished: ${v.rounds_done} rounds${v.finished_at ? ` (ended ${fmtWhen(v.finished_at)})` : ''}` }));
       kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace again', disabled: this.poking || null, onclick: () => this.poke() }));
-    } else if (this.invNote || this.invIdle) {
-      kids.push(h('span', { class: 'pill', text: this.invNote || 'Not tracing' }));
+    } else if (this.invIdle) {
+      kids.push(h('span', { class: 'pill', text: 'Not tracing' }));
       kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace', disabled: this.poking || null,
         title: 'Traces this target every few seconds; it stops by itself after about 10 minutes.', onclick: () => this.poke() }));
     } else kids.push(h('span', { class: 'pill', text: 'Starting a trace…' }));
@@ -1551,7 +1548,7 @@ class Investigate {
     const kids = [];
     if (!d.hops.length) {
       const t = targetInfo(this.target) || hostOf(this.target);
-      const pending = t && !this.alwaysOn() && !this.invErr && !this.invIdle && !this.invNote && (!this.invState || this.invState.state === 'running');
+      const pending = t && !this.alwaysOn() && !this.invErr && !this.invIdle && (!this.invState || this.invState.state === 'running');
       this.summary.className = 'inv-summary v-warming_up';
       kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.'
         : this.invIdle ? 'Not tracing. Click Trace to follow this target’s path for about 10 minutes.' : 'No trace data in this range.' }));
@@ -3271,6 +3268,8 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
 let home = null;
 /** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
 let onNav = () => {};
+/** The boot's /api/status answered: the session cookie works. */
+let signedIn = false;
 function homeShown() { return !!home && currentView() === 'h' && !(state.inv && inv); }
 
 /** The header's Home | Details switch. */
@@ -3781,6 +3780,9 @@ async function main() {
   // Back from focus mode restores the Overview's scroll position itself.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   onNav = () => {
+    // A sign-in link opened in this tab: boot takes the token (and a new CSRF token).
+    if (/(^#|&)admin=/.test(location.hash)) { location.reload(); return; }
+    if (!signedIn) return; // nothing but the sign-in dialog yet
     if (location.hash === lastHash) return;
     lastHash = location.hash;
     readHash(); log.open = state.log;
@@ -3793,9 +3795,12 @@ async function main() {
   /** @type {any} */
   const st = await fetch('api/status', { credentials: 'same-origin', cache: 'no-store' })
     .then(async (r) => { const b = await r.json().catch(() => null); return r.status === 401 ? 401 : r.ok ? b : null; }, () => null);
-  if (st === 401) { void signIn(linkErr, true); return; }
+  if (st === 401) { void signIn(linkErr); return; }
+  signedIn = true;
+  markSignedIn();
   // Home's first answer, fetched alongside the profile (null after a few seconds without
-  // one: Home then polls on its own). Details doesn't wait for it.
+  // one: Home then polls on its own); after the status, so no other request can 401
+  // first. Details doesn't wait for it.
   const first = firstHome();
   const prof = await fetchJSON('api/profile');
   status = st;

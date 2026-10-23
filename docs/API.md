@@ -20,7 +20,7 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 |---|---|---|---|
 | GET | `/` | the dashboard page (with the CSRF token in a meta tag) | |
 | GET | `static/…` | the dashboard's scripts, styles and images | |
-| GET | `api/status` | version, start time, ICMP support, store health and whether this browser may use the controls | [below](#get-apistatus) |
+| GET | `api/status` | version, start time, ICMP support, warm-up and store health | [below](#get-apistatus) |
 | GET | `api/profile` | the profile: groups, targets and which features are on | [below](#get-apiprofile) |
 | GET | `api/home` | Home: the answer card, connection strip, tiles, speed and problems | [HOME-API.md](HOME-API.md) |
 | GET | `api/panel`, `api/panel.csv` | one group's chart data, as JSON or CSV | [below](#get-apipanel-and-apipanelcsv) |
@@ -84,7 +84,7 @@ Both answer 404 when tracing is off or the target is neither a profile target no
 
 ### POST and DELETE `api/admin/session`
 
-No parameters and no body; it needs no session, so a browser can sign in. `POST` with the admin token in `X-FYISP-Admin` sets an HttpOnly, SameSite=Strict cookie that carries it from then on (also `Secure` when the request came through `--tunnel`), and answers 403 for a wrong token; `DELETE` clears the cookie. Both return `{"admin": true|false}`.
+No parameters and no body; it needs no session, so a browser can sign in. `POST` with the admin token in `X-FYISP-Admin` sets an HttpOnly, SameSite=Strict cookie that stands for it from then on (an HMAC of the token, not the token; also `Secure` when the page is HTTPS: through `--tunnel`, an `https://` Origin or `X-Forwarded-Proto: https`), and answers 403 for a wrong token; `DELETE` clears the cookie. Both return `{"admin": true|false}`.
 
 ## Metrics
 

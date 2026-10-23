@@ -1,7 +1,9 @@
 package web
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"net"
@@ -56,6 +58,7 @@ type localHandler struct {
 	self  string // bound IP literal (normalized), "" for a wildcard bind
 	extra map[string]bool
 	csrf  string
+	sess  string    // the session cookie's value (sessionValue)
 	own   *ownAddrs // this host's addresses (sameMachine)
 }
 
@@ -75,7 +78,7 @@ func Local(d Deps, o LocalOptions) http.Handler {
 		_, _ = rand.Read(b[:])
 		tok = hex.EncodeToString(b[:])
 	}
-	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, extra: map[string]bool{}, own: newOwnAddrs()}
+	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, sess: sessionValue(o.AdminToken), extra: map[string]bool{}, own: newOwnAddrs()}
 	h.server.sameMachine = h.sameMachine
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
@@ -147,8 +150,12 @@ func (h *localHandler) tunnelHostport(hostport string) bool {
 	return th != "" && port == "443" && host == strings.ToLower(th)
 }
 
-// viaTunnel reports a request by the tunnel's name.
-func (h *localHandler) viaTunnel(r *http.Request) bool { return h.tunnelHostport(r.Host) }
+// viaHTTPS reports a request from an HTTPS page: by the tunnel's name, or
+// through a proxy that says so (X-Forwarded-Proto, or the page's Origin).
+func (h *localHandler) viaHTTPS(r *http.Request) bool {
+	return h.tunnelHostport(r.Host) || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") ||
+		strings.HasPrefix(strings.ToLower(r.Header.Get("Origin")), "https://")
+}
 
 func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(w.Header())
@@ -300,6 +307,19 @@ func (h *localHandler) adminCookie() string {
 	return "fyisp_admin_" + h.port
 }
 
+// sessionValue is the session cookie's value for admin token tok: derived
+// from it, so a new token revokes every session, but not the token itself.
+// Browsers send a host's cookies to all its ports, so other web apps on the
+// same host see the cookie; they can't use it as a bearer token.
+func sessionValue(tok string) string {
+	if tok == "" {
+		return ""
+	}
+	m := hmac.New(sha256.New, []byte(tok))
+	m.Write([]byte("fyisp session cookie"))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
 // adminOK reports whether r carries the admin token, as X-FYISP-Admin,
 // "Authorization: Bearer" (scripts, Prometheus) or the session cookie.
 func (h *localHandler) adminOK(r *http.Request) bool {
@@ -309,11 +329,11 @@ func (h *localHandler) adminOK(r *http.Request) bool {
 	if tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
 		return true
 	}
-	if b, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && tokenEqual(b, h.opts.AdminToken) {
+	if s, b, ok := strings.Cut(r.Header.Get("Authorization"), " "); ok && strings.EqualFold(s, "Bearer") && tokenEqual(b, h.opts.AdminToken) {
 		return true
 	}
 	c, err := r.Cookie(h.adminCookie())
-	return err == nil && tokenEqual(c.Value, h.opts.AdminToken)
+	return err == nil && tokenEqual(c.Value, h.sess)
 }
 
 // serveAdminSession: POST exchanges the admin token (X-FYISP-Admin, taken
@@ -338,9 +358,9 @@ func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
 		return
 	}
-	// Through the tunnel the page is HTTPS: never send the token back over
-	// plain HTTP.
-	c := &http.Cookie{Name: h.adminCookie(), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.viaTunnel(r)}
+	// An HTTPS page (the tunnel, or the owner's HTTPS proxy) never has the
+	// cookie sent back over plain HTTP.
+	c := &http.Cookie{Name: h.adminCookie(), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.viaHTTPS(r)}
 	if r.Method == http.MethodDelete {
 		c.MaxAge = -1
 		http.SetCookie(w, c)
@@ -351,7 +371,7 @@ func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, http.StatusForbidden, "this admin token is not valid (any more)")
 		return
 	}
-	c.Value, c.MaxAge = h.opts.AdminToken, adminCookieMaxAge
+	c.Value, c.MaxAge = h.sess, adminCookieMaxAge
 	http.SetCookie(w, c)
 	writeJSON(w, r, http.StatusOK, map[string]any{"admin": true})
 }

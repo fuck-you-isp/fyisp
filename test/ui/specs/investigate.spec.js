@@ -17,17 +17,6 @@ async function onDemandTarget(page, i) {
   return /** @type {string} */ (t.name);
 }
 
-/** The banner under the status never says Tracing… while nothing runs, at either width. @param {import('@playwright/test').Page} page */
-async function notTracingBanner(page) {
-  const sum = page.locator('#inv .inv-summary');
-  for (const width of [1400, 390]) {
-    await page.setViewportSize({ width, height: 900 });
-    await expect(sum).toBeVisible();
-    await expect(sum).not.toContainText('Tracing…');
-  }
-  await page.setViewportSize({ width: 1400, height: 900 });
-}
-
 /** Counts POST api/investigate, answering each with answer (or the real server). @param {import('@playwright/test').Page} page @param {any} [answer] */
 async function countPosts(page, answer) {
   const posts = { n: 0 };

@@ -18,9 +18,24 @@ func init() { testNoAdmin = true }
 func TestAdminRequired(t *testing.T) {
 	h, sh := localHandlerFor(t, LocalOptions{AdminToken: testAdmin})
 	host := map[string]string{"Host": "127.0.0.1:3000"}
-	for _, p := range []string{"/", "/static/app.js", "/static/style.css"} {
+	open := []string{"/"}
+	for rel := range assets {
+		if strings.HasPrefix(rel, "static/") {
+			open = append(open, "/"+rel)
+		}
+	}
+	if len(open) < 10 {
+		t.Fatalf("only %d open paths: %v", len(open), open)
+	}
+	for _, p := range open {
 		if w := do(h, "GET", p, host); w.Code != 200 {
 			t.Errorf("GET %s = %d, want 200 without the token", p, w.Code)
+		}
+	}
+	for _, c := range []struct{ method, path string }{{"HEAD", "/api/status"}, {"OPTIONS", "/api/status"}, {"GET", "/static/nope.js"},
+		{"GET", "/static/"}, {"GET", "//api/status"}, {"GET", "/api/status/"}} {
+		if w := do(h, c.method, c.path, host); w.Code != 401 {
+			t.Errorf("%s %s = %d, want 401", c.method, c.path, w.Code)
 		}
 	}
 	for _, p := range []string{"/api/status", "/api/profile", "/api/home?part=now", "/api/speed", "/api/trace?target=Alpha", "/metrics", "/api/nope"} {
@@ -44,7 +59,8 @@ func TestAdminRequired(t *testing.T) {
 		"bearer":       {"Authorization", "Bearer " + testAdmin, 200},
 		"bad bearer":   {"Authorization", "Bearer " + strings.Repeat("0", 32), 401},
 		"basic":        {"Authorization", "Basic " + testAdmin, 401},
-		"lower bearer": {"Authorization", "bearer" + testAdmin, 401},
+		"lower bearer": {"Authorization", "bearer " + testAdmin, 200},
+		"no space":     {"Authorization", "Bearer" + testAdmin, 401},
 		"bad header":   {HeaderAdmin, testAdmin + "x", 401},
 	} {
 		if w := do(h, "GET", "/api/status", map[string]string{"Host": "127.0.0.1:3000", c.k: c.v}); w.Code != c.code {
@@ -131,7 +147,7 @@ func TestAdminSession(t *testing.T) {
 		t.Fatalf("cookies = %v", cs)
 	}
 	c := cs[0]
-	if c.Name != "fyisp_admin_3000" || c.Value != testAdmin || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode ||
+	if c.Name != "fyisp_admin_3000" || c.Value != sessionValue(testAdmin) || strings.Contains(c.Value, testAdmin) || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode ||
 		c.Path != "/" || c.Domain != "" || c.MaxAge != adminCookieMaxAge {
 		t.Errorf("cookie = %+v", c)
 	}
@@ -142,9 +158,10 @@ func TestAdminSession(t *testing.T) {
 		t.Error("the cookie does not sign in")
 	}
 	for name, hdr := range map[string]map[string]string{
-		"no cookie":  good,
-		"other port": with(map[string]string{"Cookie": "fyisp_admin_3001=" + testAdmin}),
-		"bad value":  with(map[string]string{"Cookie": "fyisp_admin_3000=" + strings.Repeat("0", 32)}),
+		"no cookie":      good,
+		"other port":     with(map[string]string{"Cookie": "fyisp_admin_3001=" + sessionValue(testAdmin)}),
+		"bad value":      with(map[string]string{"Cookie": "fyisp_admin_3000=" + strings.Repeat("0", 64)}),
+		"token as value": with(map[string]string{"Cookie": "fyisp_admin_3000=" + testAdmin}),
 	} {
 		if w := doControl(h, hdr); w.Code != 401 || sh.n != 0 {
 			t.Errorf("%s = %d, want 401", name, w.Code)
@@ -168,6 +185,21 @@ func TestAdminSession(t *testing.T) {
 	h2, sh2 := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000", AdminToken: strings.Repeat("f", 32)})
 	if w := doControl(h2, with(map[string]string{"Cookie": cookie})); w.Code != 401 || sh2.n != 0 {
 		t.Errorf("old cookie after rotation = %d", w.Code)
+	}
+
+	// Through an HTTPS page (the owner's own HTTPS proxy), the cookie is Secure.
+	hs, _ := localHandlerFor(t, LocalOptions{Addr: "127.0.0.1:3000", AdminToken: testAdmin, ExtraHosts: []string{"fyisp.example.com"}})
+	for name, hdr := range map[string]map[string]string{
+		"https Origin":      with(map[string]string{HeaderAdmin: testAdmin, "Host": "fyisp.example.com", "Origin": "https://fyisp.example.com"}),
+		"X-Forwarded-Proto": with(map[string]string{HeaderAdmin: testAdmin, "Host": "fyisp.example.com", "X-Forwarded-Proto": "https"}, "Origin"),
+	} {
+		w := do(hs, "POST", "/api/admin/session", hdr)
+		if cs := w.Result().Cookies(); w.Code != 200 || len(cs) != 1 || !cs[0].Secure {
+			t.Errorf("%s: %d %v, want a Secure cookie", name, w.Code, cs)
+		}
+	}
+	if cs := w.Result().Cookies(); cs[0].Secure {
+		t.Error("cookie over plain HTTP is Secure")
 	}
 
 	// DELETE signs out.

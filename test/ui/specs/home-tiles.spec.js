@@ -166,16 +166,22 @@ test('the open panel refreshes every 60 s', async ({ page }) => {
   expect(ctl.tileCalls.length).toBe(3);
 });
 
-test('Escape is left to an open dialog', async ({ page, failOk }) => {
-  failOk.push(/\/api\/speed\/run\b/);
+test('Escape is left to an open dialog', async ({ page }) => {
   await serveHome(page, 'now-good');
   await openHome(page);
   await page.locator('.hp-tile[data-id="meet"]').click();
   await expect(page.locator('#hp-detail')).toBeVisible();
-  // A 401 (fyisp restarted with a new admin token) opens the sign-in dialog.
-  await page.route('**/api/speed/run?*', (route) => route.fulfill({ status: 401, json: { error: 'admin token required', code: 'unauthorized' } }));
-  await page.getByRole('button', { name: 'Test speed now' }).click();
-  const dlg = page.getByRole('dialog', { name: 'Sign in' });
+  // A modal dialog opened from the speed button (as the page's dialogs are).
+  await page.getByRole('button', { name: 'Test speed now' }).focus();
+  await page.evaluate(() => {
+    const d = document.createElement('dialog');
+    d.setAttribute('aria-label', 'A dialog');
+    d.append(Object.assign(document.createElement('button'), { textContent: 'OK' }));
+    d.addEventListener('close', () => d.remove());
+    document.body.append(d);
+    d.showModal();
+  });
+  const dlg = page.getByRole('dialog', { name: 'A dialog' });
   await expect(dlg).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dlg).toHaveCount(0);

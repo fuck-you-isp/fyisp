@@ -14,10 +14,10 @@ const minAdminToken = 32
 // too short, or has characters a cookie or the link's fragment would mangle.
 func checkAdminToken(tok string) error {
 	if len(tok) < minAdminToken {
-		return fmt.Errorf("--admin-token: at least %d characters (e.g. openssl rand -hex 16)", minAdminToken)
+		return fmt.Errorf("--admin-token (or FYISP_ADMIN_TOKEN): at least %d characters (e.g. openssl rand -hex 16)", minAdminToken)
 	}
 	if strings.Trim(tok, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~") != "" {
-		return fmt.Errorf("--admin-token: only letters, digits and - . _ ~ (e.g. openssl rand -hex 16)")
+		return fmt.Errorf("--admin-token (or FYISP_ADMIN_TOKEN): only letters, digits and - . _ ~ (e.g. openssl rand -hex 16)")
 	}
 	return nil
 }

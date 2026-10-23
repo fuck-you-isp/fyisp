@@ -22,7 +22,7 @@ test('the host box traces a public host, and the URL reopens it', async ({ page 
   await box.press('Enter');
   await expect(inv.locator('.inv-status .pill.on', { hasText: /^Tracing… \d+ of 250 rounds$/ })).toBeVisible();
   // Switching the target to TCP 443 starts its own trace first.
-  expect(posts.filter((q) => /example\.com/i.test(q))).toEqual(['?host=Example.com&mode=tcp']);
+  expect(posts).toEqual(['?target=Google+DNS+8.8.8.8&mode=tcp', '?host=Example.com&mode=tcp']);
   await expect(page).toHaveURL(/#.*t=host%3Aexample\.com/);
   await expect(inv.locator('.inv-pick')).toHaveValue('host:example.com');
   await expect(inv.locator('.inv-pick option:checked')).toHaveText('example.com');
@@ -34,7 +34,7 @@ test('the host box traces a public host, and the URL reopens it', async ({ page 
   await expect(inv.locator('.inv-status .pill', { hasText: 'Not tracing' })).toBeVisible();
   await expect(box).toHaveValue('example.com');
   await expect(inv.locator('.inv-run .inv-cmd')).toHaveText('mtr -rwzbc 100 example.com');
-  expect(posts.filter((q) => /example\.com/i.test(q))).toHaveLength(1);
+  expect(posts).toHaveLength(2);
 });
 
 test('a pasted host: link never starts a trace by itself; Trace does', async ({ page }) => {

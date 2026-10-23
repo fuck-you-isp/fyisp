@@ -124,8 +124,10 @@ The dashboard's controls:
 The admin token is `--admin-token` or `$FYISP_ADMIN_TOKEN` (at least 32
 characters), else a new random one at every start; it is sent as
 `X-FYISP-Admin`, `Authorization: Bearer` or the HttpOnly, SameSite=Strict
-session cookie that the "open this link" URL sets, and compared in
-constant time. A generated token is never stored, so a restart revokes every
+session cookie that the "open this link" URL sets (it holds an HMAC of
+the token, not the token, and is `Secure` when the page is HTTPS: through
+`--tunnel`, or behind a proxy, an `https://` Origin or `X-Forwarded-Proto:
+https`), and compared in constant time. A generated token is never stored, so a restart revokes every
 session; a token passed in is never logged.
 
 ## Exposing the dashboard
@@ -142,7 +144,7 @@ tunnel or reverse proxy in front of the dashboard (cloudflared, Tailscale
 Serve or Funnel, nginx), name it with `--allow-host`. `--tunnel` does that
 for its quick tunnel: the dashboard accepts the tunnel's random name (over
 HTTPS only; after a replacement tunnel, its new name), and the session
-cookie set through the tunnel is `Secure`. Its link is printed and logged
+cookie set through the tunnel is `Secure`. Its link (without the token) is printed and logged
 once the tunnel has connected and again for each replacement tunnel.
 A generated token is printed in fyisp's log at every start as the "open
 this link" URL, so anyone who can read the logs (`journalctl`,

@@ -152,7 +152,7 @@ func main() {
 	bf := flag.Duration("backfill", 6*time.Hour, "synthetic history to generate")
 	loss := flag.Float64("loss", 0.01, "live loss rate")
 	noICMP := flag.Bool("no-icmp", false, "report ICMP as unavailable")
-	admin := flag.String("admin-token", devAdminToken, "admin token the dashboard requires (fake data: a fixed one by default)")
+	admin := flag.String("admin-token", devAdminToken, "admin token the dashboard requires (fake data, so a fixed, well-known one by default)")
 	vCycle := flag.Duration("verdict-cycle", 20*time.Second, "how long each fake verdict kind lasts")
 	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, udp_blocked, stun_blocked (quiet), udp_degraded, warming_up)")
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
@@ -169,6 +169,10 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if *conn != model.ConnWiFi && *conn != model.ConnWired && *conn != model.ConnUnknown {
 		log.Error("-conn: want wifi, wired or unknown", "got", *conn)
+		os.Exit(2)
+	}
+	if *admin == "" {
+		log.Error("-admin-token: the dashboard needs one")
 		os.Exit(2)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

@@ -699,14 +699,13 @@ type invKey struct {
 
 // Investigations tracks on-demand traces.
 type Investigations struct {
-	mu  sync.Mutex
-	m   map[invKey]*invSession
-	now func() time.Time
+	mu sync.Mutex
+	m  map[invKey]*invSession
 }
 
 // NewInvestigations returns an empty set.
 func NewInvestigations() *Investigations {
-	return &Investigations{m: map[invKey]*invSession{}, now: time.Now}
+	return &Investigations{m: map[invKey]*invSession{}}
 }
 
 // invError is a refused start: a stable code for the UI (docs/TRACE-API.md)
@@ -740,7 +739,7 @@ func (iv *Investigations) pruneLocked(now time.Time) {
 func (iv *Investigations) start(src TraceSource, k invKey) (st *investigationJSON, created bool, err error) {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	now := iv.now()
+	now := time.Now()
 	iv.pruneLocked(now)
 	if se := iv.m[k]; se != nil && se.running() {
 		return se.json(k), false, nil
@@ -777,8 +776,7 @@ func (iv *Investigations) refusedLocked() *invError {
 func (iv *Investigations) check(k invKey) *invError {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	now := iv.now()
-	iv.pruneLocked(now)
+	iv.pruneLocked(time.Now())
 	if se := iv.m[k]; se != nil && se.running() {
 		return nil
 	}
@@ -789,7 +787,7 @@ func (iv *Investigations) check(k invKey) *invError {
 func (iv *Investigations) state(k invKey) *investigationJSON {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	iv.pruneLocked(iv.now())
+	iv.pruneLocked(time.Now())
 	if se := iv.m[k]; se != nil {
 		return se.json(k)
 	}

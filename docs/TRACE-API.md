@@ -14,7 +14,7 @@ A trace has a mode, which picks its probes. None needs admin rights.
 | `tcp` | TCP SYNs to port 443, closed with a reset | `mtr -T -P 443` | `trace_tcp` |
 | `udp` | UDP datagrams to port 33434; the destination answers "port unreachable" | `mtr -u` | `trace_udp` |
 
-The destination port is fixed per trace, but the source port changes with every probe, so routers that balance per flow (ECMP) can still show several addresses at one hop, as with `mtr`. Each mode of a target is its own trace: its own session, slot and start in the budget, numbers and route. Always-on traces are ICMP. Hops are shared only between traces of the same mode, but the cap of 1 probe a second per router counts every mode. Route changes are recorded for ICMP traces only; the route of a TCP or UDP trace is kept in memory while fyisp runs, so after a restart its hop numbers have no addresses until it is traced again.
+The destination port is fixed per trace, but the source port changes with every probe, so routers that balance per flow (ECMP) can still show several addresses at one hop, as with `mtr`. Each mode of a target is its own trace: its own session, slot, numbers and route. Always-on traces are ICMP. Hops are shared only between traces of the same mode, but the cap of 1 probe a second per router counts every mode. Route changes are recorded for ICMP traces only; the route of a TCP or UDP trace is kept in memory while fyisp runs, so after a restart its hop numbers have no addresses until it is traced again.
 
 `GET api/trace` lists what this machine supports in `modes`:
 
@@ -55,11 +55,11 @@ There is no body. The checks are:
 - Logs name the target and the error, never the client.
 
 **What a POST does:**
-- **Trace running:** returns its state. It doesn't extend the trace or reset the count, and it uses no budget.
+- **Trace running:** returns its state. It doesn't extend the trace or reset the count.
 - **Trace finished:** starts a fresh 250 rounds.
-- Only starts that succeed use the budget; refused ones (no slot, unknown target, a refused host, a tracer error) don't.
+- Only starts that succeed take a slot; refused ones (no slot, unknown target, a refused host, a tracer error) don't.
 
-Client addresses behind a tunnel can't be trusted, so the budget, the slots, the 250 rounds, the public-address check and the tracer's per-router probe cap are the only bounds on a script that starts traces.
+Client addresses behind a tunnel can't be trusted, so the admin token, the slots, the 250 rounds, the public-address check and the tracer's per-router probe cap are the only bounds on a script that starts traces.
 
 **Response 200:**
 
@@ -102,7 +102,7 @@ A host's hop numbers are stored like a target's, under its name, and age out wit
 
 ## Progress
 
-The dashboard posts by itself when Investigate opens a profile target without an always-on trace. Opening a host's trace (`#t=host:…`, e.g. from a link someone sent) never starts one: you click *Trace*.
+The dashboard posts by itself when Investigate opens a profile target in a mode without an always-on trace (always-on traces are ICMP). Opening a host's trace (`#t=host:…`, e.g. from a link someone sent) never starts one: you click *Trace*.
 
 `GET api/trace?target=&mode=` carries `"investigation": {…same object…}` of that mode while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
 

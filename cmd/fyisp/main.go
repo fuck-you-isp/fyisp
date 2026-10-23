@@ -162,7 +162,8 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", os.Getenv("FYISP_ADMIN_TOKEN"), "token the dashboard and its API require (at least 32 letters, digits or - . _ ~, e.g. from openssl rand -hex 16); change it to sign every browser out (default: $FYISP_ADMIN_TOKEN, else a new random one at each start, shown as a link in the log)")
+	// No env default: flag's usage prints defaults, and this one is a secret.
+	fs.StringVar(&c.adminToken, "admin-token", "", "token the dashboard and its API require (at least 32 letters, digits or - . _ ~, e.g. from openssl rand -hex 16); change it to sign every browser out (default: $FYISP_ADMIN_TOKEN, else a new random one at each start, shown as a link in the log)")
 	fs.BoolVar(&c.tunnel, "tunnel", envBool("FYISP_TUNNEL"), "also serve the dashboard over HTTPS on a Cloudflare quick tunnel (https://<random>.trycloudflare.com, behind the admin token) (default: $FYISP_TUNNEL, else false)")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
@@ -192,6 +193,9 @@ func parseFlags(args []string) (config, error) {
 	}
 	if err := checkSpeedFlags(&c); err != nil {
 		return c, err
+	}
+	if c.adminToken == "" {
+		c.adminToken = os.Getenv("FYISP_ADMIN_TOKEN")
 	}
 	if c.adminToken != "" {
 		if err := checkAdminToken(c.adminToken); err != nil {
@@ -574,9 +578,9 @@ func servePprof(addr string, log *slog.Logger) error {
 	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("--pprof must be a loopback address, got %q", addr)
 	}
+	// No /debug/pprof/cmdline: the command line can hold --admin-token.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
@@ -584,9 +588,26 @@ func servePprof(addr string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	go func() { _ = newServer(mux).Serve(ln) }()
+	go func() { _ = newServer(loopbackHostOnly(mux)).Serve(ln) }()
 	log.Info("pprof enabled", "addr", ln.Addr().String())
 	return nil
+}
+
+// loopbackHostOnly refuses requests whose Host is not a loopback name or
+// address, so a web page can't reach h by DNS rebinding.
+func loopbackHostOnly(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		host = strings.Trim(host, "[]")
+		if ip := net.ParseIP(host); !strings.EqualFold(host, "localhost") && (ip == nil || !ip.IsLoopback()) {
+			http.Error(w, "unknown host", http.StatusMisdirectedRequest)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // displayAddr turns a wildcard listen address into one a browser can open.

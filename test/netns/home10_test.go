@@ -556,7 +556,7 @@ func TestHome10(t *testing.T) {
 			time.Sleep(150 * time.Second)
 			first := make(chan poll, 1)
 			go func() {
-				c := &http.Client{Timeout: time.Minute, Transport: &http.Transport{DialContext: dialIn(lab.cli), DisableKeepAlives: true}}
+				c := &http.Client{Timeout: time.Minute, Transport: authed(&http.Transport{DialContext: dialIn(lab.cli), DisableKeepAlives: true})}
 				first <- lab.fetchNow(c)
 			}()
 			time.Sleep(2 * time.Second)
@@ -720,7 +720,7 @@ func TestHome10(t *testing.T) {
 		}{
 			{"same machine", func() (*http.Response, error) { return lab.client.Get("http://" + listenAddr + homeAPI + "?part=now") }},
 			{"another machine", func() (*http.Response, error) {
-				c := &http.Client{Timeout: httpTimeout, Transport: &http.Transport{DialContext: dialIn(lab.gw), DisableKeepAlives: true}}
+				c := &http.Client{Timeout: httpTimeout, Transport: authed(&http.Transport{DialContext: dialIn(lab.gw), DisableKeepAlives: true})}
 				return c.Get("http://10.99.1.2:3000" + homeAPI + "?part=now")
 			}},
 			{"through a proxy", func() (*http.Response, error) {
