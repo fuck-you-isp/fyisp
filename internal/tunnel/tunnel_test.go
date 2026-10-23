@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/rs/zerolog"
 	"go.uber.org/goleak"
 )
 
@@ -170,6 +173,12 @@ func TestParseProvisionResponse(t *testing.T) {
 	}
 	if d := provisionBackoff(1, err); d < 90*time.Second {
 		t.Errorf("backoff after 429 with Retry-After 120 = %v", d)
+	}
+	for _, ra := range []string{"99999999999999999", "86400"} {
+		_, err = parseProvisionResponse(429, http.Header{"Retry-After": {ra}}, nil)
+		if !errors.As(err, &rl) || rl.retryAfter != time.Hour {
+			t.Errorf("Retry-After %s: got %v, want capped at 1h", ra, err)
+		}
 	}
 
 	_, err = parseProvisionResponse(500, nil, []byte(`{"success":false,"errors":[{"code":1003,"message":"nope"}]}`))
@@ -396,7 +405,7 @@ func TestZerologBridge(t *testing.T) {
 // links, and CloudflaredVersion the release that commit is: the first line
 // of its RELEASE_NOTES, read offline from the module cache.
 func TestCloudflaredVersionMatchesGoMod(t *testing.T) {
-	if out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/cloudflare/cloudflared").Output(); err == nil {
+	if out, err := goList(t, "{{.Dir}}"); out != "" {
 		b, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(out)), "RELEASE_NOTES"))
 		if err != nil {
 			t.Fatal(err)
@@ -404,6 +413,8 @@ func TestCloudflaredVersionMatchesGoMod(t *testing.T) {
 		if first, _, _ := strings.Cut(string(b), "\n"); strings.TrimSpace(first) != CloudflaredVersion {
 			t.Errorf("CloudflaredVersion %q, but the linked cloudflared is release %q", CloudflaredVersion, strings.TrimSpace(first))
 		}
+	} else {
+		t.Logf("RELEASE_NOTES not checked: %v", err)
 	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -417,7 +428,22 @@ func TestCloudflaredVersionMatchesGoMod(t *testing.T) {
 			return
 		}
 	}
-	t.Skip("cloudflared not in build info deps")
+	t.Fatal("cloudflared is not in the test binary's build info")
+}
+
+// goList runs go list -m -f format on cloudflared, offline (the module
+// cache). Without a go command (the livetest image) it returns "" and the
+// reason; any other failure fails the test.
+func goList(t *testing.T, format string) (string, error) {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		return "", err
+	}
+	out, err := exec.Command("go", "list", "-m", "-f", format, "github.com/cloudflare/cloudflared").Output()
+	if err != nil {
+		t.Fatalf("go list -m %s: %v", format, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func TestFallbackDue(t *testing.T) {
@@ -557,6 +583,7 @@ func TestZerologBridgePrivacy(t *testing.T) {
 		"map[a:1.2.3.4]": "map[a:[ip]]", "abc1.2.3.4": "abc[ip]", "cf_connecting_ip:203.0.113.9,203.0.113.10": "cf_connecting_ip:[ip],[ip]",
 		"[2001:db8::1]:443": "[[ip]]:443", "read tcp 203.0.113.9:40000->104.16.1.1:443": "read tcp [ip]:40000->[ip]:443",
 		"2a01:4f8:1:2::": "[ip]", "010.001.002.003": "[ip]", "203.0.113.009": "[ip]", "to 2a01:4f8:1:2:: now": "to [ip] now",
+		"fe:2001:db8:85a3:0:0:8a2e:370:7334": "[ip]", "a010.001.002.003": "a[ip]", "x1.2.3.4 y": "x[ip] y",
 	} {
 		if got := redact(in); got != want {
 			t.Errorf("redact(%q) = %q, want %q", in, got, want)
@@ -568,11 +595,11 @@ func TestZerologBridgePrivacy(t *testing.T) {
 // cloudflared's replace directives (Go ignores them in dependencies), read
 // offline from the module cache. Its no-op golang_client one is left out.
 func TestReplaceDirectivesMatchCloudflared(t *testing.T) {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.GoMod}}", "github.com/cloudflare/cloudflared").Output()
-	if err != nil {
-		t.Skipf("go list: %v", err)
+	gomod, err := goList(t, "{{.GoMod}}")
+	if gomod == "" {
+		t.Skipf("no go command: %v", err)
 	}
-	theirs, err := os.ReadFile(strings.TrimSpace(string(out)))
+	theirs, err := os.ReadFile(gomod)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,4 +635,49 @@ func replaces(mod string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// TestNoPrivateRouting: the orchestrator fyisp builds refuses every TCP and
+// UDP flow the edge could ask for, to a listening port too, and keeps doing
+// so after the edge pushes a configuration, which it never applies: fyisp's
+// own is the newest version.
+func TestNoPrivateRouting(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	tcp := netip.MustParseAddrPort(ln.Addr().String())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	zl := zerolog.Nop()
+	orch, dialer, err := newOrchestrator(ctx, "http://127.0.0.1:3000", "auto", nil, &zl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := func(when string) {
+		t.Helper()
+		if c, err := dialer.DialTCP(ctx, tcp); !errors.Is(err, errNoPrivateRouting) {
+			if c != nil {
+				c.Close()
+			}
+			t.Errorf("%s: TCP to %s: %v, want refused", when, tcp, err)
+		}
+		if c, err := dialer.DialUDP(netip.MustParseAddrPort("127.0.0.1:53")); !errors.Is(err, errNoPrivateRouting) {
+			if c != nil {
+				c.Close()
+			}
+			t.Errorf("%s: UDP: %v, want refused", when, err)
+		}
+	}
+	refused("built")
+	push := `{"ingress":[{"service":"http://192.168.1.1:80"}],"warp-routing":{}}`
+	if r := orch.UpdateConfig(7, []byte(push)); r.LastAppliedVersion != pinnedVersion || r.Err != nil {
+		t.Errorf("a pushed configuration: applied version %d, %v", r.LastAppliedVersion, r.Err)
+	}
+	refused("after a push")
+	b, err := orch.GetConfigJSON()
+	if err != nil || strings.Contains(string(b), "192.168.1.1") || !strings.Contains(string(b), "127.0.0.1:3000") {
+		t.Errorf("ingress after a push: %s %v", b, err)
+	}
 }

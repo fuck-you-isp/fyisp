@@ -80,6 +80,20 @@ func TestAdminRequired(t *testing.T) {
 	}
 }
 
+// The CSRF token comes from the admin token: the same after a restart with
+// the same token (an open page's writes keep working), new with a new one.
+func TestCSRFFromAdminToken(t *testing.T) {
+	csrf := func(tok string) string {
+		h := Local(Deps{}, LocalOptions{Addr: "127.0.0.1:3000", AdminToken: tok}).(*localHandler)
+		return h.csrf
+	}
+	a, b := csrf(testAdmin), csrf(testAdmin)
+	if a == "" || a != b || a == csrf(strings.Repeat("f", 32)) || strings.Contains(a, testAdmin) ||
+		a == derive(testAdmin, "fyisp session cookie") {
+		t.Errorf("csrf %q %q", a, b)
+	}
+}
+
 func TestLocalNeedsAdminToken(t *testing.T) {
 	testNoAdmin = false
 	defer func() { testNoAdmin = true }()
@@ -111,7 +125,8 @@ func TestAdminSession(t *testing.T) {
 		return do(h, "GET", "/api/status", hdr).Code == 200
 	}
 
-	// The exchange keeps every POST protection and needs the right token.
+	// The exchange needs the right token, the Host allowlist and, from a
+	// browser, Sec-Fetch-Site: same-origin.
 	for _, c := range []struct {
 		name string
 		hdr  map[string]string
@@ -119,9 +134,8 @@ func TestAdminSession(t *testing.T) {
 	}{
 		{"no token", good, 403},
 		{"bad token", with(map[string]string{HeaderAdmin: testAdmin[:31] + "0"}), 403},
-		{"cross-origin", with(map[string]string{HeaderAdmin: testAdmin, "Origin": "http://evil.com"}, "Sec-Fetch-Site"), 403},
 		{"cross-site", with(map[string]string{HeaderAdmin: testAdmin, "Sec-Fetch-Site": "cross-site"}), 403},
-		{"no CSRF", with(map[string]string{HeaderAdmin: testAdmin}, HeaderCSRF), 403},
+		{"same-site", with(map[string]string{HeaderAdmin: testAdmin, "Sec-Fetch-Site": "same-site"}), 403},
 		{"foreign host", with(map[string]string{HeaderAdmin: testAdmin, "Host": "evil.com:3000", "Origin": "http://evil.com:3000"}), 421},
 	} {
 		w := do(h, "POST", "/api/admin/session", c.hdr)
@@ -138,6 +152,18 @@ func TestAdminSession(t *testing.T) {
 		t.Errorf("query = %d, want 400", w.Code)
 	}
 
+	// No CSRF token or Origin needed: a page elsewhere can't send the token
+	// header (CORS preflight), and a proxy that rewrites Host to the
+	// listener's address makes the owner's own Origin look foreign.
+	for name, hdr := range map[string]map[string]string{
+		"no CSRF":        with(map[string]string{HeaderAdmin: testAdmin}, HeaderCSRF),
+		"Host rewritten": with(map[string]string{HeaderAdmin: testAdmin, "Host": "127.0.0.1:3000", "Origin": "https://nas.example"}),
+	} {
+		if w := do(h, "POST", "/api/admin/session", hdr); w.Code != 200 {
+			t.Errorf("%s: %d %s, want 200", name, w.Code, w.Body.String())
+		}
+	}
+
 	w := do(h, "POST", "/api/admin/session", with(map[string]string{HeaderAdmin: testAdmin}))
 	if w.Code != 200 {
 		t.Fatalf("exchange = %d %s", w.Code, w.Body.String())
@@ -147,7 +173,7 @@ func TestAdminSession(t *testing.T) {
 		t.Fatalf("cookies = %v", cs)
 	}
 	c := cs[0]
-	if c.Name != "fyisp_admin_3000" || c.Value != sessionValue(testAdmin) || strings.Contains(c.Value, testAdmin) || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode ||
+	if c.Name != "fyisp_admin_3000" || c.Value != derive(testAdmin, "fyisp session cookie") || strings.Contains(c.Value, testAdmin) || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode ||
 		c.Path != "/" || c.Domain != "" || c.MaxAge != adminCookieMaxAge {
 		t.Errorf("cookie = %+v", c)
 	}
@@ -159,7 +185,7 @@ func TestAdminSession(t *testing.T) {
 	}
 	for name, hdr := range map[string]map[string]string{
 		"no cookie":      good,
-		"other port":     with(map[string]string{"Cookie": "fyisp_admin_3001=" + sessionValue(testAdmin)}),
+		"other port":     with(map[string]string{"Cookie": "fyisp_admin_3001=" + derive(testAdmin, "fyisp session cookie")}),
 		"bad value":      with(map[string]string{"Cookie": "fyisp_admin_3000=" + strings.Repeat("0", 64)}),
 		"token as value": with(map[string]string{"Cookie": "fyisp_admin_3000=" + testAdmin}),
 	} {
@@ -207,7 +233,7 @@ func TestAdminSession(t *testing.T) {
 	if cs := w.Result().Cookies(); w.Code != 200 || len(cs) != 1 || cs[0].MaxAge >= 0 || cs[0].Value != "" {
 		t.Errorf("delete = %d %v", w.Code, cs)
 	}
-	if w := do(h, "DELETE", "/api/admin/session", with(nil, HeaderCSRF)); w.Code != 403 {
-		t.Errorf("delete without CSRF = %d", w.Code)
+	if w := do(h, "DELETE", "/api/admin/session", with(map[string]string{"Sec-Fetch-Site": "cross-site"})); w.Code != 403 {
+		t.Errorf("cross-site delete = %d", w.Code)
 	}
 }

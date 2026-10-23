@@ -19,7 +19,6 @@ import (
 // cloudflared's cmd/cloudflared/tunnel/quick_tunnel.go (RunQuickTunnel).
 type quickTunnel struct {
 	ID         string `json:"id"`
-	Name       string `json:"name"`
 	Hostname   string `json:"hostname"`
 	AccountTag string `json:"account_tag"`
 	Secret     []byte `json:"secret"`
@@ -75,6 +74,10 @@ func provision(ctx context.Context, service string) (*quickTunnel, error) {
 	return parseProvisionResponse(resp.StatusCode, resp.Header, body)
 }
 
+// maxRetryAfter caps a 429's Retry-After (seconds): a huge one would stop
+// retries for days, or overflow.
+const maxRetryAfter = 3600
+
 // quickHostRe is a quick tunnel's name.
 var quickHostRe = regexp.MustCompile(`^[a-z0-9-]{1,63}\.trycloudflare\.com$`)
 
@@ -82,7 +85,7 @@ func parseProvisionResponse(status int, h http.Header, body []byte) (*quickTunne
 	if status == http.StatusTooManyRequests {
 		e := &rateLimitedError{}
 		if s, err := strconv.Atoi(h.Get("Retry-After")); err == nil && s > 0 {
-			e.retryAfter = time.Duration(s) * time.Second
+			e.retryAfter = time.Duration(min(s, maxRetryAfter)) * time.Second
 		}
 		return nil, e
 	}

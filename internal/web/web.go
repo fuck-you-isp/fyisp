@@ -5,10 +5,10 @@
 // 127.0.0.1:3000). It adds /metrics and the write routes (on-demand traces,
 // speed tests). Everything but the page and its static files needs the
 // admin token; all of it is behind a Host allowlist, and the write routes
-// also behind a same-origin check and a per-process CSRF token. There is
-// one listener; live
-// access from elsewhere is fyisp's quick tunnel (TunnelHost) or the
-// owner's own tunnel or proxy (--allow-host).
+// also behind a same-origin check and a CSRF token derived from the admin
+// token. There is one listener; live access from elsewhere is fyisp's
+// quick tunnel (TunnelHost) or the owner's own tunnel or proxy
+// (--allow-host).
 //
 // The caller owns the http.Server. Recommended settings:
 //

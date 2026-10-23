@@ -3,15 +3,18 @@ package tunnel
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"net/netip"
 	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/cloudflare/cloudflared/client"
@@ -82,7 +85,11 @@ var (
 //     serve its own registry, not the default one.)
 //   - connection.NewObserver starts a dispatch goroutine that never exits, so
 //     one observer is shared by every session in the process. Its sink fans
-//     out to the current session only.
+//     out to the current session only. Each supervisor also registers its
+//     own small connection tracker on it (NewConnAwareLogger), which
+//     cloudflared never removes: a few hundred bytes per run, and runs
+//     restart at most once a minute (runLoop), so under 0.5 MB a day even
+//     while offline. A new observer per run would leak a goroutine instead.
 //   - quic-go prints a one-off UDP buffer size warning through the standard
 //     log package (bypassing slog); silence it unless the user set the knob.
 //   - cloudflared's HTTP/2 server and quic-go write other errors through the
@@ -226,13 +233,13 @@ func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog
 			if w.expired() {
 				stopping.Store(true)
 				cancel()
-				<-errC
+				waitStopped(errC)
 				return stopWatchdog, nil
 			}
 			if fallbackDue(proto, t.cfg.FallbackAfter, w.everUp(), w.active(), w.downFor()) {
 				stopping.Store(true)
 				cancel()
-				<-errC
+				waitStopped(errC)
 				return stopFallback, nil
 			}
 		case <-ctx.Done():
@@ -250,23 +257,82 @@ func (t *tunnel) runSupervisor(ctx context.Context, qt *quickTunnel, w *watchdog
 				}
 			}
 			cancel()
-			<-errC
+			waitStopped(errC)
 			return stopCtx, nil
 		}
 	}
 }
 
-// errNoPrivateRouting refuses every private-network flow (refuseDialer).
+// cancelWait bounds the wait for a cancelled supervisor to return.
+const cancelWait = 5 * time.Second
+
+// waitStopped waits for a cancelled supervisor's Run to return, or gives up
+// after cancelWait (its goroutine is left behind), so Done always closes.
+func waitStopped(errC <-chan error) {
+	select {
+	case <-errC:
+	case <-time.After(cancelWait):
+	}
+}
+
+// errNoPrivateRouting refuses every private-network flow (refusingDialer).
 var errNoPrivateRouting = errors.New("tunnel: private-network routing is off")
 
-// refuseDialer is the origin dialer for everything but the published
-// origin: it dials nothing.
-type refuseDialer struct{}
-
-func (refuseDialer) DialTCP(context.Context, netip.AddrPort) (net.Conn, error) {
-	return nil, errNoPrivateRouting
+// refusingDialer is the origin dialer for everything but the published
+// origin: every TCP and UDP dial fails before a socket connects.
+func refusingDialer() *ingress.Dialer {
+	return &ingress.Dialer{Dialer: net.Dialer{ControlContext: func(context.Context, string, string, syscall.RawConn) error {
+		return errNoPrivateRouting
+	}}}
 }
-func (refuseDialer) DialUDP(netip.AddrPort) (net.Conn, error) { return nil, errNoPrivateRouting }
+
+// pinnedVersion is the configuration version fyisp applies itself: the
+// newest possible, so cloudflared ignores every configuration the edge
+// pushes (Orchestrator.UpdateConfig applies only newer versions).
+const pinnedVersion = math.MaxInt32
+
+// newOrchestrator returns cloudflared's orchestrator for originURL alone,
+// and its origin dialer. Private-network routing (TCP and UDP flows the
+// edge asks for, to any address, and the virtual DNS service) is refused:
+// only the origin is published, and the tunnel never reaches the LAN. The
+// HTTP origin dials with its own transport, not this dialer.
+//
+// Every configuration cloudflared applies, its first one included,
+// replaces the ingress rules and the origin dialer with a plain one, and
+// the edge can push new ones. So fyisp applies its own as the newest
+// version, which no push can follow, and then puts the refusing dialer
+// back.
+func newOrchestrator(ctx context.Context, originURL, proto string, tags []pogs.Tag, zl *zerolog.Logger) (*orchestration.Orchestrator, *ingress.OriginDialerService, error) {
+	// An http.Handler cannot be plugged in: the origin must be a URL.
+	//
+	// Never set OriginRequest.HTTPHostHeader: the origin's host allowlist and
+	// same-origin check rely on cloudflared passing the visitor's Host (the
+	// trycloudflare hostname) through unchanged. TestLiveSameOrigin checks it.
+	ing := []config.UnvalidatedIngressRule{{Service: originURL}}
+	rules, err := ingress.ParseIngress(&config.Configuration{Ingress: ing})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ingress: %w", err)
+	}
+	dialer := ingress.NewOriginDialer(ingress.OriginConfig{DefaultDialer: refusingDialer()}, zl)
+	orch, err := orchestration.NewOrchestrator(ctx, &orchestration.Config{
+		Ingress:             &rules,
+		WarpRouting:         ingress.NewWarpRoutingConfig(&config.WarpRoutingConfig{}),
+		OriginDialerService: dialer,
+		ConfigurationFlags:  map[string]string{"protocol": proto},
+	}, tags, nil, zl)
+	if err != nil {
+		return nil, nil, fmt.Errorf("orchestrator: %w", err)
+	}
+	pinned, err := json.Marshal(ingress.RemoteConfigJSON{IngressRules: ing})
+	if err != nil {
+		return nil, nil, err
+	}
+	if r := orch.UpdateConfig(pinnedVersion, pinned); r.Err != nil || r.LastAppliedVersion != pinnedVersion {
+		return nil, nil, fmt.Errorf("pin the tunnel configuration: %v (version %d)", r.Err, r.LastAppliedVersion)
+	}
+	dialer.UpdateDefaultDialer(refusingDialer())
+	return orch, dialer, nil
+}
 
 // buildConfig mirrors cloudflared's prepareTunnelConfig + StartServer for a
 // quick tunnel, minus the CLI, metrics server, management, ICMP and updater.
@@ -296,23 +362,11 @@ func buildConfig(ctx context.Context, qt *quickTunnel, originURL, proto string, 
 		edgeTLS[p] = c
 	}
 
-	// An http.Handler cannot be plugged in: the origin must be a URL.
-	//
-	// Never set OriginRequest.HTTPHostHeader: the origin's host allowlist and
-	// same-origin check rely on cloudflared passing the visitor's Host (the
-	// trycloudflare hostname) through unchanged. TestLiveSameOrigin checks it.
-	rules, err := ingress.ParseIngress(&config.Configuration{
-		Ingress: []config.UnvalidatedIngressRule{{Service: originURL}},
-	})
+	tags := []pogs.Tag{{Name: "ID", Value: cc.ConnectorID.String()}}
+	orch, dialer, err := newOrchestrator(ctx, originURL, proto, tags, zl)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ingress: %w", err)
+		return nil, nil, err
 	}
-	warp := ingress.NewWarpRoutingConfig(&config.WarpRoutingConfig{})
-	// Private-network routing (TCP and UDP flows the edge asks for, to any
-	// address, and the virtual DNS service) is refused: only the origin
-	// above is published, and the tunnel never reaches the LAN. The HTTP
-	// origin dials with its own transport, not this dialer.
-	dialer := ingress.NewOriginDialer(ingress.OriginConfig{DefaultDialer: refuseDialer{}}, zl)
 	// Supervisor.Run calls OriginDNSService.StartRefreshLoop: it must be
 	// non-nil, though it is never reserved on the dialer. Use the static
 	// variant: its refresh loop returns at once. (The dynamic one has an
@@ -321,7 +375,6 @@ func buildConfig(ctx context.Context, qt *quickTunnel, originURL, proto string, 
 	dns := origins.NewStaticDNSResolverService([]netip.AddrPort{netip.MustParseAddrPort("127.0.0.1:53")},
 		origins.NewDNSDialer(), zl, origins.NewMetrics(prometheus.NewRegistry()))
 
-	tags := []pogs.Tag{{Name: "ID", Value: cc.ConnectorID.String()}}
 	tc := &supervisor.TunnelConfig{
 		ClientConfig:       cc,
 		GracePeriod:        defaultGracePeriod,
@@ -349,15 +402,6 @@ func buildConfig(ctx context.Context, qt *quickTunnel, originURL, proto string, 
 		RPCTimeout:                          defaultRPCTimeout,
 		QUICConnectionLevelFlowControlLimit: defaultQUICConnFlowLimit,
 		QUICStreamLevelFlowControlLimit:     defaultQUICStreamFlowLim,
-	}
-	orch, err := orchestration.NewOrchestrator(ctx, &orchestration.Config{
-		Ingress:             &rules,
-		WarpRouting:         warp,
-		OriginDialerService: dialer,
-		ConfigurationFlags:  map[string]string{"protocol": proto},
-	}, tags, nil, zl)
-	if err != nil {
-		return nil, nil, fmt.Errorf("orchestrator: %w", err)
 	}
 	return tc, orch, nil
 }

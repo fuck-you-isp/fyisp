@@ -54,7 +54,7 @@ first, then scheduled ones.
 With `--tunnel` (off by default) fyisp runs Cloudflare's tunnel code
 (cloudflared, linked in) to publish the dashboard at a random
 `https://<name>.trycloudflare.com` address. It asks `api.trycloudflare.com`
-for a tunnel, looks up Cloudflare's edge servers in DNS
+for a tunnel (through `HTTPS_PROXY` when that is set), looks up Cloudflare's edge servers in DNS
 (`_v2-origintunneld._tcp.argotunnel.com` and the servers it names, falling
 back to DNS over TLS at 1.1.1.1; and `cfd-features.argotunnel.com`, again
 every hour) and keeps a connection to them on port 7844 (QUIC over UDP, or
@@ -62,11 +62,15 @@ HTTP/2 over TCP). Cloudflare sees your public IP address and, when the
 tunnel registers, the machine's local address, the cloudflared version,
 the operating system and a random connector ID; if Cloudflare asks for a
 trace of a request, cloudflared also sends it the machine's host name. It
-terminates HTTPS, so it sees the dashboard's traffic, the admin token
-included (in the session cookie, and in the link when you open it). The
+terminates HTTPS, so it sees the dashboard's traffic: the admin token
+(in the sign-in request, and in scripts' `Authorization` headers) and the
+session cookie, which signs a browser in on its own. The `#admin=` part of
+a link never leaves the browser. The
 tunnel publishes the dashboard only: cloudflared's private-network
 routing (connections to other addresses the edge could ask for) is
-refused, so it never reaches your LAN. The dashboard behind it needs the
+refused, so it never reaches your LAN, and fyisp pins the tunnel's
+configuration, so the edge can't push other ingress rules or routing to
+it. The dashboard behind it needs the
 admin token like everywhere else.
 cloudflared's own logs are capped at its info level and stripped of
 headers and IP addresses before they reach fyisp's log (at debug it logs
@@ -119,7 +123,7 @@ The dashboard's controls:
 | GET `/api/*`, `/metrics` | yes | yes (401 without) | - | read-only |
 | POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes | one queue, one test at a time |
 | POST `/api/investigate` (`target=` or `host=`, optional `mode=`) | yes | yes | yes | the safeguards above: public hosts only, fixed ports, 4 at once, 250 rounds |
-| POST/DELETE `/api/admin/session` | yes | POST exchanges it for the cookie | yes | - |
+| POST/DELETE `/api/admin/session` | yes | POST exchanges it for the cookie | `Sec-Fetch-Site` only (the token header and DELETE need a CORS preflight, never granted) | - |
 
 The admin token is `--admin-token` or `$FYISP_ADMIN_TOKEN` (at least 32
 characters), else a new random one at every start; it is sent as

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -37,7 +38,7 @@ type LocalOptions struct {
 	// that POST /api/admin/session sets in exchange for it (the "open this
 	// link" URL fyisp prints).
 	AdminToken string
-	// CSRFToken overrides the random per-process token (tests only).
+	// CSRFToken overrides the one derived from AdminToken (tests only).
 	CSRFToken string
 }
 
@@ -58,7 +59,7 @@ type localHandler struct {
 	self  string // bound IP literal (normalized), "" for a wildcard bind
 	extra map[string]bool
 	csrf  string
-	sess  string    // the session cookie's value (sessionValue)
+	sess  string    // the session cookie's value (derive)
 	own   *ownAddrs // this host's addresses (sameMachine)
 }
 
@@ -72,13 +73,13 @@ func Local(d Deps, o LocalOptions) http.Handler {
 	if o.AdminToken == "" && !testNoAdmin {
 		panic("web.Local: no AdminToken")
 	}
-	tok := o.CSRFToken
-	if tok == "" {
+	tok := cmp.Or(o.CSRFToken, derive(o.AdminToken, "fyisp csrf token"))
+	if tok == "" { // tests without an admin token
 		var b [16]byte
 		_, _ = rand.Read(b[:])
 		tok = hex.EncodeToString(b[:])
 	}
-	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, sess: sessionValue(o.AdminToken), extra: map[string]bool{}, own: newOwnAddrs()}
+	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, sess: derive(o.AdminToken, "fyisp session cookie"), extra: map[string]bool{}, own: newOwnAddrs()}
 	h.server.sameMachine = h.sameMachine
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
@@ -307,16 +308,19 @@ func (h *localHandler) adminCookie() string {
 	return "fyisp_admin_" + h.port
 }
 
-// sessionValue is the session cookie's value for admin token tok: derived
-// from it, so a new token revokes every session, but not the token itself.
-// Browsers send a host's cookies to all its ports, so other web apps on the
-// same host see the cookie; they can't use it as a bearer token.
-func sessionValue(tok string) string {
+// derive is a value derived from admin token tok for purpose: the session
+// cookie (not the token, which also works as a bearer token; the cookie
+// still signs a browser in, and browsers send it to every port of the
+// host) and the CSRF token
+// (the same across restarts with the same token, so an open page's writes
+// keep working). A new token changes both, which signs every browser out.
+// "" without a token.
+func derive(tok, purpose string) string {
 	if tok == "" {
 		return ""
 	}
 	m := hmac.New(sha256.New, []byte(tok))
-	m.Write([]byte("fyisp session cookie"))
+	m.Write([]byte(purpose))
 	return hex.EncodeToString(m.Sum(nil))
 }
 
@@ -339,7 +343,11 @@ func (h *localHandler) adminOK(r *http.Request) bool {
 // serveAdminSession: POST exchanges the admin token (X-FYISP-Admin, taken
 // by the page from the link's #admin= fragment, which never reaches a
 // server log or a Referer) for an HttpOnly, SameSite=Strict cookie; DELETE
-// clears it. Both need the usual same-origin and CSRF checks.
+// clears it. A wrong token is refused (403). No Origin or CSRF check: a
+// page elsewhere can't send X-FYISP-Admin or DELETE without a CORS
+// preflight, which fyisp never grants, and a proxy that rewrites Host would
+// fail the Origin check for the owner too. A browser's Sec-Fetch-Site still
+// has to say same-origin.
 func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
 		w.Header().Set("Allow", "POST, DELETE")
@@ -350,12 +358,8 @@ func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
 		return
 	}
-	if !sameOrigin(r) {
+	if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" {
 		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
-		return
-	}
-	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
-		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
 		return
 	}
 	// An HTTPS page (the tunnel, or the owner's HTTPS proxy) never has the

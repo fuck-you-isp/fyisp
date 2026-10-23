@@ -39,8 +39,8 @@ func TestLocalSpecificBindIP(t *testing.T) {
 }
 
 // TestLocalTunnelHost: the tunnel's current name is allowed (a new one
-// after a restart, none while it is down), and a tunnel means the
-// dashboard is reached from elsewhere: no token, no controls.
+// after a restart, none while it is down) over HTTPS only, writes through
+// it need the admin token, and its visitors never count as this machine.
 func TestLocalTunnelHost(t *testing.T) {
 	var name atomic.Value
 	name.Store("")

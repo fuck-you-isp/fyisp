@@ -327,6 +327,23 @@ function reloadToSignIn() {
 }
 
 /**
+ * Boot found no session: the reload above did its job, so a later 401 may
+ * reload again. Returns why, when this browser was just signed in and
+ * still has no session: it didn't keep the cookie.
+ */
+export function bootSignedOut() {
+  try {
+    sessionStorage.removeItem('fyisp-reload-401');
+    const at = Number(sessionStorage.getItem('fyisp-signed-in')) || 0;
+    sessionStorage.removeItem('fyisp-signed-in');
+    if (Date.now() - at < 30e3) return noCookie;
+  } catch { /* no storage */ }
+  return '';
+}
+/** Why a sign-in that the dashboard took didn't stick. */
+export const noCookie = 'fyisp took the token, but this browser didn’t keep the sign-in cookie. Allow cookies for this address (or open it over HTTPS if it is behind an HTTPS proxy), then sign in again.';
+
+/**
  * The page's only content without a session: asks for the admin token
  * until the dashboard takes it, then reloads the page signed in. Escape
  * doesn't close it (there is nothing behind it).
@@ -346,7 +363,11 @@ export async function signIn(why = '') {
     const t = input.value.trim();
     if (v !== 'ok' || !t) continue;
     try {
-      if (await adminSession(t)) { location.reload(); return; }
+      if (await adminSession(t)) {
+        try { sessionStorage.setItem('fyisp-signed-in', String(Date.now())); } catch { /* no storage */ }
+        location.reload();
+        return;
+      }
       text = 'That is not this dashboard’s admin token. Paste the token fyisp was started with, or open the newest link from its log.';
     } catch (e) {
       text = 'Could not sign in: ' + /** @type {any} */ (e).message + '. Try again.';

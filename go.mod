@@ -5,6 +5,8 @@ go 1.27.3
 // Copied from github.com/cloudflare/cloudflared@2026.10.3 (de6376c5): replace
 // directives in dependencies are ignored, so they must be repeated here.
 // Keep in lockstep with the pinned cloudflared version (checked in CI).
+// The cli and quic-go forks are the ones cloudflared builds and tests
+// with (go.sum pins their content); review their diffs on each bump.
 replace github.com/urfave/cli/v2 => github.com/ipostelnik/cli/v2 v2.3.1-0.20210324024421-b6ea8234fe3d
 
 replace gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1

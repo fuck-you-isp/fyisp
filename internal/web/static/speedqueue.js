@@ -55,7 +55,7 @@ export function queueError(e) {
     case 'not_found': return 'That test isn’t in the queue any more.';
     case 'forbidden': return 'fyisp refused that. Reload the page and try again.';
   }
-  if (e.status === 401) return ''; // the sign-in dialog is open
+  if (e.status === 401) return ''; // the page reloads to sign in
   return 'Couldn’t reach fyisp. Try again.';
 }
 

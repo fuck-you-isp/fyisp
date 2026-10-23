@@ -54,7 +54,7 @@ function speedError(e) {
     case 'skipped': return 'You skipped that server. Turn it back on under Every server to test it.';
     case 'bad_request': return 'fyisp didn’t accept that setting.';
   }
-  if (e.status === 401) return ''; // the sign-in dialog is open
+  if (e.status === 401) return ''; // the page reloads to sign in
   return 'Couldn’t reach fyisp. Try again.';
 }
 

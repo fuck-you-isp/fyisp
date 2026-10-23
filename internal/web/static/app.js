@@ -14,7 +14,7 @@ import {
   meta, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, toLocalInput, fromLocalInput, adminSession, signIn, markSignedIn,
+  hideTip, whyButton, toLocalInput, fromLocalInput, adminSession, signIn, markSignedIn, bootSignedOut, noCookie,
   hatch, resetHatch, smooth,
 } from './core.js';
 import { Home, firstHome } from './home.js';
@@ -3795,7 +3795,11 @@ async function main() {
   /** @type {any} */
   const st = await fetch('api/status', { credentials: 'same-origin', cache: 'no-store' })
     .then(async (r) => { const b = await r.json().catch(() => null); return r.status === 401 ? 401 : r.ok ? b : null; }, () => null);
-  if (st === 401) { void signIn(linkErr); return; }
+  if (st === 401) {
+    const why = bootSignedOut();
+    void signIn(linkErr || (adminTok ? noCookie : why));
+    return;
+  }
   signedIn = true;
   markSignedIn();
   // Home's first answer, fetched alongside the profile (null after a few seconds without

@@ -13,6 +13,9 @@ const minAdminToken = 32
 // checkAdminToken refuses a --admin-token (or $FYISP_ADMIN_TOKEN) that is
 // too short, or has characters a cookie or the link's fragment would mangle.
 func checkAdminToken(tok string) error {
+	if tok == "off" {
+		return fmt.Errorf("--admin-token=off is gone: the dashboard always needs a token (leave it out for a new random one at each start)")
+	}
 	if len(tok) < minAdminToken {
 		return fmt.Errorf("--admin-token (or FYISP_ADMIN_TOKEN): at least %d characters (e.g. openssl rand -hex 16)", minAdminToken)
 	}

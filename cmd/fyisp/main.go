@@ -14,12 +14,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -388,6 +390,10 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	if err != nil {
 		return err
 	}
+	// Earlier versions kept a generated token here; nothing reads it now.
+	if err := os.Remove(filepath.Join(dir, "admin-token")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Warn("could not remove the old admin-token file", "err", err)
+	}
 	lo := web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}
 	var tun *dashTunnel
 	if c.tunnel {
@@ -425,7 +431,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 		fmt.Fprintf(os.Stderr, "  To sign in, open this link once in each browser (keep it private):\n  %s\n\n", link)
 		openURL = link
 	} else {
-		fmt.Fprintf(os.Stderr, "  Sign in with your --admin-token.\n\n")
+		fmt.Fprintf(os.Stderr, "  Sign in with your admin token (--admin-token or FYISP_ADMIN_TOKEN).\n\n")
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {
 		openBrowser(openURL)

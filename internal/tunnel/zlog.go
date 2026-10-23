@@ -20,14 +20,14 @@ import (
 
 type slogLogger = slog.Logger
 
-// LevelCloudflaredDebug is the slog level cloudflared's debug logs map to.
-const LevelCloudflaredDebug = slog.LevelDebug - 4
+// levelCloudflaredDebug is the slog level cloudflared's debug logs map to.
+const levelCloudflaredDebug = slog.LevelDebug - 4
 
 // newZerolog returns a zerolog.Logger for cloudflared that forwards each
 // event to the slog logger returned by get (nil: dropped). Levels are demoted
 // so a default Info logger only sees cloudflared warnings and errors, as Warn:
 // the tunnel reports its health through its own state changes. While quiet is
-// set, everything is logged at LevelCloudflaredDebug.
+// set, everything is logged at levelCloudflaredDebug.
 //
 // cloudflared never logs below Info, whatever the slog logger enables: at
 // Debug it logs every proxied request with its headers, which carry the
@@ -50,7 +50,7 @@ type zerologBridge struct {
 func mapLevel(l string) slog.Level {
 	switch l {
 	case "trace", "debug":
-		return LevelCloudflaredDebug
+		return levelCloudflaredDebug
 	case "info", "":
 		return slog.LevelDebug
 	default: // warn, error, fatal, panic
@@ -73,7 +73,7 @@ func (b zerologBridge) Write(p []byte) (int, error) {
 	levelStr, _ := m["level"].(string)
 	lvl := mapLevel(levelStr)
 	if b.quiet != nil && b.quiet.Load() {
-		lvl = LevelCloudflaredDebug
+		lvl = levelCloudflaredDebug
 	}
 	if !l.Enabled(context.Background(), lvl) {
 		return len(p), nil
@@ -212,8 +212,9 @@ func hasHeaderKey(v any) bool {
 var ipCandidate = regexp.MustCompile(`[0-9A-Fa-f:.]*[0-9A-Fa-f][:.][0-9A-Fa-f:.]*[0-9A-Fa-f:]`)
 
 // dottedQuad is any a.b.c.d of 1-3 digit numbers, leading zeros included
-// (netip refuses those, but a reader sees the address).
-var dottedQuad = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
+// (netip refuses those, but a reader sees the address), glued to a word in
+// front or not.
+var dottedQuad = regexp.MustCompile(`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 
 // redact masks every IP address in s: cloudflared's own addresses are
 // Cloudflare's edge, but a message or error can quote the visitor's, or
@@ -228,11 +229,16 @@ const maxIPLen = 45 + 6
 
 // maskIPs masks every address inside c, a run of hex digits, dots and
 // colons. A word or key can be glued to it ("id:1.2.3.4", "abc1.2.3.4"), so
-// every start is tried, the longest address first.
+// every start is tried, the longest address first; an address that starts
+// inside one found and ends past it is masked with it (a hex word glued to
+// a full IPv6 address makes the first match end early).
 func maskIPs(c string) string {
 	var b strings.Builder
 	for i := 0; i < len(c); {
 		if j := ipEnd(c, i); j > i {
+			for k := i + 1; k < j; k++ {
+				j = max(j, ipEnd(c, k))
+			}
 			b.WriteString("[ip]")
 			i = j
 			continue

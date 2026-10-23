@@ -80,7 +80,7 @@ func (t *Tunnel) URL() string {
 }
 
 // Done is closed once the tunnel has stopped: ctx ended, and cloudflared has
-// unregistered (or been cut after 5 s).
+// unregistered (or been cut after 5 s, and given up on 5 s after that).
 func (t *Tunnel) Done() <-chan struct{} { return t.done }
 
 // Err is the last provisioning or connection error, nil while connected
