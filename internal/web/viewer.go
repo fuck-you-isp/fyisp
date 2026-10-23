@@ -90,3 +90,18 @@ func (h *localHandler) extraHost(hostport string) bool {
 	host, _, err := net.SplitHostPort(hostport)
 	return (err == nil && h.extra[host]) || h.tunnelHostport(hostport)
 }
+
+// proxyHeaders are set by reverse proxies and tunnels (nginx, Caddy,
+// cloudflared, Tailscale Serve/Funnel): a request carrying one comes from
+// elsewhere, whatever its address.
+var proxyHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip", "Tailscale-User-Login"}
+
+// proxied reports whether r came through a reverse proxy or a tunnel.
+func proxied(r *http.Request) bool {
+	for _, k := range proxyHeaders {
+		if r.Header.Get(k) != "" {
+			return true
+		}
+	}
+	return false
+}

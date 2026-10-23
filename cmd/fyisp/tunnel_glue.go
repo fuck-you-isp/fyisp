@@ -31,8 +31,8 @@ var startTunnel = tunnel.Start
 
 // start publishes the dashboard listening on localAddr and prints each new
 // link once it is connected, and, with a generated admin token, the private
-// link that also turns on the speed-test controls in that browser.
-func (d *dashTunnel) start(ctx context.Context, localAddr, adminTok string, adminStored bool, log *slog.Logger) error {
+// link that signs a browser in there.
+func (d *dashTunnel) start(ctx context.Context, localAddr, adminTok string, adminGenerated bool, log *slog.Logger) error {
 	t, err := startTunnel(ctx, tunnel.Options{
 		Origin: tunnelOrigin(localAddr),
 		Log:    log,
@@ -41,10 +41,10 @@ func (d *dashTunnel) start(ctx context.Context, localAddr, adminTok string, admi
 				d.host.Store(p.Hostname())
 			}
 			link := u + "/"
-			log.Info("dashboard over HTTPS, through a Cloudflare quick tunnel: anyone with the link can open it", "url", link)
-			fmt.Fprintf(os.Stderr, "\n  Dashboard over HTTPS:  %s\n  Anyone with this link can open the dashboard. It changes when the tunnel is replaced.\n", link)
-			if adminStored {
-				fmt.Fprintf(os.Stderr, "  For the speed-test controls there too, open this link once (keep it private):\n  %s\n", adminLink(link, adminTok))
+			log.Info("dashboard over HTTPS, through a Cloudflare quick tunnel, behind the admin token", "url", link)
+			fmt.Fprintf(os.Stderr, "\n  Dashboard over HTTPS:  %s\n  It changes when the tunnel is replaced.\n", link)
+			if adminGenerated {
+				fmt.Fprintf(os.Stderr, "  To sign in there, open this link once (keep it private):\n  %s\n", adminLink(link, adminTok))
 			}
 			fmt.Fprintln(os.Stderr)
 		},

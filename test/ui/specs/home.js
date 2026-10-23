@@ -61,14 +61,6 @@ async function serveHome(page, now) {
   return ctl;
 }
 
-/** Overrides fields of the real /api/status (controls, admin). @param {import('@playwright/test').Page} page @param {object} patch */
-async function patchStatus(page, patch) {
-  await page.route('**/api/status', async (route) => {
-    const res = await route.fetch();
-    route.fulfill({ response: res, json: { ...(await res.json()), ...patch } });
-  });
-}
-
 /** Opens Home and waits for the new Home's first answer. @param {import('@playwright/test').Page} page @param {string} [hash] */
 async function openHome(page, hash = '') {
   await page.goto('/' + hash);
@@ -89,4 +81,4 @@ async function setTheme(page, theme) { await page.emulateMedia({ colorScheme: th
 const WIDTHS = [1400, 390];
 const THEMES = /** @type {const} */ (['light', 'dark']);
 
-module.exports = { fx, STATES, serveHome, patchStatus, openHome, settle, setTheme, WIDTHS, THEMES };
+module.exports = { fx, STATES, serveHome, openHome, settle, setTheme, WIDTHS, THEMES };

@@ -15,7 +15,7 @@ import { Tiles, ico, setText } from './hometiles.js';
 /** @typedef {{key:string,tone:string,icon:string,tab:string,headline:string,sub:string,day:{text:string,link:string}|null}} HomeAnswer */
 /** @typedef {{id:string,label:string,state:string,sub:string}} HomeHop */
 /** @typedef {{at:number,text:string,note:string}} HomeSpeedResult */
-/** @typedef {{available:boolean,latest:HomeSpeedResult|null,empty_text:string,running:{entry:number}|null,can_control:boolean}} HomeSpeed */
+/** @typedef {{available:boolean,latest:HomeSpeedResult|null,empty_text:string,running:{entry:number}|null}} HomeSpeed */
 /** @typedef {{id:string,from:number,to:number,ongoing:boolean,level:string,when:string,what:string,cause:string,cause_kind:string,evidence:string}} HomeProblem */
 /**
  * part=now (docs/HOME-API.md).
@@ -335,7 +335,6 @@ export class Home {
     const sp = d.speed;
     this.speedSec.hidden = !sp || !sp.available || !this.host.speedOn();
     if (!sp || this.speedSec.hidden) return;
-    const st = this.host.status();
     let line, note;
     if (this.mine) { line = this.mine.text; note = this.spErr || (this.mine.state === 'running' ? SPEED_NOTE : ''); }
     else if (sp.running) { line = 'Testing your speed…'; note = SPEED_NOTE; }
@@ -344,8 +343,6 @@ export class Home {
     setText(this.spLine, line);
     setText(this.spNote, note);
     this.spNote.hidden = !note;
-    // Admin-token dashboards ask for the token on click (apiWrite); disabled controls hide the button.
-    this.spBtn.hidden = !(sp.can_control || (st && st.controls === 'admin'));
     this.spBtn.disabled = !!this.mine || !!sp.running || this.isStale();
   }
 

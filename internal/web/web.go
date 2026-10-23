@@ -3,11 +3,10 @@
 //
 // Local is the only handler: the owner's listener (default
 // 127.0.0.1:3000). It adds /metrics and the write routes (on-demand traces,
-// speed tests), protected by a Host allowlist, a same-origin check and a
-// per-process CSRF token. Where the dashboard is reachable from elsewhere
-// (--listen beyond loopback, --allow-host, --tunnel), the speed-test
-// controls also need an admin token; traces are open to any viewer, within
-// a slot cap and an hourly start budget. There is one listener; live
+// speed tests). Everything but the page and its static files needs the
+// admin token; all of it is behind a Host allowlist, and the write routes
+// also behind a same-origin check and a per-process CSRF token. There is
+// one listener; live
 // access from elsewhere is fyisp's quick tunnel (TunnelHost) or the
 // owner's own tunnel or proxy (--allow-host).
 //

@@ -25,7 +25,8 @@ Every API error is `{"error": "<sentence>", "code": "<word>"}`. Use `code` and n
 | HTTP | `code` |
 |---|---|
 | 400 | `bad_request` |
-| 403 | `forbidden` (controls disabled, cross-origin, bad CSRF token or admin token, or proxy headers on a loopback dashboard without an admin token) |
+| 401 | `unauthorized` (no or the wrong admin token) |
+| 403 | `forbidden` (cross-origin, or a bad CSRF token) |
 | 409 | `skipped` (Test now of a server the user skipped) |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
@@ -74,7 +75,6 @@ Caching: none. Poll every 30 s, and use `part=running` or `part=queue` for live 
   "modes": ["off", "regions", "nearby"],   // offered here; "custom" only with --speedtest-server
   "enabled": true,                // mode != "off"
   "set_by_flag": false,           // a --speedtest flag chose the mode at start (the Details choice is overridden until restart)
-  "configurable": true,           // may use config and cancel (controls allowed, with the admin token where one is set)
   "interval_s": 3600,             // each region or server is tested once per interval
   "spacing_s": 240,               // between scheduled tests
   "planned_share": 0.083,         // share of time the line is planned to be under test
@@ -409,18 +409,16 @@ One entry: waiting, running, or finished less than an hour ago. Otherwise 404.
 
 The response is `202 {"entry": { ...Entry }, "duplicate": false}`. `duplicate: true` means the owner already had an equal entry waiting or running, and this is that entry. An unknown id returns 404 `not_found`.
 
-It has the speed-test control checks (the only routes the admin token guards):
-- the controls are not disabled (`--admin-token=off` on a dashboard reachable from elsewhere);
-- on a loopback dashboard without an admin token, no proxy headers (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`);
+It has the write checks:
+- the admin token (as on every route but the page);
 - same origin;
-- `X-FYISP-Token`;
-- the admin token or session cookie when one is set.
+- `X-FYISP-Token`.
 
 It works in every mode, `off` included.
 
 ### `POST api/speed/cancel?id=<id>`
 
-The same speed-test control checks as `run` (admin-gated). It cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
+The same write checks as `run`. It cancels a waiting entry, or the running one, whose test stops without a result. It returns `200 {"entry": { ...Entry }}`, or 404.
 
 ## `POST api/speed/config`
 
@@ -441,7 +439,7 @@ POST api/speed/config
 
 ## `api/home`
 
-`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, a test running now, and `can_control`; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it, 5 s after a cut-short test) is put down to the test (`cause_kind` `speedtest`, bar note "<Slow|Choppy|Down> during a speed test") rather than to the provider.
+`part=now`'s `speed` block is the latest OK test of the last 7 days against the usual (the median of the ones before it), whether tests are scheduled, and a test running now; see [HOME-API.md](HOME-API.md#partnow). Probes during a test are stored as measured, so a tile's bars keep their colour; a problem that overlaps a test (or the 2 s after it, 5 s after a cut-short test) is put down to the test (`cause_kind` `speedtest`, bar note "<Slow|Choppy|Down> during a speed test") rather than to the provider.
 
 ## Metrics and export
 

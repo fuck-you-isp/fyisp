@@ -1,88 +1,47 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestResolveAdminToken(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, adminTokenFile)
-	for _, c := range []struct {
-		flag, addr string
-		hosts      []string
-		want       string
-	}{
-		{"off", "0.0.0.0:3000", nil, ""},
-		{"off", "127.0.0.1:3000", nil, ""},
-		// off with --allow-host: no token, and web.Local then disables the
-		// speed-test controls (TestAllowHostWithoutToken), never enables them.
-		{"off", "127.0.0.1:3000", []string{"fyisp.example.com"}, ""},
-		{"mine", "0.0.0.0:3000", nil, "mine"},
-		{"mine", "127.0.0.1:3000", nil, "mine"},
-		{"mine", "127.0.0.1:3000", []string{"10.0.0.2"}, "mine"},
-		{"", "127.0.0.1:3000", nil, ""},
-		{"", "[::1]:3000", nil, ""},
-		{"", "localhost:3000", nil, ""},
-	} {
-		tok, stored, err := resolveAdminToken(c.flag, c.addr, len(c.hosts) > 0, dir)
-		if err != nil || tok != c.want || stored {
-			t.Errorf("%q on %s = %q, %v, %v; want %q", c.flag, c.addr, tok, stored, err, c.want)
+	// None given: a new random one at each start, never the same.
+	a, gen, err := resolveAdminToken("")
+	if err != nil || !gen || len(a) != minAdminToken || strings.Trim(a, "0123456789abcdef") != "" {
+		t.Fatalf("generated %q %v %v", a, gen, err)
+	}
+	if b, _, _ := resolveAdminToken(""); b == a {
+		t.Error("two starts generated the same token")
+	}
+	mine := strings.Repeat("a1-_.~", 6)
+	if tok, gen, err := resolveAdminToken(mine); err != nil || gen || tok != mine {
+		t.Errorf("given %q: %q %v %v", mine, tok, gen, err)
+	}
+	if _, err := parseFlags([]string{"--admin-token", mine}); err != nil {
+		t.Errorf("--admin-token %q refused: %v", mine, err)
+	}
+	// Refused when the flags are parsed, before anything starts.
+	for _, bad := range []string{"off", "short", strings.Repeat("a", minAdminToken-1), strings.Repeat("a", 31) + " b",
+		strings.Repeat("a", 32) + ";", strings.Repeat("a", 32) + "+", strings.Repeat("é", 32)} {
+		if _, err := parseFlags([]string{"--admin-token", bad}); err == nil {
+			t.Errorf("--admin-token %q accepted", bad)
 		}
 	}
-	if _, err := os.Stat(file); err == nil {
-		t.Fatal("token file written without need")
+	t.Setenv("FYISP_ADMIN_TOKEN", "short")
+	if _, err := parseFlags(nil); err == nil {
+		t.Error("FYISP_ADMIN_TOKEN=short accepted")
 	}
+}
 
-	// A network listener without --admin-token: generated once, then reused.
-	tok, stored, err := resolveAdminToken("", "0.0.0.0:3000", false, dir)
-	if err != nil || !stored || len(tok) != 32 {
-		t.Fatalf("generated = %q, %v, %v", tok, stored, err)
+func TestAdminTokenEnv(t *testing.T) {
+	tok := strings.Repeat("e", 32)
+	t.Setenv("FYISP_ADMIN_TOKEN", tok)
+	if c, err := parseFlags(nil); err != nil || c.adminToken != tok {
+		t.Errorf("FYISP_ADMIN_TOKEN: %q, %v", c.adminToken, err)
 	}
-	fi, err := os.Stat(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
-		t.Errorf("token file mode %v, want 0600", fi.Mode().Perm())
-	}
-	for _, addr := range []string{"0.0.0.0:3000", "192.168.1.10:3000", "[::]:3000"} {
-		again, stored, err := resolveAdminToken("", addr, false, dir)
-		if err != nil || !stored || again != tok {
-			t.Errorf("%s: reread = %q, %v, %v; want %q", addr, again, stored, err, tok)
-		}
-	}
-	// A loopback listener with any --allow-host (a tunnel or reverse proxy
-	// in front of it, name or IP) needs the token too.
-	for _, hosts := range [][]string{{"fyisp.example.com"}, {"100.64.0.7"}} {
-		again, stored, err := resolveAdminToken("", "127.0.0.1:3000", len(hosts) > 0, dir)
-		if err != nil || !stored || again != tok {
-			t.Errorf("loopback with --allow-host %q = %q, %v, %v; want %q", hosts, again, stored, err, tok)
-		}
-	}
-	if _, err := os.Stat(file + ".tmp"); err == nil {
-		t.Error("temporary file left behind")
-	}
-
-	// Loose permissions are tightened; a damaged file is an error, not a
-	// silently new token.
-	if runtime.GOOS != "windows" {
-		_ = os.Chmod(file, 0o644)
-		if _, _, err := resolveAdminToken("", "0.0.0.0:3000", false, dir); err != nil {
-			t.Fatal(err)
-		}
-		if fi, _ := os.Stat(file); fi.Mode().Perm() != 0o600 {
-			t.Errorf("mode not tightened: %v", fi.Mode().Perm())
-		}
-	}
-	for _, bad := range []string{"", "short", strings.Repeat("a", 31), strings.Repeat("a", 20) + " " + strings.Repeat("b", 20)} {
-		_ = os.WriteFile(file, []byte(bad), 0o600)
-		if tok, _, err := resolveAdminToken("", "0.0.0.0:3000", false, dir); err == nil {
-			t.Errorf("file %q accepted as %q", bad, tok)
-		}
+	if c, err := parseFlags([]string{"--admin-token", strings.Repeat("f", 32)}); err != nil || c.adminToken != strings.Repeat("f", 32) {
+		t.Errorf("--admin-token over FYISP_ADMIN_TOKEN: %q, %v", c.adminToken, err)
 	}
 }
 

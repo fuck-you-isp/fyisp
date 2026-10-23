@@ -83,8 +83,6 @@ type HomeSpeed struct {
 	Latest    *HomeSpeedResult  `json:"latest"`
 	EmptyText string            `json:"empty_text"`
 	Running   *HomeSpeedRunning `json:"running"`
-	// CanControl: this request may start a test (no admin token needed).
-	CanControl bool `json:"can_control"`
 }
 
 // HomeSpeedResult is the latest speed test.

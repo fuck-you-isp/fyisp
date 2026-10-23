@@ -7,7 +7,7 @@
 // no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, css, rgba, showTip, hideTip, tzParam, clock, fmtMbps } from './core.js';
+import { h, fetchJSON, apiWrite, css, rgba, showTip, hideTip, tzParam, clock, fmtMbps } from './core.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
 /** @typedef {import('./speed.js').SpeedRow} SpeedRow */
@@ -638,10 +638,10 @@ export class SpeedMap {
     if (skip) list.add(id); else list.delete(id);
     const label = d.servers.find((x) => x.id === id)?.label || id;
     try {
-      await apiWrite('POST', 'api/speed/config', { skip: [...list] }, 'Changing which servers are tested needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
+      await apiWrite('POST', 'api/speed/config', { skip: [...list] });
       this.skipNote = skip ? `${label} is skipped. It won’t be tested.` : `${label} will be tested again.`;
     } catch (e) {
-      this.skipNote = /** @type {any} */ (e).status === 0 ? '' : 'Couldn’t change that. Try again.';
+      this.skipNote = /** @type {any} */ (e).status === 401 ? '' : 'Couldn’t change that. Try again.';
     }
     this.say.textContent = this.skipNote;
     await this.host.refresh();
@@ -657,7 +657,7 @@ export class SpeedMap {
       down_median_bps: null, down_p10_bps: null, up_median_bps: null, up_p10_bps: null, best_down_bps: null, dip: null, hours: [] });
     const list = regions ? d.per_region : d.servers.map((x) => have.get(x.id) || empty(x));
     const srv = new Map(d.servers.map((x) => [x.id, x]));
-    const owner = !regions && canWrite();
+    const owner = !regions;
     /** @type {[string,string,(r:SpeedRow)=>number|string|null,(r:SpeedRow)=>string][]} */
     const cols = [
       ['label', regions ? 'Region' : 'Server', (r) => r.label, (r) => r.label],

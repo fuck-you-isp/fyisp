@@ -4,7 +4,7 @@
 // 60 s, and never fetches for a tile that isn't checked.
 // @ts-check
 const { test, expect } = require('./fixtures');
-const { fx, serveHome, patchStatus, openHome, settle, setTheme, THEMES } = require('./home');
+const { fx, serveHome, openHome, settle, setTheme, THEMES } = require('./home');
 
 const IDS = ['zoom', 'teams', 'meet', 'slack', 'm365', 'gws', 'github', 'dropbox', 'onedrive', 'youtube', 'netflix'];
 
@@ -166,17 +166,16 @@ test('the open panel refreshes every 60 s', async ({ page }) => {
   expect(ctl.tileCalls.length).toBe(3);
 });
 
-test('Escape is left to an open dialog', async ({ page }) => {
-  await patchStatus(page, { controls: 'admin', admin: false });
-  const d = fx('now-good');
-  d.speed.can_control = false;
-  await serveHome(page, d);
+test('Escape is left to an open dialog', async ({ page, failOk }) => {
+  failOk.push(/\/api\/speed\/run\b/);
+  await serveHome(page, 'now-good');
   await openHome(page);
   await page.locator('.hp-tile[data-id="meet"]').click();
   await expect(page.locator('#hp-detail')).toBeVisible();
-  // Test speed now asks for the admin token in a dialog.
+  // A 401 (fyisp restarted with a new admin token) opens the sign-in dialog.
+  await page.route('**/api/speed/run?*', (route) => route.fulfill({ status: 401, json: { error: 'admin token required', code: 'unauthorized' } }));
   await page.getByRole('button', { name: 'Test speed now' }).click();
-  const dlg = page.getByRole('dialog', { name: 'Admin token' });
+  const dlg = page.getByRole('dialog', { name: 'Sign in' });
   await expect(dlg).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dlg).toHaveCount(0);

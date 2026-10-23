@@ -1,10 +1,9 @@
 // Home (v0.9.0): "Test speed now". It queues one test through the speed
-// queue (apiWrite, so an admin-token dashboard asks for the token), follows
-// it until it's done and shows the new result; it is hidden without
-// controls and disabled while stale or while another test runs.
+// queue (apiWrite), follows it until it's done and shows the new result; it
+// is disabled while stale or while another test runs.
 // @ts-check
 const { test, expect } = require('./fixtures');
-const { fx, serveHome, patchStatus, openHome, settle } = require('./home');
+const { fx, serveHome, openHome, settle } = require('./home');
 
 /**
  * Fakes the speed queue: run puts entry 41 in it, then each queue poll
@@ -52,52 +51,15 @@ test('Test speed now: waiting, testing, then the new result', async ({ page }) =
   expect(q.entry).toBe(1);
 });
 
-test('an admin-token dashboard asks for the token; Cancel sends nothing', async ({ page }) => {
-  await patchStatus(page, { controls: 'admin', admin: false });
-  const d = fx('now-good');
-  d.speed.can_control = false;
-  await serveHome(page, d);
-  const q = await fakeQueue(page, ['running', 'gone']);
-  await openHome(page);
-  const btn = page.getByRole('button', { name: 'Test speed now' });
-  await btn.click();
-  const dlg = page.getByRole('dialog', { name: 'Admin token' });
-  await expect(dlg).toBeVisible();
-  await expect(dlg).toContainText('Running a speed test needs the admin token.');
-  await dlg.getByRole('button', { name: 'Cancel' }).click();
-  await expect(dlg).toHaveCount(0);
-  expect(q.runs).toBe(0);
-  await expect(btn).toBeEnabled();
-  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.');
-
-  // With the token: the request carries it.
-  await btn.click();
-  await dlg.getByLabel('Admin token').fill('s3cret');
-  await dlg.getByRole('button', { name: 'Continue' }).click();
-  await expect.poll(() => q.runs).toBe(1);
-  expect(q.headers['x-fyisp-admin']).toBe('s3cret');
-  await expect(page.locator('.hp-speed-line')).toHaveText('Testing your speed…');
-});
-
 test('a refused start says why', async ({ page, failOk }) => {
   failOk.push(/\/api\/speed\/run\b/);
   await serveHome(page, 'now-good');
   await page.route('**/api/speed/run?*', (route) => route.fulfill({ status: 403, json: { error: 'forbidden', code: 'forbidden' } }));
   await openHome(page);
   await page.getByRole('button', { name: 'Test speed now' }).click();
-  await expect(page.locator('.hp-speed-note')).toHaveText('Speed tests can only be changed from the device running fyisp.');
-  await expect(page.locator('.hp-speed [role="status"]')).toHaveText('Speed tests can only be changed from the device running fyisp.');
+  await expect(page.locator('.hp-speed-note')).toHaveText('fyisp refused that. Reload the page and try again.');
+  await expect(page.locator('.hp-speed [role="status"]')).toHaveText('fyisp refused that. Reload the page and try again.');
   await expect(page.getByRole('button', { name: 'Test speed now' })).toBeEnabled();
-});
-
-test('hidden when controls are disabled', async ({ page }) => {
-  await patchStatus(page, { controls: 'disabled', admin: false });
-  const d = fx('now-good');
-  d.speed.can_control = false;
-  await serveHome(page, d);
-  await openHome(page);
-  await expect(page.locator('.hp-speed-line')).toHaveText('Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.');
-  await expect(page.getByRole('button', { name: 'Test speed now' })).toBeHidden();
 });
 
 test('disabled while stale', async ({ page }) => {
@@ -121,7 +83,7 @@ test('a test started elsewhere shows and disables the button', async ({ page }) 
 
 test('no speed section when speed tests are off', async ({ page }) => {
   const d = fx('now-good');
-  d.speed = { available: false, latest: null, empty_text: '', running: null, can_control: true };
+  d.speed = { available: false, latest: null, empty_text: '', running: null };
   await serveHome(page, d);
   await openHome(page);
   await expect(page.locator('.hp-speed')).toBeHidden();

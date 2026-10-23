@@ -24,6 +24,17 @@
 # For an HTTPS link through a Cloudflare quick tunnel (see the README's
 # "Remote access"), a drop-in can set Environment=FYISP_TUNNEL=1 instead;
 # the link is in the journal: sudo journalctl -u fyisp | grep trycloudflare
+#
+# The dashboard needs an admin token. Without one, fyisp makes a new one at
+# every start (signing every browser out) and logs a sign-in link:
+#   sudo journalctl -u fyisp | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1
+# To keep one across restarts, put it in a file only root can read (not in
+# Environment=, which any user can read with systemctl show):
+#   sudo sh -c 'umask 077; echo FYISP_ADMIN_TOKEN=$(openssl rand -hex 16) > /etc/fyisp.env'
+# and load it with a drop-in:
+#
+#   [Service]
+#   EnvironmentFile=/etc/fyisp.env
 
 [Unit]
 Description=fyisp internet quality monitor

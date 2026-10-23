@@ -1,13 +1,79 @@
 package web
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 )
 
 const testAdmin = "0123456789abcdef0123456789abcdef"
+
+// Most tests build a Local without an AdminToken, which then asks for none
+// (testNoAdmin); the ones here set one.
+func init() { testNoAdmin = true }
+
+// TestAdminRequired: with the admin token set, only the page, its static
+// files and the session exchange are open; everything else needs the
+// token, as X-FYISP-Admin or "Authorization: Bearer".
+func TestAdminRequired(t *testing.T) {
+	h, sh := localHandlerFor(t, LocalOptions{AdminToken: testAdmin})
+	host := map[string]string{"Host": "127.0.0.1:3000"}
+	for _, p := range []string{"/", "/static/app.js", "/static/style.css"} {
+		if w := do(h, "GET", p, host); w.Code != 200 {
+			t.Errorf("GET %s = %d, want 200 without the token", p, w.Code)
+		}
+	}
+	for _, p := range []string{"/api/status", "/api/profile", "/api/home?part=now", "/api/speed", "/api/trace?target=Alpha", "/metrics", "/api/nope"} {
+		w := do(h, "GET", p, host)
+		if w.Code != 401 || w.Header().Get("WWW-Authenticate") != `Bearer realm="fyisp"` || strings.Contains(w.Body.String(), testAdmin) {
+			t.Errorf("GET %s = %d %q, want 401 with WWW-Authenticate", p, w.Code, w.Header().Get("WWW-Authenticate"))
+		}
+	}
+	write := map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000", "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123"}
+	if w := doControl(h, write); w.Code != 401 || sh.n != 0 {
+		t.Errorf("control without the token = %d", w.Code)
+	}
+	if w := do(h, "POST", "/api/investigate?target=Alpha", write); w.Code != 401 {
+		t.Errorf("investigate without the token = %d", w.Code)
+	}
+	for name, c := range map[string]struct {
+		k, v string
+		code int
+	}{
+		"header":       {HeaderAdmin, testAdmin, 200},
+		"bearer":       {"Authorization", "Bearer " + testAdmin, 200},
+		"bad bearer":   {"Authorization", "Bearer " + strings.Repeat("0", 32), 401},
+		"basic":        {"Authorization", "Basic " + testAdmin, 401},
+		"lower bearer": {"Authorization", "bearer" + testAdmin, 401},
+		"bad header":   {HeaderAdmin, testAdmin + "x", 401},
+	} {
+		if w := do(h, "GET", "/api/status", map[string]string{"Host": "127.0.0.1:3000", c.k: c.v}); w.Code != c.code {
+			t.Errorf("%s = %d, want %d", name, w.Code, c.code)
+		}
+	}
+	// The token doesn't stand in for the write checks.
+	if w := doControl(h, map[string]string{"Host": "127.0.0.1:3000", HeaderAdmin: testAdmin}); w.Code != 403 || sh.n != 0 {
+		t.Errorf("control with the token but no CSRF or origin = %d", w.Code)
+	}
+	ok := map[string]string{HeaderAdmin: testAdmin}
+	for k, v := range write {
+		ok[k] = v
+	}
+	if w := doControl(h, ok); w.Code != 200 || sh.n != 1 {
+		t.Errorf("control with the token = %d", w.Code)
+	}
+}
+
+func TestLocalNeedsAdminToken(t *testing.T) {
+	testNoAdmin = false
+	defer func() { testNoAdmin = true }()
+	defer func() {
+		if recover() == nil {
+			t.Error("Local without an AdminToken did not panic")
+		}
+	}()
+	Local(Deps{}, LocalOptions{Addr: "127.0.0.1:3000"})
+}
 
 func TestAdminSession(t *testing.T) {
 	h, sh := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000", AdminToken: testAdmin})
@@ -25,13 +91,8 @@ func TestAdminSession(t *testing.T) {
 		}
 		return m
 	}
-	statusAdmin := func(hdr map[string]string) bool {
-		var st localStatus
-		_ = json.Unmarshal(do(h, "GET", "/api/status", hdr).Body.Bytes(), &st)
-		if st.Controls != "admin" {
-			t.Errorf("controls = %q", st.Controls)
-		}
-		return st.Admin
+	signedIn := func(hdr map[string]string) bool {
+		return do(h, "GET", "/api/status", hdr).Code == 200
 	}
 
 	// The exchange keeps every POST protection and needs the right token.
@@ -77,15 +138,19 @@ func TestAdminSession(t *testing.T) {
 	cookie := c.Name + "=" + c.Value
 
 	// The cookie stands in for X-FYISP-Admin, but not for CSRF or origin.
-	if statusAdmin(good) || !statusAdmin(with(map[string]string{"Cookie": cookie})) {
-		t.Error("status admin flag wrong")
-	}
-	if w := doControl(h, good); w.Code != 403 || sh.n != 0 {
-		t.Errorf("no cookie = %d", w.Code)
+	if signedIn(good) || !signedIn(with(map[string]string{"Cookie": cookie})) {
+		t.Error("the cookie does not sign in")
 	}
 	for name, hdr := range map[string]map[string]string{
-		"other port":    with(map[string]string{"Cookie": "fyisp_admin_3001=" + testAdmin}),
-		"bad value":     with(map[string]string{"Cookie": "fyisp_admin_3000=" + strings.Repeat("0", 32)}),
+		"no cookie":  good,
+		"other port": with(map[string]string{"Cookie": "fyisp_admin_3001=" + testAdmin}),
+		"bad value":  with(map[string]string{"Cookie": "fyisp_admin_3000=" + strings.Repeat("0", 32)}),
+	} {
+		if w := doControl(h, hdr); w.Code != 401 || sh.n != 0 {
+			t.Errorf("%s = %d, want 401", name, w.Code)
+		}
+	}
+	for name, hdr := range map[string]map[string]string{
 		"no CSRF":       with(map[string]string{"Cookie": cookie}, HeaderCSRF),
 		"cross-site":    with(map[string]string{"Cookie": cookie, "Sec-Fetch-Site": "cross-site"}),
 		"wrong origin":  with(map[string]string{"Cookie": cookie, "Origin": "http://evil.com"}, "Sec-Fetch-Site"),
@@ -101,7 +166,7 @@ func TestAdminSession(t *testing.T) {
 
 	// A new token (rotation) revokes the cookie.
 	h2, sh2 := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000", AdminToken: strings.Repeat("f", 32)})
-	if w := doControl(h2, with(map[string]string{"Cookie": cookie})); w.Code != 403 || sh2.n != 0 {
+	if w := doControl(h2, with(map[string]string{"Cookie": cookie})); w.Code != 401 || sh2.n != 0 {
 		t.Errorf("old cookie after rotation = %d", w.Code)
 	}
 
@@ -112,41 +177,5 @@ func TestAdminSession(t *testing.T) {
 	}
 	if w := do(h, "DELETE", "/api/admin/session", with(nil, HeaderCSRF)); w.Code != 403 {
 		t.Errorf("delete without CSRF = %d", w.Code)
-	}
-
-	// No admin token (loopback, or --admin-token=off): nothing to exchange.
-	for _, o := range []LocalOptions{{}, {Addr: "0.0.0.0:3000"}} {
-		hn, _ := localHandlerFor(t, o)
-		hdr := with(map[string]string{HeaderAdmin: testAdmin, "Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000"})
-		if w := do(hn, "POST", "/api/admin/session", hdr); w.Code != 404 || w.Header().Get("Set-Cookie") != "" {
-			t.Errorf("%+v: exchange = %d", o, w.Code)
-		}
-	}
-	// A loopback dashboard ignores cookies and stays enabled.
-	hl, shl := localHandlerFor(t, LocalOptions{})
-	if w := doControl(hl, with(map[string]string{"Host": "127.0.0.1:3000", "Origin": "http://127.0.0.1:3000"})); w.Code != 200 || shl.n != 1 {
-		t.Errorf("loopback = %d", w.Code)
-	}
-}
-
-// TestAllowHostWithoutToken: --allow-host with --admin-token=off on a
-// loopback listener. A tunnel or forwarder (ssh -R, socat, tailscale serve
-// tcp:) sets no proxy header, so the controls must be off, not enabled:
-// through the extra name and through 127.0.0.1 alike.
-func TestAllowHostWithoutToken(t *testing.T) {
-	h, fc := localHandlerFor(t, LocalOptions{Addr: "127.0.0.1:3000", ExtraHosts: []string{"fyisp.example.com"}})
-	for _, host := range []string{"fyisp.example.com", "127.0.0.1:3000"} {
-		hdr := map[string]string{"Host": host, "Origin": "https://" + host, "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123"}
-		var st localStatus
-		_ = json.Unmarshal(do(h, "GET", "/api/status", hdr).Body.Bytes(), &st)
-		if st.Controls != "disabled" {
-			t.Errorf("%s: controls = %q, want disabled", host, st.Controls)
-		}
-		if w := doControl(h, hdr); w.Code != 403 || !strings.Contains(w.Body.String(), "--allow-host") {
-			t.Errorf("%s: control = %d %s, want 403", host, w.Code, w.Body.String())
-		}
-	}
-	if fc.n != 0 {
-		t.Errorf("%d controls used", fc.n)
 	}
 }

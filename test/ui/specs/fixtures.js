@@ -30,6 +30,9 @@ const test = base.test.extend({
   },
 });
 
+/** fyisp-webdev's fixed admin token (playwright.config.js sends it on every request). */
+const DEV_ADMIN = 'fyisp-webdev-not-a-secret';
+
 /** Starts fyisp-webdev on port with args and waits until it answers. @param {number} port @param {string[]} args */
 async function webdev(port, args) {
   const proc = spawn('fyisp-webdev', ['-listen', `127.0.0.1:${port}`, ...args], { stdio: 'ignore' });
@@ -37,7 +40,7 @@ async function webdev(port, args) {
   const up = (async () => {
     for (let i = 0; i < 100; i++) {
       try {
-        if ((await fetch(`http://127.0.0.1:${port}/api/home?part=now`)).ok) return;
+        if ((await fetch(`http://127.0.0.1:${port}/api/home?part=now`, { headers: { 'X-FYISP-Admin': DEV_ADMIN } })).ok) return;
       } catch { /* not yet */ }
       await new Promise((r) => setTimeout(r, 100));
     }
@@ -47,4 +50,4 @@ async function webdev(port, args) {
   return proc;
 }
 
-module.exports = { test, expect: base.expect, webdev };
+module.exports = { test, expect: base.expect, webdev, DEV_ADMIN };

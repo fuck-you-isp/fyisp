@@ -33,7 +33,7 @@ Technical users get every number under **Technical details**: charts per service
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh
 ```
 
-Then open <http://127.0.0.1:3000>. Pass options after `sh -s --`, e.g. `... | sh -s -- --profile streaming`.
+fyisp opens the dashboard in your browser, signed in; otherwise open the link it prints (`http://127.0.0.1:3000/#admin=…`, see [Admin token](#admin-token)). Pass options after `sh -s --`, e.g. `... | sh -s -- --profile streaming`.
 
 Everything on, on port 8080 instead of 3000:
 
@@ -41,7 +41,7 @@ Everything on, on port 8080 instead of 3000:
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile all --speedtest --listen 127.0.0.1:8080
 ```
 
-Leave out `--listen` for the default port 3000. Keep `127.0.0.1:` to stay local-only, where every control works without a token; `0.0.0.0:<port>` opens it to your network and turns the [admin token](#admin-token) on. With `--profile all`, consider `--retention 30d`: 90 days of 1,421 targets takes a lot of disk.
+Leave out `--listen` for the default port 3000. Keep `127.0.0.1:` to stay local-only; `0.0.0.0:<port>` opens it to your network, behind the [admin token](#admin-token) as always. With `--profile all`, consider `--retention 30d`: 90 days of 1,421 targets takes a lot of disk.
 
 To update, stop fyisp (Ctrl-C) and run the same command again (see [Upgrading](#upgrading)).
 
@@ -79,10 +79,10 @@ Code signing is planned: free Windows signing through the [SignPath Foundation](
 
 ```sh
 docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
-docker logs fyisp 2>&1 | grep -m1 -o 'http://[^ "]*#admin=[0-9a-f]*'
+docker logs fyisp 2>&1 | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1
 ```
 
-Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`) once in your browser. It turns on *Test speed now* and the other speed-test controls for that browser; see [Admin token](#admin-token).
+Open the link that the second command prints (`http://127.0.0.1:3000/#admin=…`) once in your browser: the dashboard needs its admin token. That token is new at every start of the container, which signs every browser out; to keep one, pass your own (below, and [Admin token](#admin-token)).
 
 **On Linux, use host networking for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
 
@@ -99,11 +99,12 @@ Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The co
 fyisp options go **after the image name** (the image sets `FYISP_DATA_DIR=/data` and `FYISP_LISTEN=0.0.0.0:3000`; `--data-dir` and `--listen` after the image name override them):
 
 ```sh
-# No speed-test controls for anyone (the dashboard and Investigate stay open)
-docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --admin-token=off
+# Your own admin token, kept across restarts: open the link this prints
+tok=$(openssl rand -hex 16); echo "http://127.0.0.1:3000/#admin=$tok"
+docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data -e FYISP_ADMIN_TOKEN=$tok ghcr.io/fuck-you-isp/fyisp
 ```
 
-If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name, a tunnel), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding. Any `--allow-host` also turns the admin token on, even with the default loopback `--listen` (see [Admin token](#admin-token)).
+If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name, a tunnel), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
 
 ## What you see: Home and Details
 
@@ -115,7 +116,7 @@ If you open the UI by a name instead of an IP address (`http://nas.local:3000`, 
 - **Your connection**: *Your home router → Your internet provider → The internet*, each with an icon (✓, ! or ✕) and a short line: *Working normally*, *Losing some data since 10:12 am*, *Dropped for 40 s at 10:14 am, fine now*. The first box says *Your Wi-Fi and router* only when fyisp can tell it is looking at the Wi-Fi of the machine you're reading on; otherwise *Your home router* (see [Wi-Fi or router?](docs/VERDICTS.md#wi-fi-or-router)).
 - **11 app tiles**: Zoom, Microsoft Teams, Google Meet and Slack (calls); Microsoft 365, Google Workspace, GitHub, Dropbox and OneDrive (apps); YouTube and Netflix (streaming). Each says *Good*, *Slow* (*Choppy* for calls) or *Down*, with *since 10:12 am* when it isn't Good, or *Dropped 40 s at 10:14 am* for 30 minutes after a drop. Under it, 24 bars show the last 2 hours in 5-minute steps: green, yellow (slow for 2 minutes or more), red (down, or a drop of 30 seconds or more) or grey (fyisp wasn't running). A tile your profile doesn't cover says *Not checked* and how to turn it on.
 - **Click a tile** for its panel: why it has that word, its numbers against their limits (delay, jitter and loss for calls; the usual time and the *Slow above* limit for the others), and a 24-hour chart with the usual line, the problems and the time fyisp wasn't running. Escape or *Close* returns to the tile. *How fyisp decides Good, Slow, Choppy and Down*, under the tiles, explains the rules (see [How fyisp decides](docs/VERDICTS.md)).
-- **Speed** (when [speed tests](#speed-tests) are on): your latest result in Mbps against your usual speed (once there are a few tests), and **Test speed now**, which runs one test against fyisp's built-in servers. It needs the admin token where the dashboard has one (see [Admin token](#admin-token)).
+- **Speed** (when [speed tests](#speed-tests) are on): your latest result in Mbps against your usual speed (once there are a few tests), and **Test speed now**, which runs one test against fyisp's built-in servers.
 - **Problems in the last 7 days**: a summary by cause (*5 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves*), then each problem with its time, what happened, its *likely cause* and one line of evidence (*Your router kept answering, but nothing past it did.*). A problem during one of fyisp's own speed tests says so.
 - **The footer**: *Watching your connection since …* and **Technical details →**.
 
@@ -145,7 +146,7 @@ Each round stops after 5 silent hops in a row past the last one that answered (l
 
 ## Keep it running
 
-fyisp can only tell you about time when it was running. Started from a terminal or the launcher, it stops when you close that window or log out, and Home shows that time as grey bars, and as hatched bands in a tile's chart: *fyisp wasn't running*. To have it start by itself, install the binary once and register it with your system, as below. It then runs in the background whenever you're logged in (or, on Linux and Docker, whenever the machine is on) and you just open <http://127.0.0.1:3000>.
+fyisp can only tell you about time when it was running. Started from a terminal or the launcher, it stops when you close that window or log out, and Home shows that time as grey bars, and as hatched bands in a tile's chart: *fyisp wasn't running*. To have it start by itself, install the binary once and register it with your system, as below. It then runs in the background whenever you're logged in (or, on Linux and Docker, whenever the machine is on) and you open <http://127.0.0.1:3000> and sign in (see [Admin token](#admin-token)).
 
 A laptop that sleeps still leaves gaps; that's expected and never counted as a problem. For a complete record, run fyisp on something that is always on and on the same network: a NAS, a Raspberry Pi or a home server, with [Docker](#docker) or [systemd](#linux-systemd).
 
@@ -174,7 +175,7 @@ PLIST
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.fuck-you-isp.fyisp.plist
 ```
 
-fyisp now starts whenever you log in. Its log is `~/Library/Logs/fyisp.log`. To stop it for good: `launchctl bootout gui/$(id -u)/io.github.fuck-you-isp.fyisp && rm ~/Library/LaunchAgents/io.github.fuck-you-isp.fyisp.plist`. Downloaded with `curl`, the binary carries no quarantine mark, so Gatekeeper doesn't block it.
+fyisp now starts whenever you log in. Its log is `~/Library/Logs/fyisp.log`; the sign-in link of the current run is its last `#admin=` line: `grep -o 'http://[^ "]*#admin=[0-9a-f]*' ~/Library/Logs/fyisp.log | tail -1`. To stop it for good: `launchctl bootout gui/$(id -u)/io.github.fuck-you-isp.fyisp && rm ~/Library/LaunchAgents/io.github.fuck-you-isp.fyisp.plist`. Downloaded with `curl`, the binary carries no quarantine mark, so Gatekeeper doesn't block it.
 
 ### Windows (Task Scheduler)
 
@@ -188,14 +189,17 @@ Invoke-WebRequest "$url/SHA256SUMS" -OutFile "$dir\SHA256SUMS"
 $want = (Select-String -Path "$dir\SHA256SUMS" -Pattern 'fyisp-windows-amd64\.exe$').Line.Split(' ')[0]
 if ((Get-FileHash "$dir\fyisp.exe").Hash -ne $want) { Remove-Item "$dir\fyisp.exe"; throw "checksum mismatch" }
 
-$action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command & '$dir\fyisp.exe' --open-browser=false"
+$b = [byte[]]::new(16); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+$tok = -join ($b | ForEach-Object { $_.ToString('x2') })
+$action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command & '$dir\fyisp.exe' --open-browser=false --admin-token $tok"
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 Register-ScheduledTask -TaskName fyisp -Action $action -Trigger $trigger -Settings $settings
 Start-ScheduledTask -TaskName fyisp
+"Sign in once per browser: http://127.0.0.1:3000/#admin=$tok"
 ```
 
-fyisp now starts, hidden, whenever you log in. To stop it for good: `Unregister-ScheduledTask -TaskName fyisp -Confirm:$false`, then end `fyisp.exe` in Task Manager.
+fyisp now starts, hidden, whenever you log in, with the admin token the last line printed. To stop it for good: `Unregister-ScheduledTask -TaskName fyisp -Confirm:$false`, then end `fyisp.exe` in Task Manager.
 
 ### Linux (systemd)
 
@@ -209,7 +213,7 @@ sudo curl --proto '=https' --tlsv1.2 -fsSL -o /etc/systemd/system/fyisp.service 
 sudo systemctl daemon-reload && sudo systemctl enable --now fyisp
 ```
 
-fyisp now runs whenever the machine is on, from boot. [`packaging/fyisp.service`](packaging/fyisp.service) runs it as a transient unprivileged user (`DynamicUser`) with a read-only system, no access to home directories and a system-call filter; data lives in `/var/lib/fyisp`. Options go in a drop-in (`sudo systemctl edit fyisp`), e.g. `Environment=FYISP_PROFILE=default,streaming`; the comments in the unit show how to pass other flags (e.g. `--speedtest`) or grant `CAP_NET_RAW`.
+fyisp now runs whenever the machine is on, from boot. [`packaging/fyisp.service`](packaging/fyisp.service) runs it as a transient unprivileged user (`DynamicUser`) with a read-only system, no access to home directories and a system-call filter; data lives in `/var/lib/fyisp`. Options go in a drop-in (`sudo systemctl edit fyisp`), e.g. `Environment=FYISP_PROFILE=default,streaming`; the comments in the unit show how to pass other flags (e.g. `--speedtest`), keep one admin token across restarts, or grant `CAP_NET_RAW`. The sign-in link of the current run is in the journal: `sudo journalctl -u fyisp | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1`.
 
 ### Docker, NAS and Raspberry Pi
 
@@ -242,9 +246,9 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
   remove: [YouTube, Netflix]      # also possible: dev-GitHub, Dropbox, OneDrive, Teams-Relay
   ```
 - **On a work laptop**, keep the default (or the default without YouTube and Netflix, as above), and run any extra profiles on a home machine instead: a NAS, a Raspberry Pi or a family computer on the same network sees the same connection. If your employer manages the laptop, check its policy before running monitoring tools on it. `fyisp profiles default` lists the names fyisp looks up (Google Meet's TCP check goes to `meet.google.com`).
-- **Hosts traced on request.** *Investigate* traces any public host someone who can open your dashboard types in (within its limits: 4 at once, 12 new traces an hour, about 10 minutes each). That host and the routers on the way see probes from your public IP address, and your DNS resolver sees the name looked up, about once a minute while the trace runs. Its hop numbers age out with the rest of the data, but the host's name stays in the database's index of series. No other service is involved.
+- **Hosts traced on request.** *Investigate* traces any public host someone signed in to your dashboard types in (within its limits: 4 at once, about 10 minutes each). That host and the routers on the way see probes from your public IP address, and your DNS resolver sees the name looked up, about once a minute while the trace runs. Its hop numbers age out with the rest of the data, but the host's name stays in the database's index of series. No other service is involved.
 - **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine, which is never stored, logged or returned (see [Wi-Fi or router?](docs/VERDICTS.md#wi-fi-or-router)). The connection type itself is in fyisp's log and in speed-test results.
-- **`--tunnel`** (off by default) connects to Cloudflare to publish the dashboard at a random `https://….trycloudflare.com` address (see [Remote access](#remote-access)). Cloudflare sees your public IP address and your machine's local address, and it decrypts the dashboard's traffic at its edge. **Anyone with the link can open the dashboard**, and with *Investigate* can make your connection trace a host they run, which shows them your public IP address.
+- **`--tunnel`** (off by default) connects to Cloudflare to publish the dashboard at a random `https://….trycloudflare.com` address (see [Remote access](#remote-access)). Cloudflare sees your public IP address and your machine's local address, and it decrypts the dashboard's traffic at its edge, the admin token included. The dashboard there needs the admin token, as everywhere.
 - **A screenshot or export you send** shows what it says. Home and *What happened at …?* show no addresses; the Details charts, traceroutes and `fyisp export` include your router's and your provider's addresses.
 
 ## ICMP permissions
@@ -268,7 +272,7 @@ fyisp --tunnel
 #   Dashboard over HTTPS:  https://calm-river-words-1234.trycloudflare.com/
 ```
 
-Under Docker, add `--tunnel` after the image name and read the link from the log: `docker logs fyisp 2>&1 | grep trycloudflare`. The name is random and lives as long as fyisp keeps the tunnel: if the tunnel stays down for 5 minutes, fyisp opens a new one and prints its new link, and the link stops working when fyisp stops. fyisp uses QUIC and switches to HTTP/2 by itself when a network blocks UDP. With a generated admin token, fyisp also prints a private link that turns the speed-test controls on in that browser. Quick tunnels are Cloudflare's free service for testing and demos, without an uptime guarantee.
+Under Docker, add `--tunnel` after the image name and read the link from the log: `docker logs fyisp 2>&1 | grep trycloudflare`. The name is random and lives as long as fyisp keeps the tunnel: if the tunnel stays down for 5 minutes, fyisp opens a new one and prints its new link, and the link stops working when fyisp stops. fyisp uses QUIC and switches to HTTP/2 by itself when a network blocks UDP. With a generated admin token, fyisp also prints the private sign-in link for that address. Quick tunnels are Cloudflare's free service for testing and demos, without an uptime guarantee.
 
 For a name of your own, run a tunnel or a reverse proxy yourself, for example a [cloudflared named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel run`) or `tailscale serve 3000`, and add its host name with `--allow-host`:
 
@@ -276,22 +280,21 @@ For a name of your own, run a tunnel or a reverse proxy yourself, for example a 
 fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 ```
 
-- Anyone who can open that address sees the **whole dashboard as you do**: every address and host name. For people outside your household, send a screenshot of Home instead.
-- Any `--allow-host`, and `--tunnel`, turns the **admin token** on, even when fyisp listens on 127.0.0.1 only: fyisp logs an "open this link" URL with it at every start (see [Admin token](#admin-token)), and only speed-test controls need the token. That includes you on this machine, through `127.0.0.1` too: open the link once per browser. With `--admin-token=off` as well, speed-test controls are off for everyone.
-- Anyone who can open the dashboard can start traces (*Investigate*), to profile targets or any public host, within the limits under [Admin token](#admin-token). Those limits, and fyisp's cap on probes per router, are all that bound a visitor or a script behind your tunnel.
-- A dashboard without an admin token (loopback `--listen`, no `--allow-host` or `--tunnel`) refuses speed-test controls that come through a proxy or tunnel (requests with `Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip` or `Tailscale-User-Login`): set `--allow-host` or `--admin-token` for one that rewrites the `Host` header to `127.0.0.1`.
+- The address shows the sign-in box until a browser has the [admin token](#admin-token).
+- Anyone you give the token to sees the **whole dashboard as you do**, every address and host name, and can run speed tests and traces (*Investigate*), including of a host they run, which shows them your public IP address. For people outside your household, send a screenshot of Home instead.
 
 ## Admin token
 
-The speed-test controls (*Test speed now*, *Test every server*, cancel, the schedule and skipped servers) need an admin token whenever the dashboard can be reached from elsewhere: under Docker (inside a container fyisp listens on all interfaces), with a `--listen` address that isn't loopback, with any `--allow-host`, or with `--tunnel`. Looking at the dashboard needs no token. On first start fyisp generates one, keeps it in the data directory (`admin-token`, readable only by fyisp) and logs an "open this link" URL at every start, like Jupyter:
+Everything fyisp serves except the page itself needs the admin token: the dashboard, its API and `/metrics`, on this machine as much as from your network or through a tunnel. Pass your own with `--admin-token` or `FYISP_ADMIN_TOKEN` (at least 32 letters, digits or `- . _ ~`, e.g. from `openssl rand -hex 16`). Without one, fyisp makes a new random token at every start and logs an "open this link" URL with it, like Jupyter; started from a terminal, it opens that link in your browser.
 
 - Open the link once per browser. The page swaps the token for a cookie that only this dashboard sees and removes it from the address bar. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers.
-- Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`.
-- To sign every browser out, delete the token and restart; a new link is logged: `docker run --rm -v fyisp:/data busybox rm /data/admin-token && docker restart fyisp` under Docker.
-- `--admin-token=<your own>` uses that token instead (the browser asks for it, or open `http://…:3000/#admin=<token>`). `--admin-token=off` turns speed-test controls off for everyone; the dashboard and Investigate keep working.
-- The dashboard is plain HTTP: someone who can watch your network traffic could copy the cookie, as with any HTTP login. Keep it on a network you trust, or use `-p 127.0.0.1:3000:3000`.
+- Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`. A browser without the cookie asks for the token instead.
+- To sign every browser out, restart fyisp with a new token. A generated token is new at every start, so a restart always signs everyone out: for a service that restarts (Docker, systemd, a NAS), pass your own.
+- Under systemd, keep the token out of the unit, which any user can read: put `FYISP_ADMIN_TOKEN=<token>` in a file only root can read and load it with `EnvironmentFile=` (see the comments in [`packaging/fyisp.service`](packaging/fyisp.service)). On any system, `--admin-token` on the command line is visible to other users of the machine (`ps`), and `FYISP_ADMIN_TOKEN` is not.
+- Scripts and Prometheus send it as `Authorization: Bearer <token>` (or `X-FYISP-Admin: <token>`); see [Prometheus metrics](#prometheus-metrics).
+- The dashboard is plain HTTP: someone who can watch your network traffic could copy the token or the cookie, as with any HTTP login. Keep it on a network you trust, use `-p 127.0.0.1:3000:3000`, or reach it through `--tunnel` (HTTPS).
 
-*Investigate* needs no token: anyone who can open the dashboard can trace a profile target or any public host (never an address on your LAN), for at most 250 rounds, 4 at once and 12 new traces an hour across all viewers. Opening the view starts one only for the owner: on this machine with a loopback dashboard without a token, or in a browser with the admin token (the link, or the token pasted for a speed test); other viewers click *Trace*. A browser with the token skips the hourly limit, not the 4 at once.
+*Investigate* traces a profile target or any public host (never an address on your LAN), for at most 250 rounds and 4 at once.
 
 ## Upgrading
 
@@ -313,7 +316,16 @@ fyisp does not update itself: run the launcher from a newer release, or replace 
 
 ## Prometheus metrics
 
-The dashboard serves `/metrics`: network_exporter-compatible `ping_*` series for the Network path, and fyisp's own series for TCP, UDP, call quality, the verdict, traceroutes and speed tests. Every series is listed in [API.md](docs/API.md#metrics). Anyone who can open the dashboard can read it, hop addresses included.
+The dashboard serves `/metrics`: network_exporter-compatible `ping_*` series for the Network path, and fyisp's own series for TCP, UDP, call quality, the verdict, traceroutes and speed tests. Every series is listed in [API.md](docs/API.md#metrics), hop addresses included. It needs the [admin token](#admin-token), as a bearer token:
+
+```yaml
+scrape_configs:
+  - job_name: fyisp
+    authorization:
+      credentials: <your --admin-token>
+    static_configs:
+      - targets: ['127.0.0.1:3000']
+```
 
 ## Where data lives, and uninstalling
 

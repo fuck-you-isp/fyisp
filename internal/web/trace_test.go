@@ -453,37 +453,31 @@ func TestInvestigate(t *testing.T) {
 	if codes[200] != MaxInvestigations-1 || codes[http.StatusTooManyRequests] != 3 {
 		t.Errorf("limit: %v", codes)
 	}
-	// Any viewer may trace: no admin token, through a proxy or not, and
-	// with the speed-test controls off (--allow-host, --admin-token=off).
+	// Traces need the admin token like every route, wherever the
+	// dashboard is reached from.
 	lan := with(map[string]string{"Host": "192.168.1.5:3000", "Origin": "http://192.168.1.5:3000"})
-	xff := map[string]string{"X-Forwarded-For": "203.0.113.9"}
 	tunnel := with(map[string]string{"Host": "fyisp.example.com", "Origin": "https://fyisp.example.com"})
 	for _, c := range []struct {
 		name string
 		o    LocalOptions
 		hdr  map[string]string
+		code int
 	}{
-		{"loopback", LocalOptions{Addr: "127.0.0.1:3000"}, good},
-		{"loopback through a proxy", LocalOptions{Addr: "127.0.0.1:3000"}, with(xff)},
-		{"LAN bind, no token", LocalOptions{Addr: "0.0.0.0:3000"}, lan},
-		{"LAN bind, token not sent", LocalOptions{Addr: "0.0.0.0:3000", AdminToken: testAdmin}, lan},
-		{"LAN bind, wrong token", LocalOptions{Addr: "0.0.0.0:3000", AdminToken: testAdmin}, with(map[string]string{"Host": "192.168.1.5:3000", "Origin": "http://192.168.1.5:3000", HeaderAdmin: "nope"})},
-		{"--allow-host, --admin-token=off", LocalOptions{Addr: "127.0.0.1:3000", ExtraHosts: []string{"fyisp.example.com"}}, tunnel},
-		{"--allow-host, --admin-token=off, via 127.0.0.1", LocalOptions{Addr: "127.0.0.1:3000", ExtraHosts: []string{"fyisp.example.com"}}, with(xff)},
-		{"--allow-host with a token", LocalOptions{Addr: "127.0.0.1:3000", ExtraHosts: []string{"fyisp.example.com"}, AdminToken: testAdmin}, tunnel},
+		{"LAN bind, token sent", LocalOptions{Addr: "0.0.0.0:3000"}, lan, 200},
+		{"LAN bind, token not sent", LocalOptions{Addr: "0.0.0.0:3000"}, with(nil, HeaderAdmin), 401},
+		{"LAN bind, wrong token", LocalOptions{Addr: "0.0.0.0:3000"}, with(map[string]string{"Host": "192.168.1.5:3000", "Origin": "http://192.168.1.5:3000", HeaderAdmin: "nope"}), 401},
+		{"--allow-host, token sent", LocalOptions{Addr: "127.0.0.1:3000", ExtraHosts: []string{"fyisp.example.com"}}, tunnel, 200},
+		{"--allow-host, through a proxy", LocalOptions{Addr: "127.0.0.1:3000", ExtraHosts: []string{"fyisp.example.com"}}, with(map[string]string{"X-Forwarded-For": "203.0.113.9"}), 200},
 	} {
 		d2, ft2, _ := traceFixture(t)
-		d2.Speed = &fakeControl{SpeedSource: newSpeedRigWith(t, 24*time.Hour, rigOpts{noRun: true}).s}
-		c.o.CSRFToken = "tok123"
-		hb := Local(d2, c.o)
-		if w := do(hb, "POST", "/api/investigate?target=Alpha", c.hdr); w.Code != 200 || len(ft2.started) != 1 {
-			t.Errorf("%s: %d %s, want 200", c.name, w.Code, w.Body.String())
+		c.o.CSRFToken, c.o.AdminToken = "tok123", testAdmin
+		if c.code == 200 {
+			c.hdr = with(c.hdr)
+			c.hdr[HeaderAdmin] = testAdmin
 		}
-		// The speed-test controls' gate is unchanged where it differs.
-		if c.o.AdminToken != "" || len(c.o.ExtraHosts) > 0 || c.hdr["X-Forwarded-For"] != "" {
-			if w := doControl(hb, c.hdr); w.Code != 403 {
-				t.Errorf("%s: speed control = %d, want 403", c.name, w.Code)
-			}
+		hb := Local(d2, c.o)
+		if w := do(hb, "POST", "/api/investigate?target=Alpha", c.hdr); w.Code != c.code || len(ft2.started) != map[bool]int{true: 1}[c.code == 200] {
+			t.Errorf("%s: %d %s, want %d", c.name, w.Code, w.Body.String(), c.code)
 		}
 	}
 	// Tracer errors surface locally.
@@ -495,24 +489,16 @@ func TestInvestigate(t *testing.T) {
 	}
 }
 
-// TestInvestigateBudget: at most InvestigateStartsPerHour new traces in a
-// rolling hour, across targets. Re-POSTs of a running trace and refused
-// starts don't count; the admin token skips the budget, not the slots.
-func TestInvestigateBudget(t *testing.T) {
+// TestInvestigateLimits: refused starts use no slot, a re-POST of a
+// running trace only returns its state, and a finished trace frees its slot.
+func TestInvestigateLimits(t *testing.T) {
 	d, ft, _ := traceFixture(t)
 	p := d.Profile()
-	for i := range InvestigateStartsPerHour + 4 {
+	for i := range MaxInvestigations + 2 {
 		p.Targets = append(p.Targets, model.Target{Name: fmt.Sprintf("T%d", i), Group: "common"})
 	}
 	h := Local(d, LocalOptions{Addr: "0.0.0.0:3000", CSRFToken: "tok123", AdminToken: testAdmin})
-	start := time.Now()
-	now := start
-	h.(*localHandler).inv.now = func() time.Time { return now }
-	good := map[string]string{"Host": "192.168.1.5:3000", "Origin": "http://192.168.1.5:3000", "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123"}
-	admin := map[string]string{HeaderAdmin: testAdmin}
-	for k, v := range good {
-		admin[k] = v
-	}
+	good := map[string]string{"Host": "192.168.1.5:3000", "Origin": "http://192.168.1.5:3000", "Sec-Fetch-Site": "same-origin", HeaderCSRF: "tok123", HeaderAdmin: testAdmin}
 	post := func(target string, hdr map[string]string) *httptest.ResponseRecorder {
 		return do(h, "POST", "/api/investigate?target="+target, hdr)
 	}
@@ -545,54 +531,9 @@ func TestInvestigateBudget(t *testing.T) {
 		t.Fatalf("re-post = %d, started %d", w.Code, len(ft.started))
 	}
 
-	// Fill the budget, a minute apart, freeing the slots as they go.
-	for i := MaxInvestigations; i < InvestigateStartsPerHour; i++ {
-		finishAll()
-		now = now.Add(time.Minute)
-		if w := post(fmt.Sprintf("T%d", i), good); w.Code != 200 {
-			t.Fatalf("start %d = %d %s", i, w.Code, w.Body.String())
-		}
-	}
+	// A finished trace frees its slot.
 	finishAll()
-	now = now.Add(time.Minute) // 9 minutes after the first four
-	w := post("T0", good)
-	var e struct {
-		Code       string `json:"code"`
-		RetryAfter int    `json:"retry_after"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &e)
-	if w.Code != 429 || e.Code != "rate_limited" || e.RetryAfter != 51*60 || w.Header().Get("Retry-After") != "3060" {
-		t.Fatalf("over budget = %d %s (Retry-After %q)", w.Code, w.Body.String(), w.Header().Get("Retry-After"))
-	}
-	if len(ft.started) != InvestigateStartsPerHour {
-		t.Fatalf("started %d", len(ft.started))
-	}
-
-	// The admin token skips the budget, but not the slot cap.
-	for i := range MaxInvestigations {
-		if w := post(fmt.Sprintf("T%d", i), admin); w.Code != 200 {
-			t.Fatalf("admin start T%d = %d %s", i, w.Code, w.Body.String())
-		}
-	}
-	if w := post("T4", admin); w.Code != 429 || !strings.Contains(w.Body.String(), `"busy"`) {
-		t.Fatalf("admin, no slot = %d %s", w.Code, w.Body.String())
-	}
-	finishAll()
-	// Admin starts don't use the viewers' budget either.
-	if w := post("T5", good); w.Code != 429 || !strings.Contains(w.Body.String(), `"rate_limited"`) {
-		t.Fatalf("still over budget = %d %s", w.Code, w.Body.String())
-	}
-
-	// An hour after the first four starts, four more fit; then none
-	// until the next one ages out.
-	now = start.Add(time.Hour)
-	for i := 5; i < 5+MaxInvestigations; i++ {
-		if w := post(fmt.Sprintf("T%d", i), good); w.Code != 200 {
-			t.Fatalf("after an hour, T%d = %d %s", i, w.Code, w.Body.String())
-		}
-	}
-	finishAll()
-	if w := post("T0", good); w.Code != 429 || w.Header().Get("Retry-After") != "60" {
-		t.Fatalf("then = %d %s (Retry-After %q)", w.Code, w.Body.String(), w.Header().Get("Retry-After"))
+	if w := post("T4", good); w.Code != 200 || len(ft.started) != MaxInvestigations+1 {
+		t.Fatalf("after the others finished = %d %s, started %d", w.Code, w.Body.String(), len(ft.started))
 	}
 }

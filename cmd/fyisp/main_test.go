@@ -55,9 +55,6 @@ func TestTunnelEnv(t *testing.T) {
 	if c, err := parseFlags([]string{"--tunnel=false"}); err != nil || c.tunnel {
 		t.Errorf("--tunnel=false over FYISP_TUNNEL=1: tunnel %v, %v", c.tunnel, err)
 	}
-	if c, _ := parseFlags([]string{"--tunnel"}); !reachedByName(c) {
-		t.Error("--tunnel does not count as reached by name (admin token)")
-	}
 	t.Setenv("FYISP_TUNNEL", "yes")
 	if _, err := parseFlags(nil); err == nil {
 		t.Error("FYISP_TUNNEL=yes accepted")

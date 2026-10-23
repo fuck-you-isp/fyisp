@@ -2,13 +2,11 @@
 // picked probe type. The trace is named "host:<host>": the URL reopens it,
 // and the mtr view, the report and "Run it yourself" work as for a target.
 // A refusal is shown under the box with the server's reason. A pasted
-// host: link never starts a trace by itself, not even the owner's: Trace does.
+// host: link never starts a trace by itself: Trace does.
 // @ts-check
 const { test, expect } = require('./fixtures');
-const { patchStatus } = require('./home');
 
 test('the host box traces a public host, and the URL reopens it', async ({ page }) => {
-  await patchStatus(page, { controls: 'admin', admin: false, can_control: false });
   /** @type {string[]} */
   const posts = [];
   // The answer is fixed: other specs may hold every slot of fyisp-webdev.
@@ -23,23 +21,23 @@ test('the host box traces a public host, and the URL reopens it', async ({ page 
   await box.fill('Example.com');
   await box.press('Enter');
   await expect(inv.locator('.inv-status .pill.on', { hasText: /^Tracing… \d+ of 250 rounds$/ })).toBeVisible();
-  expect(posts).toEqual(['?host=Example.com&mode=tcp']);
+  // Switching the target to TCP 443 starts its own trace first.
+  expect(posts.filter((q) => /example\.com/i.test(q))).toEqual(['?host=Example.com&mode=tcp']);
   await expect(page).toHaveURL(/#.*t=host%3Aexample\.com/);
   await expect(inv.locator('.inv-pick')).toHaveValue('host:example.com');
   await expect(inv.locator('.inv-pick option:checked')).toHaveText('example.com');
   await expect(inv.locator('.inv-run .inv-cmd')).toHaveText('mtr -T -P 443 -rwzbc 100 example.com');
   await expect(inv.locator('.inv-host-err')).toBeEmpty();
 
-  // Reopened from the URL, by a viewer: not started by itself.
+  // Reopened from the URL: not started by itself.
   await page.goto('/#' + new URLSearchParams({ t: 'host:example.com' }));
   await expect(inv.locator('.inv-status .pill', { hasText: 'Not tracing' })).toBeVisible();
   await expect(box).toHaveValue('example.com');
   await expect(inv.locator('.inv-run .inv-cmd')).toHaveText('mtr -rwzbc 100 example.com');
-  expect(posts.length).toBe(1);
+  expect(posts.filter((q) => /example\.com/i.test(q))).toHaveLength(1);
 });
 
-test('a pasted host: link never starts a trace by itself, even for the owner; Trace does', async ({ page }) => {
-  await patchStatus(page, { controls: 'admin', admin: true, can_control: true });
+test('a pasted host: link never starts a trace by itself; Trace does', async ({ page }) => {
   /** @type {string[]} */
   const posts = [];
   await page.route('**/api/investigate?*', (route) => {
@@ -60,7 +58,6 @@ test('a pasted host: link never starts a trace by itself, even for the owner; Tr
 
 test('a refused host shows the server\'s reason under the box', async ({ page, failOk }) => {
   failOk.push(/\/api\/investigate\b/);
-  await patchStatus(page, { controls: 'admin', admin: false, can_control: false });
   await page.goto('/#' + new URLSearchParams({ t: 'Google DNS 8.8.8.8', r: '1h' }));
   const inv = page.locator('#inv');
   const box = inv.getByRole('textbox', { name: 'Host to trace' });

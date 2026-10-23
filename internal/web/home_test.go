@@ -70,42 +70,6 @@ func TestHomeParams(t *testing.T) {
 	}
 }
 
-func TestHomeCanControl(t *testing.T) {
-	sc := scenario(t, "good")
-	lo := func(addr, admin string, extra ...string) LocalOptions {
-		return LocalOptions{Addr: addr, AdminToken: admin, ExtraHosts: extra, CSRFToken: "t"}
-	}
-	for _, c := range []struct {
-		name string
-		o    LocalOptions
-		host string
-		hdr  map[string]string
-		want bool
-	}{
-		{"loopback", lo("127.0.0.1:3000", ""), "127.0.0.1:3000", nil, true},
-		{"loopback through a proxy", lo("127.0.0.1:3000", ""), "127.0.0.1:3000", map[string]string{"X-Forwarded-For": "203.0.113.9"}, false},
-		{"tunnel", lo("127.0.0.1:3000", ""), "127.0.0.1:3000", map[string]string{"Cf-Connecting-Ip": "203.0.113.9"}, false},
-		{"admin token, none sent", lo("127.0.0.1:3000", "tok"), "127.0.0.1:3000", nil, false},
-		{"admin token in the header", lo("127.0.0.1:3000", "tok"), "127.0.0.1:3000", map[string]string{HeaderAdmin: "tok"}, true},
-		{"admin cookie", lo("127.0.0.1:3000", "tok"), "127.0.0.1:3000", map[string]string{"Cookie": "fyisp_admin_3000=tok"}, true},
-		{"admin cookie, wrong", lo("127.0.0.1:3000", "tok"), "127.0.0.1:3000", map[string]string{"Cookie": "fyisp_admin_3000=nope"}, false},
-		{"--listen 0.0.0.0 without a token", lo("0.0.0.0:3000", ""), "127.0.0.1:3000", nil, false},
-		{"--allow-host without a token", lo("127.0.0.1:3000", "", "fyisp.lan"), "fyisp.lan", nil, false},
-	} {
-		d := Deps{Profile: func() *model.Profile { return sc.Profile }, Status: func() Status { return Status{} }, Tiles: sc}
-		h := Local(d, c.o).(*localHandler)
-		h.now = func() time.Time { return homeNow }
-		h.homeSpeedSrc = sc.Speed
-		code, b := homeGet(t, h, homescen.Viewer{RemoteAddr: "127.0.0.1:5000", Host: c.host, Header: c.hdr}, "part=now")
-		if code != 200 {
-			t.Fatalf("%s: %d %s", c.name, code, b)
-		}
-		if got := decode[HomeNow](t, b).Speed.CanControl; got != c.want {
-			t.Errorf("%s: can_control %v, want %v", c.name, got, c.want)
-		}
-	}
-}
-
 func TestHomeSameMachine(t *testing.T) {
 	h := Local(Deps{Profile: func() *model.Profile { return nil }}, LocalOptions{Addr: "0.0.0.0:3000", ExtraHosts: []string{"fyisp.lan:3000", "nas.local"}}).(*localHandler)
 	reads := 0
@@ -306,7 +270,7 @@ func TestHomeSpeed(t *testing.T) {
 		return decode[HomeNow](t, b).Speed
 	}
 	sp := speed()
-	if !strings.HasPrefix(sp.Latest.Text, "Your speed: about 930 Mbps down") || !strings.HasSuffix(sp.Latest.Text, "about your usual speed.") || sp.Running != nil || !sp.CanControl {
+	if !strings.HasPrefix(sp.Latest.Text, "Your speed: about 930 Mbps down") || !strings.HasSuffix(sp.Latest.Text, "about your usual speed.") || sp.Running != nil {
 		t.Fatalf("%+v %+v", sp, sp.Latest)
 	}
 	slow := func(at time.Time, down float64) model.SpeedTest {

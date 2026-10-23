@@ -143,12 +143,16 @@ func (s oldestStore) Stats(ctx context.Context) (store.Stats, error) {
 	return st, err
 }
 
+// devAdminToken is the default admin token: the dashboard serves fake
+// data, and the UI tests sign in with it (test/ui/playwright.config.js).
+const devAdminToken = "fyisp-webdev-not-a-secret"
+
 func main() {
 	listen := flag.String("listen", "127.0.0.1:3000", "local listener")
 	bf := flag.Duration("backfill", 6*time.Hour, "synthetic history to generate")
 	loss := flag.Float64("loss", 0.01, "live loss rate")
 	noICMP := flag.Bool("no-icmp", false, "report ICMP as unavailable")
-	admin := flag.String("admin-token", "", "admin token for dashboard controls")
+	admin := flag.String("admin-token", devAdminToken, "admin token the dashboard requires (fake data: a fixed one by default)")
 	vCycle := flag.Duration("verdict-cycle", 20*time.Second, "how long each fake verdict kind lasts")
 	vKind := flag.String("verdict", "", "stay on one verdict kind (ok, lan, isp, upstream, dns, service, no_network, udp_blocked, stun_blocked (quiet), udp_degraded, warming_up)")
 	noVerdict := flag.Bool("no-verdict", false, "run without a verdict source (banner and outage log hidden)")
@@ -313,7 +317,7 @@ func main() {
 			stop()
 		}
 	}()
-	log.Info("serving", "local", "http://"+*listen+"/")
+	log.Info("serving", "local", "http://"+*listen+"/", "sign_in", "http://"+*listen+"/#admin="+*admin)
 	<-ctx.Done()
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

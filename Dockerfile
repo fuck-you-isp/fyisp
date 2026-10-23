@@ -267,8 +267,8 @@ ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000 container=oci
 ENTRYPOINT ["/fyisp"]
 
 # Runtime image smoke test: /data is 0700 and /tmp 1777, both owned by the
-# runtime user; `docker run IMG --ephemeral` must start (the API answers), and
-# exit 0 on SIGTERM with its temporary directory removed. The
+# runtime user; `docker run IMG --ephemeral` must start (the API answers with
+# $FYISP_ADMIN_TOKEN, and only with it), and exit 0 on SIGTERM with its temporary directory removed. The
 # image's root filesystem is run with chroot as the runtime user, because a
 # build step cannot start a container.
 #   docker build --target imagetest .
@@ -280,18 +280,24 @@ set -eu
 stat -c '%a %u:%g %n' /img/tmp /img/data
 [ "$(stat -c '%a %u:%g' /img/tmp)" = "1777 65532:65532" ]
 [ "$(stat -c '%a %u:%g' /img/data)" = "700 65532:65532" ]
-env -i FYISP_DATA_DIR=/data FYISP_LISTEN=127.0.0.1:3000 container=oci \
+tok=0123456789abcdef0123456789abcdef
+env -i FYISP_DATA_DIR=/data FYISP_LISTEN=127.0.0.1:3000 FYISP_ADMIN_TOKEN=$tok container=oci \
   /usr/sbin/chroot --userspec=65532:65532 /img /fyisp --ephemeral > /fyisp.log 2>&1 &
 pid=$!
 ok=0
 for i in $(seq 1 100); do
-  curl -fsS -o /status.json http://127.0.0.1:3000/api/status && { ok=1; break; }
+  curl -fsS -H "Authorization: Bearer $tok" -o /status.json http://127.0.0.1:3000/api/status && { ok=1; break; }
   kill -0 $pid 2>/dev/null || break
   sleep 0.2
 done
-if [ $ok = 1 ]; then kill -TERM $pid; else kill -KILL $pid 2>/dev/null || :; fi
+if [ $ok = 1 ]; then
+  code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/status)
+  [ "$code" = 401 ] || { echo "/api/status without the admin token: $code, want 401"; ok=2; }
+  kill -TERM $pid
+else kill -KILL $pid 2>/dev/null || :; fi
 rc=0; wait $pid || rc=$?
-[ $ok = 1 ] || { cat /fyisp.log; echo "fyisp --ephemeral did not start"; exit 1; }
+[ $ok != 0 ] || { cat /fyisp.log; echo "fyisp --ephemeral did not start"; exit 1; }
+[ $ok = 1 ] || exit 1
 [ $rc = 0 ] || { cat /fyisp.log; echo "fyisp exited with $rc"; exit 1; }
 [ -z "$(ls -A /img/tmp)" ] || { ls -la /img/tmp; echo "temporary directory left behind"; exit 1; }
 echo "imagetest ok: $(head -c 200 /status.json)"

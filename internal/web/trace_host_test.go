@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/netip"
 	"strings"
 	"sync"
@@ -184,32 +183,5 @@ func TestInvestigateLongHost(t *testing.T) {
 	}
 	if w := do(h, "GET", "/api/trace?target=host:"+long, good); w.Code != 200 {
 		t.Errorf("GET = %d %s", w.Code, w.Body)
-	}
-}
-
-// Hosts share the profile targets' budget; past it, a host is refused
-// before any DNS lookup.
-func TestInvestigateHostBudget(t *testing.T) {
-	h, it, _ := budgetFixture(t, LocalOptions{Addr: "127.0.0.1:3000"}, 0)
-	dns := newFakeDNS()
-	for i := range InvestigateStartsPerHour + 1 {
-		dns.names[fmt.Sprintf("h%d.example", i)] = []netip.Addr{ip("93.184.215.14")}
-	}
-	h.d.Resolve = dns.resolve
-	good := sameOriginHdr("127.0.0.1:3000")
-	for i := range InvestigateStartsPerHour {
-		if w := do(h, "POST", fmt.Sprintf("/api/investigate?host=h%d.example", i), good); w.Code != 200 {
-			t.Fatalf("start %d = %d %s", i, w.Code, w.Body.String())
-		}
-	}
-	n := dns.lookups()
-	w := do(h, "POST", fmt.Sprintf("/api/investigate?host=h%d.example", InvestigateStartsPerHour), good)
-	var r invResp
-	_ = json.Unmarshal(w.Body.Bytes(), &r)
-	if w.Code != 429 || r.Code != "rate_limited" || w.Header().Get("Retry-After") == "" {
-		t.Errorf("past the budget: %d %+v", w.Code, r)
-	}
-	if dns.lookups() != n || it.n != InvestigateStartsPerHour {
-		t.Errorf("lookups %d -> %d, tracer starts %d", n, dns.lookups(), it.n)
 	}
 }

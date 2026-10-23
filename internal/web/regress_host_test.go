@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,20 +19,8 @@ func TestLocalSpecificBindIP(t *testing.T) {
 			t.Errorf("--listen 192.168.1.10:3000, Host %q = %d, want %d", host, w.Code, code)
 		}
 	}
-	w := do(h, "GET", "/api/status", map[string]string{"Host": "192.168.1.10:3000"})
-	var st localStatus
-	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
-		t.Fatal(err)
-	}
-	if st.Controls != "disabled" {
-		t.Errorf("LAN bind without admin token: controls = %q, want disabled", st.Controls)
-	}
-	w = doControl(h, map[string]string{"Host": "192.168.1.10:3000", "Origin": "http://192.168.1.10:3000", HeaderCSRF: "tok123"})
-	if w.Code != 403 {
-		t.Errorf("LAN bind POST without admin token = %d, want 403", w.Code)
-	}
 	// Unknown names are refused with a hint to --allow-host.
-	w = do(h, "GET", "/", map[string]string{"Host": "nas.local:3000"})
+	w := do(h, "GET", "/", map[string]string{"Host": "nas.local:3000"})
 	if w.Code != 421 || !strings.Contains(w.Body.String(), "--allow-host") || !strings.Contains(w.Body.String(), "192.168.1.10:3000") {
 		t.Errorf("421 body = %s", w.Body.String())
 	}
@@ -76,13 +63,6 @@ func TestLocalTunnelHost(t *testing.T) {
 	if get("calm-river.trycloudflare.com") != 421 || get("new-name.trycloudflare.com") != 200 {
 		t.Error("the old name still works, or the new one doesn't")
 	}
-	var st localStatus
-	if err := json.Unmarshal(do(h, "GET", "/api/status", map[string]string{"Host": "new-name.trycloudflare.com"}).Body.Bytes(), &st); err != nil {
-		t.Fatal(err)
-	}
-	if st.Controls != "disabled" {
-		t.Errorf("tunnel without admin token: controls = %q, want disabled", st.Controls)
-	}
 	// With the token, a write from the tunnel's HTTPS page passes the
 	// same-origin check.
 	h2, _ := localHandlerFor(t, LocalOptions{Addr: "127.0.0.1:3000", AdminToken: "adm", TunnelHost: func() string { return "calm-river.trycloudflare.com" }})
@@ -92,7 +72,7 @@ func TestLocalTunnelHost(t *testing.T) {
 	if local.Code != 200 {
 		t.Fatalf("local POST with the admin token = %d: %s", local.Code, local.Body.String())
 	}
-	if w := doControl(h2, tunnelHdr); w.Code != 403 || !strings.Contains(w.Body.String(), "admin token") {
+	if w := doControl(h2, tunnelHdr); w.Code != 401 || !strings.Contains(w.Body.String(), "admin token") {
 		t.Errorf("tunnel POST without the admin token = %d: %s", w.Code, w.Body.String())
 	}
 	tunnelHdr[HeaderAdmin] = "adm"

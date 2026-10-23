@@ -59,7 +59,7 @@ docker cp fyisp-gold:/src/internal/web/testdata ./internal/web/ && docker rm fyi
 git diff internal/web/testdata   # review the copy changes
 ```
 
-**fyisp-webdev** serves the real UI over fake data. Open it as `localhost`, because any other Host name gets 421.
+**fyisp-webdev** serves the real UI over fake data, behind a fixed admin token. Open <http://localhost:3000/#admin=fyisp-webdev-not-a-secret> (as `localhost`, because any other Host name gets 421).
 
 ```sh
 docker build --target webdev -t fyisp-webdev .
