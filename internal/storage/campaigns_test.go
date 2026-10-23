@@ -528,6 +528,7 @@ func TestCampaignRestart(t *testing.T) {
 		a := l.target("A", "https://a.example", "bkt")
 		b := l.target("B", "https://b.example", "bkt")
 		od := l.start(CampaignSpec{Targets: []string{a}, Shape: model.StorageOnDemand, Interval: 5 * time.Minute, Count: 50, Cold: 1, Down: 1 << 20}, keysFor(a))
+		synctest.Wait() // its first round queued: the schedule's, due with it, is the one skipped
 		rec := l.start(CampaignSpec{Targets: []string{b}, Shape: model.StorageRecurring, Interval: 30 * time.Minute, Cold: 1, Days: 0b1111111,
 			FromMin: 0, ToMin: 23*60 + 59, TZ: "UTC", Until: time.Now().Add(time.Hour)}, keysFor(b))
 		time.Sleep(6 * time.Minute)
