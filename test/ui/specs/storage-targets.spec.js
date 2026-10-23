@@ -26,7 +26,7 @@ test('empty state, then add, check, edit and delete a target', async ({ page }) 
     await expect(page.getByRole('button', { name: 'Storage', pressed: true })).toBeVisible();
     const head = page.locator('.st-head');
     await expect(head.getByRole('heading', { name: 'Storage tests' })).toBeVisible();
-    await expect(head).toContainText('A check is one small request');
+    await expect(head).toContainText('A check sends one request now.');
     await head.getByRole('button', { name: 'Add a target' }).click();
     await expect(head.getByRole('button', { name: 'Add a target' })).toHaveCount(0);
 

@@ -25,7 +25,7 @@ Targets never hold keys. A signed check, with keys sent along with it, is availa
 
 ## Campaigns
 
-A campaign tests its targets over time: a round every few minutes of fresh connections (each with its own name lookup and handshake, as an app makes after being idle), requests on one kept connection, and, for targets given keys, a download and an upload. Every attempt is stored, failures included, so you can see when and how often each target fails, and whether it failed alone or with your line. Campaigns are started through the API for now ([STORAGE-API.md](STORAGE-API.md#campaigns)):
+A campaign tests its targets over time: a round every few minutes of fresh connections (each with its own name lookup and handshake, as an app makes after being idle), requests on one kept connection, and, for targets given keys, a download and an upload. Every attempt is stored, failures included, so you can see when and how often each target fails. Start one with **New campaign…** on the Storage page (or **Run one round now…** for a single round, first in the queue), or through the API ([STORAGE-API.md](STORAGE-API.md#campaigns)):
 
 - **On demand:** now or at a time, for a number of rounds or a while.
 - **Recurring:** on weekdays inside a window of your choice (say 7 to 11 pm), in your time zone, until a date.
@@ -33,5 +33,9 @@ A campaign tests its targets over time: a round every few minutes of fresh conne
 Rounds wait their turn in the speed-test queue, so they never run during a speed test, and their transfers are marked on the charts like speed tests. A round that can't run (another test held the line too long, the campaign was paused) is stored as skipped, and the time fyisp wasn't running as a gap.
 
 **Keys** are entered when a campaign starts and tried once first (refused keys stop the start). An on-demand campaign keeps them in memory only: after a restart it asks for them again, testing connections meanwhile. A recurring schedule saves them in `storage-targets.json` (readable by fyisp's user only) and deletes them when it ends or you remove it. Changing a target's endpoint, region, bucket, addressing or certificate authority deletes the keys held for it. Give fyisp keys that may only list, get, put and delete under `fyisp-test/` in a test bucket.
+
+**While it runs** the header says what runs and when the next round is, with **Pause**, **Resume** and **Stop campaign…** (a schedule: **Remove schedule…**). When scheduled speed tests are on, the page offers to pause them while the campaign runs (nothing is paused by itself). After a restart an on-demand campaign shows *Waiting for keys* with **Enter keys…**.
+
+**Results:** the **Rounds** grid has one column per round and one row per target; each cell shows the worst thing in that round (all worked, slow, failed, refused, no keys, didn't run, fyisp not running, cancelled) as a colour, a mark and a sentence for screen readers. Arrow keys move through it, and Enter (or a click) shows that round's attempts: each step's timings, result, speed, the provider's address as a /24 and its request ID. **Failures** lists the failed attempts, newest first, by target; **Past campaigns** shows earlier ones.
 
 **Data:** a round with keys moves its download and upload sizes per target, plus about 1 KiB per request; fyisp deletes every upload at once. The first time a download size is used on a bucket, fyisp also uploads an object of that size (and a 1 KiB one) and keeps it there for later rounds and campaigns: delete `fyisp-test/` in the bucket when you're done. The estimate (`part=estimate`) says how much a campaign moves, the seeding left out.

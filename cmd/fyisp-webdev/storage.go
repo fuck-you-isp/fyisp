@@ -78,7 +78,7 @@ func fakeAttempt(ctx context.Context, t s3test.Target, phase, op string, signed 
 	select {
 	case <-ctx.Done():
 		return model.StorageAttempt{} // cut off: no class
-	case <-time.After(400 * time.Millisecond):
+	case <-time.After(60 * time.Millisecond):
 	}
 	switch {
 	case strings.Contains(t.Endpoint.Hostname(), "down"):

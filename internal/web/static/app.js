@@ -75,11 +75,12 @@ const BLAME = { lan: 'gateway', isp: 'isp-edge', upstream: 'anycast', dns: 'serv
  * on its chart; os/oq/og/op/oc/om: the Overview's sort, filter text, region,
  * problems-only, heatmap cell and heatmap mode;
  * sr/sd/snf/ssw: Speed's selected row, span in days, "leave out backup servers" and the full test (sweep=1).
+ * stc: the storage campaign shown (0: the live one, else the latest).
  * @type {{range:string, from:number|null, to:number|null, kinds:Set<string>, log:boolean, inv:string|null, band:boolean,
- *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, sr:string, sd:number, snf:boolean, ssw:boolean}}
+ *   view:string|null, focus:string|null, os:string, oq:string, og:string, op:boolean, oc:string, om:string, sr:string, sd:number, snf:boolean, ssw:boolean, stc:number}}
  */
 const state = { range: '30m', from: null, to: null, kinds: new Set(['tcp']), log: false, inv: null, im: 'icmp', band: true,
-  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', sr: '', sd: 7, snf: false, ssw: false };
+  view: null, focus: null, os: '', oq: '', og: '', op: false, oc: '', om: '', sr: '', sd: 7, snf: false, ssw: false, stc: 0 };
 /** @type {any} */
 let status = null;
 /** The kinds the header offers, main kind first: those of the profile's non-path targets (TCP alone for every shipped profile). */
@@ -212,6 +213,9 @@ function readHash() {
   state.sd = p.get('sd') === '30' ? 30 : 7;
   state.snf = p.get('snf') === '1';
   state.ssw = p.get('sweep') === '1';
+  // Storage: the campaign shown in the results (0: the live one, else the latest).
+  const stc = p.get('stc');
+  state.stc = stc && /^[1-9][0-9]{0,15}$/.test(stc) ? Number(stc) : 0;
 }
 /** The last hash the page applied (hashchange and popstate both fire on Back). */
 let lastHash = '';
@@ -236,6 +240,7 @@ function hashString() {
   if (state.oc) p.set('oc', state.oc);
   if (state.om) p.set('om', state.om);
   if (state.sr) p.set('sr', state.sr);
+  if (state.stc) p.set('stc', String(state.stc));
   if (state.sd === 30) p.set('sd', '30');
   if (state.snf) p.set('snf', '1');
   if (state.ssw) p.set('sweep', '1');
@@ -1944,7 +1949,7 @@ function openStorage() {
   if (storage) { storage.refresh(); return; }
   if (storageLoading) return;
   storageLoading = import('./storage.js').then((m) => {
-    storage = new m.Storage();
+    storage = new m.Storage({ sel: () => state.stc, setSel: (id) => { state.stc = id; writeHash(); }, speedOn: () => !!speed });
     storageSlot.replaceWith(storage.el);
     applyView();
     storage.refresh();
@@ -3359,12 +3364,13 @@ function setView(/** @type {string} */ v) {
 
 function renderViewBar() {
   const v = currentView();
-  viewSeg.replaceChildren(
+  viewSeg.replaceChildren(...[
     callsOn ? h('button', { type: 'button', text: 'Calls', 'aria-pressed': String(v === 'calls'), title: 'Is your connection good for calls?', onclick: () => setView('calls') }) : null,
     h('button', { type: 'button', text: 'Overview', 'aria-pressed': String(v === 'o'), title: 'Every target in one table and heatmap', onclick: () => setView('o') }),
     h('button', { type: 'button', text: 'Charts', 'aria-pressed': String(v === 'c' && !focusPanel()), title: 'One chart per panel', onclick: () => setView('c') }),
     speed ? h('button', { type: 'button', text: 'Speed', 'aria-pressed': String(v === 'speed'), title: 'Download and upload speed through the day', onclick: () => setView('speed') }) : null,
-    storageOn ? h('button', { type: 'button', text: 'Storage', 'aria-pressed': String(v === 'storage'), title: 'Connections and transfers to your S3 storage', onclick: () => setView('storage') }) : null);
+    storageOn ? h('button', { type: 'button', text: 'Storage', 'aria-pressed': String(v === 'storage'), title: 'Connections and transfers to your S3 storage', onclick: () => setView('storage') }) : null,
+  ].filter((b) => b != null));
   const hint = /** @type {HTMLElement} */ (viewBar.lastElementChild);
   const n = panels.filter((p) => !p.isPath).length;
   hint.textContent = v === 'speed' ? 'Measured with short download and upload tests to public test servers'
@@ -3673,6 +3679,7 @@ function refreshMs() { return state.inv ? INV_REFRESH_MS : REFRESH_MS; }
 setInterval(() => {
   calls?.tick();
   home?.tick();
+  storage?.tick();
   if (document.hidden || refreshing || homeShown()) return;
   if (isRelative() && Date.now() - lastRefresh >= refreshMs()) refreshAll();
   // The banner is always "now", even when zoomed; it is cheap to poll.
