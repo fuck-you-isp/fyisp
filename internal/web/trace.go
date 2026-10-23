@@ -96,11 +96,6 @@ const (
 	// MaxInvestigations bounds concurrent on-demand traces (distinct
 	// targets).
 	MaxInvestigations = 4
-	// InvestigateStartsPerHour bounds new on-demand traces in a rolling
-	// hour, across all targets and viewers (client addresses behind a
-	// tunnel can't be trusted, and are never logged). Requests carrying
-	// the admin token skip it, not MaxInvestigations.
-	InvestigateStartsPerHour = 12
 	// InvestigationKeep is how long a finished trace's state is shown.
 	InvestigationKeep = time.Hour
 	// MaxTraceHops bounds hop numbers accepted by /api/trace/panel.
@@ -704,15 +699,13 @@ type invKey struct {
 
 // Investigations tracks on-demand traces.
 type Investigations struct {
-	mu     sync.Mutex
-	m      map[invKey]*invSession
-	starts []time.Time // budgeted starts in the last hour, oldest first
-	now    func() time.Time
+	mu sync.Mutex
+	m  map[invKey]*invSession
 }
 
 // NewInvestigations returns an empty set.
 func NewInvestigations() *Investigations {
-	return &Investigations{m: map[invKey]*invSession{}, now: time.Now}
+	return &Investigations{m: map[invKey]*invSession{}}
 }
 
 // invError is a refused start: a stable code for the UI (docs/TRACE-API.md)
@@ -729,38 +722,29 @@ func (e *invError) Error() string { return e.msg }
 // errNoSlot: every slot is taken.
 var errNoSlot = &invError{http.StatusTooManyRequests, "busy", "too many on-demand traces running", 30 * time.Second}
 
-// budgetWindow is the start budget's rolling window.
-const budgetWindow = time.Hour
-
-// pruneLocked drops finished traces older than InvestigationKeep, and
-// starts that left the budget's window. mu is held.
+// pruneLocked drops finished traces older than InvestigationKeep. mu is
+// held.
 func (iv *Investigations) pruneLocked(now time.Time) {
 	for k, se := range iv.m {
 		if _, ended := se.inv.Progress(); !ended.IsZero() && now.Sub(ended) >= InvestigationKeep {
 			delete(iv.m, k)
 		}
 	}
-	n := 0
-	for n < len(iv.starts) && now.Sub(iv.starts[n]) >= budgetWindow {
-		n++
-	}
-	iv.starts = iv.starts[n:]
 }
 
 // start starts k's trace for InvestigateRounds rounds. A running one is
 // returned as is (its count is not reset); a finished one starts afresh.
-// Unless unbudgeted (the admin token), a new trace needs room in the
-// hourly start budget; only starts that succeed use it. Traces of one
-// target with different modes are different traces (slots, budget).
-func (iv *Investigations) start(src TraceSource, k invKey, unbudgeted bool) (st *investigationJSON, created bool, err error) {
+// A new trace needs a free slot. Traces of one target with different modes
+// are different traces.
+func (iv *Investigations) start(src TraceSource, k invKey) (st *investigationJSON, created bool, err error) {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	now := iv.now()
+	now := time.Now()
 	iv.pruneLocked(now)
 	if se := iv.m[k]; se != nil && se.running() {
 		return se.json(k), false, nil
 	}
-	if e := iv.refusedLocked(now, unbudgeted); e != nil {
+	if e := iv.refusedLocked(); e != nil {
 		return nil, false, e
 	}
 	inv, err := src.Investigate(k.target, k.mode, InvestigateRounds)
@@ -769,19 +753,12 @@ func (iv *Investigations) start(src TraceSource, k invKey, unbudgeted bool) (st 
 	}
 	se := &invSession{inv: inv, started: now}
 	iv.m[k] = se
-	if !unbudgeted {
-		iv.starts = append(iv.starts, now)
-	}
 	return se.json(k), true, nil
 }
 
-// refusedLocked is why a new trace can't start now: the hourly budget
-// (unless unbudgeted) or the slots. mu is held.
-func (iv *Investigations) refusedLocked(now time.Time, unbudgeted bool) *invError {
-	if !unbudgeted && len(iv.starts) >= InvestigateStartsPerHour {
-		return &invError{http.StatusTooManyRequests, "rate_limited",
-			"too many on-demand traces started in the last hour", iv.starts[0].Add(budgetWindow).Sub(now)}
-	}
+// refusedLocked is why a new trace can't start now: every slot is taken.
+// mu is held.
+func (iv *Investigations) refusedLocked() *invError {
 	all := 0
 	for _, se := range iv.m {
 		if se.running() {
@@ -794,24 +771,23 @@ func (iv *Investigations) refusedLocked(now time.Time, unbudgeted bool) *invErro
 	return nil
 }
 
-// check is start's refusal for the budget or the slots, without starting
-// (nil while k runs: start returns its state).
-func (iv *Investigations) check(k invKey, unbudgeted bool) *invError {
+// check is start's refusal for the slots, without starting (nil while k
+// runs: start returns its state).
+func (iv *Investigations) check(k invKey) *invError {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	now := iv.now()
-	iv.pruneLocked(now)
+	iv.pruneLocked(time.Now())
 	if se := iv.m[k]; se != nil && se.running() {
 		return nil
 	}
-	return iv.refusedLocked(now, unbudgeted)
+	return iv.refusedLocked()
 }
 
 // state is k's trace, if it runs or finished recently.
 func (iv *Investigations) state(k invKey) *investigationJSON {
 	iv.mu.Lock()
 	defer iv.mu.Unlock()
-	iv.pruneLocked(iv.now())
+	iv.pruneLocked(time.Now())
 	if se := iv.m[k]; se != nil {
 		return se.json(k)
 	}
@@ -972,11 +948,10 @@ func modeAvailable(src TraceSource, mode model.TraceMode) bool {
 	return false
 }
 
-// investigate starts the trace once the handler's checks passed;
-// unbudgeted skips the hourly start budget. A host (or a model.HostTarget
+// investigate starts the trace once the handler's checks passed. A host (or a model.HostTarget
 // name) is checked and resolved first: public addresses only. Logs name the
 // target and the error, never the client.
-func (s *server) investigate(w http.ResponseWriter, r *http.Request, q invRequest, unbudgeted bool) {
+func (s *server) investigate(w http.ResponseWriter, r *http.Request, q invRequest) {
 	target, mode := q.target, q.mode
 	if h, ok := model.HostOf(target); ok && q.host == "" {
 		q.host = h
@@ -999,8 +974,8 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, q invReques
 	k := invKey{target, mode}
 	var ie *invError
 	if h, ok := model.HostOf(target); ok {
-		// Refused for the budget or the slots before any DNS lookup.
-		if err := s.inv.check(k, unbudgeted); err != nil {
+		// Refused for the slots before any DNS lookup.
+		if err := s.inv.check(k); err != nil {
 			ie = err
 		} else {
 			ie = s.d.checkHost(r.Context(), h)
@@ -1011,7 +986,7 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, q invReques
 			return
 		}
 	}
-	st, _, err := s.inv.start(s.d.Trace, k, unbudgeted)
+	st, _, err := s.inv.start(s.d.Trace, k)
 	switch {
 	case errors.As(err, &ie):
 		s.d.log().Debug("investigate refused", "target", target, "code", ie.code)
@@ -1025,13 +1000,10 @@ func (s *server) investigate(w http.ResponseWriter, r *http.Request, q invReques
 	writeJSON(w, r, http.StatusOK, st)
 }
 
-// serveInvestigate answers POST /api/investigate?target=|host= for any
-// viewer: same origin and the CSRF token, then the trace limits (profile
-// targets, or hosts whose every address is public; InvestigateRounds,
-// MaxInvestigations, InvestigateStartsPerHour and the tracer's per-router
-// cap). No admin token: a trace runs the same traceroute anyone can run
-// against a public host, from this machine, within those budgets. A request
-// carrying the token skips the start budget.
+// serveInvestigate answers POST /api/investigate?target=|host= (the admin
+// token, authorized): same origin and the CSRF token, then the trace limits
+// (profile targets, or hosts whose every address is public;
+// InvestigateRounds, MaxInvestigations and the tracer's per-router cap).
 func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) {
 	q, ok := h.investigateRequest(w, r)
 	if !ok {
@@ -1045,5 +1017,5 @@ func (h *localHandler) serveInvestigate(w http.ResponseWriter, r *http.Request) 
 		writeInvErr(w, r, http.StatusForbidden, "forbidden", "missing or bad "+HeaderCSRF, 0)
 		return
 	}
-	h.investigate(w, r, q, h.adminOK(r))
+	h.investigate(w, r, q)
 }

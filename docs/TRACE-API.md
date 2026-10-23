@@ -14,7 +14,7 @@ A trace has a mode, which picks its probes. None needs admin rights.
 | `tcp` | TCP SYNs to port 443, closed with a reset | `mtr -T -P 443` | `trace_tcp` |
 | `udp` | UDP datagrams to port 33434; the destination answers "port unreachable" | `mtr -u` | `trace_udp` |
 
-The destination port is fixed per trace, but the source port changes with every probe, so routers that balance per flow (ECMP) can still show several addresses at one hop, as with `mtr`. Each mode of a target is its own trace: its own session, slot and start in the budget, numbers and route. Always-on traces are ICMP. Hops are shared only between traces of the same mode, but the cap of 1 probe a second per router counts every mode. Route changes are recorded for ICMP traces only; the route of a TCP or UDP trace is kept in memory while fyisp runs, so after a restart its hop numbers have no addresses until it is traced again.
+The destination port is fixed per trace, but the source port changes with every probe, so routers that balance per flow (ECMP) can still show several addresses at one hop, as with `mtr`. Each mode of a target is its own trace: its own session, slot, numbers and route. Always-on traces are ICMP. Hops are shared only between traces of the same mode, but the cap of 1 probe a second per router counts every mode. Route changes are recorded for ICMP traces only; the route of a TCP or UDP trace is kept in memory while fyisp runs, so after a restart its hop numbers have no addresses until it is traced again.
 
 `GET api/trace` lists what this machine supports in `modes`:
 
@@ -36,15 +36,15 @@ POST api/investigate?target=<profile target name>[&mode=icmp|tcp|udp]
 POST api/investigate?host=<name or IPv4 address>[&mode=icmp|tcp|udp]
 ```
 
-There is no body. Anyone who can open the dashboard may start a trace: there is no admin token check. The checks are:
+There is no body. The checks are:
 
 | Check | |
 |---|---|
 | Host allowlist | yes |
+| Admin token | yes (401 `unauthorized` without) |
 | Same origin (`Origin` / `Sec-Fetch-Site`) | yes |
 | `X-FYISP-Token` (CSRF, page meta) | yes |
 | Slots | at most 4 traces at once |
-| Start budget | at most 12 new traces in a rolling hour, across all targets, hosts and viewers. A request carrying the admin token (`X-FYISP-Admin` or the session cookie) skips the budget, not the slots |
 | Public addresses only | a `host` must resolve to public IPv4 addresses only (see [below](#hosts-outside-the-profile)) |
 
 **Request rules:**
@@ -55,11 +55,11 @@ There is no body. Anyone who can open the dashboard may start a trace: there is 
 - Logs name the target and the error, never the client.
 
 **What a POST does:**
-- **Trace running:** returns its state. It doesn't extend the trace or reset the count, and it uses no budget.
+- **Trace running:** returns its state. It doesn't extend the trace or reset the count.
 - **Trace finished:** starts a fresh 250 rounds.
-- Only starts that succeed use the budget; refused ones (no slot, unknown target, a refused host, a tracer error) don't.
+- Only starts that succeed take a slot; refused ones (no slot, unknown target, a refused host, a tracer error) don't.
 
-Client addresses behind a tunnel can't be trusted, so the budget, the slots, the 250 rounds, the public-address check and the tracer's per-router probe cap are the only bounds on a script that starts traces.
+Client addresses behind a tunnel can't be trusted, so the admin token, the slots, the 250 rounds, the public-address check and the tracer's per-router probe cap are the only bounds on a script that starts traces.
 
 **Response 200:**
 
@@ -77,15 +77,15 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 | 400 | `bad_request` | a parameter other than one `target` or `host` and one `mode` (a `port` too), an empty one, an unknown `mode`, or a body |
 | 400 | `bad_host` | `host` is not a DNS name or an IPv4 address (an IPv6 address, a port, a scheme or a path included) |
 | 400 | `unsupported_mode` | this machine can't trace with `mode` (see `modes`) |
+| 401 | `unauthorized` | no or the wrong admin token (checked first, after the `Host`) |
 | 403 | `forbidden` | cross-origin; missing or bad `X-FYISP-Token` |
 | 403 | `not_public` | `host` is, or resolves to, an address that isn't public (the address is not named) |
 | 404 | `unknown_target` | not a profile target name |
 | 404 | `unresolved` | `host` could not be resolved to an IPv4 address (no address, a lookup failure or a timeout) |
 | 404 | `unavailable` | tracing is not available |
 | 405 | `method_not_allowed` | not POST |
-| 421 | `unknown_host` | the `Host` isn't allowed (open the dashboard's own address, or add `--allow-host`) |
+| 421 | `unknown_host` | the `Host` isn't allowed (open the dashboard's own address or its `--tunnel` link, or add `--allow-host`) |
 | 429 | `busy` | no free slot (4 in all; `retry_after`) |
-| 429 | `rate_limited` | 12 traces started in the last hour (`retry_after`: until the oldest leaves the hour) |
 | 500 | `failed` | the tracer failed (with the reason) |
 
 ## Hosts outside the profile
@@ -93,8 +93,8 @@ Client addresses behind a tunnel can't be trusted, so the budget, the slots, the
 `host=` traces any public host, like `mtr` does whatever you type. The checks, in order:
 
 1. **Syntax.** A DNS name (letters, digits and hyphens; at most 253 characters; not all digits in the last label) or an IPv4 address. It is lowercased and loses a trailing dot, so `Example.COM.` and `example.com` are one trace. IPv6 is not traced.
-2. **The limits** (slots and the hourly budget), before any lookup.
-3. **Public addresses only.** The name is resolved with the system resolver, IPv4 only, as targets are. Every address must be public: not private (RFC 1918), loopback, link-local, carrier-grade NAT (100.64/10), multicast, broadcast, "this network", reserved, benchmarking (198.18/15) or documentation space. One such address refuses the host. This keeps a viewer behind your tunnel from mapping your LAN; the Network path already shows your router.
+2. **The slots**, before any lookup.
+3. **Public addresses only.** The name is resolved with the system resolver, IPv4 only, as targets are. Every address must be public: not private (RFC 1918), loopback, link-local, carrier-grade NAT (100.64/10), multicast, broadcast, "this network", reserved, benchmarking (198.18/15) or documentation space. One such address refuses the host. This keeps a token holder behind your tunnel from mapping your LAN; the Network path already shows your router.
 
 The trace is named `host:<host>` (`"target"` in the response): `GET api/trace?target=host:example.com&mode=` and `api/trace/panel` read it like a target's, with `host` set to it. Profile target names can't start with `host:`. The tracer re-resolves the name every minute, as it does for targets, and checks every answer again: if the name later resolves to an address that isn't public (DNS rebinding), the trace stops (`finished`) and nothing is sent there.
 
@@ -102,7 +102,7 @@ A host's hop numbers are stored like a target's, under its name, and age out wit
 
 ## Progress
 
-The dashboard posts by itself when Investigate opens only for a profile target, and only for the owner: when `/api/status` has `"can_control": true` (this request may use the speed-test controls, per request: false through a proxy on a token-less dashboard) or the browser holds an admin token pasted earlier, which it then sends as `X-FYISP-Admin`. Everyone else, and anyone opening a host's trace (`#t=host:…`), clicks *Trace*.
+The dashboard posts by itself when Investigate opens a profile target in a mode without an always-on trace (always-on traces are ICMP). Opening a host's trace (`#t=host:…`, e.g. from a link someone sent) never starts one: you click *Trace*.
 
 `GET api/trace?target=&mode=` carries `"investigation": {…same object…}` of that mode while the trace runs and for an hour after it finishes. The UI polls it and never re-posts to keep a trace alive.
 

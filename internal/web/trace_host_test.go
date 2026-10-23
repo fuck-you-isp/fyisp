@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -187,29 +187,24 @@ func TestInvestigateLongHost(t *testing.T) {
 	}
 }
 
-// Hosts share the profile targets' budget; past it, a host is refused
-// before any DNS lookup.
-func TestInvestigateHostBudget(t *testing.T) {
-	h, it, _ := budgetFixture(t, LocalOptions{Addr: "127.0.0.1:3000"}, 0)
-	dns := newFakeDNS()
-	for i := range InvestigateStartsPerHour + 1 {
-		dns.names[fmt.Sprintf("h%d.example", i)] = []netip.Addr{ip("93.184.215.14")}
+// A host trace refused for want of a slot is refused before any DNS lookup.
+func TestInvestigateHostBusyNoLookup(t *testing.T) {
+	d, _, _ := traceFixture(t)
+	p := d.Profile()
+	for i := range MaxInvestigations {
+		p.Targets = append(p.Targets, model.Target{Name: "S" + strconv.Itoa(i), Group: "common"})
 	}
-	h.d.Resolve = dns.resolve
+	dns := newFakeDNS()
+	d.Resolve = dns.resolve
+	h := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123"})
 	good := sameOriginHdr("127.0.0.1:3000")
-	for i := range InvestigateStartsPerHour {
-		if w := do(h, "POST", fmt.Sprintf("/api/investigate?host=h%d.example", i), good); w.Code != 200 {
-			t.Fatalf("start %d = %d %s", i, w.Code, w.Body.String())
+	for i := range MaxInvestigations {
+		if w := do(h, "POST", "/api/investigate?target=S"+strconv.Itoa(i), good); w.Code != 200 {
+			t.Fatalf("start S%d = %d %s", i, w.Code, w.Body)
 		}
 	}
-	n := dns.lookups()
-	w := do(h, "POST", fmt.Sprintf("/api/investigate?host=h%d.example", InvestigateStartsPerHour), good)
-	var r invResp
-	_ = json.Unmarshal(w.Body.Bytes(), &r)
-	if w.Code != 429 || r.Code != "rate_limited" || w.Header().Get("Retry-After") == "" {
-		t.Errorf("past the budget: %d %+v", w.Code, r)
-	}
-	if dns.lookups() != n || it.n != InvestigateStartsPerHour {
-		t.Errorf("lookups %d -> %d, tracer starts %d", n, dns.lookups(), it.n)
+	w := do(h, "POST", "/api/investigate?host=example.com", good)
+	if w.Code != 429 || !strings.Contains(w.Body.String(), `"busy"`) || dns.lookups() != 0 {
+		t.Errorf("busy host = %d %s, %d lookups", w.Code, w.Body, dns.lookups())
 	}
 }

@@ -1,12 +1,7 @@
 // fyisp dashboard: helpers shared by the views (app.js, home*.js). Plain ES
 // module, no build step: DOM building, theme and colour tokens, formatting,
-// fetch with retry, the tooltip, and the owner's write calls.
+// fetch with retry, the tooltip, the write calls and signing in.
 // @ts-check
-
-/** @type {() => any} */
-let statusOf = () => null;
-/** Gives the write helpers the latest /api/status (its "controls" decide whether speed-test controls need the admin token). */
-export function useStatus(/** @type {() => any} */ f) { statusOf = f; }
 
 // ---------- page ----------
 
@@ -216,6 +211,9 @@ export async function fetchJSON(url, init, tries = 3) {
       continue;
     }
     const body = await res.json().catch(() => ({}));
+    // Signed out (fyisp restarted with a new admin token): reload, which
+    // also fetches the new page's CSRF token, into the sign-in dialog.
+    if (res.status === 401 && signedIn) reloadToSignIn();
     if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, body, retryAfter: Number(res.headers.get('Retry-After')) || 0 });
     return body;
   }
@@ -290,74 +288,92 @@ export function dialog(o) {
 
 // ---------- writes ----------
 
-/** The admin token pasted into the dialog earlier in this tab, or ''. */
-export function storedAdmin() {
-  try { return sessionStorage.getItem('fyisp-admin') || ''; } catch { return ''; }
-}
-
-/** The admin token for speed-test controls: remembered for this tab, else asked for in a password field. @param {string} [why] */
-async function adminHeader(why = '') {
-  let t = storedAdmin();
-  if (!t) {
-    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
-    const v = await dialog({
-      title: 'Admin token',
-      text: why || 'Speed tests on this dashboard need the admin token. Paste it here, or open the link fyisp printed when it started.',
-      fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
-      buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Continue', value: 'ok', primary: true }],
-      focus: input,
-    });
-    t = v === 'ok' ? input.value.trim() : '';
-    try { if (t) sessionStorage.setItem('fyisp-admin', t); } catch { /* ignore */ }
-  }
-  return t;
-}
-
-/**
- * Adds X-FYISP-Admin when speed-test controls need the admin token and no session
- * cookie carries it. Resolves false when the token is needed but none was
- * given (the dialog was cancelled): the caller must not send the request.
- * @param {Record<string,string>} headers @param {string} [why] the dialog's first line, for this action
- */
-async function addAdmin(headers, why = '') {
-  const status = statusOf();
-  if (!(status && status.controls === 'admin' && !status.admin)) return true;
-  const t = await adminHeader(why);
-  if (!t) return false;
-  headers['X-FYISP-Admin'] = t;
-  return true;
-}
-
-/** POST/PUT/DELETE JSON with the CSRF (and admin) token. @param {string} method @param {string} url @param {any} [body] @param {string} [why] the admin dialog's first line */
-export async function apiWrite(method, url, body, why = '') {
+/** POST/PUT/DELETE JSON with the CSRF token. @param {string} method @param {string} url @param {any} [body] */
+export function apiWrite(method, url, body) {
   /** @type {Record<string,string>} */
   const headers = { 'X-FYISP-Token': TOKEN };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const status = statusOf();
-  if (!await addAdmin(headers, why)) throw Object.assign(new Error('the admin token is needed'), { status: 0 });
+  return fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
+}
+
+// ---------- sign-in ----------
+
+/**
+ * Exchanges an admin token for the HttpOnly session cookie: true when the
+ * dashboard took it, false when it refused it (403); other failures throw.
+ * @param {string} t
+ */
+export async function adminSession(t) {
+  const res = await fetch('api/admin/session', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-FYISP-Token': TOKEN, 'X-FYISP-Admin': t } });
+  if (res.ok) return true;
+  if (res.status === 403) return false;
+  throw new Error(`HTTP ${res.status}`);
+}
+
+/** Set once the page has signed in: a later 401 reloads it (see fetchJSON). */
+let signedIn = false;
+/** The page booted signed in. */
+export function markSignedIn() { signedIn = true; }
+
+/** Reloads the page into the sign-in dialog, at most once a minute (no loop if a route keeps answering 401). */
+function reloadToSignIn() {
   try {
-    return await fetchJSON(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, 1);
-  } catch (e) {
-    const err = /** @type {any} */ (e);
-    if (err.status === 403 && status && status.controls === 'admin') { try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ } }
-    throw e;
-  }
+    const last = Number(sessionStorage.getItem('fyisp-reload-401')) || 0;
+    if (Date.now() - last < 60e3) return;
+    sessionStorage.setItem('fyisp-reload-401', String(Date.now()));
+  } catch { /* no storage: reload anyway */ }
+  signedIn = false;
+  location.reload();
 }
 
 /**
- * Why this browser can't use the speed-test controls, from what the
- * dashboard says (status.controls), for a refusal (403 forbidden) or a
- * hidden button.
+ * Boot found no session: the reload above did its job, so a later 401 may
+ * reload again. Returns why, when this browser was just signed in and
+ * still has no session: it didn't keep the cookie.
  */
-export function speedRefusal() {
-  const status = statusOf();
-  if (status && status.controls === 'disabled') return 'Speed-test controls are off on this dashboard (--admin-token=off).';
-  if (status && status.controls === 'admin') return 'That needs the admin token: open the link fyisp printed when it started.';
-  return 'Speed tests can only be changed from the device running fyisp.';
+export function bootSignedOut() {
+  try {
+    sessionStorage.removeItem('fyisp-reload-401');
+    const at = Number(sessionStorage.getItem('fyisp-signed-in')) || 0;
+    sessionStorage.removeItem('fyisp-signed-in');
+    if (Date.now() - at < 30e3) return noCookie;
+  } catch { /* no storage */ }
+  return '';
 }
+/** Why a sign-in that the dashboard took didn't stick. */
+export const noCookie = 'fyisp took the token, but this browser didn’t keep the sign-in cookie. Allow cookies for this address (or open it over HTTPS if it is behind an HTTPS proxy), then sign in again.';
 
-/** Owner controls (speed tests) are usable: not disabled by a LAN bind with --admin-token=off. */
-export function canWrite() { const status = statusOf(); return !!status && status.controls !== 'disabled'; }
+/**
+ * The page's only content without a session: asks for the admin token
+ * until the dashboard takes it, then reloads the page signed in. Escape
+ * doesn't close it (there is nothing behind it).
+ * @param {string} [why] its message
+ */
+export async function signIn(why = '') {
+  let text = why || 'This dashboard needs its admin token. Open the link fyisp printed when it started, or paste the token here.';
+  for (;;) {
+    const input = /** @type {HTMLInputElement} */ (h('input', { type: 'password', id: 'dlg-admin', autocomplete: 'current-password' }));
+    const v = await dialog({
+      title: 'Sign in',
+      body: [h('p', { text })],
+      fields: [h('label', { class: 'fld', for: 'dlg-admin' }, h('span', { text: 'Admin token' }), input)],
+      buttons: [{ label: 'Sign in', value: 'ok', primary: true }],
+      focus: input,
+    });
+    const t = input.value.trim();
+    if (v !== 'ok' || !t) continue;
+    try {
+      if (await adminSession(t)) {
+        try { sessionStorage.setItem('fyisp-signed-in', String(Date.now())); } catch { /* no storage */ }
+        location.reload();
+        return;
+      }
+      text = 'That is not this dashboard’s admin token. Paste the token fyisp was started with, or open the newest link from its log.';
+    } catch (e) {
+      text = 'Could not sign in: ' + /** @type {any} */ (e).message + '. Try again.';
+    }
+  }
+}
 
 /** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */
 export function toLocalInput(/** @type {number} */ ms) {

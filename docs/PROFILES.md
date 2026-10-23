@@ -40,7 +40,7 @@ By default fyisp measures **28 targets** a home and a remote worker rely on, plu
 
 Each service gets a TCP connect (handshake, then close; no data, no login) every 15 seconds. The STUN servers get a burst of 5 tiny Binding Requests every 5 seconds ([Call quality](CALL-QUALITY.md)); `--no-udp` leaves them out. A STUN server sees your public IP address, as every other target does. Its answer contains that address too (that is what STUN is for); fyisp skips it without decoding it and never stores, logs or exports it. `fyisp profiles default` lists every target with its host.
 
-**Everything else is opt-in.** `--profile` picks from the built-in **target catalog** (about 1,400 endpoints, one file per provider in [`internal/profile/catalog/`](../internal/profile/catalog/), every endpoint checked by hand). For containers, compose files and NAS templates, the environment variable `FYISP_PROFILE` does the same; `--profile` and `--config` win over it. Likewise `FYISP_LISTEN` and `FYISP_DATA_DIR` set the defaults of `--listen` and `--data-dir`.
+**Everything else is opt-in.** `--profile` picks from the built-in **target catalog** (about 1,400 endpoints, one file per provider in [`internal/profile/catalog/`](../internal/profile/catalog/), every endpoint checked by hand). For containers, compose files and NAS templates, the environment variable `FYISP_PROFILE` does the same; `--profile` and `--config` win over it. Likewise `FYISP_LISTEN` and `FYISP_DATA_DIR` set the defaults of `--listen` and `--data-dir`, `FYISP_TUNNEL=1` turns on `--tunnel`, and `FYISP_ADMIN_TOKEN` sets the admin token (see [Admin token](../README.md#admin-token)).
 
 ```sh
 fyisp profiles                       # list the profiles, with target and panel counts

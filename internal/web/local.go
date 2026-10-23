@@ -1,7 +1,10 @@
 package web
 
 import (
+	"cmp"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"net"
@@ -18,22 +21,24 @@ type LocalOptions struct {
 	// ExtraHosts are additional allowed Host header values, e.g.
 	// "fyisp.lan:3000" or "fyisp.lan" (any port). Compared case-insensitively.
 	// They mean the dashboard is reached from elsewhere (a proxy, a
-	// tunnel), whatever Addr is: without AdminToken the speed-test
-	// controls are then disabled.
+	// tunnel), whatever Addr is.
 	ExtraHosts []string
+	// TunnelHost, if set, is the current host name of a tunnel to this
+	// dashboard ("" while it is down), allowed like ExtraHosts. A quick
+	// tunnel gets a new random name each time it starts.
+	TunnelHost func() string
 	// PublicBind reports that the listener accepts non-loopback clients
 	// (e.g. --listen 0.0.0.0:3000). It is also inferred from an Addr whose
 	// host is unspecified or a non-loopback IP (--listen 192.168.1.10:3000).
-	// Then any IP-literal Host is allowed (DNS rebinding needs a hostname),
-	// and the speed-test controls are disabled unless AdminToken is set
-	// (fyisp generates one unless --admin-token=off).
+	// Then any IP-literal Host is allowed (DNS rebinding needs a hostname).
 	PublicBind bool
-	// AdminToken, if set, must be sent as X-FYISP-Admin on the speed-test
-	// controls, or as the session cookie that POST /api/admin/session sets
-	// in exchange for it (the "open this link" URL in the logs). With it,
-	// on-demand traces skip the hourly start budget.
+	// AdminToken is required (Local panics without it): every route but
+	// the page itself, its static files and POST /api/admin/session needs
+	// it, as X-FYISP-Admin, "Authorization: Bearer", or the session cookie
+	// that POST /api/admin/session sets in exchange for it (the "open this
+	// link" URL fyisp prints).
 	AdminToken string
-	// CSRFToken overrides the random per-process token (tests only).
+	// CSRFToken overrides the one derived from AdminToken (tests only).
 	CSRFToken string
 }
 
@@ -49,29 +54,32 @@ const adminCookieMaxAge = 400 * 24 * 3600
 
 type localHandler struct {
 	*server
-	opts     LocalOptions
-	port     string
-	self     string // bound IP literal (normalized), "" for a wildcard bind
-	extra    map[string]bool
-	csrf     string
-	controls string
-	own      *ownAddrs // this host's addresses (sameMachine)
+	opts  LocalOptions
+	port  string
+	self  string // bound IP literal (normalized), "" for a wildcard bind
+	extra map[string]bool
+	csrf  string
+	sess  string    // the session cookie's value (derive)
+	own   *ownAddrs // this host's addresses (sameMachine)
 }
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
 // /metrics, and the write routes: the speed-test controls
-// (POST /api/speed/run|config|cancel), behind speedControlAllowed;
-// POST /api/investigate, open to any viewer behind the same-origin and
-// CSRF checks and the trace limits; and POST/DELETE /api/admin/session,
-// which exchanges the admin token for a cookie.
+// (POST /api/speed/run|config|cancel) and POST /api/investigate, behind
+// writeAllowed; and POST/DELETE /api/admin/session, which exchanges the
+// admin token for a cookie. Everything but the page, its static files and
+// the session route needs the admin token (authorized).
 func Local(d Deps, o LocalOptions) http.Handler {
-	tok := o.CSRFToken
-	if tok == "" {
+	if o.AdminToken == "" && !testNoAdmin {
+		panic("web.Local: no AdminToken")
+	}
+	tok := cmp.Or(o.CSRFToken, derive(o.AdminToken, "fyisp csrf token"))
+	if tok == "" { // tests without an admin token
 		var b [16]byte
 		_, _ = rand.Read(b[:])
 		tok = hex.EncodeToString(b[:])
 	}
-	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, extra: map[string]bool{}, own: newOwnAddrs()}
+	h := &localHandler{server: newServer(d, tok), opts: o, csrf: tok, sess: derive(o.AdminToken, "fyisp session cookie"), extra: map[string]bool{}, own: newOwnAddrs()}
 	h.server.sameMachine = h.sameMachine
 	if host, port, err := net.SplitHostPort(o.Addr); err == nil {
 		h.port = port
@@ -89,21 +97,12 @@ func Local(d Deps, o LocalOptions) http.Handler {
 	for _, e := range o.ExtraHosts {
 		h.extra[strings.ToLower(e)] = true
 	}
-	switch {
-	case o.AdminToken != "":
-		h.controls = "admin"
-	case h.opts.PublicBind || len(o.ExtraHosts) > 0:
-		// Reachable from elsewhere, and no token (--admin-token=off):
-		// a tunnel or forwarder need not set any proxy header.
-		h.controls = "disabled"
-	default:
-		h.controls = "enabled"
-	}
-	h.canControlSpeed = func(r *http.Request) bool {
-		return h.controls != "disabled" && (h.opts.AdminToken == "" || h.adminOK(r)) && !(h.controls == "enabled" && proxied(r))
-	}
 	return h
 }
+
+// testNoAdmin lets tests build a Local without an AdminToken, which then
+// asks for none. Set by the package's tests only.
+var testNoAdmin bool
 
 func (h *localHandler) hostAllowed(hostport string) bool {
 	hostport = strings.ToLower(hostport)
@@ -123,6 +122,9 @@ func (h *localHandler) hostAllowed(hostport string) bool {
 	if h.extra[host] {
 		return true
 	}
+	if h.tunnelHostport(hostport) {
+		return true
+	}
 	portOK := h.opts.PublicBind || h.port == "" || h.port == "0" || port == h.port
 	switch host {
 	case "127.0.0.1", "localhost", "::1":
@@ -135,6 +137,27 @@ func (h *localHandler) hostAllowed(hostport string) bool {
 	return h.opts.PublicBind && net.ParseIP(host) != nil
 }
 
+// tunnelHostport reports a Host that is the tunnel's current name
+// (TunnelHost), with no port (as cloudflared passes it) or the HTTPS port.
+func (h *localHandler) tunnelHostport(hostport string) bool {
+	if h.opts.TunnelHost == nil {
+		return false
+	}
+	host, port, err := net.SplitHostPort(strings.ToLower(hostport))
+	if err != nil {
+		host, port = strings.ToLower(hostport), "443"
+	}
+	th := h.opts.TunnelHost()
+	return th != "" && port == "443" && host == strings.ToLower(th)
+}
+
+// viaHTTPS reports a request from an HTTPS page: by the tunnel's name, or
+// through a proxy that says so (X-Forwarded-Proto, or the page's Origin).
+func (h *localHandler) viaHTTPS(r *http.Request) bool {
+	return h.tunnelHostport(r.Host) || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") ||
+		strings.HasPrefix(strings.ToLower(r.Header.Get("Origin")), "https://")
+}
+
 func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(w.Header())
 	if !h.hostAllowed(r.Host) {
@@ -143,6 +166,11 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := r.URL.Path
+	if !h.authorized(r) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="fyisp"`)
+		writeErr(w, r, http.StatusUnauthorized, "admin token required: open the link fyisp printed when it started, or send it as \"Authorization: Bearer <token>\"")
+		return
+	}
 	switch p {
 	case "/metrics":
 		if h.d.Metrics == nil {
@@ -191,22 +219,25 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSON(w, r, http.StatusOK, localStatus{Status: h.rawStatus(r.Context()), Controls: h.controls,
-			Admin: h.controls == "admin" && h.adminOK(r), CanControl: h.canControlSpeed(r)})
+		writeJSON(w, r, http.StatusOK, h.rawStatus(r.Context()))
 		return
 	}
 	h.serveGET(w, r, rt, rel)
 }
 
-// localStatus is /api/status.
-type localStatus struct {
-	Status
-	Controls string `json:"controls"` // speed-test controls: "enabled", "admin" (need the admin token) or "disabled"
-	Admin    bool   `json:"admin"`    // "admin" controls and this request carries the token (header or cookie)
-	// CanControl: this request may use the speed-test controls as it is
-	// (api/speed's "configurable"): the owner, so the UI may start a trace
-	// by itself when Investigate opens.
-	CanControl bool `json:"can_control"`
+// authorized reports whether r may be served: the admin token, or a
+// route open to everyone (the page, its static files and the session
+// exchange, so a browser without the cookie can sign in).
+func (h *localHandler) authorized(r *http.Request) bool {
+	switch p := r.URL.Path; {
+	case p == "/api/admin/session":
+		return true
+	case strings.HasPrefix(p, "/"):
+		if rt := lookup(p[1:]); rt == routeIndex || rt == routeStatic {
+			return true
+		}
+	}
+	return h.adminOK(r)
 }
 
 // localURL is the address to suggest when the Host is refused.
@@ -249,55 +280,20 @@ func sameOrigin(r *http.Request) bool {
 	return true
 }
 
-// proxyHeaders are set by reverse proxies and tunnels (nginx, Caddy,
-// cloudflared, Tailscale Serve/Funnel). A loopback listener without an
-// admin token trusts every client with the speed-test controls, which is
-// only right when the client is on this machine: a proxy that rewrites
-// Host to 127.0.0.1 would pass the Host check and hand everyone behind it
-// the owner's speed tests.
-var proxyHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip", "Tailscale-User-Login"}
-
-// proxied reports whether r came through a reverse proxy or a tunnel.
-func proxied(r *http.Request) bool {
-	for _, k := range proxyHeaders {
-		if r.Header.Get(k) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// errProxied refuses a speed-test control through a proxy to a token-less
-// dashboard.
-const errProxied = "this dashboard has no admin token, so speed-test controls work only from this machine, not through a proxy or tunnel: start fyisp with --allow-host=<the proxy's host name> (which turns the admin token on) or --admin-token"
-
 func tokenEqual(got, want string) bool {
 	return want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
-// speedControlAllowed applies the speed-test controls' protections:
-// controls enabled, no proxy headers on a token-less dashboard, same
-// origin, CSRF token and (when set) the admin token. It writes the refusal
-// and returns false.
-func (h *localHandler) speedControlAllowed(w http.ResponseWriter, r *http.Request) bool {
-	if h.controls == "disabled" {
-		writeErr(w, r, http.StatusForbidden, "speed-test controls are disabled: the dashboard is reachable from elsewhere (--listen or --allow-host) and fyisp was started with --admin-token=off")
-		return false
-	}
-	if h.controls == "enabled" && proxied(r) {
-		writeErr(w, r, http.StatusForbidden, errProxied)
-		return false
-	}
+// writeAllowed applies the write routes' protections on top of the admin
+// token (authorized): same origin and the CSRF token. It writes the
+// refusal and returns false.
+func (h *localHandler) writeAllowed(w http.ResponseWriter, r *http.Request) bool {
 	if !sameOrigin(r) {
 		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
 		return false
 	}
 	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
 		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
-		return false
-	}
-	if h.opts.AdminToken != "" && !h.adminOK(r) {
-		writeErr(w, r, http.StatusForbidden, "admin token required")
 		return false
 	}
 	return true
@@ -312,20 +308,46 @@ func (h *localHandler) adminCookie() string {
 	return "fyisp_admin_" + h.port
 }
 
-// adminOK reports whether r carries the admin token, as X-FYISP-Admin or
-// as the session cookie.
+// derive is a value derived from admin token tok for purpose: the session
+// cookie (not the token, which also works as a bearer token; the cookie
+// still signs a browser in, and browsers send it to every port of the
+// host) and the CSRF token
+// (the same across restarts with the same token, so an open page's writes
+// keep working). A new token changes both, which signs every browser out.
+// "" without a token.
+func derive(tok, purpose string) string {
+	if tok == "" {
+		return ""
+	}
+	m := hmac.New(sha256.New, []byte(tok))
+	m.Write([]byte(purpose))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// adminOK reports whether r carries the admin token, as X-FYISP-Admin,
+// "Authorization: Bearer" (scripts, Prometheus) or the session cookie.
 func (h *localHandler) adminOK(r *http.Request) bool {
+	if testNoAdmin && h.opts.AdminToken == "" {
+		return true
+	}
 	if tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
 		return true
 	}
+	if s, b, ok := strings.Cut(r.Header.Get("Authorization"), " "); ok && strings.EqualFold(s, "Bearer") && tokenEqual(b, h.opts.AdminToken) {
+		return true
+	}
 	c, err := r.Cookie(h.adminCookie())
-	return err == nil && tokenEqual(c.Value, h.opts.AdminToken)
+	return err == nil && tokenEqual(c.Value, h.sess)
 }
 
 // serveAdminSession: POST exchanges the admin token (X-FYISP-Admin, taken
 // by the page from the link's #admin= fragment, which never reaches a
 // server log or a Referer) for an HttpOnly, SameSite=Strict cookie; DELETE
-// clears it. Both need the usual same-origin and CSRF checks.
+// clears it. A wrong token is refused (403). No Origin or CSRF check: a
+// page elsewhere can't send X-FYISP-Admin or DELETE without a CORS
+// preflight, which fyisp never grants, and a proxy that rewrites Host would
+// fail the Origin check for the owner too. A browser's Sec-Fetch-Site still
+// has to say same-origin.
 func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
 		w.Header().Set("Allow", "POST, DELETE")
@@ -336,19 +358,13 @@ func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, http.StatusBadRequest, "no parameters allowed")
 		return
 	}
-	if h.opts.AdminToken == "" {
-		writeErr(w, r, http.StatusNotFound, "no admin token is set")
-		return
-	}
-	if !sameOrigin(r) {
+	if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" {
 		writeErr(w, r, http.StatusForbidden, "cross-origin request refused")
 		return
 	}
-	if !tokenEqual(r.Header.Get(HeaderCSRF), h.csrf) {
-		writeErr(w, r, http.StatusForbidden, "missing or bad "+HeaderCSRF)
-		return
-	}
-	c := &http.Cookie{Name: h.adminCookie(), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode}
+	// An HTTPS page (the tunnel, or the owner's HTTPS proxy) never has the
+	// cookie sent back over plain HTTP.
+	c := &http.Cookie{Name: h.adminCookie(), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: h.viaHTTPS(r)}
 	if r.Method == http.MethodDelete {
 		c.MaxAge = -1
 		http.SetCookie(w, c)
@@ -356,10 +372,10 @@ func (h *localHandler) serveAdminSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !tokenEqual(r.Header.Get(HeaderAdmin), h.opts.AdminToken) {
-		writeErr(w, r, http.StatusForbidden, "this admin link is not valid (any more)")
+		writeErr(w, r, http.StatusForbidden, "this admin token is not valid (any more)")
 		return
 	}
-	c.Value, c.MaxAge = h.opts.AdminToken, adminCookieMaxAge
+	c.Value, c.MaxAge = h.sess, adminCookieMaxAge
 	http.SetCookie(w, c)
 	writeJSON(w, r, http.StatusOK, map[string]any{"admin": true})
 }

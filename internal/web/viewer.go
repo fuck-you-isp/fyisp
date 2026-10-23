@@ -65,8 +65,9 @@ func (o *ownAddrs) has(a netip.Addr) bool {
 
 // sameMachine reports whether r comes from the machine fyisp runs on: from
 // a loopback address or one of the host's own, not through a proxy or
-// tunnel (proxied), and not by an --allow-host name (which means the
-// dashboard is reached from elsewhere).
+// tunnel (proxied), and not by an --allow-host or tunnel name (which means
+// the dashboard is reached from elsewhere; the in-process tunnel connects
+// from 127.0.0.1).
 func (h *localHandler) sameMachine(r *http.Request) bool {
 	ap, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
@@ -79,12 +80,28 @@ func (h *localHandler) sameMachine(r *http.Request) bool {
 	return !proxied(r) && !h.extraHost(r.Host)
 }
 
-// extraHost reports a Host that is one of the --allow-host names.
+// extraHost reports a Host that is one of the --allow-host names, or the
+// tunnel's.
 func (h *localHandler) extraHost(hostport string) bool {
 	hostport = strings.ToLower(hostport)
 	if h.extra[hostport] {
 		return true
 	}
 	host, _, err := net.SplitHostPort(hostport)
-	return err == nil && h.extra[host]
+	return (err == nil && h.extra[host]) || h.tunnelHostport(hostport)
+}
+
+// proxyHeaders are set by reverse proxies and tunnels (nginx, Caddy,
+// cloudflared, Tailscale Serve/Funnel): a request carrying one comes from
+// elsewhere, whatever its address.
+var proxyHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip", "Tailscale-User-Login"}
+
+// proxied reports whether r came through a reverse proxy or a tunnel.
+func proxied(r *http.Request) bool {
+	for _, k := range proxyHeaders {
+		if r.Header.Get(k) != "" {
+			return true
+		}
+	}
+	return false
 }

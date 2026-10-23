@@ -17,6 +17,7 @@ fyisp is one static Go binary (`./cmd/fyisp`). It probes services with TCP conne
 | `internal/speedtest` | Pure-Go iperf3 client and scheduler. Servers are in `internal/profile/catalog/iperf3/` |
 | `internal/web` | HTTP handler, JSON API, embedded UI (`static/`), goldens (`testdata/`) |
 | `internal/metrics`, `export`, `asn` | `/metrics`, `fyisp export`, the built-in IP → AS table |
+| `internal/tunnel` | `--tunnel`: a Cloudflare quick tunnel run in-process (cloudflared linked in). Imports nothing from fyisp |
 | `test/netns`, `test/ui` | Network-fault harness (Linux, sudo), Playwright specs and fixtures |
 | `scripts/`, `packaging/`, `docs/` | Launchers, the systemd unit, user, API and operator docs |
 
@@ -58,7 +59,7 @@ docker cp fyisp-gold:/src/internal/web/testdata ./internal/web/ && docker rm fyi
 git diff internal/web/testdata   # review the copy changes
 ```
 
-**fyisp-webdev** serves the real UI over fake data. Open it as `localhost`, because any other Host name gets 421.
+**fyisp-webdev** serves the real UI over fake data, behind a fixed admin token. Open <http://localhost:3000/#admin=fyisp-webdev-not-a-secret> (as `localhost`, because any other Host name gets 421).
 
 ```sh
 docker build --target webdev -t fyisp-webdev .
@@ -71,6 +72,7 @@ docker run --rm -p 3000:3000 fyisp-webdev /fyisp-webdev -listen 0.0.0.0:3000 -ho
 - **Names are identities.** Catalog target names, iperf3 server ids and region ids key the stored history. Never rename them.
 - **Catalog:** the format is in [SCHEMA.md](internal/profile/catalog/SCHEMA.md). `docker build --target test .` runs all the catalog checks. Changing `default.yml` or a `tile:` tag changes the Home goldens.
 - **iperf3 servers:** add the server to its provider file and to a region in `regions.yml`. Add a new metro to `metroZones` (`internal/speedtest/catalog.go`), and update the count in `TestBuiltinCatalog` and the table in `docs/IPERF3-TERMS.md`. List every new id in `internal/speedtest/testdata/shipped-servers.txt`. To remove a server, delete it and move its id to `removed:` in `regions.yml`: fyisp then drops its stored results at start, keeping only the test windows.
+- **cloudflared:** `go.mod` pins it at a commit and repeats its `replace` directives (Go ignores them in dependencies). To bump it, change the version, copy its `replace` lines, and set `CloudflaredVersion` and `cloudflaredCommit` in `internal/tunnel/tunnel.go` (and the release in the `go.mod` comment); `TestCloudflaredVersionMatchesGoMod` checks both against the linked module and `TestReplaceDirectivesMatchCloudflared` the `replace` lines. A new cloudflared can raise the Go version (`GO_IMAGE` in the Dockerfile and `go-version` in ci.yml). Its live tests are the `livetest` stage and the manual "live tunnel" workflow.
 - **Web UI:** plain ES modules, no build step, and a strict CSP. That means no inline scripts, styles or handlers, and no `innerHTML`. Build the DOM with `h()` from `core.js` and reuse its helpers (`fmtMs`, `fetchJSON`, `apiWrite`, ...). An API change also updates `docs/API.md` and `docs/*-API.md`.
 
 ## Conventions

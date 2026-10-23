@@ -6,7 +6,7 @@
 // words are left to the fixture specs. Screenshots go to
 // out/shots/webdev-<scenario>.png.
 // @ts-check
-const { test, expect, webdev } = require('./fixtures');
+const { test, expect, webdev, DEV_ADMIN } = require('./fixtures');
 const { fx, STATES } = require('./home');
 
 STATES.forEach((name, i) => {
@@ -28,7 +28,7 @@ STATES.forEach((name, i) => {
       await expect(page.locator('.hp-answer')).toHaveClass(new RegExp(`\\b${want.stale ? 'stale' : want.answer.tone}\\b`));
       // The page shows the server's headline (the scenario is rebuilt each minute: poll across a rollover).
       await expect.poll(async () => {
-        const got = await (await fetch(api)).json();
+        const got = await (await fetch(api, { headers: { 'X-FYISP-Admin': DEV_ADMIN } })).json();
         const shown = await page.locator('.hp-headline').textContent();
         return !!got.answer && (got.stale ? /^fyisp hasn’t checked since /.test(shown || '') : shown === got.answer.headline);
       }, { timeout: 20e3 }).toBe(true);

@@ -3,12 +3,12 @@
 // busy line, calls that may stutter, who sees the address), then how to
 // test. Once on, a header with the mode, the next test, Test now (with a
 // server picker) and Turn off; tests wait their turn in one queue
-// (speedqueue.js). Every write goes through the dashboard's control
-// checks (the admin token where there is one).
+// (speedqueue.js). Every write goes through the dashboard's write checks
+// (apiWrite).
 // Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchShared, fmtMbps, apiWrite, canWrite, speedRefusal, dialog, tzParam, clock } from './core.js';
+import { h, fetchShared, fmtMbps, apiWrite, dialog, tzParam, clock } from './core.js';
 import { SpeedMap } from './speedmap.js';
 import { SpeedQueue } from './speedqueue.js';
 
@@ -20,7 +20,7 @@ import { SpeedQueue } from './speedqueue.js';
 /** @typedef {{id:number,start:number,end:number,trigger:string,on_demand?:boolean,outcome:string,region:string|null,server:string,label:string,display?:string,provider?:string,city?:string,fallback:boolean,fallback_level?:string,attempts:number,down_bps:number|null,up_bps:number|null,down_s?:number,up_s?:number,capped_by_server?:boolean,score?:number|null,up_score?:number|null,bytes?:number,down_retrans:number|null,up_retrans:number|null,conn?:string,handoff?:{asn:number,name:string,isp_asn:number},latency?:{edge?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat},gateway?:{idle:SpeedLat,down:SpeedLat,up:SpeedLat}},port?:number}} SpeedTest */
 /** @typedef {{case:string,tier?:string,text:string,evidence:string,caveat?:string,hours:number[],drop:number,days:number,tests:number,regions:string[],providers:string[],network?:string,regions_judged?:number,providers_judged?:number,far_regions?:string[],slow_days?:number,day_count?:number,far_evening?:boolean,bridged?:boolean}} SpeedFinding */
 /** @typedef {{entry?:number,kind?:string,started:number,direction:string,server:{id:string,label:string}|null,step?:number,steps?:number}} SpeedRunning */
-/** @typedef {{at:number,tz:number,tz_name?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,configurable:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,test_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{text:string[]}|null}} SpeedSummary */
+/** @typedef {{at:number,tz:number,tz_name?:string,days:number,exclude_fallback:boolean,mode:string,modes:string[],enabled:boolean,set_by_flag?:boolean,interval_s:number,spacing_s:number,planned_share:number,warning:string|null,test_share_24h:number,next_at:number|null,next_row?:string|null,running:SpeedRunning|null,plans?:{mode:string,tests_per_hour:number,share:number,est_gb_month:number}[],bytes_month?:number,bytes_24h?:number,connection?:{type:string,source:string},servers:SpeedServer[],rows:SpeedRow[],regions:{id:string,title:string,servers:string[],nearby?:string[],default?:boolean,providers?:string[]}[],per_region:SpeedRow[],per_server:SpeedRow[],latest:SpeedTest|null,pattern:SpeedPattern|null,finding?:SpeedFinding|null,under_load?:{text:string[]}|null}} SpeedSummary */
 
 // Seconds a typical test fills the line in each direction (a ramp-up of up to 1 s, then 3 to 10 s), and a whole test with its pauses.
 const DIR_S = 6, TEST_S = 15;
@@ -49,12 +49,12 @@ function every(/** @type {number} */ s) {
 /** Why a speed-test write failed, from the API's stable code (never its wording). @param {any} e */
 function speedError(e) {
   switch (e.body?.code) {
-    case 'forbidden': return speedRefusal();
+    case 'forbidden': return 'fyisp refused that. Reload the page and try again.';
     case 'not_found': return 'That server isn’t in the list any more.';
     case 'skipped': return 'You skipped that server. Turn it back on under Every server to test it.';
     case 'bad_request': return 'fyisp didn’t accept that setting.';
   }
-  if (e.status === 0) return ''; // the admin dialog was cancelled
+  if (e.status === 401) return ''; // the page reloads to sign in
   return 'Couldn’t reach fyisp. Try again.';
 }
 
@@ -169,18 +169,16 @@ export class Speed {
     this.headEl.onkeydown = null;
     const flag = d.set_by_flag ? h('p', { class: 'muted small', text: 'Turned on by a start-up setting. If you turn it off here, it comes back on the next restart.' }) : null;
     const next = this.queue.q?.running || d.running ? 'testing now' : d.next_at ? `next test ${clock(d.next_at)}` : '';
-    const can = canWrite();
     fill(this.headEl, [
       h('div', { class: 'sp-on' },
         h('p', { class: 'sp-state' }, h('b', { text: 'Speed tests: On' }), ` · ${modeName(d.mode)}${next ? ' · ' + next : ''}`,
           d.bytes_month ? h('span', { class: 'muted small sp-used', text: ` · Data used: ${d.bytes_24h ? `${bytes(d.bytes_24h)} today, ` : ''}${bytes(d.bytes_month)} this month` }) : null),
         h('div', { class: 'sp-acts' },
           h('span', { class: 'sp-split' },
-            h('button', { class: 'btn primary', type: 'button', text: 'Test now', disabled: !can, onclick: () => this.run('') }),
-            h('button', { class: 'btn primary sp-more', type: 'button', 'aria-label': 'Choose a server to test', title: 'Choose a server', 'aria-haspopup': 'dialog', disabled: !can, text: '▾', onclick: () => this.pick() })),
-          h('button', { class: 'btn', type: 'button', text: 'Change…', disabled: !can || !!d.set_by_flag, onclick: () => { this.panel = 'setup'; this.pickMode = d.mode; this.note = this.result = ''; this.renderAll(); /** @type {HTMLElement|null} */ (this.headEl.querySelector('h2'))?.focus(); } }),
-          h('button', { class: 'btn ghost', type: 'button', text: 'Turn off', disabled: !can, onclick: () => this.setMode('off') }))),
-      can ? null : h('p', { class: 'muted small', text: speedRefusal() }),
+            h('button', { class: 'btn primary', type: 'button', text: 'Test now', onclick: () => this.run('') }),
+            h('button', { class: 'btn primary sp-more', type: 'button', 'aria-label': 'Choose a server to test', title: 'Choose a server', 'aria-haspopup': 'dialog', text: '▾', onclick: () => this.pick() })),
+          h('button', { class: 'btn', type: 'button', text: 'Change…', disabled: !!d.set_by_flag, onclick: () => { this.panel = 'setup'; this.pickMode = d.mode; this.note = this.result = ''; this.renderAll(); /** @type {HTMLElement|null} */ (this.headEl.querySelector('h2'))?.focus(); } }),
+          h('button', { class: 'btn ghost', type: 'button', text: 'Turn off', onclick: () => this.setMode('off') }))),
       flag,
       d.warning ? h('p', { class: 'notice warn', text: d.warning }) : null,
       this.note ? h('p', { class: 'sp-note', text: this.note }) : null]);
@@ -190,7 +188,6 @@ export class Speed {
   setupNodes() {
     const d = /** @type {SpeedSummary} */ (this.d);
     const on = d.enabled;
-    const can = canWrite();
     const modes = d.modes.filter((m) => m !== 'off' && m in MODES);
     if (!this.pickMode || !modes.includes(this.pickMode)) this.pickMode = modes.includes('regions') ? 'regions' : modes[0] || '';
     const providers = [...new Set(d.servers.filter((s) => !s.custom).map((s) => s.provider))];
@@ -214,7 +211,7 @@ export class Speed {
           h('span', { class: 'sp-radio-text', text: modeSentence(d, m) }),
           gb ? h('span', { class: 'sp-gb', text: gb }) : null));
     });
-    const go = h('button', { class: 'btn primary sp-go', type: 'button', text: on ? 'Save' : 'Turn on speed tests', disabled: !can || !this.pickMode || !!d.set_by_flag, onclick: () => this.setMode(this.pickMode) });
+    const go = h('button', { class: 'btn primary sp-go', type: 'button', text: on ? 'Save' : 'Turn on speed tests', disabled: !this.pickMode || !!d.set_by_flag, onclick: () => this.setMode(this.pickMode) });
     return [
       h('h2', { tabindex: '-1', text: on ? 'Change how speed tests run' : 'Speed tests are off' }),
       on ? null : h('p', { class: 'sp-lead', text: 'Find out whether your connection slows down at certain times of day, and whether that’s your provider’s own network or its links to particular parts of the internet.' }),
@@ -222,7 +219,7 @@ export class Speed {
         h('summary', { text: on ? 'What it costs' : 'Before you turn this on' }),
         h('ul', { class: 'sp-disc' },
           h('li', {}, h('span', { text: data }), ' ',
-            can && !this.estimating ? h('button', { class: 'btn sm', type: 'button', text: est != null ? 'Estimate again' : 'Estimate for my connection', onclick: () => this.estimate() }) : null,
+            !this.estimating ? h('button', { class: 'btn sm', type: 'button', text: est != null ? 'Estimate again' : 'Estimate for my connection', onclick: () => this.estimate() }) : null,
             this.estimating ? h('span', { class: 'muted', text: 'Testing (about 20 seconds)…' }) : null),
           h('li', { text: `Your line is busy about ${fmtMinutes(busyMin)} each hour, in ${Math.round(tph)} short bursts (about ${Math.max(1, Math.round(busyMin / 60 * 100))}% of the time).` }),
           h('li', { text: 'A call during a test may stutter for a few seconds. We don’t count those seconds against your connection.' }),
@@ -233,7 +230,6 @@ export class Speed {
       h('div', { class: 'sp-go-row' }, go,
         on ? h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => this.closeSetup() })
           : h('span', { class: 'muted small', text: 'Nothing is tested until you turn this on.' })),
-      can ? null : h('p', { class: 'muted small', text: speedRefusal() }),
       this.note ? h('p', { class: 'sp-note', text: this.note }) : null,
       this.result ? h('p', { class: 'sp-result', text: this.result }) : null,
     ];
@@ -250,10 +246,8 @@ export class Speed {
   async setMode(mode) {
     const d = this.d;
     if (!d) return;
-    const why = mode === 'off' ? 'Turning off speed tests needs the admin token. Open the link fyisp printed when it started, or paste the token here.'
-      : 'Turning on speed tests needs the admin token. Open the link fyisp printed when it started, or paste the token here.';
     try {
-      const r = await apiWrite('POST', 'api/speed/config', { mode }, why);
+      const r = await apiWrite('POST', 'api/speed/config', { mode });
       d.mode = r.mode;
       d.enabled = r.mode !== 'off';
       d.next_at = r.next_at;
@@ -359,7 +353,7 @@ export class Speed {
     this.progEl.hidden = !(this.result && this.d?.enabled && this.panel !== 'setup');
     if (this.progEl.hidden) return;
     this.progEl.replaceChildren(h('p', { class: 'sp-result' }, this.result, ' ',
-      /^That server/.test(this.result) && canWrite() ? h('button', { class: 'btn sm', type: 'button', text: 'Try another server', onclick: () => this.pick() }) : null));
+      /^That server/.test(this.result) ? h('button', { class: 'btn sm', type: 'button', text: 'Try another server', onclick: () => this.pick() }) : null));
   }
 
   // ---------- body: the latest test, then the evidence ----------

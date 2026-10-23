@@ -2,7 +2,7 @@
 #   sudo install -m 0755 fyisp-linux-amd64 /usr/local/bin/fyisp
 #   sudo install -m 0644 fyisp.service /etc/systemd/system/fyisp.service
 #   sudo systemctl daemon-reload && sudo systemctl enable --now fyisp
-# Open http://127.0.0.1:3000. Data lives in /var/lib/fyisp (StateDirectory);
+# Open the sign-in link (see the admin token below). Data lives in /var/lib/fyisp (StateDirectory);
 # `sudo systemctl stop fyisp && sudo rm -rf /var/lib/private/fyisp` removes it.
 #
 # ICMP uses unprivileged ping sockets, allowed when the service's group is in
@@ -20,6 +20,25 @@
 #   [Service]
 #   ExecStart=
 #   ExecStart=/usr/local/bin/fyisp --data-dir=${STATE_DIRECTORY} --listen=127.0.0.1:3000 --speedtest
+#
+# For an HTTPS link through a Cloudflare quick tunnel (see the README's
+# "Remote access"), a drop-in can set Environment=FYISP_TUNNEL=1 instead;
+# the link is in the journal: sudo journalctl -u fyisp | grep trycloudflare
+#
+# The dashboard needs an admin token. Without one, fyisp makes a new one at
+# every start (signing every browser out) and logs a sign-in link:
+#   sudo journalctl -u fyisp | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1
+# To keep one across restarts, put it in a file only root can read (not in
+# Environment=, which any user can read with systemctl show):
+#   sudo sh -c 'umask 077; echo FYISP_ADMIN_TOKEN=$(openssl rand -hex 16) > /etc/fyisp.env'
+# and load it with a drop-in:
+#
+#   [Service]
+#   EnvironmentFile=/etc/fyisp.env
+#
+# fyisp never logs a token it was given; the sign-in link is then
+# http://127.0.0.1:3000/#admin= followed by the token:
+#   sudo sed -n 's/^FYISP_ADMIN_TOKEN=//p' /etc/fyisp.env
 
 [Unit]
 Description=fyisp internet quality monitor

@@ -14,12 +14,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -99,6 +101,7 @@ type config struct {
 	openBrowser bool
 	adminToken  string
 	allowHosts  hostList
+	tunnel      bool
 	pprofAddr   string
 	logFormat   string
 	logLevel    string
@@ -161,7 +164,9 @@ func parseFlags(args []string) (config, error) {
 	fs.StringVar(&c.speedSkip, "speedtest-skip", "", "catalog server ids never to test, comma-separated (an operator asked, or you prefer not to)")
 	fs.StringVar(&c.speedServer, "speedtest-server", "", "your own iperf3 servers (`host:port`) and/or catalog server ids, comma-separated: mode custom; no 15-minute floor (1 minute) when all are on your own network")
 	fs.BoolVar(&c.openBrowser, "open-browser", true, "open the dashboard in a browser at startup (interactive terminals only)")
-	fs.StringVar(&c.adminToken, "admin-token", "", "token required for speed-test controls (Test speed now, cancel, the schedule, skipped servers) when --listen is not loopback or --allow-host is set; by default one is generated, kept in the data directory and shown as a link in the log; off turns the speed-test controls off (traces stay open to any viewer)")
+	// No env default: flag's usage prints defaults, and this one is a secret.
+	fs.StringVar(&c.adminToken, "admin-token", "", "token the dashboard and its API require (at least 32 letters, digits or - . _ ~, e.g. from openssl rand -hex 16); change it to sign every browser out (default: $FYISP_ADMIN_TOKEN, else a new random one at each start, shown as a link in the log)")
+	fs.BoolVar(&c.tunnel, "tunnel", envBool("FYISP_TUNNEL"), "also serve the dashboard over HTTPS on a Cloudflare quick tunnel (https://<random>.trycloudflare.com, behind the admin token) (default: $FYISP_TUNNEL, else false)")
 	fs.Var(&c.allowHosts, "allow-host", "extra `name` the dashboard may be opened as, e.g. nas.local or nas.local:3000 (repeatable or comma-separated)")
 	fs.StringVar(&c.pprofAddr, "pprof", "", "serve Go pprof on this loopback address (debugging)")
 	fs.StringVar(&c.logFormat, "log-format", "auto", "log format: auto, text or json")
@@ -191,8 +196,28 @@ func parseFlags(args []string) (config, error) {
 	if err := checkSpeedFlags(&c); err != nil {
 		return c, err
 	}
+	if c.adminToken == "" {
+		c.adminToken = os.Getenv("FYISP_ADMIN_TOKEN")
+	}
+	if c.adminToken != "" {
+		if err := checkAdminToken(c.adminToken); err != nil {
+			return c, err
+		}
+	}
+	if v := os.Getenv("FYISP_TUNNEL"); v != "" {
+		if _, err := strconv.ParseBool(v); err != nil {
+			return c, fmt.Errorf("FYISP_TUNNEL=%q: want 1, true, 0 or false", v)
+		}
+	}
 	envProfiles(&c.profiles, c.configPath)
 	return c, nil
+}
+
+// envBool is an environment variable's boolean (unset or not a boolean:
+// false), for flags a container or NAS template sets more easily that way.
+func envBool(name string) bool {
+	b, _ := strconv.ParseBool(os.Getenv(name))
+	return b
 }
 
 // envProfiles fills in profiles from FYISP_PROFILE (for container and NAS
@@ -361,14 +386,21 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	deps.UDP, _ = runner.(probe.UDPStateSource)
 	deps.Speed = speed
 	localAddr := localLn.Addr().String()
-	adminTok, adminStored, err := resolveAdminToken(c.adminToken, localAddr, c.allowHosts, dir)
+	adminTok, adminGenerated, err := resolveAdminToken(c.adminToken)
 	if err != nil {
 		return err
 	}
-	if c.adminToken == adminTokenOff && len(c.allowHosts) > 0 && isLoopbackAddr(localAddr) {
-		log.Warn("--admin-token=off with --allow-host: speed-test controls are disabled for every browser, this one included")
+	// Earlier versions kept a generated token here; nothing reads it now.
+	if err := os.Remove(filepath.Join(dir, "admin-token")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Warn("could not remove the old admin-token file", "err", err)
 	}
-	localSrv := newServer(web.Local(deps, web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}))
+	lo := web.LocalOptions{Addr: localAddr, AdminToken: adminTok, ExtraHosts: c.allowHosts}
+	var tun *dashTunnel
+	if c.tunnel {
+		tun = newDashTunnel()
+		lo.TunnelHost = tun.Host
+	}
+	localSrv := newServer(web.Local(deps, lo))
 	serve := func(name string, s *http.Server, ln net.Listener) {
 		if err := s.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("http server failed", "server", name, "err", err)
@@ -391,17 +423,24 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	}
 	fmt.Fprintf(os.Stderr, "\n  Dashboard:  %s\n\n", localURL)
 	openURL := localURL
-	if adminStored {
-		// The generated token, every start (like Jupyter), so a recreated
-		// container on the same volume can still show it. Reading the log
-		// already takes as much access as reading the data directory.
+	if adminGenerated {
+		// Like Jupyter: the only way to the new token is the log. A token
+		// passed in is never logged.
 		link := adminLink(localURL, adminTok)
-		log.Info("open this link once in your browser to use Test speed now and the other speed-test controls", "url", link)
-		fmt.Fprintf(os.Stderr, "  To use Test speed now and the other speed-test controls, open this link once:\n  %s\n\n", link)
+		log.Info("open this link to sign in to the dashboard (the token changes at every start; set --admin-token to keep one)", "url", link)
+		fmt.Fprintf(os.Stderr, "  To sign in, open this link once in each browser (keep it private):\n  %s\n\n", link)
 		openURL = link
+	} else {
+		fmt.Fprintf(os.Stderr, "  Sign in with your admin token (--admin-token or FYISP_ADMIN_TOKEN).\n\n")
 	}
 	if c.openBrowser && isTerminal(os.Stdout) {
 		openBrowser(openURL)
+	}
+	if tun != nil {
+		if err := tun.start(ctx, localAddr, adminTok, adminGenerated, log); err != nil {
+			return err
+		}
+		log.Info("starting the HTTPS tunnel; its link follows once Cloudflare has assigned one")
 	}
 
 	// Probing, persistence and retention.
@@ -451,6 +490,8 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 
 	<-ctx.Done()
 	log.Info("shutting down")
+	tunnelStop := time.NewTimer(10 * time.Second) // the tunnel stops from now on, alongside the rest
+	defer tunnelStop.Stop()
 	stop() // restore default signal handling: a second Ctrl-C exits at once
 	<-probeDone
 	<-verdictDone // saves the open incident
@@ -464,6 +505,15 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	shutCtx, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel2()
 	_ = localSrv.Shutdown(shutCtx)
+	if tun != nil {
+		// Stopping since ctx ended, alongside the save (a graceful
+		// unregister of about a second), so this rarely waits.
+		select {
+		case <-tun.Done():
+		case <-tunnelStop.C:
+			log.Warn("the HTTPS tunnel did not stop in time")
+		}
+	}
 	return nil
 }
 
@@ -534,9 +584,9 @@ func servePprof(addr string, log *slog.Logger) error {
 	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("--pprof must be a loopback address, got %q", addr)
 	}
+	// No /debug/pprof/cmdline: the command line can hold --admin-token.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
@@ -544,9 +594,26 @@ func servePprof(addr string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	go func() { _ = newServer(mux).Serve(ln) }()
+	go func() { _ = newServer(loopbackHostOnly(mux)).Serve(ln) }()
 	log.Info("pprof enabled", "addr", ln.Addr().String())
 	return nil
+}
+
+// loopbackHostOnly refuses requests whose Host is not a loopback name or
+// address, so a web page can't reach h by DNS rebinding.
+func loopbackHostOnly(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		host = strings.Trim(host, "[]")
+		if ip := net.ParseIP(host); !strings.EqualFold(host, "localhost") && (ip == nil || !ip.IsLoopback()) {
+			http.Error(w, "unknown host", http.StatusMisdirectedRequest)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // displayAddr turns a wildcard listen address into one a browser can open.

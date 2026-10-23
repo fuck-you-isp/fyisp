@@ -20,7 +20,7 @@ Speed tests are **off by default**. Once a user turns them on:
 | `regions` (the default) | each region once an hour, rotating between the region's providers: one test every 2 to 3 hours per server in a 2- or 3-provider region, hourly for a single-server region (East Asia, US Northwest, US Southeast, and some opt-in regions). No server is in two default regions |
 | `nearby` | 3 nearby servers and 1 far region, each every 15 minutes |
 | `custom` | the servers the user names, at most every 15 minutes (catalog servers) |
-| Test now / Test every server | on demand, by the install's owner only: one test, or one test of every server |
+| Test now / Test every server | on demand, by whoever has the install's admin token: one test, or one test of every server |
 
 The interval can't go below 15 minutes per region or server for catalog servers.
 

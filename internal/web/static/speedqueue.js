@@ -6,7 +6,7 @@
 // cancel any entry. Plain ES module, no build step.
 // @ts-check
 
-import { h, fetchJSON, apiWrite, canWrite, speedRefusal, dialog, clock, fmtMbps } from './core.js';
+import { h, fetchJSON, apiWrite, dialog, clock, fmtMbps } from './core.js';
 import { readingCell, lowerBound } from './speedmap.js';
 
 /** @typedef {import('./speed.js').SpeedSummary} SpeedSummary */
@@ -18,7 +18,6 @@ import { readingCell, lowerBound } from './speedmap.js';
 /** @typedef {{summary:()=>SpeedSummary|null, done:(e:QueueEntry, tag:string)=>void, say:(text:string)=>void, sweepHash:()=>boolean, started:()=>void}} QueueHost */
 
 const POLL_MS = 3000;
-const WHY = 'Running a speed test needs the admin token. Open the link fyisp printed when it started, or paste the token here.';
 
 /** "in about 18 minutes", "in under a minute". */
 function inAbout(/** @type {number} */ ms) {
@@ -54,9 +53,9 @@ export function queueError(e) {
   switch (b.code) {
     case 'skipped': return 'You skipped that server.';
     case 'not_found': return 'That test isn’t in the queue any more.';
-    case 'forbidden': return speedRefusal();
+    case 'forbidden': return 'fyisp refused that. Reload the page and try again.';
   }
-  if (e.status === 0) return ''; // the admin dialog was cancelled
+  if (e.status === 401) return ''; // the page reloads to sign in
   return 'Couldn’t reach fyisp. Try again.';
 }
 
@@ -64,7 +63,7 @@ export function queueError(e) {
 function queueRun(kind, id) {
   const q = new URLSearchParams({ kind });
   if (id) q.set('id', id);
-  return apiWrite('POST', 'api/speed/run?' + q, undefined, WHY);
+  return apiWrite('POST', 'api/speed/run?' + q);
 }
 /** Queues one test: of a server, a region, or ('') the nearest servers. @param {string} [id] */
 export function startSingleTest(id = '') { return queueRun('single', id); }
@@ -145,9 +144,6 @@ export class SpeedQueue {
     } catch { /* keep what we had */ }
   }
 
-  /** Whether this viewer may start tests: the owner with controls. */
-  canStart() { return canWrite(); }
-
   /**
    * Adds a test to the queue. kind 'single' (id: a server, a region, or '' the
    * nearest) or 'sweep'; tag says what to do with the result.
@@ -205,7 +201,7 @@ export class SpeedQueue {
   /** @param {number} id */
   async cancel(id) {
     try {
-      await apiWrite('POST', 'api/speed/cancel?id=' + id, undefined, 'Cancelling a speed test needs the admin token. Open the link fyisp printed when it started, or paste the token here.');
+      await apiWrite('POST', 'api/speed/cancel?id=' + id);
       this.host.say('Cancelled.');
     } catch (e) { this.note = queueError(e); if (this.note) this.host.say(this.note); }
     await this.load();
@@ -231,7 +227,6 @@ export class SpeedQueue {
 
   renderQueue() {
     const q = this.q;
-    const owner = canWrite();
     const all = q ? [q.running, ...q.waiting].filter((e) => !!e) : [];
     const me = this.mine();
     this.el.hidden = !all.length && !this.note;
@@ -245,7 +240,7 @@ export class SpeedQueue {
         h('span', { class: 'sp-q-what', text: what(e2) }),
         h('span', { class: 'sp-q-who', text: `asked by ${whoWord(e2)}` }),
         h('span', { class: 'sp-q-when', text: when }),
-        owner ? h('button', { class: 'btn sm ghost', type: 'button', text: e2.state === 'running' ? 'Stop' : 'Cancel', 'aria-label': `${e2.state === 'running' ? 'Stop' : 'Cancel'}: ${what(e2)}`, onclick: () => this.cancel(e2.id) }) : '');
+        h('button', { class: 'btn sm ghost', type: 'button', text: e2.state === 'running' ? 'Stop' : 'Cancel', 'aria-label': `${e2.state === 'running' ? 'Stop' : 'Cancel'}: ${what(e2)}`, onclick: () => this.cancel(e2.id) }));
     });
     this.el.replaceChildren(...[
       me ? this.mineNodes(me) : null,
@@ -291,12 +286,9 @@ export class SpeedQueue {
     const d = this.host.summary();
     const q = this.q;
     const mineSweep = q && [q.running, ...q.waiting].some((e) => e && e.kind === 'sweep' && e.who === 'you');
-    const can = this.canStart();
-    const start = can
-      ? h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test every server', disabled: !!mineSweep,
-        'aria-describedby': 'sp-sw-why', onclick: () => this.confirmSweep() })
-      : null;
-    const why = mineSweep ? 'Your full test is in the queue above.' : !can ? speedRefusal() : '';
+    const start = h('button', { class: 'btn primary sp-go', type: 'button', text: 'Test every server', disabled: !!mineSweep,
+      'aria-describedby': 'sp-sw-why', onclick: () => this.confirmSweep() });
+    const why = mineSweep ? 'Your full test is in the queue above.' : '';
     // A new reason is said once; the visible text next to the button stays.
     if (why && why !== this.lastWhy && this.lastWhy != null) this.host.say(why);
     this.lastWhy = why;

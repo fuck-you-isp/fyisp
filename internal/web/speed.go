@@ -197,7 +197,6 @@ type speedJSON struct {
 	Modes           []speedtest.Mode   `json:"modes"`
 	Enabled         bool               `json:"enabled"`
 	SetByFlag       bool               `json:"set_by_flag"`
-	Configurable    bool               `json:"configurable"`
 	IntervalS       int64              `json:"interval_s"`
 	SpacingS        int64              `json:"spacing_s"`
 	PlannedShare    float64            `json:"planned_share"`
@@ -474,7 +473,6 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	configurable := s.canControlSpeed != nil && s.canControlSpeed(r)
 	s.runCached(w, r, "speed", func(ctx context.Context) (*cached, error) {
 		if p.part == "windows" {
 			ts, err := s.d.Speed.SpeedWindows(ctx, p.from.Add(-speedtest.SlotCap), p.to)
@@ -487,7 +485,6 @@ func (s *server) serveSpeed(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		out.Configurable = configurable
 		return jsonCached(out)
 	})
 }
@@ -927,7 +924,7 @@ func (h *localHandler) storeErr(w http.ResponseWriter, r *http.Request, what str
 }
 
 // speedPOST checks a speed-test write: a source, POST, only the allowed
-// parameters, and the speed-test control checks (speedControlAllowed).
+// parameters, and the write checks (writeAllowed).
 func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params ...string) bool {
 	if h.d.Speed == nil {
 		notFound(w, r)
@@ -942,7 +939,7 @@ func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params 
 		writeErr(w, r, http.StatusBadRequest, err.Error())
 		return false
 	}
-	return h.speedControlAllowed(w, r)
+	return h.writeAllowed(w, r)
 }
 
 // serveSpeedConfig answers POST api/speed/config {"mode", "extra",

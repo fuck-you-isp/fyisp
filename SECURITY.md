@@ -17,11 +17,12 @@ Only the latest release receives security fixes.
 
 ## What leaves your machine
 
-fyisp has no telemetry and no share link: it talks only to its probe
-targets (and, by traceroute, the routers on the way to them), public hosts
-a dashboard viewer asks *Investigate* to trace (below), your DNS
-resolver and, if you turn speed tests on, iperf3 servers. Every probe target, TCP or UDP, sees
-your public IP address, as any website you visit does.
+fyisp has no telemetry: it talks only to its probe targets (and, by
+traceroute, the routers on the way to them), public hosts a signed-in
+viewer asks *Investigate* to trace (below), your DNS resolver, if you turn
+speed tests on, iperf3 servers, and, with `--tunnel`, Cloudflare (below).
+Every probe target, TCP or UDP, sees your public IP address, as any
+website you visit does.
 
 The STUN servers fyisp measures calls with (listed in
 [docs/CALL-QUALITY.md](docs/CALL-QUALITY.md#stun-servers)) are no different: they see your
@@ -45,19 +46,47 @@ it to name the first network past your ISP (kept locally: shown in Details →
 Speed and in `fyisp export --speedtests`). In mode `nearby` it also checks
 the round-trip time to every catalog server once a day, to pick the nearest.
 "Test now", sweeps, cancelling, the mode choice and skipped servers are
-the speed-test controls: write actions behind the same origin, the CSRF
-token and, where the dashboard has one, the admin token. Every
+the speed-test controls: write actions behind the admin token, the same
+origin and the CSRF token. Every
 test waits in one queue and exactly one runs at a time: the owner's tests
 first, then scheduled ones.
 
-On-demand traces (*Investigate*) are open to anyone who can open the
-dashboard, behind the same origin and the CSRF token: no admin token, on
-any dashboard, through a proxy or not. A trace runs fyisp's traceroute
-against a profile target or any public host the viewer names, as `mtr`
-would from this machine: so a viewer can make this machine send trace
-probes to public hosts of their choice, within the budgets below, and see
-the path from your connection to them. It can't reach your LAN. The
-safeguards are:
+With `--tunnel` (off by default) fyisp runs Cloudflare's tunnel code
+(cloudflared, linked in) to publish the dashboard at a random
+`https://<name>.trycloudflare.com` address. It asks `api.trycloudflare.com`
+for a tunnel (through `HTTPS_PROXY` when that is set), looks up Cloudflare's edge servers in DNS
+(`_v2-origintunneld._tcp.argotunnel.com` and the servers it names, falling
+back to DNS over TLS at 1.1.1.1; and `cfd-features.argotunnel.com`, again
+every hour) and keeps a connection to them on port 7844 (QUIC over UDP, or
+HTTP/2 over TCP). Cloudflare sees your public IP address and, when the
+tunnel registers, the machine's local address, the cloudflared version,
+the operating system and a random connector ID; if Cloudflare asks for a
+trace of a request, cloudflared also sends it the machine's host name. It
+terminates HTTPS, so it sees the dashboard's traffic: the admin token
+(in the sign-in request, and in scripts' `Authorization` headers) and the
+session cookie, which signs a browser in on its own. The `#admin=` part of
+a link never leaves the browser. The
+tunnel publishes the dashboard only: cloudflared's private-network
+routing (connections to other addresses the edge could ask for) is
+refused, so it never reaches your LAN, and fyisp pins the tunnel's
+configuration, so the edge can't push other ingress rules or routing to
+it. The dashboard behind it needs the
+admin token like everywhere else.
+cloudflared's own logs are capped at its info level and stripped of
+headers and IP addresses before they reach fyisp's log (at debug it logs
+every request with its headers, which carry the visitor's address);
+addresses are also masked in what cloudflared's HTTP/2 server and quic-go
+write through Go's standard log, and in the tunnel's own errors. Nothing
+else of cloudflared runs: no metrics, management or diagnostics server,
+no updater, no error reporting.
+
+On-demand traces (*Investigate*) need the admin token, the same origin and
+the CSRF token. A trace runs fyisp's traceroute against a profile target or
+any public host the token holder names, as `mtr` would from this machine:
+so whoever has the token can make this machine send trace probes to public
+hosts of their choice, within the limits below, and see the path from your
+connection to them (and, tracing a host they run, your public IP address).
+It can't reach your LAN. The safeguards are:
 
 - a profile target name, or a host (a DNS name or an IPv4 address) whose
   every IPv4 address is public: names are resolved with the system
@@ -71,13 +100,7 @@ safeguards are:
   33434; there is no port parameter, so it can't scan ports;
 - each trace stops by itself after 250 rounds (about 10 minutes); re-posting
   doesn't extend it;
-- at most 4 run at once;
-- at most 12 new traces start in a rolling hour, across all targets,
-  hosts and viewers (429 `rate_limited`), checked before a host is looked
-  up; a request carrying the admin token skips
-  this budget, not the 4-at-once cap. So viewers can hold all 4 slots for
-  about 31 minutes an hour (12 traces of about 10 minutes, 4 at a time),
-  and meanwhile even the token holder gets `busy`;
+- at most 4 run at once (429 `busy`), checked before a host is looked up;
 - the per-router probe cap is unchanged;
 - the route takes exactly one `target` or `host` parameter, an optional
   `mode` (`icmp`, `tcp` or `udp`) and no body (a declared length,
@@ -89,54 +112,59 @@ safeguards are:
   database's index of series; its route stays in memory;
 - client addresses are never logged.
 
-Behind a tunnel, client addresses can't be trusted, so these limits (the
-hourly budget, the 4 slots, 250 rounds, the public-address check and the
-per-router cap) are the only bounds on a visitor or a script that starts
-traces.
+Client addresses are never used to limit anyone: behind a tunnel they
+can't be trusted.
 
 The dashboard's controls:
 
-| Route | Host allowlist | Same origin + CSRF | Admin token | Proxy-header refusal | Other limits |
-|---|---|---|---|---|---|
-| GET UI, `/api/*`, `/metrics` | yes | - | no | no | read-only |
-| POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes, where the dashboard has one | yes, on a dashboard without a token | off for everyone when reachable from elsewhere with `--admin-token=off`; one queue, one test at a time |
-| POST `/api/investigate` (`target=` or `host=`, optional `mode=`) | yes | yes | not needed (with it, a request skips the hourly budget) | no | the safeguards above: public hosts only, fixed ports, 4 at once, 12 an hour, 250 rounds |
-| POST/DELETE `/api/admin/session` | yes | yes | POST needs it | - | 404 when no token is set |
+| Route | Host allowlist | Admin token | Same origin + CSRF | Other limits |
+|---|---|---|---|---|
+| GET the page (`/`) and `static/*` | yes | no | - | the same files for everyone |
+| GET `/api/*`, `/metrics` | yes | yes (401 without) | - | read-only |
+| POST `/api/speed/run`, `/api/speed/config`, `/api/speed/cancel` | yes | yes | yes | one queue, one test at a time |
+| POST `/api/investigate` (`target=` or `host=`, optional `mode=`) | yes | yes | yes | the safeguards above: public hosts only, fixed ports, 4 at once, 250 rounds |
+| POST/DELETE `/api/admin/session` | yes | POST exchanges it for the cookie | `Sec-Fetch-Site` only (the token header and DELETE need a CORS preflight, never granted) | - |
+
+The admin token is `--admin-token` or `$FYISP_ADMIN_TOKEN` (at least 32
+characters), else a new random one at every start; it is sent as
+`X-FYISP-Admin`, `Authorization: Bearer` or the HttpOnly, SameSite=Strict
+session cookie that the "open this link" URL sets (it holds an HMAC of
+the token, not the token, and is `Secure` when the page is HTTPS: through
+`--tunnel`, or behind a proxy, an `https://` Origin or `X-Forwarded-Proto:
+https`), and compared in constant time. A generated token is never stored, so a restart revokes every
+session; a token passed in is never logged.
 
 ## Exposing the dashboard
 
 fyisp serves one dashboard, by default on 127.0.0.1:3000. It has no public
 or redacted view, and fyisp makes no reports:
-whoever can open the dashboard sees every address and host name. To show
+whoever has the admin token sees every address and host name. To show
 your connection to others, send a screenshot of Home, which shows no
 addresses, or review a `fyisp export` first (it lists the targets you
-measure; traceroute rows give the hop number, not its address). If you put a tunnel or reverse proxy in front of
-the dashboard (cloudflared, Tailscale Serve or Funnel, nginx), name it with
-`--allow-host`: any `--allow-host` turns the admin token on, even on a
-loopback listener, and the token then guards the speed-test controls.
-A generated token is kept in the data directory (`admin-token`, mode 0600)
-and printed in fyisp's log at every start as the "open this link" URL, so
-anyone who can read the logs (`journalctl`, `docker logs`) can use the
-speed-test controls. To revoke it and every browser session, delete
-`admin-token` and restart.
-Anyone who can open the dashboard can start traces, within the limits
-above. A loopback dashboard without an admin token refuses speed-test
-controls from requests that carry proxy headers (`Forwarded`,
-`X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`,
-`Tailscale-User-Login`), so a proxy that rewrites `Host` to 127.0.0.1 can't
-hand its visitors the owner's speed tests. The README's [Remote access](README.md#remote-access) and
+measure; traceroute rows give the hop number, not its address). Every
+route but the page needs the admin token, wherever the dashboard is reached
+from: 127.0.0.1, your network, a reverse proxy or a tunnel. If you put a
+tunnel or reverse proxy in front of the dashboard (cloudflared, Tailscale
+Serve or Funnel, nginx), name it with `--allow-host`. `--tunnel` does that
+for its quick tunnel: the dashboard accepts the tunnel's random name (over
+HTTPS only; after a replacement tunnel, its new name), and the session
+cookie set through the tunnel is `Secure`. Its link (without the token) is printed and logged
+once the tunnel has connected and again for each replacement tunnel.
+A generated token is printed in fyisp's log at every start as the "open
+this link" URL, so anyone who can read the logs (`journalctl`,
+`docker logs`) can sign in until fyisp restarts. To revoke every browser
+session, restart fyisp with a new token. The README's
+[Remote access](README.md#remote-access) and
 [Admin token](README.md#admin-token) sections have the details.
 
 In scope, for example:
 
 - an address (yours, your router's or your provider's) on Home or in
   *What happened at …?*;
-- bypasses of the dashboard's protections (Host allowlist, CSRF, the
-  admin token on speed-test controls, the proxy-header refusal for them),
-  or of the on-demand trace safeguards above (tracing anything but a
-  profile target or a public address, another port, more than 4 at once,
-  past 250 rounds, more than 12 new traces an hour without the admin
-  token);
+- bypasses of the dashboard's protections (Host allowlist, the admin
+  token, CSRF), or of the on-demand trace safeguards above (tracing
+  anything but a profile target or a public address, another port, more
+  than 4 at once, past 250 rounds);
 - ways for a remote party to make fyisp run commands, read or write files, or
   exhaust memory or disk;
 - supply-chain issues in the release process (launchers, checksums, images).

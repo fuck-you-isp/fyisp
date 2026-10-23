@@ -90,9 +90,6 @@ type server struct {
 	index []byte
 	now   func() time.Time
 	inv   *Investigations // on-demand traces
-	// canControlSpeed reports whether r may use the speed-test controls
-	// (local only; api/speed's "configurable", api/home's "can_control").
-	canControlSpeed func(r *http.Request) bool
 	// sameMachine reports whether r comes from the machine fyisp runs on
 	// (viewer.go; the Home's Wi-Fi wording). nil: never.
 	sameMachine  func(r *http.Request) bool

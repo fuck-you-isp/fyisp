@@ -9,8 +9,9 @@
 #   docker buildx build --target uitest-out --output type=local,dest=out --no-cache-filter uitest-run .  # UI tests (Playwright) -> out/shots, out/report
 #   docker build -t fyisp .                                         # runtime image (default target)
 #   docker build --target imagetest .                               # runtime image smoke test (--ephemeral)
+#   docker build --target livetest -t fyisp-livetest .              # live --tunnel tests: see internal/tunnel/live_test.go
 
-ARG GO_IMAGE=golang:1.27.1-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195
+ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5
 # The browser image for the UI tests; its Playwright must match test/ui/package.json.
 ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
 
@@ -89,6 +90,20 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go run ./cmd/genfixture -out /gen && mkdir /out && cp /gen/fyisp.db /out/${RELEASE}.db && ls -l /out
 FROM scratch AS dbfixture
 COPY --from=dbfixture-gen /out/ /internal/store/testdata/
+
+# Live tunnel tests (need network; they open quick tunnels on
+# trycloudflare.com, which rate-limits them: run by hand or through the
+# manual "live tunnel" workflow). See internal/tunnel/live_test.go.
+#   docker build --target livetest -t fyisp-livetest .
+#   docker run --rm -e FYISP_LIVE_TUNNEL=1 fyisp-livetest -test.run Live -test.v
+FROM source AS livetest-build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go test -c -race -o /tunnel.test ./internal/tunnel
+FROM debian:stable-slim AS livetest
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables && rm -rf /var/lib/apt/lists/*
+COPY --from=livetest-build /tunnel.test /tunnel.test
+ENTRYPOINT ["/tunnel.test"]
 
 # License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
 # fyisp on any release platform, for the release assets and the image.
@@ -252,8 +267,8 @@ ENV FYISP_DATA_DIR=/data FYISP_LISTEN=0.0.0.0:3000 container=oci
 ENTRYPOINT ["/fyisp"]
 
 # Runtime image smoke test: /data is 0700 and /tmp 1777, both owned by the
-# runtime user; `docker run IMG --ephemeral` must start (the API answers), and
-# exit 0 on SIGTERM with its temporary directory removed. The
+# runtime user; `docker run IMG --ephemeral` must start (the API answers with
+# $FYISP_ADMIN_TOKEN, and only with it), and exit 0 on SIGTERM with its temporary directory removed. The
 # image's root filesystem is run with chroot as the runtime user, because a
 # build step cannot start a container.
 #   docker build --target imagetest .
@@ -265,18 +280,24 @@ set -eu
 stat -c '%a %u:%g %n' /img/tmp /img/data
 [ "$(stat -c '%a %u:%g' /img/tmp)" = "1777 65532:65532" ]
 [ "$(stat -c '%a %u:%g' /img/data)" = "700 65532:65532" ]
-env -i FYISP_DATA_DIR=/data FYISP_LISTEN=127.0.0.1:3000 container=oci \
+tok=0123456789abcdef0123456789abcdef
+env -i FYISP_DATA_DIR=/data FYISP_LISTEN=127.0.0.1:3000 FYISP_ADMIN_TOKEN=$tok container=oci \
   /usr/sbin/chroot --userspec=65532:65532 /img /fyisp --ephemeral > /fyisp.log 2>&1 &
 pid=$!
 ok=0
 for i in $(seq 1 100); do
-  curl -fsS -o /status.json http://127.0.0.1:3000/api/status && { ok=1; break; }
+  curl -fsS -H "Authorization: Bearer $tok" -o /status.json http://127.0.0.1:3000/api/status && { ok=1; break; }
   kill -0 $pid 2>/dev/null || break
   sleep 0.2
 done
-if [ $ok = 1 ]; then kill -TERM $pid; else kill -KILL $pid 2>/dev/null || :; fi
+if [ $ok = 1 ]; then
+  code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/status || :)
+  [ "$code" = 401 ] || { echo "/api/status without the admin token: $code, want 401"; ok=2; }
+  kill -TERM $pid
+else kill -KILL $pid 2>/dev/null || :; fi
 rc=0; wait $pid || rc=$?
-[ $ok = 1 ] || { cat /fyisp.log; echo "fyisp --ephemeral did not start"; exit 1; }
+[ $ok != 0 ] || { cat /fyisp.log; echo "fyisp --ephemeral did not start"; exit 1; }
+[ $ok = 1 ] || exit 1
 [ $rc = 0 ] || { cat /fyisp.log; echo "fyisp exited with $rc"; exit 1; }
 [ -z "$(ls -A /img/tmp)" ] || { ls -la /img/tmp; echo "temporary directory left behind"; exit 1; }
 echo "imagetest ok: $(head -c 200 /status.json)"

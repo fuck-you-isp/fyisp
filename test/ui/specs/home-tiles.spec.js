@@ -4,7 +4,7 @@
 // 60 s, and never fetches for a tile that isn't checked.
 // @ts-check
 const { test, expect } = require('./fixtures');
-const { fx, serveHome, patchStatus, openHome, settle, setTheme, THEMES } = require('./home');
+const { fx, serveHome, openHome, settle, setTheme, THEMES } = require('./home');
 
 const IDS = ['zoom', 'teams', 'meet', 'slack', 'm365', 'gws', 'github', 'dropbox', 'onedrive', 'youtube', 'netflix'];
 
@@ -167,16 +167,21 @@ test('the open panel refreshes every 60 s', async ({ page }) => {
 });
 
 test('Escape is left to an open dialog', async ({ page }) => {
-  await patchStatus(page, { controls: 'admin', admin: false });
-  const d = fx('now-good');
-  d.speed.can_control = false;
-  await serveHome(page, d);
+  await serveHome(page, 'now-good');
   await openHome(page);
   await page.locator('.hp-tile[data-id="meet"]').click();
   await expect(page.locator('#hp-detail')).toBeVisible();
-  // Test speed now asks for the admin token in a dialog.
-  await page.getByRole('button', { name: 'Test speed now' }).click();
-  const dlg = page.getByRole('dialog', { name: 'Admin token' });
+  // A modal dialog opened from the speed button (as the page's dialogs are).
+  await page.getByRole('button', { name: 'Test speed now' }).focus();
+  await page.evaluate(() => {
+    const d = document.createElement('dialog');
+    d.setAttribute('aria-label', 'A dialog');
+    d.append(Object.assign(document.createElement('button'), { textContent: 'OK' }));
+    d.addEventListener('close', () => d.remove());
+    document.body.append(d);
+    d.showModal();
+  });
+  const dlg = page.getByRole('dialog', { name: 'A dialog' });
   await expect(dlg).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dlg).toHaveCount(0);

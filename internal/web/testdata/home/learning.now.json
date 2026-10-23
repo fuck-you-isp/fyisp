@@ -440,13 +440,7 @@
       ]
     }
   ],
-  "speed": {
-    "available": true,
-    "latest": null,
-    "empty_text": "No speed test yet. The first one runs within the hour.",
-    "running": null,
-    "can_control": true
-  },
+  "speed": {"available": true, "latest": null, "empty_text": "No speed test yet. The first one runs within the hour.", "running": null},
   "problems": {
     "summary": "No problems since fyisp started at 9:50 am.",
     "items": []

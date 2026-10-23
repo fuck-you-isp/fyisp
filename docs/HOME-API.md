@@ -19,7 +19,7 @@ GET api/home?part=tile&id=zoom&tz=America/New_York
 
 Unknown or repeated parameters return 400. Without the tiles engine (only in tests and tools) the route answers 404.
 
-**Caching.** `part=now` is never cached whole: it is rendered from the engine's latest snapshot (every 5 s) on each request, and the parts that depend on who asks (the Wi-Fi wording, `can_control`) are decided per request. Only these are reused: the problems block, per snapshot revision, zone and local date; and the stored speed tests, for 60 s or until a test starts or ends. `part=tile` keeps its chart block (`from` … `text`) per tile, zone and 5-minute bucket; its header (`state`, `word`, `reason`, `coverage`, `metrics`) follows the snapshot, so the panel never disagrees with the tile. Poll `now` every 15 s and an open panel every 60 s.
+**Caching.** `part=now` is never cached whole: it is rendered from the engine's latest snapshot (every 5 s) on each request, and the part that depends on who asks (the Wi-Fi wording) is decided per request. Only these are reused: the problems block, per snapshot revision, zone and local date; and the stored speed tests, for 60 s or until a test starts or ends. `part=tile` keeps its chart block (`from` … `text`) per tile, zone and 5-minute bucket; its header (`state`, `word`, `reason`, `coverage`, `metrics`) follows the snapshot, so the panel never disagrees with the tile. Poll `now` every 15 s and an open panel every 60 s.
 
 ## `part=now`
 
@@ -58,7 +58,7 @@ Abridged from the golden `internal/web/testdata/home/zoom.now.json`:
 
 **`path`.** The blamed node is `down` when it lost everything ("Not answering since …"), else `slow` ("Losing some data since …", or "Hard to reach since …" for the internet); the nodes past it are `slow` ("Hard to reach through your router" or "Hard to reach through your provider"). With no network at all the router is `down` ("No network connection since …") and the others `unknown` ("Can’t check while offline"). Calls losing data at a layer no verdict blames mark it `slow` ("Losing some call data since …" when only calls suffer). A layer that is slow without a verdict reads "Having some trouble"; while checking every node is `unknown` ("Checking…"). While stale every node is `unknown` ("Last known: working"). With no problem, the newest connection drop of the last 30 minutes shows on the node where it happened. A layer fyisp can't see is `unknown`: "Can’t see your router from here", "Can’t see your provider from here" or, for the internet, "Not checked yet".
 
-**Wi-Fi wording.** The first node is "Your Wi-Fi and router" (and `path_hint` is "") only when fyisp's own uplink is Wi-Fi (Linux), fyisp does not run in a container, and the request comes from the same machine: from a loopback address or one of the host's own, without a proxy header (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`), and not by an `--allow-host` name. Otherwise it is "Your home router", with the hint. The API returns only the words: no address, no interface and no flag; nothing about the viewer is logged or cached. A forwarder that adds no header (`ssh -L`, socat) reads as the same machine; only the wording is affected.
+**Wi-Fi wording.** The first node is "Your Wi-Fi and router" (and `path_hint` is "") only when fyisp's own uplink is Wi-Fi (Linux), fyisp does not run in a container, and the request comes from the same machine: from a loopback address or one of the host's own, without a proxy header (`Forwarded`, `X-Forwarded-For`, `X-Real-Ip`, `Cf-Connecting-Ip`, `Tailscale-User-Login`), and not by an `--allow-host` name or the `--tunnel` name (the tunnel connects from this machine). Otherwise it is "Your home router", with the hint. The API returns only the words: no address, no interface and no flag; nothing about the viewer is logged or cached. A forwarder that adds no header (`ssh -L`, socat) reads as the same machine; only the wording is affected.
 
 **`tiles[]`:**
 
@@ -87,8 +87,7 @@ Abridged from the golden `internal/web/testdata/home/zoom.now.json`:
             "text": "Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.",
             "note": "Today 8:00 am"},              // ", during the problem" when it ran during the card's bad problem; null: none in 7 days
  "empty_text": "No speed test yet. The first one runs within the hour.",   // "No speed test yet." while speed tests are off
- "running": null,                                  // or {"entry": 12}: a test running now, from any source
- "can_control": true}                              // this request may start a test without the admin token
+ "running": null}                                  // or {"entry": 12}: a test running now, from any source
 ```
 
 The usual is the median of the OK tests (both directions measured) of 7 days, the latest left out, once 3 or more of them precede the latest. Without a usual the text has no comparison ("Your speed: about 930 Mbps down / 940 Mbps up."). Each direction is judged against its own usual: under 60% is "much slower", under 85% "a bit slower", over 125% "faster". When both directions agree the sentence says it once ("much slower than usual (usually about 925 / 938 Mbps)"); otherwise it names each one ("download faster, upload much slower than usual (usually about 938 Mbps up)"). Only a slower direction gets its usual in brackets. There is no internet-plan setting and no plan text.

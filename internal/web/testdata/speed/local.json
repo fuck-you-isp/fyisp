@@ -2,7 +2,6 @@
  "at": 1791655200000,
  "bytes_24h": 1174405120,
  "bytes_month": 13065256960,
- "configurable": true,
  "connection": {
   "source": "detected",
   "type": "wired"

@@ -14,8 +14,8 @@ import {
   meta, TOKEN, $, h, storageGet, storageSet, mqLight,
   effectiveTheme, cssCache, css, rgba, shade, fmtMs, fmtPct, fmtTime,
   fmtWhen, fmtDur, fmtStep, fmtInt, median, fetchJSON, tip, showTip,
-  hideTip, whyButton, storedAdmin, toLocalInput, fromLocalInput,
-  useStatus, hatch, resetHatch, smooth,
+  hideTip, whyButton, toLocalInput, fromLocalInput, adminSession, signIn, markSignedIn, bootSignedOut, noCookie,
+  hatch, resetHatch, smooth,
 } from './core.js';
 import { Home, firstHome } from './home.js';
 import { Speed } from './speed.js';
@@ -1067,15 +1067,14 @@ function invWait(e) {
 /**
  * Why an on-demand trace couldn't start, in plain words, from the API's
  * stable error code (never its wording): busy (no free slot: 4 in all, with
- * retry_after); rate_limited (12 new traces an hour, with retry_after);
- * unknown_target, unavailable, forbidden.
+ * retry_after); unknown_target, unavailable, forbidden.
  * @param {any} e
  */
 function invError(e) {
+  if (e.status === 401) return ''; // the page reloads to sign in
   const b = e.body || {};
   switch (b.code) {
     case 'busy': return 'Four traces are already running, which is the most at once. Try again in a few minutes.';
-    case 'rate_limited': return `Too many traces started in the last hour. Try again ${invWait(e)}.`;
     case 'unknown_target': return 'Tracing isn’t available for this target.';
     case 'unavailable': return 'Tracing is turned off on this setup.';
     case 'forbidden': return 'This page can’t start traces: open the dashboard at its own address.';
@@ -1085,32 +1084,8 @@ function invError(e) {
   return e.status === 429 ? `Too many traces right now. Try again ${invWait(e)}.` : 'Couldn’t start the trace. Try again.';
 }
 
-/**
- * Whether opening Investigate starts a trace by itself: only for the
- * owner, i.e. a request that may use the speed-test controls as it is
- * (status.can_control: this machine on a loopback dashboard without a
- * token, or the admin cookie), or a browser holding a pasted admin token.
- * Other viewers click Trace, so browsing targets doesn't spend the hourly
- * budget every viewer shares (a visitor through a reverse proxy on a
- * token-less dashboard included: the server sees its proxy headers).
- */
-/**
- * Headers of POST api/investigate: the CSRF token and, when the browser
- * holds a token pasted into the speed-test dialog (no cookie), the admin
- * token, with which the owner's traces skip the hourly budget. Never asked
- * for here.
- */
-function invHeaders() {
-  /** @type {Record<string,string>} */
-  const headers = {};
-  if (TOKEN) headers['X-FYISP-Token'] = TOKEN;
-  const adm = status && status.controls === 'admin' && !status.admin ? storedAdmin() : '';
-  if (adm) headers['X-FYISP-Admin'] = adm;
-  return headers;
-}
-
-/** Whether opening Investigate starts a trace by itself: for the owner only (a host: link never does, see poke). */
-function autoTrace() { return !!status && (!!status.can_control || (status.controls === 'admin' && !!storedAdmin())); }
+/** Headers of POST api/investigate: the CSRF token. */
+function invHeaders() { return { 'X-FYISP-Token': TOKEN }; }
 
 function hopAddr(/** @type {HopRef} */ x) {
   if (x.no_reply) return 'no reply';
@@ -1147,10 +1122,8 @@ class Investigate {
     this.ctl = null;
     this.poking = false;
     this.invErr = '';
-    // Calm states, no error: none started (click Trace), or the hourly
-    // budget was used up when the view opened.
+    // A calm state, no error: none started (click Trace).
     this.invIdle = false;
-    this.invNote = '';
     /** @type {InvState|null} the on-demand trace of this target (running, or finished within the hour) */
     this.invState = null;
     // Start one on open, once the first load shows none is running.
@@ -1262,7 +1235,6 @@ class Investigate {
       this.sel = new Set();
       this.userSel = false;
       this.invErr = '';
-      this.invNote = '';
       this.invState = null;
       this.sessionRange = true;
       this.tbody.replaceChildren();
@@ -1284,7 +1256,7 @@ class Investigate {
     const host = hostOf(target);
     if (host && document.activeElement !== this.hostIn) this.hostIn.value = host;
     this.wantStart = (!!t || !!host) && !this.alwaysOn();
-    this.invIdle = this.wantStart && (!autoTrace() || !!host);
+    this.invIdle = this.wantStart && !!host;
     this.renderModes();
     this.renderStatus();
   }
@@ -1355,8 +1327,7 @@ class Investigate {
   }
 
   /**
-   * Starts an on-demand trace (POST api/investigate: any viewer, no admin
-   * token). It runs at most rounds_max rounds and stops by itself, so it is
+   * Starts an on-demand trace (POST api/investigate). It runs at most rounds_max rounds and stops by itself, so it is
    * never re-posted to keep it alive. On a running trace the POST only
    * returns its state.
    * @param {boolean} [auto] started by opening the view, not by a click
@@ -1365,14 +1336,13 @@ class Investigate {
     const target = this.target;
     if (this.poking) return;
     // A pasted host: link never starts a trace of a host by itself.
-    if (auto && (!autoTrace() || hostOf(target))) {
+    if (auto && hostOf(target)) {
       this.invIdle = true;
       this.renderStatus();
       return;
     }
     this.poking = true;
     this.invIdle = false;
-    this.invNote = '';
     let started = false;
     try {
       /** @type {InvState} */
@@ -1385,12 +1355,7 @@ class Investigate {
     } catch (e) {
       if (target !== this.target) return;
       const err = /** @type {any} */ (e);
-      // The budget used up by opening the view is a state, not an error:
-      // the error style is for a click.
-      if (auto && (err.body || {}).code === 'rate_limited') {
-        // 12 is InvestigateStartsPerHour (trace.go).
-        this.invNote = `12 traces have been started in the last hour, the most allowed. You can start another ${invWait(err)}.`;
-      } else this.invErr = invError(err);
+      this.invErr = invError(err);
     } finally {
       this.poking = false;
     }
@@ -1481,8 +1446,8 @@ class Investigate {
     } else if (v && v.state === 'finished') {
       kids.push(h('span', { class: 'pill', text: `Finished: ${v.rounds_done} rounds${v.finished_at ? ` (ended ${fmtWhen(v.finished_at)})` : ''}` }));
       kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace again', disabled: this.poking || null, onclick: () => this.poke() }));
-    } else if (this.invNote || this.invIdle) {
-      kids.push(h('span', { class: 'pill', text: this.invNote || 'Not tracing' }));
+    } else if (this.invIdle) {
+      kids.push(h('span', { class: 'pill', text: 'Not tracing' }));
       kids.push(h('button', { class: 'tbtn', type: 'button', text: 'Trace', disabled: this.poking || null,
         title: 'Traces this target every few seconds; it stops by itself after about 10 minutes.', onclick: () => this.poke() }));
     } else kids.push(h('span', { class: 'pill', text: 'Starting a trace…' }));
@@ -1536,7 +1501,7 @@ class Investigate {
       this.renderModes();
       const sk = `${!!this.invState}|${this.sessionOn()}`;
       if (sk !== this.shownSession) { this.shownSession = sk; renderControls(); }
-      // Opening a target without an always-on trace starts one (for the owner, not for a host:), unless one is running or just finished.
+      // Opening a target without an always-on trace starts one (not for a host:), unless one is running or just finished.
       if (this.wantStart) {
         this.wantStart = false;
         if (!d.investigation) this.poke(true);
@@ -1583,7 +1548,7 @@ class Investigate {
     const kids = [];
     if (!d.hops.length) {
       const t = targetInfo(this.target) || hostOf(this.target);
-      const pending = t && !this.alwaysOn() && !this.invErr && !this.invIdle && !this.invNote && (!this.invState || this.invState.state === 'running');
+      const pending = t && !this.alwaysOn() && !this.invErr && !this.invIdle && (!this.invState || this.invState.state === 'running');
       this.summary.className = 'inv-summary v-warming_up';
       kids.push(h('p', { class: 'is-head', text: pending ? 'Tracing… the first results appear within a few seconds.'
         : this.invIdle ? 'Not tracing. Click Trace to follow this target’s path for about 10 minutes.' : 'No trace data in this range.' }));
@@ -3303,6 +3268,8 @@ function showCallsChart(/** @type {number} */ from, /** @type {number} */ to) {
 let home = null;
 /** Re-reads the hash and applies it (hashchange, popstate, and Home's pushState links). */
 let onNav = () => {};
+/** The boot's /api/status answered: the session cookie works. */
+let signedIn = false;
 function homeShown() { return !!home && currentView() === 'h' && !(state.inv && inv); }
 
 /** The header's Home | Details switch. */
@@ -3748,28 +3715,19 @@ function takeAdminFragment() {
   return t;
 }
 
-/** Exchanges the link's admin token for the HttpOnly session cookie. @param {string} t */
+/** Exchanges the link's admin token for the HttpOnly session cookie: '' or why it didn't work (the sign-in dialog's first line). @param {string} t */
 async function adminLogin(t) {
   try {
-    await fetchJSON('api/admin/session', { method: 'POST', headers: { 'X-FYISP-Token': TOKEN, 'X-FYISP-Admin': t } }, 1);
-    try { sessionStorage.removeItem('fyisp-admin'); } catch { /* ignore */ }
+    return await adminSession(t) ? '' : 'This link is not valid any more: fyisp has a new admin token. Open the newest link from its log, or paste the token here.';
   } catch (e) {
-    adminLinkErr = /** @type {any} */ (e).status === 403
-      ? 'This link is not valid any more. Open the newest link from fyisp\'s log.'
-      : 'Could not use this link: ' + /** @type {any} */ (e).message;
+    return 'Could not use this link: ' + /** @type {any} */ (e).message + '. Paste the token here, or open the link again.';
   }
 }
-/** Why an "open this link" URL did not work (shown as a notice). */
-let adminLinkErr = '';
 
 function renderNotices() {
   const el = $('#notices');
   const out = [];
   if (!status) { el.replaceChildren(); return; }
-  if (adminLinkErr) out.push(h('div', { class: 'notice danger' }, adminLinkErr));
-  if (status.controls === 'disabled') {
-    out.push(h('div', { class: 'notice' }, 'Speed-test controls are off: the dashboard is reachable from your network and fyisp was started with --admin-token=off.'));
-  }
   if (status.targets && status.ready < status.targets) {
     out.push(h('div', { class: 'notice' }, h('b', { text: 'Warming up: ' }), `${status.ready}/${status.targets} targets reporting.`));
   }
@@ -3800,7 +3758,6 @@ async function loadStatus() {
 // ---------- boot ----------
 
 async function main() {
-  useStatus(() => status);
   applyTheme(storageGet('fyisp-theme'));
   $('#theme').addEventListener('click', () => {
     const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
@@ -3823,6 +3780,9 @@ async function main() {
   // Back from focus mode restores the Overview's scroll position itself.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   onNav = () => {
+    // A sign-in link opened in this tab: boot takes the token (and a new CSRF token).
+    if (/(^#|&)admin=/.test(location.hash)) { location.reload(); return; }
+    if (!signedIn) return; // nothing but the sign-in dialog yet
     if (location.hash === lastHash) return;
     lastHash = location.hash;
     readHash(); log.open = state.log;
@@ -3830,11 +3790,23 @@ async function main() {
   };
   window.addEventListener('hashchange', onNav);
   window.addEventListener('popstate', onNav);
-  if (adminTok) await adminLogin(adminTok);
+  const linkErr = adminTok ? await adminLogin(adminTok) : '';
+  // Signed in (the session cookie), else nothing but the sign-in dialog.
+  /** @type {any} */
+  const st = await fetch('api/status', { credentials: 'same-origin', cache: 'no-store' })
+    .then(async (r) => { const b = await r.json().catch(() => null); return r.status === 401 ? 401 : r.ok ? b : null; }, () => null);
+  if (st === 401) {
+    const why = bootSignedOut();
+    void signIn(linkErr || (adminTok ? noCookie : why));
+    return;
+  }
+  signedIn = true;
+  markSignedIn();
   // Home's first answer, fetched alongside the profile (null after a few seconds without
-  // one: Home then polls on its own). Details doesn't wait for it.
+  // one: Home then polls on its own); after the status, so no other request can 401
+  // first. Details doesn't wait for it.
   const first = firstHome();
-  const [st, prof] = await Promise.all([fetchJSON('api/status').catch(() => null), fetchJSON('api/profile')]);
+  const prof = await fetchJSON('api/profile');
   status = st;
   if (st) statusAt = Date.now();
   traceOn = !!(prof.features && prof.features.trace);

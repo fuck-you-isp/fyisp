@@ -15,6 +15,9 @@ module.exports = defineConfig({
     // The Home fixtures' copy is written for 10:30 am on 2026-10-09 in New York.
     timezoneId: 'America/New_York',
     locale: 'en-US',
+    // fyisp-webdev's fixed admin token, on every request, as a script would
+    // send it; login.spec.js signs in without it.
+    extraHTTPHeaders: { 'X-FYISP-Admin': 'fyisp-webdev-not-a-secret' },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

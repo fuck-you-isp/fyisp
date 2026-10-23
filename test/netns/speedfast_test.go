@@ -189,8 +189,8 @@ func fastEveningCut(t *testing.T) {
 	}
 	f := s.Finding
 	t.Logf("finding: %s, hours %v, %d days, %d tests: %s", f.Case, f.Hours, f.Days, f.Tests, f.Text)
-	if f.Case != "isp" || !slices.Contains(f.Hours, 20) {
-		t.Errorf("finding %s at %v, want isp at 19-22 h: %s", f.Case, f.Hours, f.Text)
+	if f.Case != "widespread" || !slices.Contains(f.Hours, 20) {
+		t.Errorf("finding %s at %v, want widespread at 19-22 h: %s", f.Case, f.Hours, f.Text)
 	}
 	for _, r := range s.Rows {
 		if fastFar[r.ID] && r.NLowerBound == 0 {

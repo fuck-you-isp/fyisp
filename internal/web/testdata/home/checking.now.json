@@ -444,8 +444,7 @@
     "available": true,
     "latest": {"at": 1791547200000, "text": "Your speed: about 930 Mbps down / 940 Mbps up — about your usual speed.", "note": "Today 8:00 am"},
     "empty_text": "No speed test yet. The first one runs within the hour.",
-    "running": null,
-    "can_control": true
+    "running": null
   },
   "problems": {
     "summary": "Checking…",

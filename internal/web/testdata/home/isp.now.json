@@ -444,8 +444,7 @@
     "available": true,
     "latest": {"at": 1791555600000, "text": "Your speed: about 140 Mbps down / 95 Mbps up — much slower than usual (usually about 925 / 938 Mbps).", "note": "Today 10:20 am, during the problem"},
     "empty_text": "No speed test yet. The first one runs within the hour.",
-    "running": null,
-    "can_control": true
+    "running": null
   },
   "problems": {
     "summary": "6 problems: 2 likely from your internet provider, 1 from your home router, 3 from the apps themselves.",

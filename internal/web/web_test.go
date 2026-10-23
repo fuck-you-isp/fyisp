@@ -211,9 +211,9 @@ func TestLocalRoutes(t *testing.T) {
 	if strings.Contains(w.Body.String(), "<script>") || strings.Contains(w.Body.String(), "style=") {
 		t.Error("index has inline script or style")
 	}
-	var st localStatus
+	var st Status
 	_ = json.Unmarshal(do(h, "GET", "/api/status", host).Body.Bytes(), &st)
-	if st.Controls != "enabled" || st.Version == "" || st.Store.FileBytes != 1234 {
+	if st.Version == "" || st.Store.FileBytes != 1234 {
 		t.Errorf("local status = %+v", st)
 	}
 }
@@ -261,76 +261,11 @@ func TestLocalPOST(t *testing.T) {
 		t.Errorf("POST /api/status = %d", w.Code)
 	}
 
-	// Listening on all interfaces without an admin token: POST disabled.
-	hb, shb := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000"})
-	if w := doControl(hb, good); w.Code != 403 || shb.n != 0 {
-		t.Errorf("PublicBind POST = %d (controls %d), want 403", w.Code, shb.n)
-	}
-	var st localStatus
-	_ = json.Unmarshal(do(hb, "GET", "/api/status", good).Body.Bytes(), &st)
-	if st.Controls != "disabled" {
-		t.Errorf("controls = %q", st.Controls)
-	}
-	// With an admin token, the header is required.
-	ha, sha := localHandlerFor(t, LocalOptions{PublicBind: true, AdminToken: "adm"})
-	if w := doControl(ha, good); w.Code != 403 {
-		t.Errorf("admin missing = %d", w.Code)
-	}
-	if w := doControl(ha, with(map[string]string{HeaderAdmin: "adm"})); w.Code != 200 || sha.n != 1 {
-		t.Errorf("admin ok = %d", w.Code)
-	}
-	// A loopback dashboard without a token trusts only this machine: a
-	// reverse proxy or tunnel that rewrote Host to 127.0.0.1 is refused.
-	before := sh.n
-	for _, k := range proxyHeaders {
-		if w := doControl(h, with(map[string]string{k: "203.0.113.9"})); w.Code != 403 || !strings.Contains(w.Body.String(), "--admin-token") {
-			t.Errorf("through a proxy (%s) = %d %s", k, w.Code, w.Body.String())
-		}
-	}
-	if sh.n != before {
-		t.Error("a proxied request used a control")
-	}
-	// Every speed control goes through the same gate.
+	// Every speed control goes through the same checks.
 	for _, p := range []string{"/api/speed/run?kind=sweep", "/api/speed/cancel?id=x"} {
-		if w := do(hb, "POST", p, good); w.Code != 403 {
-			t.Errorf("PublicBind POST %s = %d, want 403", p, w.Code)
+		if w := do(h, "POST", p, with(nil, HeaderCSRF)); w.Code != 403 {
+			t.Errorf("POST %s without CSRF = %d, want 403", p, w.Code)
 		}
-		if w := do(h, "POST", p, with(map[string]string{"X-Forwarded-For": "203.0.113.9"})); w.Code != 403 {
-			t.Errorf("POST %s through a proxy = %d, want 403", p, w.Code)
-		}
-		if w := do(ha, "POST", p, good); w.Code != 403 {
-			t.Errorf("POST %s without the admin token = %d, want 403", p, w.Code)
-		}
-	}
-	// With an admin token, the token decides.
-	if w := doControl(ha, with(map[string]string{HeaderAdmin: "adm", "X-Forwarded-For": "203.0.113.9"})); w.Code != 200 {
-		t.Errorf("admin through a proxy = %d", w.Code)
-	}
-}
-
-// TestStatusCanControl: /api/status's can_control is per request, like
-// api/speed's configurable: the UI starts a trace by itself on opening
-// Investigate only where it is true.
-func TestStatusCanControl(t *testing.T) {
-	canControl := func(h http.Handler, hdr map[string]string) bool {
-		var st localStatus
-		_ = json.Unmarshal(do(h, "GET", "/api/status", hdr).Body.Bytes(), &st)
-		return st.CanControl
-	}
-	loop := map[string]string{"Host": "127.0.0.1:3000"}
-	h, _ := localHandlerFor(t, LocalOptions{})
-	if !canControl(h, loop) || canControl(h, map[string]string{"Host": "127.0.0.1:3000", "X-Forwarded-For": "203.0.113.9"}) {
-		t.Error("loopback: want true from this machine, false through a proxy")
-	}
-	lan := map[string]string{"Host": "192.168.1.5:3000"}
-	ha, _ := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000", AdminToken: "adm"})
-	if canControl(ha, lan) || !canControl(ha, map[string]string{"Host": "192.168.1.5:3000", "Cookie": "fyisp_admin_3000=adm"}) ||
-		!canControl(ha, map[string]string{"Host": "192.168.1.5:3000", HeaderAdmin: "adm"}) {
-		t.Error("admin: want true only with the token")
-	}
-	hd, _ := localHandlerFor(t, LocalOptions{Addr: "0.0.0.0:3000"})
-	if canControl(hd, lan) {
-		t.Error("disabled: want false")
 	}
 }
 

@@ -236,7 +236,7 @@ func TestSpeedSummary(t *testing.T) {
 	if err := json.Unmarshal(do(loc, "GET", "/api/speed?days=30", speedHost).Body.Bytes(), &s); err != nil {
 		t.Fatal(err)
 	}
-	if s.Mode != "regions" || !s.Enabled || !s.Configurable || s.SetByFlag || s.IntervalS != 3600 || s.Warning != nil || s.NextAt == nil || s.NextRow == nil ||
+	if s.Mode != "regions" || !s.Enabled || s.SetByFlag || s.IntervalS != 3600 || s.Warning != nil || s.NextAt == nil || s.NextRow == nil ||
 		len(s.Servers) != 6 || len(s.Regions) != 3 || len(s.PerRegion) != 2 || len(s.Rows) != 2 || len(s.Plans) != 3 || s.BytesMonth == 0 || s.Connection.Type != "wired" {
 		t.Fatalf("summary: mode %s set by flag %v interval %d warning %v next %v %v, %d servers %d regions %d per region %d rows %d plans, bytes %d, %+v",
 			s.Mode, s.SetByFlag, s.IntervalS, s.Warning, s.NextAt, s.NextRow, len(s.Servers), len(s.Regions), len(s.PerRegion), len(s.Rows), len(s.Plans), s.BytesMonth, s.Connection)
@@ -430,13 +430,8 @@ func TestSpeedWrites(t *testing.T) {
 	}
 	// An admin token is required when set.
 	adm := Local(d, LocalOptions{Addr: "127.0.0.1:3000", CSRFToken: "tok123", AdminToken: "sekrit"})
-	if w := do(adm, "POST", "/api/speed/run", good); w.Code != 403 {
+	if w := do(adm, "POST", "/api/speed/run", good); w.Code != 401 {
 		t.Errorf("without admin token: %d", w.Code)
-	}
-	var s speedJSON
-	json.Unmarshal(do(adm, "GET", "/api/speed", speedHost).Body.Bytes(), &s)
-	if s.Configurable {
-		t.Error("configurable without the admin token")
 	}
 	withAdm := map[string]string{"X-FYISP-Admin": "sekrit"}
 	for k, v := range good {

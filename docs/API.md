@@ -5,13 +5,14 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 ## Conventions
 
 - **Paths are relative** to the dashboard's address (`api/status`, not `/api/status`), as the UI calls them.
-- **Hosts.** A request whose `Host` is not the dashboard's own address or an `--allow-host` name gets 421 `unknown_host`, on every route.
+- **Hosts.** A request whose `Host` is not the dashboard's own address, an `--allow-host` name or the current `--tunnel` name gets 421 `unknown_host`, on every route.
 - **Parameters.** Unknown or repeated parameters return 400, on every route except `/`, which ignores them.
 - **`from` and `to`** take `now`, `now-<n><s|m|h|d>` (e.g. `now-6h`) or unix milliseconds. `to` is clamped to now, and a span longer than the route's limit is shortened from the start.
 - **Times in responses** are unix milliseconds, except RFC 3339 in `api/status`, `api/verdict`, `api/incidents` and `api/trace`'s `route.since` and `changes[].at`.
-- **Errors** are `{"error": "<sentence>", "code": "<word>"}`. Match on `code`, never on the sentence: `bad_request` (400), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `unknown_host` (421), `unavailable` (503, retry after `Retry-After`) and `error` (500). Some routes add their own codes; their detail docs list them.
+- **Errors** are `{"error": "<sentence>", "code": "<word>"}`. Match on `code`, never on the sentence: `bad_request` (400), `unauthorized` (401, no or the wrong admin token), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `unknown_host` (421), `unavailable` (503, retry after `Retry-After`) and `error` (500). Some routes add their own codes; their detail docs list them.
 - **Caching.** JSON responses carry `Cache-Control: no-store`; static files carry an ETag and `no-cache`.
-- **Writes** (every `POST` and `DELETE`) need the same origin and the page's CSRF token in `X-FYISP-Token`; the speed-test controls also need the [admin token](../README.md#admin-token) where the dashboard has one. [SECURITY.md](../SECURITY.md#what-leaves-your-machine) has the table of checks per route.
+- **The admin token.** Every route but `/`, `static/*` and `api/admin/session` needs the [admin token](../README.md#admin-token): `Authorization: Bearer <token>`, `X-FYISP-Admin: <token>`, or the session cookie that `api/admin/session` sets. Without it they answer 401 `unauthorized` with `WWW-Authenticate: Bearer`.
+- **Writes** (every `POST` and `DELETE`) also need the same origin and the page's CSRF token in `X-FYISP-Token`. [SECURITY.md](../SECURITY.md#what-leaves-your-machine) has the table of checks per route.
 
 ## Routes
 
@@ -19,7 +20,7 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 |---|---|---|---|
 | GET | `/` | the dashboard page (with the CSRF token in a meta tag) | |
 | GET | `static/…` | the dashboard's scripts, styles and images | |
-| GET | `api/status` | version, start time, ICMP support, store health and whether this browser may use the controls | [below](#get-apistatus) |
+| GET | `api/status` | version, start time, ICMP support, warm-up and store health | [below](#get-apistatus) |
 | GET | `api/profile` | the profile: groups, targets and which features are on | [below](#get-apiprofile) |
 | GET | `api/home` | Home: the answer card, connection strip, tiles, speed and problems | [HOME-API.md](HOME-API.md) |
 | GET | `api/panel`, `api/panel.csv` | one group's chart data, as JSON or CSV | [below](#get-apipanel-and-apipanelcsv) |
@@ -38,15 +39,14 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 
 ### GET `api/status`
 
-No parameters. `Status` and `localStatus` in `internal/web/web.go` and `local.go`:
+No parameters. `Status` in `internal/web/web.go`:
 
 ```json
 {"version": "v0.11.0", "started": "2026-10-15T13:39:54Z", "caps": {"icmp": "udp"}, "targets": 28, "ready": 28,
- "store": {"file_bytes": 1048576, "oldest": "…", "last_flush": "…", "buffered_bytes": 4096},
- "controls": "admin", "admin": false, "can_control": false}
+ "store": {"file_bytes": 1048576, "oldest": "…", "last_flush": "…", "buffered_bytes": 4096}}
 ```
 
-`caps.icmp` is `udp`, `raw`, `iphlpapi` or `unavailable` (then `icmp_hint` says how to enable it). `store` may add `last_flush_err`, `dropped` and `rejected`. `controls` is `enabled`, `admin` (the controls need the admin token) or `disabled`; `admin` is whether this request carries the token, and `can_control` whether it may use the speed-test controls as it is.
+`caps.icmp` is `udp`, `raw`, `iphlpapi` or `unavailable` (then `icmp_hint` says how to enable it). `store` may add `last_flush_err`, `dropped` and `rejected`.
 
 ### GET `api/profile`
 
@@ -84,7 +84,7 @@ Both answer 404 when tracing is off or the target is neither a profile target no
 
 ### POST and DELETE `api/admin/session`
 
-No parameters and no body. `POST` with the admin token in `X-FYISP-Admin` sets an HttpOnly cookie that carries it from then on; `DELETE` clears the cookie. Both return `{"admin": true|false}`, and 404 when the dashboard has no admin token.
+No parameters and no body; it needs no session, so a browser can sign in. `POST` with the admin token in `X-FYISP-Admin` sets an HttpOnly, SameSite=Strict cookie that stands for it from then on (an HMAC of the token, not the token; also `Secure` when the page is HTTPS: through `--tunnel`, an `https://` Origin or `X-Forwarded-Proto: https`), and answers 403 for a wrong token; `DELETE` clears the cookie. Both return `{"admin": true|false}`.
 
 ## Metrics
 

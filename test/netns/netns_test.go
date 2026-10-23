@@ -75,6 +75,7 @@ const (
 	probeIv     = 6 * time.Second // HTTPS/TCP interval; ICMP runs at probeIv/3
 	settle      = probeIv + time.Second
 	httpTimeout = 10 * time.Second
+	adminToken  = "netns-lab-admin-token-0123456789abcdef" // every fyisp here gets it (FYISP_ADMIN_TOKEN)
 
 	parallelEnv = "FYISP_NETNS_PARALLEL" // "0": run the scenarios one at a time
 	runIDEnv    = "FYISP_NETNS_RUNID"    // 4 hex digits; random if unset
@@ -604,9 +605,28 @@ func newHarness(t *testing.T) *harness {
 
 	h.client = &http.Client{
 		Timeout:   httpTimeout,
-		Transport: &http.Transport{DialContext: dialIn(h.cli), DisableKeepAlives: true},
+		Transport: authed(&http.Transport{DialContext: dialIn(h.cli), DisableKeepAlives: true}),
 	}
 	return h
+}
+
+// noAuth, set on a request, makes authed send it without the admin token.
+const noAuth = "X-Netns-No-Auth"
+
+// authed sends adminToken as a bearer token on every request (unless the
+// request sets noAuth): every fyisp API route needs it.
+func authed(rt http.RoundTripper) http.RoundTripper { return authRT{rt} }
+
+type authRT struct{ rt http.RoundTripper }
+
+func (a authRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	if r.Header.Get(noAuth) != "" {
+		r.Header.Del(noAuth)
+	} else if r.Header.Get("Authorization") == "" {
+		r.Header.Set("Authorization", "Bearer "+adminToken)
+	}
+	return a.rt.RoundTrip(r)
 }
 
 func (h *harness) setupTopology(t *testing.T) {
@@ -800,6 +820,7 @@ func (h *harness) startFyispOn(t *testing.T, addr string, args ...string) *fyisp
 		"HOME=" + filepath.Join(h.dir, "home"),
 		"TMPDIR=" + filepath.Join(h.dir, "tmp"),
 		"SSL_CERT_FILE=" + filepath.Join(h.dir, "ca.pem"),
+		"FYISP_ADMIN_TOKEN=" + adminToken,
 	}
 	cmd.Env = append(cmd.Env, h.env...)
 	cmd.Stdout, cmd.Stderr = logf, logf

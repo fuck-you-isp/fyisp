@@ -24,7 +24,7 @@ import (
 //
 // part=now is never cached as a whole: it is rendered from the snapshot of
 // the engine's latest tick, with the parts that depend on the viewer (the
-// Wi-Fi wording, can_control) decided per request. Only the problems block
+// Wi-Fi wording) decided per request. Only the problems block
 // (by the snapshot's Rev, the zone and the local date) and the stored speed
 // tests (for homeSpeedTTL, or until a test starts or ends) are kept.
 // part=tile keeps only its chart block, per tile, zone and 5-minute bucket;
@@ -779,7 +779,6 @@ func (s *server) homeSpeed(r *http.Request, c homeCopy, cs tiles.ConnState, now 
 		return out
 	}
 	out.Available = true
-	out.CanControl = s.canControlSpeed != nil && s.canControlSpeed(r)
 	if src.On() {
 		out.EmptyText = "No speed test yet. The first one runs within the hour."
 	}

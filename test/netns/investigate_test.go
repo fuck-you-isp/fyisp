@@ -12,14 +12,11 @@ import (
 	"time"
 )
 
-// TestInvestigateOpen: any viewer may start an on-demand trace, while the
-// admin token keeps guarding the speed-test controls.
-// First with --allow-host and --admin-token=off (speed-test controls off for
-// everyone): a trace starts through the allowed host name and through
-// 127.0.0.1, and its rounds run. Then on a loopback dashboard without a
-// token: a request through a proxy (X-Forwarded-For) starts a trace, but
-// the same proxy is refused the speed-test controls.
-func TestInvestigateOpen(t *testing.T) {
+// TestInvestigateToken: on-demand traces need the admin token like every
+// route, and with it they start through an --allow-host name (from behind a
+// proxy) and through 127.0.0.1, and their rounds run. The speed-test
+// controls take the same token through the same proxy.
+func TestInvestigateToken(t *testing.T) {
 	parallel(t)
 	h := newHarness(t)
 
@@ -59,15 +56,6 @@ func TestInvestigateOpen(t *testing.T) {
 		b, _ := io.ReadAll(res.Body)
 		return resp{res.StatusCode, string(b)}
 	}
-	controls := func() string {
-		var st struct {
-			Controls string `json:"controls"`
-		}
-		if err := json.Unmarshal(h.get(t, "/api/status"), &st); err != nil {
-			t.Fatal(err)
-		}
-		return st.Controls
-	}
 	started := func(r resp, what string) {
 		t.Helper()
 		var inv struct {
@@ -81,17 +69,22 @@ func TestInvestigateOpen(t *testing.T) {
 	}
 	xff := map[string]string{"X-Forwarded-For": "203.0.113.99"}
 
-	// --allow-host with --admin-token=off.
-	fy := h.startFyisp(t, "--ephemeral", "--allow-host", "fyisp.example.com", "--admin-token=off")
+	xffNoAuth := map[string]string{"X-Forwarded-For": "203.0.113.99", noAuth: "1"}
+
+	fy := h.startFyisp(t, "--ephemeral", "--allow-host", "fyisp.example.com")
 	h.waitReady(t, fy)
+	h.stopAtEnd(t, fy)
 	tok := csrf()
-	if c := controls(); c != "disabled" {
-		t.Errorf("controls = %q, want disabled", c)
+	if r := post(tok, "fyisp.example.com", "/api/investigate?target=alpha", "", xffNoAuth); r.code != http.StatusUnauthorized {
+		t.Errorf("trace without the token: %d %s, want 401", r.code, r.body)
 	}
 	started(post(tok, "fyisp.example.com", "/api/investigate?target=alpha", "", xff), "through the allowed host name")
 	started(post(tok, listenAddr, "/api/investigate?target=bravo", "", nil), "through 127.0.0.1")
-	if r := post(tok, "fyisp.example.com", "/api/speed/config", `{"skip": []}`, xff); r.code != http.StatusForbidden || !strings.Contains(r.body, "--admin-token=off") {
-		t.Errorf("speed control through the proxy: %d %s, want 403", r.code, r.body)
+	if r := post(tok, "fyisp.example.com", "/api/speed/config", `{"skip": []}`, xffNoAuth); r.code != http.StatusUnauthorized {
+		t.Errorf("speed control without the token: %d %s, want 401", r.code, r.body)
+	}
+	if r := post(tok, "fyisp.example.com", "/api/speed/config", `{"skip": []}`, xff); r.code != http.StatusOK {
+		t.Errorf("speed control through the proxy with the token: %d %s, want 200", r.code, r.body)
 	}
 	// The trace runs: rounds every 2.5 s.
 	deadline := time.Now().Add(30 * time.Second)
@@ -111,22 +104,5 @@ func TestInvestigateOpen(t *testing.T) {
 	t.Logf("alpha: %d rounds", rounds)
 	if rounds < 3 {
 		t.Errorf("alpha's trace ran %d rounds in 30 s, want 3 or more", rounds)
-	}
-	h.stopFyisp(t, fy, 0)
-
-	// Loopback without a token, through a proxy that keeps Host 127.0.0.1.
-	fy = h.startFyisp(t, "--ephemeral")
-	h.waitReady(t, fy)
-	h.stopAtEnd(t, fy)
-	tok = csrf()
-	if c := controls(); c != "enabled" {
-		t.Errorf("controls = %q, want enabled", c)
-	}
-	started(post(tok, listenAddr, "/api/investigate?target=charlie", "", xff), "loopback through a proxy")
-	if r := post(tok, listenAddr, "/api/speed/config", `{"skip": []}`, xff); r.code != http.StatusForbidden || !strings.Contains(r.body, "speed-test controls work only from this machine") {
-		t.Errorf("speed control through a proxy: %d %s, want 403", r.code, r.body)
-	}
-	if r := post(tok, listenAddr, "/api/speed/config", `{"skip": []}`, nil); r.code != http.StatusOK {
-		t.Errorf("speed control from this machine: %d %s, want 200", r.code, r.body)
 	}
 }

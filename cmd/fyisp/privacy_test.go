@@ -141,6 +141,7 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 	get := func(h http.Handler, path string) string {
 		req := httptest.NewRequest("GET", path, nil)
 		req.Host = "127.0.0.1:3000"
+		req.Header.Set("Authorization", "Bearer "+privacyAdmin)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, req)
 		b, _ := io.ReadAll(w.Result().Body)
@@ -149,7 +150,7 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 		}
 		return string(b)
 	}
-	local := web.Local(deps, web.LocalOptions{Addr: "127.0.0.1:3000"})
+	local := web.Local(deps, web.LocalOptions{Addr: "127.0.0.1:3000", AdminToken: privacyAdmin})
 	m := get(local, "/metrics")
 	if !strings.Contains(m, "fyisp_udp_jitter_seconds{") || !strings.Contains(m, "fyisp_udp_loss_ratio{") {
 		t.Errorf("/metrics has no UDP series:\n%s", m)
@@ -177,3 +178,6 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// privacyAdmin is the admin token the dashboard under test requires.
+const privacyAdmin = "0123456789abcdef0123456789abcdef"

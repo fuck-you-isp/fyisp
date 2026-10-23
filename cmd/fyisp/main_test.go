@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
 )
@@ -39,5 +41,40 @@ func TestEnvDefaults(t *testing.T) {
 	}
 	if _, err := parseFlags([]string{"repport"}); err == nil {
 		t.Error("an unknown word ran the server")
+	}
+}
+
+// TestTunnelEnv: FYISP_TUNNEL turns --tunnel on (container templates); the
+// flag wins.
+func TestTunnelEnv(t *testing.T) {
+	if c, err := parseFlags(nil); err != nil || c.tunnel {
+		t.Errorf("default: tunnel %v, %v", c.tunnel, err)
+	}
+	t.Setenv("FYISP_TUNNEL", "1")
+	if c, err := parseFlags(nil); err != nil || !c.tunnel {
+		t.Errorf("FYISP_TUNNEL=1: tunnel %v, %v", c.tunnel, err)
+	}
+	if c, err := parseFlags([]string{"--tunnel=false"}); err != nil || c.tunnel {
+		t.Errorf("--tunnel=false over FYISP_TUNNEL=1: tunnel %v, %v", c.tunnel, err)
+	}
+	t.Setenv("FYISP_TUNNEL", "yes")
+	if _, err := parseFlags(nil); err == nil {
+		t.Error("FYISP_TUNNEL=yes accepted")
+	}
+}
+
+func TestLoopbackHostOnly(t *testing.T) {
+	h := loopbackHostOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	for host, code := range map[string]int{
+		"127.0.0.1:6060": 200, "localhost:6060": 200, "LOCALHOST": 200, "[::1]:6060": 200,
+		"evil.example:6060": 421, "rebind.evil.example": 421, "192.168.1.5:6060": 421, "": 421,
+	} {
+		r := httptest.NewRequest("GET", "/debug/pprof/", nil)
+		r.Host = host
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != code {
+			t.Errorf("Host %q = %d, want %d", host, w.Code, code)
+		}
 	}
 }
