@@ -102,8 +102,25 @@ test('a campaign: refused keys, then start, pause, resume and stop; a schedule',
     await form.getByRole('button', { name: 'Start campaign' }).click();
     const head = page.locator('.st-head');
     await expect(head).toContainText('Campaign running');
-    await expect(page.locator('#storage [role="status"]')).toContainText('Campaign started');
-    await expect(page.getByRole('grid', { name: 'Rounds' }).getByRole('gridcell')).toHaveCount(2, { timeout: 60e3 });
+    await expect(page.locator('#storage > [role="status"]')).toContainText('Campaign started');
+    // A grid cell keeps the focus while the results redraw: paused from
+    // elsewhere (as by another tab), the campaign's new state redraws them.
+    const grid = page.getByRole('grid', { name: 'Rounds' });
+    await expect(grid.getByRole('gridcell').first()).toBeVisible({ timeout: 60e3 });
+    await grid.locator('td[tabindex="0"]').focus();
+    await page.evaluate(async () => {
+      document.querySelector('.st-res-head')?.setAttribute('data-was', '');
+      const token = document.querySelector('meta[name="fyisp-token"]')?.getAttribute('content') || '';
+      const s = await (await fetch('api/storage')).json();
+      const r = await fetch(`api/storage/campaign/pause?id=${s.live[0].id}`, { method: 'POST', headers: { 'X-FYISP-Token': token } });
+      if (!r.ok) throw new Error(`pause: ${r.status}`);
+    });
+    await expect(head).toContainText('Campaign paused', { timeout: 30e3 });
+    await expect(page.locator('.st-res-head[data-was]')).toHaveCount(0, { timeout: 30e3 });
+    await expect(grid.locator('td.st-c:focus')).toHaveCount(1);
+
+    // Paused, so nothing redraws while axe looks.
+    await expect(page.locator('.st-panel')).toBeHidden({ timeout: 60e3 });
     for (const w of WIDTHS) {
       await page.setViewportSize({ width: w, height: 900 });
       for (const theme of THEMES) {
@@ -116,6 +133,9 @@ test('a campaign: refused keys, then start, pause, resume and stop; a schedule',
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.screenshot({ path: 'out/shots/storage-campaign.png', fullPage: true });
 
+    await head.getByRole('button', { name: 'Resume' }).click();
+    await expect(head).toContainText('Campaign running');
+    await expect(head.getByRole('button', { name: 'Pause' })).toBeFocused();
     await head.getByRole('button', { name: 'Pause' }).click();
     await expect(head).toContainText('Campaign paused');
     await expect(head.getByRole('button', { name: 'Resume' })).toBeFocused();
@@ -143,16 +163,82 @@ test('a campaign: refused keys, then start, pause, resume and stop; a schedule',
     await expect(head).toContainText('Storage tests: Idle');
     await expect(page.locator('.st-hist tbody tr')).toHaveCount(2);
 
-    // Escape closes the form and drops what was typed in the keys.
+    // Escape on an untouched form goes back to its button; a touched one
+    // asks, and Discard drops what was typed in the keys.
     await head.getByRole('button', { name: 'New campaign…' }).click();
+    await page.keyboard.press('Escape');
+    await expect(head.getByRole('button', { name: 'New campaign…' })).toBeFocused();
+    await head.getByRole('button', { name: 'New campaign…' }).click();
+    // Changing a field picks its choice.
+    await form.getByLabel('Hours').fill('3');
+    await expect(form.getByRole('radio', { name: 'For a while', exact: true })).toBeChecked();
+    await form.getByLabel('Start time').fill('2030-01-01T09:00');
+    await expect(form.getByRole('radio', { name: 'Start at', exact: true })).toBeChecked();
     const k2 = form.getByRole('group', { name: 'Keys for AWS Virginia' });
     await k2.getByLabel('Access key ID').fill('AKIAEXAMPLE9999');
     await k2.getByLabel('Secret access key').fill('typed-then-cancelled');
     await page.keyboard.press('Escape');
+    const discard = page.getByRole('dialog', { name: 'Discard this campaign?' });
+    await expect(discard.getByRole('button', { name: 'Keep editing' })).toBeFocused();
+    await discard.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(k2.getByLabel('Secret access key')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await discard.getByRole('button', { name: 'Discard' }).click();
     await expect(head.getByRole('button', { name: 'New campaign…' })).toBeFocused();
     await head.getByRole('button', { name: 'New campaign…' }).click();
     await expect(form.getByRole('group', { name: 'Keys for AWS Virginia' }).getByLabel('Secret access key')).toHaveValue('');
     await expect(form.getByRole('group', { name: 'Keys for AWS Virginia' }).getByLabel('Access key ID')).toHaveValue('');
+  } finally {
+    proc.kill();
+  }
+});
+
+test('keys a campaign holds: the targets table, Delete, Edit and Forget keys', async ({ page }) => {
+  test.setTimeout(120e3);
+  const port = 3223;
+  const proc = await start(port);
+  try {
+    await page.goto(`http://127.0.0.1:${port}/#v=storage`);
+    const head = page.locator('.st-head');
+    await page.getByRole('button', { name: 'New campaign…' }).click();
+    const form = page.locator('.st-cform');
+    for (const name of ['Backups \\(R2\\)', 'NAS', 'Flaky edge', 'Wrong keys']) await form.getByRole('checkbox', { name: new RegExp(`^${name} `) }).uncheck();
+    const keys = form.getByRole('group', { name: 'Keys for AWS Virginia' });
+    await keys.getByLabel('Access key ID').fill('AKIAEXAMPLE1234');
+    await keys.getByLabel('Secret access key').fill('example-secret');
+    await form.getByRole('button', { name: 'Start campaign' }).click();
+    await expect(head).toContainText('Campaign running');
+    await head.getByRole('button', { name: 'Pause' }).click();
+    await expect(head).toContainText('Campaign paused');
+
+    // The row says a campaign holds keys and uses it.
+    const row = page.locator('.st-list tr[data-id]', { hasText: 'AWS Virginia' });
+    await expect(row.locator('.st-keys')).toHaveText('In memory · key …1234');
+    await expect(row).toContainText('in a live campaign');
+    await expect(page.locator('.st-list tr[data-id]', { hasText: 'NAS' }).locator('.st-keys')).toHaveText('None');
+
+    // Delete explains instead of asking.
+    await page.getByRole('button', { name: 'Delete AWS Virginia' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('.st-targets [role="alert"]')).toHaveText('A live campaign uses this target: stop it first.');
+    await expect(page.getByRole('button', { name: 'Delete AWS Virginia' })).toBeFocused();
+
+    // The edit form warns that a change to the endpoint deletes the keys.
+    await page.getByRole('button', { name: 'Edit AWS Virginia' }).click();
+    await expect(page.locator('.st-keys-note')).toContainText('deletes them');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Edit AWS Virginia' })).toBeFocused();
+
+    // Forget keys asks (Cancel first), then the campaign waits for keys.
+    await page.getByRole('button', { name: 'Forget the keys for AWS Virginia' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Forget the keys for AWS Virginia?' });
+    await expect(dlg.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await dlg.getByRole('button', { name: 'Forget keys' }).click();
+    await expect(row.locator('.st-keys')).toHaveText('None');
+    await expect(row.locator('th')).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Forget the keys for AWS Virginia' })).toHaveCount(0);
+    await expect(page.locator('.st-wait')).toContainText('AWS Virginia');
+    await expect(page.locator('#storage > [role="status"]')).toHaveText('Forgot the keys for AWS Virginia.');
   } finally {
     proc.kill();
   }

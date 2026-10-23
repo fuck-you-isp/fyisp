@@ -32,7 +32,7 @@ const SKIP = /** @type {Object<string,string>} */ ({
 });
 
 /** A step's name: Fresh 1, Reused 2, Download, Upload, Seed. @param {any} a */
-function stepName(a) {
+export function stepName(a) {
   switch (a.phase) {
     case 'cold': return `Fresh ${a.n + 1}`;
     case 'warm': return `Reused ${a.n + 1}`;
@@ -131,7 +131,8 @@ export class StorageGrid {
       many ? h('p', { class: 'muted small', text: 'Scroll sideways for earlier rounds.' }) : null,
       this.wrap,
       h('ul', { class: 'st-legend', 'aria-label': 'Legend' }, ...'ofsakbgc'.split('').map((ch) => h('li', {},
-        h('span', { class: `st-c st-${CELL[ch].cls}`, 'aria-hidden': 'true', text: CELL[ch].glyph }), ' ' + CELL[ch].word))),
+        // As a table, each word with the letter its cells show.
+        h('span', { class: `st-c st-${CELL[ch].cls}`, 'aria-hidden': this.asTable ? null : 'true', text: this.asTable ? ch.toUpperCase() : CELL[ch].glyph }), ' ' + CELL[ch].word))),
     ].filter((n) => n != null));
     this.wrap.onscroll = () => { this.scrolledBack = this.wrap.scrollLeft + this.wrap.clientWidth < this.wrap.scrollWidth - 4; };
     // The newest round in view, unless the viewer scrolled back.

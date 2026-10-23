@@ -1276,7 +1276,7 @@ body.home-on #viewnav { display: none !important; }
 .st-notices .notice .btn { margin-left: 6px; }
 .st-panel h2, .st-res-head h2, .st-grid h3, .st-detail h3, .st-log h3, .st-hist h2, .st-found h3, .st-traces h3 { margin: 0 0 6px; font-size: 16px; }
 .st-detail h3:focus { outline: none; }
-.st-panel h2:focus, .st-res-head h2:focus, .st-detail h2:focus { outline: none; }
+.st-panel h2:focus, .st-res-head h2:focus, .st-detail h2:focus, .st-log h3:focus, .st-speed:focus { outline: none; }
 .st-res { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .st-res:empty { display: none; }
 .st-res-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }

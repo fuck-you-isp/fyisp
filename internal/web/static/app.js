@@ -3483,7 +3483,7 @@ async function refreshAll() {
       await Promise.all([loadStatus(), loadVerdict(), loadIncidents(), loadSpeedWindows(), overviewShown() ? /** @type {Overview} */ (ov).load() : null,
         callsShown() ? /** @type {Calls} */ (calls).refresh() : null,
         speedShown() ? /** @type {Speed} */ (speed).refresh() : null,
-        storageShown() ? /** @type {import('./storage.js').Storage} */ (storage).refresh() : null,
+        storageShown() ? /** @type {import('./storage.js').Storage} */ (storage).refresh(false) : null,
         ...panels.map((p) => (p.visible && panelShown(p) ? p.load() : (p.stale = true, null)))]).then(loadBaselines);
     }
   } finally {

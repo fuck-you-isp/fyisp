@@ -79,8 +79,8 @@ test('empty state, then add, check, edit and delete a target', async ({ page }) 
 
     // Check: one request; the result under the row, the focus kept, while it runs too.
     await page.getByRole('button', { name: 'Check Lab' }).click();
-    await expect(page.getByRole('button', { name: 'Check Lab' })).toHaveText('Checking…');
-    await expect(page.getByRole('button', { name: 'Check Lab' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Checking Lab' })).toHaveText('Checking…');
+    await expect(page.getByRole('button', { name: 'Checking Lab' })).toBeFocused();
     await expect(page.getByRole('button', { name: 'Check Lab' })).toHaveText('Check');
     await expect(page.getByRole('button', { name: 'Check Lab' })).toBeFocused();
     const result = page.locator('.st-check').first();

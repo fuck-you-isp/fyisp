@@ -24,8 +24,8 @@ export function findingSection(f) {
     f.evidence.length ? h('ul', { class: 'sp-found-x' }, ...f.evidence.map((t) => h('li', { text: t }))) : '');
 }
 
-/** "31 / 48 ms". @param {{p50:number|null,p95:number|null}} p */
-function pct(p) { return p.p50 == null ? '—' : `${fmtMs(p.p50)} / ${fmtMs(p.p95)} ms`; }
+/** "31.0 ms median · 48.2 ms at the 95th percentile". @param {{p50:number|null,p95:number|null}} p */
+function pct(p) { return p.p50 == null ? '—' : `${fmtMs(p.p50)} ms median · ${fmtMs(p.p95)} ms at the 95th percentile`; }
 
 /** One line of a transfer. @param {any} x @param {string} what */
 function rate(x, what) {
@@ -71,11 +71,13 @@ export function tracesSection(traces, name) {
       })), h('li', { text: `the provider, ${edge(t.edge_prefix)}` }))))));
 }
 
-/** Copy report (Markdown, hosts only when ticked) and Download CSV. @param {number} id @param {HTMLElement} say */
-export function reportSection(id, say) {
+/** Copy report (Markdown, hosts only when ticked) and Download CSV, with a status line under them. @param {number} id */
+export function reportSection(id) {
   const hosts = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', id: 'st-rep-hosts' }));
   const ta = /** @type {HTMLTextAreaElement} */ (h('textarea', { class: 'st-rep-text', rows: '8', readonly: true, hidden: true, 'aria-label': 'The report' }));
+  const say = h('p', { class: 'muted small st-rep-say', role: 'status' });
   const copy = async () => {
+    say.textContent = ''; // "Copied." again is announced again
     let text;
     try {
       const res = await fetch('api/storage/report?' + new URLSearchParams({ campaign: String(id), format: 'md', hosts: hosts.checked ? '1' : '0' }), { credentials: 'same-origin', cache: 'no-store' });
@@ -88,8 +90,8 @@ export function reportSection(id, say) {
     h('div', { class: 'st-check-row' }, hosts, h('label', { for: 'st-rep-hosts', text: ' Include endpoint hosts and bucket names' })),
     h('p', { class: 'muted small', text: 'Off by default: host names can contain account IDs. The report names your routers and your provider’s, without their addresses; your internet address is never included.' }),
     h('div', { class: 'sp-acts' },
-      h('button', { type: 'button', class: 'btn', text: 'Copy', onclick: copy }),
+      h('button', { type: 'button', class: 'btn', text: 'Copy report', onclick: copy }),
       h('a', { class: 'btn', href: 'api/storage/report?' + new URLSearchParams({ campaign: String(id), format: 'csv' }), download: `fyisp-storage-${id}.csv`, text: 'Download CSV' })),
-    ta);
+    say, ta);
 }
 

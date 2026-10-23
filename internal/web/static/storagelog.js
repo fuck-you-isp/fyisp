@@ -6,7 +6,7 @@
 
 import { h, fetchJSON, fmtTime } from './core.js';
 import { classShort, statusWords } from './storagewords.js';
-import { edge } from './storagegrid.js';
+import { edge, stepName } from './storagegrid.js';
 import { size } from './storageform.js';
 
 const PAGE = 15;
@@ -66,13 +66,16 @@ export class FailureLog {
     this.render();
   }
 
+  /** Redraws, keeping the focus on a filter button or Show more (by data-key). */
   render() {
+    const a = /** @type {HTMLElement|null} */ (document.activeElement);
+    const had = a && this.el.contains(a) ? a.dataset.key : '';
     const span = this.items.length ? this.items[0].at - this.items[this.items.length - 1].at : 0;
     const filter = this.targets.length > 1 ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Target' },
-      ...[{ id: '', name: 'All targets' }, ...this.targets].map((t) => h('button', { type: 'button', text: t.name, 'aria-pressed': String(this.target === t.id),
+      ...[{ id: '', name: 'All targets' }, ...this.targets].map((t) => h('button', { type: 'button', text: t.name, 'aria-pressed': String(this.target === t.id), 'data-key': `t:${t.id}`,
         onclick: () => { this.target = t.id; this.items = []; this.load(this.campaign, this.targets, this.spanMs).then(() => /** @type {HTMLElement|null} */ (this.el.querySelector('.seg button[aria-pressed="true"]'))?.focus()); } }))) : null;
     this.el.replaceChildren(...[
-      h('div', { class: 'sp-sec-head' }, h('h3', { id: 'st-log-h', text: 'Failures' }), filter),
+      h('div', { class: 'sp-sec-head' }, h('h3', { id: 'st-log-h', tabindex: '-1', text: 'Failures' }), filter),
       this.err ? h('p', { class: 'notice danger', text: this.err }) : null,
       !this.items.length && !this.err ? h('p', { class: 'muted', text: 'No failures in this campaign.' }) : null,
       this.items.length ? h('div', { class: 'st-scroll' }, h('table', { class: 'sp-st' },
@@ -81,13 +84,14 @@ export class FailureLog {
         h('tbody', {}, ...this.items.map((a) => h('tr', { class: a.group === 'config' ? 'bad' : null },
           h('th', { scope: 'row', class: 'when', text: fmtTime(a.at, Math.max(span, this.spanMs)) }),
           h('td', { 'data-k': 'Target', text: this.host.name(a.target) }),
-          h('td', { 'data-k': 'Step', text: a.phase === 'cold' ? `Fresh ${a.n + 1}` : a.phase === 'warm' ? `Reused ${a.n + 1}` : a.phase === 'down' ? 'Download' : a.phase === 'up' ? 'Upload' : 'Seed' }),
+          h('td', { 'data-k': 'Step', text: stepName(a) }),
           h('td', { 'data-k': 'Result', text: `${classShort(a.class)}${statusWords(a.http_status, a.s3_code)}${a.group === 'config' ? ' (configuration)' : ''}` }),
           h('td', { text: edge(a.edge_prefix) }),
           h('td', { class: 'st-rid', title: [a.request_id, a.host_id].filter(Boolean).join('\n') || null, text: a.request_id || '' })))))) : null,
       this.items.length ? h('p', { class: 'muted small', text: `${this.items.length} of ${this.total} shown.` }) : null,
-      this.next ? h('button', { type: 'button', class: 'btn st-more', text: `Show ${PAGE} more`, onclick: () => this.more().then(() => /** @type {HTMLElement|null} */ (this.el.querySelector('.st-more'))?.focus()) }) : null,
+      this.next ? h('button', { type: 'button', class: 'btn st-more', 'data-key': 'more', text: `Show ${PAGE} more`, onclick: () => this.more().then(() => /** @type {HTMLElement|null} */ (this.el.querySelector('.st-more'))?.focus()) }) : null,
     ].filter((n) => n != null));
+    if (had) /** @type {HTMLElement|null} */ (this.el.querySelector(`[data-key="${CSS.escape(had)}"]`) || this.el.querySelector('h3'))?.focus();
   }
 }
 
@@ -113,6 +117,6 @@ export function historyTable(hist, current, show) {
         h('td', { 'data-k': 'Targets', text: c.targets.map((/** @type {any} */ t) => t.name).join(', ') }),
         h('td', { class: 'num', 'data-k': 'Rounds', text: String(c.rounds_done) }),
         h('td', { class: 'num', 'data-k': 'Data', text: `${size(c.bytes_down)} down, ${size(c.bytes_up)} up` }),
-        h('td', {}, h('button', { type: 'button', class: 'btn sm', text: c.id === current ? 'Shown' : 'Show', disabled: c.id === current,
+        h('td', {}, h('button', { type: 'button', class: 'btn sm', text: c.id === current ? 'Shown' : 'Show', disabled: c.id === current, 'data-key': `show:${c.id}`,
           'aria-label': `Show the campaign of ${day(c.start_at || c.created)}`, onclick: () => show(c.id) }))))))));
 }

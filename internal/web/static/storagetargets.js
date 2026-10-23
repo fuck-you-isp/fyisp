@@ -1,15 +1,17 @@
 // Details → Storage: the targets (api/storage, docs/STORAGE-API.md). A
 // table of the S3-compatible endpoints the owner saved, each with Check
-// (one unsigned request), Edit and Delete; adding or editing turns the
-// section into a form (as Speed's setup does), Escape or Cancel goes back.
-// Targets never hold keys.
+// (one unsigned request), Edit, Forget keys (when a campaign holds keys for
+// it) and Delete; adding or editing turns the section into a form (as
+// Speed's setup does), Escape or Cancel goes back. Keys belong to
+// campaigns: the table only says whether one holds keys for a target.
 // Plain ES module, no build step.
 // @ts-check
 
 import { h, apiWrite, dialog, clock } from './core.js';
 import { classLong, statusWords, timings, hintWords } from './storagewords.js';
 
-/** @typedef {{id:string,name:string,endpoint:string,scheme:string,host:string,port:number,region:string,bucket:string,addressing:string,has_ca:boolean,network:string,last_check:import('./storagewords.js').StorageCheck|null,created:number,updated:number}} StorageTarget */
+/** @typedef {{state:'none'|'memory'|'saved',access_key_last4:string|null,session_token:boolean,campaign:number|null}} StorageTargetKeys */
+/** @typedef {{id:string,name:string,endpoint:string,scheme:string,host:string,port:number,region:string,bucket:string,addressing:string,has_ca:boolean,network:string,keys:StorageTargetKeys,in_use_by:number|null,last_check:import('./storagewords.js').StorageCheck|null,created:number,updated:number}} StorageTarget */
 /** @typedef {{at:number,rev:number,targets:StorageTarget[]}} StorageSummary */
 /** @typedef {{summary:()=>StorageSummary|null, reload:()=>Promise<void>, say:(t:string)=>void, render:()=>void}} TargetsHost */
 
@@ -17,6 +19,17 @@ import { classLong, statusWords, timings, hintWords } from './storagewords.js';
 const BUCKET_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{1,61}[A-Za-z0-9]$/;
 const REGION_RE = /^[A-Za-z0-9_-]{1,32}$/;
 const MAX_TARGETS = 32;
+const IN_USE = 'A live campaign uses this target: stop it first.';
+
+/** Whether a campaign holds keys for t. @param {StorageTarget} t */
+function hasKeys(t) { return !!t.keys && t.keys.state !== 'none'; }
+
+/** "In memory · key …1234", "Saved · key …1234", "None". @param {StorageTarget} t */
+export function keyWords(t) {
+  if (!hasKeys(t)) return 'None';
+  const k = t.keys;
+  return `${k.state === 'saved' ? 'Saved' : 'In memory'}${k.access_key_last4 ? ` · key …${k.access_key_last4}` : ''}${k.session_token ? ' · with a session token' : ''}`;
+}
 
 /** "s3.us-east-1.amazonaws.com", "http://192.168.1.20:9000": the scheme only for plain http. @param {StorageTarget} t */
 export function where(t) {
@@ -32,6 +45,7 @@ function writeError(e) {
     case 'too_many': return `fyisp keeps at most ${MAX_TARGETS} targets. Delete one first.`;
     case 'changed': return 'This target changed in another tab. Check the form and save again.';
     case 'busy': return 'Another check is running. Try again in a few seconds.';
+    case 'in_use': return IN_USE;
     case 'storage_file': return 'Storage tests are off: fyisp can’t use its storage-targets.json file. Fix or move it and restart fyisp.';
     case 'bad_request': return 'fyisp didn’t accept that setting.';
     case 'error': return 'fyisp couldn’t save its storage-targets.json file. Its log says why.';
@@ -115,7 +129,7 @@ export class StorageTargets {
       h('h2', { id: 'st-targets-h', text: 'Targets', tabindex: '-1' }),
       h('table', { class: 'sp-st st-list' },
         h('caption', { class: 'sr-only', text: 'Storage targets' }),
-        h('thead', {}, h('tr', {}, ...['Name', 'Endpoint', 'Region', 'Bucket', 'Actions'].map((c) => h('th', { scope: 'col', text: c })))),
+        h('thead', {}, h('tr', {}, ...['Name', 'Endpoint', 'Region', 'Bucket', 'Keys', 'Actions'].map((c) => h('th', { scope: 'col', text: c })))),
         h('tbody', {}, ...rows)),
       h('div', { class: 'sp-acts st-under' },
         h('button', { type: 'button', class: 'btn st-add', text: 'Add a target', disabled: ts.length >= MAX_TARGETS, onclick: () => this.open('') }),
@@ -131,20 +145,26 @@ export class StorageTargets {
   /** A target's row, and its check result under it. @param {StorageTarget} t */
   row(t) {
     const busy = this.checking.has(t.id);
+    const used = t.in_use_by != null;
     const out = [h('tr', { 'data-id': t.id, class: t.id === this.saved ? 'sel' : null },
       h('th', { scope: 'row', tabindex: '-1' }, h('b', { text: t.name }),
-        t.network === 'private' ? h('span', { class: 'pill', text: 'on your network' }) : null),
+        t.network === 'private' ? h('span', { class: 'pill', text: 'on your network' }) : null,
+        used ? h('span', { class: 'pill', text: 'in a live campaign' }) : null),
       h('td', { 'data-k': 'Endpoint', class: 'st-ep', text: where(t) }),
       h('td', { 'data-k': 'Region', text: t.region }),
       h('td', { 'data-k': 'Bucket', text: t.bucket || 'connection only' }),
+      h('td', { 'data-k': 'Keys', class: 'st-keys', text: keyWords(t) }),
       h('td', { class: 'st-row-acts' },
-        h('button', { type: 'button', class: 'btn sm', text: busy ? 'Checking…' : 'Check', 'aria-disabled': busy ? 'true' : null, 'aria-label': `Check ${t.name}`,
-          onclick: () => { if (!this.checking.has(t.id)) this.check(t); } }),
-        h('button', { type: 'button', class: 'btn sm', text: 'Edit', 'aria-label': `Edit ${t.name}`, onclick: () => this.open(t.id) }),
-        h('button', { type: 'button', class: 'btn sm ghost', text: 'Delete…', 'aria-label': `Delete ${t.name}`, onclick: () => this.remove(t) })))];
+        h('button', { type: 'button', class: 'btn sm', text: busy ? 'Checking…' : 'Check', 'aria-disabled': busy ? 'true' : null, 'aria-label': `${busy ? 'Checking' : 'Check'} ${t.name}`,
+          'data-key': `check:${t.id}`, onclick: () => { if (!this.checking.has(t.id)) this.check(t); } }),
+        h('button', { type: 'button', class: 'btn sm', text: 'Edit', 'aria-label': `Edit ${t.name}`, 'data-key': `edit:${t.id}`, onclick: () => this.open(t.id) }),
+        hasKeys(t) ? h('button', { type: 'button', class: 'btn sm ghost', text: 'Forget keys…', 'aria-label': `Forget the keys for ${t.name}`, 'data-key': `forget:${t.id}`, onclick: () => this.forget(t) }) : null,
+        // A target a live campaign uses can't be deleted: Delete says why instead of asking.
+        h('button', { type: 'button', class: 'btn sm ghost', text: 'Delete…', 'aria-label': `Delete ${t.name}`, 'data-key': `delete:${t.id}`,
+          title: used ? IN_USE : null, onclick: () => { if (used) { this.setErr(IN_USE); this.refocus(`delete:${t.id}`); } else this.remove(t); } })))];
     if (t.last_check) {
       const [lead, detail, bad] = checkWords(t);
-      out.push(h('tr', { class: 'st-check' + (bad ? ' bad' : '') }, h('td', { colspan: '5' },
+      out.push(h('tr', { class: 'st-check' + (bad ? ' bad' : '') }, h('td', { colspan: '6' },
         h('p', { class: bad ? 'notice danger' : 'st-check-ok' }, h('b', { text: lead }), ' ', detail))));
     }
     return out;
@@ -156,7 +176,7 @@ export class StorageTargets {
     this.setErr('');
     this.saved = '';
     this.render();
-    this.refocus(`Check ${t.name}`);
+    this.refocus(`check:${t.id}`);
     try {
       await apiWrite('POST', 'api/storage/check?' + new URLSearchParams({ id: t.id }));
       await this.host.reload();
@@ -170,13 +190,37 @@ export class StorageTargets {
     } finally {
       this.checking.delete(t.id);
       this.host.render();
-      this.refocus(`Check ${t.name}`);
+      this.refocus(`check:${t.id}`);
     }
   }
 
-  /** Focuses the button with this label, if it is still there. @param {string} label */
-  refocus(label) {
-    /** @type {HTMLElement|null} */ (this.el.querySelector(`button[aria-label="${CSS.escape(label)}"]`))?.focus();
+  /** Focuses the button with this data-key ("check:<id>"), if it is still there. @param {string} key */
+  refocus(key) {
+    /** @type {HTMLElement|null} */ (this.el.querySelector(`button[data-key="${CSS.escape(key)}"]`))?.focus();
+  }
+
+  /** Forgets the keys a campaign holds for t, after asking. @param {StorageTarget} t */
+  async forget(t) {
+    const v = await dialog({
+      title: `Forget the keys for ${t.name}?`,
+      body: [h('p', { text: t.keys.state === 'saved'
+        ? 'The schedule’s saved keys for it are deleted now. Its rounds test connections only until you enter keys again.'
+        : 'The campaign’s keys for it are forgotten now. Its rounds test connections only until you enter keys again.' })],
+      buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Forget keys', value: 'ok', primary: true }],
+      safe: true,
+    });
+    if (v !== 'ok') { this.refocus(`forget:${t.id}`); return; }
+    try {
+      await apiWrite('POST', 'api/storage/target/forget-keys?' + new URLSearchParams({ id: t.id }));
+      this.setErr('');
+      this.host.say(`Forgot the keys for ${t.name}.`);
+    } catch (e) {
+      this.setErr(writeError(e));
+    }
+    await this.host.reload();
+    this.host.render();
+    if (this.el.querySelector(`button[data-key="forget:${CSS.escape(t.id)}"]`)) this.refocus(`forget:${t.id}`);
+    else this.rowHead(t.id)?.focus();
   }
 
   /** Deletes a target, after asking. @param {StorageTarget} t */
@@ -187,7 +231,7 @@ export class StorageTargets {
       buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Delete target', value: 'ok', primary: true }],
       safe: true,
     });
-    if (v !== 'ok') { this.refocus(`Delete ${t.name}`); return; }
+    if (v !== 'ok') { this.refocus(`delete:${t.id}`); return; }
     const ts = this.host.summary()?.targets || [];
     const i = ts.findIndex((x) => x.id === t.id);
     const next = ts[i + 1] || ts[i - 1];
@@ -203,7 +247,7 @@ export class StorageTargets {
     }
     await this.host.reload();
     this.host.render();
-    if (!ok) { this.refocus(`Delete ${t.name}`); return; }
+    if (!ok) { this.refocus(`delete:${t.id}`); return; }
     const row = next && this.rowHead(next.id);
     if (row) row.focus(); else /** @type {HTMLElement|null} */ (document.querySelector('.st-add'))?.focus();
   }
@@ -225,7 +269,7 @@ export class StorageTargets {
 
   /** @param {string} saved the target saved ('' cancelled) @param {string} words */
   async closeForm(saved, words) {
-    const opener = this.editing ? `Edit ${this.host.summary()?.targets.find((x) => x.id === this.editing)?.name || ''}` : '';
+    const opener = this.editing ? `edit:${this.editing}` : '';
     this.editing = null;
     if (saved) {
       this.saved = saved;
@@ -292,7 +336,10 @@ class TargetForm {
     fld('endpoint', 'Endpoint', 'https://host, or http:// for a server on your network. Your provider lists it as the S3 endpoint or S3 API URL.'),
     fld('region', 'Region (optional)', 'As your provider names it, e.g. us-east-1 or auto. Used to sign requests; us-east-1 when empty.'),
     fld('bucket', 'Bucket (optional)', 'Leave empty to test connections only.'),
-    this.radios, ca, this.preview, this.formErr,
+    this.radios, ca, this.preview,
+    t && hasKeys(t) ? h('p', { class: 'notice st-keys-note' }, h('b', { text: 'A campaign holds keys for this target. ' }),
+      'Saving a change to the endpoint, region, bucket, addressing or certificate authority deletes them: its rounds test connections only until you enter keys again. A new name keeps them.') : null,
+    this.formErr,
     h('div', { class: 'sp-acts' },
       h('button', { type: 'submit', class: 'btn primary st-save', text: t ? 'Save changes' : 'Save target' }),
       h('button', { type: 'button', class: 'btn ghost', text: 'Cancel', onclick: () => this.cancel() })));
@@ -425,7 +472,7 @@ class TargetForm {
       const r = t
         ? await apiWrite('POST', 'api/storage/target/update?' + new URLSearchParams({ id: t.id }), this.body())
         : await apiWrite('POST', 'api/storage/target/add', this.body());
-      this.host.done(r.target.id, `Saved ${r.target.name}.`);
+      this.host.done(r.target.id, r.keys_cleared ? `Saved ${r.target.name}. The keys a campaign held for it were deleted.` : `Saved ${r.target.name}.`);
     } catch (e) {
       const f = this.serverField(e);
       if (f) { this.fieldErr(...f); this.f[f[0]].focus(); } else {

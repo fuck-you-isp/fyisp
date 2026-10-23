@@ -84,7 +84,11 @@ export class CampaignForm {
     this.targets = targets;
     this.host = host;
     this.busy = false;
+    /** Something was typed or picked (Escape and Cancel ask first). */
+    this.dirty = false;
     this.estSeq = 0;
+    /** The estimate's words as shown. */
+    this.estWords = '';
     /** @type {ReturnType<typeof setTimeout>|undefined} */
     this.estTimer = undefined;
     this.err = h('p', { class: 'notice danger', role: 'alert', tabindex: '-1', hidden: true });
@@ -104,12 +108,37 @@ export class CampaignForm {
     this.until = /** @type {HTMLInputElement} */ (h('input', { type: 'date', id: 'st-c-until', value: new Date(Date.now() + 30 * 86400e3).toISOString().slice(0, 10) }));
     /** @type {boolean[]} */
     this.days = [true, true, true, true, true, false, false];
-    this.dayBtns = DAYS.map((d, i) => h('button', { type: 'button', 'aria-pressed': String(this.days[i]), text: d, onclick: () => { this.days[i] = !this.days[i]; this.drawDays(); this.changed(); } }));
+    this.dayBtns = DAYS.map((d, i) => h('button', { type: 'button', 'aria-pressed': String(this.days[i]), text: d, onclick: () => { this.days[i] = !this.days[i]; this.dirty = true; this.drawDays(); this.changed(); } }));
     this.keys = new KeyFields([], { optional: true });
     this.keysWrap = h('div');
     this.el = this.build();
     this.redrawKeys();
     this.changed();
+    for (const ev of ['input', 'change']) this.el.addEventListener(ev, () => { this.dirty = true; });
+    // Changing a field picks its choice: the start time "Start at", the rounds
+    // "A number of rounds", the hours or minutes "For a while", the last day "A date".
+    for (const [f, id] of /** @type {[HTMLInputElement, string][]} */ ([[this.at, 'st-c-when-at'], [this.count.input, 'st-c-long-count'],
+      [this.hours.input, 'st-c-long-duration'], [this.mins.input, 'st-c-long-duration'], [this.until, 'st-c-until-date']])) {
+      f.addEventListener('input', () => {
+        const r = /** @type {HTMLInputElement} */ (this.el.querySelector(`#${id}`));
+        if (!r.checked) { r.checked = true; this.changed(); }
+      });
+    }
+  }
+
+  /** Cancel or Escape: asks first when something was typed or picked. */
+  async cancel() {
+    if (this.dirty) {
+      const was = /** @type {HTMLElement|null} */ (document.activeElement);
+      const v = await dialog({
+        title: 'Discard this campaign?',
+        body: [h('p', { text: 'Nothing has started. What you typed, keys included, is cleared.' })],
+        buttons: [{ label: 'Keep editing', value: 'cancel' }, { label: 'Discard', value: 'ok', primary: true }],
+        safe: true,
+      });
+      if (v !== 'ok') { /** @type {HTMLElement} */ (was && was.isConnected ? was : this.el.querySelector('input')).focus(); return; }
+    }
+    this.host.done(null, '');
   }
 
   drawDays() { this.dayBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(this.days[i]))); }
@@ -138,8 +167,8 @@ export class CampaignForm {
       h('fieldset', { class: 'st-days' }, h('legend', { text: 'Days' }),
         h('div', { class: 'seg', role: 'group', 'aria-label': 'Days' }, ...this.dayBtns),
         h('div', { class: 'st-quick' },
-          h('button', { type: 'button', class: 'btn sm ghost', text: 'Weekdays', onclick: () => { this.days = [true, true, true, true, true, false, false]; this.drawDays(); this.changed(); } }),
-          h('button', { type: 'button', class: 'btn sm ghost', text: 'Every day', onclick: () => { this.days = this.days.map(() => true); this.drawDays(); this.changed(); } }))),
+          h('button', { type: 'button', class: 'btn sm ghost', text: 'Weekdays', onclick: () => { this.days = [true, true, true, true, true, false, false]; this.dirty = true; this.drawDays(); this.changed(); } }),
+          h('button', { type: 'button', class: 'btn sm ghost', text: 'Every day', onclick: () => { this.days = this.days.map(() => true); this.dirty = true; this.drawDays(); this.changed(); } }))),
       h('div', { class: 'st-pair', oninput: () => this.changed() },
         h('div', { class: 'st-fld' }, h('label', { for: 'st-c-from', text: 'From' }), this.from),
         h('div', { class: 'st-fld' }, h('label', { for: 'st-c-to', text: 'To' }), this.to)),
@@ -157,7 +186,7 @@ export class CampaignForm {
     this.start = h('button', { type: 'submit', class: 'btn primary sp-go', text: 'Start campaign' });
     return h('form', { class: 'st-form st-cform', novalidate: true, onsubmit: (/** @type {Event} */ e) => { e.preventDefault(); this.submit(); } },
       targets, shape, this.onDemand, this.recurring, every, what, this.keysWrap, this.est, this.err,
-      h('div', { class: 'sp-acts' }, this.start, h('button', { type: 'button', class: 'btn ghost', text: 'Cancel', onclick: () => this.host.done(null, '') }),
+      h('div', { class: 'sp-acts' }, this.start, h('button', { type: 'button', class: 'btn ghost', text: 'Cancel', onclick: () => this.cancel() }),
         h('span', { class: 'muted small', text: 'Nothing runs until you start it.' })));
   }
 
@@ -222,7 +251,7 @@ export class CampaignForm {
   async estimate() {
     const s = this.spec();
     const seq = ++this.estSeq;
-    if (!s.targets.length || !s.interval_s) { this.est.replaceChildren(); return; }
+    if (!s.targets.length || !s.interval_s) { this.showEst([]); return; }
     const q = new URLSearchParams({ part: 'estimate', targets: s.targets.join(','), shape: s.shape, interval_s: String(s.interval_s),
       cold: String(s.cold), warm: String(s.warm), down_bytes: String(s.down_bytes), up_bytes: String(s.up_bytes) });
     const keyed = this.keys.keyed();
@@ -231,7 +260,7 @@ export class CampaignForm {
     if (s.duration_s) q.set('duration_s', String(s.duration_s));
     if (s.shape === 'recurring') { q.set('days', s.days.join(',') || '1'); q.set('from', s.from || '19:00'); q.set('to', s.to || '23:00'); }
     let e;
-    try { e = await fetchJSON('api/storage?' + q); } catch { if (seq === this.estSeq) this.est.replaceChildren(); return; }
+    try { e = await fetchJSON('api/storage?' + q); } catch { if (seq === this.estSeq) this.showEst([]); return; }
     if (seq !== this.estSeq) return;
     const lines = [h('p', {}, h('b', { text: 'Each round: ' }), `${size(e.per_round.down)} down and ${size(e.per_round.up)} up${keyed.length ? ` (${keyed.length} target${keyed.length === 1 ? '' : 's'} with keys)` : ' (connection checks only)'}; about ${Math.max(1, Math.round(e.round_s_est))} s.`)];
     if (e.total) lines.push(h('p', { text: `This campaign: ${e.rounds} rounds, about ${size(e.total.down)} down and ${size(e.total.up)} up.` }));
@@ -240,7 +269,15 @@ export class CampaignForm {
     this.everyHelp.hidden = !short;
     this.everyHelp.textContent = short ? `A round takes about ${Math.round(e.round_s_est)} s with these targets and sizes: choose every ${Math.ceil(e.min_interval_s / 60)} minutes or more, or fewer requests and smaller sizes.` : '';
     if (short) this.every.input.setAttribute('aria-invalid', 'true'); else this.every.input.removeAttribute('aria-invalid');
-    this.est.replaceChildren(h('h3', { text: 'Data' }), ...lines);
+    this.showEst([h('h3', { text: 'Data' }), ...lines]);
+  }
+
+  /** The estimate, redrawn (and so announced) only when its words change. @param {Node[]} nodes */
+  showEst(nodes) {
+    const words = nodes.map((n) => n.textContent).join('\n');
+    if (words === this.estWords) return;
+    this.estWords = words;
+    this.est.replaceChildren(...nodes);
   }
 
   /** @param {string} msg */

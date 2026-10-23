@@ -2,8 +2,8 @@
 // server, the schedule's slots) waits its turn in one queue and exactly one
 // runs at a time (docs/SPEEDTEST-API.md, "Queue"). This shows where your own
 // request is ("You're #2, starts in about 18 minutes", then its progress),
-// what else is waiting, and the last full test's results. The owner can
-// cancel any entry. Plain ES module, no build step.
+// what else is waiting (storage-test rounds too), and the last full test's
+// results. The owner can cancel any entry. Plain ES module, no build step.
 // @ts-check
 
 import { h, fetchJSON, apiWrite, dialog, clock, fmtMbps } from './core.js';
@@ -40,6 +40,7 @@ function stoppedWhy(e) {
 /** What an entry is, in words. @param {QueueEntry} e */
 function what(e) {
   if (e.kind === 'sweep') return 'Test of every server';
+  if (e.kind === 'campaign') return e.target ? `Storage test: ${e.target.label}` : 'Storage test';
   if (e.kind === 'scheduled') return e.target ? `Scheduled test: ${e.target.label}` : 'Scheduled test';
   return e.target ? `Test of ${e.target.label}` : 'Test of the nearest servers';
 }
@@ -212,8 +213,8 @@ export class SpeedQueue {
   mine() {
     const q = this.q;
     if (!q || q.mine == null) return null;
-    if (q.running && q.running.id === q.mine) return q.running;
-    return q.waiting.find((e) => e.id === q.mine) || null;
+    const e = q.running && q.running.id === q.mine ? q.running : q.waiting.find((x) => x.id === q.mine) || null;
+    return e && e.kind !== 'campaign' ? e : null; // a storage round's progress is on the Storage page
   }
 
   render() {

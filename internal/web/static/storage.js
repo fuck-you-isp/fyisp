@@ -40,19 +40,33 @@ function windowWords(sc) {
 }
 
 /**
- * Rebuilds el with fn, keeping the focus on the "same" button: by its
- * class and label (a redraw makes new elements).
+ * Rebuilds el with fn, keeping the focus on the "same" element (a redraw
+ * makes new ones): by its data-key, else by its class and label.
  * @param {HTMLElement} el @param {()=>void} fn
  */
 function keepFocus(el, fn) {
   const a = /** @type {HTMLElement|null} */ (document.activeElement);
-  const key = a && el.contains(a) ? [a.tagName, a.className, a.textContent] : null;
+  const key = a && a !== el && el.contains(a) ? [a.tagName, a.className, a.textContent, a.dataset.key] : null;
   fn();
-  if (!key) return;
+  if (!key || document.activeElement === a) return;
   for (const c of /** @type {NodeListOf<HTMLElement>} */ (el.querySelectorAll(key[0]))) {
-    if (c.className === key[1] && c.textContent === key[2]) { c.focus(); return; }
+    if (key[3] ? c.dataset.key === key[3] : c.className === key[1] && c.textContent === key[2]) { c.focus(); return; }
   }
 }
+
+/**
+ * Puts kids in el in this order, leaving the ones already there where they
+ * are: moving a node drops its focus.
+ * @param {HTMLElement} el @param {(Node|null|undefined|false|'')[]} kids
+ */
+function place(el, kids) {
+  const want = /** @type {Node[]} */ (kids.filter(Boolean));
+  for (const c of [...el.childNodes]) if (!want.includes(c)) c.remove();
+  want.forEach((k, i) => { if (el.childNodes[i] !== k) el.insertBefore(k, el.childNodes[i] || null); });
+}
+
+/** "every 5 min", or nothing for a single round. @param {any} c a campaign */
+function everyWords(c) { return c.count === 1 ? '' : ` every ${c.interval_s / 60} min`; }
 
 /** A dialog is open: nothing redraws under it. */
 function dialogOpen() { return !!document.querySelector('dialog[open]'); }
@@ -87,6 +101,8 @@ export class Storage {
     this.drawn = '';
     /** What the failure log was loaded for. */
     this.logged = '';
+    /** The rev and selection the campaign and the speed schedule were loaded for. */
+    this.loadedFor = '';
     this.say = h('p', { class: 'sr-only', role: 'status' });
     this.headEl = h('div', { class: 'sp-head st-head' });
     this.errEl = h('p', { class: 'notice danger', role: 'alert' });
@@ -115,8 +131,11 @@ export class Storage {
   /** The live campaigns. @returns {any[]} */
   live() { return this.d?.live || []; }
 
-  /** Reads the summary (and, while a campaign is live, the speed schedule). */
-  async load() {
+  /**
+   * Reads the summary, and (full, or when rev or the selection changed) the
+   * campaign shown and, while a campaign is live, the speed schedule.
+   */
+  async load(full = true) {
     const seq = ++this.seq;
     try {
       const d = await fetchJSON('api/storage');
@@ -126,11 +145,15 @@ export class Storage {
       this.err = '';
     } catch (e) {
       if (seq !== this.seq) return;
+      this.loadedFor = '';
       this.err = /** @type {any} */ (e).body?.code === 'storage_file'
         ? 'Storage tests are off: fyisp can’t use its storage-targets.json file (see fyisp’s log). Fix or move it and restart fyisp; fyisp never overwrites it.'
         : 'Couldn’t load the storage tests. They’ll show again when fyisp answers.';
       return;
     }
+    const key = `${this.rev}:${this.host.sel()}`;
+    if (!full && key === this.loadedFor) return;
+    this.loadedFor = key;
     this.speed = null;
     if (this.live().length && this.host.speedOn()) {
       try { this.speed = await fetchJSON('api/speed'); } catch { /* shown again on the next refresh */ }
@@ -162,10 +185,10 @@ export class Storage {
     }
   }
 
-  /** Details' refresh (on opening, after writes, every 15 s on screen). */
-  async refresh() {
+  /** Details' refresh (on opening, after writes; every 15 s on screen, full: false, reads the campaign only when rev changed). */
+  async refresh(full = true) {
     if (this.targets.editing != null || this.panel === 'form' || dialogOpen()) return; // don't redraw under a form or a dialog
-    await this.load();
+    await this.load(full);
     this.render();
     this.reloadLog();
   }
@@ -254,7 +277,7 @@ export class Storage {
     if (od) {
       const planned = od.count ? ` of ${od.count}` : '';
       if (od.state === 'scheduled') {
-        lines.push(h('b', { text: 'Campaign scheduled' }), ` · starts ${day(od.start_at)} (${inAbout(od.start_at)}) · ${od.count ? `${od.count} rounds` : 'until ' + day(od.ends_at)} every ${od.interval_s / 60} min`);
+        lines.push(h('b', { text: 'Campaign scheduled' }), ` · starts ${day(od.start_at)} (${inAbout(od.start_at)}) · ${od.count ? `${od.count} round${od.count === 1 ? '' : 's'}` : 'until ' + day(od.ends_at)}${everyWords(od)}`);
         acts.push(btn('Cancel campaign…', () => this.stop(od, 'Cancel the campaign?', 'It doesn’t start, and its keys are forgotten now.', 'Cancel campaign')));
       } else {
         lines.push(h('b', { text: od.state === 'paused' ? 'Campaign paused' : 'Campaign running' }), ` · round ${od.rounds_done}${planned}`);
@@ -291,7 +314,7 @@ export class Storage {
       if (!l.waiting_keys.length) continue;
       const names = l.waiting_keys.map((/** @type {string} */ id) => this.name(id)).join(', ');
       const why = l.shape === 'recurring' ? 'a change to a target’s settings, or Forget keys, deleted them'
-        : 'fyisp doesn’t keep an on-demand campaign’s keys across a restart, and a change to a target’s settings deletes them';
+        : 'fyisp doesn’t keep an on-demand campaign’s keys across a restart, and a change to a target’s settings, or Forget keys, deletes them';
       out.push(h('div', { class: 'notice danger st-wait' }, h('b', { text: 'Waiting for keys. ' }),
         `${names} ${l.waiting_keys.length === 1 ? 'has' : 'have'} no keys (${why}), so ${l.waiting_keys.length === 1 ? 'it gets' : 'they get'} connection checks only. `,
         h('button', { type: 'button', class: 'btn primary sm', text: 'Enter keys…', onclick: () => this.keysFor(l) })));
@@ -305,7 +328,7 @@ export class Storage {
     const sp = this.speed;
     if (this.live().length && sp && sp.enabled) {
       const p = activePause(sp.pause);
-      if (p) out.push(h('p', { class: 'muted small st-speed', text: `Scheduled speed tests are ${pauseWords(p)}.` }));
+      if (p) out.push(h('p', { class: 'muted small st-speed', tabindex: '-1', text: `Scheduled speed tests are ${pauseWords(p)}.` }));
       else out.push(h('div', { class: 'notice st-speed' }, 'Scheduled speed tests share the line with this campaign: they fill it for up to 25 s at a time, which can slow or fail a round. ',
         h('button', { type: 'button', class: 'btn sm', text: 'Pause scheduled speed tests…', onclick: () => this.pauseSpeed() }), ' ',
         h('a', { href: '#v=speed', text: 'Speed page' })));
@@ -334,26 +357,26 @@ export class Storage {
     }
     const k = c.campaign;
     const when = k.start_at || k.created;
-    const title = `${k.shape === 'recurring' ? `Schedule · ${windowWords(k.schedule)}` : 'On demand'} · ${day(when)} · ${k.rounds_done} round${k.rounds_done === 1 ? '' : 's'} every ${k.interval_s / 60} min · ${k.targets.length} target${k.targets.length === 1 ? '' : 's'} · ${size(k.bytes_down)} down, ${size(k.bytes_up)} up`;
+    const title = `${k.shape === 'recurring' ? `Schedule · ${windowWords(k.schedule)}` : 'On demand'} · ${day(when)} · ${k.rounds_done} round${k.rounds_done === 1 ? '' : 's'}${everyWords(k)} · ${k.targets.length} target${k.targets.length === 1 ? '' : 's'} · ${size(k.bytes_down)} down, ${size(k.bytes_up)} up`;
     const latest = this.live()[0]?.id || this.d.history?.[0]?.id;
     // Redrawn only when the campaign's data changed (the grid keeps its focus and scroll otherwise).
     const key = `${k.id}:${c.rounds.length}:${k.rounds_done}:${k.state}:${latest}:${(c.traces || []).length}`;
     if (key === this.drawn && this.resEl.firstChild) return;
     this.drawn = key;
     this.grid.set(c);
-    this.resEl.replaceChildren(
+    place(this.resEl, [
       h('div', { class: 'st-res-head' }, h('h2', { id: 'st-res-h', tabindex: '-1', text: 'Results' }), h('p', { class: 'muted', text: title }),
         latest && latest !== this.shown ? h('button', { type: 'button', class: 'btn sm', text: 'Show the latest campaign', onclick: () => this.showCampaign(0) }) : null),
-      c.finding ? findingSection(c.finding) : '',
-      c.cards ? cardsSection(c.cards, (id) => this.name(id), k.targets) : '',
+      c.finding ? findingSection(c.finding) : null,
+      c.cards ? cardsSection(c.cards, (id) => this.name(id), k.targets) : null,
       this.grid.el, this.grid.detail, this.log.el,
-      tracesSection(c.traces || [], (id) => this.name(id)) || '',
-      this.report(k.id));
+      tracesSection(c.traces || [], (id) => this.name(id)),
+      this.report(k.id)]);
   }
 
   /** The report panel of campaign id, kept across redraws (open, ticked). @param {number} id */
   report(id) {
-    if (this.reportFor !== id) { this.reportFor = id; this.reportEl = reportSection(id, this.say); }
+    if (this.reportFor !== id) { this.reportFor = id; this.reportEl = reportSection(id); }
     return /** @type {HTMLElement} */ (this.reportEl);
   }
 
@@ -374,7 +397,8 @@ export class Storage {
       done: (c, words) => this.closeForm(c, words),
     });
     this.panelEl.hidden = false;
-    this.panelEl.replaceChildren(h('div', { onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); this.closeForm(null, ''); } } },
+    // Escape anywhere in it, the heading included, cancels (asking first when something was typed).
+    this.panelEl.replaceChildren(h('div', { onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); this.form?.cancel(); } } },
       h('h2', { id: 'st-panel-h', tabindex: '-1', text: 'New campaign' }), this.form.el));
     this.renderHead();
     /** @type {HTMLElement} */ (this.panelEl.querySelector('h2')).focus();
@@ -424,7 +448,8 @@ export class Storage {
       this.say.textContent = l.shape === 'recurring' ? 'Schedule removed. Its keys were deleted.' : `Campaign stopped after ${l.rounds_done} round${l.rounds_done === 1 ? '' : 's'}. Keys forgotten.`;
     } catch (e) { this.say.textContent = campaignError(e); }
     await this.refresh();
-    /** @type {HTMLElement|null} */ (this.headEl.querySelector('.st-new'))?.focus();
+    // New campaign…, else (another campaign is still live) the first control left.
+    /** @type {HTMLElement|null} */ (this.headEl.querySelector('.st-new') || this.headEl.querySelector('button') || this.resEl.querySelector('#st-res-h'))?.focus();
   }
 
   /** Focuses the header or notice button with this label. @param {string} label */
@@ -450,9 +475,12 @@ export class Storage {
     const body = await askPause('Pause them while this campaign runs, so rounds and speed tests don’t compete for the line.');
     if (!body) { this.refocus('Pause scheduled speed tests…'); return; }
     try {
-      await apiWrite('POST', 'api/speed/config', body);
-      this.say.textContent = 'Scheduled speed tests paused.';
+      const r = await apiWrite('POST', 'api/speed/config', body);
+      this.say.textContent = r.pause?.paused ? `Scheduled speed tests ${pauseWords(r.pause)}.` : 'Scheduled speed tests paused.';
     } catch { this.say.textContent = 'Couldn’t pause the speed tests. Try again.'; }
     await this.refresh();
+    // The notice that replaced the button, else the button again.
+    /** @type {HTMLElement|null} */ (this.notesEl.querySelector('p.st-speed'))?.focus();
+    if (!this.notesEl.contains(document.activeElement)) this.refocus('Pause scheduled speed tests…');
   }
 }
