@@ -10,6 +10,7 @@
 #   docker build -t fyisp .                                         # runtime image (default target)
 #   docker build --target imagetest .                               # runtime image smoke test (--ephemeral)
 #   docker build --target livetest -t fyisp-livetest .              # live --tunnel tests: see internal/tunnel/live_test.go
+#   docker build --target s3lab .                                  # storage engine vs RustFS and Garage (s3lab-full: and MinIO)
 
 ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5
 # The browser image for the UI tests; its Playwright must match test/ui/package.json.
@@ -104,6 +105,36 @@ FROM debian:stable-slim AS livetest
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables && rm -rf /var/lib/apt/lists/*
 COPY --from=livetest-build /tunnel.test /tunnel.test
 ENTRYPOINT ["/tunnel.test"]
+
+# Storage tests against real S3-compatible servers (internal/s3test,
+# build tag s3lab), each started on random loopback ports by the test:
+# RustFS and Garage (s3lab, in CI), and MinIO too (s3lab-full: compiled from
+# its last community release, which takes a few minutes).
+#   docker build --target s3lab .
+#   docker build --target s3lab-full .
+FROM source AS s3lab-build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go test -c -tags s3lab -o /s3lab.test ./internal/s3test
+FROM dxflrs/garage:v2.4.1@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020 AS s3lab-garage
+FROM rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b AS s3lab-base
+COPY --from=s3lab-garage /garage /usr/local/bin/garage
+COPY --from=s3lab-build /s3lab.test /s3lab.test
+FROM s3lab-base AS s3lab
+RUN S3LAB_REQUIRE=rustfs,garage /s3lab.test -test.run TestLab -test.v
+FROM ${GO_IMAGE} AS s3lab-minio
+# The last community release, checked against its commit (a tag can move).
+ARG MINIO_TAG=RELEASE.2025-10-15T17-29-55Z
+ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
+ENV GOTOOLCHAIN=local
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    git clone --depth 1 --branch "$MINIO_TAG" https://github.com/minio/minio /minio-src && \
+    cd /minio-src && test "$(git rev-parse HEAD)" = "$MINIO_COMMIT" && \
+    CGO_ENABLED=0 go build -trimpath -o /minio .
+FROM s3lab-base AS s3lab-full
+COPY --from=s3lab-minio /minio /usr/local/bin/minio
+RUN S3LAB_REQUIRE=rustfs,garage,minio /s3lab.test -test.run TestLab -test.v
 
 # License texts (LICENSE*, COPYING*, NOTICE*) of every module linked into
 # fyisp on any release platform, for the release assets and the image.

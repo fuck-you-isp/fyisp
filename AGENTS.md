@@ -17,6 +17,8 @@ fyisp is one static Go binary (`./cmd/fyisp`). It probes services with TCP conne
 | `internal/speedtest` | Pure-Go iperf3 client and scheduler. Servers are in `internal/profile/catalog/iperf3/` |
 | `internal/web` | HTTP handler, JSON API, embedded UI (`static/`), goldens (`testdata/`) |
 | `internal/metrics`, `export`, `asn` | `/metrics`, `fyisp export`, the built-in IP → AS table |
+| `internal/s3test` | Storage tests: a SigV4 signer and its own HTTP/1.1 client, a round's phases, error classes; `s3fake` is a fake S3 for tests |
+| `internal/tcpinfo` | TCP_INFO (Linux): RTT, retransmits, MSS, bytes acked |
 | `internal/tunnel` | `--tunnel`: a Cloudflare quick tunnel run in-process (cloudflared linked in). Imports nothing from fyisp |
 | `test/netns`, `test/ui` | Network-fault harness (Linux, sudo), Playwright specs and fixtures |
 | `scripts/`, `packaging/`, `docs/` | Launchers, the systemd unit, user, API and operator docs |
@@ -32,6 +34,7 @@ Don't install Go or Node on the host. Everything runs through the [Dockerfile](D
 | Launcher tests | `docker build --target launchertest .` and `docker build --target launchertest-pwsh .` |
 | systemd unit: `systemd-analyze verify`, and fails if `ProcSubset=` is set | `docker build --target servicetest .` |
 | Runtime image smoke test | `docker build --target imagetest .` |
+| Storage engine against RustFS and Garage (`s3lab-full`: and MinIO, built from source) | `docker build --target s3lab .` |
 | Release binaries and SHA256SUMS | `docker buildx build --target dist --output type=local,dest=dist .` |
 | Runtime image | `docker build -t fyisp .` |
 | `go mod tidy` | `docker buildx build --target modfiles --output type=local,dest=. .` |

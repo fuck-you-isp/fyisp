@@ -37,8 +37,8 @@ func TestClassify(t *testing.T) {
 		{errors.New("something else"), model.ReasonOther},
 	}
 	for _, c := range cases {
-		if got := classify(c.err); got != c.want {
-			t.Errorf("classify(%v) = %s, want %s", c.err, got, c.want)
+		if got := Classify(c.err); got != c.want {
+			t.Errorf("Classify(%v) = %s, want %s", c.err, got, c.want)
 		}
 	}
 }
