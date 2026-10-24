@@ -1,114 +1,159 @@
 # fyisp
 
-Is your internet good enough for calls and work right now, and when it isn't, is it your Wi-Fi or your internet provider? fyisp answers that in plain words and keeps 90 days of evidence: when it went wrong, for how long, and whose fault it likely was.
+Is your internet good enough for calls and work right now, and when it isn't, is it your Wi-Fi, your internet provider or one app? fyisp answers that in plain words and keeps 90 days of evidence: when it went wrong, for how long, and whose fault it likely was. It runs on your own computer, NAS or Raspberry Pi, with no account and no telemetry.
 
-Run it now, with everything on (every target, calls and the Home tiles, and scheduled speed tests), on Linux or macOS:
+![fyisp Home: the answer card, the connection strip from your router to the internet, 11 app tiles with their last 2 hours (Microsoft Teams' panel open, with its 24-hour chart), and the problems of the last 7 days](docs/img/home.png)
 
-```sh
-curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile all --speedtest
-```
+- **Calls, work apps and websites.** 11 tiles (Zoom, Microsoft Teams, Google Meet, Slack, Microsoft 365, Google Workspace, GitHub, Dropbox, OneDrive, YouTube and Netflix), each *Good*, *Slow* (*Choppy* for calls) or *Down*, with the last 2 hours in 5-minute bars.
+- **Whose fault it is.** fyisp also checks your own router and your provider's first router, so it can say *your Wi-Fi or router*, *your internet provider*, *the wider internet* or *one app*.
+- **Evidence for your provider.** Every problem of the last 7 days with its time, length and likely cause, on a page with no addresses on it, so a screenshot is safe to send. 90 days of charts and `fyisp export` for the raw numbers.
+- **Private.** Your data stays on your machine. fyisp talks only to the services it checks, your DNS resolver and the routers on the way (for traceroutes), plus speed-test servers, storage endpoints or Cloudflare only if you turn those on; [Privacy](#privacy) lists everything.
 
-Speed tests can use terabytes a month on a fast line: on a metered or capped connection, leave out `--speedtest` (see [Speed tests](#speed-tests)).
-
-fyisp opens the dashboard in your browser; otherwise open the `http://127.0.0.1:3000/#admin=…` link it prints. Run the same command again to [update](#upgrading). Windows, Docker, other ports and options: [Quick start](#quick-start).
-
-fyisp ("F\*\*\* You ISP") is one small program for a home or a remote worker. It runs on your computer (or a NAS or Raspberry Pi), checks your connection every few seconds, and shows the answer at <http://127.0.0.1:3000>:
-
-- **Calls, work apps and websites.** It checks the path that call audio and video take, the call and chat apps (Teams, Zoom, Google Meet, Slack, Webex, Discord, WhatsApp), Microsoft 365, Google Workspace, GitHub, Dropbox and OneDrive, the networks most websites are served from, and YouTube and Netflix.
-- **Whose fault it is.** It also checks your own router and your provider's first hop, so it can say *your Wi-Fi or router*, *your internet provider*, *the wider internet* or *one app*.
-- **Every app at a glance.** 11 tiles (Zoom, Microsoft Teams, Google Meet, Slack, Microsoft 365, Google Workspace, GitHub, Dropbox, OneDrive, YouTube and Netflix), each *Good*, *Slow* (*Choppy* for calls) or *Down*, with the last 2 hours in 5-minute bars. Drops of 30 seconds or more always show.
-- **When it was bad.** The problems of the last 7 days, each with a *likely cause*: your home router (or Wi-Fi), your internet provider, the internet beyond your provider, or the app itself.
-- **Evidence for your provider.** Home lists every problem of the last 7 days with its time, length and likely cause, and has no addresses on it, so a screenshot is safe to send. Technical details keeps 90 days of charts, and `fyisp export` writes the raw numbers as CSV (target names, times and results; traceroute rows give the hop number, not its address).
-- **Private.** No account, no telemetry, nothing to install to try it. fyisp only talks to the services it checks (and, for traceroutes, the routers on the way), your DNS resolver, and hosts you ask it to trace (plus speed-test servers and Cloudflare, if you turn those on; see [Privacy](#privacy)). Its data stays on your machine.
-
-Technical users get every number under **Technical details**: charts per service, traceroutes, call-quality scores, the outage log, Prometheus metrics, CSV export, and 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](docs/PROFILES.md).
-
-> **The default is for homes and remote workers.** Plain `fyisp` makes 28 checks of calls, work apps and websites, one or more for each Home tile (see [Privacy](#privacy) to leave any out), and opens on the plain-words **Home** view. Cloud regions are one flag away: `--profile clouds` (or `aws`, `gcp`, `hetzner`, … ; see [What to measure](docs/PROFILES.md)).
+fyisp ("F\*\*\* You ISP") is one small program. The default makes 28 checks for homes and remote workers and opens on the plain-words **Home** view. **Technical details** has every number: charts per service, traceroutes, call-quality scores, speed and storage tests, Prometheus metrics, and about 1,400 more endpoints (clouds, CDNs, gaming, regions of the world) [one flag away](docs/PROFILES.md).
 
 ## Quick start
 
+Nothing to install: a launcher downloads fyisp, checks it against the release's published checksum, and runs it until you stop it.
+
 ### Linux and macOS
+
+Open **Terminal** (on macOS, or any terminal on Linux) and paste:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh
 ```
 
-fyisp opens the dashboard in your browser, signed in; otherwise open the link it prints (`http://127.0.0.1:3000/#admin=…`, see [Admin token](#admin-token)). Pass options after `sh -s --`, e.g. `... | sh -s -- --profile streaming`.
+### Windows
 
-Everything on, on port 8080 instead of 3000:
-
-```sh
-curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile all --speedtest --listen 127.0.0.1:8080
-```
-
-Leave out `--listen` for the default port 3000. Keep `127.0.0.1:` to stay local-only; `0.0.0.0:<port>` opens it to your network, behind the [admin token](#admin-token) as always. With `--profile all`, consider `--retention 30d`: 90 days of 1,421 targets takes a lot of disk.
-
-To update, stop fyisp (Ctrl-C) and run the same command again (see [Upgrading](#upgrading)).
-
-The launcher (`run.sh`) is pinned to the release it came from. It downloads the matching binary into a temporary directory, **refuses to run it unless its SHA-256 matches the release's `SHA256SUMS`**, also checks the GitHub build provenance attestation if the [GitHub CLI](https://cli.github.com/) is installed and logged in, runs it, and deletes it when fyisp exits. Nothing is installed, so fyisp stops when you close the terminal: see [Keep it running](#keep-it-running).
-
-### Windows (PowerShell)
+Open **PowerShell** (not Command Prompt) and paste:
 
 ```powershell
 & ([scriptblock]::Create((irm https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.ps1)))
 ```
 
-Add fyisp options at the end, e.g. `... ))) --profile all --speedtest --listen 127.0.0.1:8080`. `run.ps1` does the same checks as `run.sh`.
+On a NAS, a Raspberry Pi or a home server, use [Docker](#docker). To read the launcher or check the download yourself first, see [Check before you run](#check-before-you-run).
 
-### Download the binary yourself
+> **On a work laptop**, fyisp looks up each service's name about once a minute through your employer's DNS resolver, YouTube and Netflix included. See [Privacy](#privacy) to leave those out, or run fyisp on a home machine on the same network.
 
-Get `fyisp-<os>-<arch>` from the [latest release](https://github.com/fuck-you-isp/fyisp/releases/latest) (`linux-amd64`, `linux-arm64`, `linux-armv7`, `darwin-amd64`, `darwin-arm64`, `windows-amd64.exe`, `windows-arm64.exe`) together with `SHA256SUMS`, then verify and run it:
+### What happens next
+
+1. The launcher prints `fyisp-run: sha256 ok: …`, then fyisp prints its address and a private sign-in link:
+
+   ```text
+     Dashboard:  http://127.0.0.1:3000/
+
+     To sign in, open this link once in each browser (keep it private):
+     http://127.0.0.1:3000/#admin=…
+   ```
+
+   fyisp opens that link in your browser, signed in. If no browser opens (over SSH, or on a machine without a desktop), open the link yourself; from another machine, see [Opening it from another machine](#opening-it-from-another-machine).
+
+   If port 3000 is busy (and you didn't pass `--listen`), fyisp takes the next free one, up to 3010: use the address it prints.
+2. **Home** says *Checking your connection…*. After about a minute it has its first answer, and the tiles fill in as it runs.
+3. For its first day fyisp is still learning what's usual for your connection, and Home flags only big problems until then.
+
+Leave the window open: fyisp records only while it runs. **Stop it** with Ctrl-C, which saves first (closing the window also stops it, but can lose the last minute). **Update** by stopping it and running the same command again. Your history stays in fyisp's data directory, so the next run carries on. To remove fyisp, see [Where data lives, and uninstalling](#where-data-lives-and-uninstalling).
+
+**Next:** to have it start by itself and keep a full record, see [Keep it running](#keep-it-running). Then read [What you see](#what-you-see-home-and-details).
+
+### Options
+
+Pass options after `sh -s --` on Linux and macOS, after `)))` in PowerShell, and after the image name in Docker:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh | sh -s -- --profile default,streaming
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.ps1))) --profile default,streaming
+```
+
+| Option | What it does |
+|---|---|
+| `--profile NAMES` | What to measure, instead of the default. Combine profiles with commas to keep the default's checks, e.g. `default,streaming` or `default,clouds`; `all` is every target (about 1,400). `fyisp profiles` lists them ([What to measure](docs/PROFILES.md)). |
+| `--speedtest` | Turns on scheduled speed tests, each of 15 regions once an hour. On a 100 Mbit/s line that is about 1.1 to 3 TB a month: leave it off on a metered or capped connection ([Speed tests](#speed-tests)). **Test speed now** on Home runs one test without it. |
+| `--listen 127.0.0.1:8080` | Another port. `0.0.0.0:<port>` opens the dashboard to your network, behind the [admin token](#admin-token). |
+| `--retention 30d` | Keeps less history (the default is 90 days). Worth it with `--profile all`, which takes a lot of disk. |
+| `--admin-token TOKEN` | Your own sign-in token, kept across restarts (otherwise each start makes a new one); see [Admin token](#admin-token). |
+
+### Docker
+
+On Linux, run the container on the host's network, so that fyisp sees your real home router, and with your own admin token, so that a restart doesn't sign you out:
+
+```sh
+(umask 077; openssl rand -hex 16 > fyisp-token)   # your admin token, readable by you only
+docker run -d --name fyisp --restart unless-stopped --network host -v fyisp:/data \
+  -e FYISP_ADMIN_TOKEN="$(cat fyisp-token)" ghcr.io/fuck-you-isp/fyisp
+echo "http://127.0.0.1:3000/#admin=$(cat fyisp-token)"
+```
+
+Open the link the last command prints.
+
+- **From another machine:** replace `127.0.0.1` with the Docker host's address, e.g. `http://192.168.1.10:3000/#admin=…`. The image listens on all addresses (`FYISP_LISTEN=0.0.0.0:3000`), so the dashboard is reachable from your network, behind the token.
+- **This machine only:** add `--listen=127.0.0.1:3000` after the image name.
+- **By name:** to open it as `http://nas.local:3000` or a Tailscale MagicDNS name, add `--allow-host nas.local` after the image name. Otherwise fyisp answers *421 unknown host* (a guard against DNS rebinding).
+- **Doesn't load:** `docker logs fyisp` says why.
+
+**Stop:** `docker stop fyisp`. **Update:** see [Upgrading](#upgrading). **Remove:** `docker rm -f fyisp && docker volume rm fyisp`.
+
+<details>
+<summary>Docker's default network, Docker Desktop, and the image</summary>
+
+**Bridge network.** With Docker's default bridge network (`-p 3000:3000` instead of `--network host`), the container's gateway is Docker's bridge (`172.17.0.1`), not your home router. fyisp then measures the bridge as your router (always fine), and a Wi-Fi or router problem shows up one step too far out, as your provider or the wider internet. The charts are still right. To use it anyway, publish on this machine only with `-p 127.0.0.1:3000:3000`.
+
+**Docker Desktop (macOS, Windows)** runs containers inside a Linux VM: the gateway is the VM's virtual network and `--network host` means the VM's network, not your Mac's or PC's. The router and provider verdicts aren't about your real network there, so on macOS and Windows use the launcher instead.
+
+**The image** is published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. It runs as an unprivileged user (65532) from a `scratch` image, keeps its data in the `/data` volume, and sets `FYISP_DATA_DIR=/data` and `FYISP_LISTEN=0.0.0.0:3000` (`--data-dir` and `--listen` after the image name override them). With a bridge network, ICMP works without extra capabilities on Docker 20.10+. With `--network host`, the host's `net.ipv4.ping_group_range` applies: if the log says ICMP is unavailable, see [ICMP permissions](#icmp-permissions).
+
+</details>
+
+### Check before you run
+
+The launcher is pinned to the release it came from. It downloads the matching binary into a temporary directory, **refuses to run it unless its SHA-256 matches the release's `SHA256SUMS`**, also checks the GitHub build provenance attestation if the [GitHub CLI](https://cli.github.com/) is installed and logged in, and deletes the binary when fyisp exits. To read it before running it:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSLO https://github.com/fuck-you-isp/fyisp/releases/latest/download/run.sh
+less run.sh
+sh run.sh
+```
+
+Or download the binary yourself: get `fyisp-<os>-<arch>` (`linux-amd64`, `linux-arm64`, `linux-armv7`, `darwin-amd64`, `darwin-arm64`, `windows-amd64.exe`, `windows-arm64.exe`) and `SHA256SUMS` from the [latest release](https://github.com/fuck-you-isp/fyisp/releases/latest) into one folder, keeping their names, then verify and run it:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing     # macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
 gh attestation verify fyisp-linux-amd64 --repo fuck-you-isp/fyisp   # optional
-chmod +x fyisp-linux-amd64 && ./fyisp-linux-amd64
+chmod +x fyisp-linux-amd64 && ./fyisp-linux-amd64   # use your file's name
 ```
 
-### Avoiding "unknown publisher" warnings
+```powershell
+# Windows: runs it only if the checksum matches
+$want = (Select-String -Path .\SHA256SUMS -Pattern 'fyisp-windows-amd64\.exe$').Line.Split(' ')[0]
+if ((Get-FileHash .\fyisp-windows-amd64.exe).Hash -eq $want) { .\fyisp-windows-amd64.exe } else { 'checksum mismatch: do not run it' }
+```
 
-The binaries are not code-signed yet. Windows SmartScreen and macOS Gatekeeper only check files that carry the browser's "downloaded from the internet" mark, so:
+<details>
+<summary>"Windows protected your PC" and macOS Gatekeeper</summary>
 
-- **Recommended: use the launchers above.** `run.ps1` (`irm`) and `run.sh` (`curl`) download without that mark, so there is no warning, and they refuse to run anything whose SHA-256 doesn't match `SHA256SUMS`.
-- **Windows, browser download:** SmartScreen says "Windows protected your PC". Either choose *More info → Run anyway*, or, after verifying the checksum, remove the mark once: `Unblock-File .\fyisp-windows-amd64.exe`. Double-clicking the `.exe` opens a console window with the log and the dashboard address; closing the window stops fyisp. To pass options, run it from a terminal or put them in a shortcut's *Target*.
+The binaries are not code-signed. Windows SmartScreen and macOS Gatekeeper check only files that carry the browser's "downloaded from the internet" mark. The launchers download without it, so they show no warning.
+
+- **Windows, browser download:** SmartScreen says "Windows protected your PC". Choose **More info**, then **Run anyway**, or, after verifying the checksum, remove the mark once with `Unblock-File .\fyisp-windows-amd64.exe`. Double-clicking the `.exe` opens a console window with the log and the dashboard address; closing the window stops fyisp. To pass options, run it from a terminal or put them in a shortcut's **Target**.
 - **macOS, browser download:** Gatekeeper blocks it. After verifying it, run `xattr -d com.apple.quarantine fyisp-darwin-arm64`.
 
-Code signing is planned: free Windows signing through the [SignPath Foundation](https://signpath.org/) (for open-source projects), and Apple notarization if there is demand.
+</details>
 
-### Docker
+### If something's off
 
-```sh
-docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
-sleep 5; docker logs fyisp 2>&1 | grep -o 'http://[^ "]*#admin=[0-9a-f]*' | tail -1
-```
+- **The page asks you to sign in.** Open the newest sign-in link fyisp printed. Each start makes a new one, which signs every browser out; to keep one, pass your own [admin token](#admin-token).
+- **`fyisp is already running`.** Another fyisp uses the same data directory: use that one (its sign-in link is in its window or log), or stop it first.
+- **`ICMP probes disabled` in the log.** fyisp then can't tell your router from your provider and runs no traceroutes; see [ICMP permissions](#icmp-permissions).
+- **`is /tmp mounted noexec?`** Run the launcher with `TMPDIR` set to a directory that allows running programs, e.g. `mkdir -p ~/tmp && curl … | TMPDIR=$HOME/tmp sh`.
+- **`421 unknown host`.** You opened the dashboard by a name: start fyisp with `--allow-host <that name>`.
 
-Open the link that the second command prints, `http://127.0.0.1:3000/#admin=…`, once in your browser: the dashboard needs its admin token. If it prints nothing, fyisp is still starting: run it again. That token is new at every start of the container, which signs every browser out; to keep one, pass your own (below, and [Admin token](#admin-token)).
+### Opening it from another machine
 
-**On Linux, use host networking for accurate verdicts.** With Docker's default bridge network the container's default gateway is Docker's bridge (`172.17.0.1`), not your home router, so the *Gateway* layer measures the bridge (always fine) and the *ISP edge* found by the path discovery is your router's WAN side or later. A Wi-Fi or router problem then shows up one layer too far out (as *ISP* or *Upstream*). Run the container in the host's network namespace instead:
-
-```sh
-docker run -d --name fyisp --restart unless-stopped --network host -v fyisp:/data ghcr.io/fuck-you-isp/fyisp --listen=127.0.0.1:3000
-```
-
-With `--network host`, `-p` is ignored: fyisp listens on the host directly (the image's default `FYISP_LISTEN=0.0.0.0:3000` makes it reachable from your network; the `--listen=127.0.0.1:3000` above keeps it on this machine).
-
-**Docker Desktop (macOS, Windows)** runs containers inside a Linux VM: the container's gateway is the VM's virtual network, every probe is NATed by the VM, and `--network host` means the VM's network, not your Mac's or PC's. The charts are still useful, but the Gateway and ISP edge layers (and so the *Wi-Fi/router* vs *ISP* verdicts) are not about your real network there. For layer-accurate verdicts, run the native binary on macOS and Windows (see [Quick start](#quick-start)).
-
-Images are published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. The container runs as an unprivileged user (65532) from a `scratch` image and keeps its data in the `/data` volume. `-p 3000:3000` makes the UI reachable from your network; use `-p 127.0.0.1:3000:3000` to keep it on this machine. ICMP works without extra capabilities on Docker 20.10+, which allows unprivileged ping sockets inside containers.
-
-fyisp options go **after the image name** (the image sets `FYISP_DATA_DIR=/data` and `FYISP_LISTEN=0.0.0.0:3000`; `--data-dir` and `--listen` after the image name override them):
-
-```sh
-# Your own admin token, kept across restarts: open the link this prints
-tok=$(openssl rand -hex 16); echo "http://127.0.0.1:3000/#admin=$tok"
-docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data -e FYISP_ADMIN_TOKEN=$tok ghcr.io/fuck-you-isp/fyisp
-```
-
-If you open the UI by a name instead of an IP address (`http://nas.local:3000`, a Tailscale MagicDNS name, a tunnel), add `--allow-host nas.local` (repeatable or comma-separated). Otherwise fyisp refuses the request with *421 unknown host*, which protects against DNS rebinding.
+fyisp listens on `127.0.0.1` (this machine only) by default. To open it from your laptop or phone, either start it with `--listen 0.0.0.0:3000` and replace `127.0.0.1` in the sign-in link with the machine's address (e.g. `http://192.168.1.10:3000/#admin=…`), or keep it local and forward the port over SSH (`ssh -L 3000:127.0.0.1:3000 <host>`, then open the link on your laptop). For access from outside your home, see [Remote access](#remote-access).
 
 ## What you see: Home and Details
-
-![fyisp Home: the answer card, the connection strip from your router to the internet, 11 app tiles with their last 2 hours (Microsoft Teams' panel open, with its 24-hour chart), and the problems of the last 7 days](docs/img/home.png)
 
 **Home** opens first. It answers one question, *is my internet OK for calls and work, and which apps work?*, in plain words. Numbers stay in the tile panels.
 
@@ -116,7 +161,7 @@ If you open the UI by a name instead of an IP address (`http://nas.local:3000`, 
 - **Your connection**: *Your home router → Your internet provider → The internet*, each with an icon (✓, ! or ✕) and a short line: *Working normally*, *Losing some data since 10:12 am*, *Dropped for 40 s at 10:14 am, fine now*. The first box says *Your Wi-Fi and router* only when fyisp can tell it is looking at the Wi-Fi of the machine you're reading on; otherwise *Your home router* (see [Wi-Fi or router?](docs/VERDICTS.md#wi-fi-or-router)).
 - **11 app tiles**: Zoom, Microsoft Teams, Google Meet and Slack (calls); Microsoft 365, Google Workspace, GitHub, Dropbox and OneDrive (apps); YouTube and Netflix (streaming). Each says *Good*, *Slow* (*Choppy* for calls) or *Down*, with *since 10:12 am* when it isn't Good, or *Dropped 40 s at 10:14 am* for 30 minutes after a drop. Under it, 24 bars show the last 2 hours in 5-minute steps: green, yellow (slow for 2 minutes or more), red (down, or a drop of 30 seconds or more) or grey (fyisp wasn't running). A tile your profile doesn't cover says *Not checked* and how to turn it on.
 - **Click a tile** for its panel: why it has that word, its numbers against their limits (delay, jitter and loss for calls; the usual time and the *Slow above* limit for the others), and a 24-hour chart with the usual line, the problems and the time fyisp wasn't running. Escape or *Close* returns to the tile. *How fyisp decides Good, Slow, Choppy and Down*, under the tiles, explains the rules (see [How fyisp decides](docs/VERDICTS.md)).
-- **Speed** (when [speed tests](#speed-tests) are on): your latest result in Mbps against your usual speed (once there are a few tests), and **Test speed now**, which runs one test against fyisp's built-in servers.
+- **Speed**: your latest result in Mbps against your usual speed (once there are a few tests), and **Test speed now**, which runs one test against fyisp's built-in servers. Scheduled tests are off unless you turn on [speed tests](#speed-tests).
 - **Problems in the last 7 days**: a summary by cause (*5 problems: 1 likely from your internet provider, 1 from your home router, 3 from the apps themselves*), then each problem with its time, what happened, its *likely cause* and one line of evidence (*Your router kept answering, but nothing past it did.*). A problem during one of fyisp's own speed tests says so.
 - **The footer**: *Watching your connection since …* and **Technical details →**.
 
@@ -237,7 +282,7 @@ In Details → Storage, fyisp checks the S3-compatible endpoints you add (any pr
 
 ## What to measure (profiles)
 
-The default measures 28 targets for calls, work apps and websites. `--profile` adds any of about 1,400 more (clouds, CDNs, gaming, regions of the world), and `--config` loads your own file that adds, removes or changes targets. `fyisp profiles` lists the profiles. Details: [What to measure](docs/PROFILES.md).
+The default measures 28 targets for calls, work apps and websites. `--profile` picks others instead from about 1,400 more (clouds, CDNs, gaming, regions of the world; `--profile default,clouds` keeps the default too), and `--config` loads your own file that adds, removes or changes targets. `fyisp profiles` lists the profiles. Details: [What to measure](docs/PROFILES.md).
 
 ## Privacy
 
@@ -297,7 +342,7 @@ fyisp --allow-host fyisp.example.com     # the name the tunnel or proxy uses
 Everything fyisp serves except the page itself needs the admin token: the dashboard, its API and `/metrics`, on this machine as much as from your network or through a tunnel. Pass your own with `--admin-token` or `FYISP_ADMIN_TOKEN` (at least 32 letters, digits or `- . _ ~`, e.g. from `openssl rand -hex 16`). Without one, fyisp makes a new random token at every start and logs an "open this link" URL with it, like Jupyter; started from a terminal, it opens that link in your browser.
 
 - Open the link once per browser. The page swaps the token for an HttpOnly cookie and removes it from the address bar. The cookie holds a value derived from the token, not the token, but it signs a browser in by itself until the token changes, and browsers send it to every port of that host name: other web apps on the same host name see it and could use it to open this dashboard. Don't run fyisp next to web apps you don't trust under the same host name. The token is in the part after `#`, which browsers never send to a server, so it doesn't end up in proxy logs or `Referer` headers.
-- Opening the dashboard from another machine: replace `127.0.0.1` with the server's address, e.g. `http://192.168.1.10:3000/#admin=…`. A browser without the cookie asks for the token instead.
+- Opening the dashboard from another machine: see [Opening it from another machine](#opening-it-from-another-machine). A browser without the cookie asks for the token instead.
 - To sign every browser out, restart fyisp with a new token. A generated token is new at every start, so a restart always signs everyone out: for a service that restarts (Docker, systemd, a NAS), pass your own.
 - Under systemd, keep the token out of the unit, which any user can read: put `FYISP_ADMIN_TOKEN=<token>` in a file only root can read and load it with `EnvironmentFile=` (see the comments in [`packaging/fyisp.service`](packaging/fyisp.service)). On Linux and macOS, `--admin-token` on the command line is visible to other users of the machine (`ps`), and `FYISP_ADMIN_TOKEN` is not; fyisp never prints either one, `-h` included.
 - Scripts and Prometheus send it as `Authorization: Bearer <token>` (or `X-FYISP-Admin: <token>`); see [Prometheus metrics](#prometheus-metrics).
@@ -313,10 +358,9 @@ Everything fyisp serves except the page itself needs the admin token: the dashbo
   ```sh
   docker pull ghcr.io/fuck-you-isp/fyisp
   docker rm -f fyisp
-  docker run -d --name fyisp --restart unless-stopped -p 3000:3000 -v fyisp:/data ghcr.io/fuck-you-isp/fyisp
   ```
 
-  (Repeat the options you started it with.)
+  Then run the same `docker run` command as before (see [Docker](#docker)), with the same options and token.
 - **Installed binary** ([Keep it running](#keep-it-running)): download the new `fyisp-<os>-<arch>`, verify it, replace the old file and restart the service.
 
 Upgrading keeps your history. When a release changes the database format, its first start upgrades the database in place and logs `store: database upgraded from schema vN to vM`. A database from before v0.11.0 is the exception: it is replaced with an empty one, and fyisp logs `store: database from an older fyisp (schema vN) replaced with a new empty one`. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched. fyisp makes no backups of its database; to keep one, stop fyisp and copy `fyisp.db`, and `storage-targets.json` if you saved storage targets (`fyisp paths` shows where they are).
