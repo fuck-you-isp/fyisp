@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -174,6 +175,7 @@ type camLab struct {
 	done   chan struct{}
 	block  chan struct{} // a manual speed test runs until it is closed
 	signed sync.Map      // target id -> asked signed
+	recent atomic.Value  // [2]float64: the line's recent speeds (CampaignOptions.Recent)
 }
 
 func newCamLab(t *testing.T, st *memStore, dir string) *camLab {
@@ -207,7 +209,9 @@ func newCamLab(t *testing.T, st *memStore, dir string) *camLab {
 			return 0, false
 		},
 	})
-	l.c = NewCampaigns(CampaignOptions{Store: st, Queue: l.q, Engine: e, Targets: l.svc})
+	l.recent.Store([2]float64{})
+	l.c = NewCampaigns(CampaignOptions{Store: st, Queue: l.q, Engine: e, Targets: l.svc,
+		Recent: func() [2]float64 { return l.recent.Load().([2]float64) }})
 	ctx, cancel := context.WithCancel(context.Background())
 	l.stop, l.done = cancel, make(chan struct{})
 	go l.q.Run(ctx)
@@ -442,7 +446,7 @@ func TestCampaignKeys(t *testing.T) {
 			}
 		}
 		// Over a 1 Mbit/s upload, a 64 MiB seed takes about 9 minutes: refused; 16 MiB fits.
-		l.c.o.Recent = func() [2]float64 { return [2]float64{50e6, 1e6} }
+		l.recent.Store([2]float64{50e6, 1e6})
 		big := CampaignSpec{Targets: []string{b}, Shape: model.StorageOnDemand, Interval: 30 * time.Minute, Count: 1, Cold: 1, Down: 64 << 20}
 		if _, _, err := l.c.validate(big, keysFor(b), time.Now()); !errors.As(err, &ce) || ce.Field != "down_bytes" {
 			t.Errorf("seed too big for the upload: %v", err)
