@@ -292,6 +292,11 @@
   "text": "Evenings are slower: about 40% below your daytime speed.",
   "up": false
  },
+ "pause": {
+  "paused": false,
+  "since": null,
+  "until": null
+ },
  "per_region": [
   {
    "best_down_bps": 424000000,

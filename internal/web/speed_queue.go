@@ -19,7 +19,7 @@ import (
 // speedEntryJSON is one queue entry.
 type speedEntryJSON struct {
 	ID         uint64    `json:"id"`
-	Kind       string    `json:"kind"`   // single | sweep | scheduled
+	Kind       string    `json:"kind"`   // single | sweep | scheduled | campaign
 	Who        string    `json:"who"`    // you | scheduled
 	Origin     string    `json:"origin"` // owner | scheduled
 	State      string    `json:"state"`
@@ -120,9 +120,10 @@ type speedQueueJSON struct {
 	LastSweep *speedEntryJSON  `json:"last_sweep"`
 }
 
-// who is an entry's "who": the schedule's or the owner's.
+// who is an entry's "who": the schedule's (a storage schedule's round
+// too) or the owner's.
 func who(e speedtest.Entry) string {
-	if e.Kind == speedtest.KindScheduled {
+	if e.Kind == speedtest.KindScheduled || (e.Kind == speedtest.KindCampaign && !e.Owner) {
 		return "scheduled"
 	}
 	return "you"
@@ -156,8 +157,11 @@ func (s *server) speedEntry(e speedtest.Entry, st speedtest.State, names speedNa
 		j.Tests = []int64{}
 	}
 	j.Origin = "owner"
-	if e.Kind == speedtest.KindScheduled {
+	if j.Who == "scheduled" {
 		j.Origin = "scheduled"
+	}
+	if e.Kind == speedtest.KindCampaign { // a storage round: its campaign, by the name it shows
+		j.Target = &speedRef{ID: e.Target, Label: e.Label}
 	}
 	j.StoppedReason = strPtr(e.Stopped)
 	j.CancelledBy = strPtr(e.CancelledBy)

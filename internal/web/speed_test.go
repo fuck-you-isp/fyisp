@@ -562,6 +562,53 @@ func TestSpeedConfig(t *testing.T) {
 	}
 }
 
+// TestSpeedPause: POST api/speed/config {"pause"} pauses and resumes the
+// schedule, alone or with other fields; api/speed reports the pause and no
+// next test while paused.
+func TestSpeedPause(t *testing.T) {
+	g := newSpeedRig(t, 5*time.Hour)
+	loc, _ := speedHandlers(t, g, LocalOptions{})
+	cfg := func(body string) *httptest.ResponseRecorder {
+		return speedSend(loc, "POST", "/api/speed/config", body, speedPOSTHeaders())
+	}
+	summary := func() speedJSON {
+		var s speedJSON
+		json.Unmarshal(do(loc, "GET", "/api/speed", speedHost).Body.Bytes(), &s)
+		return s
+	}
+	if w := cfg(`{"mode": "regions"}`); w.Code != 200 {
+		t.Fatalf("regions: %d %s", w.Code, w.Body.String())
+	}
+	if s := summary(); s.Pause.Paused || s.NextAt == nil {
+		t.Fatalf("before: pause %+v next %v", s.Pause, s.NextAt)
+	}
+	w := cfg(`{"pause": true, "pause_until": null}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pause":{"paused":true,"since":`) || !strings.Contains(w.Body.String(), `"until":null`) ||
+		!strings.Contains(w.Body.String(), `"next_at":null`) || g.s.State().Pause == nil {
+		t.Errorf("pause: %d %s", w.Code, w.Body.String())
+	}
+	if s := summary(); !s.Pause.Paused || s.Pause.Since == nil || s.Pause.Until != nil || s.NextAt != nil || s.NextRow != nil {
+		t.Errorf("paused summary: pause %+v next %v %v", s.Pause, s.NextAt, s.NextRow)
+	}
+	until := g.s.State().Next.Add(3 * time.Hour).UnixMilli()
+	if w := cfg(fmt.Sprintf(`{"pause": true, "pause_until": %d, "skip": []}`, until)); w.Code != 200 || !strings.Contains(w.Body.String(), fmt.Sprintf(`"until":%d`, until)) {
+		t.Errorf("pause until, with skip: %d %s", w.Code, w.Body.String())
+	}
+	if w := cfg(`{"pause": false}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"pause":{"paused":false,"since":null,"until":null}`) || strings.Contains(w.Body.String(), `"next_at":null`) {
+		t.Errorf("resume: %d %s", w.Code, w.Body.String())
+	}
+	if s := summary(); s.Pause.Paused || s.NextAt == nil {
+		t.Errorf("resumed summary: pause %+v next %v", s.Pause, s.NextAt)
+	}
+	soon := summary().At + 10_000 // the rig's clock, not the wall's
+	for _, body := range []string{`{"pause_until": 1}`, `{"pause": false, "pause_until": 1}`, `{"pause": "yes"}`,
+		fmt.Sprintf(`{"pause": true, "pause_until": %d}`, soon), `{"pause": true, "pause_until": 1}`} {
+		if w := cfg(body); w.Code != 400 {
+			t.Errorf("%q: %d %s", body, w.Code, w.Body.String())
+		}
+	}
+}
+
 // TestHomeSpeedLine: Home's speed block reads the stored speed tests
 // (s.d.Speed): the latest, the usual of the ones before it, and whether
 // tests are scheduled.

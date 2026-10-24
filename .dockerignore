@@ -5,3 +5,4 @@ dist
 !internal/store/testdata/*.db
 test/ui/node_modules
 test/ui/out
+.claude

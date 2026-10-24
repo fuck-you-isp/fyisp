@@ -31,6 +31,10 @@ type SpeedSource interface {
 	// Queue is the speed-test queue (Test now, sweeps, schedule slots).
 	Queue() *speedtest.Queue
 	SetSkip(ctx context.Context, ids []string) error
+	// SetPause pauses the schedule (until a time; zero: until resumed) or
+	// resumes it.
+	SetPause(ctx context.Context, on bool, until time.Time) error
+	CheckPause(until time.Time) error
 	TestShare(d time.Duration) float64
 	Catalog() *speedtest.Catalog
 	BytesSince(ctx context.Context, t time.Time) (int64, error)
@@ -206,8 +210,9 @@ type speedJSON struct {
 	BytesMonth      int64              `json:"bytes_month"`
 	Bytes24h        int64              `json:"bytes_24h"`
 	Connection      speedConnection    `json:"connection"`
-	NextAt          *int64             `json:"next_at"`
+	NextAt          *int64             `json:"next_at"` // null while paused
 	NextRow         *string            `json:"next_row"`
+	Pause           speedPause         `json:"pause"`
 	Running         *speedRunning      `json:"running"`
 	Rows            []speedRow         `json:"rows"`
 	PerRegion       []speedRow         `json:"per_region"`
@@ -219,6 +224,20 @@ type speedJSON struct {
 	Finding         speedtest.Finding  `json:"finding"`
 	Coverage        []speedHour        `json:"coverage"`
 	UnderLoad       speedUnderLoad     `json:"under_load"`
+}
+
+// speedPause is the owner's pause of the schedule.
+type speedPause struct {
+	Paused bool   `json:"paused"`
+	Since  *int64 `json:"since"`
+	Until  *int64 `json:"until"` // null: until resumed
+}
+
+func pauseJSON(p *speedtest.Pause) speedPause {
+	if p == nil {
+		return speedPause{}
+	}
+	return speedPause{Paused: true, Since: ms(p.Since), Until: ms(p.Until)}
 }
 
 type speedConnection struct {
@@ -502,7 +521,7 @@ func speedWindows(ts []model.SpeedTest, from time.Time) []speedWindow {
 
 func (s *server) speedRunning(names speedNames) *speedRunning {
 	e := s.d.Speed.Queue().State().Running
-	if e == nil {
+	if e == nil || e.Kind == speedtest.KindCampaign { // a storage round: the queue shows it
 		return nil
 	}
 	r := &speedRunning{Entry: e.ID, Kind: string(e.Kind), Started: e.Started.UnixMilli(),
@@ -528,9 +547,12 @@ func (s *server) speedSummary(ctx context.Context, p speedParams, st speedtest.S
 		IntervalS: int64(st.Interval / time.Second), SpacingS: int64(st.Spacing / time.Second),
 		PlannedShare: math.Round(st.PlannedShare*1000) / 1000, Warning: strPtr(st.Warning),
 		TestShare24h: math.Round(s.d.Speed.TestShare(24*time.Hour)*1000) / 1000,
-		NextAt:       ms(st.Next), NextRow: strPtr(st.NextRow), Running: s.speedRunning(names),
+		NextAt:       ms(st.Next), NextRow: strPtr(st.NextRow), Pause: pauseJSON(st.Pause), Running: s.speedRunning(names),
 		Rows: []speedRow{}, PerRegion: []speedRow{}, PerServer: []speedRow{}, Servers: []speedServerJSON{}, Regions: []speedRegionJSON{},
 		Connection: speedConnection{Type: "unknown", Source: "detected"}}
+	if st.Pause != nil {
+		out.NextAt, out.NextRow = nil, nil // slots are skipped until the pause ends
+	}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	out.BytesMonth, _ = s.d.Speed.BytesSince(ctx, month)
 	out.Bytes24h, _ = s.d.Speed.BytesSince(ctx, now.Add(-24*time.Hour))
@@ -943,7 +965,7 @@ func (h *localHandler) speedPOST(w http.ResponseWriter, r *http.Request, params 
 }
 
 // serveSpeedConfig answers POST api/speed/config {"mode", "extra",
-// "skip"}.
+// "skip", "pause", "pause_until"}.
 func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) {
 	if !h.speedPOST(w, r) {
 		return
@@ -952,12 +974,27 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		Mode  *string  `json:"mode"`
 		Extra []string `json:"extra"` // opt-in (regions) or far (nearby) regions
 		Skip  []string `json:"skip"`  // servers never to test (replaces the list)
+		// Pause pauses (true) or resumes (false) the schedule; PauseUntil
+		// (unix ms) ends a pause by itself (null: until resumed).
+		Pause      *bool  `json:"pause"`
+		PauseUntil *int64 `json:"pause_until"`
 	}
 	d := json.NewDecoder(io.LimitReader(r.Body, 4<<10))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Skip == nil) || (body.Mode == nil && body.Extra != nil) {
-		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]} and/or {"skip": [server ids]}`)
+	if err := d.Decode(&body); err != nil || (body.Mode == nil && body.Skip == nil && body.Pause == nil) || (body.Mode == nil && body.Extra != nil) ||
+		(body.PauseUntil != nil && (body.Pause == nil || !*body.Pause)) {
+		writeErr(w, r, http.StatusBadRequest, `want {"mode": "off", "regions", "nearby" or "custom", "extra": [region ids]}, {"skip": [server ids]} and/or {"pause": true, "pause_until": ms or null} / {"pause": false}`)
 		return
+	}
+	var until time.Time
+	if body.PauseUntil != nil {
+		until = time.UnixMilli(*body.PauseUntil)
+	}
+	if body.Pause != nil && *body.Pause {
+		if err := h.d.Speed.CheckPause(until); err != nil { // before anything is saved
+			writeErr(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), storeTimeout)
 	defer cancel()
@@ -986,6 +1023,19 @@ func (h *localHandler) serveSpeedConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		out["skip"] = body.Skip
+	}
+	if body.Pause != nil {
+		if err := h.d.Speed.SetPause(ctx, *body.Pause, until); errors.Is(err, speedtest.ErrPause) {
+			writeErr(w, r, http.StatusBadRequest, err.Error())
+			return
+		} else if err != nil {
+			h.storeErr(w, r, "save the speed test pause", err)
+			return
+		}
+		out["pause"], out["next_at"] = pauseJSON(h.d.Speed.State().Pause), ms(h.d.Speed.State().Next)
+	}
+	if _, ok := out["next_at"]; ok && h.d.Speed.State().Pause != nil {
+		out["next_at"] = nil // slots are skipped until the pause ends
 	}
 	writeJSON(w, r, http.StatusOK, out)
 }

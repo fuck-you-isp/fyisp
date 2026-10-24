@@ -231,6 +231,10 @@ fyisp measures the UDP path that call audio and video take with tiny STUN reques
 
 Speed tests are **off by default**. `--speedtest` (or a mode picked in Details → Speed) tests your download and upload speed against public iperf3 servers in 15 regions (9 of them in the US), each once an hour, so you can see whether your connection slows down at certain times of day, and whose network the slowdown is in. A test fills your line while it runs: on a 100 Mbit/s line that is about 1.1 to 3 TB a month, so leave speed tests off on metered or capped connections. Modes, data use, the servers and how they're treated: [Speed tests](docs/SPEED-TESTS.md).
 
+## Storage tests
+
+In Details → Storage, fyisp checks the S3-compatible endpoints you add (any provider, or a server on your network): whether it can connect to each, how long the steps take, and what to fix when one refuses. A campaign tests them over time, on demand or inside a weekly window, and stores every attempt. Nothing is tested until you ask. Details: [Storage tests](docs/STORAGE-TESTS.md).
+
 ## What to measure (profiles)
 
 The default measures 28 targets for calls, work apps and websites. `--profile` adds any of about 1,400 more (clouds, CDNs, gaming, regions of the world), and `--config` loads your own file that adds, removes or changes targets. `fyisp profiles` lists the profiles. Details: [What to measure](docs/PROFILES.md).
@@ -253,6 +257,7 @@ fyisp has no account and no telemetry, and its data stays on your machine. What 
 - **Hosts traced on request.** *Investigate* traces any public host someone signed in to your dashboard types in (within its limits: 4 at once, about 10 minutes each). That host and the routers on the way see probes from your public IP address, and your DNS resolver sees the name looked up, about once a minute while the trace runs. Its hop numbers age out with the rest of the data, but the host's name stays in the database's index of series. No other service is involved.
 - **Wi-Fi or router.** To word Home's first box, fyisp reads whether its own connection is Wi-Fi (no network name, nothing about other devices) and whether the page is opened on the same machine, which is never stored, logged or returned (see [Wi-Fi or router?](docs/VERDICTS.md#wi-fi-or-router)). The connection type itself is in fyisp's log and in speed-test results.
 - **`--tunnel`** (off by default) connects to Cloudflare to publish the dashboard at a random `https://….trycloudflare.com` address (see [Remote access](#remote-access)). Cloudflare sees your public IP address and your machine's local address, and it decrypts the dashboard's traffic at its edge, the admin token included. Your DNS resolver sees the lookups of `api.trycloudflare.com` and Cloudflare's `argotunnel.com` names (or fyisp asks 1.1.1.1 over TLS), and the request for a tunnel goes through `HTTPS_PROXY` when that is set. The dashboard there needs the admin token, as everywhere. [SECURITY.md](SECURITY.md#what-leaves-your-machine) lists everything the tunnel sends.
+- **Storage tests** connect only to the S3-compatible endpoints you save as targets, over IPv4, and only when you ask: a check is one request, and a campaign sends rounds every few minutes (fresh connections, and with keys a download and an upload to your bucket under `fyisp-test/`) while it runs, and traceroutes the provider's address (as *Investigate* does) after the first round and after a connection failure. The endpoint sees your public IP address and your requests; your DNS resolver sees its name looked up for every fresh connection. Targets are kept in `storage-targets.json` in the data directory, readable by fyisp's user only, never in the database. Keys you enter are never shown again, logged or exported: a campaign holds them in memory until it ends, or a weekly schedule saves them in that file until it ends. Through `--tunnel` they pass through Cloudflare, so use keys scoped to a test bucket. [SECURITY.md](SECURITY.md#what-leaves-your-machine) has the details.
 - **A screenshot or export you send** shows what it says. Home and *What happened at …?* show no addresses; the Details charts, traceroutes and `fyisp export` include your router's and your provider's addresses.
 
 ## ICMP permissions
@@ -314,7 +319,7 @@ Everything fyisp serves except the page itself needs the admin token: the dashbo
   (Repeat the options you started it with.)
 - **Installed binary** ([Keep it running](#keep-it-running)): download the new `fyisp-<os>-<arch>`, verify it, replace the old file and restart the service.
 
-Upgrading keeps your history. When a release changes the database format, its first start upgrades the database in place and logs `store: database upgraded from schema vN to vM`. A database from before v0.11.0 is the exception: it is replaced with an empty one, and fyisp logs `store: database from an older fyisp (schema vN) replaced with a new empty one`. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched. fyisp makes no backups of its database; to keep one, stop fyisp and copy `fyisp.db` (`fyisp paths` shows where it is).
+Upgrading keeps your history. When a release changes the database format, its first start upgrades the database in place and logs `store: database upgraded from schema vN to vM`. A database from before v0.11.0 is the exception: it is replaced with an empty one, and fyisp logs `store: database from an older fyisp (schema vN) replaced with a new empty one`. Going back to an older release never wipes data: fyisp refuses a database from a newer version and leaves it untouched. fyisp makes no backups of its database; to keep one, stop fyisp and copy `fyisp.db`, and `storage-targets.json` if you saved storage targets (`fyisp paths` shows where they are).
 
 fyisp does not update itself: run the launcher from a newer release, or replace the binary.
 
@@ -345,7 +350,7 @@ Scraping from another machine by host name also needs that name in `--allow-host
 | systemd unit | `/var/lib/fyisp` (`$STATE_DIRECTORY`) |
 | Docker | the `/data` volume |
 
-Change it with `--data-dir`, or use `--ephemeral` for a temporary directory that is deleted on exit. Samples older than 90 days are deleted automatically (`--retention`).
+It holds the database (`fyisp.db`), its lock file and, once you save storage targets, `storage-targets.json` (readable by fyisp's user only). Change it with `--data-dir`, or use `--ephemeral` for a temporary directory that is deleted on exit. Samples older than 90 days are deleted automatically (`--retention`).
 
 To uninstall, stop fyisp, then delete its data directory and the binary. The launchers leave no binary behind; only the data directory remains.
 
@@ -379,7 +384,7 @@ Add `--build-arg VERSION=v0.1.0` to stamp a version. Releases are built by [`.gi
 
 - [What to measure](docs/PROFILES.md): Home's tiles, the profiles, the Overview and the `--config` format
 - [How fyisp decides](docs/VERDICTS.md): Good, Slow, Choppy and Down, the verdicts, and Wi-Fi or router
-- [Call quality](docs/CALL-QUALITY.md) and [Speed tests](docs/SPEED-TESTS.md)
+- [Call quality](docs/CALL-QUALITY.md), [Speed tests](docs/SPEED-TESTS.md) and [Storage tests](docs/STORAGE-TESTS.md)
 - [API](docs/API.md): every route, the `/metrics` series and the `fyisp export` columns
 - [STUN servers' terms](docs/STUN-TERMS.md), [iperf3 servers' terms](docs/IPERF3-TERMS.md) and [a note for iperf3 operators](docs/OPERATORS.md)
 - [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md)

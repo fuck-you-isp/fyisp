@@ -33,6 +33,7 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 	"github.com/fuck-you-isp/fyisp/internal/netinfo"
 	"github.com/fuck-you-isp/fyisp/internal/probe"
+	"github.com/fuck-you-isp/fyisp/internal/storage"
 	"github.com/fuck-you-isp/fyisp/internal/store"
 	"github.com/fuck-you-isp/fyisp/internal/tiles"
 	"github.com/fuck-you-isp/fyisp/internal/verdict"
@@ -69,6 +70,13 @@ type Deps struct {
 	// Speed runs the speed tests (speedtest.Scheduler); nil: the speed
 	// routes answer 404 and the UI hides Speed.
 	Speed SpeedSource
+	// Storage keeps the storage-test targets and runs checks; nil: the
+	// storage routes answer 404.
+	Storage *storage.Service
+	// Campaigns runs the storage campaigns and StorageData reads what they
+	// stored; nil: only targets and checks.
+	Campaigns   *storage.Campaigns
+	StorageData StorageReader
 	// Path is the current network path of this machine (netinfo.Watcher's
 	// Current), including how it connects (Path.Conn); may be nil.
 	Path func() netinfo.Path

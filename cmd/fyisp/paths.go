@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/fuck-you-isp/fyisp/internal/storage"
 )
 
 // defaultDataDir is where history lives unless --data-dir or --ephemeral.
@@ -116,7 +118,8 @@ func cmdPaths(args []string) int {
 			return 1
 		}
 	}
-	fmt.Printf("data directory: %s\n  database:     %s\n  lock file:    %s\n", d, filepath.Join(d, "fyisp.db"), filepath.Join(d, "fyisp.lock"))
+	fmt.Printf("data directory: %s\n  database:     %s\n  lock file:    %s\n  storage:      %s\n",
+		d, filepath.Join(d, "fyisp.db"), filepath.Join(d, "fyisp.lock"), filepath.Join(d, storage.FileName))
 	fmt.Println("To uninstall: stop fyisp, delete the data directory above, and delete the fyisp binary.")
 	return 0
 }

@@ -632,6 +632,7 @@ type profileJSON struct {
 		Trace     bool `json:"trace"`     // the Investigate view is available
 		Baselines bool `json:"baselines"` // "normal" badges and band (/api/baselines)
 		Speed     bool `json:"speed"`     // speed tests (/api/speed)
+		Storage   bool `json:"storage"`   // storage tests (/api/storage)
 	} `json:"features"`
 	Groups  []groupJSON     `json:"groups"`
 	Targets []targetSummary `json:"targets"`

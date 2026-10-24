@@ -125,6 +125,8 @@ const (
 	routeCalls
 	routeHome
 	routeSpeed
+	routeStorage
+	routeStorageReport
 )
 
 func lookup(rel string) route {
@@ -157,6 +159,10 @@ func lookup(rel string) route {
 		return routeHome
 	case "api/speed":
 		return routeSpeed
+	case "api/storage":
+		return routeStorage
+	case "api/storage/report":
+		return routeStorageReport
 	}
 	if _, ok := assets[rel]; ok && strings.HasPrefix(rel, "static/") {
 		return routeStatic
@@ -184,6 +190,7 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		pj := buildProfile(s.d.Profile())
 		pj.Features.Baselines = s.d.Baselines != nil
 		pj.Features.Speed = s.d.Speed != nil
+		pj.Features.Storage = s.d.Storage != nil
 		if s.d.Trace != nil {
 			pj.Features.Trace = true
 			tr := s.traced()
@@ -208,6 +215,10 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		s.serveHome(w, r)
 	case routeSpeed:
 		s.serveSpeed(w, r)
+	case routeStorage:
+		s.serveStorage(w, r)
+	case routeStorageReport:
+		s.serveStorageReport(w, r)
 	case routeTrace, routeTracePanel:
 		switch {
 		case s.d.Trace == nil:

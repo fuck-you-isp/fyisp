@@ -65,7 +65,8 @@ type localHandler struct {
 
 // Local returns the owner's handler: the UI at /, the API under /api/,
 // /metrics, and the write routes: the speed-test controls
-// (POST /api/speed/run|config|cancel) and POST /api/investigate, behind
+// (POST /api/speed/run|config|cancel), the storage targets and checks
+// (POST /api/storage/...) and POST /api/investigate, behind
 // writeAllowed; and POST/DELETE /api/admin/session, which exchanges the
 // admin token for a cookie. Everything but the page, its static files and
 // the session route needs the admin token (authorized).
@@ -199,6 +200,10 @@ func (h *localHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/api/speed/cancel":
 		h.serveSpeedCancel(w, r)
+		return
+	}
+	if strings.HasPrefix(p, "/api/storage/") && p != "/api/storage/report" {
+		h.serveStorageWrite(w, r)
 		return
 	}
 	if !strings.HasPrefix(p, "/") {

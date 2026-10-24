@@ -31,6 +31,7 @@ jobs:
           docker buildx build --target launchertest-pwsh .
           docker buildx build --target servicetest .
           docker buildx build --target imagetest .
+          docker buildx build --target s3lab .
       - name: runtime image for arm64 and arm/v7 (FROM scratch, no QEMU)
         run: docker buildx build --target runtime --platform linux/arm64,linux/arm/v7 .
       - name: binary size budget (50 MB)

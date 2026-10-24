@@ -13,9 +13,9 @@ import (
 	"github.com/fuck-you-isp/fyisp/internal/model"
 )
 
-// classify maps a probe error to a loss reason. Socket errnos are checked
+// Classify maps a probe error to a loss reason. Socket errnos are checked
 // first so that, e.g., a reset during the TLS handshake counts as a reset.
-func classify(err error) model.Reason {
+func Classify(err error) model.Reason {
 	if err == nil {
 		return model.ReasonOther
 	}

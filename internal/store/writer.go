@@ -66,6 +66,7 @@ type SQLite struct {
 	o    Options
 
 	flushMu  sync.Mutex   // one Flush/Prune at a time
+	cells    cellCache    // StorageCells' last campaign
 	commitMu sync.RWMutex // write: commit + memory update; read: memory snapshot + first query step
 
 	mu        sync.Mutex // guards everything below
@@ -863,9 +864,10 @@ func (s *SQLite) flushFailed(items []*flushItem, err error) error {
 }
 
 // Prune deletes every hour that ends at or before `before` (and incidents
-// that ended, route changes that happened, speed tests that ended and hop
-// addresses last seen before the first kept hour), returns the free pages to the OS
-// (incremental_vacuum) and truncates the WAL.
+// that ended, route changes that happened, speed tests that ended, storage
+// test rounds that were due and hop addresses last seen before the first
+// kept hour), returns the free pages to the OS (incremental_vacuum) and
+// truncates the WAL.
 //
 // The retention it implies (Options.Now - before) is counted back from the
 // newest stored hour, not only from the clock: a clock far ahead (e.g. at
@@ -946,6 +948,9 @@ func (s *SQLite) prune(ctx context.Context, hour int64) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM speedtests WHERE end_ms < ?`, hour*hourMs); err != nil {
+		return err
+	}
+	if err := pruneStorage(ctx, tx, hour*hourMs); err != nil {
 		return err
 	}
 	day := hour / 24

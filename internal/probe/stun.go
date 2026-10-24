@@ -223,7 +223,7 @@ func burstSamples(target string, res burstResult, err error) []model.Sample {
 	key := func(k model.ProbeKind) model.SeriesKey { return model.SeriesKey{Target: target, Kind: k} }
 	out := []model.Sample{{Key: key(model.KindUDP)}, {Key: key(model.KindUDPJitter)}, {Key: key(model.KindUDPLoss)}}
 	if err != nil {
-		reason := classify(err)
+		reason := Classify(err)
 		if reason == model.ReasonTimeout {
 			reason = model.ReasonOther // a socket error is not an unanswered request
 		}

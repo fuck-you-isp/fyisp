@@ -11,9 +11,10 @@ import (
 )
 
 // The speed-test queue: every test (Test now, a sweep of every server,
-// scheduled slots) waits in one process-wide FIFO and exactly one runs at a
-// time. The owner's requests go first, then schedule slots (never
-// pre-empting the running test). See docs/SPEEDTEST-API.md.
+// scheduled slots, storage test rounds) waits in one process-wide FIFO and
+// exactly one runs at a time. The owner's requests go first, then schedule
+// slots and campaign rounds (never pre-empting the running test). See
+// docs/SPEEDTEST-API.md.
 
 // Kind is what an entry tests.
 type Kind string
@@ -22,6 +23,7 @@ const (
 	KindSingle    Kind = "single"    // one server, one region's chain, or the nearest servers
 	KindSweep     Kind = "sweep"     // every server, one test each
 	KindScheduled Kind = "scheduled" // a schedule slot
+	KindCampaign  Kind = "campaign"  // a storage test round (internal/storage)
 )
 
 // Entry states.
@@ -52,6 +54,22 @@ type Job struct {
 	// steps, when set, resolves the job's servers when it runs (the
 	// schedule's rotation and fallback levels, the nearest servers).
 	steps func(ctx context.Context) (region string, steps []Step)
+	// A storage round (RoundJob): run runs it instead of Exec, key is its
+	// campaign (one waiting round each), label names it, est is how long
+	// it should take, live says what it does now, and unrun is called
+	// (outside the queue's lock) when it ends without run: dropped for
+	// waiting too long (stale), or cancelled.
+	run   func(ctx context.Context) (int64, bool)
+	key   string
+	label string
+	est   time.Duration
+	live  func() (phase, target string)
+	unrun func(stale bool)
+}
+
+// RoundJob is a storage round for EnqueueRound.
+func RoundJob(key, label string, est time.Duration, run func(ctx context.Context) (int64, bool), live func() (phase, target string), unrun func(stale bool)) Job {
+	return Job{run: run, key: key, label: label, est: est, live: live, unrun: unrun}
 }
 
 // Request asks for an entry. Target is a server or region ID ("" with
@@ -65,7 +83,9 @@ type Request struct {
 type Entry struct {
 	ID        uint64
 	Kind      Kind
-	Target    string // a server or region ID; "" for the nearest, a sweep or a slot
+	Target    string // a server or region ID; "" for the nearest, a sweep or a slot; a round's campaign
+	Label     string // a round's name
+	Owner     bool   // a round the owner asked for now (not a campaign's schedule)
 	State     string
 	Position  int // waiting: 1 is next; 0 otherwise
 	Enqueued  time.Time
@@ -175,6 +195,8 @@ func trigger(k Kind) string {
 		return "schedule"
 	case KindSweep:
 		return "sweep"
+	case KindCampaign:
+		return "storage"
 	}
 	return "manual"
 }
@@ -237,17 +259,41 @@ func (q *Queue) EnqueueScheduled(j Job) bool {
 	return true
 }
 
-// insertLocked places e by class: the owner's, then schedule slots; FIFO
-// within a class. Nothing pre-empts the running entry.
-func (q *Queue) insertLocked(e *qentry) {
-	rank := func(k Kind) int {
-		if k == KindScheduled {
-			return 1
+// EnqueueRound adds a storage round: the owner's (owner) with the owner's
+// tests, a campaign's with the schedule slots. A round of the same
+// campaign already waiting is returned instead (added false): rounds never
+// stack.
+func (q *Queue) EnqueueRound(j Job, owner bool) (Entry, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
+	for _, e := range q.waiting {
+		if e.Kind == KindCampaign && e.Target == j.key {
+			return q.snapshotLocked(e, now), false
 		}
-		return 0
 	}
+	q.nextID++
+	e := &qentry{Entry: Entry{ID: q.nextID, Kind: KindCampaign, Target: j.key, Label: j.label, Owner: owner, State: StateWaiting,
+		Enqueued: now, Steps: 1, Servers: []string{""}, JobTests: make([]int64, 1)}, jobs: []Job{j}}
+	q.insertLocked(e)
+	q.poke()
+	return q.snapshotLocked(e, now), true
+}
+
+// rank is an entry's class: the owner's (0), then the schedule's (1).
+func (e *qentry) rank() int {
+	if e.Kind == KindScheduled || (e.Kind == KindCampaign && !e.Owner) {
+		return 1
+	}
+	return 0
+}
+
+// insertLocked places e by class: the owner's, then schedule slots and
+// campaign rounds; FIFO within a class. Nothing pre-empts the running
+// entry.
+func (q *Queue) insertLocked(e *qentry) {
 	i := 0
-	for i < len(q.waiting) && rank(q.waiting[i].Kind) <= rank(e.Kind) {
+	for i < len(q.waiting) && q.waiting[i].rank() <= e.rank() {
 		i++
 	}
 	q.waiting = slices.Insert(q.waiting, i, e)
@@ -272,6 +318,12 @@ func (q *Queue) finishLocked(e *qentry, st string, now time.Time) {
 
 // Cancel cancels a waiting or running entry (the owner's control).
 func (q *Queue) Cancel(id uint64) (Entry, error) {
+	var unrun func(bool)
+	defer func() { // after the unlock below
+		if unrun != nil {
+			unrun(false)
+		}
+	}()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	now := q.o.Now()
@@ -287,6 +339,9 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 			q.waiting = slices.Delete(q.waiting, i, i+1)
 			e.CancelledBy = "owner"
 			q.finishLocked(e, StateCancelled, now)
+			if e.Kind == KindCampaign {
+				unrun = e.jobs[0].unrun
+			}
 			return q.snapshotLocked(e, now), nil
 		}
 	}
@@ -296,16 +351,39 @@ func (q *Queue) Cancel(id uint64) (Entry, error) {
 	return Entry{}, ErrNoEntry
 }
 
-// dropStaleLocked drops scheduled slots that waited ScheduledStale.
-func (q *Queue) dropStaleLocked(now time.Time) {
+// DropScheduled drops the schedule slot waiting in the queue, if any (the
+// schedule was paused). A slot already running finishes.
+func (q *Queue) DropScheduled() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.o.Now()
 	q.waiting = slices.DeleteFunc(q.waiting, func(e *qentry) bool {
-		if e.Kind == KindScheduled && now.Sub(e.Enqueued) >= ScheduledStale {
+		if e.Kind == KindScheduled {
 			q.finishLocked(e, StateDropped, now)
-			q.o.Log.Info("speed test: dropped a scheduled test that waited too long")
 			return true
 		}
 		return false
 	})
+}
+
+// dropStaleLocked drops scheduled slots and campaign rounds that waited
+// ScheduledStale; a round's unrun callback runs once the lock is free.
+func (q *Queue) dropStaleLocked(now time.Time) (dropped []func()) {
+	q.waiting = slices.DeleteFunc(q.waiting, func(e *qentry) bool {
+		if e.rank() == 1 && now.Sub(e.Enqueued) >= ScheduledStale {
+			q.finishLocked(e, StateDropped, now)
+			if e.Kind == KindCampaign {
+				if f := e.jobs[0].unrun; f != nil {
+					dropped = append(dropped, func() { f(true) })
+				}
+			} else {
+				q.o.Log.Info("speed test: dropped a scheduled test that waited too long")
+			}
+			return true
+		}
+		return false
+	})
+	return dropped
 }
 
 // Run executes entries one at a time until ctx ends.
@@ -313,7 +391,7 @@ func (q *Queue) Run(ctx context.Context) {
 	for {
 		q.mu.Lock()
 		now := q.o.Now()
-		q.dropStaleLocked(now)
+		dropped := q.dropStaleLocked(now)
 		var e *qentry
 		if len(q.waiting) > 0 {
 			e = q.waiting[0]
@@ -329,6 +407,9 @@ func (q *Queue) Run(ctx context.Context) {
 			ectx, e.cancel = context.WithCancelCause(ctx)
 		}
 		q.mu.Unlock()
+		for _, f := range dropped {
+			f()
+		}
 		if e != nil {
 			q.execute(ectx, e)
 			continue
@@ -347,11 +428,17 @@ func (q *Queue) Run(ctx context.Context) {
 var beforeNextJob func(id uint64, i int)
 
 func (q *Queue) execute(ctx context.Context, e *qentry) {
+	ran := false // a round's run was called
+	defer func() {
+		if f := e.jobs[0].unrun; e.Kind == KindCampaign && !ran && f != nil {
+			f(false) // cancelled before it ran
+		}
+	}()
 	for i := range e.jobs {
 		if ctx.Err() != nil {
 			break
 		}
-		if q.o.Pause != nil {
+		if q.o.Pause != nil && e.Kind != KindCampaign {
 			if why := q.o.Pause(ctx, e.jobs[i], trigger(e.Kind)); why != "" {
 				if ctx.Err() == nil {
 					q.mu.Lock()
@@ -371,7 +458,14 @@ func (q *Queue) execute(ctx context.Context, e *qentry) {
 		}
 		e.Step = i + 1
 		q.mu.Unlock()
-		id, saved := q.o.Exec(ctx, e.jobs[i], trigger(e.Kind))
+		var id int64
+		var saved bool
+		if run := e.jobs[i].run; run != nil {
+			ran = true
+			id, saved = run(ctx)
+		} else {
+			id, saved = q.o.Exec(ctx, e.jobs[i], trigger(e.Kind))
+		}
 		q.mu.Lock()
 		e.Ran = i + 1
 		if saved {
@@ -463,8 +557,10 @@ func (q *Queue) runningLeftLocked(now time.Time) time.Duration {
 		return 0
 	}
 	left := time.Duration(max(e.Steps-e.Step, 0)) * q.estJob(e)
-	cur := EstJob
-	if q.o.Live != nil {
+	cur := q.estJob(e)
+	if e.Kind == KindCampaign {
+		cur = max(e.Started.Add(cur).Sub(now), 0)
+	} else if q.o.Live != nil {
 		if _, _, end := q.o.Live(); !end.IsZero() {
 			cur = max(end.Sub(now), 0)
 		}
@@ -481,7 +577,11 @@ func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
 	case StateRunning:
 		out.EstStart = e.Started
 		out.EstFinish = now.Add(q.runningLeftLocked(now))
-		if q.o.Live != nil {
+		if e.Kind == KindCampaign {
+			if f := e.jobs[0].live; f != nil {
+				out.Direction, out.Server = f()
+			}
+		} else if q.o.Live != nil {
 			out.Direction, out.Server, _ = q.o.Live()
 		}
 	case StateWaiting:
@@ -501,8 +601,11 @@ func (q *Queue) snapshotLocked(e *qentry, now time.Time) Entry {
 
 // estJob is one of e's tests with the pause before it.
 func (q *Queue) estJob(e *qentry) time.Duration {
-	if e.Kind == KindSweep {
+	switch e.Kind {
+	case KindSweep:
 		return EstJob + q.o.EstSweepPause
+	case KindCampaign:
+		return e.jobs[0].est
 	}
 	return EstJob
 }

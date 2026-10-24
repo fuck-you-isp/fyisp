@@ -251,6 +251,17 @@ func TestFlags(t *testing.T) {
 			t.Errorf("%s accepted", f)
 		}
 	}
+	// Sample filters don't apply to the speed tests or the storage tests.
+	for _, args := range [][]string{{"--storage", "--target", "a"}, {"--speedtests", "--kind", "icmp"}, {"--storage", "--speedtests"}} {
+		fs = flag.NewFlagSet("export", flag.ContinueOnError)
+		build = Flags(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := build(now); err == nil {
+			t.Errorf("%v accepted", args)
+		}
+	}
 }
 
 // TestTraceHops: --kind trace exports only the hop series, each row with
@@ -324,5 +335,55 @@ func TestSpeedTests(t *testing.T) {
 	}, "\n") + "\n"
 	if buf.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", buf.String(), want)
+	}
+}
+
+// TestStorage: --storage writes a campaign's attempts, oldest first, with
+// the target's name as the campaign started (never its host or bucket).
+func TestStorage(t *testing.T) {
+	s, err := store.Open(t.TempDir(), store.Options{Now: func() time.Time { return t0 }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c := &model.StorageCampaign{Created: t0, Updated: t0, Shape: model.StorageOnDemand, State: model.StorageDone, Count: 1, Interval: time.Minute,
+		Targets: []model.StorageCampaignTarget{{ID: "t_00000001", Name: "Lab", Mode: "bucket"}}, Cold: 1}
+	if err := s.SaveStorageCampaign(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	seq, ms := 0, 12.5
+	r := &model.StorageRound{Campaign: c.ID, Seq: &seq, Due: t0, Start: t0, End: t0.Add(time.Second), Outcome: model.RoundFailed}
+	if err := s.SaveStorageRound(ctx, r, []model.StorageAttempt{
+		{Target: "t_00000001", Phase: "cold", Op: "get", At: t0, Class: "ok", HTTPStatus: 200, Connectms: &ms, EdgePrefix: "52.216.1.0/24"},
+		{Target: "t_00000001", Phase: "cold", Op: "get", N: 1, At: t0.Add(time.Second), Class: "tls_timeout", RequestID: "REQ1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fs := flag.NewFlagSet("x", flag.ContinueOnError)
+	parse := Flags(fs)
+	fs.Parse([]string{"--storage"})
+	o, err := parse(t0)
+	if err != nil || !o.Storage {
+		t.Fatalf("flags: %+v %v", o, err)
+	}
+	var buf bytes.Buffer
+	if err := Run(ctx, s, o, &buf); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := csv.NewReader(&buf).ReadAll()
+	if err != nil || len(rows) != 3 || strings.Join(rows[0], ",") != strings.Join(StorageHeader, ",") {
+		t.Fatalf("csv %q %v", rows, err)
+	}
+	if got := strings.Join(rows[1], ","); got != "1,1,t_00000001,Lab,cold,get,0,2026-09-01T00:00:00.000Z,ok,ok,200,,,,,12.5,,,,0,,,52.216.1.0/24,,,,," {
+		t.Errorf("row 1: %s", got)
+	}
+	if rows[2][9] != "network" || rows[2][12] != "REQ1" {
+		t.Errorf("row 2: %q", rows[2])
+	}
+	fs = flag.NewFlagSet("x", flag.ContinueOnError)
+	parse = Flags(fs)
+	fs.Parse([]string{"--storage", "--speedtests"})
+	if _, err := parse(t0); err == nil {
+		t.Error("--storage with --speedtests")
 	}
 }

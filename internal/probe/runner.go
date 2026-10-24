@@ -376,7 +376,7 @@ func (r *runner) probeTCP(ctx context.Context, ip netip.Addr, port int, timeout 
 	c, err := r.dialTCP(ctx, netip.AddrPortFrom(ip, uint16(port)).String(), timeout)
 	rtt := time.Since(t0)
 	if err != nil {
-		return 0, classify(err), err
+		return 0, Classify(err), err
 	}
 	if tc, ok := c.(*net.TCPConn); ok {
 		_ = tc.SetLinger(0) // RST on close: no TIME_WAIT sockets left behind
@@ -495,7 +495,7 @@ func (r *runner) probeHTTPS(ctx context.Context, s *series) (time.Duration, bool
 	mu.Lock()
 	defer mu.Unlock()
 	if err != nil {
-		reason := classify(err)
+		reason := Classify(err)
 		if reason == model.ReasonOther && tlsDone {
 			reason = model.ReasonHTTP // protocol error after the handshake
 		}

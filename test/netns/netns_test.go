@@ -95,6 +95,10 @@ var (
 	dnsAddr       = netip.MustParseAddr("203.0.113.53") // the test resolver
 )
 
+// Storage endpoints (storage_test.go): the storage engine refuses
+// documentation addresses, so these look like a provider's.
+var storageAddrs = []netip.Addr{netip.MustParseAddr("52.216.0.10"), netip.MustParseAddr("52.217.0.10")}
+
 // The anycast resolvers of the built-in network path group, also put on
 // the internet namespace's loopback so that TestVerdict can keep the path group enabled.
 var anycastAddrs = []netip.Addr{
@@ -587,7 +591,7 @@ func newHarness(t *testing.T) *harness {
 		t.Logf("binary: %s", strings.TrimSpace(string(out)))
 	}
 
-	goodIPs := []netip.Addr{addrAlpha, addrBravo, addrCharlie, dnsTargetAddr, addrGolf}
+	goodIPs := append([]netip.Addr{addrAlpha, addrBravo, addrCharlie, dnsTargetAddr, addrGolf}, storageAddrs...)
 	if err := writeCerts(dir, goodIPs, badTLSAddr); err != nil {
 		t.Fatal(err)
 	}
@@ -668,7 +672,7 @@ func (h *harness) setupTopology(t *testing.T) {
 	// Targets live on the internet namespace's loopback; every namespace's default route
 	// leads there through the chain.
 	for _, a := range slices.Concat([]netip.Addr{addrAlpha, addrBravo, addrCharlie, badTLSAddr, dnsTargetAddr, addrGolf, dnsAddr, stunAddr, stunAddr2, stunAddr3},
-		anycastAddrs, iperfAddrs, home10Addrs) {
+		anycastAddrs, iperfAddrs, home10Addrs, storageAddrs) {
 		h.run(t, "ip", "-n", h.inet, "addr", "add", a.String()+"/32", "dev", "lo")
 	}
 	// Unprivileged ICMP (ping sockets) is off in a new namespace

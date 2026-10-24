@@ -424,3 +424,63 @@ func TestTriggerOrigin(t *testing.T) {
 		}
 	}
 }
+
+// TestQueueRounds: storage rounds run their own function (not Exec or
+// Pause), one waiting per campaign, the owner's ahead of the schedule's
+// and a campaign's with the schedule slots; a campaign round that waits
+// ScheduledStale is dropped and told so, an owner's never.
+func TestQueueRounds(t *testing.T) {
+	paused := 0
+	q, f := newQueueHarness(t, func(o *QueueOptions) {
+		o.Pause = func(context.Context, Job, string) string { paused++; return "" }
+	})
+	var ran []string
+	var dropped []string
+	round := func(key string, est time.Duration) Job {
+		return RoundJob(key, "Round "+key, est, func(ctx context.Context) (int64, bool) {
+			ran = append(ran, key)
+			return 0, false
+		}, func() (string, string) { return "cold", "t_1" }, func(stale bool) {
+			if stale {
+				dropped = append(dropped, key)
+			}
+		})
+	}
+	q.EnqueueScheduled(Job{Region: "uk"})
+	if _, added := q.EnqueueRound(round("7", time.Minute), false); !added {
+		t.Fatal("not added")
+	}
+	if e, added := q.EnqueueRound(round("7", time.Minute), false); added || e.Position != 2 {
+		t.Errorf("a second round of 7: %+v %v", e, added)
+	}
+	if _, _, err := q.Enqueue(Request{Kind: KindSingle, Target: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	q.EnqueueRound(round("9", 2*time.Minute), true)
+	ws := q.State().Waiting
+	if got := ids(ws); !eq(got, []string{"single:A", "campaign:9", "scheduled:", "campaign:7"}) {
+		t.Fatalf("order %v", got)
+	}
+	if w := ws[1]; w.Label != "Round 9" || !w.Owner || w.EstFinish.Sub(w.EstStart) != 2*time.Minute || ws[3].Owner {
+		t.Errorf("owner round %+v", w)
+	}
+	f.advance(ScheduledStale)
+	q.mu.Lock()
+	drop := q.dropStaleLocked(q.o.Now())
+	q.mu.Unlock()
+	for _, d := range drop {
+		d()
+	}
+	if got := ids(q.State().Waiting); !eq(got, []string{"single:A", "campaign:9"}) || fmt.Sprint(dropped) != "[7]" {
+		t.Fatalf("after stale: %v, dropped %v", got, dropped)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go q.Run(ctx)
+	<-f.started
+	close(f.release)
+	waitFor(t, func() bool { st := q.State(); return st.Running == nil && len(st.Waiting) == 0 })
+	if fmt.Sprint(ran) != "[9]" || paused != 1 || !eq(f.log(), []string{"manual:A"}) {
+		t.Errorf("ran %v, paused %d times, exec %v", ran, paused, f.log())
+	}
+}

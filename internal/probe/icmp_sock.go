@@ -124,7 +124,7 @@ func (p *sockPinger) Ping(ctx context.Context, dst netip.Addr, idx uint32, timeo
 	defer t.Stop()
 	t0 := time.Now()
 	if _, err := p.c.WriteTo(b, addr); err != nil {
-		return 0, classify(err), err
+		return 0, Classify(err), err
 	}
 	select {
 	case r := <-pe.ch:
