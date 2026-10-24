@@ -389,6 +389,7 @@ func run(ctx context.Context, stop context.CancelFunc, c config) error {
 	var camps *storage.Campaigns
 	deps.Storage, camps = newStorage(dir, speed.Queue(), st, wins, tap, tr, mc, ni.Current, log)
 	if camps != nil {
+		camps.Restore(ctx) // before the API serves
 		deps.Campaigns, deps.StorageData = camps, st
 	}
 	localAddr := localLn.Addr().String()

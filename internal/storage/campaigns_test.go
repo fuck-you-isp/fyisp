@@ -538,6 +538,8 @@ func TestCampaignRestart(t *testing.T) {
 		time.Sleep(2 * time.Hour) // fyisp is down
 		l = newCamLab(t, st, dir)
 		defer l.close()
+		synctest.Wait()
+		l.c.Restore(context.Background()) // as main does before serving: Run has, so nothing happens again
 		if got := l.campaign(rec.ID); got.State != model.StorageDone || got.Stopped != model.StopUntil {
 			t.Errorf("schedule %+v", got)
 		}

@@ -154,6 +154,7 @@ type Campaigns struct {
 	traceBusy atomic.Bool
 	wg        sync.WaitGroup                  // traces in flight (Run waits for them)
 	runCtx    atomic.Pointer[context.Context] // Run's: traces outlive their round, not Run
+	restored  sync.Once
 
 	mu      sync.Mutex
 	live    map[int64]*run
@@ -186,6 +187,10 @@ func NewCampaigns(o CampaignOptions) *Campaigns {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
+	// Wall-clock times only: the monotonic clock stops while the machine
+	// sleeps, so a campaign started now would never see a sleep as a gap.
+	now := o.Now
+	o.Now = func() time.Time { return now().Round(0) }
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
@@ -581,7 +586,7 @@ func (c *Campaigns) conflictLocked(mc model.StorageCampaign, now time.Time) erro
 // each campaign's rounds as they fall due until ctx ends.
 func (c *Campaigns) Run(ctx context.Context) {
 	c.runCtx.Store(&ctx)
-	c.restart(ctx)
+	c.Restore(ctx)
 	for {
 		now := c.o.Now()
 		var due []*run
@@ -694,7 +699,7 @@ func (c *Campaigns) fireLocked(ctx context.Context, r *run, now time.Time) {
 		func() (string, string) { return c.live1(id) },
 		// Dropped (stale) or cancelled in the queue before it ran: the
 		// queue may call this while Stop holds mu, so it waits apart.
-		func(stale bool) { go c.unrun(ctx, id, entry.Load(), seq, due, stale) })
+		func(stale bool) { go c.unrun(ctx, id, &entry, seq, due, stale) })
 	e, added := c.o.Queue.EnqueueRound(j, r.owner)
 	entry.Store(e.ID)
 	r.owner = false
@@ -707,11 +712,11 @@ func (c *Campaigns) fireLocked(ctx context.Context, r *run, now time.Time) {
 }
 
 // unrun records a round that never ran: skipped stale, or cancelled.
-func (c *Campaigns) unrun(ctx context.Context, id int64, entry uint64, seq int, due time.Time, stale bool) {
+func (c *Campaigns) unrun(ctx context.Context, id int64, entry *atomic.Uint64, seq int, due time.Time, stale bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	r := c.live[id]
-	if r == nil || r.entry != entry {
+	r := c.live[id] // entry is set by now: fireLocked stores it under mu
+	if r == nil || r.entry != entry.Load() {
 		return // stopped, or long since replaced
 	}
 	r.entry = 0
@@ -1205,6 +1210,13 @@ func (c *Campaigns) ProvideKeys(ctx context.Context, id int64, keys map[string]*
 	} else if len(refused) > 0 {
 		return &CampaignError{Code: "keys_refused", Field: "keys", Targets: refused, Msg: "the keys were refused"}
 	}
+	// Saved under mu, as start does: a campaign that ended during the check
+	// (stopped, its schedule's end passed) gets none.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.live[id] != r {
+		return ErrNoCampaign
+	}
 	if shape == model.StorageRecurring {
 		err = c.o.Targets.SaveKeys(id, keys)
 	} else {
@@ -1213,9 +1225,7 @@ func (c *Campaigns) ProvideKeys(ctx context.Context, id int64, keys map[string]*
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if r := c.live[id]; r != nil && shape == model.StorageRecurring && !r.c.KeysSaved {
+	if shape == model.StorageRecurring && !r.c.KeysSaved {
 		r.c.KeysSaved = true
 		c.saveCampaignLocked(ctx, r)
 	}
@@ -1268,6 +1278,12 @@ func (c *Campaigns) shutdown() {
 }
 
 // ---------- restart ----------
+
+// Restore loads the live campaigns from the store, once (Run does it
+// first if nothing did). Called before the API serves, so no request sees
+// the campaigns of the last run as not there: a second one started, a
+// target in use deleted.
+func (c *Campaigns) Restore(ctx context.Context) { c.restored.Do(func() { c.restart(ctx) }) }
 
 // restart, before the first round: the install id; schedules whose end
 // passed while fyisp was down are ended and their keys deleted; on-demand

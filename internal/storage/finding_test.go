@@ -56,6 +56,9 @@ func TestExplain(t *testing.T) {
 		{"the line", "line", "packet loss on your own line", rounds(6, 0.05), fail(ok(6), "a", "connect_timeout", 2, 4), false},
 		{"everywhere", "line", "All the targets failed in the same rounds", rounds(6, 0), fail(fail(ok(6), "a", "connect_reset", 2, 4), "b", "connect_reset", 2, 4), false},
 		{"provider", "provider", "provider's own answers", rounds(6, 0), fail(ok(6), "a", "http_5xx", 1, 2, 3), false},
+		// Two buckets on one provider slowed down together: still the provider, not the line.
+		{"throttled everywhere", "provider", "provider's own answers", rounds(6, 0), fail(fail(ok(6), "a", "throttled", 1, 2, 3, 4, 5, 6), "b", "throttled", 1, 2, 3, 4, 5, 6), false},
+		{"throttled with loss", "provider", "provider's own answers", rounds(6, 0.05), fail(ok(6), "a", "throttled", 1, 2, 3), false},
 	} {
 		got := Explain(camp, c.rounds, c.counts, c.live)
 		if got.Kicker != c.kicker || !strings.Contains(got.Text, c.text) {

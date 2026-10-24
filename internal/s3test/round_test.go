@@ -522,16 +522,26 @@ func TestClassGroups(t *testing.T) {
 }
 
 // TestCheckFake: with Options.Fake, a check asks it instead of the network
-// (fyisp-webdev), and reads keys from its answer as from a server's.
+// (fyisp-webdev), and reads keys from its answer as from a server's; a
+// sweep sends nothing.
 func TestCheckFake(t *testing.T) {
 	var got []string
-	e := New(Options{Fake: func(_ context.Context, tg Target, phase, op string, signed bool) model.StorageAttempt {
+	dialed := ""
+	lookup := func(context.Context, string, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("52.216.10.10")}, nil // public: a real sweep would dial it
+	}
+	dial := func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialed = addr
+		return nil, errors.New("no network")
+	}
+	fake := func(_ context.Context, tg Target, phase, op string, signed bool) model.StorageAttempt {
 		got = append(got, fmt.Sprintf("%s %s %s %v", tg.ID, phase, op, signed))
 		if signed {
 			return model.StorageAttempt{Class: string(ClassHTTPAuth), HTTPStatus: 403}
 		}
 		return model.StorageAttempt{Class: string(ClassOK), HTTPStatus: 200}
-	}})
+	}
+	e := New(Options{Lookup: lookup, Dial: dial, Fake: fake})
 	ep, _ := url.Parse("https://s3.test")
 	tg := Target{ID: "t_1", Endpoint: ep, Region: "us-east-1", Bucket: "bkt"}
 	if r := e.Check(context.Background(), RoundTarget{Target: tg}); r.Keys != "none" || r.Attempt.Class != "ok" || r.Attempt.Target != "t_1" {
@@ -542,6 +552,9 @@ func TestCheckFake(t *testing.T) {
 	}
 	if want := []string{"t_1 cold head false", "t_1 cold list true"}; fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("asked %q, want %q", got, want)
+	}
+	if n, class := e.Sweep(context.Background(), RoundTarget{Target: tg, Creds: NewCreds("AK", "s", "")}, "0123456789abcdef", true); n != 0 || class != ClassOK || dialed != "" {
+		t.Errorf("sweep: %d %s, dialed %q", n, class, dialed)
 	}
 }
 

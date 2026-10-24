@@ -111,10 +111,10 @@ func (e *Engine) Check(ctx context.Context, rt RoundTarget) CheckResult {
 // Sweep deletes what fyisp left under the install's prefix (uploads a
 // crash or a failed delete left behind), keeping the seeds when
 // keepSeeds. One sweep lists one page (up to 1000 objects); class is the
-// first failure ("ok" when none).
+// first failure ("ok" when none). With Options.Fake nothing is sent.
 func (e *Engine) Sweep(ctx context.Context, rt RoundTarget, install string, keepSeeds bool) (deleted int, class Class) {
 	class = ClassOK
-	if !rt.keyed() || !installRe.MatchString(install) || rt.Validate(rt.Creds.HasToken()) != nil {
+	if e.o.Fake != nil || !rt.keyed() || !installRe.MatchString(install) || rt.Validate(rt.Creds.HasToken()) != nil {
 		return 0, class
 	}
 	prefix := installPrefix(install)

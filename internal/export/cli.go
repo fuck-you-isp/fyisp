@@ -36,6 +36,9 @@ func Flags(fs *flag.FlagSet) func(now time.Time) (Options, error) {
 		if o.SpeedTests && o.Storage {
 			return o, fmt.Errorf("--speedtests and --storage: one at a time")
 		}
+		if (o.SpeedTests || o.Storage) && (len(targets) > 0 || len(kinds) > 0) {
+			return o, fmt.Errorf("--target and --kind pick samples: --speedtests and --storage take only --from and --to")
+		}
 		for _, k := range kinds {
 			pk, err := ParseKind(k)
 			if err != nil {

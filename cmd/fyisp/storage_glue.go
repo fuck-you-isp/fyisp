@@ -98,9 +98,10 @@ const lineSamples = 20
 // storageTrace traceroutes a provider's edge address as Investigate does
 // a host (TCP to 443 where this OS can, else ICMP), waits for it, and
 // returns its route's hops with their networks and the first network
-// past this connection's provider. Hops on this network (private, CGNAT)
-// and in this connection's provider's network keep no address (one could
-// be the user's public address): only "your network", "your provider".
+// past this connection's provider. Hops on this network (private, CGNAT),
+// in this connection's provider's network, and of no known network before
+// the route leaves it keep no address (one could be the user's public
+// address): only "your network", "your provider".
 // The last hop, the traced address itself, is left out (the round keeps
 // its /24).
 func storageTrace(tr trace.Tracer, path func() netinfo.Path) func(ctx context.Context, ip netip.Addr) ([]model.StorageHop, uint32, bool) {
@@ -154,8 +155,10 @@ func storageTrace(tr trace.Tracer, path func() netinfo.Path) func(ctx context.Co
 			switch {
 			case !netinfo.Traceable(h) || storage.IsSelf(h):
 				out = append(out, model.StorageHop{Owner: model.HopYourNetwork})
-			case isp == 0 || info.ASN == isp:
-				// The provider's own routers (or an unknown provider: maybe yours).
+			case isp == 0 || info.ASN == isp || info.ASN == 0 && handoff == 0:
+				// The provider's own routers (or an unknown provider: maybe
+				// yours; or a router of no known network before the route
+				// leaves it: maybe the provider's unannounced space).
 				seenISP = true
 				out = append(out, model.StorageHop{ASN: info.ASN, Owner: model.HopYourProvider})
 			default:

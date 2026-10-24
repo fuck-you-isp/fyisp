@@ -431,6 +431,7 @@ type StorageCellRow struct {
 type cellCache struct {
 	mu       sync.Mutex
 	campaign int64
+	created  int64 // its created_ms: ids are reused once pruning empties a table
 	last     int64 // the newest round read
 	rows     []StorageCellRow
 }
@@ -441,12 +442,15 @@ func (s *SQLite) StorageCells(ctx context.Context, campaign int64) ([]StorageCel
 	c := &s.cells
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.campaign != campaign {
-		c.campaign, c.last, c.rows = campaign, 0, nil
-	}
-	var first sql.NullInt64 // the oldest round kept: pruning drops older ones
-	if err := s.db.r.QueryRowContext(ctx, `SELECT min(id) FROM storage_rounds WHERE campaign = ?`, campaign).Scan(&first); err != nil {
+	var created sql.NullInt64
+	var first, newest sql.NullInt64 // the oldest round kept (pruning drops older ones), the newest
+	if err := s.db.r.QueryRowContext(ctx, `SELECT (SELECT created_ms FROM storage_campaigns WHERE id = ?), min(id), max(id) FROM storage_rounds WHERE campaign = ?`,
+		campaign, campaign).Scan(&created, &first, &newest); err != nil {
 		return nil, err
+	}
+	if c.campaign != campaign || c.created != created.Int64 || !newest.Valid || newest.Int64 < c.last {
+		// Another campaign, one with a reused id, or rounds gone: read afresh.
+		c.campaign, c.created, c.last, c.rows = campaign, created.Int64, 0, nil
 	}
 	if i := slices.IndexFunc(c.rows, func(r StorageCellRow) bool { return r.Round >= first.Int64 }); i > 0 {
 		c.rows = slices.Delete(c.rows, 0, i)

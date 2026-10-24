@@ -129,7 +129,7 @@ The Go runtime's `go_*` and `process_*` series are there too.
 
 ## `fyisp export`
 
-`fyisp export` writes the stored samples (or with `--speedtests` the speed tests, with `--storage` the storage tests' attempts) as CSV to stdout, or to a file with `-o` (created with mode 0600). It reads what the running fyisp has written to disk, which it does every minute. Flags: `--from` and `--to` (RFC 3339, `YYYY-MM-DD`, or an age like `24h` or `7d`; default all the data), `--target` and `--kind` (`https`, `tcp`, `icmp`, `trace`, `trace_tcp`, `trace_udp`, `udp`, `udp_jitter`, `udp_loss`), each repeatable or comma-separated, and `--data-dir`. In Docker: `docker exec fyisp /fyisp export --from 7d > fyisp.csv`.
+`fyisp export` writes the stored samples (or with `--speedtests` the speed tests, with `--storage` the storage tests' attempts) as CSV to stdout, or to a file with `-o` (created with mode 0600). It reads what the running fyisp has written to disk, which it does every minute. Flags: `--from` and `--to` (RFC 3339, `YYYY-MM-DD`, or an age like `24h` or `7d`; default all the data), `--target` and `--kind` (`https`, `tcp`, `icmp`, `trace`, `trace_tcp`, `trace_udp`, `udp`, `udp_jitter`, `udp_loss`), each repeatable or comma-separated, for samples only (refused with `--speedtests` and `--storage`), and `--data-dir`. In Docker: `docker exec fyisp /fyisp export --from 7d > fyisp.csv`.
 
 **Samples**, one row per stored slot:
 
@@ -155,4 +155,4 @@ id,start,end,trigger,outcome,region,server,fallback,fallback_level,port,attempts
 campaign,round,target,target_name,phase,op,n,at,class,group,http_status,s3_code,request_id,host_id,dns_ms,connect_ms,tls_ms,ttfb_ms,total_ms,bytes,goodput_bps,stall_ms,edge_prefix,tls_version,tcp_rtt_ms,retrans,mss,skew_s
 ```
 
-`target` is the target's id and `target_name` its name as the campaign started; the export never opens the targets file, so it has no hosts, buckets or keys. `edge_prefix` is the provider address's /24. A `target_name`, `request_id` or `host_id` that starts with `=`, `+`, `-` or `@` gets a leading `'`, so a spreadsheet reads it as text. The fields are the Attempt's in [STORAGE-API.md](STORAGE-API.md#campaign-reads).
+`target` is the target's id and `target_name` its name as the campaign started; the export never opens the targets file, so it has no hosts, buckets or keys. `edge_prefix` is the provider address's /24. A `target_name`, `request_id` or `host_id` that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a spreadsheet reads it as text. `campaign` and `round` are ids; the other fields are the Attempt's in [STORAGE-API.md](STORAGE-API.md#campaign-reads), without `request_id_header`.

@@ -251,6 +251,17 @@ func TestFlags(t *testing.T) {
 			t.Errorf("%s accepted", f)
 		}
 	}
+	// Sample filters don't apply to the speed tests or the storage tests.
+	for _, args := range [][]string{{"--storage", "--target", "a"}, {"--speedtests", "--kind", "icmp"}, {"--storage", "--speedtests"}} {
+		fs = flag.NewFlagSet("export", flag.ContinueOnError)
+		build = Flags(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := build(now); err == nil {
+			t.Errorf("%v accepted", args)
+		}
+	}
 }
 
 // TestTraceHops: --kind trace exports only the hop series, each row with

@@ -322,7 +322,7 @@ One region's or server's view. It takes `days`, `tz` and `exclude_fallback`. An 
   "kind": "region",               // "region" | "server"
   "row": { ...Row },
   "tests": [ ...Test ],           // every test in the span (any trigger), oldest first, the newest 5000 at most
-  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner
+  "windows": [ {"start": ..., "end": ..., "origin": "scheduled"} ]   // origin: scheduled | owner | storage (a storage-test round's transfers)
 }
 ```
 
@@ -334,7 +334,7 @@ For compare, make one request per row (up to 4).
 {"at": 1760104800000, "windows": [{"start": 1760104790000, "end": 1760104808000, "origin": "owner"}]}
 ```
 
-`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples inside a window are stored as measured, so a test that loads the line shows up as a spike or loss. Home blames a problem that overlaps a window (or the 2 s after it) on the test (`cause_kind` `speedtest`). The windows include tests of servers since removed from the catalog, whose results are gone from every other part of this API.
+`from` and `to` take the same forms as `/api/panel`: `now`, `now-6h`, `now-7d` or unix ms, up to 90 days apart. The defaults are `now-30m` and `now`. Shade these on every time chart. Probe samples inside a window are stored as measured, so a test that loads the line shows up as a spike or loss. Home blames a problem that overlaps a window (or the 2 s after it) on the test (`cause_kind` `speedtest`). The windows include tests of servers since removed from the catalog, whose results are gone from every other part of this API, and storage-test rounds' transfers (`origin` `storage`).
 
 ## The queue
 

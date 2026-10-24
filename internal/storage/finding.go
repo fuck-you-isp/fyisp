@@ -63,6 +63,7 @@ func explain(c model.StorageCampaign, rounds []model.StorageRound, counts []Atte
 	classes := map[string]int{}
 	prefixes := map[string]int{}
 	failRounds := map[int64]map[string]bool{} // round -> targets that failed in it
+	netRounds := map[int64]map[string]bool{}  // the same, network failures only
 	total := 0
 	for _, a := range counts {
 		if _, ok := ran[a.Round]; !ok {
@@ -78,6 +79,10 @@ func explain(c model.StorageCampaign, rounds []model.StorageRound, counts []Atte
 		switch s3test.Class(a.Class).Group() {
 		case s3test.GroupNetwork:
 			t.failed += a.N
+			if netRounds[a.Round] == nil {
+				netRounds[a.Round] = map[string]bool{}
+			}
+			netRounds[a.Round][a.Target] = true
 		case s3test.GroupProvider:
 			t.failed += a.N
 			t.provider += a.N
@@ -138,30 +143,38 @@ func explain(c model.StorageCampaign, rounds []model.StorageRound, counts []Atte
 		return Finding{Kicker: "early", Text: fmt.Sprintf("%s%d failure%s in %d round%s. A few more rounds tell where they come from.", so, failed, plural(failed), len(ran), plural(len(ran))), Evidence: ev}
 	}
 	// Where the failures are: with loss on the line, everywhere at once, at
-	// the provider's answers, or on one path.
-	lossy, both, measured := 0, 0, 0
-	for rid, ts := range failRounds {
+	// the provider's answers, or on one path. The line is blamed only for
+	// network failures: a provider's server errors and slow-downs are its
+	// own, however many targets get them at once.
+	lossy, measured, netLossy, netBoth := 0, 0, 0, 0
+	for rid := range failRounds {
 		r := ran[rid]
+		loss := (r.GwLoss != nil && *r.GwLoss >= LineLoss) || (r.EdgeLoss != nil && *r.EdgeLoss >= LineLoss)
 		if r.GwLoss != nil || r.EdgeLoss != nil {
 			measured++
 		}
-		if (r.GwLoss != nil && *r.GwLoss >= LineLoss) || (r.EdgeLoss != nil && *r.EdgeLoss >= LineLoss) {
+		if loss {
 			lossy++
 		}
-		if len(ts) >= 2 && len(ts) == len(c.Targets) {
-			both++
+		if ts := netRounds[rid]; ts != nil {
+			if loss {
+				netLossy++
+			}
+			if len(ts) >= 2 && len(ts) == len(c.Targets) {
+				netBoth++
+			}
 		}
 	}
-	nf := len(failRounds)
+	nf, nn := len(failRounds), len(netRounds)
 	if p := topKeys(prefixes, 1); len(p) == 1 && prefixes[p[0]]*2 > failed && failed >= 3 {
 		ev = append(ev, fmt.Sprintf("%d of the %d failures went to %s.", prefixes[p[0]], failed, strings.Replace(p[0], ".0/24", ".x", 1)))
 	}
 	switch {
-	case lossy*2 >= nf:
-		ev = append(ev, fmt.Sprintf("Your router or your provider's first router lost packets in %d of the %d rounds with failures.", lossy, nf))
+	case nn > 0 && netLossy*2 >= nn:
+		ev = append(ev, fmt.Sprintf("Your router or your provider's first router lost packets in %d of the %d rounds with network failures.", netLossy, nn))
 		return Finding{Kicker: "line", Text: so + "the failures came with packet loss on your own line in the same rounds: they point to your connection, not the storage provider.", Evidence: ev}
-	case len(c.Targets) >= 2 && both*2 >= nf:
-		ev = append(ev, fmt.Sprintf("Every target failed together in %d of the %d rounds with failures.", both, nf))
+	case len(c.Targets) >= 2 && nn > 0 && netBoth*2 >= nn:
+		ev = append(ev, fmt.Sprintf("Every target failed together in %d of the %d rounds with network failures.", netBoth, nn))
 		return Finding{Kicker: "line", Text: so + "all the targets failed in the same rounds: the problem is nearer to you than any one provider.", Evidence: ev}
 	case provider*2 >= failed:
 		return Finding{Kicker: "provider", Text: so + "most failures were the provider's own answers (server errors or slow-downs): they point to the provider.", Evidence: ev}

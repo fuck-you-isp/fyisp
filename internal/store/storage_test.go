@@ -2,6 +2,7 @@ package store
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -146,5 +147,55 @@ func TestStorageRoundTrip(t *testing.T) {
 	}
 	if cs, _ := s.StorageCampaigns(ctx, c.ID, 10, false); len(cs) != 0 {
 		t.Errorf("before its own id %v", cs)
+	}
+}
+
+// TestStorageCellsCache: StorageCells reads only newer rounds into its
+// cache, and starts afresh when pruning took every round, also for a new
+// campaign that got a pruned one's id.
+func TestStorageCellsCache(t *testing.T) {
+	s := openT(t, t.TempDir(), Options{})
+	defer s.Close()
+	ex := func(q string) {
+		t.Helper()
+		if _, err := s.db.w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	targets := func() []string {
+		t.Helper()
+		rs, err := s.StorageCells(ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.Target)
+		}
+		return out
+	}
+	ex(`INSERT INTO storage_campaigns(id, created_ms, updated_ms, shape, state, targets, cold, warm, down_bytes, up_bytes, interval_s) VALUES (1,0,0,'on_demand','done','[]',1,1,0,0,60)`)
+	ex(`INSERT INTO storage_rounds(id, campaign, seq, due_ms, outcome) VALUES (100, 1, 0, 1, 'ok')`)
+	ex(`INSERT INTO storage_attempts(round, target, phase, op, n, at_ms, class) VALUES (100,'old','cold','head',0,1,'ok')`)
+	if got := targets(); !slices.Equal(got, []string{"old"}) {
+		t.Fatalf("first read %v", got)
+	}
+	ex(`INSERT INTO storage_rounds(id, campaign, seq, due_ms, outcome) VALUES (101, 1, 1, 2, 'ok')`)
+	ex(`INSERT INTO storage_attempts(round, target, phase, op, n, at_ms, class) VALUES (101,'later','cold','head',0,2,'ok')`)
+	if got := targets(); !slices.Equal(got, []string{"old", "later"}) {
+		t.Fatalf("second read %v", got)
+	}
+	ex(`DELETE FROM storage_attempts`)
+	ex(`DELETE FROM storage_rounds`)
+	ex(`DELETE FROM storage_campaigns`)
+	if got := targets(); len(got) != 0 {
+		t.Errorf("all pruned: %v", got)
+	}
+	// The tables are empty, so SQLite hands out id 1 again.
+	ex(`INSERT INTO storage_campaigns(created_ms, updated_ms, shape, state, targets, cold, warm, down_bytes, up_bytes, interval_s) VALUES (0,0,'on_demand','done','[]',1,1,0,0,60)`)
+	ex(`INSERT INTO storage_rounds(campaign, seq, due_ms, outcome) VALUES (1, 0, 3, 'ok')`)
+	ex(`INSERT INTO storage_attempts(round, target, phase, op, n, at_ms, class) SELECT id,'new','cold','head',0,3,'ok' FROM storage_rounds`)
+	if got := targets(); !slices.Equal(got, []string{"new"}) {
+		t.Errorf("reused id: %v", got)
 	}
 }
