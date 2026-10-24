@@ -97,6 +97,11 @@ export class CampaignForm {
     this.cold = num('st-c-cold', 'Fresh connections per target', 10, 0, 20);
     this.warm = num('st-c-warm', 'Requests on a reused connection', 5, 0, 10);
     this.down = sizeSelect('st-c-down', 'Download size', 64 << 20);
+    // fyisp refuses a download whose object takes over 5 minutes to upload once (it seeds it).
+    this.downErr = h('p', { class: 'sp-note st-err', id: 'st-c-down-err', hidden: true });
+    this.down.sel.setAttribute('aria-describedby', 'st-c-down-err');
+    this.down.el.append(this.downErr);
+    this.down.sel.addEventListener('change', () => this.downFail(''));
     this.up = sizeSelect('st-c-up', 'Upload size', 16 << 20);
     this.every = num('st-c-every', 'Every (minutes)', 5, 1, 1440);
     this.count = num('st-c-count', 'Rounds', 24, 1, 1000);
@@ -263,8 +268,8 @@ export class CampaignForm {
     try { e = await fetchJSON('api/storage?' + q); } catch { if (seq === this.estSeq) this.showEst([]); return; }
     if (seq !== this.estSeq) return;
     const lines = [h('p', {}, h('b', { text: 'Each round: ' }), `${size(e.per_round.down)} down and ${size(e.per_round.up)} up${keyed.length ? ` (${keyed.length} target${keyed.length === 1 ? '' : 's'} with keys)` : ' (connection checks only)'}; about ${Math.max(1, Math.round(e.round_s_est))} s.`)];
-    if (e.total) lines.push(h('p', { text: `This campaign: ${e.rounds} rounds, about ${size(e.total.down)} down and ${size(e.total.up)} up.` }));
-    if (e.per_window) lines.push(h('p', { text: `Each window: ${e.rounds} rounds, about ${size(e.per_window.down)} down and ${size(e.per_window.up)} up. The next 30 days: about ${size(e.per_30d.down)} down and ${size(e.per_30d.up)} up.` }));
+    if (e.total) lines.push(h('p', { text: `This campaign: ${e.rounds} round${e.rounds === 1 ? '' : 's'}, about ${size(e.total.down)} down and ${size(e.total.up)} up.` }));
+    if (e.per_window) lines.push(h('p', { text: `Each window: ${e.rounds} round${e.rounds === 1 ? '' : 's'}, about ${size(e.per_window.down)} down and ${size(e.per_window.up)} up. The next 30 days: about ${size(e.per_30d.down)} down and ${size(e.per_30d.up)} up.` }));
     const short = s.interval_s < e.min_interval_s;
     this.everyHelp.hidden = !short;
     this.everyHelp.textContent = short ? `A round takes about ${Math.round(e.round_s_est)} s with these targets and sizes: choose every ${Math.ceil(e.min_interval_s / 60)} minutes or more, or fewer requests and smaller sizes.` : '';
@@ -280,6 +285,13 @@ export class CampaignForm {
     this.est.replaceChildren(...nodes);
   }
 
+  /** The download size's error (fyisp's), shown under it. @param {string} msg */
+  downFail(msg) {
+    this.downErr.textContent = msg;
+    this.downErr.hidden = !msg;
+    if (msg) this.down.sel.setAttribute('aria-invalid', 'true'); else this.down.sel.removeAttribute('aria-invalid');
+  }
+
   /** @param {string} msg */
   fail(msg) {
     this.err.textContent = msg;
@@ -290,6 +302,7 @@ export class CampaignForm {
   async submit() {
     if (this.busy) return;
     this.fail('');
+    this.downFail('');
     const s = this.spec();
     if (!s.targets.length) { this.fail('Pick at least one target.'); return; }
     if (s.shape === 'recurring' && !s.days.length) { this.fail('Pick at least one day.'); return; }
@@ -314,6 +327,12 @@ export class CampaignForm {
       if (b.code === 'keys_refused' && Array.isArray(b.targets)) {
         for (const id of b.targets) this.keys.setError(id, 'These keys were refused. Check them, or clear them to test connections only. Type the secret again.');
         this.keys.focus(b.targets[0]);
+      } else if (b.code === 'bad_request' && b.field === 'down_bytes') {
+        // fyisp's sentence says why (e.g. too big to upload once at your recent upload speed).
+        this.downFail(typeof b.error === 'string' && b.error
+          ? `${b.error[0].toUpperCase()}${b.error.slice(1).replace(/\.$/, '')}.`
+          : 'fyisp didn’t accept this download size: choose a smaller one.');
+        this.down.sel.focus();
       } else this.fail(campaignError(e));
     } finally {
       this.busy = false;

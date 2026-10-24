@@ -29,7 +29,8 @@ function inAbout(ms) {
   if (m <= 0) return 'now';
   if (m < 60) return `in about ${m} minute${m === 1 ? '' : 's'}`;
   const hrs = Math.round(m / 60);
-  return `in about ${hrs} hour${hrs === 1 ? '' : 's'}`;
+  if (hrs <= 48) return `in about ${hrs} hour${hrs === 1 ? '' : 's'}`;
+  return `in about ${Math.round(hrs / 24)} days`;
 }
 
 /** "weekdays 19:00–23:00". @param {any} sc */
@@ -117,6 +118,7 @@ export class Storage {
       reload: () => this.load(),
       say: (t) => { this.say.textContent = t; },
       render: () => this.render(),
+      formOpen: () => this.panel === 'form',
     });
     this.el = h('section', { id: 'storage', class: 'storage', 'aria-label': 'Storage tests', hidden: true },
       this.say, this.headEl, this.notesEl, this.panelEl, this.resEl, this.targets.el, this.histEl);
@@ -401,6 +403,7 @@ export class Storage {
     this.panelEl.replaceChildren(h('div', { onkeydown: (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); this.form?.cancel(); } } },
       h('h2', { id: 'st-panel-h', tabindex: '-1', text: 'New campaign' }), this.form.el));
     this.renderHead();
+    this.targets.render(); // without Add and Edit while this form is open
     /** @type {HTMLElement} */ (this.panelEl.querySelector('h2')).focus();
   }
 
@@ -413,7 +416,7 @@ export class Storage {
     if (c) { this.host.setSel(0); this.say.textContent = words; }
     await this.refresh();
     if (c) /** @type {HTMLElement|null} */ (this.panelEl.querySelector('h2') || this.headEl.querySelector('.st-toggle, .st-toggle-rec'))?.focus();
-    else /** @type {HTMLElement|null} */ (this.headEl.querySelector('.st-new'))?.focus();
+    else /** @type {HTMLElement|null} */ (this.headEl.querySelector('.st-new') || this.headEl.querySelector('button'))?.focus();
   }
 
   async runNow() {
@@ -445,7 +448,8 @@ export class Storage {
     if (v !== 'ok') { this.refocus(title.startsWith('Remove') ? 'Remove schedule…' : title.startsWith('Cancel') ? 'Cancel campaign…' : 'Stop campaign…'); return; }
     try {
       await apiWrite('POST', 'api/storage/campaign/stop?' + new URLSearchParams({ id: String(l.id) }));
-      this.say.textContent = l.shape === 'recurring' ? 'Schedule removed. Its keys were deleted.' : `Campaign stopped after ${l.rounds_done} round${l.rounds_done === 1 ? '' : 's'}. Keys forgotten.`;
+      this.say.textContent = l.shape === 'recurring' ? 'Schedule removed. Its keys were deleted.'
+        : l.state === 'scheduled' ? 'Campaign cancelled before it started. Keys forgotten.' : `Campaign stopped after ${l.rounds_done} round${l.rounds_done === 1 ? '' : 's'}. Keys forgotten.`;
     } catch (e) { this.say.textContent = campaignError(e); }
     await this.refresh();
     // New campaign…, else (another campaign is still live) the first control left.

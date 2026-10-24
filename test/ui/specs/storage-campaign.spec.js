@@ -85,6 +85,9 @@ test('a campaign: refused keys, then start, pause, resume and stop; a schedule',
     await page.goto(`http://127.0.0.1:${port}/#v=storage`);
     await page.getByRole('button', { name: 'New campaign…' }).click();
     await expect(page.getByRole('heading', { name: 'New campaign' })).toBeFocused();
+    // No target form opens beside it.
+    await expect(page.getByRole('button', { name: 'Edit NAS' })).toHaveCount(0);
+    await expect(page.locator('.st-targets .st-add')).toHaveCount(0);
     const form = page.locator('.st-cform');
     for (const name of ['Backups \\(R2\\)', 'NAS', 'Flaky edge']) await form.getByRole('checkbox', { name: new RegExp(`^${name} `) }).uncheck();
     await expect(form.getByRole('group', { name: 'Keys for Wrong keys' })).toBeVisible();
@@ -213,9 +216,9 @@ test('keys a campaign holds: the targets table, Delete, Edit and Forget keys', a
 
     // The row says a campaign holds keys and uses it.
     const row = page.locator('.st-list tr[data-id]', { hasText: 'AWS Virginia' });
-    await expect(row.locator('.st-keys')).toHaveText('In memory · key …1234');
+    await expect(row.locator('.st-keycol')).toHaveText('In memory · key …1234');
     await expect(row).toContainText('in a live campaign');
-    await expect(page.locator('.st-list tr[data-id]', { hasText: 'NAS' }).locator('.st-keys')).toHaveText('None');
+    await expect(page.locator('.st-list tr[data-id]', { hasText: 'NAS' }).locator('.st-keycol')).toHaveText('None');
 
     // Delete explains instead of asking.
     await page.getByRole('button', { name: 'Delete AWS Virginia' }).click();
@@ -234,11 +237,20 @@ test('keys a campaign holds: the targets table, Delete, Edit and Forget keys', a
     const dlg = page.getByRole('dialog', { name: 'Forget the keys for AWS Virginia?' });
     await expect(dlg.getByRole('button', { name: 'Cancel' })).toBeFocused();
     await dlg.getByRole('button', { name: 'Forget keys' }).click();
-    await expect(row.locator('.st-keys')).toHaveText('None');
+    await expect(row.locator('.st-keycol')).toHaveText('None');
     await expect(row.locator('th')).toBeFocused();
     await expect(page.getByRole('button', { name: 'Forget the keys for AWS Virginia' })).toHaveCount(0);
     await expect(page.locator('.st-wait')).toContainText('AWS Virginia');
     await expect(page.locator('#storage > [role="status"]')).toHaveText('Forgot the keys for AWS Virginia.');
+
+    // Stopped: the in-use alert goes with it.
+    await page.getByRole('button', { name: 'Delete AWS Virginia' }).click();
+    await expect(page.locator('.st-targets [role="alert"]')).toBeVisible();
+    await head.getByRole('button', { name: 'Stop campaign…' }).click();
+    await page.getByRole('dialog', { name: 'Stop this campaign?' }).getByRole('button', { name: 'Stop campaign' }).click();
+    await expect(head).toContainText('Storage tests: Idle');
+    await expect(page.locator('.st-targets [role="alert"]')).toBeHidden();
+    await expect(row).not.toContainText('in a live campaign');
   } finally {
     proc.kill();
   }

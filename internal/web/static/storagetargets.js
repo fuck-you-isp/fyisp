@@ -13,7 +13,7 @@ import { classLong, statusWords, timings, hintWords } from './storagewords.js';
 /** @typedef {{state:'none'|'memory'|'saved',access_key_last4:string|null,session_token:boolean,campaign:number|null}} StorageTargetKeys */
 /** @typedef {{id:string,name:string,endpoint:string,scheme:string,host:string,port:number,region:string,bucket:string,addressing:string,has_ca:boolean,network:string,keys:StorageTargetKeys,in_use_by:number|null,last_check:import('./storagewords.js').StorageCheck|null,created:number,updated:number}} StorageTarget */
 /** @typedef {{at:number,rev:number,targets:StorageTarget[]}} StorageSummary */
-/** @typedef {{summary:()=>StorageSummary|null, reload:()=>Promise<void>, say:(t:string)=>void, render:()=>void}} TargetsHost */
+/** @typedef {{summary:()=>StorageSummary|null, reload:()=>Promise<void>, say:(t:string)=>void, render:()=>void, formOpen:()=>boolean}} TargetsHost */
 
 /** As the server checks them (storage.Spec.normalize and s3test.Validate). */
 const BUCKET_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{1,61}[A-Za-z0-9]$/;
@@ -103,6 +103,8 @@ export class StorageTargets {
     /** The target just saved (its row is marked and focused). */
     this.saved = '';
     this.err = '';
+    /** The campaign form is open: no Add or Edit. */
+    this.locked = false;
     // One alert, kept across redraws: its text changes only when the error does.
     this.errEl = h('p', { class: 'notice danger', role: 'alert', hidden: true });
     /** The list or the form (redrawn); the alert stays outside it. */
@@ -124,6 +126,10 @@ export class StorageTargets {
     const ts = d ? d.targets : [];
     if (!ts.length) { this.body.replaceChildren(); this.el.hidden = !this.err; return; }
     this.el.hidden = false;
+    // The in-use alert goes once no target it was about is in use.
+    if (this.err === IN_USE && !ts.some((t) => t.in_use_by != null)) this.err = '';
+    // While the campaign form is open, no target form opens beside it.
+    this.locked = this.host.formOpen();
     const rows = ts.flatMap((t) => this.row(t));
     this.body.replaceChildren(...[
       h('h2', { id: 'st-targets-h', text: 'Targets', tabindex: '-1' }),
@@ -132,7 +138,7 @@ export class StorageTargets {
         h('thead', {}, h('tr', {}, ...['Name', 'Endpoint', 'Region', 'Bucket', 'Keys', 'Actions'].map((c) => h('th', { scope: 'col', text: c })))),
         h('tbody', {}, ...rows)),
       h('div', { class: 'sp-acts st-under' },
-        h('button', { type: 'button', class: 'btn st-add', text: 'Add a target', disabled: ts.length >= MAX_TARGETS, onclick: () => this.open('') }),
+        this.locked ? null : h('button', { type: 'button', class: 'btn st-add', text: 'Add a target', disabled: ts.length >= MAX_TARGETS, onclick: () => this.open('') }),
         ts.length >= MAX_TARGETS ? h('span', { class: 'muted small', text: `At most ${MAX_TARGETS} targets.` }) : null,
         this.saved && ts.some((t) => t.id === this.saved && !t.last_check) ? h('span', { class: 'muted small', text: 'Check it now to see whether fyisp can reach it.' }) : null),
     ].filter((n) => n != null));
@@ -153,11 +159,11 @@ export class StorageTargets {
       h('td', { 'data-k': 'Endpoint', class: 'st-ep', text: where(t) }),
       h('td', { 'data-k': 'Region', text: t.region }),
       h('td', { 'data-k': 'Bucket', text: t.bucket || 'connection only' }),
-      h('td', { 'data-k': 'Keys', class: 'st-keys', text: keyWords(t) }),
+      h('td', { 'data-k': 'Keys', class: 'st-keycol', text: keyWords(t) }),
       h('td', { class: 'st-row-acts' },
         h('button', { type: 'button', class: 'btn sm', text: busy ? 'Checking…' : 'Check', 'aria-disabled': busy ? 'true' : null, 'aria-label': `${busy ? 'Checking' : 'Check'} ${t.name}`,
           'data-key': `check:${t.id}`, onclick: () => { if (!this.checking.has(t.id)) this.check(t); } }),
-        h('button', { type: 'button', class: 'btn sm', text: 'Edit', 'aria-label': `Edit ${t.name}`, 'data-key': `edit:${t.id}`, onclick: () => this.open(t.id) }),
+        this.locked ? null : h('button', { type: 'button', class: 'btn sm', text: 'Edit', 'aria-label': `Edit ${t.name}`, 'data-key': `edit:${t.id}`, onclick: () => this.open(t.id) }),
         hasKeys(t) ? h('button', { type: 'button', class: 'btn sm ghost', text: 'Forget keys…', 'aria-label': `Forget the keys for ${t.name}`, 'data-key': `forget:${t.id}`, onclick: () => this.forget(t) }) : null,
         // A target a live campaign uses can't be deleted: Delete says why instead of asking.
         h('button', { type: 'button', class: 'btn sm ghost', text: 'Delete…', 'aria-label': `Delete ${t.name}`, 'data-key': `delete:${t.id}`,
@@ -435,9 +441,10 @@ class TargetForm {
     if (b.code !== 'bad_request' || !b.field) return null;
     switch (b.field) {
       case 'name': return ['name', 'Give the target a name of up to 64 characters, without control characters.'];
-      case 'endpoint': return ['endpoint', this.f.endpoint.value.trim().startsWith('http://')
-        ? 'fyisp couldn’t use that address. Check that the name resolves to an IPv4 address; plain http:// is allowed only for a server on your network.'
-        : 'fyisp couldn’t use that address. Check that the name resolves to an IPv4 address.'];
+      // fyisp's sentence says why (a bad host or port, a name that doesn't resolve, http:// to the internet).
+      case 'endpoint': return ['endpoint', typeof b.error === 'string' && b.error
+        ? `fyisp didn’t accept this endpoint: ${b.error.replace(/\.$/, '')}.`
+        : 'fyisp didn’t accept this endpoint.'];
       case 'region': return ['region', 'Use the region your provider shows, e.g. us-east-1 or auto (letters, digits, - and _).'];
       case 'bucket': return ['bucket', 'Bucket names are 3 to 63 letters, digits, dots, hyphens or underscores.'];
       case 'ca_pem': return ['ca', 'That isn’t a PEM certificate.'];

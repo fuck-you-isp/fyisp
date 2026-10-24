@@ -170,7 +170,10 @@ export class Speed {
     this.headEl.onkeydown = null;
     const flag = d.set_by_flag ? h('p', { class: 'muted small', text: 'Turned on by a start-up setting. If you turn it off here, it comes back on the next restart.' }) : null;
     const paused = activePause(d.pause);
-    const next = this.queue.q?.running || d.running ? 'testing now' : paused ? `scheduled tests ${pauseWords(paused)}` : d.next_at ? `next test ${clock(d.next_at)}` : '';
+    // A pause shows while a test runs too (pausing doesn't stop it).
+    const testing = !!(this.queue.q?.running || d.running);
+    const next = [testing ? 'testing now' : '', paused ? `scheduled tests ${pauseWords(paused)}` : !testing && d.next_at ? `next test ${clock(d.next_at)}` : '']
+      .filter(Boolean).join(' · ');
     fill(this.headEl, [
       h('div', { class: 'sp-on' },
         h('p', { class: 'sp-state' }, h('b', { text: 'Speed tests: On' }), ` · ${modeName(d.mode)}${next ? ' · ' + next : ''}`,

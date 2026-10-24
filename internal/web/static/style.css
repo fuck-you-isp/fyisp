@@ -1307,13 +1307,14 @@ body.home-on #viewnav { display: none !important; }
 .st-tl .st-tl-name { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 140px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--ink); font-weight: 600; font-size: 12px; }
 .st-c { width: 22px; min-width: 22px; height: 24px; text-align: center; font-weight: 700; font-size: 14px; border-radius: 3px; cursor: pointer; box-sizing: border-box; }
 .st-c:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.st-ok { background: color-mix(in srgb, var(--good) 45%, var(--surface)); }
-.st-slow { background: var(--slow); color: var(--slow-ink); }
-.st-failed { background: var(--down); color: #ffffff; }
-.st-config { box-shadow: inset 0 0 0 1px var(--ink-2); color: var(--ink); }
-.st-nokeys { border: 1px dotted var(--ink-2); color: var(--ink); }
-.st-skipped, .st-cancelled { color: var(--ink-2); background: transparent; border: 1px dashed var(--ink-2); }
-.st-gap { background: repeating-linear-gradient(135deg, var(--hatch) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 1px var(--hatch); }
+/* The grid's cells and the legend's swatches only (speedqueue.js's list uses st-<status> too). */
+.st-c.st-ok { background: color-mix(in srgb, var(--good) 45%, var(--surface)); }
+.st-c.st-slow { background: var(--slow); color: var(--slow-ink); }
+.st-c.st-failed { background: var(--down); color: #ffffff; }
+.st-c.st-config { box-shadow: inset 0 0 0 1px var(--ink-2); color: var(--ink); }
+.st-c.st-nokeys { border: 1px dotted var(--ink-2); color: var(--ink); }
+.st-c.st-skipped, .st-c.st-cancelled { color: var(--ink-2); background: transparent; border: 1px dashed var(--ink-2); }
+.st-c.st-gap { background: repeating-linear-gradient(135deg, var(--hatch) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 1px var(--hatch); }
 .st-tl-text .st-c { font-size: 11px; }
 .st-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0; margin: 8px 0 0; font-size: 12px; color: var(--ink-2); }
 .st-legend li { display: flex; align-items: center; gap: 4px; }
@@ -1324,6 +1325,8 @@ body.home-on #viewnav { display: none !important; }
 .st-hist tr.sel th { box-shadow: inset 3px 0 0 var(--accent); }
 @media (forced-colors: active) {
   .st-c { border: 1px solid CanvasText; }
+  /* No fills here: a gap (empty, like ok) gets a dashed border. */
+  .st-c.st-gap { border-style: dashed; }
 }
 @media (max-width: 767.98px) {
   .st-tl .st-tl-name { min-width: 84px; max-width: 84px; }

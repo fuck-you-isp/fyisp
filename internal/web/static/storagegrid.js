@@ -162,14 +162,23 @@ export class StorageGrid {
     this.move(r, i);
   }
 
-  /** @param {number} r @param {number} i */
+  /** Moves the cursor to cell (r, i) and focuses it. @param {number} r @param {number} i */
   move(r, i) {
     this.cur = [r, i];
+    const td = this.sync();
+    if (td) { td.focus(); td.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+  }
+
+  /** The one tab stop on the cursor's cell (returned). */
+  sync() {
+    /** @type {HTMLElement|null} */
+    let at = null;
     for (const td of /** @type {NodeListOf<HTMLElement>} */ (this.wrap.querySelectorAll('td.st-c'))) {
-      const on = td.dataset.r === String(r) && td.dataset.i === String(i);
+      const on = td.dataset.r === String(this.cur[0]) && td.dataset.i === String(this.cur[1]);
       td.tabIndex = on ? 0 : -1;
-      if (on) { td.focus(); td.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      if (on) at = td;
     }
+    return at;
   }
 
   /** @param {MouseEvent} e */
@@ -196,6 +205,7 @@ export class StorageGrid {
     if (i < 0 || i >= d.rounds.length) return;
     this.open = [this.open[0], d.rounds[i].id];
     this.cur[1] = i;
+    this.sync();
     this.loadDetail(true);
   }
 
