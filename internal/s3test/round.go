@@ -88,9 +88,6 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 		return e.fakeRound(ctx, s)
 	}
 	res := RoundResult{Start: e.o.Now(), Skips: map[string]string{}}
-	est := EstimateRound(len(s.Targets), countKeyed(s.Targets), s.Phases, s.RecentBps)
-	rctx, cancel := context.WithTimeout(ctx, min(max(2*est, est+capSlack), RoundCap))
-	defer cancel()
 	for i := range s.Targets {
 		rt := &s.Targets[i]
 		if !installRe.MatchString(s.Install) || rt.Validate(rt.Creds != nil && rt.Creds.HasToken()) != nil {
@@ -110,18 +107,18 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 		}
 		return a
 	}
-	live := func(rt *RoundTarget) bool { return res.Skips[rt.ID] == "" && rctx.Err() == nil }
 	targets := make([]*RoundTarget, len(s.Targets))
 	for i := range s.Targets {
 		targets[i] = &s.Targets[i]
 	}
 
-	// Seed: the objects the checks and the download read, put once.
+	// Seed: the objects the checks and the download read, put once, each
+	// within its own bound; the round's starts after them.
 	for _, rt := range targets {
-		if rt.keyed() && live(rt) {
+		if rt.keyed() && res.Skips[rt.ID] == "" && ctx.Err() == nil {
 			s.phase(model.StoragePhaseSeed, rt.ID)
 			n := len(res.Attempts)
-			e.seed(rctx, rt, s.Install, s.Phases.Down, s.RecentBps[1], add)
+			e.seed(ctx, rt, s.Install, s.Phases.Down, s.RecentBps[1], add)
 			for _, a := range res.Attempts[n:] {
 				if a.Op == "put" {
 					res.Up += a.Bytes // a seed's upload costs data too
@@ -129,6 +126,10 @@ func (e *Engine) RunRound(ctx context.Context, s RoundSpec) RoundResult {
 			}
 		}
 	}
+	est := EstimateRound(len(s.Targets), countKeyed(s.Targets), s.Phases, s.RecentBps)
+	rctx, cancel := context.WithTimeout(ctx, min(max(2*est, est+capSlack), RoundCap))
+	defer cancel()
+	live := func(rt *RoundTarget) bool { return res.Skips[rt.ID] == "" && rctx.Err() == nil }
 	// Cold: a fresh lookup, connection and handshake per request, the
 	// targets interleaved, each at most once a second.
 	if s.Phases.Cold > 0 {
@@ -284,6 +285,9 @@ func (e *Engine) seed(ctx context.Context, rt *RoundTarget, install string, n in
 		put.Phase, put.Op = model.StoragePhaseSeed, "put"
 		r := e.putRequest(rt, key, size, recentUp)
 		r.transfer = big
+		if big {
+			r.total = seedBound(size, recentUp)
+		}
 		e.do(ctx, &rt.Target, r, nil, false, &put)
 		if big && e.o.Masker != nil {
 			_ = e.o.Masker.End(e.o.Now())
@@ -372,4 +376,20 @@ func transferBound(n int64, bps float64) time.Duration {
 	}
 	d := time.Duration(3 * float64(n*8) / bps * float64(time.Second))
 	return min(max(d, minTransferTime), maxTransferTime)
+}
+
+// seedBound is the download seed's: 3x its time at the recent upload
+// rate, within 30 s to 10 min (10 min when the rate is unknown).
+func seedBound(n int64, bps float64) time.Duration {
+	if bps <= 0 {
+		return maxSeedTime
+	}
+	d := time.Duration(3 * float64(n*8) / bps * float64(time.Second))
+	return min(max(d, minTransferTime), maxSeedTime)
+}
+
+// SeedFits reports whether a download of n bytes can be seeded at the
+// recent upload rate (bits/s; 0: unknown, then it may), in half the bound.
+func SeedFits(n int64, upBps float64) bool {
+	return upBps <= 0 || float64(n*8)/upBps*float64(time.Second) <= float64(maxSeedTime/2)
 }

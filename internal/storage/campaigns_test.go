@@ -441,6 +441,16 @@ func TestCampaignKeys(t *testing.T) {
 				t.Errorf("%s: accepted", name)
 			}
 		}
+		// Over a 1 Mbit/s upload, a 64 MiB seed takes about 9 minutes: refused; 16 MiB fits.
+		l.c.o.Recent = func() [2]float64 { return [2]float64{50e6, 1e6} }
+		big := CampaignSpec{Targets: []string{b}, Shape: model.StorageOnDemand, Interval: 30 * time.Minute, Count: 1, Cold: 1, Down: 64 << 20}
+		if _, _, err := l.c.validate(big, keysFor(b), time.Now()); !errors.As(err, &ce) || ce.Field != "down_bytes" {
+			t.Errorf("seed too big for the upload: %v", err)
+		}
+		big.Down = 16 << 20
+		if _, _, err := l.c.validate(big, keysFor(b), time.Now()); err != nil {
+			t.Errorf("a seed that fits: %v", err)
+		}
 	})
 }
 

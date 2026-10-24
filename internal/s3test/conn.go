@@ -28,6 +28,12 @@ const (
 	StallTimeout    = 10 * time.Second // no body bytes either way
 	minTransferTime = 30 * time.Second
 	maxTransferTime = 180 * time.Second
+	// A request that isn't a transfer, from its first byte sent to its
+	// answer's last read.
+	smallRequestTime = 60 * time.Second
+	// The download's seed is put once per bucket and size, before the
+	// round's own bound: it may be large over a slow upload.
+	maxSeedTime = 10 * time.Minute
 )
 
 // Target is one S3-compatible endpoint, as the owner set it up. Nothing

@@ -373,6 +373,11 @@ func (c *Campaigns) validate(s CampaignSpec, keys map[string]*s3test.Creds, now 
 		return mc, nil, &CampaignError{Code: "interval_too_short", Field: "interval_s", Min: min,
 			Msg: fmt.Sprintf("a round of these takes up to %s: the interval must be at least that", min)}
 	}
+	if keyed > 0 && s.Down > 0 && !s3test.SeedFits(s.Down, c.recent()[1]) {
+		// The download reads an object fyisp uploads once: one this size
+		// would never finish uploading, and every round would try again.
+		return mc, nil, cerr("bad_request", "down_bytes", "uploading the download's object once takes over 5 minutes at your recent upload speed: choose a smaller download")
+	}
 	var loc *time.Location
 	switch s.Shape {
 	case model.StorageOnDemand:

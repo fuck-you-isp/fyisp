@@ -69,7 +69,7 @@ func newLab(t *testing.T, tlsOn bool) *lab {
 		},
 		Masker: l.mask, IsSelf: func(netip.Addr) bool { return false }, Sleep: func(context.Context, time.Duration) bool { return true },
 		lim: limits{dns: time.Second, connect: time.Second, handshake: time.Second, write: time.Second,
-			ttfb: 300 * time.Millisecond, ttfbUpload: time.Second, stall: 300 * time.Millisecond},
+			ttfb: 300 * time.Millisecond, ttfbUpload: time.Second, stall: 300 * time.Millisecond, small: 5 * time.Second},
 	})
 	return l
 }
@@ -503,6 +503,13 @@ func TestEstimate(t *testing.T) {
 	if transferBound(1<<30, 0) != 2*time.Minute || transferBound(1, 1e9) != minTransferTime || transferBound(1<<30, 1e6) != maxTransferTime {
 		t.Error("transfer bounds")
 	}
+	// 256 MiB over 10 Mbit/s: about 3.6 minutes, past a transfer's bound but within a seed's.
+	if seedBound(256<<20, 10e6) != maxSeedTime || seedBound(1<<20, 1e9) != minTransferTime || seedBound(1, 0) != maxSeedTime {
+		t.Error("seed bounds")
+	}
+	if !SeedFits(256<<20, 10e6) || SeedFits(1<<30, 10e6) || !SeedFits(1<<30, 0) {
+		t.Error("seed fits")
+	}
 }
 
 func TestClassGroups(t *testing.T) {
@@ -599,5 +606,41 @@ func TestEndlessHeaders(t *testing.T) {
 	}
 	if n := sent.Load(); n >= 64<<20 {
 		t.Errorf("read the whole %d bytes", n)
+	}
+}
+
+// TestSlowHeaders: a server that sends its head a byte at a time, each
+// within the read deadline, fails a small request at its bound.
+func TestSlowHeaders(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		go io.Copy(io.Discard, c)
+		for _, b := range []byte("HTTP/1.1 200 OK\r\n" + strings.Repeat("X-Pad: a\r\n", 100)) {
+			if _, err := c.Write([]byte{b}); err != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+	l := newLab(t, false)
+	l.rt.Creds = nil
+	l.e.o.lim.small = 500 * time.Millisecond // each byte is well within the 10 s read deadline
+	l.e.o.Dial = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, network, ln.Addr().String())
+	}
+	start := time.Now()
+	c := l.e.Check(context.Background(), l.rt)
+	if c.Attempt.Class != string(ClassTimeoutTotal) || time.Since(start) > 3*time.Second {
+		t.Errorf("class %q after %v", c.Attempt.Class, time.Since(start))
 	}
 }

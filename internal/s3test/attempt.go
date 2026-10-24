@@ -45,11 +45,11 @@ type Options struct {
 
 // limits are the per-step bounds (tests shorten them).
 type limits struct {
-	dns, connect, handshake, write, ttfb, ttfbUpload, stall time.Duration
+	dns, connect, handshake, write, ttfb, ttfbUpload, stall, small time.Duration
 }
 
 var defaultLimits = limits{dns: DNSTimeout, connect: ConnectTimeout, handshake: TLSTimeout, write: WriteTimeout,
-	ttfb: TTFBTimeout, ttfbUpload: TTFBUpload, stall: StallTimeout}
+	ttfb: TTFBTimeout, ttfbUpload: TTFBUpload, stall: StallTimeout, small: smallRequestTime}
 
 // Masker is *speedtest.Windows: Begin and End bracket a transfer.
 type Masker interface {
@@ -137,14 +137,16 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 	start := a.At
 	var res result
 	reused := false         // the request goes out on a kept connection
-	var hardTotal time.Time // the transfer's bound, when it has one
-	// cause names why err happened: the ctx, the transfer's bound or a
+	var hardTotal time.Time // the request's bound, once it is sent
+	// cause names why err happened: the ctx, the request's bound or a
 	// stall, before the step's own classification.
 	cause := func(err error) error {
 		switch {
 		case ctx.Err() != nil:
 			return errCancelled
-		case !hardTotal.IsZero() && !time.Now().Before(hardTotal) && isTimeout(err):
+		case !hardTotal.IsZero() && !time.Now().Before(hardTotal):
+			// Past the bound, whatever the error says: a read cut by its
+			// deadline can leave a partial status line that parses as junk.
 			return errTotal
 		}
 		return err
@@ -195,14 +197,22 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 			a.EdgeIP, a.EdgePrefix = c.addr, prefix24(c.addr)
 		}
 	}
-	// A cancel stops the attempt at once: no deadline can be re-armed past it.
-	stop := context.AfterFunc(ctx, func() { c.stopAt(time.Now()) })
-	defer stop()
-	if r.total > 0 {
-		hardTotal = time.Now().Add(r.total)
+	// A small request is bounded too: a server that sends a byte now and
+	// then would keep it, deadline by sliding deadline, until the round's
+	// bound.
+	total := r.total
+	if total == 0 {
+		total = e.o.lim.small
+	}
+	if total > 0 {
+		hardTotal = time.Now().Add(total)
 		c.hard.Store(hardTotal.UnixNano())
 		defer c.hard.Store(0)
 	}
+	// A cancel stops the attempt at once: no deadline can be re-armed past
+	// it (set after the bound, which it overrides).
+	stop := context.AfterFunc(ctx, func() { c.stopAt(time.Now()) })
+	defer stop()
 	// Sign and write the request.
 	hdr := map[string]string{"host": t.requestHost(r.root)}
 	for k, v := range r.header {
@@ -334,8 +344,10 @@ func (e *Engine) do(ctx context.Context, t *Target, r request, c *conn, keep boo
 	}
 	switch {
 	case r.size > 0 && r.transfer:
+		// Up to the answer: the last bytes written may still sit in the
+		// send buffer, and the server answers once it has them all.
 		a.Bytes = r.size
-		g := float64(r.size*8) / max(wrote.Sub(bodyStart).Seconds(), 1e-6)
+		g := float64(r.size*8) / max(first.Sub(bodyStart).Seconds(), 1e-6)
 		a.GoodputBps, a.Stallms = &g, ms(up.max)
 	case r.size > 0:
 		a.Bytes = r.size
