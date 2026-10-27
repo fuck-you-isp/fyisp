@@ -22,7 +22,7 @@ import (
 // written by that release's own store (the dbfixture Dockerfile stage).
 // After tagging a release, set it and the stage's RELEASE to the new tag
 // and regenerate the file.
-const lastRelease = "v0.13.0"
+const lastRelease = "v0.14.0"
 
 // The generator's clock and values (testdata/genfixture/main.go): keep
 // them in step.
