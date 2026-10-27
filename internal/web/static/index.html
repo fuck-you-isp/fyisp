@@ -43,6 +43,7 @@
     <ul>
       <li>Lines break where no probe succeeded. The strip under each chart shows lost samples by reason; grey hatching means not measured (fyisp was not running), which is not loss.</li>
       <li>Drag on a chart to zoom, double-click to reset. Click a legend entry to isolate it, Ctrl/Cmd-click to toggle.</li>
+      <li>With one target isolated, <b>Probes over … ms</b> counts and marks each of its probes slower than that, at any range: a dot per probe (a tick when they crowd), a ring for a TCP connect of 1 to 1.4 s (likely a dropped packet, sent again after 1 s), a caret at the top for one above the chart, and ▼ on the strip for each lost probe. It starts at 3 times the target’s usual time (at least 50 ms more), and remembers what you type.</li>
       <li>Faint coloured bands on the charts mark incidents from the outage log; click an incident to zoom to it.</li>
       <li>Choose “show speed tests” in a chart’s legend to mark when speed tests ran (zoom in to see each one as a band). Samples taken during a test are measured as usual, so a spike there may be the test.</li>
       <li><b>×2.3 normal</b>: 2.3 times slower than usual for this target (its typical time over the past week). The “Normal band” shades each target’s usual range (median to p95).</li>

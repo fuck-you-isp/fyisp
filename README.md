@@ -171,7 +171,7 @@ On a phone the strip stacks and the tiles take 2 columns (right: a problem at th
 
 For its first day fyisp is still learning what's usual for your connection: Home says so and flags only big problems until then. If fyisp hasn't checked for 2 minutes or more (the computer it runs on is asleep, or fyisp stopped), the card turns grey, says since when, and the tiles are dimmed.
 
-**Technical details** (*Technical details →* on Home; the *Home | Details* switch at the top goes back) is the full instrument panel: the verdict and outage log, the [Calls view](docs/CALL-QUALITY.md) with scores per app and *What happened at …?*, the [Overview](docs/PROFILES.md#the-overview-large-profiles), charts for every service, traceroutes (*Investigate*), speed tests and CSV export.
+**Technical details** (*Technical details →* on Home; the *Home | Details* switch at the top goes back) is the full instrument panel: the verdict and outage log, the [Calls view](docs/CALL-QUALITY.md) with scores per app and *What happened at …?*, the [Overview](docs/PROFILES.md#the-overview-large-profiles), charts for every service (isolate one to count and mark each probe slower than a threshold you set), traceroutes (*Investigate*), speed tests and CSV export.
 
 Home's 11 tiles and what each one checks, the 28 default targets and the profiles that add about 1,400 more are in [What to measure](docs/PROFILES.md); how a tile becomes *Slow*, *Choppy* or *Down*, and how fyisp decides whose fault a problem is, in [How fyisp decides](docs/VERDICTS.md).
 

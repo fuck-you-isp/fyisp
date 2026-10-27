@@ -108,3 +108,4 @@ Settled choices; reviewers shouldn't re-raise them.
 - **`api/probes` "likely dropped"** is TCP probes of 1000 to 1400 ms: a SYN resent after a 1 s initial RTO. It is labelled as likely, not proven (nothing records the retransmit, and Windows may resend at 3 s, which is a timeout).
 - **`api/probes` has no gaps.** `api/panel`'s per-bucket `gap` already says when fyisp wasn't measuring.
 - **`api/probes` caps at the slowest 5000**, not the first, so a capped answer still shows the worst probes; `complete_above_ms` says what is complete.
+- **"Probes over X ms"** (Details charts) shows only when one target is shown, and only for the panel's main kind. The threshold is typed, not dragged (dragging the plot zooms), starts at the verdict engine's spike rule (3× normal, at least +50 ms) and is kept per target and kind in localStorage, not the URL. The min–max band stays.

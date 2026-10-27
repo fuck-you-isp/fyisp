@@ -9,6 +9,8 @@
 /** @typedef {{id:number,start:string,end?:string,kind:string,summary:string,targets?:string[],peak_loss:number}} Incident */
 /** @typedef {{target:string,kind:string,mean:(number|null)[],min:(number|null)[],max:(number|null)[],n:number[],lost:number[],gap:number[],lost_by:Object<string,number[]>}} SeriesData */
 /** @typedef {{group:Group,tier:string,from:number,to:number,now:number,start:number,step:number,len:number,series:SeriesData[]}} PanelData */
+/** @typedef {{ts:number,ms:number}} Probe */
+/** @typedef {{target:string,kind:string,from:number,to:number,over_ms:number,n:number,over:number,complete_above_ms:number|null,probes:Probe[],likely_drop?:number,lost_total:number,lost_by:Object<string,number>,lost:{ts:number,reason:string}[],lost_capped:boolean}} ProbesData */
 
 import {
   meta, TOKEN, $, h, storageGet, storageSet, mqLight,
@@ -155,6 +157,17 @@ function seriesColor(/** @type {number} */ i) {
 }
 function reasonColor(/** @type {string} */ r) { return css(`--r-${r}`) || '#999999'; }
 
+/** A probe's RTT: "52.0 ms", "1.04 s" from a second. */
+function fmtProbeMs(/** @type {number} */ ms) { return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${fmtMs(ms)} ms`; }
+
+/** A TCP connect of 1000-1400 ms: likely a lost SYN sent again after 1 s (api/probes' likely_drop). */
+function likelyDrop(/** @type {string} */ kind, /** @type {number} */ ms) { return kind === 'tcp' && ms >= 1000 && ms < 1400; }
+
+/** A probe's time to the second, with the date. */
+function fmtStamp(/** @type {number} */ ms) {
+  return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 // Glossary for Details: the short explanation of each technical term (ux-content §4).
 // The same text is in the footer's Glossary; term() marks a word with it as a hover hint.
 /** @type {Object<string,string>} */
@@ -291,6 +304,16 @@ class Panel {
     this.chartEl.append(this.emptyEl);
     this.strip = /** @type {HTMLCanvasElement} */ (h('canvas', { class: 'strip', 'aria-hidden': 'true' }));
     this.stripLegend = h('div', { class: 'strip-legend' });
+    // "Probes over X ms" when one target is shown (api/probes).
+    this.thrInput = /** @type {HTMLInputElement} */ (h('input', { type: 'number', class: 'thr', min: '0', max: '60000', step: 'any', inputmode: 'decimal', 'aria-describedby': `pcount-${group.id}`,
+      oninput: () => this.thrChanged(false), onchange: () => this.thrChanged(true) }));
+    this.thrCount = h('span', { class: 'pcount', id: `pcount-${group.id}` });
+    this.thrSay = h('span', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
+    this.probesEl = h('div', { class: 'probes', hidden: true }, h('label', {}, 'Probes over ', this.thrInput, ' ms'), this.thrCount, this.thrSay);
+    /** @type {{target:string,kind:string,key:string,data:ProbesData|null,ctl:AbortController|null,timer:number,sayTimer:number,say:boolean}} say: announce the next count (the user changed something) */
+    this.thr = { target: '', kind: '', key: '', data: null, ctl: null, timer: 0, sayTimer: 0, say: false };
+    /** Probe marks drawn on the chart, in CSS pixels of the plot, for the tooltip. @type {{x:number,y:number,p:Probe}[]} */
+    this.dots = [];
     this.legend = h('ul', { class: 'legend', 'aria-label': `${group.title} targets` });
     this.layers = this.isPath ? h('ol', { class: 'layers', 'aria-label': 'Network path status' }) : null;
     const pathTrace = this.isPath && traceOn && defaultTraceTarget()
@@ -302,6 +325,7 @@ class Panel {
       this.chartEl,
       h('div', { class: 'strip-wrap' }, this.strip),
       this.stripLegend,
+      this.probesEl,
       this.legend);
     this.strip.addEventListener('mousemove', (e) => this.stripHover(e));
     this.strip.addEventListener('mouseleave', hideTip);
@@ -477,7 +501,243 @@ class Panel {
         if (v != null && v > top && xs[i] + step > from && xs[i] <= to) top = v;
       }
     }
+    // Room for the threshold line; probes above the axis get a mark at the top.
+    if (this.thr.data) {
+      const v = this.thrValue();
+      if (isFinite(v)) top = Math.max(top, v * 1.2);
+    }
     return top;
+  }
+
+  // ---------- probes over a threshold ----------
+
+  /** The one target shown, with the main kind, when the probes control applies. */
+  thrTarget() {
+    const mk = this.mainKind();
+    if (!mk || !this.data) return null;
+    const shown = new Set(this.visibleSeries().map((s) => s.target));
+    const [name] = shown;
+    return shown.size === 1 && this.data.series.some((s) => s.target === name && s.kind === mk) ? { target: name, kind: mk } : null;
+  }
+
+  thrStoreKey() { return `fyisp-thr:${this.thr.target}:${this.thr.kind}`; }
+
+  thrBase() { return baselines.get(this.thr.target + '\0' + this.thr.kind); }
+
+  /** The verdict engine's spike rule over the series' normal: 3× it, at
+   * least 50 ms over it. Without a normal yet, 2× the median of the chart's means. */
+  thrDefault() {
+    const b = this.thrBase();
+    if (b && b.median_ms > 0) return Math.max(VERY_SLOW * b.median_ms, b.median_ms + 50);
+    const s = this.data?.series.find((x) => x.target === this.thr.target && x.kind === this.thr.kind);
+    const m = median(/** @type {number[]} */ ((s?.mean || []).filter((v) => v != null)));
+    return m > 0 ? Math.round(2 * m * 10) / 10 : 100;
+  }
+
+  /** The threshold in ms: the input, else the default; NaN when the input is not a number from 0 to 60000. */
+  thrValue() {
+    const s = this.thrInput.value.trim();
+    if (this.thrInput.validity.badInput) return NaN; // text the browser can't parse reads as ''
+    if (s === '') return this.thrDefault();
+    const v = Number(s);
+    return isFinite(v) && v >= 0 && v <= 60000 ? v : NaN;
+  }
+
+  /** Shows the control when one target is shown, else hides it; loads what the view needs. */
+  syncProbes() {
+    const t = this.thrTarget();
+    const thr = this.thr;
+    if (!t) {
+      if (this.probesEl.hidden) return;
+      this.probesEl.hidden = true;
+      thr.ctl?.abort();
+      clearTimeout(thr.timer);
+      thr.target = thr.kind = thr.key = '';
+      thr.data = null;
+      this.redrawProbes();
+      return;
+    }
+    if (t.target !== thr.target || t.kind !== thr.kind) {
+      thr.target = t.target;
+      thr.kind = t.kind;
+      thr.key = '';
+      thr.data = null;
+      this.thrInput.value = storageGet(this.thrStoreKey()) || '';
+      thr.say = true;
+    }
+    this.thrInput.placeholder = fmtMs(this.thrDefault());
+    this.probesEl.hidden = false;
+    this.fetchProbes(true);
+  }
+
+  /** @param {boolean} commit the input was committed (change, Enter): store it, fetch now */
+  thrChanged(commit) {
+    const s = this.thrInput.value.trim();
+    if (commit && isFinite(this.thrValue())) storageSet(this.thrStoreKey(), s);
+    this.thr.say = true;
+    if (this.thr.target) this.fetchProbes(commit);
+  }
+
+  /** Filters the last answer when it holds every probe over the threshold, else fetches (debounced while typing). */
+  fetchProbes(/** @type {boolean} */ now) {
+    const d = /** @type {PanelData} */ (this.data), thr = this.thr;
+    const v = this.thrValue();
+    clearTimeout(thr.timer);
+    this.thrInput.setAttribute('aria-invalid', String(isNaN(v)));
+    if (isNaN(v)) {
+      thr.ctl?.abort();
+      this.say('Enter a number of milliseconds from 0 to 60000');
+      this.redrawProbes();
+      return;
+    }
+    const key = `${thr.target}|${thr.kind}|${d.from}|${d.to}`;
+    const pd = thr.data;
+    if (pd && key === thr.key && v >= (pd.complete_above_ms ?? pd.over_ms)) {
+      this.showProbes();
+      return;
+    }
+    if (now || key !== thr.key) this.loadProbes(key, v);
+    else thr.timer = setTimeout(() => this.loadProbes(key, v), 250);
+  }
+
+  async loadProbes(/** @type {string} */ key, /** @type {number} */ over) {
+    const thr = this.thr, d = /** @type {PanelData} */ (this.data);
+    thr.ctl?.abort();
+    const ctl = thr.ctl = new AbortController();
+    this.probesEl.classList.add('loading');
+    if (!thr.data || thr.say) this.thrCount.textContent = 'Counting…'; // not when a refresh only moved the window
+    try {
+      const q = new URLSearchParams({ target: thr.target, kind: thr.kind, from: String(d.from), to: String(d.to), over_ms: String(over) });
+      const pd = await fetchJSON('api/probes?' + q, { signal: ctl.signal });
+      if (ctl.signal.aborted) return;
+      thr.data = pd;
+      thr.key = key;
+      this.showProbes();
+    } catch (e) {
+      if (/** @type {any} */ (e).name === 'AbortError') return;
+      thr.data = null;
+      thr.key = '';
+      this.say(`Couldn’t count probes: ${/** @type {Error} */ (e).message}`);
+      this.redrawProbes();
+    } finally {
+      if (thr.ctl === ctl) this.probesEl.classList.remove('loading');
+    }
+  }
+
+  /** The last answer's probes over the current threshold. */
+  overProbes() {
+    const pd = this.thr.data, v = this.thrValue();
+    return pd && isFinite(v) ? pd.probes.filter((p) => p.ms > v) : [];
+  }
+
+  showProbes() {
+    const pd = this.thr.data;
+    if (!pd) return;
+    const v = this.thrValue(), shown = this.overProbes().length;
+    const over = v === pd.over_ms ? pd.over : shown;
+    const parts = [];
+    if (pd.n + pd.lost_total === 0) parts.push('No probes in this range');
+    else parts.push(over ? `${fmtInt(over)} of ${fmtInt(pd.n)} probes over ${fmtMs(v)} ms` : `None of ${fmtInt(pd.n)} probes over ${fmtMs(v)} ms`);
+    if (shown < over) parts.push(`showing the slowest ${fmtInt(shown)}`);
+    // Counted over the whole range, whatever the threshold.
+    const inRange = [];
+    if (pd.likely_drop) inRange.push(`${fmtInt(pd.likely_drop)} likely dropped ${pd.likely_drop === 1 ? 'packet' : 'packets'} (1–1.4 s)`);
+    if (pd.lost_total) inRange.push(`${fmtInt(pd.lost_total)} lost`);
+    if (inRange.length) parts.push('in this range: ' + inRange.join(', '));
+    if (this.thrInput.value.trim() === '' && !this.thrBase()) parts.push('default is 2× the typical time (no normal yet)');
+    this.say(parts.join(' · '));
+    this.redrawProbes();
+  }
+
+  /** Shows txt under the chart; screen readers hear it once typing settles, only after a change the user made. */
+  say(/** @type {string} */ txt) {
+    this.thrCount.textContent = txt;
+    if (!this.thr.say) return;
+    this.thr.say = false;
+    clearTimeout(this.thr.sayTimer);
+    this.thr.sayTimer = setTimeout(() => { this.thrSay.textContent = txt; }, 500);
+  }
+
+  /** Redraws with the y axis fitted again (the threshold may have moved). */
+  redrawProbes() { this.u?.setScale('x', { min: this.view[0], max: this.view[1] }); }
+
+  /** The threshold line and a mark per probe over it: a ring for a likely
+   * dropped packet, a caret at the top when above the axis, else a dot; ticks
+   * instead of dots once any pixel column holds more than 3. */
+  drawProbes(/** @type {any} */ u) {
+    this.dots = [];
+    const v = this.thrValue();
+    if (!this.thr.data || !isFinite(v)) return;
+    const ctx = u.ctx, dpr = window.devicePixelRatio || 1;
+    const { left, top, width, height } = u.bbox;
+    const color = seriesColor(/** @type {number} */ (this.colors.get(this.thr.target)));
+    // Lines of dpr device pixels: on a pixel centre when odd, an edge when even.
+    const crisp = (/** @type {number} */ c) => Math.round(c) + (Math.round(dpr) % 2) / 2;
+    const yv = crisp(u.valToPos(v, 'y', true));
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, top, width, height);
+    ctx.clip();
+    ctx.strokeStyle = css('--ink-2');
+    ctx.lineWidth = dpr;
+    ctx.setLineDash([4 * dpr, 3 * dpr]);
+    ctx.beginPath();
+    ctx.moveTo(left, yv);
+    ctx.lineTo(left + width, yv);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const probes = this.overProbes();
+    const perCol = new Map();
+    for (const p of probes) {
+      const c = Math.round(u.valToPos(p.ts / 1000, 'x'));
+      perCol.set(c, (perCol.get(c) || 0) + 1);
+    }
+    const dense = [...perCol.values()].some((n) => n > 3);
+    const ymax = u.scales.y.max;
+    let above = 0, aboveMax = 0;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    for (const p of probes) {
+      const x = u.valToPos(p.ts / 1000, 'x');
+      if (x < 0 || x * dpr > width) continue;
+      const off = p.ms > ymax;
+      const y = off ? 2 : u.valToPos(p.ms, 'y');
+      this.dots.push({ x, y, p });
+      const cx = left + x * dpr, cy = top + y * dpr;
+      ctx.beginPath();
+      if (off) {
+        above++;
+        aboveMax = Math.max(aboveMax, p.ms);
+        ctx.moveTo(cx, top);
+        ctx.lineTo(cx - 4 * dpr, top + 6 * dpr);
+        ctx.lineTo(cx + 4 * dpr, top + 6 * dpr);
+        ctx.fill();
+      } else if (likelyDrop(this.thr.kind, p.ms)) {
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.arc(cx, cy, 3.5 * dpr, 0, 2 * Math.PI);
+        ctx.stroke();
+      } else if (dense) {
+        ctx.lineWidth = dpr;
+        ctx.moveTo(crisp(cx), yv);
+        ctx.lineTo(crisp(cx), cy);
+        ctx.stroke();
+      } else {
+        ctx.arc(cx, cy, 3 * dpr, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.lineWidth = dpr;
+        ctx.strokeStyle = css('--surface');
+        ctx.stroke();
+        ctx.strokeStyle = color;
+      }
+    }
+    if (above) {
+      ctx.fillStyle = css('--ink-2');
+      ctx.font = `${11 * dpr}px system-ui, sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`↑ ${fmtInt(above)} above, up to ${fmtProbeMs(aboveMax)}`, left + width - 4 * dpr, top + 8 * dpr);
+    }
+    ctx.restore();
   }
 
   /** @param {any[]} smap @param {any[]} data */
@@ -530,7 +790,7 @@ class Panel {
       hooks: {
         setSelect: [onChartSelect],
         setCursor: [(/** @type {any} */ u) => self.onCursor(u)],
-        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawBand(u); self.drawIncidents(u); self.drawStrip(); }],
+        draw: [(/** @type {any} */ u) => { drawSpeedWindows(u); self.drawBand(u); self.drawIncidents(u); self.drawProbes(u); self.drawStrip(); }],
       },
     };
     this.emptyEl.remove();
@@ -555,6 +815,7 @@ class Panel {
         if (this.u.series[m.si].show !== show) this.u.setSeries(m.si, { show });
       }
     });
+    this.syncProbes();
   }
 
   /** Series that count for legend, strip and tooltip: selected kinds, visible targets. */
@@ -681,6 +942,20 @@ class Panel {
         g.fillRect(x0, Math.max(0, y - bh), w, Math.min(bh, y));
       }
     }
+    // Each lost probe of the one target shown: a mark at its own time.
+    if (this.thr.data) {
+      for (const l of this.thr.data.lost) {
+        const x = u.valToPos(l.ts / 1000, 'x');
+        if (x < 0 || x > width) continue;
+        present.add(l.reason);
+        g.fillStyle = reasonColor(l.reason);
+        g.beginPath();
+        g.moveTo(x - 4, 0);
+        g.lineTo(x + 4, 0);
+        g.lineTo(x, 7);
+        g.fill();
+      }
+    }
     const kids = [];
     for (const r of REASONS) if (present.has(r)) kids.push(h('span', {}, h('span', { class: `chip r-${r}` }), REASON_LABEL[/** @type {'dns'} */ (r)]));
     if (anyGap) kids.push(h('span', {}, h('span', { class: 'chip hatch' }), 'not measured'));
@@ -717,6 +992,7 @@ class Panel {
     const d = this.data;
     const i = u.cursor.idx;
     if (!d || i == null || u.cursor.left < 0) { hideTip(); return; }
+    if (this.probeTip(u)) return;
     // Nearest visible mean line to the pointer; fall back to the first visible target.
     let best = null, bestDist = Infinity;
     for (const m of this.smap) {
@@ -783,6 +1059,25 @@ class Panel {
     nodes.push(...speedTipNodes(d.start + i * d.step, d.start + (i + 1) * d.step));
     const rect = u.over.getBoundingClientRect();
     showTip(nodes, rect.left + u.cursor.left, rect.top + u.cursor.top);
+  }
+
+  /** The tooltip of the probe mark under the pointer, if any. */
+  probeTip(/** @type {any} */ u) {
+    const cx = u.cursor.left, cy = u.cursor.top;
+    const near = this.dots.filter((m) => Math.abs(m.x - cx) <= 6 && Math.abs(m.y - cy) <= 6);
+    if (!near.length) return false;
+    near.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+    const p = near[0].p;
+    const sw = h('span', { class: 'sw' });
+    sw.style.background = seriesColor(/** @type {number} */ (this.colors.get(this.thr.target)));
+    const nodes = [h('div', { class: 't', text: fmtStamp(p.ts) }),
+      h('div', { class: 'row' }, sw, h('b', { text: this.thr.target })),
+      h('div', { class: 'row' }, h('span', { class: 'k', text: KIND_LABEL[/** @type {'https'} */ (this.thr.kind)] }), fmtProbeMs(p.ms))];
+    if (likelyDrop(this.thr.kind, p.ms)) nodes.push(h('div', { class: 'muted', text: 'Likely a dropped packet, sent again after 1 s' }));
+    if (near.length > 1) nodes.push(h('div', { class: 'muted', text: `+${near.length - 1} nearby` }));
+    const rect = u.over.getBoundingClientRect();
+    showTip(nodes, rect.left + cx, rect.top + cy);
+    return true;
   }
 
   /** The incidents this panel shows: connection-wide ones (no targets) and
@@ -2084,7 +2379,7 @@ async function loadBaselines() {
     baseAt = 0;
     return;
   }
-  for (const p of panels) if (p.data) { p.renderLegend(); p.u?.redraw(false); }
+  for (const p of panels) if (p.data) { p.renderLegend(); p.syncProbes(); p.u?.redraw(false); }
 }
 
 function fmtRatio(/** @type {number} */ r) { return '×' + (r >= 10 ? r.toFixed(0) : r.toFixed(1)); }
