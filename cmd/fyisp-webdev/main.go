@@ -6,6 +6,7 @@
 //	fyisp-webdev -profile all -backfill 90m   # a catalog profile: the Overview
 //	fyisp-webdev -verdict ok -calls poor      # the Calls view: good, poor or blocked
 //	fyisp-webdev -home blip                   # a Home scenario (/api/home; homescen.Names)
+//	fyisp-webdev -spikes                      # fixed spikes and drops on one service (api/probes)
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -68,9 +70,13 @@ func windows(d time.Duration, now time.Time) (hole, isp, lan window) {
 // backfill writes synthetic history: a not-measured hole (fyisp "stopped"),
 // an ISP outage (gateway fine, everything past it lossy, mixed reasons) and
 // a short LAN blip (everything lossy), so the UI has something to show.
-func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time) {
+func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time, spikes bool) {
 	r := mrand.New(mrand.NewPCG(1, 2))
 	hole, isp, lan := windows(d, now)
+	spikeName := ""
+	if spikes {
+		spikeName = spikeTarget(p)
+	}
 	reasons := []model.Reason{model.ReasonTimeout, model.ReasonRefused, model.ReasonReset, model.ReasonDNS, model.ReasonTLS, model.ReasonUnreachable, model.ReasonNoNetwork}
 	for i, t := range p.Targets {
 		base := 5 + float64(i%30)*5
@@ -127,8 +133,52 @@ func backfill(st model.Sink, p *model.Profile, d time.Duration, now time.Time) {
 					}
 					s.RTT = time.Duration(ms * float64(time.Millisecond))
 				}
+				if t.Name == spikeName && k == model.KindTCP {
+					spike(&s, now, iv, base)
+				}
 				st.Observe(s)
 			}
+		}
+	}
+}
+
+// spikeTable holds fixed probes of spikeTarget, by age at startup, as ms
+// added to the slot's value: three of about 1 s (a resent SYN), six of
+// 10-50 ms and one timeout. They change the slot after its random draws, so
+// every other sample is unchanged.
+var spikeTable = []struct {
+	age   time.Duration
+	extra float64 // 0: lost
+}{
+	{3 * time.Minute, 23}, {5 * time.Minute, 1000}, {8 * time.Minute, 48}, {10 * time.Minute, 0},
+	{12 * time.Minute, 1005}, {15 * time.Minute, 17}, {20 * time.Minute, 35}, {25 * time.Minute, 12},
+	{90 * time.Minute, 29}, {2 * time.Hour, 1010},
+}
+
+// spikeTarget is the first service probed with TCP (not the network path).
+func spikeTarget(p *model.Profile) string {
+	for _, t := range p.Targets {
+		if t.Layer == "" && slices.Contains(t.ProbeKinds(), model.KindTCP) {
+			return t.Name
+		}
+	}
+	return ""
+}
+
+// spike changes s when a spikeTable entry falls in its slot; a randomly lost
+// slot becomes base plus the extra, so every spike shows.
+func spike(s *model.Sample, now time.Time, iv time.Duration, base float64) {
+	for _, x := range spikeTable {
+		if !now.Add(-x.age).Truncate(iv).Equal(s.Slot) {
+			continue
+		}
+		switch {
+		case x.extra == 0:
+			s.Lost, s.Reason, s.RTT = true, model.ReasonTimeout, 0
+		case s.Lost:
+			s.Lost, s.Reason, s.RTT = false, 0, time.Duration((base+x.extra)*float64(time.Millisecond))
+		default:
+			s.RTT += time.Duration(x.extra * float64(time.Millisecond))
 		}
 	}
 }
@@ -166,6 +216,7 @@ func main() {
 	storageScen := flag.String("storage", storageTargets, "storage tests: none (Storage hidden), empty (no targets) or targets")
 	callsMode := flag.String("calls", callsGood, "call-path scenario for the Calls view: good, poor or blocked")
 	named := flag.String("profile", "", "named profiles instead of the dev profile, e.g. all (keep -backfill short: every series is in memory)")
+	spikes := flag.Bool("spikes", false, "fixed slow and lost probes on the first TCP service in the last 2 h (needs -backfill 2h or more)")
 	home := flag.String("home", "", "a Home scenario served by /api/home (the rest stays fake probes): "+strings.Join(homescen.Names, ", "))
 	flag.Parse()
 
@@ -250,7 +301,7 @@ func main() {
 	pr := &probe.Fake{Seed: 42, LossRate: *loss}
 	if *bf > 0 {
 		log.Info("backfilling", "range", *bf)
-		backfill(sink(st), p, *bf, now)
+		backfill(sink(st), p, *bf, now, *spikes)
 	}
 	// The Home tiles: the real engine over the fake store and probes.
 	tl := tiles.New(p, profile.ResolveTiles(p), tiles.Sources{Store: st,
