@@ -100,3 +100,11 @@ docker run --rm -p 3000:3000 fyisp-webdev /fyisp-webdev -listen 0.0.0.0:3000 -ho
 - **Per-OS files** (`_windows.go`, `_darwin.go`, ...): `test` vets only `netinfo` for other OSes. Run `GOOS=windows go vet ./...` or rely on the native CI.
 - **Host allowlist:** the handler answers 421 to unknown Host headers, so tests must set `r.Host`.
 - **SQLite pragmas:** modernc runs `_pragma` DSN values in lexicographic order, so persistent pragmas are set in code (`sqlite.go`), not in the DSN.
+
+## Decisions
+
+Settled choices; reviewers shouldn't re-raise them.
+
+- **`api/probes` "likely dropped"** is TCP probes of 1000 to 1400 ms: a SYN resent after a 1 s initial RTO. It is labelled as likely, not proven (nothing records the retransmit, and Windows may resend at 3 s, which is a timeout).
+- **`api/probes` has no gaps.** `api/panel`'s per-bucket `gap` already says when fyisp wasn't measuring.
+- **`api/probes` caps at the slowest 5000**, not the first, so a capped answer still shows the worst probes; `complete_above_ms` says what is complete.

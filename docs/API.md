@@ -24,6 +24,7 @@ Every route the dashboard serves, the `/metrics` series and the `fyisp export` C
 | GET | `api/profile` | the profile: groups, targets and which features are on | [below](#get-apiprofile) |
 | GET | `api/home` | Home: the answer card, connection strip, tiles, speed and problems | [HOME-API.md](HOME-API.md) |
 | GET | `api/panel`, `api/panel.csv` | one group's chart data, as JSON or CSV | [below](#get-apipanel-and-apipanelcsv) |
+| GET | `api/probes` | one series' probes slower than a threshold, and its lost probes | [below](#get-apiprobes) |
 | GET | `api/verdict` | the current verdict | [below](#get-apiverdict-and-apiincidents) |
 | GET | `api/incidents` | the outage log | [below](#get-apiverdict-and-apiincidents) |
 | GET | `api/baselines` | each series' normal and how it compares now | [below](#get-apibaselines) |
@@ -59,6 +60,23 @@ No parameters. `profileJSON` in `internal/web/api.go`: `name`, `features` (`trac
 ### GET `api/panel` and `api/panel.csv`
 
 `group` (required), `from` (default `now-30m`), `to` (default `now`), `points` (10 to 2000, default 1000). The span is at most 90 days. The JSON (`panelData.JSON` in `internal/web/api.go`) has `group`, `tier`, `from`, `to`, `now`, `start`, `step` and `len`, and per series `target`, `kind` (`hop` for trace series) and the bucket arrays `mean`, `min`, `max`, `n`, `lost`, `gap` and `lost_by` (per loss reason). The CSV is the same data as a download. An unknown group is 404; a query that takes too long is 503 with `Retry-After: 2`.
+
+### GET `api/probes`
+
+`target` and `kind` (required: a profile target and one of its kinds), `over_ms` (required, 0 to 60000), `from` and `to` (default the last 30 minutes, at most 90 days) and `limit` (0 to 5000, default 5000). It reads the series' stored probes, not the hourly summaries, so it is exact at any range. `probesJSON` in `internal/web/probes.go`:
+
+```json
+{"target": "AWS-ap-south-2", "kind": "tcp", "from": 1761000000000, "to": 1761172800000, "over_ms": 50,
+ "n": 11498, "over": 1, "complete_above_ms": null, "probes": [{"ts": 1761012015000, "ms": 1042.48}],
+ "likely_drop": 1, "lost_total": 1, "lost_by": {"timeout": 1}, "lost": [{"ts": 1761030000000, "reason": "timeout"}], "lost_capped": false}
+```
+
+- `n` counts the answered probes and `over` those slower than `over_ms`. Slots that were not measured count in neither.
+- `probes` lists at most `limit` of the probes over `over_ms`: the slowest ones, in time order. When it lists fewer than `over`, `complete_above_ms` is set and every probe slower than it is listed; otherwise it is `null`. With `limit=0` only the counts come back.
+- `likely_drop` (TCP only) counts the probes of 1000 to 1400 ms (1400 excluded). A connect that slow is most likely a lost SYN or SYN-ACK that the OS sent again after its 1 s retransmission timeout, plus the path's round trip. That holds where the first retransmission comes after 1 s (Linux); a resend at 3 s is the probe timeout and counts as lost.
+- `lost_total` and `lost_by` count the lost probes (the reasons are `api/panel`'s). `lost` lists the first 5000 in time order, and `lost_capped` says there were more.
+
+An unknown target, or a kind the target is not probed with, is 404; a query that takes too long is 503 with `Retry-After: 2`.
 
 ### GET `api/verdict` and `api/incidents`
 

@@ -313,13 +313,7 @@ func dominantReason(counts []int64) string {
 		if v == 0 || model.Reason(rs) == model.ReasonGap {
 			continue
 		}
-		slug := "other"
-		for _, x := range reasonSlugs {
-			if x.r == model.Reason(rs) {
-				slug = x.slug
-			}
-		}
-		by[slug] += v
+		by[reasonSlug(model.Reason(rs))] += v
 	}
 	best, bestN := "", int64(0)
 	for _, x := range reasonSlugs {
