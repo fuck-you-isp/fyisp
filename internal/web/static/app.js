@@ -463,6 +463,23 @@ class Panel {
     if (this.isPath) this.renderLayers();
   }
 
+  /** The highest visible mean in the x range. The y axis fits the means, not
+   * the max series, so one slow probe does not flatten every line. */
+  meanTop(/** @type {any} */ u) {
+    const xs = u.data[0], [from, to] = this.view;
+    const step = /** @type {PanelData} */ (this.data).step / 1000;
+    let top = 0;
+    for (const m of this.smap) {
+      if (m.role !== 'mean' || !u.series[m.si].show) continue;
+      const ys = u.data[m.si];
+      for (let i = 0; i < xs.length; i++) {
+        const v = ys[i];
+        if (v != null && v > top && xs[i] + step > from && xs[i] <= to) top = v;
+      }
+    }
+    return top;
+  }
+
   /** @param {any[]} smap @param {any[]} data */
   makeChart(smap, data) {
     const ink2 = css('--ink-2'), grid = css('--grid'), axis = css('--axis');
@@ -494,7 +511,7 @@ class Panel {
       legend: { show: false },
       scales: {
         x: { time: true, range: () => self.view },
-        y: { range: (/** @type {any} */ u, /** @type {number} */ min, /** @type {number} */ max) => [0, max > 0 ? max * 1.08 : 10] },
+        y: { range: (/** @type {any} */ u) => { const top = self.meanTop(u); return [0, top > 0 ? top * 1.08 : 10]; } },
       },
       axes: [
         { stroke: ink2, font, grid: { stroke: grid, width: 1 }, ticks: { stroke: axis, width: 1, size: 4 } },
