@@ -411,6 +411,15 @@ var reasonSlugs = []struct {
 	{model.ReasonOther, "other"},
 }
 
+func reasonSlug(r model.Reason) string {
+	for _, x := range reasonSlugs {
+		if x.r == r {
+			return x.slug
+		}
+	}
+	return "other"
+}
+
 // lostBy folds a series' per-reason counts into the API's reason slugs.
 func lostBy(c *store.SeriesCols, nb int) map[string][]uint32 {
 	out := map[string][]uint32{}
@@ -421,12 +430,7 @@ func lostBy(c *store.SeriesCols, nb int) map[string][]uint32 {
 		if r == model.ReasonGap {
 			continue
 		}
-		slug := "other"
-		for _, x := range reasonSlugs {
-			if x.r == r {
-				slug = x.slug
-			}
-		}
+		slug := reasonSlug(r)
 		dst := out[slug]
 		if dst == nil {
 			dst = make([]uint32, nb)

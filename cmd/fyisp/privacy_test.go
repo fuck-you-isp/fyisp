@@ -156,7 +156,8 @@ func TestUDPPrivacyEndToEnd(t *testing.T) {
 		t.Errorf("/metrics has no UDP series:\n%s", m)
 	}
 	outputs = append(outputs, m,
-		get(local, "/api/status"), get(local, "/api/profile"), get(local, "/api/panel?group=calls&from=now-5m"))
+		get(local, "/api/status"), get(local, "/api/profile"), get(local, "/api/panel?group=calls&from=now-5m"),
+		get(local, "/api/probes?target=STUN-test&kind=udp&over_ms=0&from=now-5m"))
 	calls := get(local, "/api/calls?from=now-5m")
 	if !strings.Contains(calls, `"app":"meet","udp":"measured"`) {
 		t.Errorf("/api/calls does not measure Meet:\n%s", calls)

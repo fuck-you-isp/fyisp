@@ -198,6 +198,7 @@ func TestLocalRoutes(t *testing.T) {
 		"/api/panel.csv?group=lan": 200, "/static/app.js": 200, "/debug/pprof/": 404, "/nope": 404,
 		"/static/index.html": 404, "/api/verdict": 200, "/api/incidents": 200,
 		"/api/verdict?from=now": 400, "/api/incidents?from=now&to=now-1h": 400,
+		"/api/probes?target=Alpha&kind=tcp&over_ms=5": 200, "/api/probes?target=Alpha&kind=tcp": 400,
 	} {
 		if w := do(h, "GET", p, host); w.Code != code {
 			t.Errorf("GET %s = %d, want %d", p, w.Code, code)

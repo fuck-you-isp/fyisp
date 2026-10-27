@@ -38,7 +38,7 @@ func TestAdminRequired(t *testing.T) {
 			t.Errorf("%s %s = %d, want 401", c.method, c.path, w.Code)
 		}
 	}
-	for _, p := range []string{"/api/status", "/api/profile", "/api/home?part=now", "/api/speed", "/api/trace?target=Alpha", "/metrics", "/api/nope"} {
+	for _, p := range []string{"/api/status", "/api/profile", "/api/home?part=now", "/api/speed", "/api/trace?target=Alpha", "/api/probes?target=Alpha&kind=tcp&over_ms=5", "/metrics", "/api/nope"} {
 		w := do(h, "GET", p, host)
 		if w.Code != 401 || w.Header().Get("WWW-Authenticate") != `Bearer realm="fyisp"` || strings.Contains(w.Body.String(), testAdmin) {
 			t.Errorf("GET %s = %d %q, want 401 with WWW-Authenticate", p, w.Code, w.Header().Get("WWW-Authenticate"))

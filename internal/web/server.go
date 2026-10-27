@@ -127,6 +127,7 @@ const (
 	routeSpeed
 	routeStorage
 	routeStorageReport
+	routeProbes
 )
 
 func lookup(rel string) route {
@@ -141,6 +142,8 @@ func lookup(rel string) route {
 		return routePanel
 	case "api/panel.csv":
 		return routePanelCSV
+	case "api/probes":
+		return routeProbes
 	case "api/verdict":
 		return routeVerdict
 	case "api/incidents":
@@ -201,6 +204,8 @@ func (s *server) serveGET(w http.ResponseWriter, r *http.Request, rt route, rel 
 		writeJSON(w, r, http.StatusOK, pj)
 	case routePanel, routePanelCSV:
 		s.servePanel(w, r, rt == routePanelCSV)
+	case routeProbes:
+		s.serveProbes(w, r)
 	case routeVerdict:
 		s.serveVerdict(w, r)
 	case routeIncidents:
