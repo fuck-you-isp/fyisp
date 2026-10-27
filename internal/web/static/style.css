@@ -199,6 +199,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .strip-wrap { position: relative; height: 22px; margin-top: 2px; }
 .strip { position: absolute; top: 0; height: 22px; display: block; }
 .strip-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--ink-2); min-height: 16px; margin-top: 2px; }
+.probes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+.probes[hidden] { display: none; }
+.probes.loading .pcount { opacity: 0.6; }
+.probes .thr { width: 6em; margin: 0 4px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.probes .thr[aria-invalid="true"] { border-color: var(--danger-border); }
+.probes .pcount { font-variant-numeric: tabular-nums; }
 .chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 .chip.hatch { background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 4px); border: 1px solid var(--hatch); }
 .r-timeout { background: var(--r-timeout); }
